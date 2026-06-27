@@ -30,6 +30,33 @@ public final class AuthService: Sendable {
         return response
     }
 
+    /// POST /api/v1/auth/apple. Send Apple's identity token (+ name on first
+    /// auth). Persists the returned session token on success.
+    @discardableResult
+    public func appleLogin(
+        identityToken: String,
+        firstName: String?,
+        lastName: String?,
+        deviceId: String?
+    ) async throws -> LoginResponse {
+        let payload = try JSONEncoder().encode(
+            AppleLoginRequest(
+                identityToken: identityToken,
+                deviceId: deviceId,
+                firstName: firstName,
+                lastName: lastName
+            )
+        )
+        let response: LoginResponse = try await api.request(
+            "/auth/apple",
+            method: .post,
+            body: payload,
+            authenticated: false
+        )
+        await tokenStore.save(response.token)
+        return response
+    }
+
     /// Forget the session locally. (Also call DeviceService.unregister first if
     /// you want to stop pushes to this device server-side.)
     public func logout() async {

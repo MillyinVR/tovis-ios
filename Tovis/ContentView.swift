@@ -2,6 +2,7 @@
 // Styled with the Peacock Plume tokens (Theme/BrandColor + BrandFont).
 import SwiftUI
 import TovisKit
+import AuthenticationServices
 
 // MARK: - App entry point
 
@@ -48,6 +49,26 @@ final class SessionModel {
             let result = try await client.auth.login(
                 email: email,
                 password: password,
+                deviceId: client.deviceId
+            )
+            currentUser = result.user
+            state = .signedIn
+        } catch let error as APIError {
+            errorMessage = error.userMessage
+        } catch {
+            errorMessage = "Something went wrong. Please try again."
+        }
+    }
+
+    func appleLogin(identityToken: String, firstName: String?, lastName: String?) async {
+        isWorking = true
+        errorMessage = nil
+        defer { isWorking = false }
+        do {
+            let result = try await client.auth.appleLogin(
+                identityToken: identityToken,
+                firstName: firstName,
+                lastName: lastName,
                 deviceId: client.deviceId
             )
             currentUser = result.user
@@ -147,10 +168,47 @@ struct LoginView: View {
             .disabled(email.isEmpty || password.isEmpty || session.isWorking)
             .opacity(email.isEmpty || password.isEmpty ? 0.5 : 1)
 
+            HStack(spacing: 12) {
+                Rectangle().fill(BrandColor.textMuted.opacity(0.2)).frame(height: 1)
+                Text("or").font(BrandFont.body(13)).foregroundStyle(BrandColor.textMuted)
+                Rectangle().fill(BrandColor.textMuted.opacity(0.2)).frame(height: 1)
+            }
+
+            SignInWithAppleButton(.signIn) { request in
+                request.requestedScopes = [.fullName, .email]
+            } onCompletion: { result in
+                handleApple(result)
+            }
+            .signInWithAppleButtonStyle(.white)
+            .frame(height: 52)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
             Spacer()
             Spacer()
         }
         .padding(.horizontal, 28)
+    }
+
+    private func handleApple(_ result: Result<ASAuthorization, Error>) {
+        switch result {
+        case let .success(auth):
+            guard
+                let credential = auth.credential as? ASAuthorizationAppleIDCredential,
+                let tokenData = credential.identityToken,
+                let token = String(data: tokenData, encoding: .utf8)
+            else {
+                return
+            }
+            // fullName is only populated on the user's FIRST authorization.
+            let first = credential.fullName?.givenName
+            let last = credential.fullName?.familyName
+            Task {
+                await session.appleLogin(identityToken: token, firstName: first, lastName: last)
+            }
+        case .failure:
+            // User canceled or the request failed — leave the screen as-is.
+            break
+        }
     }
 }
 

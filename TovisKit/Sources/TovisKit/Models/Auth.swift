@@ -22,6 +22,15 @@ public struct LoginResponse: Codable, Sendable {
     public let isFullyVerified: Bool
 }
 
+/// POST /api/v1/auth/apple — request body. `identityToken` is the JWT from
+/// ASAuthorization; name is only present on the user's first authorization.
+struct AppleLoginRequest: Encodable, Sendable {
+    let identityToken: String
+    let deviceId: String?
+    let firstName: String?
+    let lastName: String?
+}
+
 /// POST /api/v1/auth/refresh — response (`AuthRefreshResponseDTO`).
 public struct RefreshResponse: Codable, Sendable {
     public let token: String
