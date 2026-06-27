@@ -213,4 +213,14 @@ import Testing
         #expect(b.waitlist.first?.professional?.displayName == "Snip")
         #expect(b.waitlist.first?.service?.name == "Cut")
     }
+
+    // The consultation decision body must use the backend's exact action verbs.
+    @Test func consultationDecisionEncodesActionVerb() throws {
+        #expect(ConsultationDecision.approve.wire == "APPROVE")
+        #expect(ConsultationDecision.reject.wire == "REJECT")
+
+        let data = try JSONEncoder().encode(ConsultationDecisionRequest(action: ConsultationDecision.approve.wire))
+        let json = String(data: data, encoding: .utf8)
+        #expect(json == #"{"action":"APPROVE"}"#)
+    }
 }

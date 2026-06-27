@@ -178,3 +178,18 @@ public struct BookingWaitlistEntry: Decodable, Sendable, Identifiable {
     public let service: HomeServiceRef?
     public let professional: BookingProfessional?
 }
+
+// MARK: - Consultation decision
+
+/// The client's response to a pro's proposed consultation plan.
+public enum ConsultationDecision: Sendable {
+    case approve
+    case reject
+
+    var wire: String { self == .approve ? "APPROVE" : "REJECT" }
+}
+
+/// POST /api/v1/client/bookings/{id}/consultation — request body.
+struct ConsultationDecisionRequest: Encodable, Sendable {
+    let action: String  // "APPROVE" | "REJECT"
+}

@@ -15,4 +15,21 @@ public final class BookingsService: Sendable {
         let response: ClientBookingsResponse = try await api.request("/client/bookings")
         return response.buckets
     }
+
+    /// POST /api/v1/client/bookings/{id}/consultation — approve or reject the
+    /// pro's proposed consultation plan. The server is idempotent and a decision
+    /// on an already-decided proposal still returns 200.
+    public func decideConsultation(
+        bookingId: String,
+        _ decision: ConsultationDecision
+    ) async throws {
+        let payload = try JSONEncoder().encode(
+            ConsultationDecisionRequest(action: decision.wire)
+        )
+        try await api.requestVoid(
+            "/client/bookings/\(bookingId)/consultation",
+            method: .post,
+            body: payload
+        )
+    }
 }

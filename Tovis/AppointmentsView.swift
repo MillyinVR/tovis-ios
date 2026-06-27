@@ -73,7 +73,7 @@ struct AppointmentsView: View {
                 VStack(spacing: 10) {
                     ForEach(bookings) { booking in
                         NavigationLink {
-                            BookingDetailView(booking: booking)
+                            BookingDetailView(booking: booking, onDecision: { await load() })
                         } label: {
                             BookingRow(booking: booking)
                         }

@@ -163,13 +163,18 @@ All return the same session payload (`AuthLoginResponseDTO`): token in the JSON 
    `BookingsService`/`ClientBooking` (mirror the DTOs; only the rendered subset modeled,
    nullable→optional, unknown keys ignored). Shared UI in `Theme/BrandComponents.swift`.
    Decode tests in `DecodingTests.swift`.
-3. **Make the screens actionable (next pass).** Read-only today. Wire the real actions, all
-   of which have `/api/v1` endpoints already: approve/reject consultation
-   (`POST /client/bookings/[id]/consultation`), pay
-   (`/client/bookings/[id]/checkout` + `/deposit/stripe-session`), accept a last-minute
-   invite, open a pro profile (`/u/[handle]` public profile), rebook
-   (`/client/bookings/[id]/aftercare-rebook`). The pro display-name resolver
-   (`BookingProfessional.displayName`) already ports `lib/privacy/professionalDisplayName.ts`.
+3. **Make the screens actionable (in progress).**
+   - ✅ **Consultation approve/reject DONE.** `BookingsService.decideConsultation(bookingId:_:)`
+     → `POST /client/bookings/[id]/consultation` `{action:APPROVE|REJECT}` (server is
+     idempotent). `BookingDetailView` shows Approve/Decline buttons when the consultation is
+     pending; on success it refreshes the list (`onDecision`) and pops back. Wire verbs
+     locked by a test.
+   - ⏭️ Still to wire (endpoints exist): **pay**
+     (`/client/bookings/[id]/checkout` + `/deposit/stripe-session` — needs an in-app
+     Safari/web redirect + a deep-link return, see step 6), **accept a last-minute invite**,
+     **open a pro profile** (`/u/[handle]` public profile — needs a profile endpoint/screen),
+     **rebook** (`/client/bookings/[id]/aftercare-rebook`). The pro display-name resolver
+     (`BookingProfessional.displayName`) already ports `lib/privacy/professionalDisplayName.ts`.
 4. Then iterate outward: search/discover, booking flow (holds → availability → checkout),
    messages. All have `/api/v1` endpoints + DTOs already.
 5. **Push notifications** (backend built but inert): add the Push Notifications capability,

@@ -6,19 +6,33 @@ import SwiftUI
 import TovisKit
 
 struct BookingDetailView: View {
+    @Environment(SessionModel.self) private var session
+    @Environment(\.dismiss) private var dismiss
+
     let booking: ClientBooking
+    /// Called after a successful decision so the list behind can refresh.
+    var onDecision: () async -> Void = {}
+
+    @State private var working = false
+    @State private var actionError: String?
+
+    private var isConsultationPending: Bool {
+        booking.hasPendingConsultationApproval ||
+            (booking.consultation?.approvalStatus?.uppercased() == "PENDING")
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 headerCard
 
-                if booking.hasPendingConsultationApproval {
+                if isConsultationPending {
                     noticeCard(
                         title: "Consultation needs your review",
                         subtitle: "Your pro proposed a plan — review and approve it.",
                         icon: "checklist", tint: BrandColor.gold
                     )
+                    consultationActions
                 }
 
                 if !booking.items.isEmpty {
@@ -55,6 +69,83 @@ struct BookingDetailView: View {
         .navigationTitle("Appointment")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
+    }
+
+    // MARK: - Consultation actions
+
+    private var consultationActions: some View {
+        VStack(spacing: 10) {
+            if let proposed = Wire.money(booking.consultation?.proposedTotal) {
+                HStack {
+                    Text("Proposed total")
+                        .font(BrandFont.body(14))
+                        .foregroundStyle(BrandColor.textSecondary)
+                    Spacer()
+                    Text(proposed)
+                        .font(BrandFont.body(16, .semibold))
+                        .foregroundStyle(BrandColor.textPrimary)
+                }
+                .padding(.bottom, 2)
+            }
+
+            Button {
+                Task { await decide(.approve) }
+            } label: {
+                actionLabel("Approve plan", filled: true)
+            }
+            .disabled(working)
+
+            Button {
+                Task { await decide(.reject) }
+            } label: {
+                actionLabel("Decline", filled: false)
+            }
+            .disabled(working)
+
+            if let actionError {
+                Text(actionError)
+                    .font(BrandFont.body(13))
+                    .foregroundStyle(BrandColor.ember)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private func actionLabel(_ title: String, filled: Bool) -> some View {
+        Group {
+            if working {
+                ProgressView().tint(filled ? BrandColor.onAccent : BrandColor.accent)
+            } else {
+                Text(title).font(BrandFont.body(16, .semibold))
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 15)
+        .foregroundStyle(filled ? BrandColor.onAccent : BrandColor.ember)
+        .background(filled ? BrandColor.accent : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(filled ? Color.clear : BrandColor.ember.opacity(0.4), lineWidth: 1)
+        )
+        .opacity(working ? 0.7 : 1)
+    }
+
+    private func decide(_ decision: ConsultationDecision) async {
+        working = true
+        actionError = nil
+        defer { working = false }
+        do {
+            try await session.client.bookings.decideConsultation(
+                bookingId: booking.id, decision
+            )
+            await onDecision()
+            dismiss()
+        } catch let error as APIError {
+            actionError = error.userMessage
+        } catch {
+            actionError = "Something went wrong. Please try again."
+        }
     }
 
     // MARK: - Cards
