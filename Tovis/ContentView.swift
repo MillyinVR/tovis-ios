@@ -100,7 +100,8 @@ struct LoginView: View {
         VStack(spacing: 28) {
             Spacer()
 
-            VStack(spacing: 8) {
+            VStack(spacing: 14) {
+                TovisEye(size: 76)
                 Text("tovis")
                     .font(BrandFont.display(44, .semibold))
                     .foregroundStyle(BrandColor.textPrimary)
@@ -192,9 +193,7 @@ struct SignedInView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            Text("tovis")
-                .font(BrandFont.display(34, .semibold))
-                .foregroundStyle(BrandColor.accent)
+            TovisEye(size: 56)
             Text("You're signed in 🎉")
                 .font(BrandFont.body(18, .semibold))
                 .foregroundStyle(BrandColor.textPrimary)
