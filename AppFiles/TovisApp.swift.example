@@ -1,0 +1,22 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// REPLACE the auto-generated `TovisApp.swift` that Xcode created for you with
+// this. (Xcode names the @main file "<ProductName>App.swift".) The only real
+// additions vs the template are: creating the SessionModel and injecting it via
+// `.environment(...)`.
+// ─────────────────────────────────────────────────────────────────────────────
+import SwiftUI
+import TovisKit
+
+@main
+struct TovisApp: App {
+    // Point at `.local` while developing against `npm run dev`, `.production`
+    // for a real build. (See TovisConfig — set your real prod URL there.)
+    @State private var session = SessionModel(config: .local)
+
+    var body: some Scene {
+        WindowGroup {
+            RootView()
+                .environment(session)
+        }
+    }
+}
