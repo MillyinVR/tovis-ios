@@ -57,6 +57,40 @@ public final class AuthService: Sendable {
         return response
     }
 
+    /// POST /api/v1/auth/phone-login/send. Requests an SMS code. The response is
+    /// intentionally generic (it never reveals whether the number has an account).
+    @discardableResult
+    public func phoneLoginSend(phone: String) async throws -> PhoneLoginSendResponse {
+        let payload = try JSONEncoder().encode(PhoneLoginSendRequest(phone: phone))
+        return try await api.request(
+            "/auth/phone-login/send",
+            method: .post,
+            body: payload,
+            authenticated: false
+        )
+    }
+
+    /// POST /api/v1/auth/phone-login/verify. Verifies the SMS code and, on
+    /// success, persists the returned session token.
+    @discardableResult
+    public func phoneLoginVerify(
+        phone: String,
+        code: String,
+        deviceId: String?
+    ) async throws -> LoginResponse {
+        let payload = try JSONEncoder().encode(
+            PhoneLoginVerifyRequest(phone: phone, code: code, deviceId: deviceId)
+        )
+        let response: LoginResponse = try await api.request(
+            "/auth/phone-login/verify",
+            method: .post,
+            body: payload,
+            authenticated: false
+        )
+        await tokenStore.save(response.token)
+        return response
+    }
+
     /// Forget the session locally. (Also call DeviceService.unregister first if
     /// you want to stop pushes to this device server-side.)
     public func logout() async {

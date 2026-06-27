@@ -31,6 +31,23 @@ struct AppleLoginRequest: Encodable, Sendable {
     let lastName: String?
 }
 
+/// POST /api/v1/auth/phone-login/send — request body.
+struct PhoneLoginSendRequest: Encodable, Sendable {
+    let phone: String
+}
+
+/// POST /api/v1/auth/phone-login/send — response (always generic / enumeration-safe).
+public struct PhoneLoginSendResponse: Codable, Sendable {
+    public let message: String
+}
+
+/// POST /api/v1/auth/phone-login/verify — request body.
+struct PhoneLoginVerifyRequest: Encodable, Sendable {
+    let phone: String
+    let code: String
+    let deviceId: String?
+}
+
 /// POST /api/v1/auth/refresh — response (`AuthRefreshResponseDTO`).
 public struct RefreshResponse: Codable, Sendable {
     public let token: String

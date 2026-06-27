@@ -80,6 +80,44 @@ final class SessionModel {
         }
     }
 
+    /// Phone-OTP step 1. Returns true if the request was accepted (move to the
+    /// code step). The response is generic, so this never reveals account existence.
+    func phoneSend(_ phone: String) async -> Bool {
+        isWorking = true
+        errorMessage = nil
+        defer { isWorking = false }
+        do {
+            _ = try await client.auth.phoneLoginSend(phone: phone)
+            return true
+        } catch let error as APIError {
+            errorMessage = error.userMessage
+            return false
+        } catch {
+            errorMessage = "Something went wrong. Please try again."
+            return false
+        }
+    }
+
+    /// Phone-OTP step 2. On success, signs in.
+    func phoneVerify(phone: String, code: String) async {
+        isWorking = true
+        errorMessage = nil
+        defer { isWorking = false }
+        do {
+            let result = try await client.auth.phoneLoginVerify(
+                phone: phone,
+                code: code,
+                deviceId: client.deviceId
+            )
+            currentUser = result.user
+            state = .signedIn
+        } catch let error as APIError {
+            errorMessage = error.userMessage
+        } catch {
+            errorMessage = "Something went wrong. Please try again."
+        }
+    }
+
     func logout() async {
         await client.auth.logout()
         currentUser = nil
@@ -116,6 +154,7 @@ struct LoginView: View {
     @Environment(SessionModel.self) private var session
     @State private var email = ""
     @State private var password = ""
+    @State private var showPhone = false
 
     var body: some View {
         VStack(spacing: 28) {
@@ -183,10 +222,27 @@ struct LoginView: View {
             .frame(height: 52)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
+            Button {
+                showPhone = true
+            } label: {
+                Text("Continue with phone")
+                    .font(BrandFont.body(16, .semibold))
+                    .foregroundStyle(BrandColor.textPrimary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 15)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(BrandColor.textMuted.opacity(0.3), lineWidth: 1)
+                    )
+            }
+
             Spacer()
             Spacer()
         }
         .padding(.horizontal, 28)
+        .sheet(isPresented: $showPhone) {
+            PhoneLoginView()
+        }
     }
 
     private func handleApple(_ result: Result<ASAuthorization, Error>) {
