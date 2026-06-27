@@ -142,7 +142,7 @@ struct RootView: View {
             case .signedOut:
                 LoginView()
             case .signedIn:
-                SignedInView()
+                MainTabView()
             }
         }
     }
@@ -300,41 +300,5 @@ struct BrandField: View {
     }
 }
 
-// MARK: - Signed in (placeholder)
-
-struct SignedInView: View {
-    @Environment(SessionModel.self) private var session
-
-    var body: some View {
-        VStack(spacing: 16) {
-            TovisEye(size: 56)
-            Text("You're signed in 🎉")
-                .font(BrandFont.body(18, .semibold))
-                .foregroundStyle(BrandColor.textPrimary)
-            if let user = session.currentUser {
-                Text(user.email)
-                    .font(BrandFont.body(14))
-                    .foregroundStyle(BrandColor.textSecondary)
-                Text(user.role.rawValue)
-                    .font(BrandFont.mono(12))
-                    .foregroundStyle(BrandColor.textMuted)
-            }
-
-            Button {
-                Task { await session.logout() }
-            } label: {
-                Text("Sign out")
-                    .font(BrandFont.body(15, .semibold))
-                    .foregroundStyle(BrandColor.ember)
-                    .padding(.vertical, 12)
-                    .padding(.horizontal, 24)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(BrandColor.ember.opacity(0.4), lineWidth: 1)
-                    )
-            }
-            .padding(.top, 8)
-        }
-        .padding()
-    }
-}
+// The signed-in surface now lives in HomeView (Tovis/HomeView.swift), which
+// loads GET /api/v1/client/home and renders the real client home.
