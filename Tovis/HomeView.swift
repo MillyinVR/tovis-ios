@@ -19,28 +19,32 @@ struct HomeView: View {
     @State private var phase: Phase = .loading
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                header
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    header
 
-                switch phase {
-                case .loading:
-                    loadingState
-                case let .failed(message):
-                    errorState(message)
-                case let .loaded(home):
-                    content(home)
+                    switch phase {
+                    case .loading:
+                        loadingState
+                    case let .failed(message):
+                        errorState(message)
+                    case let .loaded(home):
+                        content(home)
+                    }
                 }
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+                .padding(.bottom, 40)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 8)
-            .padding(.bottom, 40)
+            .background(BrandColor.bgPrimary.ignoresSafeArea())
+            .toolbar(.hidden, for: .navigationBar)  // home has its own header
+            .refreshable { await load() }
+            .task {
+                if case .loading = phase { await load() }
+            }
         }
-        .background(BrandColor.bgPrimary.ignoresSafeArea())
-        .refreshable { await load() }
-        .task {
-            if case .loading = phase { await load() }
-        }
+        .tint(BrandColor.accent)
     }
 
     // MARK: - Sections
@@ -89,7 +93,12 @@ struct HomeView: View {
         if !home.invites.isEmpty {
             BrandSection(title: "Last-minute openings") {
                 VStack(spacing: 10) {
-                    ForEach(home.invites) { InviteRow(invite: $0) }
+                    ForEach(home.invites) { invite in
+                        proLink(id: invite.opening.professional.id,
+                                name: invite.opening.professional.displayName) {
+                            InviteRow(invite: invite)
+                        }
+                    }
                 }
             }
         }
@@ -97,7 +106,13 @@ struct HomeView: View {
         if !home.waitlists.isEmpty {
             BrandSection(title: "On your waitlist") {
                 VStack(spacing: 10) {
-                    ForEach(home.waitlists) { WaitlistRow(entry: $0) }
+                    ForEach(home.waitlists) { entry in
+                        if let pro = entry.professional {
+                            proLink(id: pro.id, name: pro.displayName) { WaitlistRow(entry: entry) }
+                        } else {
+                            WaitlistRow(entry: entry)
+                        }
+                    }
                 }
             }
         }
@@ -107,7 +122,9 @@ struct HomeView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 16) {
                         ForEach(Array(home.favoritePros.enumerated()), id: \.offset) { _, fav in
-                            if let pro = fav.professional { FavoriteProChip(pro: pro) }
+                            if let pro = fav.professional {
+                                proLink(id: pro.id, name: pro.displayName) { FavoriteProChip(pro: pro) }
+                            }
                         }
                     }
                     .padding(.vertical, 2)
@@ -137,6 +154,18 @@ struct HomeView: View {
         if isEmpty(home) {
             emptyState
         }
+    }
+
+    /// Wrap a row in a navigation link to the pro's public profile.
+    private func proLink<Label: View>(
+        id: String, name: String, @ViewBuilder label: () -> Label
+    ) -> some View {
+        NavigationLink {
+            ProProfileView(professionalId: id, fallbackName: name)
+        } label: {
+            label()
+        }
+        .buttonStyle(.plain)
     }
 
     private func upcomingTrailing(_ count: Int) -> String? {

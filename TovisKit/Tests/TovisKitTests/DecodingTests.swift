@@ -223,4 +223,55 @@ import Testing
         let json = String(data: data, encoding: .utf8)
         #expect(json == #"{"action":"APPROVE"}"#)
     }
+
+    // GET /api/v1/professionals/{id} — public pro profile (publicProfileMappers.ts).
+    @Test func decodesProProfile() throws {
+        let json = """
+        {
+          "ok": true,
+          "professional": {
+            "professionalId": "pro_1",
+            "header": {
+              "id": "pro_1", "userId": "usr_1", "verificationStatus": "APPROVED",
+              "handle": "dana", "displayHandle": "@dana", "isPremium": true,
+              "isLicenseVerified": true, "displayName": "Dana Lee", "businessName": "Plume Studio",
+              "bio": "Balayage specialist.", "avatarUrl": null, "professionType": "HAIR",
+              "professionLabel": "Hair Stylist", "location": "Los Angeles, CA", "timeZone": "America/Los_Angeles"
+            },
+            "stats": {
+              "priceFromLabel": "From $100", "completedBookingsLabel": "120 booked",
+              "favoritesLabel": "45 saves", "reviewCountLabel": "30 reviews", "averageRatingLabel": "4.9"
+            },
+            "offerings": [
+              {
+                "id": "off_1", "professionalId": "pro_1", "serviceId": "svc_1", "name": "Balayage",
+                "description": "Hand-painted highlights.", "imageUrl": null,
+                "pricingLines": ["Salon from $100", "Mobile from $140"], "priceFromLabel": "From $100",
+                "priceFromNumber": 100, "durationMinutes": 90, "offersInSalon": true, "offersMobile": true
+              }
+            ],
+            "portfolioTiles": [
+              { "id": "pt_1", "caption": "Sunkissed", "src": "https://x/1.jpg", "thumbUrl": "https://x/1t.jpg",
+                "mediaType": "IMAGE", "isVideo": false, "visibility": "PUBLIC", "isEligibleForLooks": true,
+                "isFeaturedInPortfolio": true, "serviceIds": ["svc_1"] }
+            ],
+            "reviews": [
+              { "id": "rv_1", "rating": 5, "headline": "Amazing", "body": "Loved it.",
+                "createdAt": "2026-06-01T00:00:00.000Z", "clientName": "Jamie", "clientHref": null,
+                "helpfulCount": 3, "viewerHelpful": false, "mediaAssets": [] }
+            ],
+            "isFavoritedByMe": false
+          }
+        }
+        """.data(using: .utf8)!
+
+        let res = try JSONDecoder().decode(ProProfileResponse.self, from: json)
+        let p = res.professional
+        #expect(p.header.displayName == "Dana Lee")
+        #expect(p.header.isLicenseVerified == true)
+        #expect(p.offerings.first?.pricingLines.count == 2)
+        #expect(p.portfolioTiles.first?.displayUrl == "https://x/1t.jpg")
+        #expect(p.reviews.first?.rating == 5)
+        #expect(p.stats.averageRatingLabel == "4.9")
+    }
 }

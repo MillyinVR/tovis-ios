@@ -162,9 +162,17 @@ struct BookingDetailView: View {
                             .font(BrandFont.body(18, .semibold))
                             .foregroundStyle(BrandColor.textPrimary)
                         if let pro = booking.professional {
-                            Text("with \(pro.displayName)")
+                            NavigationLink {
+                                ProProfileView(professionalId: pro.id, fallbackName: pro.displayName)
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Text("with \(pro.displayName)")
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 10, weight: .semibold))
+                                }
                                 .font(BrandFont.body(14))
-                                .foregroundStyle(BrandColor.textSecondary)
+                                .foregroundStyle(BrandColor.accent)
+                            }
                         }
                     }
                     Spacer()
