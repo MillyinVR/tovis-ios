@@ -7,5 +7,12 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>UIAppFonts</key>
+	<array>
+		<string>HankenGrotesk.ttf</string>
+		<string>SpaceGrotesk.ttf</string>
+		<string>SpaceMono-Regular.ttf</string>
+		<string>SpaceMono-Bold.ttf</string>
+	</array>
 </dict>
 </plist>
