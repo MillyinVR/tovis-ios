@@ -144,6 +144,33 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.services.first?.categoryName == "Hair")
     }
 
+    // GET /api/v1/availability/bootstrap + /day — schema-validated fixtures.
+    @Test func decodesAvailability() throws {
+        let boot = try JSONDecoder().decode(AvailabilityBootstrap.self, from: fixture("availabilityBootstrap"))
+        #expect(boot.timeZone == "America/Los_Angeles")
+        #expect(boot.request.locationId.isEmpty == false)
+        #expect(boot.offering?.salonDurationMinutes == 90)
+
+        let day = try JSONDecoder().decode(AvailabilityDay.self, from: fixture("availabilityDay"))
+        #expect(day.slots.isEmpty == false) // 2026-07-15 has openings for this pro
+    }
+
+    // POST /api/v1/holds + /bookings/finalize — small, stable shapes (inline).
+    @Test func decodesHoldAndFinalize() throws {
+        let hold = """
+        {"hold":{"id":"hold_1","expiresAt":"2026-07-15T17:05:00.000Z","scheduledFor":"2026-07-15T17:00:00.000Z","locationType":"SALON","locationId":"loc_1","clientAddressId":null,"clientAddressSnapshot":null},"meta":{"mutated":true,"noOp":false}}
+        """.data(using: .utf8)!
+        let h = try JSONDecoder().decode(CreateHoldResponse.self, from: hold)
+        #expect(h.hold.id == "hold_1")
+        #expect(h.hold.locationType == "SALON")
+
+        let booking = """
+        {"ok":true,"booking":{"id":"bk_1","status":"PENDING","scheduledFor":"2026-07-15T17:00:00.000Z","professionalId":"pro_1"},"meta":{"mutated":true,"noOp":false}}
+        """.data(using: .utf8)!
+        let b = try JSONDecoder().decode(FinalizeBookingResponse.self, from: booking)
+        #expect(b.booking.status == "PENDING")
+    }
+
     // GET /api/v1/client/bookings — Fixtures/clientBookings.json (schema-validated).
     @Test func decodesClientBookings() throws {
         let res = try JSONDecoder().decode(ClientBookingsResponse.self, from: fixture("clientBookings"))

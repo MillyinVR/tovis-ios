@@ -41,6 +41,7 @@ public final class APIClient: Sendable {
         method: HTTPMethod = .get,
         query: [URLQueryItem]? = nil,
         body: Data? = nil,
+        headers: [String: String]? = nil,
         authenticated: Bool = true,
         retryOn401: Bool = true
     ) async throws -> Response {
@@ -49,6 +50,7 @@ public final class APIClient: Sendable {
             method: method,
             query: query,
             body: body,
+            headers: headers,
             authenticated: authenticated,
             retryOn401: retryOn401
         )
@@ -66,6 +68,7 @@ public final class APIClient: Sendable {
         method: HTTPMethod = .get,
         query: [URLQueryItem]? = nil,
         body: Data? = nil,
+        headers: [String: String]? = nil,
         authenticated: Bool = true,
         retryOn401: Bool = true
     ) async throws -> Data {
@@ -74,6 +77,7 @@ public final class APIClient: Sendable {
             method: method,
             query: query,
             body: body,
+            headers: headers,
             authenticated: authenticated,
             retryOn401: retryOn401
         )
@@ -86,10 +90,11 @@ public final class APIClient: Sendable {
         method: HTTPMethod,
         query: [URLQueryItem]? = nil,
         body: Data?,
+        headers: [String: String]? = nil,
         authenticated: Bool,
         retryOn401: Bool
     ) async throws -> Data {
-        let request = await buildRequest(path, method: method, query: query, body: body, authenticated: authenticated)
+        let request = await buildRequest(path, method: method, query: query, body: body, headers: headers, authenticated: authenticated)
 
         let data: Data
         let response: URLResponse
@@ -115,6 +120,7 @@ public final class APIClient: Sendable {
                     method: method,
                     query: query,
                     body: body,
+                    headers: headers,
                     authenticated: authenticated,
                     retryOn401: false
                 )
@@ -131,6 +137,7 @@ public final class APIClient: Sendable {
         method: HTTPMethod,
         query: [URLQueryItem]? = nil,
         body: Data?,
+        headers: [String: String]? = nil,
         authenticated: Bool
     ) async -> URLRequest {
         let base = config.baseURL.appendingPathComponent(path.hasPrefix("/") ? String(path.dropFirst()) : path)
@@ -151,6 +158,10 @@ public final class APIClient: Sendable {
 
         if authenticated, let token = await tokenStore.token() {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        if let headers {
+            for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
         }
 
         return request

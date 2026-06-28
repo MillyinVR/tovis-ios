@@ -27,6 +27,8 @@ const CHECKS = [
   { file: 'messageThread.json', def: 'MessageDTO', pick: (d) => d.messages },
   { file: 'search.json', def: 'SearchProItemDto', pick: (d) => d.pros },
   { file: 'search.json', def: 'SearchServiceItemDto', pick: (d) => d.services },
+  { file: 'availabilityBootstrap.json', def: 'AvailabilityBootstrapOk', pick: (d) => [d] },
+  { file: 'availabilityDay.json', def: 'AvailabilityDayOk', pick: (d) => [d] },
   { file: 'proProfile.json', def: 'ProPublicProfileDto', pick: (d) => [d.professional] },
   {
     file: 'clientBookings.json',

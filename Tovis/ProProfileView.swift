@@ -20,6 +20,8 @@ struct ProProfileView: View {
     @State private var phase: Phase = .loading
     @State private var isFavorited = false
     @State private var favoriteWorking = false
+    @State private var bookingOffering: ProOffering?
+    @State private var bookingProName = ""
 
     var body: some View {
         ScrollView {
@@ -44,6 +46,9 @@ struct ProProfileView: View {
         .task {
             if case .loading = phase { await load() }
         }
+        .sheet(item: $bookingOffering) { offering in
+            BookingFlowView(professionalId: professionalId, proName: bookingProName, offering: offering)
+        }
     }
 
     // MARK: - Content
@@ -63,7 +68,15 @@ struct ProProfileView: View {
         if !profile.offerings.isEmpty {
             BrandSection(title: "Services") {
                 VStack(spacing: 10) {
-                    ForEach(profile.offerings) { OfferingRow(offering: $0) }
+                    ForEach(profile.offerings) { offering in
+                        Button {
+                            bookingProName = profile.header.displayName
+                            bookingOffering = offering
+                        } label: {
+                            OfferingRow(offering: offering)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             }
         }
@@ -257,6 +270,12 @@ private struct OfferingRow: View {
                     }
                     if offering.offersInSalon { BrandPill(text: "Salon") }
                     if offering.offersMobile { BrandPill(text: "Mobile") }
+                    Spacer()
+                    HStack(spacing: 4) {
+                        Text("Book").font(BrandFont.mono(10)).tracking(0.6)
+                        Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold))
+                    }
+                    .foregroundStyle(BrandColor.accent)
                 }
             }
         }
