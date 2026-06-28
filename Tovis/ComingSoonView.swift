@@ -37,14 +37,6 @@ struct ComingSoonView: View {
 
 // Convenience builders so the tabs read clearly in MainTabView.
 extension ComingSoonView {
-    static var discover: ComingSoonView {
-        ComingSoonView(
-            title: "Discover",
-            systemImage: "safari",
-            blurb: "Find pros and services near you. Search and the map are on the way."
-        )
-    }
-
     static var looks: ComingSoonView {
         ComingSoonView(
             title: "Looks",

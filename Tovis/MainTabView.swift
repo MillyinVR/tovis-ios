@@ -21,7 +21,7 @@ struct MainTabView: View {
             HomeView(onOpenInbox: { tab = .inbox })
                 .tag(ClientTab.ID.home)
 
-            ComingSoonView.discover
+            DiscoverView()
                 .tag(ClientTab.ID.discover)
 
             ComingSoonView.looks

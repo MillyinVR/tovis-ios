@@ -133,6 +133,17 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.hasMore == false)
     }
 
+    // GET /api/v1/search — Fixtures/search.json (schema-validated, both tabs).
+    @Test func decodesSearch() throws {
+        let res = try JSONDecoder().decode(SearchResponse.self, from: fixture("search"))
+        let pro = try #require(res.pros.first)
+        #expect(pro.displayName == "Plume Studio")
+        #expect(pro.ratingAvg == 4.8)
+        #expect(pro.minPrice == 65)
+        #expect(pro.supportsMobile == true)
+        #expect(res.services.first?.categoryName == "Hair")
+    }
+
     // GET /api/v1/client/bookings — Fixtures/clientBookings.json (schema-validated).
     @Test func decodesClientBookings() throws {
         let res = try JSONDecoder().decode(ClientBookingsResponse.self, from: fixture("clientBookings"))

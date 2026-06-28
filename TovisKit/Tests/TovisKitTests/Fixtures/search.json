@@ -1,0 +1,30 @@
+{
+  "ok": true,
+  "pros": [
+    {
+      "id": "pro_1",
+      "businessName": "Plume Studio",
+      "displayName": "Plume Studio",
+      "handle": "plume",
+      "professionType": "HAIRSTYLIST",
+      "avatarUrl": null,
+      "locationLabel": "Los Angeles, CA",
+      "distanceMiles": 2.4,
+      "ratingAvg": 4.8,
+      "ratingCount": 36,
+      "minPrice": 65,
+      "supportsMobile": true,
+      "closestLocation": null,
+      "primaryLocation": null
+    }
+  ],
+  "services": [
+    {
+      "id": "svc_1",
+      "name": "Balayage",
+      "categoryId": "cat_1",
+      "categoryName": "Hair",
+      "categorySlug": "hair"
+    }
+  ]
+}

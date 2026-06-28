@@ -17,6 +17,7 @@ public final class TovisClient: Sendable {
     public let profiles: ProfileService
     public let me: MeService
     public let messages: MessagesService
+    public let search: SearchService
     public let tokenStore: TokenStore
 
     /// Stable per-install id. Persisted in the Keychain-backed store's UserDefaults
@@ -44,6 +45,7 @@ public final class TovisClient: Sendable {
         self.profiles = ProfileService(api: api)
         self.me = MeService(api: api)
         self.messages = MessagesService(api: api)
+        self.search = SearchService(api: api)
     }
 
     /// The signed-in user's id, decoded from the stored JWT. Works on a cold

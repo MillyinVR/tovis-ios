@@ -39,6 +39,7 @@ public final class APIClient: Sendable {
     public func request<Response: Decodable>(
         _ path: String,
         method: HTTPMethod = .get,
+        query: [URLQueryItem]? = nil,
         body: Data? = nil,
         authenticated: Bool = true,
         retryOn401: Bool = true
@@ -46,6 +47,7 @@ public final class APIClient: Sendable {
         let data = try await perform(
             path,
             method: method,
+            query: query,
             body: body,
             authenticated: authenticated,
             retryOn401: retryOn401
@@ -62,6 +64,7 @@ public final class APIClient: Sendable {
     public func requestVoid(
         _ path: String,
         method: HTTPMethod = .get,
+        query: [URLQueryItem]? = nil,
         body: Data? = nil,
         authenticated: Bool = true,
         retryOn401: Bool = true
@@ -69,6 +72,7 @@ public final class APIClient: Sendable {
         try await perform(
             path,
             method: method,
+            query: query,
             body: body,
             authenticated: authenticated,
             retryOn401: retryOn401
@@ -80,11 +84,12 @@ public final class APIClient: Sendable {
     private func perform(
         _ path: String,
         method: HTTPMethod,
+        query: [URLQueryItem]? = nil,
         body: Data?,
         authenticated: Bool,
         retryOn401: Bool
     ) async throws -> Data {
-        let request = await buildRequest(path, method: method, body: body, authenticated: authenticated)
+        let request = await buildRequest(path, method: method, query: query, body: body, authenticated: authenticated)
 
         let data: Data
         let response: URLResponse
@@ -108,6 +113,7 @@ public final class APIClient: Sendable {
                 return try await perform(
                     path,
                     method: method,
+                    query: query,
                     body: body,
                     authenticated: authenticated,
                     retryOn401: false
@@ -123,10 +129,17 @@ public final class APIClient: Sendable {
     private func buildRequest(
         _ path: String,
         method: HTTPMethod,
+        query: [URLQueryItem]? = nil,
         body: Data?,
         authenticated: Bool
     ) async -> URLRequest {
-        let url = config.baseURL.appendingPathComponent(path.hasPrefix("/") ? String(path.dropFirst()) : path)
+        let base = config.baseURL.appendingPathComponent(path.hasPrefix("/") ? String(path.dropFirst()) : path)
+        var url = base
+        if let query, !query.isEmpty,
+           var comps = URLComponents(url: base, resolvingAgainstBaseURL: false) {
+            comps.queryItems = query
+            url = comps.url ?? base
+        }
         var request = URLRequest(url: url)
         request.httpMethod = method.rawValue
         request.setValue("application/json", forHTTPHeaderField: "Accept")
