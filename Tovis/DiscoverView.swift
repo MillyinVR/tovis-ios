@@ -18,7 +18,7 @@ struct DiscoverView: View {
     @State private var selectedCategory: DiscoverCategory?
     @State private var pros: [SearchProItem] = []
     @State private var activeProId: String?
-    @State private var viewMode: ViewMode = .map
+    @State private var viewMode: ViewMode = .list   // open on the grid; toggle to the map
     @State private var loading = false
     @State private var errorMessage: String?
     @State private var searchToken = 0
