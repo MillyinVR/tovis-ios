@@ -77,15 +77,14 @@ struct LooksMark: View {
         ZStack {
             coin
             TovisEye(size: featherSize)
-            // The "little bit of transparency": a soft jewel-tinted orb of light
-            // layered over the coin with a screen blend (web TovisFeatherMark's
-            // radiating orb), drifting diagonally. Clipped to the coin.
+            // A soft jewel-tinted orb of light over the coin with a screen blend
+            // (web TovisFeatherMark's radiating orb), drifting diagonally.
             orb(innerSize)
         }
         .frame(width: innerSize, height: innerSize)
         .clipShape(Circle())
         .padding(ringWidth)
-        .background(Self.plume)
+        .background(Self.plume)        // iridescent plume ring (filled, like web)
         .clipShape(Circle())
         // boxShadow: 0 14px 30px var(--tovis-acc-shadow) (accent @ 0.45)
         .shadow(color: BrandColor.accent.opacity(0.45), radius: 15, x: 0, y: 14)

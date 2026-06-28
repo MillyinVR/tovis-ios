@@ -40,13 +40,16 @@ struct TovisTabBar: View {
         let isActive = selected == tab.id
 
         if tab.center {
-            // The raised "Looks" center mark — lifted above the bar (CSS
-            // .tovis-center-lift: margin-top: -30px).
+            // The raised "Looks" center mark, sized to match the PRO footer's
+            // center button: 72pt coin lifted -34 (CSS .tovis-center-lift-lg).
+            // We keep its layout slot at 66 so the coin overflows/lifts without
+            // making the bar taller than 80.
             Button {
                 selected = tab.id
             } label: {
-                LooksMark(size: 66)
-                    .offset(y: -30)
+                LooksMark(size: 72)
+                    .frame(width: 66, height: 66)
+                    .offset(y: -34)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(tab.label)
