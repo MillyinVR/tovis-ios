@@ -72,8 +72,8 @@ final class SessionModel {
               let userId = SessionToken.userId(from: token)
         else { return }
 
-        await realtime.start(channels: ["user:\(userId)"]) { [weak self] in
-            Task { @MainActor in self?.signalRefresh() }
+        await realtime.start(channels: ["user:\(userId)"]) {
+            Task { @MainActor [weak self] in self?.signalRefresh() }
         }
     }
 
