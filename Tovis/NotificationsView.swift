@@ -30,6 +30,7 @@ struct NotificationsView: View {
     @State private var bookingsById: [String: ClientBooking] = [:]
     @State private var selectedBooking: ClientBooking?
     @State private var pushBooking = false
+    @State private var showSettings = false
 
     var body: some View {
         NavigationStack {
@@ -64,11 +65,21 @@ struct NotificationsView: View {
                         .disabled(markingAll)
                     }
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(action: { showSettings = true }) {
+                        Image(systemName: "gearshape")
+                            .foregroundStyle(BrandColor.textSecondary)
+                    }
+                    .accessibilityLabel("Notification settings")
+                }
             }
             .navigationDestination(isPresented: $pushBooking) {
                 if let booking = selectedBooking {
                     BookingDetailView(booking: booking)
                 }
+            }
+            .navigationDestination(isPresented: $showSettings) {
+                NotificationPreferencesView()
             }
             .refreshable { await load() }
             .task { if case .loading = phase { await load() } }
