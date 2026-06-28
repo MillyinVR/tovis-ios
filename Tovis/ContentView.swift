@@ -9,12 +9,19 @@ import AuthenticationServices
 @main
 struct TovisApp: App {
     @State private var session = SessionModel(config: .local)
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environment(session)
                 .preferredColorScheme(.dark) // brand default mode is dark
+        }
+        // Live-sync Layer 1: whenever the app returns to the foreground, signal
+        // every screen to refetch so it never shows stale data after you were on
+        // another device. (Layer 2's Realtime subscriber bumps the same seam.)
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { session.signalRefresh() }
         }
     }
 }
@@ -30,6 +37,13 @@ final class SessionModel {
     private(set) var currentUser: AuthUser?
     var isWorking = false
     var errorMessage: String?
+
+    /// Live-sync seam: every screen observes this and refetches when it changes.
+    /// Bumped on app foreground (Layer 1) and on a Realtime "changed" broadcast
+    /// (Layer 2). Keeping it on the session means one place wires both triggers.
+    private(set) var refreshTick = 0
+
+    func signalRefresh() { refreshTick &+= 1 }
 
     let client: TovisClient
 

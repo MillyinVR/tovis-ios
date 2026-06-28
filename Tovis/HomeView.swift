@@ -43,8 +43,19 @@ struct HomeView: View {
             .task {
                 if case .loading = phase { await load() }
             }
+            // Live-sync: refetch on foreground / Realtime signal, and poll gently
+            // while open so a salon-computer change shows up without interaction.
+            .onChange(of: session.refreshTick) { Task { await load() } }
+            .task { await poll() }
         }
         .tint(BrandColor.accent)
+    }
+
+    private func poll() async {
+        while !Task.isCancelled {
+            try? await Task.sleep(for: .seconds(30))
+            if !Task.isCancelled { await load() }
+        }
     }
 
     // MARK: - Sections
