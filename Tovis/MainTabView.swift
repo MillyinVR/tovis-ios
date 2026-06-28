@@ -15,6 +15,9 @@ struct MainTabView: View {
     @Environment(SessionModel.self) private var session
     @State private var tab: ClientTab.ID = .home
     @State private var messagesBadge: String?
+    /// A booking surfaced by a tapped push (`tovis://`-style `href` deep link),
+    /// presented over the shell. nil when nothing is being deep-linked.
+    @State private var deepLinkBooking: ClientBooking?
 
     var body: some View {
         TabView(selection: $tab) {
@@ -42,6 +45,40 @@ struct MainTabView: View {
         .task { await refreshBadge() }
         .onChange(of: session.refreshTick) { Task { await refreshBadge() } }
         .task { await pollBadge() }
+        // Push deep-link routing. `.task` catches a link set before this mounted
+        // (cold-launch tap); `.onChange` catches taps while the app is running.
+        .task { await routeDeepLink(session.pushDeepLink) }
+        .onChange(of: session.pushDeepLink) { _, link in
+            Task { await routeDeepLink(link) }
+        }
+        .sheet(item: $deepLinkBooking) { booking in
+            NavigationStack {
+                BookingDetailView(booking: booking, onDecision: { session.signalRefresh() })
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Done") { deepLinkBooking = nil }
+                                .tint(BrandColor.textSecondary)
+                        }
+                    }
+            }
+            .tint(BrandColor.accent)
+        }
+    }
+
+    /// Resolve a push deep link to a concrete destination and present it, then
+    /// clear it from the session so it isn't re-handled. Booking ids are resolved
+    /// from the bookings list (the same source the in-app center uses — there's no
+    /// standalone GET /bookings/[id]).
+    private func routeDeepLink(_ link: PushDeepLink?) async {
+        guard let link else { return }
+        switch link.target {
+        case let .booking(id):
+            if let buckets = try? await session.client.bookings.fetch() {
+                let all = buckets.upcoming + buckets.pending + buckets.prebooked + buckets.past
+                deepLinkBooking = all.first { $0.id == id }
+            }
+        }
+        session.clearPushDeepLink()
     }
 
     private func pollBadge() async {

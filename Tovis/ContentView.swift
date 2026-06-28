@@ -69,6 +69,32 @@ struct CheckoutReturn: Equatable {
     }
 }
 
+// MARK: - Push deep link
+
+/// A tapped push's `href` resolved to an in-app destination. The backend sends a
+/// single internal path (e.g. "/client/bookings/bk_1?step=aftercare"); we map the
+/// surfaces the client app can open. Unrecognized paths yield `nil` (no-op tap).
+struct PushDeepLink: Equatable {
+    enum Target: Equatable {
+        case booking(id: String)
+    }
+
+    let target: Target
+
+    init?(href: String) {
+        // Drop any query/fragment, then split the path into segments.
+        let pathOnly = href.split(whereSeparator: { $0 == "?" || $0 == "#" }).first.map(String.init) ?? href
+        let parts = pathOnly.split(separator: "/").map(String.init)
+
+        // /client/bookings/{id} → the booking detail.
+        if parts.count >= 3, parts[0] == "client", parts[1] == "bookings" {
+            target = .booking(id: parts[2])
+            return
+        }
+        return nil
+    }
+}
+
 // MARK: - Auth state (owns the TovisClient)
 
 @MainActor
@@ -116,6 +142,22 @@ final class SessionModel {
 
     /// Acknowledge a return once the active screen has consumed it.
     func clearCheckoutReturn() { checkoutReturn = nil }
+
+    /// The destination a tapped push asked to open. The signed-in shell observes
+    /// this and routes (e.g. presents the booking detail), then clears it. Set
+    /// even mid-launch — the shell consumes it once it mounts, so a cold-launch
+    /// push tap still lands on the right screen.
+    private(set) var pushDeepLink: PushDeepLink?
+
+    /// Handle a tapped push's `href` deep-link path. Ignores paths the client app
+    /// can't open (so an unknown link just foregrounds + refreshes, never crashes).
+    func handlePushDeepLink(href: String) {
+        guard let link = PushDeepLink(href: href) else { return }
+        pushDeepLink = link
+    }
+
+    /// Acknowledge a deep link once the shell has routed it.
+    func clearPushDeepLink() { pushDeepLink = nil }
 
     let client: TovisClient
     private let realtime: SupabaseRealtime?
@@ -169,6 +211,9 @@ final class SessionModel {
             deviceId: client.deviceId,
             onActivity: { [weak self] in
                 Task { @MainActor in self?.signalRefresh() }
+            },
+            onDeepLink: { [weak self] href in
+                Task { @MainActor in self?.handlePushDeepLink(href: href) }
             }
         )
     }

@@ -23,6 +23,13 @@ final class PushManager {
     private var latestToken: String?
     /// Bumped on an incoming push so the active surface refetches (like live-sync).
     private var onActivity: (@Sendable () -> Void)?
+    /// Called when the user TAPS a push, with the payload's `href` deep-link path
+    /// (e.g. "/client/bookings/bk_1") — the session routes it to the right screen.
+    private var onDeepLink: (@Sendable (String) -> Void)?
+    /// A tap that arrived before `enable` wired `onDeepLink` — e.g. a COLD-LAUNCH
+    /// tap, where the OS delivers it before sign-in/bootstrap runs. Flushed once
+    /// `enable` connects the handler so the launch tap still lands.
+    private var pendingDeepLinkHref: String?
 
     /// Call on sign-in. Asks for notification permission, then registers for
     /// remote notifications; the token arrives asynchronously via `didRegister`.
@@ -31,11 +38,19 @@ final class PushManager {
     func enable(
         client: TovisClient,
         deviceId: String,
-        onActivity: @escaping @Sendable () -> Void
+        onActivity: @escaping @Sendable () -> Void,
+        onDeepLink: @escaping @Sendable (String) -> Void
     ) async {
         self.client = client
         self.deviceId = deviceId
         self.onActivity = onActivity
+        self.onDeepLink = onDeepLink
+
+        // Flush a tap that landed before we had a handler (cold-launch tap).
+        if let pendingDeepLinkHref {
+            self.pendingDeepLinkHref = nil
+            onDeepLink(pendingDeepLinkHref)
+        }
 
         let center = UNUserNotificationCenter.current()
         let granted =
@@ -59,6 +74,8 @@ final class PushManager {
         client = nil
         deviceId = nil
         onActivity = nil
+        onDeepLink = nil
+        pendingDeepLinkHref = nil
     }
 
     /// APNs returned a device token (from the AppDelegate). Persist + register it.
@@ -72,6 +89,16 @@ final class PushManager {
     /// the live-sync refresh seam so the UI reflects whatever the push announced.
     func handleIncoming() {
         onActivity?()
+    }
+
+    /// The user TAPPED a push. Refetch (like `handleIncoming`) AND, if the payload
+    /// carries an `href` deep-link path, hand it to the session to route. The
+    /// backend sends a single custom key `href` alongside `aps` (no bookingId).
+    func handleTap(userInfo: [AnyHashable: Any]) {
+        onActivity?()
+        guard let href = userInfo["href"] as? String, !href.isEmpty else { return }
+        if let onDeepLink { onDeepLink(href) }
+        else { pendingDeepLinkHref = href } // flushed when `enable` wires the handler
     }
 
     private func sendRegistration(token: String) async {
@@ -123,14 +150,15 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         completionHandler([.banner, .badge, .sound])
     }
 
-    // The user tapped a notification — bring the app forward + refetch. (Routing
-    // to the exact deep link from the payload is a follow-up.)
+    // The user tapped a notification — bring the app forward, refetch, and route
+    // to the payload's `href` deep link (e.g. the specific booking).
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        Task { @MainActor in PushManager.shared.handleIncoming() }
+        let userInfo = response.notification.request.content.userInfo
+        Task { @MainActor in PushManager.shared.handleTap(userInfo: userInfo) }
         completionHandler()
     }
 }
