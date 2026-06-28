@@ -115,7 +115,22 @@
             "professionType": "HAIR", "location": "NYC", "timeZone": "America/New_York"
           },
           "location": null,
-          "services": [],
+          "services": [
+            {
+              "id": "os_1",
+              "openingId": "op_1",
+              "serviceId": "svc_9",
+              "offeringId": "off_9",
+              "sortOrder": 0,
+              "service": { "id": "svc_9", "name": "Blowout", "minPrice": "55.00", "defaultDurationMinutes": 45 },
+              "offering": {
+                "id": "off_9", "title": "Blowout",
+                "salonPriceStartingAt": "60.00", "mobilePriceStartingAt": null,
+                "salonDurationMinutes": 45, "mobileDurationMinutes": null,
+                "offersInSalon": true, "offersMobile": false
+              }
+            }
+          ],
           "tierPlans": []
         }
       }
@@ -159,6 +174,8 @@
     "viralLive": [
       { "id": "v_1", "name": "Glass Skin", "sourceUrl": null, "approvedAt": "2026-06-01T00:00:00.000Z", "_count": { "approvalFanOuts": 12 } }
     ],
-    "viralPending": []
+    "viralPending": [
+      { "id": "vp_1", "name": "Cherry Cola", "sourceUrl": "https://www.tiktok.com/@x/video/1", "status": "IN_REVIEW", "createdAt": "2026-06-25T00:00:00.000Z", "_count": { "approvalFanOuts": 3 } }
+    ]
   }
 }

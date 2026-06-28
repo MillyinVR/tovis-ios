@@ -76,10 +76,23 @@ func fixture(_ name: String) throws -> Data {
 
         // Solo pro with no businessName falls back to the handle.
         #expect(home.invites.first?.opening.professional.displayName == "@alex")
+        // Invite opening derives its title + starting price from services.
+        #expect(home.invites.first?.opening.title == "Blowout")
+        #expect(home.invites.first?.opening.startingPrice == "60.00")
         #expect(home.waitlists.first?.service?.name == "Cut")
         #expect(home.favoritePros.first?.professional?.displayName == "Gloss")
         #expect(home.favoriteServices.first?.service?.minPrice == "45.00")
+        #expect(home.favoriteServices.first?.service?.category?.name == "Nails")
         #expect(home.viralLive.first?.fanOutCount == 12)
+        // Pending viral carries its review status + derived platform.
+        #expect(home.viralPending.first?.status == "IN_REVIEW")
+        #expect(home.viralPending.first?.platform == "TikTok")
+
+        // The pending-consultation action surfaces the proposed plan.
+        if case let .pendingConsultation(b) = home.action {
+            #expect(b.consultationApproval?.proposedTotal == "160.00")
+            #expect(b.consultationApproval?.notes == "Adds a gloss.")
+        }
     }
 
     // GET /api/v1/me — Fixtures/clientMe.json (also schema-validated).

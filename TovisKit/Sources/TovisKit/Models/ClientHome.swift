@@ -66,12 +66,21 @@ public struct HomeBooking: Decodable, Sendable, Identifiable {
     public let service: HomeServiceRef?
     public let professional: HomeProfessional?
     public let location: HomeLocation?
+    /// Present on a pending-consultation booking (the proposed plan to review).
+    public let consultationApproval: HomeConsultationApproval?
 
     /// Best timezone to render this booking's time in: the location's, then the
     /// booking-level snapshot, then the pro's. Nil → render in the device zone.
     public var resolvedTimeZone: String? {
         location?.timeZone ?? locationTimeZone ?? professional?.timeZone
     }
+}
+
+/// The pro's proposed consultation plan (subset of `consultationApproval`).
+public struct HomeConsultationApproval: Decodable, Sendable {
+    public let status: String?
+    public let proposedTotal: String?
+    public let notes: String?
 }
 
 public struct HomeLocation: Decodable, Sendable, Identifiable {
@@ -130,6 +139,40 @@ public struct HomeOpening: Decodable, Sendable, Identifiable {
     public let endAt: String?
     public let timeZone: String?
     public let professional: HomeProfessional
+    /// Services on this opening (drives the invite title + starting price).
+    public let services: [HomeOpeningService]?
+
+    /// Title like the web `inviteTitle`: first service, "+ N more" when multiple.
+    public var title: String {
+        let names = (services ?? []).map { $0.service.name }.filter { !$0.isEmpty }
+        guard let first = names.first else { return "Last-minute opening" }
+        return names.count == 1 ? first : "\(first) + \(names.count - 1) more"
+    }
+
+    /// Starting price like the web `invitePrice`: salon → mobile → service min.
+    public var startingPrice: String? {
+        guard let s = services?.first else { return nil }
+        return s.offering?.salonPriceStartingAt
+            ?? s.offering?.mobilePriceStartingAt
+            ?? s.service.minPrice
+    }
+}
+
+public struct HomeOpeningService: Decodable, Sendable, Identifiable {
+    public let id: String
+    public let offeringId: String?
+    public let service: HomeOpeningServiceRef
+    public let offering: HomeOpeningOffering?
+}
+
+public struct HomeOpeningServiceRef: Decodable, Sendable {
+    public let name: String
+    public let minPrice: String?
+}
+
+public struct HomeOpeningOffering: Decodable, Sendable {
+    public let salonPriceStartingAt: String?
+    public let mobilePriceStartingAt: String?
 }
 
 // MARK: - Waitlists
@@ -158,6 +201,11 @@ public struct HomeFavoriteServiceRef: Decodable, Sendable, Identifiable {
     public let minPrice: String
     public let defaultDurationMinutes: Int
     public let defaultImageUrl: String?
+    public let category: HomeCategoryRef?
+}
+
+public struct HomeCategoryRef: Decodable, Sendable {
+    public let name: String
 }
 
 // MARK: - Viral looks
@@ -167,7 +215,10 @@ public struct HomeViral: Decodable, Sendable, Identifiable {
     public let name: String
     public let sourceUrl: String?
 
-    private enum CodingKeys: String, CodingKey { case id, name, sourceUrl, count = "_count" }
+    /// REQUESTED / IN_REVIEW for pending looks (drives the review pipeline).
+    public let status: String?
+
+    private enum CodingKeys: String, CodingKey { case id, name, sourceUrl, status, count = "_count" }
     private struct Count: Decodable, Sendable { let approvalFanOuts: Int }
 
     public let fanOutCount: Int
@@ -177,6 +228,17 @@ public struct HomeViral: Decodable, Sendable, Identifiable {
         id = try c.decode(String.self, forKey: .id)
         name = try c.decode(String.self, forKey: .name)
         sourceUrl = try c.decodeIfPresent(String.self, forKey: .sourceUrl)
+        status = try c.decodeIfPresent(String.self, forKey: .status)
         fanOutCount = (try c.decodeIfPresent(Count.self, forKey: .count))?.approvalFanOuts ?? 0
+    }
+
+    /// Platform label derived from the source URL ("TikTok", "Instagram", …).
+    public var platform: String? {
+        guard let host = sourceUrl.flatMap({ URL(string: $0)?.host?.lowercased() }) else { return nil }
+        if host.contains("tiktok") { return "TikTok" }
+        if host.contains("instagram") || host.contains("instagr.am") { return "Instagram" }
+        if host.contains("pinterest") || host.contains("pin.it") { return "Pinterest" }
+        if host.contains("youtube") || host.contains("youtu.be") { return "YouTube" }
+        return "Link"
     }
 }
