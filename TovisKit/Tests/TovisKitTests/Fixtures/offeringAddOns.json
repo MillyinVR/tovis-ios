@@ -1,0 +1,32 @@
+{
+  "ok": true,
+  "offeringId": "off_1",
+  "locationType": "SALON",
+  "offering": {
+    "id": "off_1",
+    "service": { "id": "svc_1", "name": "Balayage" },
+    "professional": { "id": "pro_1", "businessName": "Studio Lumen" }
+  },
+  "addOns": [
+    {
+      "id": "addon_link_1",
+      "serviceId": "svc_toner",
+      "title": "Gloss & Toner",
+      "group": "Color",
+      "price": "35.00",
+      "minutes": 30,
+      "sortOrder": 0,
+      "isRecommended": true
+    },
+    {
+      "id": "addon_link_2",
+      "serviceId": "svc_treatment",
+      "title": "Olaplex Treatment",
+      "group": null,
+      "price": "25.00",
+      "minutes": 20,
+      "sortOrder": 1,
+      "isRecommended": false
+    }
+  ]
+}

@@ -171,6 +171,19 @@ func fixture(_ name: String) throws -> Data {
         #expect(b.booking.status == "PENDING")
     }
 
+    // GET /api/v1/offerings/add-ons — Fixtures/offeringAddOns.json. No schema
+    // entry yet (the backend route isn't a typed DTO), so this is decode-only.
+    @Test func decodesOfferingAddOns() throws {
+        let res = try JSONDecoder().decode(OfferingAddOnsResponse.self, from: fixture("offeringAddOns"))
+        #expect(res.addOns.count == 2)
+        let first = try #require(res.addOns.first)
+        #expect(first.id == "addon_link_1")       // link id (→ finalize addOnIds)
+        #expect(first.serviceId == "svc_toner")
+        #expect(first.minutes == 30)
+        #expect(first.isRecommended)
+        #expect(res.addOns[1].group == nil)        // nullable group decodes
+    }
+
     // GET /api/v1/client/bookings — Fixtures/clientBookings.json (schema-validated).
     @Test func decodesClientBookings() throws {
         let res = try JSONDecoder().decode(ClientBookingsResponse.self, from: fixture("clientBookings"))

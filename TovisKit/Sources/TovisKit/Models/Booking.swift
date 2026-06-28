@@ -53,6 +53,27 @@ public struct AvailabilityDay: Decodable, Sendable {
     public let slots: [String] // ISO-8601 instants
 }
 
+// MARK: - Offering add-ons (GET /api/v1/offerings/add-ons)
+
+struct OfferingAddOnsResponse: Decodable, Sendable {
+    let addOns: [BookingAddOn]
+}
+
+/// A selectable add-on for an offering in a given location mode. The `id` is the
+/// OfferingAddOn link id — that's what goes back into finalize's `addOnIds`
+/// (NOT `serviceId`). Add-ons don't affect the hold (same as web): they're only
+/// applied at finalize, and the server derives the total duration/price.
+public struct BookingAddOn: Decodable, Sendable, Identifiable, Hashable {
+    public let id: String
+    public let serviceId: String
+    public let title: String
+    public let group: String?
+    public let price: String   // formatted money, e.g. "25.00"
+    public let minutes: Int
+    public let sortOrder: Int
+    public let isRecommended: Bool
+}
+
 // MARK: - Holds (POST /api/v1/holds)
 
 struct CreateHoldRequest: Encodable, Sendable {

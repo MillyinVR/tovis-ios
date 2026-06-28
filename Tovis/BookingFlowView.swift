@@ -1,7 +1,7 @@
-// Booking flow (v1, request-to-book) — pick a date + time for an offering, then
-// hold + finalize. Opened as a sheet from the pro profile. Salon mode, no
-// add-ons, no in-app payment (handled per the pro's settings / at appointment);
-// Stripe checkout lands once Universal-Link deep links exist.
+// Booking flow (v1, request-to-book) — pick a date + time for an offering,
+// optionally add add-ons, then hold + finalize. Opened as a sheet from the pro
+// profile. Salon mode, no in-app payment (handled per the pro's settings / at
+// appointment); Stripe checkout lands via the tovis:// deep-link return.
 import SwiftUI
 import TovisKit
 
@@ -36,7 +36,17 @@ struct BookingFlowView: View {
     @State private var booking = false
     @State private var bookError: String?
 
+    // Add-ons (new bookings only — reschedule keeps the original add-ons).
+    @State private var addOns: [BookingAddOn] = []
+    @State private var selectedAddOnIds: Set<String> = []
+
     private var duration: Int { offering.durationMinutes ?? 60 }
+
+    /// Base duration + the minutes of every selected add-on (display only — the
+    /// server is the source of truth and the hold isn't extended, matching web).
+    private var totalDuration: Int {
+        duration + addOns.filter { selectedAddOnIds.contains($0.id) }.reduce(0) { $0 + $1.minutes }
+    }
 
     var body: some View {
         NavigationStack {
@@ -80,7 +90,7 @@ struct BookingFlowView: View {
                         Text("with \(proName)")
                             .font(BrandFont.body(13)).foregroundStyle(BrandColor.textSecondary)
                         HStack(spacing: 10) {
-                            BrandPill(text: "\(duration) min")
+                            BrandPill(text: "\(totalDuration) min")
                             if let price = offering.priceFromLabel {
                                 BrandPill(text: "from \(price)", tint: BrandColor.accent)
                             }
@@ -106,6 +116,16 @@ struct BookingFlowView: View {
                             .padding(.vertical, 8)
                     } else {
                         slotGrid(boot)
+                    }
+                }
+
+                if !isReschedule && !addOns.isEmpty {
+                    BrandSection(title: "Add-ons", trailing: "Optional") {
+                        VStack(spacing: 10) {
+                            ForEach(addOns) { addOn in
+                                addOnRow(addOn)
+                            }
+                        }
                     }
                 }
 
@@ -150,6 +170,43 @@ struct BookingFlowView: View {
                 .buttonStyle(.plain)
             }
         }
+    }
+
+    private func addOnRow(_ addOn: BookingAddOn) -> some View {
+        let isSelected = selectedAddOnIds.contains(addOn.id)
+        return Button {
+            if isSelected { selectedAddOnIds.remove(addOn.id) }
+            else { selectedAddOnIds.insert(addOn.id) }
+            bookError = nil
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 20))
+                    .foregroundStyle(isSelected ? BrandColor.accent : BrandColor.textMuted.opacity(0.5))
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(addOn.title)
+                            .font(BrandFont.body(15, .medium)).foregroundStyle(BrandColor.textPrimary)
+                        if addOn.isRecommended {
+                            BrandPill(text: "Popular", tint: BrandColor.accent)
+                        }
+                    }
+                    Text("+\(addOn.minutes) min")
+                        .font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
+                }
+                Spacer(minLength: 8)
+                Text(priceLabel(addOn.price))
+                    .font(BrandFont.body(14, .semibold)).foregroundStyle(BrandColor.textSecondary)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(BrandColor.bgSurface)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(isSelected ? BrandColor.accent.opacity(0.6) : BrandColor.textMuted.opacity(0.18),
+                        lineWidth: 1))
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Success / failure
@@ -209,11 +266,21 @@ struct BookingFlowView: View {
                 selectedDate = d
             }
             phase = .ready(boot)
+            await loadAddOns()
         } catch let error as APIError {
             phase = .failed(error.userMessage)
         } catch {
             phase = .failed("Couldn’t load availability.")
         }
+    }
+
+    /// Add-ons apply to new bookings only (a reschedule keeps the original ones).
+    /// Best-effort: a failure just hides the section, never blocks booking.
+    private func loadAddOns() async {
+        guard !isReschedule else { return }
+        addOns = (try? await session.client.booking.addOns(
+            offeringId: offering.id, locationType: locationType
+        )) ?? []
     }
 
     private func loadSlots(_ boot: AvailabilityBootstrap) async {
@@ -251,7 +318,8 @@ struct BookingFlowView: View {
                 scheduledFor = result.scheduledFor
             } else {
                 let result = try await session.client.booking.finalize(
-                    holdId: hold.id, offeringId: offering.id, idempotencyKey: UUID().uuidString
+                    holdId: hold.id, offeringId: offering.id,
+                    addOnIds: Array(selectedAddOnIds), idempotencyKey: UUID().uuidString
                 )
                 scheduledFor = result.scheduledFor
             }
@@ -271,6 +339,14 @@ struct BookingFlowView: View {
 
     private func timeZoneLabel(_ boot: AvailabilityBootstrap) -> String? {
         boot.timeZone.split(separator: "/").last.map { $0.replacingOccurrences(of: "_", with: " ") }
+    }
+
+    /// Add-on prices arrive as a bare decimal string ("25.00"); render with a
+    /// currency symbol and drop a trailing ".00" to match the offering pills.
+    private func priceLabel(_ raw: String) -> String {
+        let trimmed = raw.hasSuffix(".00") ? String(raw.dropLast(3)) : raw
+        let hasSymbol = trimmed.first.map { !$0.isNumber } ?? false
+        return hasSymbol ? trimmed : "$\(trimmed)"
     }
 
     private func slotLabel(_ iso: String, tz: String) -> String {

@@ -1,9 +1,9 @@
 import Foundation
 
 /// The booking flow — the same endpoints the web AvailabilityDrawer uses:
-/// availability bootstrap/day → create a hold → finalize the booking. v1 covers
-/// SALON, no add-ons, and "request to book" (no in-app payment — that needs the
-/// Stripe deep-link return). Authenticated (bearer token; client only).
+/// availability bootstrap/day → create a hold → (optional add-ons) → finalize the
+/// booking. v1 covers SALON + add-ons and "request to book" (no in-app payment —
+/// that needs the Stripe deep-link return). Authenticated (bearer token; client only).
 public final class BookingService: Sendable {
     private let api: APIClient
 
@@ -50,6 +50,20 @@ public final class BookingService: Sendable {
         ])
     }
 
+    /// GET /api/v1/offerings/add-ons — selectable add-ons for an offering in a
+    /// given location mode. Each returned `id` is the link id to pass back in
+    /// finalize's `addOnIds`. Add-ons don't affect the hold (matches web).
+    public func addOns(
+        offeringId: String,
+        locationType: String = "SALON"
+    ) async throws -> [BookingAddOn] {
+        let response: OfferingAddOnsResponse = try await api.request("/offerings/add-ons", query: [
+            URLQueryItem(name: "offeringId", value: offeringId),
+            URLQueryItem(name: "locationType", value: locationType),
+        ])
+        return response.addOns.sorted { $0.sortOrder < $1.sortOrder }
+    }
+
     /// POST /api/v1/holds — reserve a slot briefly before finalizing.
     public func createHold(
         offeringId: String,
@@ -74,12 +88,13 @@ public final class BookingService: Sendable {
         holdId: String,
         offeringId: String,
         locationType: String = "SALON",
+        addOnIds: [String] = [],
         source: String = "REQUESTED",
         idempotencyKey: String
     ) async throws -> FinalizedBooking {
         let payload = try JSONEncoder().encode(FinalizeBookingRequest(
             holdId: holdId, offeringId: offeringId,
-            locationType: locationType, addOnIds: [], source: source
+            locationType: locationType, addOnIds: addOnIds, source: source
         ))
         let response: FinalizeBookingResponse = try await api.request(
             "/bookings/finalize",
