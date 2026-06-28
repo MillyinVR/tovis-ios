@@ -63,11 +63,12 @@ write/reschedule/cancel, notifications feed/summary/read/prefs, and device regis
 all verified **live end-to-end** against the API.
 
 **Next real work = polish only** (the v1 must-haves are shipped). In rough priority:
-**(1) add-ons in booking** (`/offerings/add-ons`), **(2) push deep-linking** (a push tap should open
-the specific booking/look — today it just foregrounds + refreshes), **(3) deposit-pay CTA** (model
-`depositStatus` on `ClientBooking`), **(4) Looks video playback** (`AVPlayer`; today VIDEO shows the
-still frame), **(5) Discover** Places autocomplete / pin clustering / radius filter, **(6) Booking v2
-remainder** — mobile mode + client address selection. See "Suggested next steps" for detail.
+**(1) ✅ add-ons in booking DONE 2026-06-28** (`/offerings/add-ons` → finalize `addOnIds`),
+**(2) push deep-linking** (a push tap should open the specific booking/look — today it just
+foregrounds + refreshes), **(3) deposit-pay CTA** (model `depositStatus` on `ClientBooking`),
+**(4) Looks video playback** (`AVPlayer`; today VIDEO shows the still frame), **(5) Discover** Places
+autocomplete / pin clustering / radius filter, **(6) Booking v2 remainder** — mobile mode + client
+address selection. See "Suggested next steps" for detail.
 
 ## 🔔 Notifications — Track A DONE; Track B (push) is next
 
@@ -469,8 +470,17 @@ Everything below is set up; recorded here so the next session knows the live con
 
 **The v1 must-haves are all shipped + on TestFlight. What remains is POLISH — pick up here, in priority order:**
 
-1. **Add-ons in booking** — `BookingFlowView` only books the base service. Add add-on selection via
-   `/offerings/add-ons` (finalize already accepts `addOnIds: []`). Most-felt booking gap.
+1. ✅ **Add-ons in booking DONE 2026-06-28** — `BookingFlowView` now fetches `/offerings/add-ons`
+   (`BookingService.addOns`, SALON/MOBILE-aware), shows a toggle-able **Add-ons (Optional)** section with
+   per-add-on minutes/price + a live total-duration pill, and passes the selected **link ids** into
+   `finalize(addOnIds:)` (was hard-coded `[]`). Matches web: add-ons don't touch the hold (only finalize),
+   the server derives real duration/price, and reschedule keeps the original add-ons (section hidden).
+   TovisKit: `BookingAddOn` model + `OfferingAddOnsResponse`; decode test + `offeringAddOns.json` (**22
+   tests**); Debug+Release `xcodebuild` green. ⚠️ **No contract-validator entry** — the backend add-ons
+   route isn't a typed DTO in `schema/api/tovis-api.schema.json` (no `AddOn` def), so the validator stays
+   at **20 objects**. Optional parity follow-up (a tovis-app PR, same pattern as #419 for notifications):
+   add a typed `AddOnDTO` + regen the schema, then add a contract `CHECKS` entry. Verified live? **No —**
+   decode-only (round-trip a real `GET /offerings/add-ons` against a seed pro that has add-ons to confirm).
 2. **Push deep-linking** — a push tap currently just foregrounds + bumps `refreshTick` (see
    `PushManager.handleIncoming` / `AppDelegate.didReceive`). Route the payload's deep link to the
    specific booking/look (the in-app center already deep-links bookings via `BookingDetailView`).
