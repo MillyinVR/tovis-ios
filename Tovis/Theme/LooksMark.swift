@@ -12,6 +12,9 @@ struct LooksMark: View {
     // Drives the soft orb's slow diagonal drift (web @keyframes tovisOrb).
     @State private var orbDrift = false
 
+    // A little see-through so the footer + content read faintly behind the coin.
+    private static let coinOpacity: Double = 0.82
+
     // --plume: linear-gradient(100deg, #f2b43e, #15c9a8 32%, #0e8e89 50%,
     //          #1574c4 72%, #6b4be6)
     private static let plume = LinearGradient(
@@ -75,7 +78,7 @@ struct LooksMark: View {
         let innerSize = size - ringWidth * 2
 
         ZStack {
-            coin
+            coin.opacity(Self.coinOpacity)   // a little transparency
             TovisEye(size: featherSize)
             // A soft jewel-tinted orb of light over the coin with a screen blend
             // (web TovisFeatherMark's radiating orb), drifting diagonally.
@@ -84,8 +87,9 @@ struct LooksMark: View {
         .frame(width: innerSize, height: innerSize)
         .clipShape(Circle())
         .padding(ringWidth)
-        .background(Self.plume)        // iridescent plume ring (filled, like web)
-        .clipShape(Circle())
+        // Plume as a RING (stroke), not a filled disc — so nothing opaque sits
+        // behind the translucent coin and the footer/content shows through.
+        .overlay(Circle().strokeBorder(Self.plume, lineWidth: ringWidth))
         // boxShadow: 0 14px 30px var(--tovis-acc-shadow) (accent @ 0.45)
         .shadow(color: BrandColor.accent.opacity(0.45), radius: 15, x: 0, y: 14)
         .frame(width: size, height: size)

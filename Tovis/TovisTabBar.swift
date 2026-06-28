@@ -11,9 +11,12 @@ struct TovisTabBar: View {
     /// Unread Inbox badge text (e.g. "3", "9+"). Nil → no badge, matching web.
     var messagesBadge: String? = nil
 
+    // Tunable footer geometry.
+    private let barHeight: CGFloat = 68      // shorter bar (was 80)
+    private let centerSize: CGFloat = 84     // bigger center coin (was 72)
+    private let centerBottomGap: CGFloat = 8 // coin's gap above the bar bottom
+
     var body: some View {
-        // Items are top-aligned in an 80pt-tall bar (CSS .tovis-footer-bar:
-        // min-height 80px; align-items: flex-start; padding 14px 16px 0).
         HStack(alignment: .top, spacing: 0) {
             ForEach(ClientNav.tabs) { tab in
                 item(for: tab)
@@ -21,8 +24,22 @@ struct TovisTabBar: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.top, 14)
-        .frame(minHeight: 80, alignment: .top)
+        .padding(.top, 12)
+        .frame(minHeight: barHeight, alignment: .top)
+        // The raised center button is anchored to the bar's BOTTOM (sits low,
+        // close to the footer bottom but not touching) and overflows upward so
+        // it still pokes slightly above the top edge.
+        .overlay(alignment: .bottom) {
+            Button {
+                selected = .looks
+            } label: {
+                LooksMark(size: centerSize)
+                    .offset(y: -centerBottomGap)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Looks")
+            .accessibilityAddTraits(selected == .looks ? [.isSelected] : [])
+        }
         // surface + hairline top border (--bg-surface / --line)
         .background(
             BrandColor.bgSurface
@@ -40,20 +57,10 @@ struct TovisTabBar: View {
         let isActive = selected == tab.id
 
         if tab.center {
-            // The raised "Looks" center mark, sized to match the PRO footer's
-            // center button: 72pt coin lifted -34 (CSS .tovis-center-lift-lg).
-            // We keep its layout slot at 66 so the coin overflows/lifts without
-            // making the bar taller than 80.
-            Button {
-                selected = tab.id
-            } label: {
-                LooksMark(size: 72)
-                    .frame(width: 66, height: 66)
-                    .offset(y: -34)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(tab.label)
-            .accessibilityAddTraits(isActive ? [.isSelected] : [])
+            // The real button is the bottom-anchored overlay above; this is just
+            // an empty slot that reserves the center's horizontal space so the
+            // four nav items space evenly (2 left, 2 right).
+            Color.clear.frame(height: 1)
         } else {
             Button {
                 selected = tab.id
