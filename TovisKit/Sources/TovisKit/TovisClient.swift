@@ -28,18 +28,27 @@ public final class TovisClient: Sendable {
     /// per-device revocation wants.
     public let deviceId: String
 
-    public init(config: TovisConfig, session: URLSession = .shared) {
+    public init(config: TovisConfig, session: URLSession? = nil) {
         let store = TokenStore()
         self.tokenStore = store
         self.deviceId = Self.resolveDeviceId()
 
+        // Native auth is bearer-token (Keychain) based and MUST stay cookieless.
+        // `URLSession.shared` has a shared cookie jar that would store the
+        // `tovis_token` cookie the backend sets on login and silently resend it.
+        // That defeats the server's cookieless-origin exemption: a request that
+        // carries a cookie is forced through the CSRF Origin check, and native
+        // sends no Origin → 403 INVALID_ORIGIN. So we run on a session with no
+        // cookie storage unless the caller injects one (tests).
+        let resolvedSession = session ?? Self.makeCookielessSession()
+
         // The refresh closure is a free function so there's no reference cycle
         // back into APIClient/AuthService.
         let refresh: @Sendable () async -> Bool = {
-            await performTokenRefresh(config: config, session: session, tokenStore: store)
+            await performTokenRefresh(config: config, session: resolvedSession, tokenStore: store)
         }
 
-        let api = APIClient(config: config, session: session, tokenStore: store, refresh: refresh)
+        let api = APIClient(config: config, session: resolvedSession, tokenStore: store, refresh: refresh)
         self.api = api
         self.auth = AuthService(api: api, tokenStore: store)
         self.devices = DeviceService(api: api)
@@ -59,6 +68,16 @@ public final class TovisClient: Sendable {
     public func currentUserId() async -> String? {
         guard let token = await tokenStore.token() else { return nil }
         return SessionToken.userId(from: token)
+    }
+
+    /// A URLSession that neither stores nor sends cookies — keeps native auth
+    /// truly cookieless so the backend's Origin-check exemption always applies.
+    private static func makeCookielessSession() -> URLSession {
+        let configuration = URLSessionConfiguration.default
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.httpCookieAcceptPolicy = .never
+        return URLSession(configuration: configuration)
     }
 
     private static let deviceIdKey = "tovis.deviceId"

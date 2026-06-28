@@ -209,6 +209,15 @@ from `tovis-app/lib/brand/brands/tovis.ts` and `lib/brand/eyeSvg.ts`. Default mo
 All return the same session payload (`AuthLoginResponseDTO`): token in the JSON body
 (stored in Keychain) + cookie for web. 401s auto-refresh via `POST /api/v1/auth/refresh`.
 
+⚠️ **Native MUST be cookieless (fixed 2026-06-27).** The login response sets a `tovis_token`
+cookie for web. `URLSession.shared` has a shared cookie jar that would store it and silently
+resend it — and the backend's CSRF gate (`tovis-app/proxy.ts`) only exempts native requests
+when they carry **no cookie**. A stale cookie → the Origin check runs → native sends no Origin →
+**403 "Invalid request origin." (INVALID_ORIGIN)** on the NEXT login. Fix: `TovisClient` now runs
+on a **cookieless `URLSession`** (`makeCookielessSession()`: nil cookie storage,
+`httpShouldSetCookies=false`, accept policy `.never`). Verified: a no-cookie login → 200; the
+same login with a `Cookie: tovis_token=…` header → 403. Don't reintroduce `.shared`.
+
 ## Backend PR status (in `tovis-app`)
 
 - **#413 — proxy cookieless-origin fix — MERGED.** *Critical:* native login/apple/phone
