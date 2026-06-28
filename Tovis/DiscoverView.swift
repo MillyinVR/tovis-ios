@@ -1,135 +1,273 @@
-// Discover — search pros + services (GET /api/v1/search). Native rebuild of the
-// web /search surface: a query field, a Pros/Services toggle, and result rows
-// that push into the pro profile. Booking flow (holds → availability → checkout)
-// lands later; for now Discover → pro profile is the path.
+// Discover — native rebuild of the web SearchMapClient (/search): a full-screen
+// map of nearby pros with category chips + free-text search, a Map/List toggle,
+// an active-pro card, and a "Search this area" affordance when you pan. Backed by
+// GET /api/v1/search/pros (geo) + /api/v1/discover/categories, the same data the
+// web uses. Web renders Leaflet/OSM; here we use native MapKit.
 import SwiftUI
+import MapKit
 import TovisKit
 
 struct DiscoverView: View {
     @Environment(SessionModel.self) private var session
+    @State private var location = LocationManager()
 
-    enum Tab: String, CaseIterable { case pros = "Pros", services = "Services" }
+    private enum ViewMode { case map, list }
 
     @State private var query = ""
-    @State private var tab: Tab = .pros
-    @State private var pros: [SearchPro] = []
-    @State private var services: [SearchServiceItem] = []
+    @State private var categories: [DiscoverCategory] = []
+    @State private var selectedCategory: DiscoverCategory?
+    @State private var pros: [SearchProItem] = []
+    @State private var activeProId: String?
+    @State private var viewMode: ViewMode = .map
     @State private var loading = false
     @State private var errorMessage: String?
     @State private var searchToken = 0
 
+    // Map state
+    @State private var camera: MapCameraPosition = .region(Self.fallbackRegion)
+    @State private var searchedOrigin = Self.fallbackCenter   // origin of the last search
+    @State private var mapCenter = Self.fallbackCenter        // current viewport center
+    @State private var didInitialLocate = false
+
+    // Los Angeles fallback so the first paint isn't empty before a fix arrives.
+    private static let fallbackCenter = CLLocationCoordinate2D(latitude: 34.05, longitude: -118.24)
+    private static let fallbackRegion = MKCoordinateRegion(
+        center: fallbackCenter,
+        span: MKCoordinateSpan(latitudeDelta: 0.25, longitudeDelta: 0.25)
+    )
+    private static let radiusMiles = 25
+
     var body: some View {
         NavigationStack {
-            VStack(spacing: 14) {
-                searchField
-                tabs
-                results
+            ZStack(alignment: .top) {
+                BrandColor.bgPrimary.ignoresSafeArea()
+
+                Group {
+                    if viewMode == .map { mapLayer } else { listLayer }
+                }
+
+                topControls
+
+                if viewMode == .map, let pro = activePro {
+                    activeCard(pro)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
-            .padding(.top, 8)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .background(BrandColor.bgPrimary.ignoresSafeArea())
-            .navigationTitle("Discover")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
-            .task { if pros.isEmpty && services.isEmpty { await runSearch() } }
+            .navigationDestination(for: String.self) { proId in
+                ProProfileView(professionalId: proId, fallbackName: proName(proId) ?? "Pro")
+            }
+            .toolbar(.hidden, for: .navigationBar)
         }
         .tint(BrandColor.accent)
+        .task {
+            if categories.isEmpty {
+                categories = (try? await session.client.discover.categories()) ?? []
+            }
+            location.request()
+            if pros.isEmpty { await runSearch() }
+        }
+        .onChange(of: location.coordinate?.latitude) { recenterOnUser() }
     }
 
-    // MARK: - Search field
+    // MARK: - Map
+
+    private var mapLayer: some View {
+        Map(position: $camera, selection: $activeProId) {
+            ForEach(pinnable) { pin in
+                Annotation(pin.item.displayName, coordinate: pin.coordinate) {
+                    ProPin(active: pin.item.id == activeProId)
+                }
+                .tag(pin.item.id)
+            }
+            UserAnnotation()
+        }
+        .mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll))
+        .mapControls { MapUserLocationButton() }
+        .ignoresSafeArea(edges: .top)
+        .onMapCameraChange(frequency: .onEnd) { context in
+            mapCenter = context.region.center
+        }
+        .overlay(alignment: .top) {
+            if showSearchThisArea {
+                Button { Task { await searchThisArea() } } label: {
+                    Label("Search this area", systemImage: "arrow.clockwise")
+                        .font(BrandFont.body(13, .semibold))
+                        .foregroundStyle(BrandColor.textPrimary)
+                        .padding(.vertical, 9).padding(.horizontal, 14)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .overlay(Capsule().stroke(BrandColor.textMuted.opacity(0.25), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 168)   // sits below the floating header + chips
+                .transition(.opacity)
+            }
+        }
+    }
+
+    /// Distance the viewport has drifted from the searched origin (miles).
+    private var driftMiles: Double {
+        CLLocation(latitude: mapCenter.latitude, longitude: mapCenter.longitude)
+            .distance(from: CLLocation(latitude: searchedOrigin.latitude, longitude: searchedOrigin.longitude))
+            / 1609.34
+    }
+    private var showSearchThisArea: Bool { driftMiles >= 0.5 }
+
+    private struct Pinnable: Identifiable {
+        let item: SearchProItem
+        let coordinate: CLLocationCoordinate2D
+        var id: String { item.id }
+    }
+
+    private var pinnable: [Pinnable] {
+        pros.compactMap { pro in
+            guard let lat = pro.mapLocation?.lat, let lng = pro.mapLocation?.lng else { return nil }
+            return Pinnable(item: pro, coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lng))
+        }
+    }
+
+    // MARK: - List
+
+    private var listLayer: some View {
+        ScrollView {
+            LazyVStack(spacing: 12) {
+                if loading && pros.isEmpty {
+                    ProgressView().tint(BrandColor.accent).padding(.top, 60)
+                } else if pros.isEmpty {
+                    Text("No pros found nearby. Try a wider search or another area.")
+                        .font(BrandFont.body(14)).foregroundStyle(BrandColor.textMuted)
+                        .multilineTextAlignment(.center).padding(.top, 60).padding(.horizontal, 30)
+                } else {
+                    ForEach(pros) { pro in
+                        NavigationLink(value: pro.id) { ProResultRow(pro: pro) }
+                            .buttonStyle(.plain)
+                            .simultaneousGesture(TapGesture().onEnded { activeProId = pro.id })
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 168)   // clear the floating header + chips
+            .padding(.bottom, 24)
+        }
+    }
+
+    // MARK: - Top controls (search + view toggle + category chips)
+
+    private var topControls: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 10) {
+                searchField
+                viewToggle
+            }
+            categoryRail
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+    }
 
     private var searchField: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 9) {
             Image(systemName: "magnifyingglass").foregroundStyle(BrandColor.textMuted)
-            TextField("Search pros or services", text: $query)
-                .font(BrandFont.body(15))
-                .foregroundStyle(BrandColor.textPrimary)
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
+            TextField("Search pros, services, or a place", text: $query)
+                .font(BrandFont.body(15)).foregroundStyle(BrandColor.textPrimary)
+                .autocorrectionDisabled().textInputAutocapitalization(.never)
                 .submitLabel(.search)
                 .onSubmit { Task { await runSearch() } }
                 .onChange(of: query) { debouncedSearch() }
-            if !query.isEmpty {
+            if loading {
+                ProgressView().controlSize(.mini).tint(BrandColor.accent)
+            } else if !query.isEmpty {
                 Button { query = ""; Task { await runSearch() } } label: {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(BrandColor.textMuted)
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 14).padding(.vertical, 11)
-        .background(BrandColor.bgSurface)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .padding(.horizontal, 13).padding(.vertical, 11)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .stroke(BrandColor.textMuted.opacity(0.18), lineWidth: 1))
-        .padding(.horizontal, 20)
+            .stroke(BrandColor.textMuted.opacity(0.2), lineWidth: 1))
     }
 
-    private var tabs: some View {
-        HStack(spacing: 28) {
-            ForEach(Tab.allCases, id: \.self) { item in
-                let active = item == tab
-                Button { tab = item; Task { await runSearch() } } label: {
-                    VStack(spacing: 8) {
-                        Text(item.rawValue.uppercased())
-                            .font(BrandFont.mono(12)).tracking(0.8)
-                            .foregroundStyle(active ? BrandColor.textPrimary : BrandColor.textMuted)
-                        Rectangle().fill(active ? BrandColor.accent : .clear).frame(height: 2)
+    private var viewToggle: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) { viewMode = viewMode == .map ? .list : .map }
+        } label: {
+            Image(systemName: viewMode == .map ? "list.bullet" : "map")
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(BrandColor.textPrimary)
+                .frame(width: 44, height: 44)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(BrandColor.textMuted.opacity(0.2), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(viewMode == .map ? "Show list" : "Show map")
+    }
+
+    private var categoryRail: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(categories, id: \.identity) { cat in
+                    let active = selectedCategory?.identity == cat.identity
+                        || (selectedCategory == nil && cat.isAll)
+                    Button {
+                        selectedCategory = cat.isAll ? nil : cat
+                        Task { await runSearch() }
+                    } label: {
+                        Text(cat.isAll ? "All" : cat.label)
+                            .font(BrandFont.body(13, active ? .semibold : .regular))
+                            .foregroundStyle(active ? BrandColor.onAccent : BrandColor.textPrimary)
+                            .padding(.vertical, 7).padding(.horizontal, 13)
+                            .background(active ? AnyShapeStyle(BrandColor.accent) : AnyShapeStyle(.ultraThinMaterial),
+                                        in: Capsule())
+                            .overlay(Capsule().stroke(BrandColor.textMuted.opacity(active ? 0 : 0.2), lineWidth: 1))
                     }
-                    .fixedSize()
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
+            .padding(.horizontal, 2)
+        }
+    }
+
+    // MARK: - Active pro card (map mode)
+
+    private var activePro: SearchProItem? {
+        guard let id = activeProId else { return nil }
+        return pros.first { $0.id == id }
+    }
+
+    private func activeCard(_ pro: SearchProItem) -> some View {
+        VStack {
             Spacer()
-        }
-        .padding(.horizontal, 20)
-    }
-
-    // MARK: - Results
-
-    @ViewBuilder
-    private var results: some View {
-        if loading && pros.isEmpty && services.isEmpty {
-            ProgressView().tint(BrandColor.accent)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let errorMessage {
-            VStack(spacing: 12) {
-                Text(errorMessage).font(BrandFont.body(14)).foregroundStyle(BrandColor.textSecondary)
-                    .multilineTextAlignment(.center)
-                Button("Try again") { Task { await runSearch() } }
-                    .font(BrandFont.body(14, .semibold)).foregroundStyle(BrandColor.accent)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.horizontal, 40)
-        } else {
-            ScrollView {
-                LazyVStack(spacing: 12) {
-                    switch tab {
-                    case .pros:
-                        if pros.isEmpty { emptyRow("No pros found") }
-                        ForEach(pros) { pro in
-                            NavigationLink {
-                                ProProfileView(professionalId: pro.id, fallbackName: pro.displayName)
-                            } label: { ProRow(pro: pro) }
-                            .buttonStyle(.plain)
+            NavigationLink(value: pro.id) {
+                BrandSurface {
+                    HStack(spacing: 12) {
+                        BrandAvatar(name: pro.displayName, avatarUrl: pro.avatarUrl, size: 54)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(pro.displayName)
+                                .font(BrandFont.body(16, .semibold)).foregroundStyle(BrandColor.textPrimary).lineLimit(1)
+                            if let meta = metaLine(pro) {
+                                Text(meta).font(BrandFont.body(12.5)).foregroundStyle(BrandColor.textMuted).lineLimit(1)
+                            }
+                            HStack(spacing: 8) {
+                                if let price = pro.minPrice {
+                                    Text("from \(money(price))")
+                                        .font(BrandFont.body(12.5, .semibold)).foregroundStyle(BrandColor.accent)
+                                }
+                                if pro.supportsMobile { BrandPill(text: "Mobile", tint: BrandColor.iris) }
+                            }
                         }
-                    case .services:
-                        if services.isEmpty { emptyRow("No services found") }
-                        ForEach(services) { service in
-                            Button {
-                                query = service.name; tab = .pros; Task { await runSearch() }
-                            } label: { ServiceRow(service: service) }
-                            .buttonStyle(.plain)
-                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 13, weight: .semibold)).foregroundStyle(BrandColor.textMuted)
                     }
                 }
-                .padding(.horizontal, 20).padding(.bottom, 24)
             }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 12)
         }
-    }
-
-    private func emptyRow(_ text: String) -> some View {
-        Text(text)
-            .font(BrandFont.body(14)).foregroundStyle(BrandColor.textMuted)
-            .frame(maxWidth: .infinity).padding(.top, 48)
     }
 
     // MARK: - Search
@@ -146,10 +284,18 @@ struct DiscoverView: View {
     private func runSearch() async {
         loading = true
         errorMessage = nil
+        let origin = searchedOrigin
         do {
-            switch tab {
-            case .pros: pros = try await session.client.search.pros(query: query)
-            case .services: services = try await session.client.search.services(query: query)
+            let page = try await session.client.discover.searchPros(
+                q: query,
+                lat: origin.latitude,
+                lng: origin.longitude,
+                radiusMiles: Self.radiusMiles,
+                categoryId: selectedCategory?.id
+            )
+            pros = page.items
+            if let active = activeProId, !pros.contains(where: { $0.id == active }) {
+                activeProId = nil
             }
         } catch let error as APIError {
             errorMessage = error.userMessage
@@ -158,12 +304,70 @@ struct DiscoverView: View {
         }
         loading = false
     }
+
+    private func searchThisArea() async {
+        searchedOrigin = mapCenter
+        await runSearch()
+    }
+
+    private func recenterOnUser() {
+        guard !didInitialLocate, let coord = location.coordinate else { return }
+        didInitialLocate = true
+        searchedOrigin = coord
+        mapCenter = coord
+        withAnimation {
+            camera = .region(MKCoordinateRegion(
+                center: coord,
+                span: MKCoordinateSpan(latitudeDelta: 0.2, longitudeDelta: 0.2)
+            ))
+        }
+        Task { await runSearch() }
+    }
+
+    // MARK: - Helpers
+
+    private func proName(_ id: String) -> String? { pros.first { $0.id == id }?.displayName }
+
+    private func metaLine(_ pro: SearchProItem) -> String? {
+        var parts: [String] = []
+        if let craft = pro.professionType { parts.append(craft.capitalized) }
+        if let rating = pro.ratingAvg, pro.ratingCount > 0 {
+            parts.append("★ \(String(format: "%.1f", rating)) (\(pro.ratingCount))")
+        }
+        if let d = pro.distanceMiles { parts.append("\(String(format: "%.1f", d)) mi") }
+        if parts.isEmpty { return pro.locationLabel ?? pro.mapLocation?.cityState }
+        return parts.joined(separator: " · ")
+    }
+
+    private func money(_ value: Double) -> String {
+        value.rounded() == value ? "$\(Int(value))" : String(format: "$%.2f", value)
+    }
 }
 
-// MARK: - Rows
+// MARK: - Map pin
 
-private struct ProRow: View {
-    let pro: SearchPro
+private struct ProPin: View {
+    let active: Bool
+
+    var body: some View {
+        ZStack {
+            if active {
+                Circle().fill(BrandColor.gold).frame(width: 26, height: 26)
+                Circle().fill(.white).frame(width: 20, height: 20)
+            }
+            Circle()
+                .fill(BrandColor.accent)
+                .frame(width: active ? 14 : 13, height: active ? 14 : 13)
+                .overlay(Circle().stroke(.white, lineWidth: active ? 0 : 3))
+        }
+        .shadow(color: .black.opacity(0.4), radius: 4, y: 2)
+    }
+}
+
+// MARK: - Result row (list)
+
+private struct ProResultRow: View {
+    let pro: SearchProItem
 
     var body: some View {
         BrandSurface {
@@ -171,8 +375,7 @@ private struct ProRow: View {
                 BrandAvatar(name: pro.displayName, avatarUrl: pro.avatarUrl, size: 54)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(pro.displayName)
-                        .font(BrandFont.body(15, .semibold)).foregroundStyle(BrandColor.textPrimary)
-                        .lineLimit(1)
+                        .font(BrandFont.body(15, .semibold)).foregroundStyle(BrandColor.textPrimary).lineLimit(1)
                     if let meta = metaLine {
                         Text(meta).font(BrandFont.body(12.5)).foregroundStyle(BrandColor.textMuted).lineLimit(1)
                     }
@@ -198,37 +401,11 @@ private struct ProRow: View {
             parts.append("★ \(String(format: "%.1f", rating)) (\(pro.ratingCount))")
         }
         if let d = pro.distanceMiles { parts.append("\(String(format: "%.1f", d)) mi") }
-        return parts.isEmpty ? pro.locationLabel : parts.joined(separator: " · ")
+        if parts.isEmpty { return pro.locationLabel ?? pro.mapLocation?.cityState }
+        return parts.joined(separator: " · ")
     }
 
     private func money(_ value: Double) -> String {
-        let whole = value.rounded() == value
-        return "$" + (whole ? String(Int(value)) : String(format: "%.2f", value))
-    }
-}
-
-private struct ServiceRow: View {
-    let service: SearchServiceItem
-
-    var body: some View {
-        BrandSurface {
-            HStack(spacing: 12) {
-                Image(systemName: "scissors")
-                    .font(.system(size: 16)).foregroundStyle(BrandColor.accent)
-                    .frame(width: 34, height: 34)
-                    .background(BrandColor.accent.opacity(0.14))
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(service.name)
-                        .font(BrandFont.body(15, .semibold)).foregroundStyle(BrandColor.textPrimary).lineLimit(1)
-                    if let cat = service.categoryName {
-                        Text(cat).font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
-                    }
-                }
-                Spacer()
-                Text("Find pros")
-                    .font(BrandFont.mono(10)).tracking(0.6).foregroundStyle(BrandColor.accent)
-            }
-        }
+        value.rounded() == value ? "$\(Int(value))" : String(format: "$%.2f", value)
     }
 }

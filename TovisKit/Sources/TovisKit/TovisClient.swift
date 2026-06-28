@@ -18,6 +18,7 @@ public final class TovisClient: Sendable {
     public let me: MeService
     public let messages: MessagesService
     public let search: SearchService
+    public let discover: DiscoverService
     public let booking: BookingService
     public let checkout: CheckoutService
     public let looks: LooksService
@@ -58,6 +59,7 @@ public final class TovisClient: Sendable {
         self.me = MeService(api: api)
         self.messages = MessagesService(api: api)
         self.search = SearchService(api: api)
+        self.discover = DiscoverService(api: api)
         self.booking = BookingService(api: api)
         self.checkout = CheckoutService(api: api)
         self.looks = LooksService(api: api)

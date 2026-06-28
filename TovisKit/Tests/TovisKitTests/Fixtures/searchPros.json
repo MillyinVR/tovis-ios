@@ -1,0 +1,58 @@
+{
+  "ok": true,
+  "items": [
+    {
+      "id": "pro_1",
+      "businessName": "Studio Lumière",
+      "displayName": "Studio Lumière",
+      "handle": "amarahair",
+      "professionType": "HAIRSTYLIST",
+      "avatarUrl": "https://example.supabase.co/storage/v1/object/public/media-public/avatars/pro_1.jpg",
+      "locationLabel": "Downtown LA",
+      "distanceMiles": 2.3,
+      "ratingAvg": 4.9,
+      "ratingCount": 128,
+      "minPrice": 85,
+      "supportsMobile": true,
+      "closestLocation": {
+        "id": "loc_1",
+        "formattedAddress": null,
+        "city": "Los Angeles",
+        "state": "CA",
+        "timeZone": "America/Los_Angeles",
+        "placeId": null,
+        "lat": 34.05,
+        "lng": -118.24,
+        "isPrimary": true
+      },
+      "primaryLocation": {
+        "id": "loc_1",
+        "formattedAddress": null,
+        "city": "Los Angeles",
+        "state": "CA",
+        "timeZone": "America/Los_Angeles",
+        "placeId": null,
+        "lat": 34.05,
+        "lng": -118.24,
+        "isPrimary": true
+      }
+    },
+    {
+      "id": "pro_2",
+      "businessName": null,
+      "displayName": "Noelle Reyes",
+      "handle": null,
+      "professionType": null,
+      "avatarUrl": null,
+      "locationLabel": null,
+      "distanceMiles": null,
+      "ratingAvg": null,
+      "ratingCount": 0,
+      "minPrice": null,
+      "supportsMobile": false,
+      "closestLocation": null,
+      "primaryLocation": null
+    }
+  ],
+  "nextCursor": "eyJpZCI6InByb18yIn0="
+}

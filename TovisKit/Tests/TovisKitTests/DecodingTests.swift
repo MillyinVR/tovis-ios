@@ -235,6 +235,21 @@ func fixture(_ name: String) throws -> Data {
         #expect(client.viewerSaved == true)
     }
 
+    // GET /api/v1/search/pros — Fixtures/searchPros.json (schema-validated).
+    @Test func decodesSearchPros() throws {
+        let res = try JSONDecoder().decode(SearchProsResponse.self, from: fixture("searchPros"))
+        #expect(res.items.count == 2)
+        #expect(res.nextCursor != nil)
+        let pro = try #require(res.items.first)
+        #expect(pro.displayName == "Studio Lumière")
+        #expect(pro.distanceMiles == 2.3)
+        #expect(pro.supportsMobile == true)
+        #expect(pro.mapLocation?.lat == 34.05)
+        #expect(pro.mapLocation?.cityState == "Los Angeles, CA")
+        // Pro with no location still decodes (optionals).
+        #expect(res.items[1].mapLocation == nil)
+    }
+
     // GET /api/v1/looks/{id}/comments — Fixtures/looksComments.json (schema-validated).
     @Test func decodesLooksComments() throws {
         let res = try JSONDecoder().decode(LooksCommentsListResponse.self, from: fixture("looksComments"))

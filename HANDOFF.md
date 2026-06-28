@@ -17,8 +17,12 @@ footer 1:1** — Home · Discover · Looks(center feather) · Inbox · Me — wi
 - **Home** (`GET /client/home`) — full web parity: accent glow, greeting + InboxBell, action
   card (inline consult approve/decline), last-minute openings (Grab it/Pass), next booking,
   favorite pros, favorited services, waitlist, Viral Looks band.
-- **Discover** (`GET /api/v1/search`) — search pros + services (debounced), Pros/Services
-  toggle; pro rows → pro profile, service rows → re-search. **List only (no map yet.)**
+- **Discover** — native **MapKit** rebuild of the web SearchMapClient: a full-screen map of
+  nearby pros (`GET /api/v1/search/pros` geo) with category chips (`/discover/categories`),
+  free-text search, a **Map/List toggle**, an active-pro card → profile, and a **"Search this
+  area"** button on pan. Uses `LocationManager` (CLLocationManager) for the "near you" origin;
+  falls back to LA + manual pan if denied. Web uses Leaflet/OSM; iOS uses MapKit. Pins use the
+  coarsened (~neighborhood) coords the API returns; `distanceMiles` is accurate.
 - **Inbox** (`GET /messages/*`) — thread list + conversation (bubbles, send, mark-read);
   live unread badge on the footer tab; Home bell switches to this tab.
 - **Me** (`GET /api/v1/me`) — full web /client/me parity: header + FOLLOWERS/BOARDS/SAVED/
@@ -135,7 +139,7 @@ doesn't model `depositStatus`, so there's no UI trigger. Add that field to surfa
 ## TovisKit services map (one service per surface, all on `TovisClient`)
 
 `auth` · `devices` · `home` · `bookings` · `profiles` · `me` · `messages` · `search` ·
-`booking` · `checkout` · `looks` — plus `client.currentUserId()` (decodes the JWT; used to align chat bubbles).
+`booking` · `checkout` · `looks` · `discover` — plus `client.currentUserId()` (decodes the JWT; used to align chat bubbles).
 `APIClient.request/requestVoid` now take `query: [URLQueryItem]?` and `headers: [String:String]?`
 (added for search params + the finalize idempotency-key).
 

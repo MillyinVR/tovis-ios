@@ -42,6 +42,7 @@ const CHECKS = [
   },
   { file: 'looksFeed.json', def: 'LooksFeedItemDto', pick: (d) => d.items },
   { file: 'looksComments.json', def: 'LooksCommentDto', pick: (d) => d.comments },
+  { file: 'searchPros.json', def: 'SearchProItemDto', pick: (d) => d.items },
 ]
 
 function fail(msg) {
