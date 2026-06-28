@@ -94,10 +94,7 @@ struct HomeView: View {
             BrandSection(title: "Last-minute openings") {
                 VStack(spacing: 10) {
                     ForEach(home.invites) { invite in
-                        proLink(id: invite.opening.professional.id,
-                                name: invite.opening.professional.displayName) {
-                            InviteRow(invite: invite)
-                        }
+                        InviteRow(invite: invite, onChanged: { await load() })
                     }
                 }
             }
@@ -322,24 +319,92 @@ private struct UpcomingCard: View {
 }
 
 private struct InviteRow: View {
+    @Environment(SessionModel.self) private var session
     let invite: HomeInvite
+    /// Reload home after accept/decline so the offer leaves the list.
+    var onChanged: () async -> Void
+
+    @State private var working = false
+    @State private var errorMessage: String?
+
+    private var pro: HomeProfessional { invite.opening.professional }
 
     var body: some View {
         BrandSurface {
-            HStack(spacing: 12) {
-                BrandAvatar(name: invite.opening.professional.displayName,
-                            avatarUrl: invite.opening.professional.avatarUrl, size: 40)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(invite.opening.professional.displayName)
-                        .font(BrandFont.body(15, .semibold))
-                        .foregroundStyle(BrandColor.textPrimary)
-                    Text(Wire.dateTime(invite.opening.startAt, timeZone: invite.opening.timeZone))
-                        .font(BrandFont.body(13))
-                        .foregroundStyle(BrandColor.textSecondary)
+            VStack(alignment: .leading, spacing: 12) {
+                NavigationLink {
+                    ProProfileView(professionalId: pro.id, fallbackName: pro.displayName)
+                } label: {
+                    HStack(spacing: 12) {
+                        BrandAvatar(name: pro.displayName, avatarUrl: pro.avatarUrl, size: 40)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(pro.displayName)
+                                .font(BrandFont.body(15, .semibold))
+                                .foregroundStyle(BrandColor.textPrimary)
+                            Text(Wire.dateTime(invite.opening.startAt, timeZone: invite.opening.timeZone))
+                                .font(BrandFont.body(13))
+                                .foregroundStyle(BrandColor.textSecondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(BrandColor.textMuted)
+                    }
                 }
-                Spacer()
-                BrandPill(text: "Open", tint: BrandColor.gold)
+                .buttonStyle(.plain)
+
+                HStack(spacing: 10) {
+                    Button { Task { await act(accept: true) } } label: {
+                        actionLabel("Accept", filled: true)
+                    }
+                    .disabled(working)
+                    Button { Task { await act(accept: false) } } label: {
+                        actionLabel("Decline", filled: false)
+                    }
+                    .disabled(working)
+                }
+
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(BrandFont.body(12))
+                        .foregroundStyle(BrandColor.ember)
+                }
             }
+        }
+    }
+
+    private func actionLabel(_ title: String, filled: Bool) -> some View {
+        Text(title)
+            .font(BrandFont.body(14, .semibold))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .foregroundStyle(filled ? BrandColor.onAccent : BrandColor.textSecondary)
+            .background(filled ? BrandColor.accent : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(filled ? Color.clear : BrandColor.textMuted.opacity(0.3), lineWidth: 1)
+            )
+            .opacity(working ? 0.6 : 1)
+    }
+
+    private func act(accept: Bool) async {
+        guard !working else { return }
+        working = true
+        errorMessage = nil
+        do {
+            if accept {
+                try await session.client.home.acceptInvite(recipientId: invite.id)
+            } else {
+                try await session.client.home.declineInvite(recipientId: invite.id)
+            }
+            await onChanged()
+        } catch let error as APIError {
+            errorMessage = error.userMessage
+            working = false
+        } catch {
+            errorMessage = "Something went wrong. Please try again."
+            working = false
         }
     }
 }

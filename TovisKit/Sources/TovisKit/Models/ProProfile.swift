@@ -75,3 +75,9 @@ public struct ProReview: Decodable, Sendable, Identifiable {
     public let clientName: String
     public let helpfulCount: Int
 }
+
+/// Result of toggling a pro favorite (POST/DELETE /professionals/{id}/favorite).
+public struct FavoriteResult: Decodable, Sendable {
+    public let favorited: Bool
+    public let count: Int
+}

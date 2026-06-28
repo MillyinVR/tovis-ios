@@ -16,4 +16,14 @@ public final class ProfileService: Sendable {
         let response: ProProfileResponse = try await api.request("/professionals/\(id)")
         return response.professional
     }
+
+    /// Favorite (POST) or unfavorite (DELETE) a pro. Returns the new favorited
+    /// state + total favorite count.
+    @discardableResult
+    public func setFavorite(professionalId: String, favorited: Bool) async throws -> FavoriteResult {
+        try await api.request(
+            "/professionals/\(professionalId)/favorite",
+            method: favorited ? .post : .delete
+        )
+    }
 }

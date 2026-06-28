@@ -52,15 +52,17 @@ tovis-ios/
 │       ├── Auth/              TokenStore (Keychain actor), AuthService (login/apple/phoneLogin/refresh/logout)
 │       ├── Devices/           DeviceService (POST /devices push registration)
 │       ├── Home/             HomeService (GET /client/home)
-│       ├── Bookings/         BookingsService (GET /client/bookings, bucketed)
-│       ├── Models/            Codable wire models (Auth, Common, ClientHome, ClientBooking)
-│       └── TovisClient.swift  (wires it all + stable per-install deviceId; exposes .home/.bookings)
+│       ├── Bookings/         BookingsService (GET /client/bookings + POST consultation decision)
+│       ├── Professionals/    ProfileService (GET /professionals/{id} public profile)
+│       ├── Models/            Codable wire models (Auth, Common, ClientHome, ClientBooking, ProProfile)
+│       └── TovisClient.swift  (wires it all + stable per-install deviceId; exposes .home/.bookings/.profiles)
 ├── Tovis/                    ← the Xcode APP TARGET (synchronized folder — drop files here, they auto-add)
 │   ├── ContentView.swift      @main + SessionModel + RootView + LoginView (email/pw + Apple + phone buttons)
 │   ├── PhoneLoginView.swift    two-step phone→code sheet
 │   ├── MainTabView.swift       signed-in tab shell (Home + Appointments; add tabs here)
-│   ├── HomeView.swift          client home (loads HomeService; cards link to Appointments tab)
+│   ├── HomeView.swift          client home (NavigationStack; cards→Appointments tab, pros→profile)
 │   ├── AppointmentsView.swift  bucketed bookings list (NavigationStack → detail)
+│   ├── ProProfileView.swift    public pro profile (header/stats/bio/offerings/portfolio/reviews)
 │   ├── BookingDetailView.swift read-only booking detail (from ClientBookingDTO)
 │   ├── Theme/                  BrandColor (Peacock Plume), BrandFont (Grotesk trio), TovisEye (logo), Formatters (ISO date + money), BrandComponents (shared Surface/Pill/Avatar/Section + statusTone)
 │   ├── Fonts/                  bundled .ttf (Hanken/Space Grotesk, Space Mono) + registered in Info.plist
@@ -169,12 +171,18 @@ All return the same session payload (`AuthLoginResponseDTO`): token in the JSON 
      idempotent). `BookingDetailView` shows Approve/Decline buttons when the consultation is
      pending; on success it refreshes the list (`onDecision`) and pops back. Wire verbs
      locked by a test.
+   - ✅ **Open a pro profile DONE.** `ProfileService.professional(id:)` →
+     `GET /professionals/{id}` (returns `{ professional }`; note `/u/[handle]` is the
+     *client/creator* profile, NOT the pro). `ProProfileView` renders header/stats/bio/
+     offerings/portfolio/reviews. Pros are tappable from booking detail + home (favorite
+     chips / invite / waitlist rows). Decode test added.
    - ⏭️ Still to wire (endpoints exist): **pay**
      (`/client/bookings/[id]/checkout` + `/deposit/stripe-session` — needs an in-app
      Safari/web redirect + a deep-link return, see step 6), **accept a last-minute invite**,
-     **open a pro profile** (`/u/[handle]` public profile — needs a profile endpoint/screen),
-     **rebook** (`/client/bookings/[id]/aftercare-rebook`). The pro display-name resolver
-     (`BookingProfessional.displayName`) already ports `lib/privacy/professionalDisplayName.ts`.
+     **favorite/unfavorite a pro** (`POST /professionals/[id]/favorite`, profile carries
+     `isFavoritedByMe`), **rebook** (`/client/bookings/[id]/aftercare-rebook`). The pro
+     display-name resolver (`BookingProfessional.displayName`) already ports
+     `lib/privacy/professionalDisplayName.ts`.
 4. Then iterate outward: search/discover, booking flow (holds → availability → checkout),
    messages. All have `/api/v1` endpoints + DTOs already.
 5. **Push notifications** (backend built but inert): add the Push Notifications capability,

@@ -274,4 +274,12 @@ import Testing
         #expect(p.reviews.first?.rating == 5)
         #expect(p.stats.averageRatingLabel == "4.9")
     }
+
+    // POST/DELETE /api/v1/professionals/{id}/favorite → { ok, favorited, count }.
+    @Test func decodesFavoriteResult() throws {
+        let json = #"{ "ok": true, "favorited": true, "count": 46 }"#.data(using: .utf8)!
+        let res = try JSONDecoder().decode(FavoriteResult.self, from: json)
+        #expect(res.favorited == true)
+        #expect(res.count == 46)
+    }
 }

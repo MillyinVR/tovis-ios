@@ -18,6 +18,8 @@ struct ProProfileView: View {
     }
 
     @State private var phase: Phase = .loading
+    @State private var isFavorited = false
+    @State private var favoriteWorking = false
 
     var body: some View {
         ScrollView {
@@ -100,6 +102,7 @@ struct ProProfileView: View {
                         }
                     }
                     Spacer()
+                    favoriteButton
                 }
 
                 if header.isPremium || header.isLicenseVerified || header.displayHandle != nil {
@@ -116,6 +119,34 @@ struct ProProfileView: View {
                     }
                 }
             }
+        }
+    }
+
+    private var favoriteButton: some View {
+        Button {
+            Task { await toggleFavorite() }
+        } label: {
+            Image(systemName: isFavorited ? "heart.fill" : "heart")
+                .font(.system(size: 22))
+                .foregroundStyle(isFavorited ? BrandColor.ember : BrandColor.textMuted)
+        }
+        .disabled(favoriteWorking)
+    }
+
+    private func toggleFavorite() async {
+        guard !favoriteWorking else { return }
+        favoriteWorking = true
+        defer { favoriteWorking = false }
+
+        let target = !isFavorited
+        isFavorited = target  // optimistic
+        do {
+            let result = try await session.client.profiles.setFavorite(
+                professionalId: professionalId, favorited: target
+            )
+            isFavorited = result.favorited
+        } catch {
+            isFavorited = !target  // revert on failure
         }
     }
 
@@ -164,6 +195,7 @@ struct ProProfileView: View {
         phase = .loading
         do {
             let profile = try await session.client.profiles.professional(id: professionalId)
+            isFavorited = profile.isFavoritedByMe
             phase = .loaded(profile)
         } catch let error as APIError {
             phase = .failed(error.userMessage)

@@ -15,4 +15,22 @@ public final class HomeService: Sendable {
         let response: ClientHomeResponse = try await api.request("/client/home")
         return response.home
     }
+
+    /// Accept a last-minute (priority) offer. `recipientId` is `HomeInvite.id`.
+    /// A 410 (expired / opening inactive) or 409 (no longer priority) surfaces as
+    /// `APIError.server`.
+    public func acceptInvite(recipientId: String) async throws {
+        try await api.requestVoid(
+            "/client/priority-offer/\(recipientId)/accept",
+            method: .post
+        )
+    }
+
+    /// Decline a last-minute (priority) offer. `recipientId` is `HomeInvite.id`.
+    public func declineInvite(recipientId: String) async throws {
+        try await api.requestVoid(
+            "/client/priority-offer/\(recipientId)/decline",
+            method: .post
+        )
+    }
 }
