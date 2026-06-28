@@ -481,7 +481,7 @@ Everything below is set up; recorded here so the next session knows the live con
    regenerated schema; also DRY'd the web's two duplicate local `AddOnDTO`s onto the shared one). iOS
    validator now schema-checks the fixture: **22 objects** (was 20). Verified live? **No —** still
    decode-only (round-trip a real `GET /offerings/add-ons` against a seed pro that has add-ons to confirm).
-   🔴 **Merge PR #421**, then ff local `main` → origin/main.
+   ✅ **PR #421 MERGED to origin/main** (`fd4de7d9`). 🔴 ff local tovis-app `main` → origin/main when convenient.
 2. ✅ **Push deep-linking DONE 2026-06-28** — a push tap now opens the specific booking. `PushManager`
    reads the payload's **`href`** (the only custom key the backend sends — `lib/notifications/delivery/
    sendPush.ts`; e.g. `/client/bookings/bk_1`), parses it to a `PushDeepLink` (ContentView), the session
@@ -490,8 +490,15 @@ Everything below is set up; recorded here so the next session knows the live con
    sign-in wires the handler. Unknown paths no-op (foreground + refresh). Booking is the only actionable
    client `href` today; the parser has a clean extension point. Debug+Release green; 22 tests. Verified
    live? **No —** needs a real-device push tap (simulator can't receive APNs); parser is build-checked only.
-3. **Deposit-pay CTA** — model `depositStatus` on `ClientBooking` (backend DTO add) + a deposit button
-   in `BookingDetailView`. `CheckoutService.createDepositSession` already exists.
+3. ✅ **Deposit-pay CTA DONE 2026-06-28** — `BookingDetailView` shows a "Secure your booking" card with a
+   **Pay $X deposit** button when `checkout.depositStatus == "PENDING"`, opening the hosted Stripe deposit
+   checkout (`CheckoutService.createDepositSession`, already existed) and handed back via the `tovis://`
+   return (its `.deposit` kind flips the card to **Deposit paid**). TovisKit: `ClientBookingCheckout` gains
+   `depositStatus` + `depositAmount`. Backend **tovis-app PR #422** adds both to `ClientBookingCheckoutDTO`
+   + the client bookings list-route select (deposit columns optional on `buildClientBookingDTO` so other
+   callers emit null — no web churn); schema regenerated. Fixture/decode updated; contract **22 objects**;
+   Debug+Release green; 22 tests. 🔴 **Merge PR #422.** Verified live? **No —** needs a booking with a real
+   PENDING deposit to round-trip the deposit checkout.
 4. **Looks video playback** — `mediaType==VIDEO` shows the still frame; add `AVPlayer`.
 5. **Booking v2 remainder** — mobile mode (+ client address selection via `/client/addresses`).
    Rebook-confirm still needs a tovis-app DTO field (`pendingRebookConfirmation` on `ClientBookingDTO`).
