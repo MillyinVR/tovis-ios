@@ -52,23 +52,30 @@ Next real work (pick up here): **(1) Notifications** — see the dedicated secti
 capability + `APPLE_CLIENT_ID` env. **(4) Deploy** tovis-app `main` (the merged Stripe-return
 PR #417 isn't on prod yet — the user is holding the deploy).
 
-## 🔔 Notifications — the next feature (pick up here)
+## 🔔 Notifications — Track A DONE; Track B (push) is next
 
-Two distinct tracks; build the in-app center first (it's pure software; push needs operator + Apple).
+Two distinct tracks. **Track A (in-app center) is now built + live-verified.** Track B (push/APNs)
+still needs operator + Apple.
 
-**Track A — in-app notification center (buildable now, existing endpoints, no new backend).**
-The web has a client notification inbox; iOS doesn't yet. Endpoints (all `requireClient`):
-- `GET /api/v1/client/notifications` — the feed (list of notifications).
-- `GET /api/v1/client/notifications/summary` — unread count (drive a bell badge, like Inbox does).
-- `POST /api/v1/client/notifications/read` — mark read.
-- `GET/PUT /api/v1/client/notification-preferences` — per-channel toggles + Quiet Hours
-  (default-ON 22–08; equal start/end sentinel — see the `notification-preferences-surface` memory).
-Plan: a TovisKit `NotificationsService` (feed/summary/read/prefs) + wire models + a fixture +
-decode test + contract entries; then a SwiftUI notifications screen. There's already an **InboxBell**
-on Home — a notifications bell could live there or in the Me header. Live-sync's `refreshTick` should
-refresh the unread count (same seam Inbox uses). **First step:** read the web client notification
-components + the route DTOs (`lib/dto` / wherever the notification list DTO lives) and the
-`notification-preferences-surface` + `notification-quiet-hours-diagnosis` memories.
+**✅ Track A — in-app notification center — DONE 2026-06-28.** A real notification center on the
+existing `/client/notifications*` endpoints. TovisKit `Models/Notifications.swift` +
+`Notifications/NotificationsService.swift` on `client.notifications` (feed cursor-paged with
+unread/eventKey filters · summary · markRead · preferences GET/PATCH); 2 fixtures
+(`clientNotifications.json`, `notificationPreferences.json`) + 3 decode tests + 2 contract entries
+(`ClientNotificationDTO`, `NotificationPreferencesPayload`). App: `NotificationsView.swift` — feed
+list (per-event icon/tint, unread dot, tap-to-mark-read, **Mark all read**, pull-to-refresh, cursor
+pagination); **booking notifications push `BookingDetailView`** (resolved from `client.bookings`).
+**Home header** now has a **notifications bell** (unread dot from the unread feed, so it covers every
+event type — the bucketed summary only covers booking/consult/aftercare/reminder) opening the sheet;
+the messages entry became an **envelope** to disambiguate. Wired to `refreshTick` + the 30s home poll.
+Verified: `swift test` (21) · contract validator (20 objects) · Debug `xcodebuild` · and a **live
+round-trip** (feed/summary/preferences/mark-read) against the local backend — item keys, ISO
+`createdAt`, `data` object, and `readAt` all matched. ⚠️ Note: the prefs PATCH method is **PATCH**
+(an earlier handoff said PUT). The companion **tovis-app** change (typed DTOs + wire contract, branch
+`feat/client-notifications-dto`, **not yet a PR/merged**) adds `lib/dto/clientNotifications.ts`,
+retypes the feed + summary routes (Date→ISO mapper), and re-exports the prefs payload through the DTO
+barrel so the schema captures the contract. **Not yet wired:** a SwiftUI **preferences editor**
+screen (the service supports GET/PATCH; only the feed UI shipped) — easy follow-up.
 
 **Track B — push / APNs (needs Apple capability + operator creds).**
 `TovisKit/Devices/DeviceService.swift` already has `register(apnsToken:deviceId:)` / `unregister`
@@ -121,7 +128,8 @@ doesn't model `depositStatus`, so there's no UI trigger. Add that field to surfa
 
 - **`tovis-ios`** — branch `main`, **all work committed, working tree clean**. **NO git
   remote** (local commits only; nothing to push). Recent commits (newest first):
-  `style(discover)` grid-default + web-grid view · `feat(discover)` MapKit rebuild ·
+  `feat(notifications)` in-app notification center (Track A) · `style(discover)` grid-default +
+  web-grid view · `feat(discover)` MapKit rebuild ·
   `style(looks)` TikTok comments + feed-above-comments · `fix(auth)` cookieless URLSession ·
   `style(footer)` web-match + bigger center coin · `feat(looks)` feed + comments ·
   `feat(checkout)` Stripe pay + deep-link return · then `feat(booking|inbox|home|me|theme|footer)`.
@@ -168,7 +176,7 @@ doesn't model `depositStatus`, so there's no UI trigger. Add that field to surfa
 ## TovisKit services map (one service per surface, all on `TovisClient`)
 
 `auth` · `devices` · `home` · `bookings` · `profiles` · `me` · `messages` · `search` ·
-`booking` · `checkout` · `looks` · `discover` — plus `client.currentUserId()` (decodes the JWT; used to align chat bubbles).
+`booking` · `checkout` · `looks` · `discover` · `notifications` — plus `client.currentUserId()` (decodes the JWT; used to align chat bubbles).
 `APIClient.request/requestVoid` now take `query: [URLQueryItem]?` and `headers: [String:String]?`
 (added for search params + the finalize idempotency-key).
 
@@ -402,9 +410,10 @@ multi-tenant scale, upgrade to authorized channels (RLS on `realtime.messages` +
 
 **Pick up here, in priority order:**
 
-1. 🔔 **Notifications** — see the dedicated "🔔 Notifications" section near the top. Build the
-   **in-app notification center** first (existing `client/notifications*` endpoints, no new
-   backend), then **push/APNs** (needs the Apple capability + operator creds).
+1. 🔔 **Notifications** — **Track A (in-app center) is DONE** (see the "🔔 Notifications" section).
+   Remaining: **(a)** open/merge the tovis-app `feat/client-notifications-dto` branch (typed DTOs +
+   wire contract); **(b)** a SwiftUI **notification-preferences editor** (the service GET/PATCH is
+   ready); **(c)** **Track B push/APNs** (needs the Apple capability + operator creds).
 2. **Booking v2** — mobile mode (+ client address selection via `/client/addresses`), add-ons
    (`/offerings/add-ons`), and reschedule/cancel (`/bookings/[id]/{reschedule,cancel}`). Also
    **rebook confirm** still needs a tovis-app DTO field: surface `pendingRebookConfirmation`
