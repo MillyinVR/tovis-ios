@@ -9,13 +9,18 @@ import AuthenticationServices
 @main
 struct TovisApp: App {
     @State private var session = SessionModel(config: .local)
+    @State private var theme = ThemeStore()
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environment(session)
-                .preferredColorScheme(.dark) // brand default mode is dark
+                .environment(theme)
+                // System / Light / Dark — follows the device on "system",
+                // mirroring the web (lib/brand/theme.ts). Brand default leans
+                // dark, but the preference (default .system) drives it.
+                .preferredColorScheme(theme.colorScheme)
         }
         // Live-sync Layer 1: whenever the app returns to the foreground, signal
         // every screen to refetch so it never shows stale data after you were on

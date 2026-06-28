@@ -36,6 +36,21 @@ struct MeView: View {
                         .buttonStyle(.plain)
                     }
 
+                    BrandSection(title: "Appearance") {
+                        BrandSurface {
+                            HStack(spacing: 12) {
+                                Image(systemName: "circle.lefthalf.filled")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundStyle(BrandColor.accent)
+                                Text("Theme")
+                                    .font(BrandFont.body(16, .semibold))
+                                    .foregroundStyle(BrandColor.textPrimary)
+                                Spacer()
+                                ThemeToggle()
+                            }
+                        }
+                    }
+
                     BrandSection(title: "Account") {
                         Button(role: .destructive) {
                             Task { await session.logout() }
