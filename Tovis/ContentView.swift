@@ -8,9 +8,20 @@ import AuthenticationServices
 
 @main
 struct TovisApp: App {
-    @State private var session = SessionModel(config: .local)
+    @State private var session = SessionModel(config: Self.apiConfig)
     @State private var theme = ThemeStore()
     @Environment(\.scenePhase) private var scenePhase
+
+    /// Debug builds (simulator / local dev) hit the local backend; Release builds
+    /// (TestFlight / App Store) hit production at tovis.app. Both share the prod
+    /// Supabase project for live-sync — see TovisConfig.
+    private static var apiConfig: TovisConfig {
+        #if DEBUG
+        return .local
+        #else
+        return .production
+        #endif
+    }
 
     var body: some Scene {
         WindowGroup {

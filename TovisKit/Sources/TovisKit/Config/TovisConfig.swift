@@ -38,9 +38,14 @@ public struct TovisConfig: Sendable {
         supabaseAnonKey: supabasePublishableKey
     )
 
-    /// Production. Replace YOUR-DOMAIN with the real host before shipping.
+    /// Production — the live backend at tovis.app. We target the canonical
+    /// `www.` host directly: the apex `tovis.app` 307-redirects to
+    /// `www.tovis.app`, and a cross-host redirect can drop the `Authorization`
+    /// header on URLSession, so we skip it. Serves the same `/api/v1` surface
+    /// against the prod Supabase DB the web app uses, so data is shared
+    /// between web and iOS.
     public static let production = TovisConfig(
-        baseURL: URL(string: "https://YOUR-DOMAIN/api/v1")!,
+        baseURL: URL(string: "https://www.tovis.app/api/v1")!,
         supabaseURL: supabaseProjectURL,
         supabaseAnonKey: supabasePublishableKey
     )
