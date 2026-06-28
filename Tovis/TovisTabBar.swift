@@ -12,7 +12,9 @@ struct TovisTabBar: View {
     var messagesBadge: String? = nil
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: 0) {
+        // Items are top-aligned in an 80pt-tall bar (CSS .tovis-footer-bar:
+        // min-height 80px; align-items: flex-start; padding 14px 16px 0).
+        HStack(alignment: .top, spacing: 0) {
             ForEach(ClientNav.tabs) { tab in
                 item(for: tab)
                     .frame(maxWidth: .infinity)
@@ -20,8 +22,7 @@ struct TovisTabBar: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 14)
-        .padding(.bottom, 8)
-        .frame(minHeight: 64)
+        .frame(minHeight: 80, alignment: .top)
         // surface + hairline top border (--bg-surface / --line)
         .background(
             BrandColor.bgSurface
@@ -45,7 +46,7 @@ struct TovisTabBar: View {
                 selected = tab.id
             } label: {
                 LooksMark(size: 66)
-                    .offset(y: -26)
+                    .offset(y: -30)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(tab.label)
@@ -78,17 +79,20 @@ private struct NavItemLabel: View {
 
     var body: some View {
         VStack(spacing: 4) {
-            // active dot above the icon (5px accent circle on web)
-            Circle()
-                .fill(BrandColor.accent)
-                .frame(width: 5, height: 5)
-                .opacity(active ? 1 : 0)
-
             ZStack(alignment: .topTrailing) {
                 Image(systemName: tab.systemImage)
-                    .font(.system(size: 22, weight: .regular))
+                    .font(.system(size: 24, weight: .regular))   // web: lucide size={24}
                     .foregroundStyle(active ? BrandColor.accent : BrandColor.textMuted)
-                    .frame(width: 26, height: 26)
+                    .frame(width: 28, height: 26)
+                    // active dot floats above the icon (web: absolute, top: -9 —
+                    // doesn't take a row, so the icon row sits where web's does).
+                    .overlay(alignment: .top) {
+                        Circle()
+                            .fill(BrandColor.accent)
+                            .frame(width: 5, height: 5)
+                            .offset(y: -9)
+                            .opacity(active ? 1 : 0)
+                    }
 
                 if let badge {
                     BadgeDot(label: badge)
