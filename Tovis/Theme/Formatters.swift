@@ -21,6 +21,26 @@ enum Wire {
         return f.string(from: date)
     }
 
+    /// Short relative age of a backend ISO instant, e.g. "now", "5m", "3h",
+    /// "2d", or a "MMM d" date for older items. Used by notification timestamps.
+    static func relativeAgo(_ iso: String, now: Date = Date()) -> String {
+        guard let date = date(iso) else { return "" }
+        let seconds = now.timeIntervalSince(date)
+        if seconds < 60 { return "now" }
+        let minutes = Int(seconds / 60)
+        if minutes < 60 { return "\(minutes)m" }
+        let hours = minutes / 60
+        if hours < 24 { return "\(hours)h" }
+        let days = hours / 24
+        if days < 7 { return "\(days)d" }
+
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US")
+        f.timeZone = .current
+        f.dateFormat = "MMM d"
+        return f.string(from: date)
+    }
+
     /// Format a decimal-string amount (e.g. "120.00") as USD currency: "$120".
     static func money(_ amount: String?) -> String? {
         guard let amount, let value = Decimal(string: amount) else { return nil }

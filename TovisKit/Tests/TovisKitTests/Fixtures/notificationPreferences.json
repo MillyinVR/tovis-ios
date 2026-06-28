@@ -1,0 +1,43 @@
+{
+  "ok": true,
+  "categories": [
+    {
+      "key": "BOOKINGS",
+      "label": "Bookings",
+      "description": "Requests, confirmations, reschedules, cancellations, consultations, and aftercare.",
+      "events": [
+        {
+          "eventKey": "BOOKING_CONFIRMED",
+          "label": "Booking confirmed",
+          "supportedChannels": ["IN_APP", "SMS", "EMAIL"],
+          "emailLocked": false
+        },
+        {
+          "eventKey": "AFTERCARE_READY",
+          "label": "Aftercare ready",
+          "supportedChannels": ["IN_APP", "SMS", "EMAIL"],
+          "emailLocked": false
+        }
+      ]
+    },
+    {
+      "key": "PAYMENTS",
+      "label": "Payments",
+      "description": "Receipts and payments that need your action.",
+      "events": [
+        {
+          "eventKey": "PAYMENT_COLLECTED",
+          "label": "Payment receipt",
+          "supportedChannels": ["IN_APP", "EMAIL"],
+          "emailLocked": true
+        }
+      ]
+    }
+  ],
+  "events": {
+    "BOOKING_CONFIRMED": { "inAppEnabled": true, "smsEnabled": true, "emailEnabled": true },
+    "AFTERCARE_READY": { "inAppEnabled": true, "smsEnabled": false, "emailEnabled": true },
+    "PAYMENT_COLLECTED": { "inAppEnabled": true, "smsEnabled": true, "emailEnabled": true }
+  },
+  "quietHours": { "enabled": true, "startMinutes": 1320, "endMinutes": 480 }
+}

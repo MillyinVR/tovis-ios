@@ -1,0 +1,33 @@
+{
+  "ok": true,
+  "items": [
+    {
+      "id": "ntf_1",
+      "eventKey": "BOOKING_CONFIRMED",
+      "title": "Booking confirmed",
+      "body": "Your Balayage with Dana Lee is confirmed for Jul 15 at 10:00 AM.",
+      "href": "/client/bookings/bk_1",
+      "data": { "bookingId": "bk_1" },
+      "createdAt": "2026-06-28T17:30:00.000Z",
+      "updatedAt": "2026-06-28T17:30:00.000Z",
+      "readAt": null,
+      "bookingId": "bk_1",
+      "aftercareId": null
+    },
+    {
+      "id": "ntf_2",
+      "eventKey": "AFTERCARE_READY",
+      "title": "Aftercare ready",
+      "body": "Dana shared your aftercare notes.",
+      "href": "/client/aftercare/ac_1",
+      "data": null,
+      "createdAt": "2026-06-27T15:00:00.000Z",
+      "updatedAt": "2026-06-27T16:00:00.000Z",
+      "readAt": "2026-06-27T16:00:00.000Z",
+      "bookingId": null,
+      "aftercareId": "ac_1"
+    }
+  ],
+  "nextCursor": "ntf_2",
+  "filters": { "unreadOnly": false, "eventKey": null }
+}

@@ -19,6 +19,9 @@ struct HomeView: View {
     }
 
     @State private var phase: Phase = .loading
+    @State private var showNotifications = false
+    /// Drives the notifications-bell unread dot (GET .../notifications/summary).
+    @State private var hasUnreadNotifications = false
 
     var body: some View {
         NavigationStack {
@@ -44,6 +47,7 @@ struct HomeView: View {
             .task { if case .loading = phase { await load() } }
             .onChange(of: session.refreshTick) { Task { await load() } }
             .task { await poll() }
+            .sheet(isPresented: $showNotifications) { NotificationsView() }
         }
         .tint(BrandColor.accent)
     }
@@ -80,22 +84,48 @@ struct HomeView: View {
                     .foregroundStyle(BrandColor.textPrimary)
             }
             Spacer()
-            inboxBell
+            HStack(spacing: 10) {
+                notificationsBell
+                inboxBell
+            }
         }
         .padding(.top, 4)
     }
 
-    /// Inbox entry point — bell in a circle, like the web InboxBell (links to the
-    /// inbox; that surface lands later, so it opens the placeholder for now).
+    /// Notification center entry — bell in a circle with an unread dot (driven by
+    /// GET .../notifications/summary). Opens the NotificationsView sheet.
+    private var notificationsBell: some View {
+        Button(action: { showNotifications = true }) {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: "bell")
+                    .font(.system(size: 17))
+                    .foregroundStyle(BrandColor.textMuted)
+                    .frame(width: 38, height: 38)
+                    .overlay(Circle().stroke(BrandColor.textPrimary.opacity(0.16), lineWidth: 1))
+                if hasUnreadNotifications {
+                    Circle()
+                        .fill(BrandColor.gold)
+                        .frame(width: 9, height: 9)
+                        .overlay(Circle().stroke(BrandColor.bgPrimary, lineWidth: 1.5))
+                        .offset(x: -2, y: 2)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Notifications")
+    }
+
+    /// Messages entry point — envelope in a circle (links to the Inbox tab).
     private var inboxBell: some View {
         Button(action: onOpenInbox) {
-            Image(systemName: "bell")
-                .font(.system(size: 17))
+            Image(systemName: "envelope")
+                .font(.system(size: 16))
                 .foregroundStyle(BrandColor.textMuted)
                 .frame(width: 38, height: 38)
                 .overlay(Circle().stroke(BrandColor.textPrimary.opacity(0.16), lineWidth: 1))
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("Messages")
     }
 
     private var greeting: String {
@@ -178,6 +208,16 @@ struct HomeView: View {
             phase = .failed(error.userMessage)
         } catch {
             phase = .failed("Something went wrong. Please try again.")
+        }
+        await loadNotificationSummary()
+    }
+
+    /// Best-effort unread-notifications check for the bell dot — never blocks or
+    /// fails the home load. Uses the unread feed (covers every event type, unlike
+    /// the bucketed summary) and only needs to know whether ANY exist.
+    private func loadNotificationSummary() async {
+        if let page = try? await session.client.notifications.feed(unreadOnly: true, take: 1) {
+            hasUnreadNotifications = !page.items.isEmpty
         }
     }
 }

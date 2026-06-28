@@ -250,6 +250,50 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.items[1].mapLocation == nil)
     }
 
+    // GET /api/v1/client/notifications — Fixtures/clientNotifications.json (schema-validated).
+    @Test func decodesClientNotifications() throws {
+        let res = try JSONDecoder().decode(
+            ClientNotificationListResponse.self, from: fixture("clientNotifications"))
+        #expect(res.items.count == 2)
+        #expect(res.nextCursor == "ntf_2")
+
+        let unread = try #require(res.items.first)
+        #expect(unread.eventKey == "BOOKING_CONFIRMED")
+        #expect(unread.bookingId == "bk_1")
+        #expect(unread.isUnread == true) // readAt == null
+
+        let read = res.items[1]
+        #expect(read.aftercareId == "ac_1")
+        #expect(read.bookingId == nil)
+        #expect(read.isUnread == false) // readAt set
+    }
+
+    // GET /api/v1/client/notification-preferences — Fixtures/notificationPreferences.json.
+    @Test func decodesNotificationPreferences() throws {
+        let res = try JSONDecoder().decode(
+            NotificationPreferences.self, from: fixture("notificationPreferences"))
+        #expect(res.categories.count == 2)
+        #expect(res.categories.first?.key == "BOOKINGS")
+        #expect(res.categories.first?.events.first?.supportedChannels == ["IN_APP", "SMS", "EMAIL"])
+        // PAYMENT_COLLECTED is email-locked (critical event the engine always emails).
+        let payments = try #require(res.categories.first { $0.key == "PAYMENTS" })
+        #expect(payments.events.first?.emailLocked == true)
+        // Effective per-event channel state is keyed by event key.
+        #expect(res.events["AFTERCARE_READY"]?.smsEnabled == false)
+        #expect(res.quietHours.enabled == true)
+        #expect(res.quietHours.startMinutes == 1320)
+    }
+
+    // The mark-read body omits nil selectors (so the route gets only what we mean).
+    @Test func markReadRequestOmitsNilSelectors() throws {
+        let data = try JSONEncoder().encode(
+            MarkNotificationsReadRequest(ids: ["ntf_1"], eventKeys: nil, before: nil))
+        let json = String(data: data, encoding: .utf8) ?? ""
+        #expect(json.contains("\"ids\""))
+        #expect(!json.contains("eventKeys"))
+        #expect(!json.contains("before"))
+    }
+
     // GET /api/v1/looks/{id}/comments — Fixtures/looksComments.json (schema-validated).
     @Test func decodesLooksComments() throws {
         let res = try JSONDecoder().decode(LooksCommentsListResponse.self, from: fixture("looksComments"))
