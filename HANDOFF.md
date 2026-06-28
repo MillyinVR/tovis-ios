@@ -35,17 +35,30 @@ footer 1:1** — Home · Discover · Looks(center feather) · Inbox · Me — wi
 detail), favorite/unfavorite a pro, accept/decline last-minute invites, **send messages**,
 **toggle a look Public/Private**, **request-to-book** (hold→finalize), theme preference.
 
-**Looks tab** is the ONLY remaining "Coming soon" placeholder (`ComingSoonView.looks`).
+**There are now ZERO "Coming soon" placeholders** — every footer tab is a real screen.
+(The old `ComingSoonView` was deleted once the Looks tab shipped.)
 
 **Verification posture:** `TovisKit` `swift test` green (**15 tests**); the contract validator
 (`scripts/contract`) green (**11 objects** vs the backend schema); the whole app **BUILDS via
 `xcodebuild`** for the simulator in Debug AND Release. The booking write path (hold→finalize)
 was verified **live end-to-end** against the API (201 PENDING → shows in /client/bookings).
 
-Next real work (pick up here): **(1) Looks tab** — clear the last placeholder
-(`GET /api/v1/looks` feed). **(2) Push/APNs** (DeviceService is inert). **(3) Booking v2** —
-mobile mode + add-ons + reschedule/cancel. **(4) Xcode/operator** — Apple capability +
+Next real work (pick up here): **(1) Push/APNs** (DeviceService is inert). **(2) Booking v2** —
+mobile mode + add-ons + reschedule/cancel. **(3) Xcode/operator** — Apple capability +
 `APPLE_CLIENT_ID` env.
+
+**✅ DONE 2026-06-27 — Looks tab (the last placeholder).** The center feather tab is now a real
+TikTok/IG-style feed: full-bleed vertically-paged media, bottom-left overlays (creator → pro
+profile, service/category, "from $X", caption), and a right rail (like, comment, Book → pro
+profile). Cursor pagination, For You / Following tabs, optimistic like, and a full **comments
+sheet** (`LookCommentsView`) with top-level comments + 1-level replies (load-on-tap), like a
+comment, reply, and delete-your-own — matching the rebuilt web CommentsDrawer. All reads use
+existing endpoints; **no new backend code**. TovisKit: `Models/Looks.swift`, `Looks/LooksService.swift`
+(feed/like/comments/replies), wired on `client.looks`; 2 new fixtures + decode tests (17 total) +
+contract entries (`LooksFeedItemDto`, `LooksCommentDto` — both already in the wire schema). Verified
+the live `GET /api/v1/looks` returns all modeled fields. **Deferred:** save-to-board (needs a board
+picker), the Spotlight/category tabs, and video playback (images render; `mediaType==VIDEO` shows
+the frame, no player yet).
 
 **✅ DONE 2026-06-27 — in-app Stripe payment + deep-link return (the old #1).** A client can now
 pay a booking inside the app via hosted Stripe Checkout, and the app is handed back
@@ -69,16 +82,15 @@ doesn't model `depositStatus`, so there's no UI trigger. Add that field to surfa
 
 - **`tovis-ios`** — branch `main`, **all work committed, working tree clean**. **NO git
   remote** (local commits only; nothing to push). Recent commits (newest first):
-  `feat(checkout)` (Stripe pay + deep-link return) · `feat(booking)` · `feat(discover)` ·
-  `feat(inbox)` · `feat(home)` · `feat(me)` · `feat(theme)` · `feat(config: www.tovis.app)` ·
-  `feat(footer)`.
-- **`tovis-app`** — the native-Stripe-return backend is on branch
-  **`feat/native-stripe-checkout-return`** (committed; **not yet pushed/PR'd** as of this
-  handoff — local `main` is still clean + level with `origin/main`). It adds
+  `feat(looks)` (Looks feed + comments) · `feat(checkout)` (Stripe pay + deep-link return) ·
+  `feat(booking)` · `feat(discover)` · `feat(inbox)` · `feat(home)` · `feat(me)` · `feat(theme)` ·
+  `feat(config: www.tovis.app)` · `feat(footer)`.
+- **`tovis-app`** — the native-Stripe-return backend **PR #417 is MERGED** into `main`
+  (`90c5931e`); local `main` fast-forwarded + level with `origin/main`. It added
   `lib/checkout/nativeReturn.ts` (shared, dedupes the old per-route `getAppUrl`), the public
   `app/checkout/return` bounce route, and the `native` branch in both `*/stripe-session` routes
-  (web URLs byte-for-byte unchanged; native gated on the header). typecheck + lint +
-  static-guards green; checkout stripe-session route tests 12/12 (added a native-return case).
+  (web URLs byte-for-byte unchanged; native gated on the header). **NOT yet deployed to Vercel
+  prod** (user is holding the deploy) — so Release builds won't get the native return until then.
 - **`tovis-app`** — branch `main`, level with `origin/main`. **PR #416 (live-sync) is MERGED**
   (it's the latest main commit). **`main` has been DEPLOYED to Vercel production** this session
   (`npx vercel@latest --prod`) — native cookieless auth now passes on prod (was 403
@@ -116,7 +128,7 @@ doesn't model `depositStatus`, so there's no UI trigger. Add that field to surfa
 ## TovisKit services map (one service per surface, all on `TovisClient`)
 
 `auth` · `devices` · `home` · `bookings` · `profiles` · `me` · `messages` · `search` ·
-`booking` — plus `client.currentUserId()` (decodes the JWT; used to align chat bubbles).
+`booking` · `checkout` · `looks` — plus `client.currentUserId()` (decodes the JWT; used to align chat bubbles).
 `APIClient.request/requestVoid` now take `query: [URLQueryItem]?` and `headers: [String:String]?`
 (added for search params + the finalize idempotency-key).
 
@@ -339,9 +351,10 @@ consultation approve/decline, pro profile, favorite, last-minute invites, live-s
    block above for the full wiring). Two follow-ups remain: **(a)** confirm the `tovis://` redirect
    on a real device/simulator with a live Stripe test session; **(b)** model `depositStatus` on
    `ClientBooking` to surface a deposit-pay CTA (the service method already exists).
-2. **Looks tab** — the LAST `ComingSoonView` placeholder. `GET /api/v1/looks` (feed) +
-   `/looks/[id]` + like/save/comments exist (DTOs: `LooksFeedResponseDto`, `LooksDetailResponseDto`,
-   etc. in `lib/looks/types`). Build a feed (the center tab is the client's "home base" on web).
+2. ✅ **Looks tab — DONE 2026-06-27** (see the TL;DR block above). Follow-ups: **save-to-board**
+   (needs a board-picker sheet; `GET/POST/DELETE /looks/{id}/save` with a `boardId`), the
+   **Spotlight + service-category tabs** (web has them; iOS ships For You / Following), and
+   **video playback** (`mediaType==VIDEO` currently shows the still frame, no `AVPlayer` yet).
 3. **Push / APNs** — `DeviceService.register(apnsToken:deviceId:)` exists but is inert. Add the
    Push Notifications capability, register for APNs, call it on sign-in. Operator sets APNs creds
    (`tovis-app/docs/mobile/push-go-live-runbook.md`).

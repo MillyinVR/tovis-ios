@@ -215,4 +215,37 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.favorited == true)
         #expect(res.count == 46)
     }
+
+    // GET /api/v1/looks — Fixtures/looksFeed.json (schema-validated, both author kinds).
+    @Test func decodesLooksFeed() throws {
+        let res = try JSONDecoder().decode(LooksFeedResponse.self, from: fixture("looksFeed"))
+        #expect(res.items.count == 2)
+        #expect(res.nextCursor != nil)
+
+        let pro = try #require(res.items.first)
+        #expect(pro.professional?.displayName == "Studio Lumière") // BUSINESS_NAME mode
+        #expect(pro.count.likes == 342)
+        #expect(pro.priceLabel == "$220")
+        #expect(pro.viewerLiked == false)
+
+        let client = res.items[1]
+        #expect(client.professional == nil)
+        #expect(client.clientAuthor?.handleLabel == "@noellestyles")
+        #expect(client.thumbUrl == nil)
+        #expect(client.viewerSaved == true)
+    }
+
+    // GET /api/v1/looks/{id}/comments — Fixtures/looksComments.json (schema-validated).
+    @Test func decodesLooksComments() throws {
+        let res = try JSONDecoder().decode(LooksCommentsListResponse.self, from: fixture("looksComments"))
+        #expect(res.commentsCount == 2)
+        let top = try #require(res.comments.first)
+        #expect(top.isReply == false)
+        #expect(top.replyCount == 1)
+        #expect(top.viewerCanDelete == false)
+        let reply = res.comments[1]
+        #expect(reply.isReply == true)
+        #expect(reply.parentCommentId == "cmt_1")
+        #expect(reply.viewerCanDelete == true)
+    }
 }

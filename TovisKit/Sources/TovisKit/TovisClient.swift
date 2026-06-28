@@ -20,6 +20,7 @@ public final class TovisClient: Sendable {
     public let search: SearchService
     public let booking: BookingService
     public let checkout: CheckoutService
+    public let looks: LooksService
     public let tokenStore: TokenStore
 
     /// Stable per-install id. Persisted in the Keychain-backed store's UserDefaults
@@ -50,6 +51,7 @@ public final class TovisClient: Sendable {
         self.search = SearchService(api: api)
         self.booking = BookingService(api: api)
         self.checkout = CheckoutService(api: api)
+        self.looks = LooksService(api: api)
     }
 
     /// The signed-in user's id, decoded from the stored JWT. Works on a cold

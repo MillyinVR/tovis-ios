@@ -1,0 +1,70 @@
+{
+  "ok": true,
+  "items": [
+    {
+      "id": "look_1",
+      "url": "https://example.supabase.co/storage/v1/object/public/media-public/looks/look_1.jpg",
+      "thumbUrl": "https://example.supabase.co/storage/v1/object/public/media-public/looks/look_1_thumb.jpg",
+      "mediaType": "IMAGE",
+      "caption": "Soft money-piece balayage ✨",
+      "createdAt": "2026-06-26T18:30:00.000Z",
+      "professional": {
+        "id": "pro_1",
+        "businessName": "Studio Lumière",
+        "firstName": "Amara",
+        "lastName": "Okafor",
+        "handle": "amarahair",
+        "nameDisplay": "BUSINESS_NAME",
+        "professionType": "HAIRSTYLIST",
+        "avatarUrl": "https://example.supabase.co/storage/v1/object/public/media-public/avatars/pro_1.jpg",
+        "location": "Los Angeles, CA",
+        "followerCount": 1280
+      },
+      "clientAuthor": null,
+      "_count": { "likes": 342, "comments": 18 },
+      "viewerLiked": false,
+      "viewerSaved": false,
+      "viewerFollows": false,
+      "serviceId": "svc_1",
+      "serviceName": "Balayage",
+      "category": "Hair",
+      "serviceIds": ["svc_1"],
+      "priceStartingAt": 220,
+      "uploadedByRole": "PRO",
+      "reviewId": null,
+      "reviewHelpfulCount": null,
+      "reviewRating": null,
+      "reviewHeadline": null
+    },
+    {
+      "id": "look_2",
+      "url": "https://example.supabase.co/storage/v1/object/public/media-public/looks/look_2.jpg",
+      "thumbUrl": null,
+      "mediaType": "IMAGE",
+      "caption": null,
+      "createdAt": "2026-06-25T14:05:00.000Z",
+      "professional": null,
+      "clientAuthor": {
+        "handle": "noellestyles",
+        "avatarUrl": null,
+        "profileHref": "/u/noellestyles"
+      },
+      "_count": { "likes": 57, "comments": 3 },
+      "viewerLiked": true,
+      "viewerSaved": true,
+      "viewerFollows": false,
+      "serviceId": null,
+      "serviceName": null,
+      "category": null,
+      "serviceIds": [],
+      "priceStartingAt": null,
+      "uploadedByRole": "CLIENT",
+      "reviewId": null,
+      "reviewHelpfulCount": null,
+      "reviewRating": null,
+      "reviewHeadline": null
+    }
+  ],
+  "nextCursor": "eyJrIjoiTE9PSyIsImlkIjoibG9va18yIn0=",
+  "viewerContext": { "isAuthenticated": true }
+}

@@ -1,0 +1,39 @@
+{
+  "ok": true,
+  "lookPostId": "look_1",
+  "comments": [
+    {
+      "id": "cmt_1",
+      "body": "Obsessed with this color 😍",
+      "createdAt": "2026-06-26T19:00:00.000Z",
+      "user": {
+        "id": "user_2",
+        "displayName": "Noelle",
+        "avatarUrl": "https://example.supabase.co/storage/v1/object/public/media-public/avatars/user_2.jpg",
+        "profileHref": "/u/noellestyles"
+      },
+      "parentCommentId": null,
+      "likeCount": 12,
+      "replyCount": 1,
+      "viewerLiked": false,
+      "viewerCanDelete": false
+    },
+    {
+      "id": "cmt_2",
+      "body": "Thank you!! Booked you for next month 💕",
+      "createdAt": "2026-06-26T19:12:00.000Z",
+      "user": {
+        "id": "user_1",
+        "displayName": "Amara",
+        "avatarUrl": null,
+        "profileHref": "/professionals/pro_1"
+      },
+      "parentCommentId": "cmt_1",
+      "likeCount": 2,
+      "replyCount": 0,
+      "viewerLiked": true,
+      "viewerCanDelete": true
+    }
+  ],
+  "commentsCount": 2
+}

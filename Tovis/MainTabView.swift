@@ -24,7 +24,7 @@ struct MainTabView: View {
             DiscoverView()
                 .tag(ClientTab.ID.discover)
 
-            ComingSoonView.looks
+            LooksView()
                 .tag(ClientTab.ID.looks)
 
             InboxView()

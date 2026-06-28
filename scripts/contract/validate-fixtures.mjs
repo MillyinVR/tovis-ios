@@ -40,6 +40,8 @@ const CHECKS = [
       ...d.buckets.past,
     ],
   },
+  { file: 'looksFeed.json', def: 'LooksFeedItemDto', pick: (d) => d.items },
+  { file: 'looksComments.json', def: 'LooksCommentDto', pick: (d) => d.comments },
 ]
 
 function fail(msg) {
