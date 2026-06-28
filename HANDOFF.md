@@ -149,6 +149,7 @@ doesn't model `depositStatus`, so there's no UI trigger. Add that field to surfa
 
 - **`tovis-ios`** — branch `main`, **all work committed, working tree clean**. **NO git
   remote** (local commits only; nothing to push). Recent commits (newest first):
+  `fix(ios)` app icon asset catalog (TestFlight unblock) · `feat(auth)` in-app phone verification ·
   `feat(push)` APNs registration wired (Track B) ·
   `feat(booking)` client reschedule + cancel (Booking v2) · `feat(notifications)` prefs editor ·
   `feat(notifications)` in-app notification center (Track A) · `style(discover)` grid-default +
@@ -272,6 +273,17 @@ from `tovis-app/lib/brand/brands/tovis.ts` and `lib/brand/eyeSvg.ts`. Default mo
 
 All return the same session payload (`AuthLoginResponseDTO`): token in the JSON body
 (stored in Keychain) + cookie for web. 401s auto-refresh via `POST /api/v1/auth/refresh`.
+
+**✅ In-app phone verification (2026-06-28)** — `isFullyVerified = phone && email`, and Sign in with
+Apple verifies the email but NOT a phone, so a new Apple client was signed-in-but-gated. Added a
+`.needsVerification` root state + `PhoneVerificationView` (enter phone → `/auth/phone/correct` sets it
++ sends OTP → `/auth/phone/verify` mints the ACTIVE token). Sign-in routes via
+`SessionModel.handleAuthResult` (fully-verified → app; else → verify step); cold launch reads the JWT
+`sessionKind` (ACTIVE vs VERIFICATION) to route with no network call. NO backend change (same authed
+`/auth/phone/*` endpoints the web verify-phone page uses). 🔴 Apple sign-in needs **`APPLE_CLIENT_ID`**
+set in the **prod** Vercel env to work on device — confirm it's set. Native email/password **sign-UP**
+is still web-only (register has captcha/TOS/SMS-consent/ZIP gates); **Apple + phone-OTP are the native
+onboarding paths** (both auto-create accounts).
 
 ⚠️ **Native MUST be cookieless (fixed 2026-06-27).** The login response sets a `tovis_token`
 cookie for web. `URLSession.shared` has a shared cookie jar that would store it and silently
