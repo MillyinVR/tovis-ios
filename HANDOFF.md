@@ -475,15 +475,21 @@ Everything below is set up; recorded here so the next session knows the live con
    per-add-on minutes/price + a live total-duration pill, and passes the selected **link ids** into
    `finalize(addOnIds:)` (was hard-coded `[]`). Matches web: add-ons don't touch the hold (only finalize),
    the server derives real duration/price, and reschedule keeps the original add-ons (section hidden).
-   TovisKit: `BookingAddOn` model + `OfferingAddOnsResponse`; decode test + `offeringAddOns.json` (**22
-   tests**); Debug+Release `xcodebuild` green. ⚠️ **No contract-validator entry** — the backend add-ons
-   route isn't a typed DTO in `schema/api/tovis-api.schema.json` (no `AddOn` def), so the validator stays
-   at **20 objects**. Optional parity follow-up (a tovis-app PR, same pattern as #419 for notifications):
-   add a typed `AddOnDTO` + regen the schema, then add a contract `CHECKS` entry. Verified live? **No —**
+   TovisKit: `BookingAddOn` model + `OfferingAddOnsResponse`; decode test + `offeringAddOns.json`;
+   Debug+Release `xcodebuild` green. ✅ **Contract-validator entry added** — backend now exposes a typed
+   `OfferingAddOnItemDTO` (**tovis-app PR #421**: `lib/dto/offeringAddOns.ts` + `satisfies` on the route +
+   regenerated schema; also DRY'd the web's two duplicate local `AddOnDTO`s onto the shared one). iOS
+   validator now schema-checks the fixture: **22 objects** (was 20). Verified live? **No —** still
    decode-only (round-trip a real `GET /offerings/add-ons` against a seed pro that has add-ons to confirm).
-2. **Push deep-linking** — a push tap currently just foregrounds + bumps `refreshTick` (see
-   `PushManager.handleIncoming` / `AppDelegate.didReceive`). Route the payload's deep link to the
-   specific booking/look (the in-app center already deep-links bookings via `BookingDetailView`).
+   🔴 **Merge PR #421**, then ff local `main` → origin/main.
+2. ✅ **Push deep-linking DONE 2026-06-28** — a push tap now opens the specific booking. `PushManager`
+   reads the payload's **`href`** (the only custom key the backend sends — `lib/notifications/delivery/
+   sendPush.ts`; e.g. `/client/bookings/bk_1`), parses it to a `PushDeepLink` (ContentView), the session
+   publishes it, and `MainTabView` resolves the booking (via `bookings.fetch()`) and presents
+   `BookingDetailView` over the shell. **Cold-launch taps** are buffered in `PushManager` and flushed once
+   sign-in wires the handler. Unknown paths no-op (foreground + refresh). Booking is the only actionable
+   client `href` today; the parser has a clean extension point. Debug+Release green; 22 tests. Verified
+   live? **No —** needs a real-device push tap (simulator can't receive APNs); parser is build-checked only.
 3. **Deposit-pay CTA** — model `depositStatus` on `ClientBooking` (backend DTO add) + a deposit button
    in `BookingDetailView`. `CheckoutService.createDepositSession` already exists.
 4. **Looks video playback** — `mediaType==VIDEO` shows the still frame; add `AVPlayer`.
