@@ -89,4 +89,43 @@ public final class BookingService: Sendable {
         )
         return response.booking
     }
+
+    /// POST /api/v1/bookings/{id}/reschedule — move a booking to a new time. The
+    /// new slot must already be held (create the hold for the SAME offering, then
+    /// pass its id here). Requires an idempotency key so a retry can't double-apply.
+    public func reschedule(
+        bookingId: String,
+        holdId: String,
+        locationType: String = "SALON",
+        idempotencyKey: String
+    ) async throws -> RescheduledBooking {
+        let payload = try JSONEncoder().encode(
+            RescheduleBookingRequest(holdId: holdId, locationType: locationType)
+        )
+        let response: RescheduleBookingResponse = try await api.request(
+            "/bookings/\(bookingId)/reschedule",
+            method: .post,
+            body: payload,
+            headers: ["idempotency-key": idempotencyKey]
+        )
+        return response.booking
+    }
+
+    /// POST /api/v1/bookings/{id}/cancel — cancel a booking. No body; the server
+    /// applies its own refund policy (a client cancelling ≥24h out is refunded).
+    /// Requires an idempotency key so a retry can't double-cancel. Returns the
+    /// booking's new status.
+    @discardableResult
+    public func cancel(
+        bookingId: String,
+        idempotencyKey: String
+    ) async throws -> String {
+        let response: CancelBookingResponse = try await api.request(
+            "/bookings/\(bookingId)/cancel",
+            method: .post,
+            body: Data("{}".utf8),
+            headers: ["idempotency-key": idempotencyKey]
+        )
+        return response.status
+    }
 }

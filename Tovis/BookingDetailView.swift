@@ -22,10 +22,27 @@ struct BookingDetailView: View {
     @State private var checkoutError: String?
     @State private var paidLocally = false
 
+    // Manage leg (reschedule / cancel)
+    @State private var rescheduleSheet: RescheduleContext?
+    @State private var loadingReschedule = false
+    @State private var showCancelConfirm = false
+    @State private var cancelling = false
+    @State private var cancelledLocally = false
+    @State private var manageError: String?
+
     /// A presented hosted Stripe Checkout page.
     private struct CheckoutSheet: Identifiable {
         let id = UUID()
         let url: URL
+    }
+
+    /// The resolved offering for a reschedule, presented as the booking flow.
+    private struct RescheduleContext: Identifiable {
+        let id = UUID()
+        let offering: ProOffering
+        let professionalId: String
+        let proName: String
+        let locationType: String
     }
 
     /// Payment is collectable once the pro has finalized the bill (READY /
@@ -48,6 +65,20 @@ struct BookingDetailView: View {
     private var isConsultationPending: Bool {
         booking.hasPendingConsultationApproval ||
             (booking.consultation?.approvalStatus?.uppercased() == "PENDING")
+    }
+
+    /// Reschedule/cancel are offered for an active, still-upcoming booking. Past,
+    /// cancelled, or completed bookings can't be changed.
+    private var isManageable: Bool {
+        if cancelledLocally { return false }
+        switch (booking.status ?? "").uppercased() {
+        case "CANCELLED", "COMPLETED", "NO_SHOW", "DECLINED", "EXPIRED":
+            return false
+        default:
+            break
+        }
+        guard let when = Wire.date(booking.scheduledFor) else { return true }
+        return when > Date()
     }
 
     var body: some View {
@@ -91,6 +122,8 @@ struct BookingDetailView: View {
                 totalsCard
 
                 payCard
+
+                manageCard
             }
             .padding(.horizontal, 20)
             .padding(.top, 8)
@@ -107,6 +140,28 @@ struct BookingDetailView: View {
                 Task { await onDecision() }
             }
             .ignoresSafeArea()
+        }
+        .sheet(item: $rescheduleSheet) { ctx in
+            BookingFlowView(
+                professionalId: ctx.professionalId,
+                proName: ctx.proName,
+                offering: ctx.offering,
+                rescheduleBookingId: booking.id,
+                locationType: ctx.locationType
+            )
+            .onDisappear { Task { await onDecision() } }
+        }
+        .confirmationDialog(
+            "Cancel this appointment?",
+            isPresented: $showCancelConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Cancel appointment", role: .destructive) {
+                Task { await cancelBooking() }
+            }
+            Button("Keep it", role: .cancel) {}
+        } message: {
+            Text("Cancelling within 24 hours of the appointment may not be refunded.")
         }
         .onChange(of: session.checkoutReturn) { _, ret in
             guard let ret, ret.bookingId == booking.id else { return }
@@ -187,6 +242,120 @@ struct BookingDetailView: View {
             checkoutError = error.userMessage
         } catch {
             checkoutError = "Couldn’t start checkout. Please try again."
+        }
+    }
+
+    // MARK: - Manage (reschedule / cancel)
+
+    @ViewBuilder
+    private var manageCard: some View {
+        if isManageable {
+            VStack(spacing: 10) {
+                Button {
+                    Task { await beginReschedule() }
+                } label: {
+                    Group {
+                        if loadingReschedule {
+                            ProgressView().tint(BrandColor.accent)
+                        } else {
+                            Label("Reschedule", systemImage: "calendar.badge.clock")
+                                .font(BrandFont.body(16, .semibold))
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 15)
+                    .foregroundStyle(BrandColor.textPrimary)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(BrandColor.textMuted.opacity(0.3), lineWidth: 1)
+                    )
+                }
+                .disabled(loadingReschedule || cancelling)
+
+                Button {
+                    showCancelConfirm = true
+                } label: {
+                    Group {
+                        if cancelling {
+                            ProgressView().tint(BrandColor.ember)
+                        } else {
+                            Text("Cancel appointment").font(BrandFont.body(16, .semibold))
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 15)
+                    .foregroundStyle(BrandColor.ember)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(BrandColor.ember.opacity(0.4), lineWidth: 1)
+                    )
+                }
+                .disabled(cancelling || loadingReschedule)
+
+                if let manageError {
+                    Text(manageError)
+                        .font(BrandFont.body(13))
+                        .foregroundStyle(BrandColor.ember)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+    }
+
+    /// Resolve the booking's offering from the pro's profile (matching the base
+    /// service) so the booking flow can re-pick a slot, then present it.
+    private func beginReschedule() async {
+        guard !loadingReschedule, let pro = booking.professional else { return }
+        loadingReschedule = true
+        manageError = nil
+        defer { loadingReschedule = false }
+
+        let baseServiceId = booking.items.first(where: { !$0.isAddOn })?.serviceId
+            ?? booking.items.first?.serviceId
+
+        do {
+            let profile = try await session.client.profiles.professional(id: pro.id)
+            let offering = profile.offerings.first(where: { $0.serviceId == baseServiceId })
+                ?? profile.offerings.first(where: { $0.name == booking.display.baseName })
+
+            guard let offering else {
+                manageError = "This service isn’t open for self-rescheduling. Message your pro to change the time."
+                return
+            }
+
+            rescheduleSheet = RescheduleContext(
+                offering: offering,
+                professionalId: pro.id,
+                proName: pro.displayName,
+                locationType: (booking.locationType ?? "SALON").uppercased() == "MOBILE"
+                    ? "MOBILE" : "SALON"
+            )
+        } catch let error as APIError {
+            manageError = error.userMessage
+        } catch {
+            manageError = "Couldn’t load times to reschedule. Try again."
+        }
+    }
+
+    private func cancelBooking() async {
+        guard !cancelling else { return }
+        cancelling = true
+        manageError = nil
+        defer { cancelling = false }
+        do {
+            _ = try await session.client.booking.cancel(
+                bookingId: booking.id, idempotencyKey: UUID().uuidString
+            )
+            cancelledLocally = true
+            session.signalRefresh()
+            await onDecision()
+            dismiss()
+        } catch let error as APIError {
+            manageError = error.userMessage
+        } catch {
+            manageError = "Couldn’t cancel the appointment. Try again."
         }
     }
 

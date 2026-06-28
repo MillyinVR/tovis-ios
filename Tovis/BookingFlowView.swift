@@ -12,12 +12,20 @@ struct BookingFlowView: View {
     let professionalId: String
     let proName: String
     let offering: ProOffering
+    /// When set, this flow RESCHEDULES that booking (hold → reschedule) instead
+    /// of creating a new one (hold → finalize). The picker is otherwise identical.
+    var rescheduleBookingId: String? = nil
+    /// The booking's location mode, preserved across a reschedule. Defaults to SALON.
+    var locationType: String = "SALON"
+
+    private var isReschedule: Bool { rescheduleBookingId != nil }
 
     private enum Phase {
         case loading
         case ready(AvailabilityBootstrap)
         case failed(String)
-        case success(FinalizedBooking)
+        /// Carries the (re)scheduled instant ISO — works for finalize + reschedule.
+        case success(String)
     }
 
     @State private var phase: Phase = .loading
@@ -39,15 +47,15 @@ struct BookingFlowView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 case let .failed(message):
                     failure(message)
-                case let .success(b):
-                    success(b)
+                case let .success(scheduledFor):
+                    success(scheduledFor)
                 case let .ready(boot):
                     form(boot)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(BrandColor.bgPrimary.ignoresSafeArea())
-            .navigationTitle("Book")
+            .navigationTitle(isReschedule ? "Reschedule" : "Book")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -108,7 +116,10 @@ struct BookingFlowView: View {
                 Button { Task { await requestToBook(boot) } } label: {
                     Group {
                         if booking { ProgressView().tint(BrandColor.onAccent) }
-                        else { Text("Request to book").font(BrandFont.body(17, .semibold)) }
+                        else {
+                            Text(isReschedule ? "Confirm new time" : "Request to book")
+                                .font(BrandFont.body(17, .semibold))
+                        }
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, 16)
                     .foregroundStyle(BrandColor.onAccent)
@@ -143,17 +154,19 @@ struct BookingFlowView: View {
 
     // MARK: - Success / failure
 
-    private func success(_ b: FinalizedBooking) -> some View {
+    private func success(_ scheduledFor: String) -> some View {
         VStack(spacing: 16) {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 56)).foregroundStyle(BrandColor.accent)
-            Text("Request sent")
+            Text(isReschedule ? "Time updated" : "Request sent")
                 .font(BrandFont.display(24, .semibold)).foregroundStyle(BrandColor.textPrimary)
             Text("\(offering.name) with \(proName)")
                 .font(BrandFont.body(15)).foregroundStyle(BrandColor.textSecondary)
-            Text(Wire.dateTime(b.scheduledFor, timeZone: nil))
+            Text(Wire.dateTime(scheduledFor, timeZone: nil))
                 .font(BrandFont.body(14)).foregroundStyle(BrandColor.textSecondary)
-            Text("\(proName) will confirm your booking. You’ll find it under Appointments.")
+            Text(isReschedule
+                 ? "Your appointment was moved. \(proName) will be notified."
+                 : "\(proName) will confirm your booking. You’ll find it under Appointments.")
                 .font(BrandFont.body(13)).foregroundStyle(BrandColor.textMuted)
                 .multilineTextAlignment(.center)
             Button { dismiss() } label: {
@@ -187,7 +200,8 @@ struct BookingFlowView: View {
         do {
             let boot = try await session.client.booking.bootstrap(
                 professionalId: professionalId, serviceId: offering.serviceId,
-                offeringId: offering.id, durationMinutes: duration
+                offeringId: offering.id, durationMinutes: duration,
+                locationType: locationType
             )
             // Open on the server's suggested first day when present.
             if let first = boot.selectedDay?.date ?? boot.availableDays.first?.date,
@@ -210,7 +224,7 @@ struct BookingFlowView: View {
             let day = try await session.client.booking.day(
                 professionalId: professionalId, serviceId: offering.serviceId,
                 offeringId: offering.id, locationId: boot.request.locationId,
-                durationMinutes: duration, date: date
+                durationMinutes: duration, date: date, locationType: locationType
             )
             slots = day.slots
         } catch {
@@ -225,17 +239,30 @@ struct BookingFlowView: View {
         bookError = nil
         do {
             let hold = try await session.client.booking.createHold(
-                offeringId: offering.id, locationId: boot.request.locationId, scheduledFor: slot
+                offeringId: offering.id, locationId: boot.request.locationId,
+                scheduledFor: slot, locationType: locationType
             )
-            let result = try await session.client.booking.finalize(
-                holdId: hold.id, offeringId: offering.id, idempotencyKey: UUID().uuidString
-            )
-            session.signalRefresh() // surface the new booking in Appointments/Home
-            phase = .success(result)
+            let scheduledFor: String
+            if let rescheduleBookingId {
+                let result = try await session.client.booking.reschedule(
+                    bookingId: rescheduleBookingId, holdId: hold.id,
+                    locationType: locationType, idempotencyKey: UUID().uuidString
+                )
+                scheduledFor = result.scheduledFor
+            } else {
+                let result = try await session.client.booking.finalize(
+                    holdId: hold.id, offeringId: offering.id, idempotencyKey: UUID().uuidString
+                )
+                scheduledFor = result.scheduledFor
+            }
+            session.signalRefresh() // surface the change in Appointments/Home
+            phase = .success(scheduledFor)
         } catch let error as APIError {
             bookError = error.userMessage
         } catch {
-            bookError = "Couldn’t complete the booking. Try again."
+            bookError = isReschedule
+                ? "Couldn’t reschedule. Try again."
+                : "Couldn’t complete the booking. Try again."
         }
         booking = false
     }

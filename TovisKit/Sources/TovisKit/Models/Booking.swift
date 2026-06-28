@@ -95,3 +95,30 @@ public struct FinalizedBooking: Decodable, Sendable, Identifiable {
     public let scheduledFor: String
     public let professionalId: String
 }
+
+// MARK: - Reschedule (POST /api/v1/bookings/[id]/reschedule)
+
+struct RescheduleBookingRequest: Encodable, Sendable {
+    let holdId: String
+    let locationType: String
+}
+
+struct RescheduleBookingResponse: Decodable, Sendable {
+    let booking: RescheduledBooking
+}
+
+public struct RescheduledBooking: Decodable, Sendable, Identifiable {
+    public let id: String
+    public let status: String
+    public let scheduledFor: String
+    public let locationType: String?
+}
+
+// MARK: - Cancel (POST /api/v1/bookings/[id]/cancel)
+
+/// The cancel route returns the fields at the top level (no `booking` wrapper):
+/// `{ ok, id, status, sessionStep, meta }`.
+struct CancelBookingResponse: Decodable, Sendable {
+    let id: String
+    let status: String
+}
