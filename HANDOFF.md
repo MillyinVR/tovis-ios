@@ -176,12 +176,25 @@ All return the same session payload (`AuthLoginResponseDTO`): token in the JSON 
      *client/creator* profile, NOT the pro). `ProProfileView` renders header/stats/bio/
      offerings/portfolio/reviews. Pros are tappable from booking detail + home (favorite
      chips / invite / waitlist rows). Decode test added.
-   - ⏭️ Still to wire (endpoints exist): **pay**
-     (`/client/bookings/[id]/checkout` + `/deposit/stripe-session` — needs an in-app
-     Safari/web redirect + a deep-link return, see step 6), **accept a last-minute invite**,
-     **favorite/unfavorite a pro** (`POST /professionals/[id]/favorite`, profile carries
-     `isFavoritedByMe`), **rebook** (`/client/bookings/[id]/aftercare-rebook`). The pro
-     display-name resolver (`BookingProfessional.displayName`) already ports
+   - ✅ **Favorite/unfavorite a pro DONE.** `ProfileService.setFavorite` →
+     `POST`/`DELETE /professionals/{id}/favorite` (returns `{favorited,count}`). Heart toggle
+     in `ProProfileView`, optimistic + reverts on error, seeded from `isFavoritedByMe`.
+   - ✅ **Accept/decline last-minute invites DONE.** `HomeService.acceptInvite/declineInvite`
+     → `POST /client/priority-offer/{recipientId}/{accept,decline}` (`HomeInvite.id` IS the
+     recipientId). Home invite rows have inline Accept/Decline + still link to the pro;
+     success reloads home. 410/409 (expired / no-longer-priority) surface as the error line.
+   - ⏭️ **Remaining two need backend/app infra, NOT iOS-only — STOPPED here on purpose:**
+     - **rebook (aftercare next-appointment confirm/decline)** — endpoint exists
+       (`POST /client/bookings/[id]/aftercare-rebook` `{action:CONFIRM|DECLINE}`, and CONFIRM
+       requires an `Idempotency-Key` header → APIClient needs header support added). BUT the
+       gating signal (`aftercare.rebookMode === BOOKED_NEXT_APPOINTMENT` + `rebookedFor`) is
+       **NOT in the `/client/bookings` list DTO** — the native app can't tell which prebooked
+       booking is awaiting confirmation. Fix first in tovis-app: surface a
+       `pendingRebookConfirmation` flag (or the aftercare rebook fields) on `ClientBookingDTO`,
+       then wire the UI.
+     - **pay** (`/client/bookings/[id]/checkout` + `/deposit/stripe-session`) — Stripe returns
+       a hosted URL; needs in-app Safari + a Universal-Link deep-link return (Tier 3.2, step 6).
+     The pro display-name resolver (`BookingProfessional.displayName`) already ports
      `lib/privacy/professionalDisplayName.ts`.
 4. Then iterate outward: search/discover, booking flow (holds → availability → checkout),
    messages. All have `/api/v1` endpoints + DTOs already.
