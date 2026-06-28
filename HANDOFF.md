@@ -48,7 +48,7 @@ detail), favorite/unfavorite a pro, accept/decline last-minute invites, **send m
 was verified **live end-to-end** against the API (201 PENDING → shows in /client/bookings).
 
 Next real work (pick up here): **(1) Notifications** — see the dedicated section below.
-**(2) Booking v2** — mobile mode + add-ons + reschedule/cancel. **(3) Xcode/operator** — Apple
+**(2) Booking v2** — ✅ **reschedule + cancel DONE** (2026-06-28); remaining: mobile mode + add-ons. **(3) Xcode/operator** — Apple
 capability + `APPLE_CLIENT_ID` env. **(4) Deploy** tovis-app `main` (the merged Stripe-return
 PR #417 isn't on prod yet — the user is holding the deploy).
 
@@ -138,6 +138,7 @@ doesn't model `depositStatus`, so there's no UI trigger. Add that field to surfa
 
 - **`tovis-ios`** — branch `main`, **all work committed, working tree clean**. **NO git
   remote** (local commits only; nothing to push). Recent commits (newest first):
+  `feat(booking)` client reschedule + cancel (Booking v2) · `feat(notifications)` prefs editor ·
   `feat(notifications)` in-app notification center (Track A) · `style(discover)` grid-default +
   web-grid view · `feat(discover)` MapKit rebuild ·
   `style(looks)` TikTok comments + feed-above-comments · `fix(auth)` cookieless URLSession ·
@@ -424,9 +425,12 @@ multi-tenant scale, upgrade to authorized channels (RLS on `realtime.messages` +
    Remaining: **(a)** open/merge the tovis-app `feat/client-notifications-dto` branch (typed DTOs +
    wire contract); **(b)** a SwiftUI **notification-preferences editor** (the service GET/PATCH is
    ready); **(c)** **Track B push/APNs** (needs the Apple capability + operator creds).
-2. **Booking v2** — mobile mode (+ client address selection via `/client/addresses`), add-ons
-   (`/offerings/add-ons`), and reschedule/cancel (`/bookings/[id]/{reschedule,cancel}`). Also
-   **rebook confirm** still needs a tovis-app DTO field: surface `pendingRebookConfirmation`
+2. **Booking v2** — ✅ **reschedule + cancel SHIPPED** (`/bookings/[id]/{reschedule,cancel}`):
+   `BookingDetailView` Manage section; `BookingFlowView` reused in a reschedule mode (hold →
+   reschedule instead of finalize); resolves the offering from the pro profile by matching the
+   base service; both send the `idempotency-key` header; live round-trip verified. **Remaining:**
+   mobile mode (+ client address selection via `/client/addresses`) + add-ons (`/offerings/add-ons`).
+   Also **rebook confirm** still needs a tovis-app DTO field: surface `pendingRebookConfirmation`
    (or the aftercare rebook fields) on `ClientBookingDTO` before the UI can gate it.
 3. **Deploy** tovis-app `main` to Vercel prod so Release builds get the Stripe `tovis://` return
    (PR #417 is merged but **not deployed** — the user is holding it). Deploy via `npx vercel@latest --prod`.
