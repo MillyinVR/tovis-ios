@@ -138,9 +138,29 @@ All return the same session payload (`AuthLoginResponseDTO`): token in the JSON 
   ```
 
   This catches every type/SwiftUI error (it caught a bogus `Equatable` conformance during
-  the home-screen build). The home screen + login surface BOTH type-check clean this way.
-  Final signed run in Xcode (⌘R on a simulator) is still the last confirmation, but the
-  code is no longer "unverified."
+  the home-screen build).
+
+  Even better — the **full app target now BUILDS via `xcodebuild`** (real toolchain, not
+  just type-check):
+
+  ```bash
+  xcodebuild build -scheme Tovis -project tovis-ios.xcodeproj \
+    -destination 'generic/platform=iOS Simulator' -configuration Debug CODE_SIGNING_ALLOWED=NO
+  # → ** BUILD SUCCEEDED **
+  ```
+
+  ⚠️ **Deployment-target gotcha (fixed):** the project shipped with
+  `IPHONEOS_DEPLOYMENT_TARGET = 27.0`, which exceeds the installed SDK's max (26.5) — a plain
+  simulator build then reports "Supported platforms … is empty" and silently produces nothing.
+  Lowered to `17.0` (matches TovisKit's `.iOS(.v17)`). If a future Xcode bumps this back up,
+  watch for that message.
+- **Wire-contract test (DTO drift guard):** `scripts/contract/validate-fixtures.mjs` (ajv)
+  validates the shared `TovisKit/Tests/.../Fixtures/*.json` against tovis-app's generated
+  `schema/api/tovis-api.schema.json`. The SAME fixtures are decoded by `swift test`. So a
+  backend DTO change fails loudly in one of those two places. Run:
+  `cd scripts/contract && npm install && npm run validate` (schema path overridable via
+  `TOVIS_API_SCHEMA`; defaults to the sibling `../../../tovis-app/...`). It already caught a
+  real enum drift (`professionType` "HAIR" → "HAIRSTYLIST").
 - **Branch hygiene (we got burned once):** in `tovis-app`, branch every feature off
   `origin/main` and DON'T stack PRs. Phone-OTP got accidentally committed on top of the
   Apple branch; I had to un-stack it (cherry-pick onto main + reset). When two auth PRs
