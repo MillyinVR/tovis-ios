@@ -165,7 +165,11 @@ struct LooksView: View {
             .scrollTargetLayout()
         }
         .scrollTargetBehavior(.paging)
-        .ignoresSafeArea()
+        // Full-bleed up top, but RESPECT the bottom inset so the slide sits
+        // above the footer bar (was hidden behind it). The footer — including
+        // the center circle that pokes above it — is an overlay on top, so the
+        // circle still floats in front of the feed.
+        .ignoresSafeArea(edges: .top)
     }
 
     private var emptyState: some View {
