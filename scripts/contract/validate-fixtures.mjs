@@ -53,6 +53,11 @@ const CHECKS = [
     def: 'NotificationPreferencesPayload',
     pick: (d) => [d],
   },
+  {
+    file: 'offeringAddOns.json',
+    def: 'OfferingAddOnItemDTO',
+    pick: (d) => d.addOns,
+  },
 ]
 
 function fail(msg) {
