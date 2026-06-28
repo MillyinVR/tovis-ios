@@ -46,13 +46,35 @@ final class SessionModel {
     func signalRefresh() { refreshTick &+= 1 }
 
     let client: TovisClient
+    private let realtime: SupabaseRealtime?
 
     init(config: TovisConfig) {
         self.client = TovisClient(config: config)
+        // nil unless Supabase creds are configured — then live-sync is inert and
+        // the app relies on foreground-refresh + polling (still fresh).
+        self.realtime = SupabaseRealtime(
+            supabaseURL: config.supabaseURL,
+            anonKey: config.supabaseAnonKey
+        )
     }
 
     func bootstrap() async {
-        state = await client.auth.hasSession() ? .signedIn : .signedOut
+        let signedIn = await client.auth.hasSession()
+        state = signedIn ? .signedIn : .signedOut
+        if signedIn { await startRealtime() }
+    }
+
+    /// Subscribe to this user's live channel. Derives the userId from the stored
+    /// JWT so it works on a cold launch too. No-op if realtime isn't configured.
+    private func startRealtime() async {
+        guard let realtime,
+              let token = await client.tokenStore.token(),
+              let userId = SessionToken.userId(from: token)
+        else { return }
+
+        await realtime.start(channels: ["user:\(userId)"]) { [weak self] in
+            Task { @MainActor in self?.signalRefresh() }
+        }
     }
 
     func login(email: String, password: String) async {
@@ -67,6 +89,7 @@ final class SessionModel {
             )
             currentUser = result.user
             state = .signedIn
+            await startRealtime()
         } catch let error as APIError {
             errorMessage = error.userMessage
         } catch {
@@ -87,6 +110,7 @@ final class SessionModel {
             )
             currentUser = result.user
             state = .signedIn
+            await startRealtime()
         } catch let error as APIError {
             errorMessage = error.userMessage
         } catch {
@@ -125,6 +149,7 @@ final class SessionModel {
             )
             currentUser = result.user
             state = .signedIn
+            await startRealtime()
         } catch let error as APIError {
             errorMessage = error.userMessage
         } catch {
@@ -133,6 +158,7 @@ final class SessionModel {
     }
 
     func logout() async {
+        await realtime?.stop()
         await client.auth.logout()
         currentUser = nil
         state = .signedOut
