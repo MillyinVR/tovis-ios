@@ -11,6 +11,8 @@ struct TovisApp: App {
     @State private var session = SessionModel(config: Self.apiConfig)
     @State private var theme = ThemeStore()
     @Environment(\.scenePhase) private var scenePhase
+    // Receives the APNs device token + notification callbacks → PushManager (Track B).
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     /// Debug builds (simulator / local dev) hit the local backend; Release builds
     /// (TestFlight / App Store) hit production at tovis.app. Both share the prod
@@ -120,7 +122,10 @@ final class SessionModel {
     func bootstrap() async {
         let signedIn = await client.auth.hasSession()
         state = signedIn ? .signedIn : .signedOut
-        if signedIn { await startRealtime() }
+        if signedIn {
+            await startRealtime()
+            await startPush()
+        }
     }
 
     /// Subscribe to this user's live channel. Derives the userId from the stored
@@ -136,6 +141,23 @@ final class SessionModel {
         }
     }
 
+    /// Track B push: ask for notification permission + register this device's APNs
+    /// token (same deviceId as login). An incoming push nudges `refreshTick`, the
+    /// same live-sync seam Realtime uses. No-op-safe to call on every sign-in.
+    private func startPush() async {
+        await PushManager.shared.enable(
+            client: client,
+            deviceId: client.deviceId,
+            onActivity: { [weak self] in
+                Task { @MainActor in self?.signalRefresh() }
+            }
+        )
+    }
+
+    private func stopPush() async {
+        await PushManager.shared.disable()
+    }
+
     func login(email: String, password: String) async {
         isWorking = true
         errorMessage = nil
@@ -149,6 +171,7 @@ final class SessionModel {
             currentUser = result.user
             state = .signedIn
             await startRealtime()
+            await startPush()
         } catch let error as APIError {
             errorMessage = error.userMessage
         } catch {
@@ -170,6 +193,7 @@ final class SessionModel {
             currentUser = result.user
             state = .signedIn
             await startRealtime()
+            await startPush()
         } catch let error as APIError {
             errorMessage = error.userMessage
         } catch {
@@ -209,6 +233,7 @@ final class SessionModel {
             currentUser = result.user
             state = .signedIn
             await startRealtime()
+            await startPush()
         } catch let error as APIError {
             errorMessage = error.userMessage
         } catch {
@@ -218,6 +243,7 @@ final class SessionModel {
 
     func logout() async {
         await realtime?.stop()
+        await stopPush() // unregister this device's push token server-side
         await client.auth.logout()
         currentUser = nil
         state = .signedOut
