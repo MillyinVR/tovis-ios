@@ -173,3 +173,8 @@ public struct ClientMeRemix: Decodable, Sendable, Identifiable {
     public let proName: String
     public let bookedAt: String
 }
+
+/// PATCH /api/v1/client/looks/{id} — request body for the visibility toggle.
+struct ClientLookVisibilityRequest: Encodable, Sendable {
+    let isPublic: Bool
+}

@@ -249,15 +249,8 @@ struct MeView: View {
             }
             LazyVGrid(columns: twoCol, spacing: 18) {
                 ForEach(looks) { look in
-                    VStack(alignment: .leading, spacing: 8) {
-                        tile(look.imageUrl, fallback: look.name, aspect: 1)
-                        Text(look.name)
-                            .font(BrandFont.body(13, .semibold))
-                            .foregroundStyle(BrandColor.textPrimary)
-                            .lineLimit(1)
-                        Text(look.isPublic ? "PUBLIC" : "PRIVATE")
-                            .font(BrandFont.mono(9)).tracking(1.2)
-                            .foregroundStyle(BrandColor.textSecondary)
+                    MeLookCard(look: look) { id, isPublic in
+                        await setLookVisibility(id, isPublic: isPublic)
                     }
                 }
             }
@@ -366,7 +359,7 @@ struct MeView: View {
                         BookingDetailView(booking: item.booking, onDecision: { await load() })
                     } label: {
                         VStack(alignment: .leading, spacing: 10) {
-                            tile(item.heroImageUrl, fallback: item.booking.display.title, aspect: 1.18)
+                            MediaTile(url: item.heroImageUrl, fallback: item.booking.display.title, aspect: 1.18)
                             Text(item.booking.display.title)
                                 .font(BrandFont.body(14, .semibold))
                                 .foregroundStyle(BrandColor.textPrimary)
@@ -388,31 +381,15 @@ struct MeView: View {
         [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
     }
 
-    /// A rounded media tile with a branded fallback when there's no image.
-    private func tile(_ url: String?, fallback: String, aspect: CGFloat) -> some View {
-        ZStack {
-            BrandColor.bgSecondary
-            if let url, let parsed = URL(string: url) {
-                AsyncImage(url: parsed) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    ProgressView().tint(BrandColor.accent)
-                }
-            } else {
-                Text(fallback)
-                    .font(BrandFont.body(13, .semibold))
-                    .foregroundStyle(BrandColor.textSecondary)
-                    .multilineTextAlignment(.center)
-                    .padding(12)
-            }
+    /// Flip a look's visibility via the backend, returning whether it stuck.
+    /// The card updates optimistically and reverts on `false`.
+    private func setLookVisibility(_ id: String, isPublic: Bool) async -> Bool {
+        do {
+            try await session.client.me.setLookVisibility(lookId: id, isPublic: isPublic)
+            return true
+        } catch {
+            return false
         }
-        .aspectRatio(aspect, contentMode: .fill)
-        .frame(maxWidth: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(BrandColor.textMuted.opacity(0.12), lineWidth: 1)
-        )
     }
 
     /// 2×2 thumbnail mosaic for a board (mirrors the web PrototypeThumb).
@@ -536,5 +513,98 @@ struct MeView: View {
         } catch {
             phase = .failed("Something went wrong. Please try again.")
         }
+    }
+}
+
+// MARK: - Reusable pieces
+
+/// A rounded media tile with a branded fallback when there's no image.
+private struct MediaTile: View {
+    let url: String?
+    let fallback: String
+    let aspect: CGFloat
+
+    var body: some View {
+        ZStack {
+            BrandColor.bgSecondary
+            if let url, let parsed = URL(string: url) {
+                AsyncImage(url: parsed) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
+                    ProgressView().tint(BrandColor.accent)
+                }
+            } else {
+                Text(fallback)
+                    .font(BrandFont.body(13, .semibold))
+                    .foregroundStyle(BrandColor.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .padding(12)
+            }
+        }
+        .aspectRatio(aspect, contentMode: .fill)
+        .frame(maxWidth: .infinity)
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(BrandColor.textMuted.opacity(0.12), lineWidth: 1)
+        )
+    }
+}
+
+/// One "Your Looks" card with a working Public/Private switch — mirrors the web
+/// MyLookCard: optimistic flip, reverts + shows "COULDN'T SAVE" on failure.
+private struct MeLookCard: View {
+    let look: ClientMeLook
+    /// Performs the PATCH; returns whether it stuck.
+    let onToggle: (String, Bool) async -> Bool
+
+    @State private var isPublic: Bool
+    @State private var busy = false
+    @State private var failed = false
+
+    init(look: ClientMeLook, onToggle: @escaping (String, Bool) async -> Bool) {
+        self.look = look
+        self.onToggle = onToggle
+        _isPublic = State(initialValue: look.isPublic)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            MediaTile(url: look.imageUrl, fallback: look.name, aspect: 1)
+
+            HStack(alignment: .center, spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(look.name)
+                        .font(BrandFont.body(13, .semibold))
+                        .foregroundStyle(BrandColor.textPrimary)
+                        .lineLimit(1)
+                    Text(failed ? "COULDN’T SAVE" : (isPublic ? "PUBLIC" : "PRIVATE"))
+                        .font(BrandFont.mono(9)).tracking(1.2)
+                        .foregroundStyle(failed ? BrandColor.ember : BrandColor.textSecondary)
+                }
+                Spacer()
+                Toggle("", isOn: Binding(
+                    get: { isPublic },
+                    set: { _ in Task { await toggle() } }
+                ))
+                .labelsHidden()
+                .tint(BrandColor.accent)
+                .disabled(busy)
+            }
+        }
+    }
+
+    private func toggle() async {
+        guard !busy else { return }
+        let next = !isPublic
+        busy = true
+        failed = false
+        isPublic = next // optimistic
+        let ok = await onToggle(look.id, next)
+        if !ok {
+            isPublic = !next // revert
+            failed = true
+        }
+        busy = false
     }
 }
