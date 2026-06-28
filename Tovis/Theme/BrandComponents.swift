@@ -76,7 +76,9 @@ struct BrandAvatar: View {
     }
 }
 
-/// A titled section with an optional trailing note.
+/// A section with a small mono-uppercase eyebrow label — matches the web's
+/// section headers (`font-mono text-[10px] uppercase tracking-[0.16em]
+/// text-textMuted`). An optional trailing count renders as "· N", as on web.
 struct BrandSection<Content: View>: View {
     let title: String
     var trailing: String? = nil
@@ -84,19 +86,18 @@ struct BrandSection<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(title)
-                    .font(BrandFont.display(18, .semibold))
-                    .foregroundStyle(BrandColor.textPrimary)
-                Spacer()
-                if let trailing {
-                    Text(trailing)
-                        .font(BrandFont.mono(12))
-                        .foregroundStyle(BrandColor.textMuted)
-                }
-            }
+            Text(label)
+                .font(BrandFont.mono(11))
+                .tracking(1.4)
+                .textCase(.uppercase)
+                .foregroundStyle(BrandColor.textMuted)
             content
         }
+    }
+
+    private var label: String {
+        guard let trailing else { return title }
+        return "\(title) · \(trailing)"
     }
 }
 

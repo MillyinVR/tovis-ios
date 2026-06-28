@@ -50,11 +50,15 @@ struct HomeView: View {
     // MARK: - Sections
 
     private var header: some View {
-        HStack(alignment: .center) {
-            HStack(spacing: 10) {
-                TovisEye(size: 30)
-                Text("tovis")
-                    .font(BrandFont.display(24, .semibold))
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 7) {
+                Text(greeting)
+                    .font(BrandFont.mono(11))
+                    .tracking(1.6)
+                    .textCase(.uppercase)
+                    .foregroundStyle(BrandColor.textMuted)
+                Text("\(displayName).")
+                    .font(BrandFont.display(34, .semibold).italic())
                     .foregroundStyle(BrandColor.textPrimary)
             }
             Spacer()
@@ -76,18 +80,35 @@ struct HomeView: View {
         .padding(.top, 4)
     }
 
+    /// Time-of-day greeting — mirrors the web's `ClientGreeting`.
+    private var greeting: String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        if hour < 12 { return "Good morning" }
+        if hour < 18 { return "Good afternoon" }
+        return "Good evening"
+    }
+
+    /// Best-effort first name from the signed-in email (the home payload carries
+    /// no client name). e.g. "amara619@gmail.com" → "Amara".
+    private var displayName: String {
+        guard let email = session.currentUser?.email,
+              let local = email.split(separator: "@").first else { return "Welcome back" }
+        let token = local.split(whereSeparator: { $0 == "." || $0 == "_" || $0 == "-" })
+            .first.map(String.init) ?? String(local)
+        let letters = String(token.prefix(while: { !$0.isNumber }))
+        let base = letters.isEmpty ? token : letters
+        guard let first = base.first else { return "Welcome back" }
+        return first.uppercased() + base.dropFirst()
+    }
+
     @ViewBuilder
     private func content(_ home: ClientHome) -> some View {
+        // Section order mirrors the web home's mobile (single-column) flow:
+        // action → invites → upcoming → favorite pros → favorited services →
+        // waitlist → viral.
         if let action = home.action {
             Button(action: onOpenAppointments) { ActionBanner(action: action) }
                 .buttonStyle(.plain)
-        }
-
-        if let upcoming = home.upcoming {
-            BrandSection(title: "Next appointment", trailing: upcomingTrailing(home.upcomingCount)) {
-                Button(action: onOpenAppointments) { UpcomingCard(booking: upcoming) }
-                    .buttonStyle(.plain)
-            }
         }
 
         if !home.invites.isEmpty {
@@ -100,22 +121,15 @@ struct HomeView: View {
             }
         }
 
-        if !home.waitlists.isEmpty {
-            BrandSection(title: "On your waitlist") {
-                VStack(spacing: 10) {
-                    ForEach(home.waitlists) { entry in
-                        if let pro = entry.professional {
-                            proLink(id: pro.id, name: pro.displayName) { WaitlistRow(entry: entry) }
-                        } else {
-                            WaitlistRow(entry: entry)
-                        }
-                    }
-                }
+        if let upcoming = home.upcoming {
+            BrandSection(title: "Next booking", trailing: upcomingTrailing(home.upcomingCount)) {
+                Button(action: onOpenAppointments) { UpcomingCard(booking: upcoming) }
+                    .buttonStyle(.plain)
             }
         }
 
         if !home.favoritePros.isEmpty {
-            BrandSection(title: "Your pros") {
+            BrandSection(title: "Favorite pros") {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 16) {
                         ForEach(Array(home.favoritePros.enumerated()), id: \.offset) { _, fav in
@@ -130,7 +144,7 @@ struct HomeView: View {
         }
 
         if !home.favoriteServices.isEmpty {
-            BrandSection(title: "Saved services") {
+            BrandSection(title: "Favorited services", trailing: "\(home.favoriteServices.count)") {
                 VStack(spacing: 10) {
                     ForEach(home.favoriteServices) { fav in
                         if let service = fav.service { FavoriteServiceRow(service: service) }
@@ -139,9 +153,23 @@ struct HomeView: View {
             }
         }
 
+        if !home.waitlists.isEmpty {
+            BrandSection(title: "On the waitlist") {
+                VStack(spacing: 10) {
+                    ForEach(home.waitlists) { entry in
+                        if let pro = entry.professional {
+                            proLink(id: pro.id, name: pro.displayName) { WaitlistRow(entry: entry) }
+                        } else {
+                            WaitlistRow(entry: entry)
+                        }
+                    }
+                }
+            }
+        }
+
         let viral = home.viralLive + home.viralPending
         if !viral.isEmpty {
-            BrandSection(title: "Trending looks") {
+            BrandSection(title: "Viral looks") {
                 VStack(spacing: 10) {
                     ForEach(viral) { ViralRow(look: $0) }
                 }
@@ -166,7 +194,7 @@ struct HomeView: View {
     }
 
     private func upcomingTrailing(_ count: Int) -> String? {
-        count > 1 ? "\(count) upcoming" : nil
+        count > 1 ? "\(count - 1) more" : nil
     }
 
     private func isEmpty(_ home: ClientHome) -> Bool {
