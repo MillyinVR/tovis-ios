@@ -50,6 +50,11 @@ struct LooksView: View {
     @State private var commentsFor: LooksFeedItem?
     @State private var saveFor: LooksFeedItem?
 
+    private var commentsOpen: Bool { commentsFor != nil }
+    // Roughly the visible fraction above the 0.7-height comments sheet — scales
+    // the look to fit in that top gap. Tune alongside the sheet's .fraction(0.7).
+    private static let mediaShrinkScale: CGFloat = 0.33
+
     var body: some View {
         NavigationStack {
             ZStack(alignment: .top) {
@@ -63,10 +68,17 @@ struct LooksView: View {
                 case .empty:
                     emptyState
                 case let .loaded(items):
+                    // When the comments sheet is open, shrink the media up into
+                    // the space above it (TikTok-style) so the whole look stays
+                    // visible above the sheet.
                     feed(items)
+                        .scaleEffect(commentsOpen ? Self.mediaShrinkScale : 1, anchor: .top)
+                        .animation(.easeInOut(duration: 0.25), value: commentsOpen)
                 }
 
                 header
+                    .opacity(commentsOpen ? 0 : 1)
+                    .animation(.easeInOut(duration: 0.2), value: commentsOpen)
             }
             .navigationDestination(for: LooksProfessional.self) { pro in
                 ProProfileView(professionalId: pro.id, fallbackName: pro.displayName)
