@@ -127,27 +127,63 @@ struct DiscoverView: View {
 
     // MARK: - List
 
+    // The web "GRID" view: a "Trending near you" portrait rail + a 2-column grid
+    // of pro cards (DiscoverGridView / TrendingProRail).
     private var listLayer: some View {
         ScrollView {
-            LazyVStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 20) {
                 if loading && pros.isEmpty {
-                    ProgressView().tint(BrandColor.accent).padding(.top, 60)
+                    ProgressView().tint(BrandColor.accent)
+                        .frame(maxWidth: .infinity).padding(.top, 60)
                 } else if pros.isEmpty {
                     Text("No pros found nearby. Try a wider search or another area.")
                         .font(BrandFont.body(14)).foregroundStyle(BrandColor.textMuted)
-                        .multilineTextAlignment(.center).padding(.top, 60).padding(.horizontal, 30)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity).padding(.top, 60).padding(.horizontal, 14)
                 } else {
-                    ForEach(pros) { pro in
-                        NavigationLink(value: pro.id) { ProResultRow(pro: pro) }
-                            .buttonStyle(.plain)
-                            .simultaneousGesture(TapGesture().onEnded { activeProId = pro.id })
+                    if !trending.isEmpty {
+                        VStack(alignment: .leading, spacing: 10) {
+                            gridSectionHeader("Trending near you")
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 10) {
+                                    ForEach(trending) { pro in
+                                        NavigationLink(value: pro.id) { TrendingCard(pro: pro) }
+                                            .buttonStyle(.plain)
+                                    }
+                                }
+                                .padding(.horizontal, 2)
+                            }
+                        }
+                    }
+                    VStack(alignment: .leading, spacing: 10) {
+                        gridSectionHeader("Pros near you")
+                        LazyVGrid(
+                            columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
+                            spacing: 12
+                        ) {
+                            ForEach(pros) { pro in
+                                NavigationLink(value: pro.id) {
+                                    ProGridCard(pro: pro, active: pro.id == activeProId)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
                     }
                 }
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 16)
             .padding(.top, 168)   // clear the floating header + chips
             .padding(.bottom, 24)
         }
+    }
+
+    private var trending: [SearchProItem] { Array(pros.prefix(10)) }
+
+    private func gridSectionHeader(_ text: String) -> some View {
+        Text("◆ \(text)".uppercased())
+            .font(BrandFont.mono(10)).tracking(1.4)
+            .foregroundStyle(BrandColor.textMuted)
+            .padding(.leading, 2)
     }
 
     // MARK: - Top controls (search + view toggle + category chips)
@@ -364,48 +400,171 @@ private struct ProPin: View {
     }
 }
 
-// MARK: - Result row (list)
+// Shared decorative box used as the card "image" area — a diagonal sheen over a
+// dark base (mirrors the web cards' gradient + texture placeholder).
+private struct CardSheen: View {
+    var body: some View {
+        ZStack {
+            BrandColor.bgPrimary.opacity(0.45)
+            LinearGradient(
+                stops: [
+                    .init(color: .white.opacity(0.08), location: 0.0),
+                    .init(color: .white.opacity(0.02), location: 0.35),
+                    .init(color: .black.opacity(0.24), location: 1.0),
+                ],
+                startPoint: .topLeading, endPoint: .bottomTrailing
+            )
+        }
+    }
+}
 
-private struct ProResultRow: View {
+private func roundedDollars(_ value: Double?) -> String? {
+    guard let value, value > 0 else { return nil }
+    return "$\(Int(value.rounded()))"
+}
+
+// MARK: - Trending rail card (web TrendingProRail) — 140pt, 7:9 portrait
+
+private struct TrendingCard: View {
     let pro: SearchProItem
 
     var body: some View {
-        BrandSurface {
-            HStack(spacing: 12) {
-                BrandAvatar(name: pro.displayName, avatarUrl: pro.avatarUrl, size: 54)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(pro.displayName)
-                        .font(BrandFont.body(15, .semibold)).foregroundStyle(BrandColor.textPrimary).lineLimit(1)
-                    if let meta = metaLine {
-                        Text(meta).font(BrandFont.body(12.5)).foregroundStyle(BrandColor.textMuted).lineLimit(1)
-                    }
-                    HStack(spacing: 8) {
-                        if let price = pro.minPrice {
-                            Text("from \(money(price))")
-                                .font(BrandFont.body(12.5, .semibold)).foregroundStyle(BrandColor.accent)
-                        }
-                        if pro.supportsMobile { BrandPill(text: "Mobile", tint: BrandColor.iris) }
+        VStack(alignment: .leading, spacing: 8) {
+            ZStack(alignment: .top) {
+                Group {
+                    if let url = pro.avatarUrl.flatMap({ URL(string: $0) }) {
+                        AsyncImage(url: url) { img in
+                            img.resizable().scaledToFill()
+                        } placeholder: { CardSheen() }
+                    } else {
+                        CardSheen()
                     }
                 }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold)).foregroundStyle(BrandColor.textMuted)
+                .frame(width: 140, height: 180)
+                .clipped()
+
+                LinearGradient(colors: [.clear, BrandColor.bgPrimary.opacity(0.7)],
+                               startPoint: .center, endPoint: .bottom)
+                    .allowsHitTesting(false)
+
+                HStack(alignment: .top) {
+                    if let craft = pro.professionType {
+                        badge(craft.uppercased(), bg: BrandColor.bgPrimary.opacity(0.55))
+                    }
+                    Spacer()
+                    if let price = roundedDollars(pro.minPrice) {
+                        badge("\(price)+", bg: BrandColor.bgPrimary.opacity(0.7), mono: true)
+                    }
+                }
+                .padding(8)
+            }
+            .frame(width: 140, height: 180)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(pro.displayName)
+                    .font(BrandFont.body(13, .black)).foregroundStyle(BrandColor.textPrimary).lineLimit(1)
+                Text(subLine)
+                    .font(BrandFont.body(11, .semibold)).foregroundStyle(BrandColor.textMuted).lineLimit(1)
             }
         }
+        .frame(width: 140)
+    }
+
+    private var subLine: String {
+        var s = pro.locationLabel ?? pro.mapLocation?.cityState ?? "Nearby"
+        if let rating = pro.ratingAvg, pro.ratingCount > 0 {
+            s += " · ★ \(String(format: "%.1f", rating))"
+        }
+        return s
+    }
+
+    private func badge(_ text: String, bg: Color, mono: Bool = false) -> some View {
+        Text(text)
+            .font(mono ? BrandFont.mono(10) : BrandFont.mono(9)).tracking(0.8)
+            .foregroundStyle(BrandColor.textPrimary)
+            .padding(.vertical, 4).padding(.horizontal, 7)
+            .background(bg, in: mono ? AnyShape(Capsule()) : AnyShape(RoundedRectangle(cornerRadius: 6, style: .continuous)))
+    }
+}
+
+// MARK: - Grid card (web DiscoverGridView) — 2-col, 0.92 aspect + View profile
+
+private struct ProGridCard: View {
+    let pro: SearchProItem
+    let active: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ZStack {
+                CardSheen()
+                VStack {
+                    HStack {
+                        if let craft = pro.professionType {
+                            Text(craft.uppercased())
+                                .font(BrandFont.mono(9)).tracking(1)
+                                .foregroundStyle(BrandColor.textPrimary)
+                                .padding(.vertical, 4).padding(.horizontal, 7)
+                                .background(BrandColor.bgPrimary.opacity(0.8),
+                                            in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        }
+                        Spacer()
+                    }
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Text(priceLabel)
+                            .font(BrandFont.mono(10)).tracking(0.6)
+                            .foregroundStyle(BrandColor.onAccent)
+                            .padding(.vertical, 6).padding(.horizontal, 11)
+                            .background(BrandColor.accent, in: Capsule())
+                    }
+                }
+                .padding(8)
+            }
+            .aspectRatio(0.92, contentMode: .fit)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(pro.displayName)
+                        .font(BrandFont.body(13, .black)).foregroundStyle(BrandColor.textPrimary).lineLimit(1)
+                    Spacer(minLength: 2)
+                    if let rating = pro.ratingAvg, pro.ratingCount > 0 {
+                        Text("★ \(String(format: "%.1f", rating))")
+                            .font(BrandFont.body(11, .black)).foregroundStyle(BrandColor.textSecondary)
+                    }
+                }
+                if let meta = metaLine {
+                    Text(meta).font(BrandFont.body(11, .semibold)).foregroundStyle(BrandColor.textSecondary).lineLimit(1)
+                }
+            }
+            .padding(12)
+
+            Text("View profile")
+                .font(BrandFont.mono(10)).tracking(1.4)
+                .foregroundStyle(BrandColor.textPrimary)
+                .frame(maxWidth: .infinity).frame(height: 36)
+                .background(BrandColor.bgPrimary.opacity(0.25), in: Capsule())
+                .overlay(Capsule().stroke(.white.opacity(0.15), lineWidth: 1))
+                .padding(.horizontal, 12).padding(.bottom, 12)
+        }
+        .background(BrandColor.bgSecondary)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(active ? BrandColor.accent.opacity(0.7) : .white.opacity(0.1), lineWidth: 1)
+        )
+    }
+
+    private var priceLabel: String {
+        roundedDollars(pro.minPrice).map { "FROM \($0)" } ?? "VIEW"
     }
 
     private var metaLine: String? {
         var parts: [String] = []
-        if let craft = pro.professionType { parts.append(craft.capitalized) }
-        if let rating = pro.ratingAvg, pro.ratingCount > 0 {
-            parts.append("★ \(String(format: "%.1f", rating)) (\(pro.ratingCount))")
-        }
+        if let loc = pro.locationLabel ?? pro.mapLocation?.cityState { parts.append(loc) }
+        if pro.supportsMobile { parts.append("Mobile") }
         if let d = pro.distanceMiles { parts.append("\(String(format: "%.1f", d)) mi") }
-        if parts.isEmpty { return pro.locationLabel ?? pro.mapLocation?.cityState }
-        return parts.joined(separator: " · ")
-    }
-
-    private func money(_ value: Double) -> String {
-        value.rounded() == value ? "$\(Int(value))" : String(format: "$%.2f", value)
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }
