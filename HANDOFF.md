@@ -72,10 +72,20 @@ Verified: `swift test` (21) · contract validator (20 objects) · Debug `xcodebu
 round-trip** (feed/summary/preferences/mark-read) against the local backend — item keys, ISO
 `createdAt`, `data` object, and `readAt` all matched. ⚠️ Note: the prefs PATCH method is **PATCH**
 (an earlier handoff said PUT). The companion **tovis-app** change (typed DTOs + wire contract, branch
-`feat/client-notifications-dto`, **not yet a PR/merged**) adds `lib/dto/clientNotifications.ts`,
+`feat/client-notifications-dto`, **PR #419**) adds `lib/dto/clientNotifications.ts`,
 retypes the feed + summary routes (Date→ISO mapper), and re-exports the prefs payload through the DTO
-barrel so the schema captures the contract. **Not yet wired:** a SwiftUI **preferences editor**
-screen (the service supports GET/PATCH; only the feed UI shipped) — easy follow-up.
+barrel so the schema captures the contract.
+
+**✅ Preferences editor DONE 2026-06-28** — `NotificationPreferencesView.swift` (reached via the **gear**
+in NotificationsView) is the native match of the web client's Settings → Notifications (the shared
+`NotificationPreferencesForm`): a "how would you like to hear from us?" quick-pick (Email/Text/Push-soon,
+porting the web's `deriveActivePreference` + `applyPreferredChannel`), quiet hours (toggle + From/To,
+start≠end), and per-category per-channel toggles with email-locked events locked on. GET/PATCH via
+`NotificationsService`; live PATCH round-trip verified. **NOTE — the web client already has this editor**
+(`app/client/(gated)/settings/page.tsx` → Notifications), so **no web work was needed for prefs parity**.
+The only thing iOS has that the web client lacks is the **notification-center feed list** itself (web
+uses the Activity social feed + per-surface) — adding a web client center would be optional parity work
+(the pro side already has one at `/pro/notifications`).
 
 **Track B — push / APNs (needs Apple capability + operator creds).**
 `TovisKit/Devices/DeviceService.swift` already has `register(apnsToken:deviceId:)` / `unregister`
