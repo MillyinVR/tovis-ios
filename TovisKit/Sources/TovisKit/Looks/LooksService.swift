@@ -17,19 +17,59 @@ public final class LooksService: Sendable {
         public let nextCursor: String?
     }
 
-    /// GET /api/v1/looks — `following: true` scopes to pros you follow. `cursor`
-    /// is the opaque `nextCursor` from the previous page.
+    /// GET /api/v1/looks. Mirrors the web tabs: the default "Looks" feed (no
+    /// args), Following (`following`), Spotlight (`filter: "spotlight"`), or a
+    /// service category (`category` slug). `cursor` is the prior page's
+    /// `nextCursor`.
     public func feed(
+        filter: String? = nil,
+        category: String? = nil,
         following: Bool = false,
         cursor: String? = nil,
         limit: Int = 12
     ) async throws -> FeedPage {
         var query = [URLQueryItem(name: "limit", value: String(limit))]
         if following { query.append(URLQueryItem(name: "following", value: "true")) }
+        if let filter { query.append(URLQueryItem(name: "filter", value: filter)) }
+        if let category { query.append(URLQueryItem(name: "category", value: category)) }
         if let cursor { query.append(URLQueryItem(name: "cursor", value: cursor)) }
 
         let response: LooksFeedResponse = try await api.request("/looks", query: query)
         return FeedPage(items: response.items, nextCursor: response.nextCursor)
+    }
+
+    /// GET /api/v1/looks/categories — the dynamic service-category tabs.
+    public func categories() async throws -> [LooksCategory] {
+        let response: LooksCategoriesResponse = try await api.request("/looks/categories")
+        return response.categories
+    }
+
+    // MARK: - Follow a pro (from the overlay)
+
+    /// POST/DELETE /api/v1/pros/{id}/follow.
+    public func setFollow(professionalId: String, following: Bool) async throws -> FollowState {
+        try await api.request(
+            "/pros/\(professionalId)/follow",
+            method: following ? .post : .delete,
+            body: Data("{}".utf8)
+        )
+    }
+
+    // MARK: - Save to board
+
+    /// GET /api/v1/looks/{id}/save — current save state + the viewer's boards.
+    public func saveState(lookId: String) async throws -> LooksSaveState {
+        try await api.request("/looks/\(lookId)/save")
+    }
+
+    /// POST/DELETE /api/v1/looks/{id}/save — add/remove from a board.
+    public func setSaved(lookId: String, boardId: String, saved: Bool) async throws -> LooksSaveState {
+        let payload = try JSONEncoder().encode(LooksSaveMutationRequest(boardId: boardId))
+        return try await api.request(
+            "/looks/\(lookId)/save",
+            method: saved ? .post : .delete,
+            body: payload
+        )
     }
 
     // MARK: - Like a look

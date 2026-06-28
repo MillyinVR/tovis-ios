@@ -47,18 +47,25 @@ Next real work (pick up here): **(1) Push/APNs** (DeviceService is inert). **(2)
 mobile mode + add-ons + reschedule/cancel. **(3) Xcode/operator** — Apple capability +
 `APPLE_CLIENT_ID` env.
 
-**✅ DONE 2026-06-27 — Looks tab (the last placeholder).** The center feather tab is now a real
-TikTok/IG-style feed: full-bleed vertically-paged media, bottom-left overlays (creator → pro
-profile, service/category, "from $X", caption), and a right rail (like, comment, Book → pro
-profile). Cursor pagination, For You / Following tabs, optimistic like, and a full **comments
-sheet** (`LookCommentsView`) with top-level comments + 1-level replies (load-on-tap), like a
-comment, reply, and delete-your-own — matching the rebuilt web CommentsDrawer. All reads use
-existing endpoints; **no new backend code**. TovisKit: `Models/Looks.swift`, `Looks/LooksService.swift`
-(feed/like/comments/replies), wired on `client.looks`; 2 new fixtures + decode tests (17 total) +
-contract entries (`LooksFeedItemDto`, `LooksCommentDto` — both already in the wire schema). Verified
-the live `GET /api/v1/looks` returns all modeled fields. **Deferred:** save-to-board (needs a board
-picker), the Spotlight/category tabs, and video playback (images render; `mediaType==VIDEO` shows
-the frame, no player yet).
+**✅ DONE 2026-06-27 — Looks tab (the last placeholder), reworked to match web 1:1.** The center
+feather tab is a full-bleed, vertically-paged TikTok/IG feed **ported directly from the web
+components** (`tovis-app/app/(main)/looks/_components/*`): the **`Looks` serif header + Spotlight ·
+Following · category tabs** (categories fetched from `/looks/categories`), bottom-left overlays
+(creator name + **FOLLOW pill** + follower count, italic caption in quotes, mono-uppercase service
+pill), and the full **right action rail**: creator **avatar with + badge** → teal **BOOK** circle →
+like → comment → **save (bookmark)** → **share**. Cursor pagination; optimistic like + follow; share
+via `ShareLink`; **save-to-board sheet** (`SaveToBoardSheet`, loads the viewer's boards). Full
+**comments sheet** (`LookCommentsView`): top-level + 1-level replies (load-on-tap), like, reply,
+delete-your-own — matching the rebuilt web CommentsDrawer. All existing endpoints, **no new backend
+code**. TovisKit: `Models/Looks.swift` + `Looks/LooksService.swift` (feed w/ filter/category +
+categories + like + follow + save + comments/replies) on `client.looks`; 2 fixtures + decode tests
+(17 total) + contract entries (`LooksFeedItemDto`, `LooksCommentDto`). Verified live `GET /api/v1/looks`
+returns all modeled fields. **Deferred:** video playback (`mediaType==VIDEO` shows the still frame,
+no `AVPlayer` yet) and the header's search icon + workspace-switch pills (global chrome).
+⚠️ **Couldn't screenshot it logged-in this session** (terminal lacks simulator accessibility
+access; a `simctl install` also logs the sim out). To see it: Xcode ⌘R + sign in
+(`client@tovis.app`/`password123` on local). Debug shows LOCAL looks (sparse) — to compare against
+the prod web feed, point Debug at prod (flip the scheme to Release, or add a prod override).
 
 **✅ DONE 2026-06-27 — in-app Stripe payment + deep-link return (the old #1).** A client can now
 pay a booking inside the app via hosted Stripe Checkout, and the app is handed back

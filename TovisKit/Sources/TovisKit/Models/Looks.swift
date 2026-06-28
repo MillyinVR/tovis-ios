@@ -103,6 +103,46 @@ public struct LooksCounts: Decodable, Sendable {
     public let comments: Int
 }
 
+// MARK: - Categories (GET /api/v1/looks/categories)
+
+public struct LooksCategory: Decodable, Sendable, Identifiable, Hashable {
+    public let name: String
+    public let slug: String
+    public var id: String { slug }
+}
+
+struct LooksCategoriesResponse: Decodable, Sendable {
+    let categories: [LooksCategory]
+}
+
+// MARK: - Follow (POST/DELETE /api/v1/pros/{id}/follow)
+
+public struct FollowState: Decodable, Sendable {
+    public let following: Bool
+    public let followerCount: Int
+}
+
+// MARK: - Save to board (GET/POST/DELETE /api/v1/looks/{id}/save)
+
+public struct LooksBoard: Decodable, Sendable, Identifiable, Hashable {
+    public let id: String
+    public let name: String
+    public let visibility: String
+}
+
+/// The look's save state. Both the GET state and the POST/DELETE mutation
+/// responses carry this shape (extra mutation-only keys are ignored).
+public struct LooksSaveState: Decodable, Sendable {
+    public let isSaved: Bool
+    public let saveCount: Int
+    public let boardIds: [String]
+    public let boards: [LooksBoard]
+}
+
+struct LooksSaveMutationRequest: Encodable, Sendable {
+    let boardId: String
+}
+
 // MARK: - Like (POST/DELETE /api/v1/looks/{id}/like)
 
 public struct LooksLikeResponse: Decodable, Sendable {
