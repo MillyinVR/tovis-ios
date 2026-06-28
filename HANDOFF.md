@@ -87,14 +87,25 @@ The only thing iOS has that the web client lacks is the **notification-center fe
 uses the Activity social feed + per-surface) — adding a web client center would be optional parity work
 (the pro side already has one at `/pro/notifications`).
 
-**Track B — push / APNs (needs Apple capability + operator creds).**
-`TovisKit/Devices/DeviceService.swift` already has `register(apnsToken:deviceId:)` / `unregister`
-(POST/DELETE `/api/v1/devices`) but is **inert** — nothing calls it. To light it up: add the **Push
-Notifications** capability in Xcode, register for APNs in the app delegate / `UIApplicationDelegate`
-adaptor, and call `DeviceService.register` on sign-in with the SAME `deviceId` used for login (per-
-device revocation depends on that). Operator sets APNs creds — runbook:
-`tovis-app/docs/mobile/push-go-live-runbook.md`. Pair with Track A's preferences so users can
-control what pushes.
+**Track B — push / APNs — ✅ APP SIDE WIRED 2026-06-28 (needs Apple capability + operator creds to fire).**
+`Tovis/PushManager.swift` (PushManager + `AppDelegate` via `@UIApplicationDelegateAdaptor`) is now
+LIVE: on every sign-in path (`SessionModel.startPush()` in login/apple/phone/bootstrap) it requests
+notification permission, `registerForRemoteNotifications()`, and on the APNs callback calls
+`DeviceService.register(apnsToken:deviceId:)` with the SAME per-install `deviceId` as login (per-device
+revocation lines up). Logout → `stopPush()` → `unregister`. Foreground pushes show a banner; any incoming
+push bumps `refreshTick` (the live-sync seam). The backend pipeline (APNs sender + cron drain + token
+invalidation) is **already built/deployed + dormant** — NO backend code needed. Verified: Debug
+xcodebuild + a live register/list/unregister round-trip vs POST/DELETE `/api/v1/devices`.
+🔴 **To actually deliver a push (human/operator — can't be done from code):**
+1. **Xcode**: Tovis target → Signing & Capabilities → set **Team** → **+ Capability → Push Notifications**
+   (creates the `aps-environment` entitlement + provisioning). `didFailToRegister` fires until this is done
+   (and always on the plain simulator) — non-fatal.
+2. **Operator**: set `APNS_AUTH_KEY`/`APNS_KEY_ID`/`APNS_TEAM_ID`/`APNS_BUNDLE_ID` (= `app.tovis.Tovis`)
+   (+ `APNS_ENV`) in Vercel and **redeploy** — runbook `tovis-app/docs/mobile/push-go-live-runbook.md`.
+   `APNS_ENV=sandbox` for **Debug** (Xcode) builds, `production` for **TestFlight/App Store**.
+3. **Smoke test on a REAL device** (simulator APNs tokens differ): sign in → grant permission → token
+   registers → trigger a booking confirmation → push arrives. Per-event push + opt-out already honor
+   Track A's preferences (`pushEnabled` + quiet hours).
 
 **✅ DONE 2026-06-27 — Looks tab (the last placeholder), reworked to match web 1:1.** The center
 feather tab is a full-bleed, vertically-paged TikTok/IG feed **ported directly from the web
@@ -138,6 +149,7 @@ doesn't model `depositStatus`, so there's no UI trigger. Add that field to surfa
 
 - **`tovis-ios`** — branch `main`, **all work committed, working tree clean**. **NO git
   remote** (local commits only; nothing to push). Recent commits (newest first):
+  `feat(push)` APNs registration wired (Track B) ·
   `feat(booking)` client reschedule + cancel (Booking v2) · `feat(notifications)` prefs editor ·
   `feat(notifications)` in-app notification center (Track A) · `style(discover)` grid-default +
   web-grid view · `feat(discover)` MapKit rebuild ·
@@ -329,10 +341,11 @@ multi-tenant scale, upgrade to authorized channels (RLS on `realtime.messages` +
 1. **`APPLE_CLIENT_ID` env** = the iOS bundle id (e.g. `me.tovis.Tovis`, check Xcode →
    target → Signing & Capabilities). Set in `tovis-app/.env.local` for local dev AND in
    Vercel for prod. Without it, `/api/v1/auth/apple` can't verify tokens.
-2. **Xcode: add the "Sign in with Apple" capability** — Tovis target → Signing &
-   Capabilities → set **Team** (paid Apple Developer account — the user HAS one) → +
-   Capability → Sign in with Apple. The button compiles without it but Apple's sheet
-   errors until it's added.
+2. **Xcode capabilities** — Tovis target → Signing & Capabilities → set **Team** (paid
+   Apple Developer account — the user HAS one), then **+ Capability** for BOTH:
+   **Sign in with Apple** (the button compiles without it but Apple's sheet errors until added)
+   and **Push Notifications** (creates the `aps-environment` entitlement; APNs registration
+   fails until added). Push **operator** creds: see the Track B section + push-go-live-runbook.
 3. **Twilio Verify** for phone-OTP — `TWILIO_VERIFY_SERVICE_SID` etc. (already set in prod).
 4. **Deploy** so the merged backend is live against production (not just local dev).
 
