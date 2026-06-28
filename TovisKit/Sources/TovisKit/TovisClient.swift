@@ -16,6 +16,7 @@ public final class TovisClient: Sendable {
     public let bookings: BookingsService
     public let profiles: ProfileService
     public let me: MeService
+    public let messages: MessagesService
     public let tokenStore: TokenStore
 
     /// Stable per-install id. Persisted in the Keychain-backed store's UserDefaults
@@ -42,6 +43,14 @@ public final class TovisClient: Sendable {
         self.bookings = BookingsService(api: api)
         self.profiles = ProfileService(api: api)
         self.me = MeService(api: api)
+        self.messages = MessagesService(api: api)
+    }
+
+    /// The signed-in user's id, decoded from the stored JWT. Works on a cold
+    /// launch (before `currentUser` is populated) — used to align chat bubbles.
+    public func currentUserId() async -> String? {
+        guard let token = await tokenStore.token() else { return nil }
+        return SessionToken.userId(from: token)
     }
 
     private static let deviceIdKey = "tovis.deviceId"

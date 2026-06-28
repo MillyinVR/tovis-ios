@@ -9,6 +9,9 @@ import TovisKit
 struct HomeView: View {
     @Environment(SessionModel.self) private var session
 
+    /// Switch the shell to the Inbox tab (the header bell), set by MainTabView.
+    var onOpenInbox: () -> Void = {}
+
     private enum Phase {
         case loading
         case loaded(ClientHome)
@@ -85,9 +88,7 @@ struct HomeView: View {
     /// Inbox entry point — bell in a circle, like the web InboxBell (links to the
     /// inbox; that surface lands later, so it opens the placeholder for now).
     private var inboxBell: some View {
-        NavigationLink {
-            ComingSoonView.inbox
-        } label: {
+        Button(action: onOpenInbox) {
             Image(systemName: "bell")
                 .font(.system(size: 17))
                 .foregroundStyle(BrandColor.textMuted)

@@ -52,12 +52,4 @@ extension ComingSoonView {
             blurb: "The viral looks feed lands here — browse, save, and rebook the styles you love."
         )
     }
-
-    static var inbox: ComingSoonView {
-        ComingSoonView(
-            title: "Inbox",
-            systemImage: "envelope",
-            blurb: "Messages with your pros will live here once chat ships to the app."
-        )
-    }
 }

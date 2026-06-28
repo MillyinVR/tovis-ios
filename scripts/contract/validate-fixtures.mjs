@@ -23,6 +23,8 @@ const schemaPath = process.env.TOVIS_API_SCHEMA || defaultSchema
 const CHECKS = [
   { file: 'clientHome.json', def: 'ClientHomeDTO', pick: (d) => [d.home] },
   { file: 'clientMe.json', def: 'ClientMePageDTO', pick: (d) => [d.me] },
+  { file: 'messagesThreads.json', def: 'MessageThreadListItemDTO', pick: (d) => d.threads },
+  { file: 'messageThread.json', def: 'MessageDTO', pick: (d) => d.messages },
   { file: 'proProfile.json', def: 'ProPublicProfileDto', pick: (d) => [d.professional] },
   {
     file: 'clientBookings.json',

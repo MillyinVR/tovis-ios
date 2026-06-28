@@ -1,0 +1,25 @@
+{
+  "ok": true,
+  "thread": { "id": "thr_1" },
+  "messages": [
+    {
+      "id": "msg_1",
+      "body": "Hi! Looking forward to your appointment.",
+      "createdAt": "2026-06-27T17:00:00.000Z",
+      "senderUserId": "usr_pro",
+      "attachments": []
+    },
+    {
+      "id": "msg_2",
+      "body": "Me too — see you at 2!",
+      "createdAt": "2026-06-27T18:30:00.000Z",
+      "senderUserId": "usr_me",
+      "attachments": [
+        { "id": "att_1", "url": "https://cdn.example.com/att_1.jpg", "mediaType": "IMAGE" }
+      ]
+    }
+  ],
+  "nextCursor": null,
+  "hasMore": false,
+  "take": 40
+}

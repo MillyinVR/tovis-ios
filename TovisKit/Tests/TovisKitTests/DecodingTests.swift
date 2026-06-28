@@ -114,6 +114,25 @@ func fixture(_ name: String) throws -> Data {
         #expect(me.activityUnreadCount == 2)
     }
 
+    // GET /api/v1/messages/threads — Fixtures/messagesThreads.json (schema-validated).
+    @Test func decodesMessageThreads() throws {
+        let res = try JSONDecoder().decode(MessageThreadsResponse.self, from: fixture("messagesThreads"))
+        let thread = try #require(res.threads.first)
+        #expect(thread.professional.displayName == "Plume Studio")
+        #expect(thread.lastMessagePreview == "See you at 2!")
+        // lastMessageAt (18:30) is newer than my lastReadAt (18:00) → unread.
+        #expect(thread.isUnread == true)
+    }
+
+    // GET /api/v1/messages/threads/{id} — Fixtures/messageThread.json (schema-validated).
+    @Test func decodesMessageThread() throws {
+        let res = try JSONDecoder().decode(MessageThreadPageResponse.self, from: fixture("messageThread"))
+        #expect(res.messages.count == 2)
+        #expect(res.messages.first?.senderUserId == "usr_pro")
+        #expect(res.messages.last?.attachments.first?.mediaType == "IMAGE")
+        #expect(res.hasMore == false)
+    }
+
     // GET /api/v1/client/bookings — Fixtures/clientBookings.json (schema-validated).
     @Test func decodesClientBookings() throws {
         let res = try JSONDecoder().decode(ClientBookingsResponse.self, from: fixture("clientBookings"))
