@@ -14,36 +14,36 @@ struct AppointmentsView: View {
 
     @State private var phase: Phase = .loading
 
+    // Pushed inside the host tab's NavigationStack (Home / Me) — no stack here,
+    // to avoid nesting NavigationStacks.
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
-                    switch phase {
-                    case .loading:
-                        loadingState
-                    case let .failed(message):
-                        errorState(message)
-                    case let .loaded(buckets):
-                        content(buckets)
-                    }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                switch phase {
+                case .loading:
+                    loadingState
+                case let .failed(message):
+                    errorState(message)
+                case let .loaded(buckets):
+                    content(buckets)
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 8)
-                .padding(.bottom, 40)
             }
-            .background(BrandColor.bgPrimary.ignoresSafeArea())
-            .navigationTitle("Appointments")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
-            .refreshable { await load() }
-            .task {
-                if case .loading = phase { await load() }
-            }
-            // Live-sync: refetch on foreground / Realtime signal, and poll gently
-            // (this is the "leave it open on the salon computer" screen).
-            .onChange(of: session.refreshTick) { Task { await load() } }
-            .task { await poll() }
+            .padding(.horizontal, 20)
+            .padding(.top, 8)
+            .padding(.bottom, 40)
         }
+        .background(BrandColor.bgPrimary.ignoresSafeArea())
+        .navigationTitle("Appointments")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
+        .refreshable { await load() }
+        .task {
+            if case .loading = phase { await load() }
+        }
+        // Live-sync: refetch on foreground / Realtime signal, and poll gently
+        // (this is the "leave it open on the salon computer" screen).
+        .onChange(of: session.refreshTick) { Task { await load() } }
+        .task { await poll() }
         .tint(BrandColor.accent)
     }
 

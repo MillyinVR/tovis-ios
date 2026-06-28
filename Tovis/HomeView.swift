@@ -7,9 +7,6 @@ import TovisKit
 struct HomeView: View {
     @Environment(SessionModel.self) private var session
 
-    /// Jump to the Appointments tab (the home's appointment/action cards link here).
-    var onOpenAppointments: () -> Void = {}
-
     private enum Phase {
         case loading
         case loaded(ClientHome)
@@ -118,7 +115,7 @@ struct HomeView: View {
         // action → invites → upcoming → favorite pros → favorited services →
         // waitlist → viral.
         if let action = home.action {
-            Button(action: onOpenAppointments) { ActionBanner(action: action) }
+            NavigationLink { AppointmentsView() } label: { ActionBanner(action: action) }
                 .buttonStyle(.plain)
         }
 
@@ -134,7 +131,7 @@ struct HomeView: View {
 
         if let upcoming = home.upcoming {
             BrandSection(title: "Next booking", trailing: upcomingTrailing(home.upcomingCount)) {
-                Button(action: onOpenAppointments) { UpcomingCard(booking: upcoming) }
+                NavigationLink { AppointmentsView() } label: { UpcomingCard(booking: upcoming) }
                     .buttonStyle(.plain)
             }
         }

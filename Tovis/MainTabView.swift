@@ -1,22 +1,38 @@
-// The signed-in shell: a tab bar over the client surfaces.
-// Home + Appointments today; more tabs (discover, messages, profile) land here
-// as those screens get built.
+// The signed-in shell: the custom Tovis footer over the client surfaces.
+//
+// Matches the web client footer 1:1 — Home · Discover · Looks(center feather) ·
+// Inbox · Me (see ClientTab + TovisTabBar). Appointments is NOT a footer tab
+// (the web reaches bookings from the home cards and the Me tab, not the footer);
+// HomeView pushes to it, and the Me tab links to it.
+//
+// We keep a real SwiftUI TabView for per-tab state + lazy loading, hide its
+// system bar, and overlay our branded bar via safeAreaInset so the raised
+// feather can lift above the bar like the web's .tovis-center-lift.
 import SwiftUI
 
 struct MainTabView: View {
-    enum Tab: Hashable { case home, appointments }
-
-    @State private var tab: Tab = .home
+    @State private var tab: ClientTab.ID = .home
 
     var body: some View {
         TabView(selection: $tab) {
-            HomeView(onOpenAppointments: { tab = .appointments })
-                .tabItem { Label("Home", systemImage: "house.fill") }
-                .tag(Tab.home)
+            HomeView()
+                .tag(ClientTab.ID.home)
 
-            AppointmentsView()
-                .tabItem { Label("Appointments", systemImage: "calendar") }
-                .tag(Tab.appointments)
+            ComingSoonView.discover
+                .tag(ClientTab.ID.discover)
+
+            ComingSoonView.looks
+                .tag(ClientTab.ID.looks)
+
+            ComingSoonView.inbox
+                .tag(ClientTab.ID.inbox)
+
+            MeView()
+                .tag(ClientTab.ID.me)
+        }
+        .toolbar(.hidden, for: .tabBar)         // hide the system tab bar
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            TovisTabBar(selected: $tab)         // our branded footer
         }
         .tint(BrandColor.accent)
     }
