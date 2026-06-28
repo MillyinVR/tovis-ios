@@ -13,6 +13,13 @@ public enum SessionToken {
         claim("userId", from: token)
     }
 
+    /// The session-kind claim ("ACTIVE" once fully verified, "VERIFICATION" for a
+    /// partial post-signup session). Lets a cold launch route to the in-app
+    /// verification step without a network round-trip.
+    public static func sessionKind(from token: String) -> String? {
+        claim("sessionKind", from: token)
+    }
+
     static func claim(_ name: String, from token: String) -> String? {
         let parts = token.split(separator: ".")
         guard parts.count >= 2 else { return nil }

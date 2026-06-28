@@ -53,6 +53,30 @@ public struct RefreshResponse: Codable, Sendable {
     public let token: String
 }
 
+// MARK: - Account phone verification (post-signup, e.g. after Sign in with Apple)
+// These act on the authenticated (verification) session — distinct from the
+// passwordless phone-LOGIN flow above.
+
+/// POST /api/v1/auth/phone/correct — set the account phone + send an OTP.
+struct PhoneCorrectRequest: Encodable, Sendable {
+    let phone: String
+}
+
+/// POST /api/v1/auth/phone/verify — request body.
+struct PhoneVerifyCodeRequest: Encodable, Sendable {
+    let code: String
+}
+
+/// POST /api/v1/auth/phone/verify — response (`AuthPhoneVerifyResponseDTO`).
+/// `token` is non-nil once the session is fully verified (a new ACTIVE token).
+public struct PhoneVerifyResponse: Decodable, Sendable {
+    public let isPhoneVerified: Bool
+    public let isEmailVerified: Bool
+    public let isFullyVerified: Bool
+    public let requiresEmailVerification: Bool
+    public let token: String?
+}
+
 /// Push platform — matches the backend `DevicePlatform` enum.
 public enum DevicePlatform: String, Codable, Sendable {
     case ios = "IOS"

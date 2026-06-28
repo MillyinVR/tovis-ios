@@ -74,12 +74,23 @@ struct CheckoutReturn: Equatable {
 @MainActor
 @Observable
 final class SessionModel {
-    enum State: Equatable { case loading, signedOut, signedIn }
+    enum State: Equatable {
+        case loading
+        case signedOut
+        /// Signed in but not fully verified yet (e.g. Apple sign-in verifies the
+        /// email but a phone still needs verifying). Routes to PhoneVerificationView.
+        case needsVerification
+        case signedIn
+    }
 
     private(set) var state: State = .loading
     private(set) var currentUser: AuthUser?
     var isWorking = false
     var errorMessage: String?
+
+    /// Whether the partial session's EMAIL is already verified (Apple sets this),
+    /// so the verification screen knows phone is the only step left.
+    private(set) var emailVerified = false
 
     /// Live-sync seam: every screen observes this and refetches when it changes.
     /// Bumped on app foreground (Layer 1) and on a Realtime "changed" broadcast
@@ -120,12 +131,20 @@ final class SessionModel {
     }
 
     func bootstrap() async {
-        let signedIn = await client.auth.hasSession()
-        state = signedIn ? .signedIn : .signedOut
-        if signedIn {
-            await startRealtime()
-            await startPush()
+        guard await client.auth.hasSession() else {
+            state = .signedOut
+            return
         }
+        // A partial (post-signup) session carries sessionKind "VERIFICATION";
+        // route it to the in-app verification step instead of the app. Read from
+        // the stored JWT — no network call. Unknown/legacy tokens default to in.
+        if await client.auth.sessionKind() == "VERIFICATION" {
+            state = .needsVerification
+            return
+        }
+        state = .signedIn
+        await startRealtime()
+        await startPush()
     }
 
     /// Subscribe to this user's live channel. Derives the userId from the stored
@@ -158,6 +177,79 @@ final class SessionModel {
         await PushManager.shared.disable()
     }
 
+    /// Route a fresh auth response: fully verified → into the app (+ live-sync +
+    /// push); otherwise → the in-app verification step.
+    private func handleAuthResult(_ result: LoginResponse) async {
+        currentUser = result.user
+        emailVerified = result.isEmailVerified
+        if result.isFullyVerified {
+            state = .signedIn
+            await startRealtime()
+            await startPush()
+        } else {
+            state = .needsVerification
+        }
+    }
+
+    // MARK: - In-app verification (phone)
+
+    /// Step 1: set the account phone + send the SMS code. Returns true to advance
+    /// to the code entry step.
+    func submitVerificationPhone(_ phone: String) async -> Bool {
+        isWorking = true
+        errorMessage = nil
+        defer { isWorking = false }
+        do {
+            try await client.auth.setAccountPhoneAndSendCode(phone: phone)
+            return true
+        } catch let error as APIError {
+            errorMessage = error.userMessage
+            return false
+        } catch {
+            errorMessage = "Couldn’t send the code. Please try again."
+            return false
+        }
+    }
+
+    /// Resend the code to the phone already on file.
+    func resendVerificationCode() async {
+        errorMessage = nil
+        try? await client.auth.resendAccountPhoneCode()
+    }
+
+    /// Step 2: verify the code. On full verification the new ACTIVE token is
+    /// persisted and we drop into the app.
+    func verifyPhoneCode(_ code: String) async {
+        isWorking = true
+        errorMessage = nil
+        defer { isWorking = false }
+        do {
+            let result = try await client.auth.verifyAccountPhone(code: code)
+            if result.isFullyVerified {
+                state = .signedIn
+                await startRealtime()
+                await startPush()
+            } else {
+                // Phone done but email still pending (not expected for Apple, whose
+                // email is pre-verified). Surface it rather than silently looping.
+                emailVerified = result.isEmailVerified
+                errorMessage = "Your phone is verified. Check your email to finish."
+            }
+        } catch let error as APIError {
+            errorMessage = error.userMessage
+        } catch {
+            errorMessage = "That code didn’t work. Please try again."
+        }
+    }
+
+    /// Bail out of verification (back to the sign-in screen).
+    func cancelVerification() async {
+        await client.auth.logout()
+        currentUser = nil
+        emailVerified = false
+        state = .signedOut
+    }
+
     func login(email: String, password: String) async {
         isWorking = true
         errorMessage = nil
@@ -168,10 +260,7 @@ final class SessionModel {
                 password: password,
                 deviceId: client.deviceId
             )
-            currentUser = result.user
-            state = .signedIn
-            await startRealtime()
-            await startPush()
+            await handleAuthResult(result)
         } catch let error as APIError {
             errorMessage = error.userMessage
         } catch {
@@ -190,10 +279,7 @@ final class SessionModel {
                 lastName: lastName,
                 deviceId: client.deviceId
             )
-            currentUser = result.user
-            state = .signedIn
-            await startRealtime()
-            await startPush()
+            await handleAuthResult(result)
         } catch let error as APIError {
             errorMessage = error.userMessage
         } catch {
@@ -230,10 +316,7 @@ final class SessionModel {
                 code: code,
                 deviceId: client.deviceId
             )
-            currentUser = result.user
-            state = .signedIn
-            await startRealtime()
-            await startPush()
+            await handleAuthResult(result)
         } catch let error as APIError {
             errorMessage = error.userMessage
         } catch {
@@ -266,6 +349,8 @@ struct RootView: View {
                     .task { await session.bootstrap() }
             case .signedOut:
                 LoginView()
+            case .needsVerification:
+                PhoneVerificationView()
             case .signedIn:
                 MainTabView()
             }

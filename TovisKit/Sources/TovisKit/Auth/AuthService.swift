@@ -91,6 +91,37 @@ public final class AuthService: Sendable {
         return response
     }
 
+    // MARK: - Account phone verification (post-signup)
+    //
+    // For a freshly created account that isn't fully verified yet (e.g. after Sign
+    // in with Apple, which verifies the email but not a phone). These run on the
+    // authenticated verification session (bearer token already stored).
+
+    /// POST /api/v1/auth/phone/correct — set the account's phone number AND send
+    /// an SMS code to it. Use this to (re)set the phone before verifying.
+    public func setAccountPhoneAndSendCode(phone: String) async throws {
+        let payload = try JSONEncoder().encode(PhoneCorrectRequest(phone: phone))
+        try await api.requestVoid("/auth/phone/correct", method: .post, body: payload)
+    }
+
+    /// POST /api/v1/auth/phone/send — resend the code to the phone already on file.
+    public func resendAccountPhoneCode() async throws {
+        try await api.requestVoid("/auth/phone/send", method: .post, body: Data("{}".utf8))
+    }
+
+    /// POST /api/v1/auth/phone/verify — check the SMS code. On full verification
+    /// the backend mints a new ACTIVE token, which we persist so the next request
+    /// carries the verified session.
+    @discardableResult
+    public func verifyAccountPhone(code: String) async throws -> PhoneVerifyResponse {
+        let payload = try JSONEncoder().encode(PhoneVerifyCodeRequest(code: code))
+        let response: PhoneVerifyResponse = try await api.request(
+            "/auth/phone/verify", method: .post, body: payload
+        )
+        if let token = response.token { await tokenStore.save(token) }
+        return response
+    }
+
     /// Forget the session locally. (Also call DeviceService.unregister first if
     /// you want to stop pushes to this device server-side.)
     public func logout() async {
@@ -100,6 +131,13 @@ public final class AuthService: Sendable {
     /// Whether a session token is present (does NOT validate it server-side).
     public func hasSession() async -> Bool {
         await tokenStore.hasToken()
+    }
+
+    /// The stored session's kind ("ACTIVE" = fully verified, "VERIFICATION" =
+    /// partial post-signup). Read locally from the JWT — no network call.
+    public func sessionKind() async -> String? {
+        guard let token = await tokenStore.token() else { return nil }
+        return SessionToken.sessionKind(from: token)
     }
 }
 
