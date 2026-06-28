@@ -22,6 +22,11 @@ struct BookingDetailView: View {
     @State private var checkoutError: String?
     @State private var paidLocally = false
 
+    // Deposit leg (discovery deposit + one-time platform fee)
+    @State private var creatingDeposit = false
+    @State private var depositError: String?
+    @State private var depositPaidLocally = false
+
     // Manage leg (reschedule / cancel)
     @State private var rescheduleSheet: RescheduleContext?
     @State private var loadingReschedule = false
@@ -60,6 +65,19 @@ struct BookingDetailView: View {
         paidLocally ||
             booking.checkout.paymentCollectedAt != nil ||
             (booking.checkout.checkoutStatus ?? "").uppercased() == "PAID"
+    }
+
+    /// A discovery deposit is owed exactly while its status is PENDING (the same
+    /// gate the backend's deposit/stripe-session route enforces). `depositPaidLocally`
+    /// flips it off optimistically once the deposit return lands.
+    private var depositDue: Bool {
+        !depositPaidLocally &&
+            (booking.checkout.depositStatus ?? "").uppercased() == "PENDING"
+    }
+
+    private var depositPaid: Bool {
+        depositPaidLocally ||
+            (booking.checkout.depositStatus ?? "").uppercased() == "PAID"
     }
 
     private var isConsultationPending: Bool {
@@ -121,6 +139,8 @@ struct BookingDetailView: View {
 
                 totalsCard
 
+                depositCard
+
                 payCard
 
                 manageCard
@@ -166,7 +186,13 @@ struct BookingDetailView: View {
         .onChange(of: session.checkoutReturn) { _, ret in
             guard let ret, ret.bookingId == booking.id else { return }
             checkoutSheet = nil // dismiss the in-app browser
-            if ret.status == .success { paidLocally = true }
+            if ret.status == .success {
+                // The same return scheme carries both legs — flip the one that paid.
+                switch ret.kind {
+                case .deposit: depositPaidLocally = true
+                case .checkout: paidLocally = true
+                }
+            }
             session.clearCheckoutReturn()
             Task { await onDecision() }
         }
@@ -242,6 +268,80 @@ struct BookingDetailView: View {
             checkoutError = error.userMessage
         } catch {
             checkoutError = "Couldn’t start checkout. Please try again."
+        }
+    }
+
+    // MARK: - Deposit (discovery deposit + one-time platform fee)
+
+    @ViewBuilder
+    private var depositCard: some View {
+        if depositPaid {
+            BrandSurface(tint: BrandColor.emerald.opacity(0.14)) {
+                HStack(spacing: 10) {
+                    Image(systemName: "lock.shield.fill").foregroundStyle(BrandColor.emerald)
+                    Text("Deposit paid")
+                        .font(BrandFont.body(15, .semibold))
+                        .foregroundStyle(BrandColor.textPrimary)
+                    Spacer()
+                }
+            }
+        } else if depositDue {
+            BrandSurface {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "lock.shield").foregroundStyle(BrandColor.accent)
+                        Text("Secure your booking")
+                            .font(BrandFont.body(15, .semibold))
+                            .foregroundStyle(BrandColor.textPrimary)
+                        Spacer()
+                    }
+                    Text("Your pro asks for a deposit to hold this appointment. It goes toward your total.")
+                        .font(BrandFont.body(13)).foregroundStyle(BrandColor.textSecondary)
+
+                    Button { Task { await startDeposit() } } label: {
+                        Group {
+                            if creatingDeposit { ProgressView().tint(BrandColor.onAccent) }
+                            else { Text(depositButtonTitle).font(BrandFont.body(16, .semibold)) }
+                        }
+                        .frame(maxWidth: .infinity).padding(.vertical, 14)
+                        .foregroundStyle(BrandColor.onAccent)
+                        .background(BrandColor.accent)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
+                    .disabled(creatingDeposit)
+
+                    if let depositError {
+                        Text(depositError)
+                            .font(BrandFont.body(13)).foregroundStyle(BrandColor.ember)
+                    }
+                }
+            }
+        }
+    }
+
+    private var depositButtonTitle: String {
+        if let amount = Wire.money(booking.checkout.depositAmount), amount != "$0" {
+            return "Pay \(amount) deposit"
+        }
+        return "Pay deposit"
+    }
+
+    private func startDeposit() async {
+        guard !creatingDeposit else { return }
+        creatingDeposit = true
+        depositError = nil
+        defer { creatingDeposit = false }
+        do {
+            let result = try await session.client.checkout.createDepositSession(bookingId: booking.id)
+            guard let raw = result.stripeCheckout.url, let url = URL(string: raw) else {
+                depositError = "Couldn’t open the deposit checkout. Please try again."
+                return
+            }
+            checkoutSheet = CheckoutSheet(url: url)
+        } catch let error as APIError {
+            depositError = error.userMessage
+        } catch {
+            depositError = "Couldn’t start the deposit. Please try again."
         }
     }
 

@@ -132,6 +132,11 @@ public struct ClientBookingCheckout: Decodable, Sendable {
     public let selectedPaymentMethod: String?
     public let paymentAuthorizedAt: String?
     public let paymentCollectedAt: String?
+    /// Discovery-deposit lifecycle: NONE · PENDING · PAID · REFUNDED · FAILED.
+    /// A deposit is owed-and-unpaid exactly when this is "PENDING".
+    public let depositStatus: String?
+    /// Formatted deposit amount (e.g. "$25"), or null when no deposit applies.
+    public let depositAmount: String?
 }
 
 public struct ClientBookingItem: Decodable, Sendable, Identifiable {

@@ -22,7 +22,9 @@
           "checkoutStatus": null,
           "selectedPaymentMethod": null,
           "paymentAuthorizedAt": null,
-          "paymentCollectedAt": null
+          "paymentCollectedAt": null,
+          "depositStatus": "PENDING",
+          "depositAmount": "25.00"
         },
         "locationType": "SALON",
         "locationId": "loc_1",

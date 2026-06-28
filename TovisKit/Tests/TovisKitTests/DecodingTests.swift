@@ -193,6 +193,8 @@ func fixture(_ name: String) throws -> Data {
         #expect(booking.display.title == "Balayage + Toner")
         #expect(booking.items.filter { $0.isAddOn }.count == 1)
         #expect(booking.checkout.totalAmount == "120.00")
+        #expect(booking.checkout.depositStatus == "PENDING")
+        #expect(booking.checkout.depositAmount == "25.00")
         // REAL_NAME mode → first + last name.
         #expect(booking.professional?.displayName == "Dana Lee")
         #expect(b.waitlist.first?.professional?.displayName == "Snip")
