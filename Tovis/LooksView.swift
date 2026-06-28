@@ -53,7 +53,7 @@ struct LooksView: View {
     private var commentsOpen: Bool { commentsFor != nil }
     // Roughly the visible fraction above the 0.7-height comments sheet — scales
     // the look to fit in that top gap. Tune alongside the sheet's .fraction(0.7).
-    private static let mediaShrinkScale: CGFloat = 0.33
+    private static let mediaShrinkScale: CGFloat = 0.37
 
     var body: some View {
         NavigationStack {
