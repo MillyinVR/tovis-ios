@@ -1,0 +1,113 @@
+{
+  "ok": true,
+  "me": {
+    "user": {
+      "id": "usr_1",
+      "email": "amara@example.com",
+      "phone": "+15555550123",
+      "role": "CLIENT",
+      "createdAt": "2025-11-02T18:30:00.000Z",
+      "phoneVerifiedAt": "2025-11-02T18:31:00.000Z",
+      "emailVerifiedAt": null,
+      "clientProfile": {
+        "id": "cli_1",
+        "firstName": "Amara",
+        "lastName": "Reyes",
+        "avatarUrl": null,
+        "phoneVerifiedAt": "2025-11-02T18:31:00.000Z"
+      }
+    },
+    "profile": {
+      "id": "cli_1",
+      "firstName": "Amara",
+      "lastName": "Reyes",
+      "email": "amara@example.com",
+      "avatarUrl": null,
+      "claimStatus": "CLAIMED",
+      "claimedAt": "2025-11-02T18:30:00.000Z",
+      "handle": "amara",
+      "isPublicProfile": true
+    },
+    "boards": [
+      {
+        "id": "brd_1",
+        "clientId": "cli_1",
+        "name": "Summer color",
+        "visibility": "PRIVATE",
+        "createdAt": "2026-01-04T10:00:00.000Z",
+        "updatedAt": "2026-01-06T10:00:00.000Z",
+        "itemCount": 2,
+        "items": [
+          {
+            "id": "bi_1",
+            "createdAt": "2026-01-04T10:00:00.000Z",
+            "lookPostId": "lp_1",
+            "lookPost": {
+              "id": "lp_1",
+              "caption": "Bright balayage",
+              "status": "PUBLISHED",
+              "visibility": "PUBLIC",
+              "moderationStatus": "APPROVED",
+              "publishedAt": "2026-01-03T10:00:00.000Z",
+              "primaryMedia": {
+                "id": "ma_1",
+                "mediaType": "IMAGE",
+                "thumbUrl": "https://cdn.example.com/lp_1_thumb.jpg",
+                "url": "https://cdn.example.com/lp_1.jpg"
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "following": {
+      "clientId": "cli_1",
+      "items": [
+        {
+          "followedAt": "2026-02-01T10:00:00.000Z",
+          "professional": {
+            "id": "pro_1",
+            "businessName": "Studio Lux",
+            "firstName": "Jordan",
+            "lastName": "Kim",
+            "handle": "studiolux",
+            "nameDisplay": "BUSINESS_NAME",
+            "location": "Los Angeles",
+            "professionType": "HAIRSTYLIST",
+            "avatarUrl": null,
+            "isPremium": false,
+            "verificationStatus": "VERIFIED"
+          }
+        }
+      ],
+      "pagination": { "take": 24, "skip": 0, "hasMore": false }
+    },
+    "counts": { "boards": 1, "saved": 8, "booked": 3, "following": 1, "followers": 12 },
+    "upcomingNotificationBooking": null,
+    "history": [],
+    "myLooks": [
+      {
+        "id": "lk_1",
+        "name": "Bright balayage",
+        "imageUrl": "https://cdn.example.com/lk_1.jpg",
+        "visibility": "PUBLIC",
+        "serviceId": "svc_1"
+      }
+    ],
+    "activityUnreadCount": 2,
+    "creator": {
+      "isCreator": true,
+      "savesOnYourLooks": 14,
+      "bookedFromYou": 3,
+      "remixes": [
+        {
+          "id": "bk_remix_1",
+          "who": "Maya",
+          "lookName": "Bright balayage",
+          "proName": "Studio Lux",
+          "bookedAt": "2026-02-10T10:00:00.000Z"
+        }
+      ]
+    }
+  }
+}

@@ -15,6 +15,7 @@ public final class TovisClient: Sendable {
     public let home: HomeService
     public let bookings: BookingsService
     public let profiles: ProfileService
+    public let me: MeService
     public let tokenStore: TokenStore
 
     /// Stable per-install id. Persisted in the Keychain-backed store's UserDefaults
@@ -40,6 +41,7 @@ public final class TovisClient: Sendable {
         self.home = HomeService(api: api)
         self.bookings = BookingsService(api: api)
         self.profiles = ProfileService(api: api)
+        self.me = MeService(api: api)
     }
 
     private static let deviceIdKey = "tovis.deviceId"

@@ -82,6 +82,25 @@ func fixture(_ name: String) throws -> Data {
         #expect(home.viralLive.first?.fanOutCount == 12)
     }
 
+    // GET /api/v1/me — Fixtures/clientMe.json (also schema-validated).
+    @Test func decodesClientMe() throws {
+        let res = try JSONDecoder().decode(ClientMeResponse.self, from: fixture("clientMe"))
+        let me = res.me
+        #expect(me.profile.handle == "amara")
+        #expect(me.profile.isPublicProfile == true)
+        #expect(me.counts.followers == 12)
+        #expect(me.counts.booked == 3)
+        // Board preview pulls the look-post primary media thumb.
+        #expect(me.boards.first?.previewImageUrls.first == "https://cdn.example.com/lp_1_thumb.jpg")
+        // Following resolves the pro's public display name (BUSINESS_NAME mode).
+        #expect(me.following.items.first?.professional.displayName == "Studio Lux")
+        #expect(me.following.items.first?.professional.subtitle == "HAIRSTYLIST · Los Angeles")
+        #expect(me.myLooks.first?.isPublic == true)
+        #expect(me.creator.isCreator == true)
+        #expect(me.creator.remixes.first?.who == "Maya")
+        #expect(me.activityUnreadCount == 2)
+    }
+
     // GET /api/v1/client/bookings — Fixtures/clientBookings.json (schema-validated).
     @Test func decodesClientBookings() throws {
         let res = try JSONDecoder().decode(ClientBookingsResponse.self, from: fixture("clientBookings"))

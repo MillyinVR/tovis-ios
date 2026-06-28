@@ -22,6 +22,7 @@ const schemaPath = process.env.TOVIS_API_SCHEMA || defaultSchema
 // the object(s) to validate against the named backend schema definition.
 const CHECKS = [
   { file: 'clientHome.json', def: 'ClientHomeDTO', pick: (d) => [d.home] },
+  { file: 'clientMe.json', def: 'ClientMePageDTO', pick: (d) => [d.me] },
   { file: 'proProfile.json', def: 'ProPublicProfileDto', pick: (d) => [d.professional] },
   {
     file: 'clientBookings.json',
