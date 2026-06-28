@@ -20,23 +20,28 @@ public struct TovisConfig: Sendable {
         self.supabaseAnonKey = supabaseAnonKey
     }
 
+    /// The Supabase project powering live-sync. This is a PUBLIC publishable key
+    /// (the kind designed to ship in client apps) for the same project the
+    /// backend uses, so it's safe to embed. Rotate here if the project changes.
+    private static let supabaseProjectURL = URL(string: "https://rqhhvuaoksuvbvlypztn.supabase.co")
+    private static let supabasePublishableKey = "sb_publishable_uSZDOKvLxbeZnk-6CzoC1w_k2mADwLe"
+
     /// Local Next.js dev server (`npm run dev`).
     /// NOTE: plain `http://localhost` requires an App Transport Security
     /// exception in the app's Info.plist (see the repo README).
     ///
-    /// For live-sync in dev, set supabaseURL/anonKey to the SAME Supabase
-    /// project the local backend uses (the public URL + anon key).
+    /// Live-sync points at the same Supabase project the local backend uses
+    /// (local dev shares the dev Supabase project).
     public static let local = TovisConfig(
         baseURL: URL(string: "http://localhost:3000/api/v1")!,
-        supabaseURL: nil,        // e.g. URL(string: "https://<ref>.supabase.co")
-        supabaseAnonKey: nil     // the project's anon/publishable key
+        supabaseURL: supabaseProjectURL,
+        supabaseAnonKey: supabasePublishableKey
     )
 
-    /// Production. Replace YOUR-DOMAIN with the real host before shipping, and
-    /// set the prod Supabase URL + anon key to enable live-sync.
+    /// Production. Replace YOUR-DOMAIN with the real host before shipping.
     public static let production = TovisConfig(
         baseURL: URL(string: "https://YOUR-DOMAIN/api/v1")!,
-        supabaseURL: nil,
-        supabaseAnonKey: nil
+        supabaseURL: supabaseProjectURL,
+        supabaseAnonKey: supabasePublishableKey
     )
 }
