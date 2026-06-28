@@ -172,7 +172,7 @@ struct DiscoverView: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.top, 168)   // clear the floating header + chips
+            .padding(.top, 108)   // clear the floating header + chips (list starts below the status bar)
             .padding(.bottom, 24)
         }
     }
