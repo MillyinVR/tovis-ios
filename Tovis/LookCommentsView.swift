@@ -8,7 +8,6 @@ import TovisKit
 
 struct LookCommentsView: View {
     @Environment(SessionModel.self) private var session
-    @Environment(\.dismiss) private var dismiss
 
     let look: LooksFeedItem
     /// Reports the net change in this look's comment count back to the feed.
@@ -34,25 +33,44 @@ struct LookCommentsView: View {
 
     @FocusState private var composerFocused: Bool
 
+    // TikTok-style partial sheet: opens at ~70% so the look stays visible above,
+    // expands to full only when the input is tapped.
+    @State private var detent: PresentationDetent = .fraction(0.7)
+    @State private var totalCount = 0
+
     private struct ReplyTarget: Equatable { let commentId: String; let name: String }
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                content
-                composer
-            }
-            .background(BrandColor.bgPrimary.ignoresSafeArea())
-            .navigationTitle("Comments")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }.tint(BrandColor.accent)
-                }
-            }
+        VStack(spacing: 0) {
+            header
+            content
+            composer
         }
+        .background(BrandColor.bgPrimary.ignoresSafeArea())
+        .presentationDetents([.fraction(0.7), .large], selection: $detent)
+        .presentationDragIndicator(.visible)
         .tint(BrandColor.accent)
-        .task { await load() }
+        .onChange(of: composerFocused) { _, focused in
+            if focused { withAnimation(.easeOut(duration: 0.2)) { detent = .large } }
+        }
+        .task {
+            totalCount = look.count.comments
+            await load()
+        }
+    }
+
+    // TikTok-style header: just the comment count, centered, with a hairline.
+    // (The grab handle is the sheet's drag indicator.)
+    private var header: some View {
+        VStack(spacing: 10) {
+            Text(totalCount == 1 ? "1 comment" : "\(totalCount) comments")
+                .font(BrandFont.body(14, .semibold))
+                .foregroundStyle(BrandColor.textPrimary)
+            Rectangle()
+                .fill(BrandColor.textMuted.opacity(0.12))
+                .frame(height: 1)
+        }
+        .padding(.top, 12)
     }
 
     @ViewBuilder
@@ -233,6 +251,7 @@ struct LookCommentsView: View {
             } else {
                 comments.insert(created, at: 0)
             }
+            totalCount += 1
             onCountChange(1)
         } catch let error as APIError {
             loadError = error.userMessage
@@ -286,6 +305,7 @@ struct LookCommentsView: View {
             try await session.client.looks.deleteComment(lookId: look.id, commentId: comment.id)
             // Top-level delete soft-removes the whole thread on the server.
             let removedReplies = comment.isReply ? 0 : (replies[comment.id]?.count ?? replyCount(comment))
+            totalCount = max(0, totalCount - (1 + removedReplies))
             onCountChange(-(1 + removedReplies))
         } catch {
             if !wasRemoved { removed.remove(comment.id) }   // revert

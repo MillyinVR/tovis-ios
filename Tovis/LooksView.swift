@@ -81,11 +81,11 @@ struct LooksView: View {
         .onChange(of: tab) { Task { await load() } }
         .onChange(of: session.refreshTick) { Task { await reloadKeepingPlace() } }
         .sheet(item: $commentsFor) { item in
+            // TikTok-style: opens as a partial-height sheet (presentation detents
+            // are managed inside the view so it can expand when the input is tapped).
             LookCommentsView(look: item) { delta in
                 commentCounts[item.id] = commentCount(item) + delta
             }
-            .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
         }
         .sheet(item: $saveFor) { item in
             SaveToBoardSheet(lookId: item.id)
