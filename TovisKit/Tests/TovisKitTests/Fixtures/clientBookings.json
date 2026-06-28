@@ -1,0 +1,64 @@
+{
+  "ok": true,
+  "buckets": {
+    "upcoming": [
+      {
+        "id": "bk_1",
+        "status": "ACCEPTED",
+        "source": "CLIENT",
+        "sessionStep": "SCHEDULED",
+        "scheduledFor": "2026-07-01T17:00:00.000Z",
+        "totalDurationMinutes": 90,
+        "bufferMinutes": 0,
+        "subtotalSnapshot": "120.00",
+        "checkout": {
+          "subtotalSnapshot": "120.00",
+          "serviceSubtotalSnapshot": "120.00",
+          "productSubtotalSnapshot": null,
+          "tipAmount": null,
+          "taxAmount": null,
+          "discountAmount": null,
+          "totalAmount": "120.00",
+          "checkoutStatus": null,
+          "selectedPaymentMethod": null,
+          "paymentAuthorizedAt": null,
+          "paymentCollectedAt": null
+        },
+        "locationType": "SALON",
+        "locationId": "loc_1",
+        "timeZone": "America/Los_Angeles",
+        "timeZoneSource": "LOCATION",
+        "locationLabel": "1 Main St, Los Angeles",
+        "professional": {
+          "id": "pro_1", "businessName": null, "firstName": "Dana", "lastName": "Lee",
+          "handle": "dana", "nameDisplay": "REAL_NAME", "location": "LA", "timeZone": "America/Los_Angeles"
+        },
+        "bookedLocation": {
+          "id": "loc_1", "name": "Plume", "formattedAddress": "1 Main St",
+          "city": "Los Angeles", "state": "CA", "timeZone": "America/Los_Angeles"
+        },
+        "display": { "title": "Balayage + Toner", "baseName": "Balayage", "addOnNames": ["Toner"], "addOnCount": 1 },
+        "items": [
+          { "id": "it_1", "type": "BASE", "serviceId": "svc_1", "name": "Balayage", "price": "100.00", "durationMinutes": 75, "parentItemId": null, "sortOrder": 0 },
+          { "id": "it_2", "type": "ADD_ON", "serviceId": "svc_2", "name": "Toner", "price": "20.00", "durationMinutes": 15, "parentItemId": "it_1", "sortOrder": 1 }
+        ],
+        "productSales": [],
+        "hasUnreadAftercare": false,
+        "hasPendingConsultationApproval": false,
+        "consultation": null
+      }
+    ],
+    "pending": [],
+    "prebooked": [],
+    "past": [],
+    "waitlist": [
+      {
+        "id": "wl_1", "createdAt": "2026-06-20T00:00:00.000Z", "status": "ACTIVE",
+        "preferenceType": "ANY", "notes": null,
+        "service": { "id": "svc_3", "name": "Cut" },
+        "professional": { "id": "pro_2", "businessName": "Snip", "firstName": null, "lastName": null, "handle": null, "nameDisplay": "BUSINESS_NAME", "location": null, "timeZone": null }
+      }
+    ]
+  },
+  "meta": { "now": "2026-06-27T00:00:00.000Z", "next30": "2026-07-27T00:00:00.000Z" }
+}

@@ -13,6 +13,13 @@ let package = Package(
     ],
     targets: [
         .target(name: "TovisKit"),
-        .testTarget(name: "TovisKitTests", dependencies: ["TovisKit"]),
+        .testTarget(
+            name: "TovisKitTests",
+            dependencies: ["TovisKit"],
+            // The Fixtures/*.json are the SINGLE source of wire-shape truth:
+            // decoded here AND validated against the backend schema by
+            // scripts/contract/validate-fixtures.mjs.
+            resources: [.process("Fixtures")]
+        ),
     ]
 )

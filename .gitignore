@@ -18,3 +18,7 @@ Package.resolved
 *.xcconfig.local
 GoogleService-Info.plist
 AuthKey_*.p8
+
+# Node (contract-test tooling only)
+node_modules/
+package-lock.json

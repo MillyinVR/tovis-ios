@@ -1,0 +1,12 @@
+{
+  "name": "tovis-ios-contract",
+  "private": true,
+  "type": "module",
+  "description": "Validates the iOS wire-model fixtures against the backend API JSON Schema, so a backend DTO change fails loudly instead of breaking decode at runtime.",
+  "scripts": {
+    "validate": "node validate-fixtures.mjs"
+  },
+  "devDependencies": {
+    "ajv": "^8.17.1"
+  }
+}

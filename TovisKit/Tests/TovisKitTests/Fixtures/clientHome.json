@@ -1,0 +1,164 @@
+{
+  "ok": true,
+  "home": {
+    "upcoming": {
+      "id": "bk_1",
+      "status": "CONFIRMED",
+      "source": "CLIENT",
+      "sessionStep": "SCHEDULED",
+      "scheduledFor": "2026-07-01T17:00:00.000Z",
+      "finishedAt": null,
+      "subtotalSnapshot": "120.00",
+      "serviceSubtotalSnapshot": "120.00",
+      "productSubtotalSnapshot": null,
+      "totalAmount": "120.00",
+      "tipAmount": null,
+      "taxAmount": null,
+      "discountAmount": null,
+      "checkoutStatus": null,
+      "selectedPaymentMethod": null,
+      "paymentAuthorizedAt": null,
+      "paymentCollectedAt": null,
+      "totalDurationMinutes": 90,
+      "bufferMinutes": 0,
+      "locationType": "SALON",
+      "locationId": "loc_1",
+      "locationTimeZone": "America/Los_Angeles",
+      "locationAddressSnapshot": null,
+      "service": { "id": "svc_1", "name": "Balayage" },
+      "professional": {
+        "id": "pro_1", "businessName": "Plume Studio", "handle": "plume",
+        "avatarUrl": null, "location": "Los Angeles, CA", "timeZone": "America/Los_Angeles"
+      },
+      "location": {
+        "id": "loc_1", "name": "Plume Studio", "formattedAddress": "1 Main St",
+        "city": "Los Angeles", "state": "CA", "timeZone": "America/Los_Angeles"
+      },
+      "serviceItems": [],
+      "productSales": [],
+      "consultationNotes": null,
+      "consultationPrice": null,
+      "consultationConfirmedAt": null,
+      "consultationApproval": null
+    },
+    "upcomingCount": 2,
+    "action": {
+      "kind": "PENDING_CONSULTATION",
+      "booking": {
+        "id": "bk_2",
+        "status": "CONSULTATION",
+        "source": "PRO",
+        "sessionStep": "CONSULTATION_PENDING_CLIENT",
+        "scheduledFor": "2026-07-02T20:00:00.000Z",
+        "finishedAt": null,
+        "subtotalSnapshot": null,
+        "serviceSubtotalSnapshot": null,
+        "productSubtotalSnapshot": null,
+        "totalAmount": null,
+        "tipAmount": null,
+        "taxAmount": null,
+        "discountAmount": null,
+        "checkoutStatus": null,
+        "selectedPaymentMethod": null,
+        "paymentAuthorizedAt": null,
+        "paymentCollectedAt": null,
+        "totalDurationMinutes": 30,
+        "bufferMinutes": 0,
+        "locationType": null,
+        "locationId": null,
+        "locationTimeZone": null,
+        "locationAddressSnapshot": null,
+        "service": null,
+        "professional": null,
+        "location": null,
+        "serviceItems": [],
+        "productSales": [],
+        "consultationNotes": "Proposed a gloss add-on.",
+        "consultationPrice": "40.00",
+        "consultationConfirmedAt": null,
+        "consultationApproval": {
+          "status": "PENDING",
+          "proposedServicesJson": null,
+          "proposedTotal": "160.00",
+          "notes": "Adds a gloss.",
+          "approvedAt": null,
+          "rejectedAt": null
+        }
+      }
+    },
+    "invites": [
+      {
+        "id": "inv_1",
+        "firstMatchedTier": "EARLY",
+        "notifiedTier": "EARLY",
+        "status": "NOTIFIED",
+        "notifiedAt": "2026-06-27T10:00:00.000Z",
+        "openedAt": null,
+        "clickedAt": null,
+        "bookedAt": null,
+        "createdAt": "2026-06-27T09:00:00.000Z",
+        "opening": {
+          "id": "op_1",
+          "professionalId": "pro_9",
+          "startAt": "2026-06-29T18:00:00.000Z",
+          "endAt": "2026-06-29T19:00:00.000Z",
+          "note": null,
+          "status": "OPEN",
+          "visibilityMode": "PRIVATE",
+          "publicVisibleFrom": null,
+          "publicVisibleUntil": null,
+          "timeZone": "America/New_York",
+          "locationType": "SALON",
+          "locationId": "loc_9",
+          "professional": {
+            "id": "pro_9", "businessName": null, "handle": "alex", "avatarUrl": null,
+            "professionType": "HAIR", "location": "NYC", "timeZone": "America/New_York"
+          },
+          "location": null,
+          "services": [],
+          "tierPlans": []
+        }
+      }
+    ],
+    "waitlists": [
+      {
+        "id": "wl_1",
+        "createdAt": "2026-06-20T00:00:00.000Z",
+        "notes": null,
+        "mediaId": null,
+        "status": "ACTIVE",
+        "preferenceType": "ANY",
+        "specificDate": null,
+        "timeOfDay": null,
+        "windowStartMin": null,
+        "windowEndMin": null,
+        "service": { "id": "svc_2", "name": "Cut" },
+        "professional": {
+          "id": "pro_2", "businessName": "Snip", "handle": null, "avatarUrl": null,
+          "location": null, "timeZone": null
+        }
+      }
+    ],
+    "favoritePros": [
+      {
+        "professional": {
+          "id": "pro_3", "businessName": "Gloss", "handle": "gloss", "avatarUrl": null,
+          "professionType": "NAILS", "location": "SF"
+        }
+      }
+    ],
+    "favoriteServices": [
+      {
+        "id": "fav_1",
+        "service": {
+          "id": "svc_3", "name": "Gel Mani", "minPrice": "45.00", "defaultDurationMinutes": 60,
+          "defaultImageUrl": null, "category": { "id": "cat_1", "name": "Nails" }
+        }
+      }
+    ],
+    "viralLive": [
+      { "id": "v_1", "name": "Glass Skin", "sourceUrl": null, "approvedAt": "2026-06-01T00:00:00.000Z", "_count": { "approvalFanOuts": 12 } }
+    ],
+    "viralPending": []
+  }
+}
