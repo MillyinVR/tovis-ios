@@ -13,6 +13,13 @@ Branded login with **3 auth methods** (email/pw, Sign in with Apple, phone-OTP) 
 footer 1:1** — Home · Discover · Looks(center feather) · Inbox · Me — with brand-matched,
 **actionable** screens, **System/Light/Dark** theming, and **live-sync** so web ⇄ iOS stay in step.
 
+> **🚀 STATUS (2026-06-28): client app is feature-complete for v1 and LIVE ON TESTFLIGHT.**
+> tovis-app `main` is **deployed to Vercel prod** (Stripe-return #417 + notification DTOs #419 +
+> web client notification center #420). `APPLE_CLIENT_ID` is **set in prod** + Apple/Push
+> capabilities added in Xcode + APNs creds set (use `APNS_ENV=production` for TestFlight builds).
+> Everything below is committed on `tovis-ios` `main` (no remote — local commits only).
+> **What's left is polish** (see "Suggested next steps").
+
 **Signed-in screens (all committed, build green):**
 - **Home** (`GET /client/home`) — full web parity: accent glow, greeting + InboxBell, action
   card (inline consult approve/decline), last-minute openings (Grab it/Pass), next booking,
@@ -28,12 +35,19 @@ footer 1:1** — Home · Discover · Looks(center feather) · Inbox · Me — wi
 - **Me** (`GET /api/v1/me`) — full web /client/me parity: header + FOLLOWERS/BOARDS/SAVED/
   BOOKED stats, creator card, upcoming, Your Looks (with working Public/Private toggle),
   BOARDS/FOLLOWING/HISTORY tabs. Theme picker + Sign out live in its header menu.
-- **Appointments** (`GET /client/bookings`) — bucketed list → **Booking detail** (read-only).
-  NOT a footer tab (matches web): reached from Home cards + the Me tab.
+- **Appointments** (`GET /client/bookings`) — bucketed list → **Booking detail**. NOT a footer
+  tab (matches web): reached from Home cards + the Me tab. Detail has consult approve/decline,
+  **in-app Stripe Pay**, and a **Manage section: Reschedule + Cancel (Booking v2)**.
+- **Looks** (center feather tab) — full-bleed TikTok/IG vertical feed (`/api/v1/looks`): header
+  tabs (Spotlight/Following/category), like/follow/save/share, full comments sheet.
+- **Notifications** — in-app **notification center** (`/client/notifications*`) reached from the
+  Home bell (unread dot); per-event rows, tap-to-mark-read, Mark all read, pagination, booking
+  notifications push detail. Gear → **preferences editor** (channels + quiet hours). **Push/APNs**
+  registers on sign-in (Track B). See the "🔔 Notifications" section.
 - **Pro profile** (`GET /professionals/{id}`) — header/stats/bio/offerings/portfolio/reviews;
   tapping a **service opens the booking flow**.
-- **Booking flow (v1)** — `BookingFlowView` sheet from a pro's service: bootstrap availability
-  → pick date → exact slots → **hold + finalize** → booking lands in Appointments as PENDING.
+- **Booking flow** — `BookingFlowView` sheet from a pro's service: bootstrap availability → pick
+  date → exact slots → **hold + finalize** (or **hold + reschedule** when reused for Booking v2).
 
 **Actions wired (client → backend):** consultation approve/decline (home card + booking
 detail), favorite/unfavorite a pro, accept/decline last-minute invites, **send messages**,
@@ -42,15 +56,18 @@ detail), favorite/unfavorite a pro, accept/decline last-minute invites, **send m
 **There are now ZERO "Coming soon" placeholders** — every footer tab is a real screen.
 (The old `ComingSoonView` was deleted once the Looks tab shipped.)
 
-**Verification posture:** `TovisKit` `swift test` green (**18 tests**); the contract validator
-(`scripts/contract`) green (**17 objects** vs the backend schema); the whole app **BUILDS via
-`xcodebuild`** for the simulator in Debug AND Release. The booking write path (hold→finalize)
-was verified **live end-to-end** against the API (201 PENDING → shows in /client/bookings).
+**Verification posture:** `TovisKit` `swift test` green (**21 tests**); the contract validator
+(`scripts/contract`) green (**20 objects** vs the backend schema); the whole app **BUILDS via
+`xcodebuild`** for the simulator in Debug AND Release **and ships via TestFlight**. Booking
+write/reschedule/cancel, notifications feed/summary/read/prefs, and device register/unregister were
+all verified **live end-to-end** against the API.
 
-Next real work (pick up here): **(1) Notifications** — see the dedicated section below.
-**(2) Booking v2** — ✅ **reschedule + cancel DONE** (2026-06-28); remaining: mobile mode + add-ons. **(3) Xcode/operator** — Apple
-capability + `APPLE_CLIENT_ID` env. **(4) Deploy** tovis-app `main` (the merged Stripe-return
-PR #417 isn't on prod yet — the user is holding the deploy).
+**Next real work = polish only** (the v1 must-haves are shipped). In rough priority:
+**(1) add-ons in booking** (`/offerings/add-ons`), **(2) push deep-linking** (a push tap should open
+the specific booking/look — today it just foregrounds + refreshes), **(3) deposit-pay CTA** (model
+`depositStatus` on `ClientBooking`), **(4) Looks video playback** (`AVPlayer`; today VIDEO shows the
+still frame), **(5) Discover** Places autocomplete / pin clustering / radius filter, **(6) Booking v2
+remainder** — mobile mode + client address selection. See "Suggested next steps" for detail.
 
 ## 🔔 Notifications — Track A DONE; Track B (push) is next
 
@@ -157,29 +174,23 @@ doesn't model `depositStatus`, so there's no UI trigger. Add that field to surfa
   `style(looks)` TikTok comments + feed-above-comments · `fix(auth)` cookieless URLSession ·
   `style(footer)` web-match + bigger center coin · `feat(looks)` feed + comments ·
   `feat(checkout)` Stripe pay + deep-link return · then `feat(booking|inbox|home|me|theme|footer)`.
-- **`tovis-app`** — the native-Stripe-return backend **PR #417 is MERGED** into `main`
-  (`90c5931e`); local `main` fast-forwarded + level with `origin/main`. It added
-  `lib/checkout/nativeReturn.ts` (shared, dedupes the old per-route `getAppUrl`), the public
-  `app/checkout/return` bounce route, and the `native` branch in both `*/stripe-session` routes
-  (web URLs byte-for-byte unchanged; native gated on the header). **NOT yet deployed to Vercel
-  prod** (user is holding the deploy) — so Release builds won't get the native return until then.
-- **`tovis-app`** — branch `main`, level with `origin/main`. **PR #416 (live-sync) is MERGED**
-  (it's the latest main commit). **`main` has been DEPLOYED to Vercel production** this session
-  (`npx vercel@latest --prod`) — native cookieless auth now passes on prod (was 403
-  INVALID_ORIGIN before the deploy). Prod migration `20260627040000_add_user_apple_user_id`
-  applied.
-- **Local backend is/was running** for dev: `cd ~/Dev/tovis-app && pnpm dev` (serves
-  `localhost:3000`, used by the iOS **Debug** build). It uses the **local** Postgres on
-  `:5434` (Docker container `tovis-dev-postgres`), NOT prod — see the env/DB note below.
-  **Seed login: `client@tovis.app` / `password123`** (CLIENT).
+- **`tovis-app`** — branch `main`, **clean + level with `origin/main`**, and **DEPLOYED to Vercel
+  production** (2026-06-28). Prod now has: native Stripe `tovis://` return (**#417**), typed client
+  notification DTOs + wire contract (**#419**), and the **web client notification center** (**#420**).
+  Notification endpoints + `/devices` register/unregister + `/auth/phone/*` verify all confirmed live.
+  Migrate-on-deploy is wired; no pending migrations. **No open tovis-app PRs.**
+- **Local backend** for the iOS **Debug** build: `cd ~/Dev/tovis-app && pnpm dev` (serves
+  `localhost:3000` against **local** Postgres `:5434`, Docker `tovis-dev-postgres`, NOT prod — see the
+  env/DB note). **Seed login: `client@tovis.app` / `password123`** (CLIENT, local DB only — does NOT
+  exist in prod, so TestFlight/Release needs a real prod account: web signup, Apple, or phone-OTP).
 - **Build/verify commands:**
-  - iOS unit + contract: `cd ~/Dev/tovis-ios/TovisKit && swift test` (15 pass);
-    `cd ~/Dev/tovis-ios/scripts/contract && npm run validate` (11 objects vs backend schema).
+  - iOS unit + contract: `cd ~/Dev/tovis-ios/TovisKit && swift test` (**21 pass**);
+    `cd ~/Dev/tovis-ios/scripts/contract && npm run validate` (**20 objects** vs backend schema).
   - iOS app build: `cd ~/Dev/tovis-ios && xcodebuild build -scheme Tovis -project
     tovis-ios.xcodeproj -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO`.
   - Backend: `cd ~/Dev/tovis-app && npm run typecheck && npm run lint && npm run
     check:static-guards` + `npx vitest run`.
-- **#1 next action:** deep links + Stripe so a booking can be *paid* in-app (see Next steps).
+- **#1 next action:** a polish item (add-ons in booking is the suggested next) — see Suggested next steps.
 
 ## ⚙️ Backend env / DB / prod (so the app actually loads — learned this session)
 
@@ -307,7 +318,7 @@ same login with a `Cookie: tovis_token=…` header → 403. Don't reintroduce `.
   Backend `/api/v1/me` and `/client/me` were used as-is — **no new backend code was needed**
   for the Me dashboard (it already existed). Discover/Inbox/Booking also use existing endpoints.
 
-## Live-sync (web ⇄ iOS) — built, PR #416 open
+## Live-sync (web ⇄ iOS) — built, PR #416 MERGED + deployed
 
 Goal: a booking/consult/message done on one device shows on the other without manual reload.
 **One backend + one DB; clients are thin** — so they can't truly diverge; this just removes
@@ -348,18 +359,22 @@ make a booking, watch it appear with no manual refresh. If silent, check the ws 
 token or use the legacy anon JWT instead. v1 uses **public** broadcast channels; before
 multi-tenant scale, upgrade to authorized channels (RLS on `realtime.messages` + minted token).
 
-## 🔴 Remaining setup to light it all up (operator + Xcode — needs the human)
+## ✅ Operator + Xcode setup — ALL DONE (2026-06-28)
 
-1. **`APPLE_CLIENT_ID` env** = the iOS bundle id (e.g. `me.tovis.Tovis`, check Xcode →
-   target → Signing & Capabilities). Set in `tovis-app/.env.local` for local dev AND in
-   Vercel for prod. Without it, `/api/v1/auth/apple` can't verify tokens.
-2. **Xcode capabilities** — Tovis target → Signing & Capabilities → set **Team** (paid
-   Apple Developer account — the user HAS one), then **+ Capability** for BOTH:
-   **Sign in with Apple** (the button compiles without it but Apple's sheet errors until added)
-   and **Push Notifications** (creates the `aps-environment` entitlement; APNs registration
-   fails until added). Push **operator** creds: see the Track B section + push-go-live-runbook.
-3. **Twilio Verify** for phone-OTP — `TWILIO_VERIFY_SERVICE_SID` etc. (already set in prod).
-4. **Deploy** so the merged backend is live against production (not just local dev).
+Everything below is set up; recorded here so the next session knows the live config.
+
+1. ✅ **`APPLE_CLIENT_ID`** (= bundle id `app.tovis.Tovis`) **set in prod Vercel** — Apple sign-in
+   verifies tokens. (User confirmed set.)
+2. ✅ **Xcode capabilities** — Team set (`DEVELOPMENT_TEAM = SB3J675LNU`); **Sign in with Apple** +
+   **Push Notifications** capabilities added (`Tovis/Tovis.entitlements` has `aps-environment` +
+   `applesignin`). **App icon** added (`Tovis/Assets.xcassets/AppIcon`) so the archive passes validation.
+3. ✅ **APNs creds set in prod** (`APNS_AUTH_KEY`/`KEY_ID`/`TEAM_ID`/`BUNDLE_ID`). ⚠️ **`APNS_ENV`
+   must be `production` for TestFlight/App Store** builds (distribution archives are production-signed);
+   use `sandbox` only for a development build run straight from Xcode onto a device.
+4. ✅ **Twilio Verify** for phone-OTP set in prod. ✅ **tovis-app `main` deployed to Vercel prod.**
+   ✅ **Live on TestFlight.**
+
+> Reminder: env-var changes only take effect on a **redeploy** (`cd ~/Dev/tovis-app && npx vercel@latest --prod --yes`).
 
 ## How to run / test (current state)
 
@@ -432,7 +447,15 @@ multi-tenant scale, upgrade to authorized channels (RLS on `realtime.messages` +
 
 ## ▶️ Suggested next steps (pick up here)
 
-**✅ DONE 2026-06-27/28 (this session, all committed, build green):**
+**✅ DONE 2026-06-28 (latest session — all committed, build green, much verified live):**
+- **Notifications** — in-app **center** (Track A) + **preferences editor** + **push/APNs registration**
+  (Track B). Backend: typed DTOs **#419 merged** + **web client notification center #420 merged**.
+- **Booking v2 — reschedule + cancel** (`BookingDetailView` Manage section; live round-trip verified).
+- **App icon asset catalog** (unblocked TestFlight validation) → **SHIPPED TO TESTFLIGHT**.
+- **In-app phone verification** (smooth Apple onboarding — `.needsVerification` + `PhoneVerificationView`).
+- **tovis-app `main` deployed to Vercel prod**; `APPLE_CLIENT_ID` + APNs creds confirmed set.
+
+**✅ DONE 2026-06-27 (prior session):**
 - **Stripe in-app payment + `tovis://` deep-link return** (PR #417 merged on backend; see TL;DR).
 - **Looks tab** built then reworked to web parity (header tabs + rail + overlay), **TikTok-style
   comments sheet** (partial-height, count header, auto-expand on input), feed **lifted above the
@@ -444,30 +467,24 @@ multi-tenant scale, upgrade to authorized channels (RLS on `realtime.messages` +
 - **`fix(auth)` cookieless URLSession** — native login was 403 INVALID_ORIGIN once URLSession.shared
   stored the `tovis_token` cookie; the client now runs cookieless. (Would've hit prod too.)
 
-**Pick up here, in priority order:**
+**The v1 must-haves are all shipped + on TestFlight. What remains is POLISH — pick up here, in priority order:**
 
-1. 🔔 **Notifications** — **Track A (in-app center) is DONE** (see the "🔔 Notifications" section).
-   Remaining: **(a)** open/merge the tovis-app `feat/client-notifications-dto` branch (typed DTOs +
-   wire contract); **(b)** a SwiftUI **notification-preferences editor** (the service GET/PATCH is
-   ready); **(c)** **Track B push/APNs** (needs the Apple capability + operator creds).
-2. **Booking v2** — ✅ **reschedule + cancel SHIPPED** (`/bookings/[id]/{reschedule,cancel}`):
-   `BookingDetailView` Manage section; `BookingFlowView` reused in a reschedule mode (hold →
-   reschedule instead of finalize); resolves the offering from the pro profile by matching the
-   base service; both send the `idempotency-key` header; live round-trip verified. **Remaining:**
-   mobile mode (+ client address selection via `/client/addresses`) + add-ons (`/offerings/add-ons`).
-   Also **rebook confirm** still needs a tovis-app DTO field: surface `pendingRebookConfirmation`
-   (or the aftercare rebook fields) on `ClientBookingDTO` before the UI can gate it.
-3. **Deploy** tovis-app `main` to Vercel prod so Release builds get the Stripe `tovis://` return
-   (PR #417 is merged but **not deployed** — the user is holding it). Deploy via `npx vercel@latest --prod`.
-4. **Xcode / operator (needs the human):** add **Sign in with Apple** + **Push Notifications**
-   capabilities (set Team); set **`APPLE_CLIENT_ID`** (bundle id `app.tovis.Tovis`) in Vercel env;
-   confirm Twilio Verify + APNs creds. Then Archive → TestFlight (Release auto-targets `www.tovis.app`).
+1. **Add-ons in booking** — `BookingFlowView` only books the base service. Add add-on selection via
+   `/offerings/add-ons` (finalize already accepts `addOnIds: []`). Most-felt booking gap.
+2. **Push deep-linking** — a push tap currently just foregrounds + bumps `refreshTick` (see
+   `PushManager.handleIncoming` / `AppDelegate.didReceive`). Route the payload's deep link to the
+   specific booking/look (the in-app center already deep-links bookings via `BookingDetailView`).
+3. **Deposit-pay CTA** — model `depositStatus` on `ClientBooking` (backend DTO add) + a deposit button
+   in `BookingDetailView`. `CheckoutService.createDepositSession` already exists.
+4. **Looks video playback** — `mediaType==VIDEO` shows the still frame; add `AVPlayer`.
+5. **Booking v2 remainder** — mobile mode (+ client address selection via `/client/addresses`).
+   Rebook-confirm still needs a tovis-app DTO field (`pendingRebookConfirmation` on `ClientBookingDTO`).
+6. **Discover** — Google Places autocomplete in the search bar, pin **clustering**, radius/sort filter
+   sheet (fixed 25mi / distance sort today). Confirm the Stripe `tovis://` redirect on-device.
 
-**Smaller follow-ups (deferred this session):** Stripe — confirm the `tovis://` redirect on-device +
-model `depositStatus` for a deposit-pay CTA. Looks — save-to-board exists but needs polish; Spotlight
-already wired; **video playback** (`mediaType==VIDEO` shows the still frame, no `AVPlayer`). Discover —
-Google Places location autocomplete in the search bar, pin **clustering**, and a radius/sort filter
-sheet (fixed 25mi / distance sort today); grid cards use a decorative box, not the avatar photo (matches web).
+**Onboarding note:** native **email/password sign-UP** is still web-only (register has
+captcha/TOS/SMS-consent/CLIENT_ZIP gates). **Apple + phone-OTP are the native account-creation paths**
+(both auto-create accounts); Apple now finishes via the in-app phone-verify step (see the Auth section).
 
 ⚠️ **Xcode synchronized-folder note:** new Swift files in `Tovis/` only join the build once
 Xcode's synchronized folder picks them up. CLI `xcodebuild` already sees them (build is green),
