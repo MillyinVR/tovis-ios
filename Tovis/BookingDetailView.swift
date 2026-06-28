@@ -16,6 +16,35 @@ struct BookingDetailView: View {
     @State private var working = false
     @State private var actionError: String?
 
+    // Pay leg (hosted Stripe Checkout)
+    @State private var checkoutSheet: CheckoutSheet?
+    @State private var creatingCheckout = false
+    @State private var checkoutError: String?
+    @State private var paidLocally = false
+
+    /// A presented hosted Stripe Checkout page.
+    private struct CheckoutSheet: Identifiable {
+        let id = UUID()
+        let url: URL
+    }
+
+    /// Payment is collectable once the pro has finalized the bill (READY /
+    /// PARTIALLY_PAID) and nothing has been collected yet. Mirrors the web
+    /// "Pay" CTA on /client/bookings.
+    private var paymentDue: Bool {
+        guard !paidLocally, booking.checkout.paymentCollectedAt == nil else { return false }
+        switch (booking.checkout.checkoutStatus ?? "").uppercased() {
+        case "READY", "PARTIALLY_PAID": return true
+        default: return false
+        }
+    }
+
+    private var isPaid: Bool {
+        paidLocally ||
+            booking.checkout.paymentCollectedAt != nil ||
+            (booking.checkout.checkoutStatus ?? "").uppercased() == "PAID"
+    }
+
     private var isConsultationPending: Bool {
         booking.hasPendingConsultationApproval ||
             (booking.consultation?.approvalStatus?.uppercased() == "PENDING")
@@ -60,6 +89,8 @@ struct BookingDetailView: View {
                 }
 
                 totalsCard
+
+                payCard
             }
             .padding(.horizontal, 20)
             .padding(.top, 8)
@@ -69,6 +100,94 @@ struct BookingDetailView: View {
         .navigationTitle("Appointment")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
+        .sheet(item: $checkoutSheet) { sheet in
+            SafariView(url: sheet.url) {
+                // Manual "Done" — the webhook may already have settled payment,
+                // so refresh the list behind to surface the latest state.
+                Task { await onDecision() }
+            }
+            .ignoresSafeArea()
+        }
+        .onChange(of: session.checkoutReturn) { _, ret in
+            guard let ret, ret.bookingId == booking.id else { return }
+            checkoutSheet = nil // dismiss the in-app browser
+            if ret.status == .success { paidLocally = true }
+            session.clearCheckoutReturn()
+            Task { await onDecision() }
+        }
+    }
+
+    // MARK: - Pay
+
+    @ViewBuilder
+    private var payCard: some View {
+        if isPaid {
+            BrandSurface(tint: BrandColor.emerald.opacity(0.14)) {
+                HStack(spacing: 10) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .foregroundStyle(BrandColor.emerald)
+                    Text("Payment received")
+                        .font(BrandFont.body(15, .semibold))
+                        .foregroundStyle(BrandColor.textPrimary)
+                    Spacer()
+                }
+            }
+        } else if paymentDue {
+            VStack(spacing: 10) {
+                Button {
+                    Task { await startCheckout() }
+                } label: {
+                    Group {
+                        if creatingCheckout {
+                            ProgressView().tint(BrandColor.onAccent)
+                        } else {
+                            Text(payButtonTitle).font(BrandFont.body(17, .semibold))
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .foregroundStyle(BrandColor.onAccent)
+                    .background(BrandColor.accent)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .disabled(creatingCheckout)
+
+                if let checkoutError {
+                    Text(checkoutError)
+                        .font(BrandFont.body(13))
+                        .foregroundStyle(BrandColor.ember)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+    }
+
+    private var payButtonTitle: String {
+        if let total = Wire.money(booking.checkout.totalAmount), total != "$0" {
+            return "Pay \(total)"
+        }
+        return "Pay now"
+    }
+
+    private func startCheckout() async {
+        guard !creatingCheckout else { return }
+        creatingCheckout = true
+        checkoutError = nil
+        defer { creatingCheckout = false }
+        do {
+            let sessionResult = try await session.client.checkout.createCheckoutSession(
+                bookingId: booking.id
+            )
+            guard let raw = sessionResult.url, let url = URL(string: raw) else {
+                checkoutError = "Couldn’t open checkout. Please try again."
+                return
+            }
+            checkoutSheet = CheckoutSheet(url: url)
+        } catch let error as APIError {
+            checkoutError = error.userMessage
+        } catch {
+            checkoutError = "Couldn’t start checkout. Please try again."
+        }
     }
 
     // MARK: - Consultation actions

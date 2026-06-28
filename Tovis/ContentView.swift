@@ -42,6 +42,31 @@ struct TovisApp: App {
     }
 }
 
+// MARK: - Checkout deep-link return
+
+/// A parsed `tovis://checkout/return` deep link — the hand-back from the hosted
+/// Stripe Checkout page. The backend bounce route (tovis-app app/checkout/return)
+/// redirects to this scheme after success/cancel.
+struct CheckoutReturn: Equatable {
+    enum Status: String { case success, cancelled }
+    enum Kind: String { case checkout, deposit }
+
+    let bookingId: String
+    let status: Status
+    let kind: Kind
+
+    init?(url: URL) {
+        guard url.scheme == "tovis", url.host == "checkout" else { return nil }
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        func value(_ name: String) -> String? { items.first { $0.name == name }?.value }
+
+        guard let bookingId = value("bookingId"), !bookingId.isEmpty else { return nil }
+        self.bookingId = bookingId
+        self.status = value("status").flatMap(Status.init) ?? .success
+        self.kind = value("kind").flatMap(Kind.init) ?? .checkout
+    }
+}
+
 // MARK: - Auth state (owns the TovisClient)
 
 @MainActor
@@ -60,6 +85,24 @@ final class SessionModel {
     private(set) var refreshTick = 0
 
     func signalRefresh() { refreshTick &+= 1 }
+
+    /// The most recent Stripe Checkout return handed back via the `tovis://`
+    /// scheme. The active booking screen observes this, dismisses the in-app
+    /// browser, and refetches so the paid state shows. Bumping `signalRefresh`
+    /// also nudges every list — and the webhook is the source of truth, so this
+    /// is just to surface the result without a manual reload.
+    private(set) var checkoutReturn: CheckoutReturn?
+
+    /// Handle a `tovis://checkout/return?status=…&kind=…&bookingId=…` deep link.
+    /// Ignores anything that isn't our checkout return so other links are safe.
+    func handleDeepLink(_ url: URL) {
+        guard let parsed = CheckoutReturn(url: url) else { return }
+        checkoutReturn = parsed
+        signalRefresh()
+    }
+
+    /// Acknowledge a return once the active screen has consumed it.
+    func clearCheckoutReturn() { checkoutReturn = nil }
 
     let client: TovisClient
     private let realtime: SupabaseRealtime?
@@ -201,6 +244,10 @@ struct RootView: View {
                 MainTabView()
             }
         }
+        // Stripe Checkout hands back through the `tovis://checkout/return` scheme
+        // (via the backend bounce page). Route it into the session so the active
+        // booking screen can dismiss the browser and refetch.
+        .onOpenURL { session.handleDeepLink($0) }
     }
 }
 

@@ -42,18 +42,43 @@ detail), favorite/unfavorite a pro, accept/decline last-minute invites, **send m
 `xcodebuild`** for the simulator in Debug AND Release. The booking write path (hold→finalize)
 was verified **live end-to-end** against the API (201 PENDING → shows in /client/bookings).
 
-Next real work (pick up here): **(1) deep links + Stripe** — the one thing blocking a *paid*
-booking (Stripe returns a hosted URL; need a Universal-Link return). **(2) Looks tab** —
-clear the last placeholder (`GET /api/v1/looks` feed). **(3) Push/APNs** (DeviceService is
-inert). **(4) Booking v2** — mobile mode + add-ons + reschedule/cancel. **(5) Xcode/operator**
-— Apple capability + `APPLE_CLIENT_ID` env.
+Next real work (pick up here): **(1) Looks tab** — clear the last placeholder
+(`GET /api/v1/looks` feed). **(2) Push/APNs** (DeviceService is inert). **(3) Booking v2** —
+mobile mode + add-ons + reschedule/cancel. **(4) Xcode/operator** — Apple capability +
+`APPLE_CLIENT_ID` env.
+
+**✅ DONE 2026-06-27 — in-app Stripe payment + deep-link return (the old #1).** A client can now
+pay a booking inside the app via hosted Stripe Checkout, and the app is handed back
+automatically — **without any Apple-portal setup**. Chosen approach: a **custom-scheme bounce**
+(not Universal Links). The native app sends an `x-tovis-return-target: native` header on the
+`*/stripe-session` POST; the backend then points Stripe's success/cancel `*_url` at a new public
+page `tovis-app app/checkout/return`, which redirects to `tovis://checkout/return?status=…&kind=…&bookingId=…`.
+The app catches that via `.onOpenURL`, dismisses the in-app `SFSafariViewController`, and refetches.
+The Stripe **webhook is the source of truth** (sets `checkoutStatus=PAID`), so the return is just
+UX. Wired: `TovisKit/Checkout/CheckoutService` (`createCheckoutSession` + `createDepositSession`),
+`Tovis/SafariView.swift`, `CheckoutReturn` deep-link parser + `SessionModel.handleDeepLink`, and a
+**Pay button in `BookingDetailView`** (shows when `checkoutStatus` is READY/PARTIALLY_PAID and
+nothing's collected; flips to "Payment received" after). `tovis` URL scheme registered in Info.plist.
+🟡 **One on-device unknown** (same posture as live-sync): whether `SFSafariViewController`
+auto-follows the `tovis://` redirect. If it doesn't, the bounce page shows a "Return to the app"
+button (user-tap always works) and the manual "Done" tap refetches anyway — so it degrades safely.
+🟡 **Deposit UI not gated yet**: `CheckoutService.createDepositSession` exists, but `ClientBooking`
+doesn't model `depositStatus`, so there's no UI trigger. Add that field to surface a deposit-pay CTA.
 
 ## Current repo state (resume here)
 
 - **`tovis-ios`** — branch `main`, **all work committed, working tree clean**. **NO git
   remote** (local commits only; nothing to push). Recent commits (newest first):
-  `feat(booking)` · `feat(discover)` · `feat(inbox)` · `feat(home)` · `feat(me)` ·
-  `feat(theme)` · `feat(config: www.tovis.app)` · `feat(footer)`.
+  `feat(checkout)` (Stripe pay + deep-link return) · `feat(booking)` · `feat(discover)` ·
+  `feat(inbox)` · `feat(home)` · `feat(me)` · `feat(theme)` · `feat(config: www.tovis.app)` ·
+  `feat(footer)`.
+- **`tovis-app`** — the native-Stripe-return backend is on branch
+  **`feat/native-stripe-checkout-return`** (committed; **not yet pushed/PR'd** as of this
+  handoff — local `main` is still clean + level with `origin/main`). It adds
+  `lib/checkout/nativeReturn.ts` (shared, dedupes the old per-route `getAppUrl`), the public
+  `app/checkout/return` bounce route, and the `native` branch in both `*/stripe-session` routes
+  (web URLs byte-for-byte unchanged; native gated on the header). typecheck + lint +
+  static-guards green; checkout stripe-session route tests 12/12 (added a native-return case).
 - **`tovis-app`** — branch `main`, level with `origin/main`. **PR #416 (live-sync) is MERGED**
   (it's the latest main commit). **`main` has been DEPLOYED to Vercel production** this session
   (`npx vercel@latest --prod`) — native cookieless auth now passes on prod (was 403
@@ -310,12 +335,10 @@ consultation approve/decline, pro profile, favorite, last-minute invites, live-s
 
 **Pick up here, in priority order:**
 
-1. 🔴 **Deep links + Stripe payment** — the one thing blocking a *paid* booking. Booking v1
-   finalizes as a PENDING request with NO in-app payment. To pay: `/client/bookings/[id]/checkout`
-   + `/deposit/stripe-session` return a Stripe **hosted URL** → open in `SFSafariViewController`,
-   and add a **Universal-Link return** (`apple-app-site-association` on tovis.app + the entitlement)
-   so the app catches the success/cancel redirect and re-fetches the booking. (APIClient already
-   has the header support that checkout idempotency needs.)
+1. ✅ **Deep links + Stripe payment — DONE 2026-06-27** (custom-scheme bounce; see the TL;DR
+   block above for the full wiring). Two follow-ups remain: **(a)** confirm the `tovis://` redirect
+   on a real device/simulator with a live Stripe test session; **(b)** model `depositStatus` on
+   `ClientBooking` to surface a deposit-pay CTA (the service method already exists).
 2. **Looks tab** — the LAST `ComingSoonView` placeholder. `GET /api/v1/looks` (feed) +
    `/looks/[id]` + like/save/comments exist (DTOs: `LooksFeedResponseDto`, `LooksDetailResponseDto`,
    etc. in `lib/looks/types`). Build a feed (the center tab is the client's "home base" on web).
