@@ -547,11 +547,13 @@ Everything below is set up; recorded here so the next session knows the live con
    suggestions (`PlacesService`, biased to map center, kind ANY); tap → details → recenter map + search pros
    near there (clears the text → location search). Free-text pro search still runs in parallel. Reuses
    PlacesService, no new backend. Debug+Release green.
-   ⏸️ **Pin clustering DEFERRED** — SwiftUI `Map` (iOS 17) doesn't natively cluster annotations; real
-   clustering needs an `MKMapView` `UIViewRepresentable` rebuild (the existing map layer has selection/
-   camera/user-dot/"search this area" wired to SwiftUI `Map`), or manual grid clustering keyed off the
-   camera span. Low ROI until pro density is high — left as the one remaining Discover item.
-   🟡 Also open: **confirm the Stripe `tovis://` redirect on-device** (verification, not code).
+   ✅ **Pin clustering DONE 2026-06-28** — grid clustering on the SwiftUI `Map` (no MKMapView rewrite):
+   pins in the same camera-span-scaled cell merge into a count bubble (`ClusterPin`); tap zooms in and the
+   cluster splits as cells shrink. Single-pin cells keep the selectable `ProPin` (selection unchanged).
+   Debug+Release green. **#6 Discover build items are all complete.**
+   🟡 Only remaining #6 item: **confirm the Stripe `tovis://` redirect on-device** (verification, not code).
+   ⚠️ Map interactions (cluster tap-to-zoom, de-cluster on zoom, place-jump recenter) are **build-verified
+   only** — exercise on a device/sim.
 
 **Onboarding note:** native **email/password sign-UP** is still web-only (register has
 captcha/TOS/SMS-consent/CLIENT_ZIP gates). **Apple + phone-OTP are the native account-creation paths**
