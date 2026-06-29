@@ -82,6 +82,9 @@ struct CreateHoldRequest: Encodable, Sendable {
     let locationId: String
     let scheduledFor: String
     let source: String
+    /// Required by the backend when locationType == MOBILE (the service address
+    /// the pro travels to); omitted for SALON.
+    let clientAddressId: String?
 }
 
 struct CreateHoldResponse: Decodable, Sendable {

@@ -58,6 +58,11 @@ const CHECKS = [
     def: 'OfferingAddOnItemDTO',
     pick: (d) => d.addOns,
   },
+  {
+    file: 'clientAddresses.json',
+    def: 'ClientAddressDTO',
+    pick: (d) => d.addresses,
+  },
 ]
 
 function fail(msg) {

@@ -40,7 +40,35 @@ struct BookingFlowView: View {
     @State private var addOns: [BookingAddOn] = []
     @State private var selectedAddOnIds: Set<String> = []
 
+    // Location mode (SALON / MOBILE). New bookings can choose when the offering
+    // offers both; reschedule keeps the original. MOBILE needs a service address.
+    @State private var mode = ""
+    @State private var addresses: [ClientAddress] = []
+    @State private var selectedAddressId: String?
+    @State private var loadingAddresses = false
+    @State private var showAddAddress = false
+
     private var duration: Int { offering.durationMinutes ?? 60 }
+
+    private var isMobile: Bool { mode.uppercased() == "MOBILE" }
+
+    /// Show the SALON/MOBILE switch only for a new booking on an offering that
+    /// supports both. A reschedule preserves the original mode.
+    private var canChooseMode: Bool {
+        !isReschedule && offering.offersInSalon && offering.offersMobile
+    }
+
+    /// The mode a new flow opens in: SALON when offered, else MOBILE; reschedule
+    /// keeps the booking's existing mode.
+    private var initialMode: String {
+        if isReschedule { return locationType }
+        if offering.offersInSalon { return "SALON" }
+        if offering.offersMobile { return "MOBILE" }
+        return locationType
+    }
+
+    /// A mobile booking can't proceed until a service address is chosen.
+    private var addressRequiredButMissing: Bool { isMobile && selectedAddressId == nil }
 
     /// Base duration + the minutes of every selected add-on (display only — the
     /// server is the source of truth and the hold isn't extended, matching web).
@@ -99,6 +127,23 @@ struct BookingFlowView: View {
                     }
                 }
 
+                if canChooseMode {
+                    BrandSection(title: "Where") {
+                        Picker("Where", selection: $mode) {
+                            Text("At the salon").tag("SALON")
+                            Text("Mobile (they come to you)").tag("MOBILE")
+                        }
+                        .pickerStyle(.segmented)
+                        .onChange(of: mode) { Task { await loadBootstrap() } }
+                    }
+                }
+
+                if isMobile {
+                    BrandSection(title: "Service address", trailing: "Required") {
+                        addressSection
+                    }
+                }
+
                 BrandSection(title: "Pick a date") {
                     DatePicker("", selection: $selectedDate, in: Date()...maxDate(boot),
                                displayedComponents: .date)
@@ -143,14 +188,77 @@ struct BookingFlowView: View {
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, 16)
                     .foregroundStyle(BrandColor.onAccent)
-                    .background(selectedSlot == nil ? BrandColor.textMuted.opacity(0.4) : BrandColor.accent)
+                    .background(bookDisabled ? BrandColor.textMuted.opacity(0.4) : BrandColor.accent)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
-                .disabled(selectedSlot == nil || booking)
+                .disabled(bookDisabled)
             }
             .padding(20)
         }
         .task { if slots.isEmpty { await loadSlots(boot) } }
+        .sheet(isPresented: $showAddAddress) {
+            AddServiceAddressSheet { newAddress in
+                addresses.insert(newAddress, at: 0)
+                selectedAddressId = newAddress.id
+            }
+        }
+    }
+
+    private var bookDisabled: Bool {
+        selectedSlot == nil || booking || addressRequiredButMissing
+    }
+
+    // MARK: - Address picker (mobile)
+
+    @ViewBuilder
+    private var addressSection: some View {
+        if loadingAddresses {
+            ProgressView().tint(BrandColor.accent).frame(maxWidth: .infinity).padding(.vertical, 16)
+        } else {
+            VStack(spacing: 10) {
+                ForEach(addresses) { address in
+                    addressRow(address)
+                }
+                Button { showAddAddress = true } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "plus.circle.fill")
+                        Text(addresses.isEmpty ? "Add a service address" : "Add another address")
+                            .font(BrandFont.body(14, .medium))
+                    }
+                    .foregroundStyle(BrandColor.accent)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 4)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func addressRow(_ address: ClientAddress) -> some View {
+        let isSelected = selectedAddressId == address.id
+        return Button { selectedAddressId = address.id } label: {
+            HStack(spacing: 12) {
+                Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
+                    .font(.system(size: 20))
+                    .foregroundStyle(isSelected ? BrandColor.accent : BrandColor.textMuted.opacity(0.5))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(address.displayLine)
+                        .font(BrandFont.body(15, .medium)).foregroundStyle(BrandColor.textPrimary)
+                    if let detail = address.detailLine {
+                        Text(detail).font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
+                    }
+                }
+                Spacer(minLength: 8)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(BrandColor.bgSurface)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(isSelected ? BrandColor.accent.opacity(0.6) : BrandColor.textMuted.opacity(0.18),
+                        lineWidth: 1))
+        }
+        .buttonStyle(.plain)
     }
 
     private func slotGrid(_ boot: AvailabilityBootstrap) -> some View {
@@ -254,11 +362,12 @@ struct BookingFlowView: View {
 
     private func loadBootstrap() async {
         phase = .loading
+        if mode.isEmpty { mode = initialMode }
         do {
             let boot = try await session.client.booking.bootstrap(
                 professionalId: professionalId, serviceId: offering.serviceId,
                 offeringId: offering.id, durationMinutes: duration,
-                locationType: locationType
+                locationType: mode
             )
             // Open on the server's suggested first day when present.
             if let first = boot.selectedDay?.date ?? boot.availableDays.first?.date,
@@ -267,6 +376,7 @@ struct BookingFlowView: View {
             }
             phase = .ready(boot)
             await loadAddOns()
+            if isMobile { await loadAddresses() }
         } catch let error as APIError {
             phase = .failed(error.userMessage)
         } catch {
@@ -279,8 +389,20 @@ struct BookingFlowView: View {
     private func loadAddOns() async {
         guard !isReschedule else { return }
         addOns = (try? await session.client.booking.addOns(
-            offeringId: offering.id, locationType: locationType
+            offeringId: offering.id, locationType: mode
         )) ?? []
+    }
+
+    /// Load the client's saved service addresses for a mobile booking, defaulting
+    /// the selection to their default (or first) address.
+    private func loadAddresses() async {
+        guard addresses.isEmpty else { return }
+        loadingAddresses = true
+        defer { loadingAddresses = false }
+        addresses = (try? await session.client.addresses.serviceAddresses()) ?? []
+        if selectedAddressId == nil {
+            selectedAddressId = (addresses.first { $0.isDefault } ?? addresses.first)?.id
+        }
     }
 
     private func loadSlots(_ boot: AvailabilityBootstrap) async {
@@ -291,7 +413,7 @@ struct BookingFlowView: View {
             let day = try await session.client.booking.day(
                 professionalId: professionalId, serviceId: offering.serviceId,
                 offeringId: offering.id, locationId: boot.request.locationId,
-                durationMinutes: duration, date: date, locationType: locationType
+                durationMinutes: duration, date: date, locationType: mode
             )
             slots = day.slots
         } catch {
@@ -302,23 +424,28 @@ struct BookingFlowView: View {
 
     private func requestToBook(_ boot: AvailabilityBootstrap) async {
         guard let slot = selectedSlot, !booking else { return }
+        if addressRequiredButMissing {
+            bookError = "Add a service address for a mobile booking."
+            return
+        }
         booking = true
         bookError = nil
         do {
             let hold = try await session.client.booking.createHold(
                 offeringId: offering.id, locationId: boot.request.locationId,
-                scheduledFor: slot, locationType: locationType
+                scheduledFor: slot, locationType: mode,
+                clientAddressId: isMobile ? selectedAddressId : nil
             )
             let scheduledFor: String
             if let rescheduleBookingId {
                 let result = try await session.client.booking.reschedule(
                     bookingId: rescheduleBookingId, holdId: hold.id,
-                    locationType: locationType, idempotencyKey: UUID().uuidString
+                    locationType: mode, idempotencyKey: UUID().uuidString
                 )
                 scheduledFor = result.scheduledFor
             } else {
                 let result = try await session.client.booking.finalize(
-                    holdId: hold.id, offeringId: offering.id,
+                    holdId: hold.id, offeringId: offering.id, locationType: mode,
                     addOnIds: Array(selectedAddOnIds), idempotencyKey: UUID().uuidString
                 )
                 scheduledFor = result.scheduledFor

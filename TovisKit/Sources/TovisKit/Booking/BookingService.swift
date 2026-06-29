@@ -70,11 +70,13 @@ public final class BookingService: Sendable {
         locationId: String,
         scheduledFor: String,
         locationType: String = "SALON",
+        clientAddressId: String? = nil,
         source: String = "REQUESTED"
     ) async throws -> BookingHold {
         let payload = try JSONEncoder().encode(CreateHoldRequest(
             offeringId: offeringId, locationType: locationType,
-            locationId: locationId, scheduledFor: scheduledFor, source: source
+            locationId: locationId, scheduledFor: scheduledFor, source: source,
+            clientAddressId: clientAddressId
         ))
         let response: CreateHoldResponse = try await api.request(
             "/holds", method: .post, body: payload

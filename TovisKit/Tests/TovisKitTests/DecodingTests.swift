@@ -171,6 +171,19 @@ func fixture(_ name: String) throws -> Data {
         #expect(b.booking.status == "PENDING")
     }
 
+    // GET /api/v1/client/addresses — Fixtures/clientAddresses.json (schema-validated).
+    @Test func decodesClientAddresses() throws {
+        let res = try JSONDecoder().decode(ClientAddressesResponse.self, from: fixture("clientAddresses"))
+        #expect(res.addresses.count == 2)
+        let service = try #require(res.addresses.first)
+        #expect(service.isServiceAddress)
+        #expect(service.isDefault)
+        #expect(service.displayLine == "Home")           // label preferred
+        #expect(service.detailLine?.contains("123 Main St") == true)
+        #expect(res.addresses[1].isServiceAddress == false) // SEARCH_AREA
+        #expect(res.addresses[1].lat == 34.0195)
+    }
+
     // GET /api/v1/offerings/add-ons — Fixtures/offeringAddOns.json. No schema
     // entry yet (the backend route isn't a typed DTO), so this is decode-only.
     @Test func decodesOfferingAddOns() throws {

@@ -1,0 +1,41 @@
+{
+  "ok": true,
+  "addresses": [
+    {
+      "id": "addr_1",
+      "kind": "SERVICE_ADDRESS",
+      "label": "Home",
+      "isDefault": true,
+      "formattedAddress": "123 Main St, Los Angeles, CA 90001, USA",
+      "addressLine1": "123 Main St",
+      "addressLine2": null,
+      "city": "Los Angeles",
+      "state": "CA",
+      "postalCode": "90001",
+      "countryCode": "US",
+      "placeId": "ChIJabc123",
+      "lat": 34.0522,
+      "lng": -118.2437,
+      "createdAt": "2026-06-20T17:00:00.000Z",
+      "updatedAt": "2026-06-20T17:00:00.000Z"
+    },
+    {
+      "id": "addr_2",
+      "kind": "SEARCH_AREA",
+      "label": null,
+      "isDefault": false,
+      "formattedAddress": "Santa Monica, CA, USA",
+      "addressLine1": null,
+      "addressLine2": null,
+      "city": "Santa Monica",
+      "state": "CA",
+      "postalCode": null,
+      "countryCode": "US",
+      "placeId": null,
+      "lat": 34.0195,
+      "lng": -118.4912,
+      "createdAt": "2026-06-21T17:00:00.000Z",
+      "updatedAt": "2026-06-21T17:00:00.000Z"
+    }
+  ]
+}
