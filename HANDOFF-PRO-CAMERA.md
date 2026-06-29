@@ -114,23 +114,45 @@ editor** (prefs service methods already exist on `ProNotificationsService`); cal
 - **Clients** ✅ — Add-a-client form `a74ddf3`; native **8-tab chart** + safety strip + do-not-rebook
   banner `a8066d0` (list now opens the chart for viewable clients).
 
-**🔶 OPEN — needs the user (I can't merge PRs / deploy prod unilaterally):**
-Three additive backend PRs on `tovis-app` must be **reviewed + merged**, then **prod redeployed**
-(auto-deploy is OFF → `npx vercel@latest --prod`) so the new native screens work at runtime in a
-Release build. Until then they decode green and Debug→localhost works once the branch is running:
-- **#431** `GET /pro/services/catalog` — feeds the add-service picker.
-- **#432** expands `GET /pro/bookings/[id]` — totals/tax/tip/discount/payment/started+finished/
-  sessionStep/aftercareSummary (the booking-detail Timing/Payment/Aftercare cards).
-- **#433** aggregate `GET /pro/clients/[id]/chart` — the whole client chart (gated by
-  `assertProCanViewClient` + the founder technical-record flag).
+**✅ DONE 2026-06-29 — backend PRs merged + first side-by-side sim walkthrough.**
+The three additive backend PRs are **MERGED + prod redeployed**: **#431** `GET /pro/services/catalog`,
+**#432** expanded `GET /pro/bookings/[id]`, **#433** aggregate `GET /pro/clients/[id]/chart`.
+Did the first real Debug→localhost side-by-side walkthrough as a logged-in pro. Fixes (all on `tovis-ios` main):
+- **Footer** — Looks tab renders the brand `TovisEye` mark (was `sparkles`) `41a5643`; center coin
+  geometry matched to web `footers.css` 1:1 (bar 80 / coin 72 / raised ~20pt) `b7d146d`; **even 5-slot
+  spacing** (reserved empty center slot — side buttons were crowding center), **brighter full-color ring**
+  (thicker + blurred bloom + brightness lift), **readable cream START label** (was faint teal on the
+  translucent coin), state-driven coin opacity (translucent idle / solid live), client `TovisTabBar`
+  brought to the same geometry `b8244a0`.
+- **CRITICAL notifications decode bug** `dd24af9` — `GET /pro/notifications` serializes `priority` as the
+  enum NAME ("HIGH") but the native model had `priority: Int?` → the **whole feed threw** the moment a pro
+  had any notification (empty feed + red "We couldn't read the server response."). The decode test passed
+  only because the fixture used a numeric priority. Model→`String?` + fixture corrected; this also restored
+  the `Unread(n)` chip + `Mark all read` button that the failed decode had suppressed.
+- **Verified ✅:** booking-detail (verbatim copy, #432 data live), profile (Messages quick action
+  **intentionally omitted** from a pro's view of their OWN profile per user), notifications.
 
-**Deferred polish (next session):** pro **aftercare detail** screen (web "View full aftercare" link
-omitted — no native destination yet); in-app **Message** deep-link from the clients list (no native
-start-thread-by-client API); per-tab chart **write forms** beyond Add-a-note + technical-record
-encrypted-note **decryption** (web-only by design); **looks/followers** profile stat tiles (not in the
-public-profile projection — would need a small `GET /pro/profile` stat add); contact/service-addresses
-view (`ProClientDetailView` is now orphaned — re-link or delete). **Visual side-by-side verification on
-the sim was NOT done** (compiles only) — do a real Debug→localhost walkthrough of all 5 pages.
+**🔶 STILL OPEN — Clients list** (vs `app/pro/clients/page.tsx`):
+- Copy drifts: missing header subtitle "Only clients you currently have access to (pending/active/upcoming).",
+  missing "Client list" section header + `{n} visible` count, empty-state copy ("No clients with active
+  visibility right now." + desc + **View profile** action) vs native "No clients yet.".
+- **Functional Q (resolve before fixing copy):** web lists pending/active/upcoming-booking clients (the
+  seeded Test Client has a *pending* booking → shows on web), but native `GET /pro/clients/search` shows
+  "No clients yet." → investigate the search endpoint's default behavior. **Blocks live chart (#433)
+  verification** (need a listed client to open the 8-tab chart).
+
+**Deferred polish (unchanged):** pro **aftercare detail** screen (web "View full aftercare" link omitted —
+no native destination); in-app **Message** deep-link from the clients list; per-tab chart **write forms**
+beyond Add-a-note + technical-record encrypted-note **decryption** (web-only by design); **looks/followers**
+profile stat tiles (web stat grid = 5: Rating·Reviews·Favs·Looks·Followers, native = 3; needs a small
+`GET /pro/profile` stat add); contact/service-addresses view (`ProClientDetailView` is orphaned — re-link
+or delete).
+
+**⚠️ Sim-workflow gotchas (2026-06-29):** `xcrun simctl install` **wipes the Keychain session** every
+reinstall → the pro is logged out after each rebuild (TokenStore = Keychain); batch fixes to minimize
+rebuilds, and the user must re-login after each. Driving the sim via `osascript`/System Events is **blocked
+by TCC** (`-25204`/`-25211`, even with Accessibility toggled on — the spawned osascript isn't the authorized
+app) → fall back to user-navigates / `xcrun simctl io booted screenshot`.
 
 **Why booking-detail + clients weren't done this pass:** both need backend route work, and the
 `tovis-app` checkout was on another active session's branch — branch-switching + `prisma generate`
