@@ -1,5 +1,9 @@
 # Tovis iOS — Build Handoff
 
+> 👉 **Resuming the PRO app / AI camera? Start with [`HANDOFF-PRO-CAMERA.md`](HANDOFF-PRO-CAMERA.md)**
+> — the short, current entry point for that active workstream. This file is the deep reference (client
+> app history + full per-phase detail).
+
 > Self-contained handoff for a fresh Claude Code session continuing the **native
 > iOS app** build. Written 2026-06-27, **last updated 2026-06-28** — the entire
 > **polish backlog (#1–#6) is now built** (add-ons · push deep-linking · deposit
@@ -163,11 +167,11 @@ real-time coach [**B1 ✅**: toggles + lighting/composition + nudge/ring/grid + 
 ≥0.85); **B3a ✅**: on-demand **silent** video clip (AVCaptureMovieFileOutput, NO mic — never records
 salon audio) → frame-by-frame scrubber (AVAssetImageGenerator) to extract the best still or save the
 whole clip, both into the same session media (VIDEO via `uploadSessionVideo`); **B3b next**: client
-**B3b ✅**: client per-session media-use consent — backend **tovis-app PR #427** (Booking
+**B3b ✅**: client per-session media-use consent — backend **tovis-app PR #427 MERGED** (Booking
 .mediaUseConsentAt + publicShareGuard honors it + `POST /client/bookings/{id}/media-consent` +
 ClientBookingDTO.mediaUseConsent) + iOS client toggle in `BookingDetailView` ("Allow [pro] to feature
-my photos & video", `BookingsService.setMediaConsent`). ⚠️ iOS contract passes against the PR-branch
-schema; merge #427 before a Release build relies on it. **B4**: NFC-card ColorChecker calibration (see
+my photos & video", `BookingsService.setMediaConsent`). Remaining B3b: the **web-client** toggle (backend
+is live on main; just UI). **B4**: NFC-card ColorChecker calibration (see
 the "NFC card camera calibration" section)] → **C.** ShotGuides + onion-skin + **comparison
 slider + portfolio publish** (now unlocked by B3b consent) →
 **D.** Claude critique (consented) → **E.** engagement learning loop.
