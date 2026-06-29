@@ -16,6 +16,9 @@ struct ProCalendarTimeGrid: View {
     let onTapBooking: (String) -> Void
     let onTapBlock: (ProCalendarEvent) -> Void
 
+    /// Top-most visible hour cell — set to "now" on open (iOS 17 scrollPosition).
+    @State private var scrolledHour: Int?
+
     // Web parity: PX_PER_MINUTE = 1.5 → a 24h day is 2160pt tall.
     private let pxPerMinute: CGFloat = 1.5
     private let stepMinutes = 15
@@ -33,12 +36,13 @@ struct ProCalendarTimeGrid: View {
         // while the page above (stats/controls/etc.) stays visible.
         VStack(spacing: 0) {
             headerRow
-            ScrollViewReader { proxy in
-                ScrollView(.vertical, showsIndicators: true) {
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(spacing: 0) {
                     ZStack(alignment: .topLeading) {
                         // Real-layout anchor ladder: one cell per hour at its true
-                        // height, so ScrollViewReader can target an hour. The visual
-                        // grid uses .offset(), which is NOT a valid scroll target.
+                        // height. `scrollPosition(id:)` binds the top-most cell, so
+                        // these are the scroll targets (the visual grid uses .offset(),
+                        // which can't be targeted directly).
                         VStack(spacing: 0) {
                             ForEach(0..<24, id: \.self) { hour in
                                 Color.clear
@@ -46,6 +50,7 @@ struct ProCalendarTimeGrid: View {
                                     .id(hour)
                             }
                         }
+                        .scrollTargetLayout()
 
                         HStack(alignment: .top, spacing: 0) {
                             timeGutter
@@ -60,10 +65,13 @@ struct ProCalendarTimeGrid: View {
                         }
                         .frame(height: totalHeight)
                     }
+                    // Trailing room so a midday hour can sit at the very top.
+                    Color.clear.frame(height: 640)
                 }
-                .onAppear { scrollToNow(proxy) }
-                .onChange(of: scrollKey) { scrollToNow(proxy) }
             }
+            .scrollPosition(id: $scrolledHour, anchor: .top)
+            .onAppear { setNowScroll() }
+            .onChange(of: scrollKey) { setNowScroll() }
         }
         .background(BrandColor.bgPrimary)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -73,24 +81,16 @@ struct ProCalendarTimeGrid: View {
         )
     }
 
-    /// Re-anchors the timeline to the current hour (one hour of headroom above),
-    /// or to 8am when today isn't in view. Deferred a tick so the ScrollView has
-    /// laid out before we target an anchor.
-    private func scrollToNow(_ proxy: ScrollViewProxy) {
+    /// Pins the timeline's top to the current hour (or 8am when today isn't in
+    /// view), so it opens right under the date header with no empty pre-now gap.
+    private func setNowScroll() {
         let todayKey = ProCalendarGrid.ymd(Date(), timeZone)
         let todayVisible = days.contains { $0.dayYmd == todayKey }
-        // Center the current hour (or 8am when today isn't in view) so the grid
-        // opens with "now" in view and upcoming hours below it.
-        let targetHour: Int = todayVisible
+        let target = todayVisible
             ? ProCalendarGrid.minutesSinceMidnight(Date(), timeZone) / 60
             : 8
-        // Defer past the ScrollView's first layout pass; a single async tick can
-        // still beat layout, so re-assert it shortly after.
-        for delay in [0.05, 0.3] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                withAnimation(.none) { proxy.scrollTo(targetHour, anchor: .center) }
-            }
-        }
+        // Defer a tick so the binding applies after the ScrollView's first layout.
+        DispatchQueue.main.async { scrolledHour = target }
     }
 
     /// Changes whenever the visible range changes, so we re-anchor on nav.
@@ -104,21 +104,21 @@ struct ProCalendarTimeGrid: View {
         HStack(spacing: 0) {
             Color.clear.frame(width: gutterWidth)
             ForEach(days) { day in
-                VStack(spacing: 2) {
+                VStack(spacing: 1) {
                     Text(weekdayLabel(day.startOfDay))
-                        .font(BrandFont.mono(10))
+                        .font(BrandFont.mono(9))
                         .foregroundStyle(BrandColor.textMuted)
                     Text("\(day.dayNumber)")
-                        .font(BrandFont.body(15, day.isToday ? .bold : .regular))
+                        .font(BrandFont.body(13, day.isToday ? .bold : .regular))
                         .foregroundStyle(day.isToday ? BrandColor.onAccent : BrandColor.textPrimary)
-                        .frame(width: 26, height: 26)
+                        .frame(width: 22, height: 22)
                         .background(day.isToday ? BrandColor.accent : Color.clear)
                         .clipShape(Circle())
                 }
                 .frame(maxWidth: .infinity)
             }
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, 4)
         .background(BrandColor.bgSecondary)
     }
 
