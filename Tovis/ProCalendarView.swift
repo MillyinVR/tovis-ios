@@ -63,15 +63,19 @@ struct ProCalendarView: View {
     private struct BookingNav: Identifiable, Hashable { let id: String }
     @State private var bookingNav: BookingNav?
 
+    // Collapses the stats / location / auto-accept chrome to give the grid room.
+    @State private var chromeCollapsed = false
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Pinned top chrome — always visible.
+                // Pinned top chrome. Stats / location collapse to free grid space;
+                // the view switcher + date nav stay so you can always navigate.
                 VStack(alignment: .leading, spacing: 14) {
-                    if let stats = loadedStats { statsHeader(stats) }
+                    if !chromeCollapsed, let stats = loadedStats { statsHeader(stats) }
                     controlsBar
 
-                    if locations.count > 1 {
+                    if !chromeCollapsed, locations.count > 1 {
                         ProLocationBar(
                             locations: locations,
                             activeLocationId: activeLocationId,
@@ -131,6 +135,16 @@ struct ProCalendarView: View {
             .task { await poll() }
             .task { await loadNotificationSummary() }
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) { chromeCollapsed.toggle() }
+                    } label: {
+                        Image(systemName: chromeCollapsed ? "chevron.down" : "chevron.up")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(BrandColor.textPrimary)
+                    }
+                    .accessibilityLabel(chromeCollapsed ? "Expand details" : "Collapse details")
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showNotifications = true } label: {
                         ZStack(alignment: .topTrailing) {
@@ -224,7 +238,9 @@ struct ProCalendarView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     pendingBar(data)
-                    ProAutoAcceptBar(enabled: autoAccept, saving: savingAutoAccept, onToggle: toggleAutoAccept)
+                    if !chromeCollapsed {
+                        ProAutoAcceptBar(enabled: autoAccept, saving: savingAutoAccept, onToggle: toggleAutoAccept)
+                    }
                     monthBody(data)
                 }
                 .padding(.horizontal, 20)
@@ -235,7 +251,9 @@ struct ProCalendarView: View {
             // internally, opening at "now" — the chrome above stays visible.
             VStack(spacing: 10) {
                 pendingBar(data)
-                ProAutoAcceptBar(enabled: autoAccept, saving: savingAutoAccept, onToggle: toggleAutoAccept)
+                if !chromeCollapsed {
+                    ProAutoAcceptBar(enabled: autoAccept, saving: savingAutoAccept, onToggle: toggleAutoAccept)
+                }
                 ProCalendarTimeGrid(
                     view: view,
                     currentDate: currentDate,

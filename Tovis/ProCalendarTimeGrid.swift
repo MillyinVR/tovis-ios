@@ -106,23 +106,42 @@ struct ProCalendarTimeGrid: View {
             // Fixed-width spacer (a bare Color.clear is greedy vertically and would
             // balloon the header's height).
             Spacer().frame(width: gutterWidth)
-            ForEach(days) { day in
-                VStack(spacing: 1) {
-                    Text(weekdayLabel(day.startOfDay))
-                        .font(BrandFont.mono(9))
-                        .foregroundStyle(BrandColor.textMuted)
-                    Text("\(day.dayNumber)")
-                        .font(BrandFont.body(13, day.isToday ? .bold : .regular))
-                        .foregroundStyle(day.isToday ? BrandColor.onAccent : BrandColor.textPrimary)
-                        .frame(width: 22, height: 22)
-                        .background(day.isToday ? BrandColor.accent : Color.clear)
-                        .clipShape(Circle())
+
+            if view == .day, let day = days.first {
+                // Single day → the full long-form date.
+                Text(longDateLabel(day.startOfDay))
+                    .font(BrandFont.body(14, .semibold))
+                    .foregroundStyle(day.isToday ? BrandColor.accent : BrandColor.textPrimary)
+                    .frame(maxWidth: .infinity)
+            } else {
+                // Week → per-column weekday + day-number (unchanged).
+                ForEach(days) { day in
+                    VStack(spacing: 1) {
+                        Text(weekdayLabel(day.startOfDay))
+                            .font(BrandFont.mono(9))
+                            .foregroundStyle(BrandColor.textMuted)
+                        Text("\(day.dayNumber)")
+                            .font(BrandFont.body(13, day.isToday ? .bold : .regular))
+                            .foregroundStyle(day.isToday ? BrandColor.onAccent : BrandColor.textPrimary)
+                            .frame(width: 22, height: 22)
+                            .background(day.isToday ? BrandColor.accent : Color.clear)
+                            .clipShape(Circle())
+                    }
+                    .frame(maxWidth: .infinity)
                 }
-                .frame(maxWidth: .infinity)
             }
         }
         .padding(.vertical, 6)
         .background(BrandColor.bgSecondary)
+    }
+
+    /// Full date for the single-day header, e.g. "Monday, June 29".
+    private func longDateLabel(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US")
+        f.timeZone = timeZone
+        f.dateFormat = "EEEE, MMMM d"
+        return f.string(from: date)
     }
 
     // MARK: - Time gutter (hour labels)
