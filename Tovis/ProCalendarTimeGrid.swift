@@ -28,31 +28,23 @@ struct ProCalendarTimeGrid: View {
     }
 
     var body: some View {
+        // The timeline flows in the page's scroll (web mobile "Option A"): a single
+        // 24h column at full height, NOT an inner ScrollView — nesting a second
+        // vertical scroller inside the page broke the gutter/header layout.
         VStack(spacing: 0) {
             headerRow
-            ScrollViewReader { proxy in
-                ScrollView(.vertical, showsIndicators: false) {
-                    HStack(alignment: .top, spacing: 0) {
-                        timeGutter
-                        ForEach(days) { day in
-                            dayColumn(day)
-                            if day.id != days.last?.id {
-                                Rectangle()
-                                    .fill(BrandColor.textMuted.opacity(0.12))
-                                    .frame(width: 1)
-                            }
-                        }
-                    }
-                    .frame(height: totalHeight)
-                    // Anchor for the initial 8am scroll (web PROTOTYPE_START_MINUTE).
-                    .overlay(alignment: .top) {
-                        Color.clear.frame(height: 1)
-                            .offset(y: CGFloat(8 * 60) * pxPerMinute)
-                            .id("hour-8")
+            HStack(alignment: .top, spacing: 0) {
+                timeGutter
+                ForEach(days) { day in
+                    dayColumn(day)
+                    if day.id != days.last?.id {
+                        Rectangle()
+                            .fill(BrandColor.textMuted.opacity(0.12))
+                            .frame(width: 1)
                     }
                 }
-                .onAppear { proxy.scrollTo("hour-8", anchor: .top) }
             }
+            .frame(height: totalHeight)
         }
         .background(BrandColor.bgPrimary)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -91,12 +83,13 @@ struct ProCalendarTimeGrid: View {
     private var timeGutter: some View {
         ZStack(alignment: .topLeading) {
             Color.clear.frame(width: gutterWidth, height: totalHeight)
-            ForEach(1..<24) { hour in
+            ForEach(0..<24) { hour in
                 Text(hourLabel(hour))
                     .font(BrandFont.mono(10))
                     .foregroundStyle(BrandColor.textMuted)
                     .frame(width: gutterWidth - 6, alignment: .trailing)
-                    .offset(y: CGFloat(hour * 60) * pxPerMinute - 6)
+                    // Clamp 12am to the top edge so it doesn't clip off-screen.
+                    .offset(y: max(0, CGFloat(hour * 60) * pxPerMinute - 6))
             }
         }
         .frame(width: gutterWidth)
@@ -118,10 +111,16 @@ struct ProCalendarTimeGrid: View {
         }
 
         return ZStack(alignment: .topLeading) {
+            // Full-height spacer establishes the ZStack's intrinsic height so the
+            // .offset(y:) children measure from the TOP. Without it the ZStack has
+            // no intrinsic height and the outer .frame centers everything (the 2×
+            // offset bug — a 10am tile landed at ~8:30pm).
+            Color.clear.frame(maxWidth: .infinity, minHeight: totalHeight, maxHeight: totalHeight)
+
             // Hour rules.
             ForEach(0..<24) { hour in
                 Rectangle()
-                    .fill(BrandColor.textMuted.opacity(0.10))
+                    .fill(BrandColor.textMuted.opacity(0.16))
                     .frame(height: 1)
                     .offset(y: CGFloat(hour * 60) * pxPerMinute)
             }
@@ -138,8 +137,6 @@ struct ProCalendarTimeGrid: View {
                 nowLine
             }
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: totalHeight)
         .background(day.isToday ? BrandColor.accent.opacity(0.04) : Color.clear)
     }
 

@@ -233,7 +233,6 @@ struct ProCalendarView: View {
                 onTapBooking: { id in bookingNav = BookingNav(id: id) },
                 onTapBlock: { event in openBlockEditor(event) }
             )
-            .frame(height: 560)
         }
     }
 
@@ -270,25 +269,30 @@ struct ProCalendarView: View {
         return nil
     }
 
+    // Web parity (CalendarStatsPanel): Booked / Pending / Free with sub-labels.
     private func statsHeader(_ stats: ProCalendarStats) -> some View {
         HStack(spacing: 12) {
-            statTile("\(stats.todaysBookings)", "Today")
-            statTile("\(stats.pendingRequests)", "Requests")
-            if let hours = stats.availableHours {
-                statTile(hoursLabel(hours), "Open")
-            }
+            statTile("\(stats.todaysBookings)", "Booked", "today")
+            statTile("\(stats.pendingRequests)", "Pending", "review")
+            statTile(
+                stats.availableHours.map(hoursLabel) ?? "—",
+                "Free",
+                "\(hoursLabel(stats.blockedHours)) blocked")
         }
     }
 
-    private func statTile(_ value: String, _ label: String) -> some View {
+    private func statTile(_ value: String, _ label: String, _ sub: String) -> some View {
         BrandSurface {
             VStack(alignment: .leading, spacing: 4) {
-                Text(value)
-                    .font(BrandFont.display(24, .semibold))
-                    .foregroundStyle(BrandColor.textPrimary)
                 Text(label.uppercased())
                     .font(BrandFont.mono(10))
                     .tracking(0.8)
+                    .foregroundStyle(BrandColor.textMuted)
+                Text(value)
+                    .font(BrandFont.display(24, .semibold))
+                    .foregroundStyle(BrandColor.textPrimary)
+                Text(sub)
+                    .font(BrandFont.body(12))
                     .foregroundStyle(BrandColor.textMuted)
             }
         }
