@@ -1,9 +1,11 @@
 # Tovis iOS — Build Handoff
 
 > Self-contained handoff for a fresh Claude Code session continuing the **native
-> iOS app** build. Written 2026-06-27, **last updated 2026-06-28** (footer parity,
-> light/dark, Me, Home, Inbox, Discover, Booking v1, prod deploy). The companion
-> backend doc is `tovis-app/docs/mobile/native-readiness-handoff.md`.
+> iOS app** build. Written 2026-06-27, **last updated 2026-06-28** — the entire
+> **polish backlog (#1–#6) is now built** (add-ons · push deep-linking · deposit
+> CTA · Looks video · Booking v2: mobile mode + rebook-confirm · Discover: filter
+> sheet + Places autocomplete + pin clustering). The companion backend doc is
+> `tovis-app/docs/mobile/native-readiness-handoff.md`.
 
 ## TL;DR — where we are
 
@@ -13,12 +15,14 @@ Branded login with **3 auth methods** (email/pw, Sign in with Apple, phone-OTP) 
 footer 1:1** — Home · Discover · Looks(center feather) · Inbox · Me — with brand-matched,
 **actionable** screens, **System/Light/Dark** theming, and **live-sync** so web ⇄ iOS stay in step.
 
-> **🚀 STATUS (2026-06-28): client app is feature-complete for v1 and LIVE ON TESTFLIGHT.**
-> tovis-app `main` is **deployed to Vercel prod** (Stripe-return #417 + notification DTOs #419 +
-> web client notification center #420). `APPLE_CLIENT_ID` is **set in prod** + Apple/Push
-> capabilities added in Xcode + APNs creds set (use `APNS_ENV=production` for TestFlight builds).
-> Everything below is committed on `tovis-ios` `main` (no remote — local commits only).
-> **What's left is polish** (see "Suggested next steps").
+> **🚀 STATUS (2026-06-28): client app feature-complete + the full polish backlog (#1–#6) BUILT.**
+> v1 is LIVE ON TESTFLIGHT. tovis-app `main` deployed to Vercel prod. Since then the whole polish
+> backlog shipped on `tovis-ios` `main` (no remote — local commits only), with **5 companion backend
+> PRs all MERGED**: typed DTOs for add-ons (**#421**), deposit (**#422**), client addresses (**#423**),
+> rebook-confirm (**#425**), plus the E2E CI flake fix (**#424**). `tovis-app main` is clean + synced.
+> **⚠️ The one open gap is LIVE VERIFICATION** — every polish feature is build- + contract-verified but
+> NOT yet exercised on a device/sim against the backend (see "Suggested next steps"). Plus: merge nothing
+> pending; just run the stack and click through.
 
 **Signed-in screens (all committed, build green):**
 - **Home** (`GET /client/home`) — full web parity: accent glow, greeting + InboxBell, action
@@ -56,19 +60,19 @@ detail), favorite/unfavorite a pro, accept/decline last-minute invites, **send m
 **There are now ZERO "Coming soon" placeholders** — every footer tab is a real screen.
 (The old `ComingSoonView` was deleted once the Looks tab shipped.)
 
-**Verification posture:** `TovisKit` `swift test` green (**21 tests**); the contract validator
-(`scripts/contract`) green (**20 objects** vs the backend schema); the whole app **BUILDS via
+**Verification posture:** `TovisKit` `swift test` green (**24 tests**); the contract validator
+(`scripts/contract`) green (**24 objects** vs the backend schema); the whole app **BUILDS via
 `xcodebuild`** for the simulator in Debug AND Release **and ships via TestFlight**. Booking
 write/reschedule/cancel, notifications feed/summary/read/prefs, and device register/unregister were
-all verified **live end-to-end** against the API.
+verified **live end-to-end** earlier — but the **polish features (#1–#6) are build/decode-verified ONLY**
+(see the per-item "Verified live? No" notes).
 
-**Next real work = polish only** (the v1 must-haves are shipped). In rough priority:
-**(1) ✅ add-ons in booking DONE 2026-06-28** (`/offerings/add-ons` → finalize `addOnIds`),
-**(2) push deep-linking** (a push tap should open the specific booking/look — today it just
-foregrounds + refreshes), **(3) deposit-pay CTA** (model `depositStatus` on `ClientBooking`),
-**(4) Looks video playback** (`AVPlayer`; today VIDEO shows the still frame), **(5) Discover** Places
-autocomplete / pin clustering / radius filter, **(6) Booking v2 remainder** — mobile mode + client
-address selection. See "Suggested next steps" for detail.
+**The polish backlog (#1–#6) is DONE — what remains is LIVE VERIFICATION, not building:**
+**(1) ✅ add-ons** · **(2) ✅ push deep-linking** · **(3) ✅ deposit-pay CTA** · **(4) ✅ Looks video** ·
+**(5) ✅ Booking v2** (mobile mode + Places-autocomplete address + rebook-confirm) · **(6) ✅ Discover**
+(radius/sort/mobile filter sheet + search-bar Places autocomplete + grid pin clustering).
+The ONLY non-built item left is the on-device **Stripe `tovis://` redirect** confirmation. See
+"Suggested next steps" for the per-item detail + the live-verification checklist.
 
 ## 🔔 Notifications — Track A DONE; Track B (push) is next
 
@@ -167,31 +171,31 @@ doesn't model `depositStatus`, so there's no UI trigger. Add that field to surfa
 
 - **`tovis-ios`** — branch `main`, **all work committed, working tree clean**. **NO git
   remote** (local commits only; nothing to push). Recent commits (newest first):
-  `fix(ios)` app icon asset catalog (TestFlight unblock) · `feat(auth)` in-app phone verification ·
-  `feat(push)` APNs registration wired (Track B) ·
-  `feat(booking)` client reschedule + cancel (Booking v2) · `feat(notifications)` prefs editor ·
-  `feat(notifications)` in-app notification center (Track A) · `style(discover)` grid-default +
-  web-grid view · `feat(discover)` MapKit rebuild ·
-  `style(looks)` TikTok comments + feed-above-comments · `fix(auth)` cookieless URLSession ·
-  `style(footer)` web-match + bigger center coin · `feat(looks)` feed + comments ·
-  `feat(checkout)` Stripe pay + deep-link return · then `feat(booking|inbox|home|me|theme|footer)`.
-- **`tovis-app`** — branch `main`, **clean + level with `origin/main`**, and **DEPLOYED to Vercel
-  production** (2026-06-28). Prod now has: native Stripe `tovis://` return (**#417**), typed client
-  notification DTOs + wire contract (**#419**), and the **web client notification center** (**#420**).
-  Notification endpoints + `/devices` register/unregister + `/auth/phone/*` verify all confirmed live.
-  Migrate-on-deploy is wired; no pending migrations. **No open tovis-app PRs.**
+  `feat(discover)` grid pin clustering · `feat(discover)` search-bar place autocomplete ·
+  `feat(booking)` rebook-confirm CTA (#5b) · `feat(booking)` Places autocomplete for service address ·
+  `feat(discover)` radius/sort/mobile filter sheet · `feat(booking)` mobile mode + address selection (#5a) ·
+  `feat(looks)` AVPlayer video playback · `feat(booking)` deposit-pay CTA · `feat(push)` deep-link tap →
+  booking · `feat(booking)` add-on selection — then the earlier v1 work (notifications, checkout, etc.).
+- **`tovis-app`** — branch `main`, **clean + level with `origin/main`** (`03430e0a`), DEPLOYED to Vercel
+  prod. **5 polish-companion PRs MERGED**: add-ons DTO (**#421**), deposit DTO (**#422**), client-address
+  DTO (**#423**), E2E CI fix chromium-on-PRs (**#424**), rebook-confirm DTO (**#425**). Migrate-on-deploy
+  wired; no pending migrations. **No open tovis-app PRs.** ⚠️ Prod hasn't been re-deployed since the polish
+  DTOs merged — if a Release/TestFlight build needs the new DTO fields (deposit/rebook/addresses on the
+  client bookings list, etc.), redeploy: `cd ~/Dev/tovis-app && npx vercel@latest --prod --yes`.
 - **Local backend** for the iOS **Debug** build: `cd ~/Dev/tovis-app && pnpm dev` (serves
   `localhost:3000` against **local** Postgres `:5434`, Docker `tovis-dev-postgres`, NOT prod — see the
   env/DB note). **Seed login: `client@tovis.app` / `password123`** (CLIENT, local DB only — does NOT
   exist in prod, so TestFlight/Release needs a real prod account: web signup, Apple, or phone-OTP).
 - **Build/verify commands:**
-  - iOS unit + contract: `cd ~/Dev/tovis-ios/TovisKit && swift test` (**21 pass**);
-    `cd ~/Dev/tovis-ios/scripts/contract && npm run validate` (**20 objects** vs backend schema).
+  - iOS unit + contract: `cd ~/Dev/tovis-ios/TovisKit && swift test` (**24 pass**);
+    `cd ~/Dev/tovis-ios/scripts/contract && npm run validate` (**24 objects** vs backend schema).
   - iOS app build: `cd ~/Dev/tovis-ios && xcodebuild build -scheme Tovis -project
     tovis-ios.xcodeproj -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO`.
   - Backend: `cd ~/Dev/tovis-app && npm run typecheck && npm run lint && npm run
     check:static-guards` + `npx vitest run`.
-- **#1 next action:** a polish item (add-ons in booking is the suggested next) — see Suggested next steps.
+- **#1 next action: LIVE VERIFICATION of the polish stack** (nothing left to build) — run the local
+  stack + sim and walk add-ons → mobile booking + Places → deposit → rebook → Looks video → Discover
+  filters/clustering/place-jump. See "Suggested next steps".
 
 ## ⚙️ Backend env / DB / prod (so the app actually loads — learned this session)
 
@@ -308,6 +312,19 @@ same login with a `Cookie: tovis_token=…` header → 403. Don't reintroduce `.
 
 ## Backend PR status (in `tovis-app`)
 
+**Polish-companion DTO/CI PRs (2026-06-28) — ALL MERGED:**
+- **#421 — typed `OfferingAddOnItemDTO`** (add-ons) + web `AddOnDTO` dedup onto the shared type.
+- **#422 — `depositStatus` + `depositAmount`** on `ClientBookingCheckoutDTO` (+ list-route select).
+- **#423 — typed `ClientAddressDTO`** (client addresses; pins `mapClientAddress`).
+- **#424 — E2E CI fix:** chromium-only on PRs, full matrix on `main` (cuts the runner-preemption flake).
+- **#425 — `hasPendingRebookConfirmation` + `rebookProposedFor`** on `ClientBookingDTO` (+ list-route select).
+  All used the OPTIONAL-builder-input pattern (deposit/rebook/address selects optional on
+  `buildClientBookingDTO` → zero web churn; only the bookings LIST route selects them).
+  💡 LESSON saved: a DTO **JSDoc-comment edit** changes the generated schema (ts-json-schema-generator emits
+  comments as `description`s) — re-run `npm run gen:api-schema` after ANY DTO edit or CI `check:api-schema`
+  fails (bit us on #422). Places autocomplete used EXISTING proxies (`/api/v1/google/places/*`), no new DTO.
+
+**Earlier auth/live-sync PRs — MERGED:**
 - **#413 — proxy cookieless-origin fix — MERGED.** *Critical:* native login/apple/phone
   are cookieless with no `Origin` header; without this they 403. This unblocks ALL native auth.
 - **#414 — Sign in with Apple backend — MERGED.**
@@ -448,6 +465,36 @@ Everything below is set up; recorded here so the next session knows the live con
 
 ## ▶️ Suggested next steps (pick up here)
 
+> **🟢 THE BUILD BACKLOG IS EMPTY.** Polish items #1–#6 are all shipped (per-item ✅ detail below).
+> The ONE remaining task is **LIVE VERIFICATION** — none of the polish features have been exercised on a
+> device/sim against the backend; some (map cluster tap-to-zoom, place-jump, push-tap routing, Stripe
+> `tovis://` redirect) genuinely can't be confirmed by a compile.
+
+### 🔬 Live-verification checklist (the actual #1 next action)
+
+1. **Start the stack:** `docker start tovis-dev-postgres` (or `pnpm db:dev:up`) → `cd ~/Dev/tovis-app &&
+   pnpm dev`. If signed-in screens 500 with "table … does not exist", run the `prisma db push` from the
+   env/DB note. Open Xcode (`~/Dev/tovis-ios/tovis-ios.xcodeproj`), iPhone sim, **⌘R (Debug → localhost)**.
+   Sign in `client@tovis.app` / `password123`.
+2. **Add-ons (#1):** open a pro/offering with add-ons → toggle add-ons → confirm total-duration pill
+   updates + the booking finalizes with the add-ons. ⚠️ local seed may lack add-ons — may need to seed an
+   `OfferingAddOn`, or point Debug at prod.
+3. **Mobile booking + Places (#5a):** pick a mobile-capable offering → "Where" → Mobile → add a service
+   address via **Places autocomplete** (type → pick suggestion → exact coords) → book. Confirm
+   out-of-radius surfaces the backend message.
+4. **Deposit (#3):** a booking with `depositStatus=PENDING` → "Secure your booking" card → Pay deposit →
+   Stripe → returns via `tovis://` → flips to "Deposit paid".
+5. **Rebook-confirm (#5b):** a booking with a pro-proposed BOOKED_NEXT_APPOINTMENT → Confirm/Decline card.
+6. **Push deep-link (#2):** REAL DEVICE only (sim has no APNs) — booking push → tap → opens that booking.
+7. **Looks video (#4):** a feed with VIDEO looks (local seed is sparse — point Debug at prod) → autoplay,
+   loop, tap-to-mute.
+8. **Discover (#6):** filter sheet (radius/sort/mobile) re-searches; **search-bar place autocomplete**
+   recenters; **pin clustering** count bubbles → tap zooms + splits.
+9. **Stripe `tovis://` redirect on-device** (the one non-built item): confirm `SFSafariViewController`
+   auto-follows the bounce, else the "Return to the app" button.
+
+---
+
 **✅ DONE 2026-06-28 (latest session — all committed, build green, much verified live):**
 - **Notifications** — in-app **center** (Track A) + **preferences editor** + **push/APNs registration**
   (Track B). Backend: typed DTOs **#419 merged** + **web client notification center #420 merged**.
@@ -468,7 +515,8 @@ Everything below is set up; recorded here so the next session knows the live con
 - **`fix(auth)` cookieless URLSession** — native login was 403 INVALID_ORIGIN once URLSession.shared
   stored the `tovis_token` cookie; the client now runs cookieless. (Would've hit prod too.)
 
-**The v1 must-haves are all shipped + on TestFlight. What remains is POLISH — pick up here, in priority order:**
+**✅ The polish backlog (#1–#6) is COMPLETE — per-item detail below (all build/contract-verified; "Verified
+live? No" on each → see the checklist above). Nothing here is left to build:**
 
 1. ✅ **Add-ons in booking DONE 2026-06-28** — `BookingFlowView` now fetches `/offerings/add-ons`
    (`BookingService.addOns`, SALON/MOBILE-aware), shows a toggle-able **Add-ons (Optional)** section with
@@ -481,7 +529,7 @@ Everything below is set up; recorded here so the next session knows the live con
    regenerated schema; also DRY'd the web's two duplicate local `AddOnDTO`s onto the shared one). iOS
    validator now schema-checks the fixture: **22 objects** (was 20). Verified live? **No —** still
    decode-only (round-trip a real `GET /offerings/add-ons` against a seed pro that has add-ons to confirm).
-   ✅ **PR #421 MERGED to origin/main** (`fd4de7d9`). 🔴 ff local tovis-app `main` → origin/main when convenient.
+   ✅ **PR #421 MERGED.**
 2. ✅ **Push deep-linking DONE 2026-06-28** — a push tap now opens the specific booking. `PushManager`
    reads the payload's **`href`** (the only custom key the backend sends — `lib/notifications/delivery/
    sendPush.ts`; e.g. `/client/bookings/bk_1`), parses it to a `PushDeepLink` (ContentView), the session
@@ -497,7 +545,7 @@ Everything below is set up; recorded here so the next session knows the live con
    `depositStatus` + `depositAmount`. Backend **tovis-app PR #422** adds both to `ClientBookingCheckoutDTO`
    + the client bookings list-route select (deposit columns optional on `buildClientBookingDTO` so other
    callers emit null — no web churn); schema regenerated. Fixture/decode updated; contract **22 objects**;
-   Debug+Release green; 22 tests. 🔴 **Merge PR #422.** Verified live? **No —** needs a booking with a real
+   Debug+Release green; 22 tests. ✅ **PR #422 MERGED.** Verified live? **No —** needs a booking with a real
    PENDING deposit to round-trip the deposit checkout.
 4. ✅ **Looks video playback DONE 2026-06-28** — VIDEO looks now play like a native social feed.
    `Tovis/LookVideoPlayer.swift`: a **chromeless `AVPlayerLayer`** in a `UIViewRepresentable`
@@ -518,7 +566,7 @@ Everything below is set up; recorded here so the next session knows the live con
    the backend `userMessage`; Book is gated until a mobile booking has an address. TovisKit: `ClientAddress`
    model + `AddressesService` (`client.addresses`: list/serviceAddresses/create); `createHold` gains
    `clientAddressId`. Backend **tovis-app PR #423** adds typed `ClientAddressDTO` + schema (contract **24
-   objects**). Fixture/decode added; Debug+Release green; 23 tests. 🔴 **Merge PR #423.** Verified live?
+   objects**). Fixture/decode added; Debug+Release green; 23 tests. ✅ **PR #423 MERGED.** Verified live?
    **No** — needs a pro with mobile enabled + a saved/added service address. NOTE: address add is a typed
    form (no Places autocomplete yet — that rides with #6).
    ✅ **Rebook-confirm DONE 2026-06-28** — there IS an authed path (no token needed):
@@ -529,7 +577,7 @@ Everything below is set up; recorded here so the next session knows the live con
    `rebookProposedFor`; `BookingsService.decideRebook(confirm:)`. Backend **tovis-app PR #425** adds both
    DTO fields (computed from `aftercareSummary` + the rebook chain: pending iff BOOKED_NEXT_APPOINTMENT ∧
    rebookedFor ∧ not-declined ∧ no active rebooked booking — hides after confirm) + the list-route select.
-   Fixture/decode; contract **24 objects**; Debug+Release green; 24 tests. 🔴 **Merge PR #425.** Verified
+   Fixture/decode; contract **24 objects**; Debug+Release green; 24 tests. ✅ **PR #425 MERGED.** Verified
    live? **No** — needs a pro-proposed BOOKED_NEXT_APPOINTMENT to confirm/decline. **Booking v2 is now
    COMPLETE (mobile mode + rebook-confirm).**
 6. 🟡 **Discover — FILTER SHEET + PLACES AUTOCOMPLETE DONE 2026-06-28; clustering DEFERRED.**
