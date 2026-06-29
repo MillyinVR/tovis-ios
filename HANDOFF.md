@@ -527,8 +527,22 @@ Everything below is set up; recorded here so the next session knows the live con
    and decline is `POST /client/bookings/[id]/aftercare-rebook {action:"DECLINE"}`. To surface it natively:
    add `hasPendingRebookConfirmation` + `rebookedFor` to `ClientBookingDTO`, and decide whether the app
    confirms via an authed path (the token isn't in the booking list). Web shipped this via #236. Own pass.
-6. **Discover** — Google Places autocomplete in the search bar, pin **clustering**, radius/sort filter
-   sheet (fixed 25mi / distance sort today). Confirm the Stripe `tovis://` redirect on-device.
+6. 🟡 **Discover — FILTER SHEET + PLACES AUTOCOMPLETE DONE 2026-06-28; clustering DEFERRED.**
+   ✅ **Radius/sort/mobile filter sheet** (`DiscoverFilterSheet`) — filter button (active-dot) → radius
+   (5/10/15/25/50 mi), sort (Distance/Top rated/Price/Name), mobile-pros-only, Reset/Apply. Pure UI —
+   `DiscoverService.searchPros` already accepted `radiusMiles`/`sort`/`mobileOnly` and the backend already
+   honors them (NO backend/DTO work). ✅ **Google Places autocomplete** — `PlacesService` (`client.places`:
+   autocomplete + details) over the **existing** backend proxies (`/api/v1/google/places/*`, server-only
+   key — NO new backend). Wired into **`AddServiceAddressSheet`** (the mobile-booking address form): search
+   → pick a suggestion → resolve to exact lat/lng via details → save with `placeId`+coords so the backend
+   keeps them as-is (removes the typed-form re-geocode + "couldn't verify" failures). `AddressesService`
+   gained `createServiceAddress(from: PlaceDetails)`. Decode test (**24 tests**); Debug+Release green.
+   Places routes are Google-proxy passthroughs (not typed DTOs) → decode-only, no contract entry.
+   ⏸️ **Pin clustering DEFERRED** — SwiftUI `Map` (iOS 17) doesn't natively cluster annotations; real
+   clustering needs an `MKMapView` `UIViewRepresentable` rebuild (or manual grid clustering). Low ROI until
+   pro density is high. 🟡 Also still open from #6: **Places autocomplete in the Discover SEARCH BAR**
+   (recenter map to a typed place — the bar does free-text PRO search today; map has "search this area")
+   and **confirm the Stripe `tovis://` redirect on-device**. Verified live? **No** (build/decode only).
 
 **Onboarding note:** native **email/password sign-UP** is still web-only (register has
 captcha/TOS/SMS-consent/CLIENT_ZIP gates). **Apple + phone-OTP are the native account-creation paths**
