@@ -20,7 +20,7 @@ on `tovis-ios` `main`; the one backend change is **merged** (`tovis-app` PR #427
 
 - **Run:** `docker start tovis-dev-postgres` → `cd ~/Dev/tovis-app && pnpm dev` (localhost:3000, local DB `:5434`). Open `~/Dev/tovis-ios/tovis-ios.xcodeproj`, iPhone sim, ⌘R (Debug→localhost). Sign in **as a PRO** to see the pro shell (a CLIENT lands on the client shell). Seed client: `client@tovis.app`/`password123` (CLIENT only — for a pro, use a real APPROVED pro account; role decides the shell).
 - **Verify (run before committing):**
-  - iOS: `cd ~/Dev/tovis-ios/TovisKit && swift test` (**26**); `cd ~/Dev/tovis-ios/scripts/contract && npm run validate` (**26 objects**); `cd ~/Dev/tovis-ios && xcodebuild build -scheme Tovis -project tovis-ios.xcodeproj -destination 'generic/platform=iOS Simulator' -configuration Debug CODE_SIGNING_ALLOWED=NO` (and `-configuration Release`).
+  - iOS: `cd ~/Dev/tovis-ios/TovisKit && swift test` (**50**); `cd ~/Dev/tovis-ios/scripts/contract && npm run validate` (**26 objects**); `cd ~/Dev/tovis-ios && xcodebuild build -scheme Tovis -project tovis-ios.xcodeproj -destination 'generic/platform=iOS Simulator' -configuration Debug CODE_SIGNING_ALLOWED=NO` (and `-configuration Release`).
   - Backend: `npm run typecheck && npm run lint && npm run check:static-guards` + `npx vitest run <paths>`.
 
 ## ✅ DONE (committed on `tovis-ios` `main`)
@@ -201,9 +201,19 @@ Bell → notifications sheet. Polls every 60s + refresh-tick. That's a *subset* 
    updateBlock,deleteBlock}`, 2 fixtures + 3 decode/encode tests. Create pins to a bookable location
    (`GET /pro/locations`, primary default, picker when >1); FAB hidden if none. `swift test` **46** ·
    contract **26** · Debug+Release green. ⚠️ NOT yet sim-verified.
-3. **Day/Week time-grid** ← **NEXT** — `DayWeekGrid` (time-slot columns w/ booking/block tiles). Replaces the
-   agenda fallback that inc.1 uses for Day/Week.
-4. **Bars/panels** — `MobilePendingRequestBar`, `MobileAutoAcceptBar`, `CalendarStatsPanel`, location bar.
+3. ✅ **DONE 2026-06-29 (`1b1e18d`)** — **Day/Week time-grid.** `ProCalendarTimeGrid` ports the web
+   `DayWeekGrid` (+ `_grid/TimeGutter`/`DayColumn`/`DayHeaderRow`/`EventCard`): a 24h vertical timeline at
+   `PX_PER_MINUTE=1.5`, time gutter, 1 col (day) / 7 cols Mon-start (week), hour rules, a now-line on today,
+   and event tiles positioned by their minutes-since-midnight window. Auto-scrolls to 8am. Tiles tap →
+   booking detail (programmatic push) or block editor; **replaced the inc.1 agenda fallback for Day/Week**.
+   Pure layout math (`eventDayMinutes`/`snap`/`minutesSinceMidnight`/`timelineDays`) added to
+   `ProCalendarGrid` + 4 tests (`swift test` **50**). Contract **26** · Debug+Release green. ⚠️ NOT sim-verified.
+   **Web parity gaps (deferred to polish):** working-hours shading (needs per-location `workingHours`), event
+   drag/resize + tap-to-create (mouse-oriented; native uses the FAB + detail screen), side-by-side overlap
+   columns (web also stacks full-width), sticky header inside the scroll.
+4. **Bars/panels** ← **NEXT** — `MobilePendingRequestBar`, `MobileAutoAcceptBar`, `CalendarStatsPanel`,
+   location bar. (Native already shows a stats strip + pending-requests section + bell; this increment is the
+   auto-accept toggle, the dismissible top pending bar, and the location selector for multi-location pros.)
 
 **House rules carry over:** web-parity 1:1 · no dup logic (reuse BrandSurface/Section/Pill/Avatar + the
 agenda row) · decode-only fixtures unless an ajv contract entry is warranted · `requirePro` · backend changes
