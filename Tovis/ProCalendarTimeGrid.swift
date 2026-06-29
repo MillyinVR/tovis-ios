@@ -86,9 +86,10 @@ struct ProCalendarTimeGrid: View {
     private func setNowScroll() {
         let todayKey = ProCalendarGrid.ymd(Date(), timeZone)
         let todayVisible = days.contains { $0.dayYmd == todayKey }
-        let target = todayVisible
-            ? ProCalendarGrid.minutesSinceMidnight(Date(), timeZone) / 60
-            : 8
+        // Open with the hour just before "now" at the top (a little past context),
+        // then the current hour and the day ahead below it.
+        let nowHour = ProCalendarGrid.minutesSinceMidnight(Date(), timeZone) / 60
+        let target = todayVisible ? max(0, nowHour - 1) : 8
         // Defer a tick so the binding applies after the ScrollView's first layout.
         DispatchQueue.main.async { scrolledHour = target }
     }
@@ -102,7 +103,9 @@ struct ProCalendarTimeGrid: View {
 
     private var headerRow: some View {
         HStack(spacing: 0) {
-            Color.clear.frame(width: gutterWidth)
+            // Fixed-width spacer (a bare Color.clear is greedy vertically and would
+            // balloon the header's height).
+            Spacer().frame(width: gutterWidth)
             ForEach(days) { day in
                 VStack(spacing: 1) {
                     Text(weekdayLabel(day.startOfDay))
@@ -118,7 +121,7 @@ struct ProCalendarTimeGrid: View {
                 .frame(maxWidth: .infinity)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
         .background(BrandColor.bgSecondary)
     }
 
