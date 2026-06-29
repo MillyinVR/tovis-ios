@@ -163,7 +163,8 @@ real-time coach [**B1 ✅**: toggles + lighting/composition + nudge/ring/grid + 
 ≥0.85); **B3a ✅**: on-demand **silent** video clip (AVCaptureMovieFileOutput, NO mic — never records
 salon audio) → frame-by-frame scrubber (AVAssetImageGenerator) to extract the best still or save the
 whole clip, both into the same session media (VIDEO via `uploadSessionVideo`); **B3b next**: client
-per-session media-use consent toggle in aftercare] → **C.** ShotGuides + onion-skin + **comparison
+per-session media-use consent toggle in aftercare; **B4**: NFC-card ColorChecker calibration (see the
+"NFC card camera calibration" section)] → **C.** ShotGuides + onion-skin + **comparison
 slider + portfolio publish** →
 **D.** Claude critique (consented) → **E.** engagement learning loop.
 
@@ -179,6 +180,40 @@ guides them. `CoachEngine` (MainActor) + `CoachAnalyzer` (AVCaptureVideoDataOutp
 Vision face + CoreImage luma) → one prioritized nudge + a 0–1 readiness driving the shutter ring.
 Coaches so far: **Lighting** (exposure/backlit) + **Composition** (face centering/headroom); sharpness/
 background/pose next. Extend by adding a `ShotCoach` to the engine's coach list.
+
+## 📇 NFC card camera calibration (Phase B4 — decided 2026-06-28, NOT built)
+
+The pro holds the camera to a **printed reference target on the back of the Tovis NFC card** to
+calibrate color + exposure for true, consistent before/afters (color accuracy *is* the product for
+hair/nails). NFC carries data, not color — so the **printed target** does the calibration; **NFC
+triggers it + identifies the card version** (so we use that print batch's measured reference values).
+
+**Decisions (user-confirmed):** **full ColorChecker swatches** on the card (white balance + exposure +
+a 3×3 color-correction matrix) · **NFC = trigger + identify card version** (adds CoreNFC) · **build
+order: AFTER B3b consent + a couple more coaches** (this is Phase B4, not next).
+
+**How it works (all real iOS APIs):**
+- **White balance** — sample the neutral gray swatch → compute gains → `AVCaptureDevice
+  .setWhiteBalanceModeLocked(with:)` (lock out the room's color cast).
+- **Exposure** — lock off the card's known brightness → `setExposureModeCustom`/lock (no drift).
+- **Color** — sample each swatch's captured RGB vs. its **known reference value** → solve a least-
+  squares **3×3 color-correction matrix** → apply to every capture via CoreImage (`CIColorMatrix`),
+  and feed the lighting coach a calibrated baseline.
+- **Detect the card (MVP):** guided overlay box ("line the card up here") + tap to sample fixed grid
+  positions. Auto-detect (Vision rectangle/fiducial) is a later nicety.
+- **NFC:** CoreNFC (`NFCTagReaderSession`) — tap → launch calibrate + read a **card-version id** →
+  look up that batch's reference swatch values. Needs the NFC capability + entitlement + an Info.plist
+  usage string.
+
+**⚠️ Hardware dependency (blocks accurate color):** the 3×3 matrix is only as good as the printed
+swatches. Each print batch's swatch values must be **measured (or printed to a known spec) and keyed by
+the NFC card-version id**. Gray-patch WB/exposure is forgiving; color-matrix is not.
+
+**Card target spec to define before printing (TODO with the card vendor):** swatch grid layout +
+sizes, the neutral-gray reference, the per-swatch reference RGB/Lab values (measured per batch), a quiet
+zone/fiducial for the guided box, and the **NFC payload** = a `cardVersion` id the app maps to the
+batch reference profile. Build as a self-contained `CameraCalibration` module that sets WB/exposure on
+`CameraController` + a `CIColorMatrix` applied in the capture/harvest path.
 
 **Phase A contracts (verified in tovis-app):** sign `POST /api/v1/pro/uploads {kind:"CONSULT_PRIVATE",
 bookingId, phase, contentType, size}` → `MediaUploadInitDTO {bucket, path, token, signedUrl, uploadSessionId, …}`;
