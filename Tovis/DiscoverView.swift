@@ -35,6 +35,12 @@ struct DiscoverView: View {
     @State private var mobileOnly = false
     @State private var showFilters = false
 
+    // Place autocomplete — "jump the map to a place" suggestions for the search bar.
+    @State private var placeResults: [PlacePrediction] = []
+    @State private var placeToken = 0
+    @State private var placeSessionToken = UUID().uuidString
+    @State private var resolvingPlace = false
+
     // Los Angeles fallback so the first paint isn't empty before a fix arrives.
     private static let fallbackCenter = CLLocationCoordinate2D(latitude: 34.05, longitude: -118.24)
     private static let fallbackRegion = MKCoordinateRegion(
@@ -205,6 +211,7 @@ struct DiscoverView: View {
                 filterButton
                 viewToggle
             }
+            if !placeResults.isEmpty { placeSuggestions }
             categoryRail
             Spacer()
         }
@@ -220,7 +227,7 @@ struct DiscoverView: View {
                 .autocorrectionDisabled().textInputAutocapitalization(.never)
                 .submitLabel(.search)
                 .onSubmit { Task { await runSearch() } }
-                .onChange(of: query) { debouncedSearch() }
+                .onChange(of: query) { debouncedSearch(); loadPlaceSuggestions() }
             if loading {
                 ProgressView().controlSize(.mini).tint(BrandColor.accent)
             } else if !query.isEmpty {
@@ -383,6 +390,77 @@ struct DiscoverView: View {
 
     private func searchThisArea() async {
         searchedOrigin = mapCenter
+        await runSearch()
+    }
+
+    // MARK: - Place autocomplete (jump the map to a place)
+
+    private var placeSuggestions: some View {
+        VStack(spacing: 0) {
+            ForEach(placeResults) { place in
+                Button { Task { await pickPlace(place) } } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "mappin.circle.fill")
+                            .foregroundStyle(BrandColor.accent)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(place.mainText)
+                                .font(BrandFont.body(14, .medium)).foregroundStyle(BrandColor.textPrimary)
+                            Text(place.secondaryText)
+                                .font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
+                        }
+                        Spacer(minLength: 8)
+                        if resolvingPlace { ProgressView().controlSize(.mini).tint(BrandColor.accent) }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 9).padding(.horizontal, 12)
+                }
+                .buttonStyle(.plain)
+                if place.id != placeResults.last?.id {
+                    Divider().background(BrandColor.textMuted.opacity(0.12))
+                }
+            }
+        }
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .stroke(BrandColor.textMuted.opacity(0.2), lineWidth: 1))
+    }
+
+    private func loadPlaceSuggestions() {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 3 else { placeResults = []; return }
+        placeToken += 1
+        let token = placeToken
+        Task {
+            try? await Task.sleep(for: .milliseconds(350))
+            guard token == placeToken else { return }
+            let results = try? await session.client.places.autocomplete(
+                input: trimmed, sessionToken: placeSessionToken,
+                lat: mapCenter.latitude, lng: mapCenter.longitude, kind: "ANY"
+            )
+            if token == placeToken { placeResults = Array((results ?? []).prefix(4)) }
+        }
+    }
+
+    private func pickPlace(_ prediction: PlacePrediction) async {
+        resolvingPlace = true
+        defer { resolvingPlace = false }
+        guard let details = try? await session.client.places.details(
+            placeId: prediction.placeId, sessionToken: placeSessionToken
+        ) else { return }
+
+        placeSessionToken = UUID().uuidString // close the Places billing session
+        placeToken += 1                        // cancel any in-flight suggestion fetch
+        placeResults = []
+        query = ""                             // a picked place is a location search, not text
+        let coord = CLLocationCoordinate2D(latitude: details.lat, longitude: details.lng)
+        searchedOrigin = coord
+        mapCenter = coord
+        withAnimation {
+            camera = .region(MKCoordinateRegion(
+                center: coord,
+                span: MKCoordinateSpan(latitudeDelta: 0.2, longitudeDelta: 0.2)
+            ))
+        }
         await runSearch()
     }
 
