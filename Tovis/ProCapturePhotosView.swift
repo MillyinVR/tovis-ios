@@ -24,6 +24,10 @@ struct ProCapturePhotosView: View {
     @State private var coach: CoachEngine?
     @State private var showSettings = false
     @State private var showBestShots = false
+    /// A just-recorded clip awaiting frame-by-frame review (nil = none).
+    @State private var scrubClip: ScrubClip?
+
+    private struct ScrubClip: Identifiable { let url: URL; var id: String { url.absoluteString } }
 
     var body: some View {
         ZStack {
@@ -51,6 +55,9 @@ struct ProCapturePhotosView: View {
             if let coach {
                 BestShotsReviewView(coach: coach, bookingId: bookingId, phase: phase)
             }
+        }
+        .fullScreenCover(item: $scrubClip) { clip in
+            FrameScrubberView(videoURL: clip.url, bookingId: bookingId, phase: phase)
         }
     }
 
@@ -188,10 +195,27 @@ struct ProCapturePhotosView: View {
 
             // Shutter
             HStack {
-                Text(captured.isEmpty ? "" : "\(captured.count) captured")
-                    .font(BrandFont.mono(11))
-                    .foregroundStyle(.white.opacity(0.7))
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                // Record control (left) — silent video clip → frame scrubber.
+                Group {
+                    if camera.recordingAvailable {
+                        Button { Task { await toggleRecording() } } label: {
+                            ZStack {
+                                Circle().strokeBorder(.white.opacity(0.7), lineWidth: 2).frame(width: 44, height: 44)
+                                RoundedRectangle(cornerRadius: camera.isRecording ? 4 : 11, style: .continuous)
+                                    .fill(BrandColor.ember)
+                                    .frame(width: camera.isRecording ? 20 : 22,
+                                           height: camera.isRecording ? 20 : 22)
+                                    .animation(.easeInOut(duration: 0.2), value: camera.isRecording)
+                            }
+                        }
+                        .accessibilityLabel(camera.isRecording ? "Stop recording" : "Record clip")
+                    } else if !captured.isEmpty {
+                        Text("\(captured.count) captured")
+                            .font(BrandFont.mono(11))
+                            .foregroundStyle(.white.opacity(0.7))
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 Button {
                     Task { await capture() }
@@ -279,6 +303,17 @@ struct ProCapturePhotosView: View {
             errorMessage = error.userMessage
         } catch {
             errorMessage = "Couldn’t save that photo. Please try again."
+        }
+    }
+
+    private func toggleRecording() async {
+        if camera.isRecording {
+            errorMessage = nil
+            if let url = try? await camera.stopRecording() {
+                scrubClip = ScrubClip(url: url)   // → frame-by-frame review
+            }
+        } else {
+            camera.startRecording()
         }
     }
 

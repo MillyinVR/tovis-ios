@@ -25,8 +25,7 @@ public final class ProMediaService: Sendable {
         self.uploadSession = URLSession(configuration: .ephemeral)
     }
 
-    /// One-shot: presign → upload bytes → confirm. Returns the created media row.
-    /// `imageData` is JPEG bytes from the camera; `mediaType` defaults to image.
+    /// One-shot photo upload: presign → PUT → confirm. `imageData` is JPEG bytes.
     @discardableResult
     public func uploadSessionPhoto(
         bookingId: String,
@@ -35,18 +34,51 @@ public final class ProMediaService: Sendable {
         contentType: String = "image/jpeg",
         caption: String? = nil
     ) async throws -> ProBookingMediaItem {
+        try await upload(
+            bookingId: bookingId, phase: phase, data: imageData,
+            contentType: contentType, mediaType: .image, caption: caption
+        )
+    }
+
+    /// One-shot video upload from a recorded clip file (silent .mov → VIDEO).
+    /// Lands in the same session media as before/after photos.
+    @discardableResult
+    public func uploadSessionVideo(
+        bookingId: String,
+        phase: MediaPhase,
+        fileURL: URL,
+        contentType: String = "video/quicktime",
+        caption: String? = nil
+    ) async throws -> ProBookingMediaItem {
+        let data = try Data(contentsOf: fileURL)
+        return try await upload(
+            bookingId: bookingId, phase: phase, data: data,
+            contentType: contentType, mediaType: .video, caption: caption
+        )
+    }
+
+    /// Shared 3-step pipeline: presign → PUT bytes → confirm.
+    @discardableResult
+    private func upload(
+        bookingId: String,
+        phase: MediaPhase,
+        data: Data,
+        contentType: String,
+        mediaType: MediaType,
+        caption: String?
+    ) async throws -> ProBookingMediaItem {
         let initData = try await presign(
             bookingId: bookingId,
             phase: phase,
             contentType: contentType,
-            size: imageData.count
+            size: data.count
         )
-        try await putBytes(imageData, to: initData, contentType: contentType)
+        try await putBytes(data, to: initData, contentType: contentType)
         return try await confirm(
             bookingId: bookingId,
             uploadSessionId: initData.uploadSessionId,
             phase: phase,
-            mediaType: .image,
+            mediaType: mediaType,
             caption: caption
         )
     }

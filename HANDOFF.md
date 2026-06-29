@@ -160,8 +160,11 @@ auto-capture) · **build Phase A first** (capture + upload foundation).
 **Camera build ladder:** **A.** ✅ capture + upload foundation (committed `e9296b5`) → **B.** on-device
 real-time coach [**B1 ✅**: toggles + lighting/composition + nudge/ring/grid + voice/haptics;
 **B2 ✅**: auto-harvest "best shots" tray (staged review → upload keepers; ≥1/2.5s, cap 24, readiness
-≥0.85); **B3 next**: on-demand video clip → save-as-portfolio + best-frame extraction] → **C.**
-ShotGuides + onion-skin + **comparison slider + portfolio publish** →
+≥0.85); **B3a ✅**: on-demand **silent** video clip (AVCaptureMovieFileOutput, NO mic — never records
+salon audio) → frame-by-frame scrubber (AVAssetImageGenerator) to extract the best still or save the
+whole clip, both into the same session media (VIDEO via `uploadSessionVideo`); **B3b next**: client
+per-session media-use consent toggle in aftercare] → **C.** ShotGuides + onion-skin + **comparison
+slider + portfolio publish** →
 **D.** Claude critique (consented) → **E.** engagement learning loop.
 
 **The "Session Reel" capture model (user-refined 2026-06-28):** instead of recording the entire

@@ -23,8 +23,14 @@ final class CameraController: NSObject {
     nonisolated(unsafe) let session = AVCaptureSession()
     nonisolated(unsafe) private let photoOutput = AVCapturePhotoOutput()
     nonisolated(unsafe) private let videoOutput = AVCaptureVideoDataOutput()
+    /// Records silent video clips (NO mic input — we never capture salon audio).
+    nonisolated(unsafe) private let movieOutput = AVCaptureMovieFileOutput()
     nonisolated(unsafe) private var configured = false
     nonisolated(unsafe) private var captureContinuation: CheckedContinuation<Data, Error>?
+    nonisolated(unsafe) private var recordContinuation: CheckedContinuation<URL, Error>?
+    /// Whether the session could add the movie output (false → recording hidden).
+    private(set) var recordingAvailable = false
+    private(set) var isRecording = false
     /// Live-frame delegate for the on-device coach (set before `start`). Weak —
     /// the CoachEngine owns it.
     nonisolated(unsafe) weak var frameDelegate: AVCaptureVideoDataOutputSampleBufferDelegate?
@@ -79,6 +85,38 @@ final class CameraController: NSObject {
         }
     }
 
+    // MARK: - Recording (silent video clips)
+
+    func startRecording() {
+        guard recordingAvailable, !isRecording else { return }
+        isRecording = true
+        sessionQueue.async {
+            guard self.session.isRunning, !self.movieOutput.isRecording else { return }
+            // Upright portrait orientation (iOS 17 rotation API).
+            if let conn = self.movieOutput.connection(with: .video),
+               conn.isVideoRotationAngleSupported(90) {
+                conn.videoRotationAngle = 90
+            }
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("tovis-clip-\(UUID().uuidString).mov")
+            self.movieOutput.startRecording(to: url, recordingDelegate: self)
+        }
+    }
+
+    /// Stop and hand back the recorded file URL.
+    func stopRecording() async throws -> URL {
+        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<URL, Error>) in
+            sessionQueue.async {
+                guard self.movieOutput.isRecording else {
+                    cont.resume(throwing: CameraError.noData)
+                    return
+                }
+                self.recordContinuation = cont
+                self.movieOutput.stopRecording()
+            }
+        }
+    }
+
     // MARK: - Setup
 
     private static func ensureAuthorized() async -> Bool {
@@ -123,8 +161,35 @@ final class CameraController: NSObject {
                     self.session.addOutput(self.videoOutput)
                 }
 
+                // Silent video recording (iOS 16+ allows movie + data outputs).
+                if self.session.canAddOutput(self.movieOutput) {
+                    self.session.addOutput(self.movieOutput)
+                    Task { @MainActor in self.recordingAvailable = true }
+                }
+
                 self.session.commitConfiguration()
                 cont.resume(returning: nil)
+            }
+        }
+    }
+}
+
+extension CameraController: AVCaptureFileOutputRecordingDelegate {
+    nonisolated func fileOutput(
+        _ output: AVCaptureFileOutput,
+        didFinishRecordingTo outputFileURL: URL,
+        from connections: [AVCaptureConnection],
+        error: Error?
+    ) {
+        let failed = error != nil
+        sessionQueue.async {
+            let cont = self.recordContinuation
+            self.recordContinuation = nil
+            Task { @MainActor in self.isRecording = false }
+            if failed {
+                cont?.resume(throwing: CameraError.noData)
+            } else {
+                cont?.resume(returning: outputFileURL)
             }
         }
     }
