@@ -6,6 +6,8 @@
 	<string>AppIcon</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Tovis uses your location to find pros and services near you on Discover.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Tovis uses the camera to capture before and after photos during your appointments.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

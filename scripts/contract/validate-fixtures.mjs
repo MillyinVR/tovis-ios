@@ -63,6 +63,11 @@ const CHECKS = [
     def: 'ClientAddressDTO',
     pick: (d) => d.addresses,
   },
+  {
+    file: 'proBookingMedia.json',
+    def: 'ProBookingMediaItemDTO',
+    pick: (d) => d.items,
+  },
 ]
 
 function fail(msg) {

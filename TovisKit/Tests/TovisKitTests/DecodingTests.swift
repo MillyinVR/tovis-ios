@@ -237,6 +237,21 @@ func fixture(_ name: String) throws -> Data {
         #expect(u.center.action == .unknown)
     }
 
+    // GET /api/v1/pro/bookings/{id}/media — Fixtures/proBookingMedia.json. Session
+    // before/after photos (ProBookingMediaItemDTO). Schema-validated via contract.
+    @Test func decodesProBookingMedia() throws {
+        let res = try JSONDecoder().decode(ProBookingMediaListResponse.self, from: fixture("proBookingMedia"))
+        #expect(res.items.count == 2)
+        let before = try #require(res.items.first)
+        #expect(before.phase == .before)
+        #expect(before.mediaType == .image)
+        #expect(before.displayThumbUrl == "https://x/media_1_rt.jpg")   // prefers render thumb
+        let after = res.items[1]
+        #expect(after.phase == .after)
+        #expect(after.caption == "fresh balayage")
+        #expect(after.displayThumbUrl == "https://x/media_2_t.jpg")     // falls back when no render
+    }
+
     // GET /api/v1/client/bookings — Fixtures/clientBookings.json (schema-validated).
     @Test func decodesClientBookings() throws {
         let res = try JSONDecoder().decode(ClientBookingsResponse.self, from: fixture("clientBookings"))

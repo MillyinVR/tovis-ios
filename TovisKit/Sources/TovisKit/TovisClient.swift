@@ -30,6 +30,8 @@ public final class TovisClient: Sendable {
     public let proSession: ProSessionService
     /// PRO workspace — the calendar/agenda (bookings + blocks + management).
     public let proCalendar: ProCalendarService
+    /// PRO workspace — session media (before/after photo upload + list).
+    public let proMedia: ProMediaService
     public let tokenStore: TokenStore
 
     /// Stable per-install id. Persisted in the Keychain-backed store's UserDefaults
@@ -76,6 +78,11 @@ public final class TovisClient: Sendable {
         self.notifications = NotificationsService(api: api)
         self.proSession = ProSessionService(api: api)
         self.proCalendar = ProCalendarService(api: api)
+        self.proMedia = ProMediaService(
+            api: api,
+            supabaseURL: config.supabaseURL,
+            supabaseKey: config.supabaseAnonKey
+        )
     }
 
     /// The signed-in user's id, decoded from the stored JWT. Works on a cold

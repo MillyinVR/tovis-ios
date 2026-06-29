@@ -1,0 +1,35 @@
+{
+  "ok": true,
+  "items": [
+    {
+      "id": "media_1",
+      "mediaType": "IMAGE",
+      "visibility": "PRO_CLIENT",
+      "phase": "BEFORE",
+      "caption": null,
+      "createdAt": "2026-07-15T17:05:00.000Z",
+      "reviewId": null,
+      "isEligibleForLooks": true,
+      "isFeaturedInPortfolio": false,
+      "url": "https://x/media_1.jpg",
+      "thumbUrl": "https://x/media_1_t.jpg",
+      "renderUrl": "https://x/media_1_r.jpg",
+      "renderThumbUrl": "https://x/media_1_rt.jpg"
+    },
+    {
+      "id": "media_2",
+      "mediaType": "IMAGE",
+      "visibility": "PRO_CLIENT",
+      "phase": "AFTER",
+      "caption": "fresh balayage",
+      "createdAt": "2026-07-15T18:30:00.000Z",
+      "reviewId": null,
+      "isEligibleForLooks": true,
+      "isFeaturedInPortfolio": false,
+      "url": "https://x/media_2.jpg",
+      "thumbUrl": "https://x/media_2_t.jpg",
+      "renderUrl": null,
+      "renderThumbUrl": null
+    }
+  ]
+}

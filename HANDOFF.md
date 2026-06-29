@@ -127,6 +127,49 @@ pulse when live, `PICK_BOOKING` opens a booking picker sheet, `START`/`FINISH` P
 `GET .../session/state`. **Decision (2026-06-28): build the FULL live-session flow now** — incl.
 the before/after photo-capture screens — not a stub.
 
+## 📸 The "AI Photographer" camera — design (decided 2026-06-28)
+
+The pro session camera is NOT a plain camera — it's a real-time **AI photographer** that coaches
+the pro to pro-quality images, service-aware, and learns what does well. Decomposed by latency tier:
+
+- **Tier 1 — on-device real-time coach** (Vision + CoreImage + AVFoundation + CoreMotion, every
+  frame, no network — keeps `media-private` images on device). Coaches: **lighting** (luma histogram
+  + face-vs-background, backlit/over/under), **composition** (saliency + face/subject → rule-of-thirds,
+  headroom, framing; CoreMotion horizon), **background** (`VNGeneratePersonSegmentation` → score
+  clutter/brightness behind subject), **poses** (`VNDetectHumanBodyPose`/`HandPose` + face landmarks →
+  compare to a target template), plus sharpness + shake. Surfaces **one prioritized nudge at a time**
+  + a **readiness ring** (green → optional auto-capture). Architecture: a `ShotCoach` protocol; a
+  coordinator aggregates to one nudge + readiness.
+- **Tier 2 — service awareness** — a backend-served **ShotGuide** per profession/service selects
+  WHICH coaches matter + targets + a **shot list** + **pose templates** + per-shot tips. v1 =
+  **curated** guides (deterministic, ships now); v2 learns from Looks/portfolio engagement.
+- **Tier 3 — Claude vision critique** (server-side, ~seconds) — structured critique + quality score +
+  exemplar comparison ("what top balayage shots do that this misses"). **Gated behind explicit consent**
+  (client session images are `media-private`). Build in Phase D. Use the latest vision-capable Claude
+  model — confirm via the `claude-api` skill when implementing.
+
+**Before/after auto-comparison slider** (user-requested, first-class): pair a BEFORE↔AFTER, show an
+interactive slider, and let the pro **publish it to their portfolio** (a `LOOKS_PUBLIC`/
+`PORTFOLIO_PUBLIC` upload — distinct from the private session media). This is the bridge from session
+capture → marketing.
+
+**Decisions (2026-06-28, user-confirmed):** on-device first (Claude critique later, behind consent) ·
+curated ShotGuides now (learn later) · **custom AVFoundation camera** (needed for overlays/onion-skin/
+auto-capture) · **build Phase A first** (capture + upload foundation).
+
+**Camera build ladder:** **A.** capture + upload foundation (custom AVFoundation, BEFORE/AFTER,
+presign→PUT→confirm, gallery) → **B.** on-device real-time coach → **C.** ShotGuides + onion-skin +
+**comparison slider + portfolio publish** → **D.** Claude critique (consented) → **E.** engagement
+learning loop.
+
+**Phase A contracts (verified in tovis-app):** sign `POST /api/v1/pro/uploads {kind:"CONSULT_PRIVATE",
+bookingId, phase, contentType, size}` → `MediaUploadInitDTO {bucket, path, token, signedUrl, uploadSessionId, …}`;
+upload **PUT** `${SUPABASE_URL}/storage/v1/object/upload/sign/{bucket}/{path}?token=…` headers
+`apikey: <publishable>` + `Content-Type` + `x-upsert:false` (⚠️ **MUST be PUT** — POST → RLS 403, see
+`lib/media/uploadWithProgress.ts`); confirm `POST /api/v1/pro/bookings/{id}/media {uploadSessionId,
+phase, mediaType, caption?}` → `ProBookingMediaItemDTO`; list `GET …/media?phase=` →
+`ProBookingMediaListResponseDTO`. All typed DTOs exist → contract entries possible.
+
 ## ✅ Progress (2026-06-28) — footer/shell milestone SHIPPED (committed, build green)
 
 The pro footer now WORKS end-to-end. Built + verified (`swift test` **25**, contract **24**,

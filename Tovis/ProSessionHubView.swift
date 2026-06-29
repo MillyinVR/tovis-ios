@@ -19,6 +19,15 @@ struct ProSessionHubView: View {
     @State private var phase: Phase = .loading
     @State private var working = false
     @State private var actionError: String?
+    @State private var media: [ProBookingMediaItem] = []
+    /// The phase whose capture screen is open (nil = closed). Wrapper makes it
+    /// Identifiable for `fullScreenCover(item:)`.
+    @State private var capturing: CaptureSelection?
+
+    private struct CaptureSelection: Identifiable {
+        let phase: MediaPhase
+        var id: String { phase.rawValue }
+    }
 
     var body: some View {
         ScrollView {
@@ -42,6 +51,10 @@ struct ProSessionHubView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
         .task { if case .loading = phase { await load() } }
+        .onChange(of: session.refreshTick) { Task { await loadMedia() } }
+        .fullScreenCover(item: $capturing, onDismiss: { Task { await loadMedia() } }) { selection in
+            ProCapturePhotosView(bookingId: bookingId, phase: selection.phase)
+        }
         .tint(BrandColor.accent)
     }
 
@@ -65,6 +78,8 @@ struct ProSessionHubView: View {
                 }
             }
         }
+
+        photosSection
 
         if let message = actionError {
             Text(message)
@@ -97,6 +112,76 @@ struct ProSessionHubView: View {
             }
             .disabled(working)
         }
+    }
+
+    // MARK: - Photos
+
+    private var photosSection: some View {
+        BrandSection(title: "Photos") {
+            VStack(spacing: 12) {
+                phaseRow(.before, label: "Before")
+                phaseRow(.after, label: "After")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func phaseRow(_ phase: MediaPhase, label: String) -> some View {
+        let shots = media.filter { $0.phase == phase }
+        BrandSurface {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text(label)
+                        .font(BrandFont.body(15, .semibold))
+                        .foregroundStyle(BrandColor.textPrimary)
+                    if !shots.isEmpty {
+                        Text("\(shots.count)")
+                            .font(BrandFont.mono(11))
+                            .foregroundStyle(BrandColor.textMuted)
+                    }
+                    Spacer()
+                    Button {
+                        capturing = CaptureSelection(phase: phase)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "camera.fill").font(.system(size: 13, weight: .semibold))
+                            Text(shots.isEmpty ? "Capture" : "Add")
+                                .font(BrandFont.body(13, .semibold))
+                        }
+                        .foregroundStyle(BrandColor.accent)
+                    }
+                }
+
+                if !shots.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(shots) { item in
+                                thumbnail(item)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func thumbnail(_ item: ProBookingMediaItem) -> some View {
+        let urlString = item.displayThumbUrl
+        ZStack {
+            BrandColor.bgSecondary
+            if let urlString, let url = URL(string: urlString) {
+                AsyncImage(url: url) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
+                    ProgressView().tint(BrandColor.accent)
+                }
+            } else {
+                Image(systemName: "photo").foregroundStyle(BrandColor.textMuted)
+            }
+        }
+        .frame(width: 64, height: 64)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private func labeled(_ label: String, value: String) -> some View {
@@ -143,6 +228,11 @@ struct ProSessionHubView: View {
         } catch {
             phase = .failed("Couldn’t load this session.")
         }
+        await loadMedia()
+    }
+
+    private func loadMedia() async {
+        media = (try? await session.client.proMedia.list(bookingId: bookingId)) ?? media
     }
 
     private func finish() async {
