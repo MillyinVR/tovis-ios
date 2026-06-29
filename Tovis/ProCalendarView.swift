@@ -50,6 +50,15 @@ struct ProCalendarView: View {
     @State private var blockSheet: BlockSheetTarget?
     @State private var editorErrorMessage: String?
 
+    // Auto-accept toggle + active-location filter + pending-request quick actions
+    // (web MobileAutoAcceptBar / MobileLocationBar / MobilePendingRequestBar).
+    @State private var autoAccept = false
+    @State private var savingAutoAccept = false
+    @State private var activeLocationId: String?
+    @State private var pendingDismissedKey: String?
+    @State private var pendingActionBusyId: String?
+    @State private var pendingActionError: String?
+
     // Programmatic push to a booking's detail when a time-grid tile is tapped.
     private struct BookingNav: Identifiable, Hashable { let id: String }
     @State private var bookingNav: BookingNav?
@@ -60,6 +69,14 @@ struct ProCalendarView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     if let stats = loadedStats { statsHeader(stats) }
                     controlsBar
+
+                    if locations.count > 1 {
+                        ProLocationBar(
+                            locations: locations,
+                            activeLocationId: activeLocationId,
+                            onChange: { activeLocationId = $0 }
+                        )
+                    }
 
                     switch phase {
                     case .loading:
@@ -103,6 +120,7 @@ struct ProCalendarView: View {
             // Re-fetch when the visible range changes (view switch or nav).
             .onChange(of: view) { Task { await load() } }
             .onChange(of: currentDate) { Task { await load() } }
+            .onChange(of: activeLocationId) { Task { await load() } }
             // Live-sync: a booking made on web (or by a client) shows here.
             .onChange(of: session.refreshTick) { Task { await load(); await loadNotificationSummary() } }
             .task { await poll() }
@@ -196,14 +214,13 @@ struct ProCalendarView: View {
 
     @ViewBuilder
     private func content(_ data: ProCalendarResponse) -> some View {
-        // Pending requests are not range-scoped — they always surface (web parity).
-        if !data.management.pendingRequests.isEmpty {
-            BrandSection(title: "Pending requests", trailing: "\(data.management.pendingRequests.count)") {
-                VStack(spacing: 10) {
-                    ForEach(data.management.pendingRequests) { row(for: $0, zone: data.viewportTimeZone) }
-                }
-            }
-        }
+        pendingBar(data)
+
+        ProAutoAcceptBar(
+            enabled: autoAccept,
+            saving: savingAutoAccept,
+            onToggle: toggleAutoAccept
+        )
 
         if view == .month {
             monthBody(data)
@@ -277,20 +294,71 @@ struct ProCalendarView: View {
         }
     }
 
+    // The top pending request with quick approve/deny (web MobilePendingRequestBar).
+    // Approving advances to the next; "+N more" counts the rest.
     @ViewBuilder
-    private func row(for event: ProCalendarEvent, zone: String?) -> some View {
-        if event.isBooking {
-            NavigationLink {
-                ProBookingDetailView(bookingId: event.id)
-            } label: {
-                ProCalendarEventRow(event: event, zone: zone)
+    private func pendingBar(_ data: ProCalendarResponse) -> some View {
+        let pending = data.management.pendingRequests
+        let key = pending.map(\.id).joined(separator: "|")
+        if let top = pending.first, pendingDismissedKey != key {
+            ProPendingRequestBar(
+                event: top,
+                moreCount: pending.count - 1,
+                timeZone: data.viewportTimeZone,
+                busy: pendingActionBusyId == top.id,
+                errorText: pendingActionError,
+                onOpen: { bookingNav = BookingNav(id: top.id) },
+                onApprove: { approvePending(top) },
+                onDeny: { denyPending(top) },
+                onDismiss: { pendingDismissedKey = key }
+            )
+        }
+    }
+
+    private func toggleAutoAccept() {
+        guard !savingAutoAccept else { return }
+        let next = !autoAccept
+        savingAutoAccept = true
+        autoAccept = next   // optimistic
+        Task {
+            do {
+                autoAccept = try await session.client.proCalendar.setAutoAccept(next)
+            } catch {
+                autoAccept = !next   // revert on failure
             }
-            .buttonStyle(.plain)
-        } else {
-            Button { openBlockEditor(event) } label: {   // a block opens its editor
-                ProCalendarEventRow(event: event, zone: zone)
+            savingAutoAccept = false
+        }
+    }
+
+    private func approvePending(_ event: ProCalendarEvent) {
+        runPendingAction(event) {
+            try await session.client.proBookings.accept(bookingId: event.id)
+        }
+    }
+
+    private func denyPending(_ event: ProCalendarEvent) {
+        runPendingAction(event) {
+            try await session.client.proBookings.decline(bookingId: event.id)
+        }
+    }
+
+    private func runPendingAction(
+        _ event: ProCalendarEvent,
+        _ action: @escaping () async throws -> Void
+    ) {
+        guard pendingActionBusyId == nil else { return }
+        pendingActionBusyId = event.id
+        pendingActionError = nil
+        Task {
+            do {
+                try await action()
+                await load()
+            } catch let error as APIError {
+                pendingActionError = error.userMessage
+            } catch {
+                pendingActionError = "Please try again."
             }
-            .buttonStyle(.plain)
+            pendingActionBusyId = nil
         }
     }
 
@@ -340,12 +408,17 @@ struct ProCalendarView: View {
         do {
             let data = try await session.client.proCalendar.calendar(
                 from: ProCalendarGrid.iso(range.from),
-                to: ProCalendarGrid.iso(range.to))
+                to: ProCalendarGrid.iso(range.to),
+                locationId: activeLocationId)
             // Refine the working zone from the server's viewport (no re-fetch:
             // events carry `localDateKey`, so grouping/dots stay correct).
             if let id = data.viewportTimeZone ?? data.timeZone,
                let zone = TimeZone(identifier: id) {
                 calendarTimeZone = zone
+            }
+            // Seed the auto-accept toggle from the server (unless a save is mid-flight).
+            if !savingAutoAccept, let aa = data.autoAcceptBookings {
+                autoAccept = aa
             }
             phase = .loaded(data)
         } catch let error as APIError {
@@ -353,49 +426,5 @@ struct ProCalendarView: View {
         } catch {
             phase = .failed("Couldn’t load your calendar. Please try again.")
         }
-    }
-}
-
-// MARK: - Row
-
-private struct ProCalendarEventRow: View {
-    let event: ProCalendarEvent
-    let zone: String?
-
-    var body: some View {
-        BrandSurface {
-            HStack(spacing: 12) {
-                BrandAvatar(name: event.clientName, size: 44)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(event.title)
-                        .font(BrandFont.body(15, .semibold))
-                        .foregroundStyle(BrandColor.textPrimary)
-                        .lineLimit(1)
-                    Text(Wire.dateTime(event.startsAt, timeZone: event.timeZone ?? zone))
-                        .font(BrandFont.body(13))
-                        .foregroundStyle(BrandColor.textSecondary)
-                    if event.isBooking {
-                        Text(event.clientName)
-                            .font(BrandFont.body(12))
-                            .foregroundStyle(BrandColor.textMuted)
-                            .lineLimit(1)
-                    }
-                }
-                Spacer()
-                VStack(alignment: .trailing, spacing: 6) {
-                    BrandPill(text: statusLabel, tint: statusTone(event.status))
-                    if event.isBooking {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(BrandColor.textMuted)
-                    }
-                }
-            }
-        }
-    }
-
-    private var statusLabel: String {
-        if event.isBlock { return "Blocked" }
-        return event.status.capitalized
     }
 }

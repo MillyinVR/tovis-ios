@@ -1,0 +1,8 @@
+{
+  "ok": true,
+  "professionalProfile": {
+    "id": "pro_1",
+    "autoAcceptBookings": true,
+    "timeZone": "America/Los_Angeles"
+  }
+}

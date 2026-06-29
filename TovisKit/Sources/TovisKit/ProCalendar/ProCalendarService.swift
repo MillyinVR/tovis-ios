@@ -78,4 +78,14 @@ public final class ProCalendarService: Sendable {
     public func deleteBlock(id: String) async throws {
         try await api.requestVoid("/pro/calendar/blocked/\(id)", method: .delete)
     }
+
+    /// PATCH /api/v1/pro/settings { autoAcceptBookings } — flip whether new
+    /// bookings auto-accept (web calendar auto-accept bar). Returns the saved value.
+    @discardableResult
+    public func setAutoAccept(_ enabled: Bool) async throws -> Bool {
+        let body = try JSONEncoder().encode(ProSettingsUpdateRequest(autoAcceptBookings: enabled))
+        let res: ProSettingsResponse = try await api.request(
+            "/pro/settings", method: .patch, body: body)
+        return res.professionalProfile.autoAcceptBookings
+    }
 }

@@ -14,6 +14,21 @@ public struct ProCalendarResponse: Decodable, Sendable {
     public let events: [ProCalendarEvent]
     public let stats: ProCalendarStats
     public let management: ProCalendarManagement
+    /// Whether new bookings auto-accept (drives the calendar's auto-accept bar).
+    public let autoAcceptBookings: Bool?
+}
+
+/// `PATCH /api/v1/pro/settings` → `{ professionalProfile: { autoAcceptBookings } }`.
+public struct ProSettingsResponse: Decodable, Sendable {
+    public struct Profile: Decodable, Sendable {
+        public let autoAcceptBookings: Bool
+    }
+    public let professionalProfile: Profile
+}
+
+/// `PATCH /api/v1/pro/settings` body — currently just the auto-accept flag.
+struct ProSettingsUpdateRequest: Encodable {
+    let autoAcceptBookings: Bool
 }
 
 /// One calendar occupancy — a booking or a personal block. The discriminator is

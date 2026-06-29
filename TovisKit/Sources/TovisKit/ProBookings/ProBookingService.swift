@@ -38,6 +38,25 @@ public final class ProBookingService: Sendable {
         )
     }
 
+    /// PATCH /api/v1/pro/bookings/{id} {status:"CANCELLED"} — deny a PENDING
+    /// request from the calendar's quick-action bar (web management deny). Unlike
+    /// `cancel`, this hits the base status route (no refund flow for a pending one).
+    public func decline(
+        bookingId: String,
+        notifyClient: Bool = true,
+        idempotencyKey: String = UUID().uuidString
+    ) async throws {
+        let payload = try JSONEncoder().encode(
+            ProBookingStatusRequest(status: "CANCELLED", notifyClient: notifyClient)
+        )
+        try await api.requestVoid(
+            "/pro/bookings/\(bookingId)",
+            method: .patch,
+            body: payload,
+            headers: ["idempotency-key": idempotencyKey]
+        )
+    }
+
     /// PATCH /api/v1/pro/bookings/{id}/cancel — cancel a PENDING/ACCEPTED booking
     /// (auto-refunds the client). Idempotent.
     public func cancel(

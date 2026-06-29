@@ -178,7 +178,7 @@ struct ProBlockTimeSheet: View {
     private var locationMenu: some View {
         Menu {
             ForEach(locations) { location in
-                Button(locationLabel(location)) { locationId = location.id }
+                Button(proLocationDisplayLabel(location)) { locationId = location.id }
             }
         } label: {
             HStack {
@@ -221,10 +221,7 @@ struct ProBlockTimeSheet: View {
     private var selectedLocationLabel: String {
         guard let locationId, let match = locations.first(where: { $0.id == locationId })
         else { return "Select location" }
-        return locationLabel(match)
-    }
-    private func locationLabel(_ location: ProLocationSummary) -> String {
-        location.name ?? location.formattedAddress ?? location.type?.capitalized ?? "Location"
+        return proLocationDisplayLabel(match)
     }
 
     // MARK: - Actions

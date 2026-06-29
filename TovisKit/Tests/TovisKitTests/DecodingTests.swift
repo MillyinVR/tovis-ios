@@ -596,6 +596,13 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.locations[1].type == "MOBILE")
     }
 
+    // PATCH /api/v1/pro/settings — Fixtures/proSettings.json (auto-accept bar).
+    @Test func decodesProSettings() throws {
+        let res = try JSONDecoder().decode(
+            ProSettingsResponse.self, from: fixture("proSettings"))
+        #expect(res.professionalProfile.autoAcceptBookings == true)
+    }
+
     // The create-block body omits a nil note (synthesized encodeIfPresent).
     @Test func createBlockRequestOmitsNilNote() throws {
         let data = try JSONEncoder().encode(CreateBlockRequest(
