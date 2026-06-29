@@ -521,12 +521,17 @@ Everything below is set up; recorded here so the next session knows the live con
    objects**). Fixture/decode added; Debug+Release green; 23 tests. 🔴 **Merge PR #423.** Verified live?
    **No** — needs a pro with mobile enabled + a saved/added service address. NOTE: address add is a typed
    form (no Places autocomplete yet — that rides with #6).
-   ⏸️ **Rebook-confirm DEFERRED** — it's NOT a clean booking-detail action: the state lives in
-   `AftercareSummary` (`rebookMode` BOOKED_NEXT_APPOINTMENT/RECOMMENDED_WINDOW, `rebookedFor`,
-   `rebookDeclinedAt`), confirm is a **token magic-link** (`POST /client/rebook/[token]` with `scheduledFor`)
-   and decline is `POST /client/bookings/[id]/aftercare-rebook {action:"DECLINE"}`. To surface it natively:
-   add `hasPendingRebookConfirmation` + `rebookedFor` to `ClientBookingDTO`, and decide whether the app
-   confirms via an authed path (the token isn't in the booking list). Web shipped this via #236. Own pass.
+   ✅ **Rebook-confirm DONE 2026-06-28** — there IS an authed path (no token needed):
+   `POST /client/bookings/[id]/aftercare-rebook {action:"CONFIRM"|"DECLINE"}` (idempotency-key). CONFIRM
+   creates the booking at the pro's proposed time + returns it; DECLINE sets `rebookDeclinedAt`.
+   `BookingDetailView` shows a **rebook card** (proposed time + Confirm/Decline) when
+   `hasPendingRebookConfirmation`. TovisKit: `ClientBooking` gains `hasPendingRebookConfirmation` +
+   `rebookProposedFor`; `BookingsService.decideRebook(confirm:)`. Backend **tovis-app PR #425** adds both
+   DTO fields (computed from `aftercareSummary` + the rebook chain: pending iff BOOKED_NEXT_APPOINTMENT ∧
+   rebookedFor ∧ not-declined ∧ no active rebooked booking — hides after confirm) + the list-route select.
+   Fixture/decode; contract **24 objects**; Debug+Release green; 24 tests. 🔴 **Merge PR #425.** Verified
+   live? **No** — needs a pro-proposed BOOKED_NEXT_APPOINTMENT to confirm/decline. **Booking v2 is now
+   COMPLETE (mobile mode + rebook-confirm).**
 6. 🟡 **Discover — FILTER SHEET + PLACES AUTOCOMPLETE DONE 2026-06-28; clustering DEFERRED.**
    ✅ **Radius/sort/mobile filter sheet** (`DiscoverFilterSheet`) — filter button (active-dot) → radius
    (5/10/15/25/50 mi), sort (Distance/Top rated/Price/Name), mobile-pros-only, Reset/Apply. Pure UI —
