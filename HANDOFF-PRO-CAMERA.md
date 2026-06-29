@@ -92,7 +92,51 @@ DTO); aftercare **LIST** (per-booking `GET /pro/bookings/[id]/aftercare` exists;
 a DTO); pro **locations editor**, **payment-settings/membership**, **notification-preferences
 editor** (prefs service methods already exist on `ProNotificationsService`); calendar
 **day/week grid + block create/edit**; offering **CREATE/DELETE** (only toggle/edit shipped).
-**Next pro step:** merge+redeploy PR #428, then live-verify the pro suite on the sim.
+**Next pro step:** merge+redeploy PR #428 (✅ MERGED 2026-06-29), then live-verify the pro suite on the sim.
+
+### 🔍 Web-parity audit (2026-06-29) — exact-match status per page
+
+Read the real web components and diffed against each native screen (full specs were
+captured from `app/pro/**`). Status:
+
+- **Working hours** ✅ PARITY DONE (committed): web header (◆ Salon hours / Base schedule
+  / blurb / "N Days on"), per-day summary line, end-after-start validation, "Save schedule".
+- **Notifications feed** ✅ PARITY DONE (committed): filter chips (All · Unread(n) · Requests ·
+  Updates · Cancelled · Reviews · Social) with the web event→category map, date-grouped
+  sections (Today/Yesterday/"Thu, Jun 28") + per-day counts, per-event text badge + "Unread"
+  badge + h:mm timestamp, status line, "You're caught up." empty copy. ⏳ Notification **prefs
+  settings** screen still TODO (quiet hours + per-event channel toggles + SMS consent note;
+  `ProNotificationsService.preferences/updatePreferences` already exist).
+- **Booking detail** 🔶 PARTIAL — needs **backend GET /pro/bookings/[id] expansion** before it
+  can match: add `totalAmount, serviceSubtotalSnapshot, taxAmount, tipAmount, discountAmount,
+  paymentCollectedAt, selectedPaymentMethod, stripePaymentStatus/AmountTotal/Currency,
+  startedAt, finishedAt, sessionStep, aftercareSummary{sentToClientAt,draftSavedAt,version}`.
+  Then iOS: **Timing** timeline (Scheduled/Started/Finished w/ check dots), **Payment** card
+  (status box + Services/Discount/Tax/Tip/Total rows), **Aftercare** snapshot (SENT/DRAFT badge
+  + "View full aftercare"), header "Booking · #id" + TOTAL + location "tap for directions".
+  Action set to match web: PENDING→Accept/Cancel, ACCEPTED→Start booking(session/start)/Cancel,
+  IN_PROGRESS→Continue session, + **Refund** (POST /api/v1/bookings/{id}/refund, when Stripe
+  payment succeeded). ⚠️ **REMOVE the invented "propose next appointment" rebook card** — it's
+  not on the web booking detail (rebook lives on the aftercare page).
+- **Profile** 🔶 LARGE GAP — web has a vanity-link card (copy/QR/share + "Your link" states),
+  stats grid (rating/reviews/favorites/looks/followers), **3 tabs** (portfolio/services/reviews),
+  portfolio grid w/ upload tile + badges, a full **services manager** (add-service overlay w/
+  category→sub→service pickers + per-offering add-ons manager + service-image upload), a big
+  **Edit Profile modal** (handle w/ live availability check + suggestions via
+  `/pro/profile/handle-available`, business name, name-display 3-option, profession type,
+  location, avatar upload, bio), and a **Payment Settings modal** (collection timing, deposits,
+  8 accepted methods w/ handles, tips w/ suggestions, client note → `/pro/payment-settings`).
+  Current native tab ≈ 25%. Exact copy is in the captured spec.
+- **Clients** 🔶 LARGE GAP — list needs an "Add a client" form + Message/View-chart actions;
+  the **chart** is an 8-tab surface (Notes/Allergies/History/Products/Reviews/Pro-feedback/
+  Photos/Technical) + safety strip + relationship-intelligence card. The chart READ has **no
+  API** (server-rendered) → needs a new backend aggregate `GET /pro/clients/[id]/chart` DTO
+  before it can be ported. Current native ≈ 15%.
+
+**Why booking-detail + clients weren't done this pass:** both need backend route work, and the
+`tovis-app` checkout was on another active session's branch — branch-switching + `prisma generate`
+during typecheck would clobber the sibling. Do these when the checkout is free (or in an isolated
+worktree with its own node_modules to avoid the shared-prisma-client clobber).
 
 ## ⚠️ Make it FULLY FUNCTIONAL — device run + tune pass (do this FIRST)
 
