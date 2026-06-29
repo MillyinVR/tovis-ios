@@ -13,6 +13,13 @@ import TovisKit
 struct NotificationPreferencesView: View {
     @Environment(SessionModel.self) private var session
 
+    /// Which notification surface this editor drives. Both the client
+    /// (`/api/v1/client/notification-preferences`) and the pro
+    /// (`/api/v1/pro/notification-preferences`) share the exact same payload shape
+    /// + method signatures, so one view serves both — pointed at the right service.
+    enum Surface { case client, pro }
+    var surface: Surface = .client
+
     /// Local, mutable per-event channel state (the wire structs are immutable).
     private struct ChannelDraft: Equatable {
         var inApp: Bool
@@ -400,7 +407,9 @@ struct NotificationPreferencesView: View {
 
     private func load() async {
         do {
-            let prefs = try await session.client.notifications.preferences()
+            let prefs = surface == .pro
+                ? try await session.client.proNotifications.preferences()
+                : try await session.client.notifications.preferences()
             apply(prefs)
             phase = .loaded
         } catch let error as APIError {
@@ -448,9 +457,11 @@ struct NotificationPreferencesView: View {
             endMinutes: quietEnd
         )
         do {
-            let updated = try await session.client.notifications.updatePreferences(
-                events: payload, quietHours: quiet
-            )
+            let updated = surface == .pro
+                ? try await session.client.proNotifications.updatePreferences(
+                    events: payload, quietHours: quiet)
+                : try await session.client.notifications.updatePreferences(
+                    events: payload, quietHours: quiet)
             apply(updated)
             banner = Banner(kind: .success, text: "Notification preferences saved.")
             session.signalRefresh()

@@ -79,6 +79,14 @@ struct ProNotificationsView: View {
                             .tint(BrandColor.accent).font(BrandFont.body(14))
                     }
                 }
+                ToolbarItem(placement: .primaryAction) {
+                    NavigationLink {
+                        NotificationPreferencesView(surface: .pro)
+                    } label: {
+                        Image(systemName: "gearshape")
+                    }
+                    .tint(BrandColor.accent)
+                }
             }
             .task { if loading { await load() } }
             .tint(BrandColor.accent)
