@@ -53,16 +53,21 @@ struct ClientAddressResponse: Decodable, Sendable {
     let address: ClientAddress
 }
 
-/// POST /api/v1/client/addresses body for a new SERVICE_ADDRESS. The backend
-/// geocodes the typed address on save (fills formattedAddress + lat/lng), so the
-/// client sends the street + a location anchor (city/state/postal).
+/// POST /api/v1/client/addresses body for a new SERVICE_ADDRESS. When the address
+/// came from Places (placeId + lat/lng + formattedAddress), the backend keeps it
+/// as-is (already resolved); a bare typed address is geocoded server-side.
 struct CreateClientAddressRequest: Encodable, Sendable {
     let kind: String
     let label: String?
+    let formattedAddress: String?
     let addressLine1: String?
     let addressLine2: String?
     let city: String?
     let state: String?
     let postalCode: String?
+    let countryCode: String?
+    let placeId: String?
+    let lat: Double?
+    let lng: Double?
     let isDefault: Bool?
 }

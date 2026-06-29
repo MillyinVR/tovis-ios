@@ -184,6 +184,24 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.addresses[1].lat == 34.0195)
     }
 
+    // GET /api/v1/google/places/{autocomplete,details} — inline (Google-proxy
+    // shapes, decode-only; not a typed DTO in the schema).
+    @Test func decodesPlaces() throws {
+        let auto = """
+        {"kind":"ADDRESS","predictions":[{"placeId":"p1","description":"123 Main St, Los Angeles, CA","mainText":"123 Main St","secondaryText":"Los Angeles, CA, USA","types":["street_address"],"distanceMeters":1200}]}
+        """.data(using: .utf8)!
+        let a = try JSONDecoder().decode(PlacesAutocompleteResponse.self, from: auto)
+        #expect(a.predictions.first?.placeId == "p1")
+        #expect(a.predictions.first?.mainText == "123 Main St")
+
+        let detail = """
+        {"place":{"resourceName":"places/p1","placeId":"p1","name":null,"formattedAddress":"123 Main St, Los Angeles, CA 90001, USA","lat":34.0522,"lng":-118.2437,"viewport":null,"components":{"locality":"Los Angeles"},"city":"Los Angeles","state":"CA","postalCode":"90001","countryCode":"US","types":["street_address"]}}
+        """.data(using: .utf8)!
+        let d = try JSONDecoder().decode(PlaceDetailsResponse.self, from: detail)
+        #expect(d.place.lat == 34.0522)
+        #expect(d.place.postalCode == "90001")
+    }
+
     // GET /api/v1/offerings/add-ons — Fixtures/offeringAddOns.json. No schema
     // entry yet (the backend route isn't a typed DTO), so this is decode-only.
     @Test func decodesOfferingAddOns() throws {

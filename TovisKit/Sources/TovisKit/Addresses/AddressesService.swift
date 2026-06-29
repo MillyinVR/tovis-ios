@@ -24,9 +24,9 @@ public final class AddressesService: Sendable {
             .sorted { $0.isDefault && !$1.isDefault }
     }
 
-    /// POST /api/v1/client/addresses — add a SERVICE_ADDRESS. The backend geocodes
-    /// the typed address on save (fills formattedAddress + lat/lng). Throws an
-    /// APIError with a user-facing message if the address can't be verified.
+    /// POST /api/v1/client/addresses — add a SERVICE_ADDRESS from a typed form.
+    /// The backend geocodes it on save (fills formattedAddress + lat/lng). Throws
+    /// an APIError with a user-facing message if the address can't be verified.
     public func createServiceAddress(
         label: String?,
         addressLine1: String,
@@ -36,16 +36,51 @@ public final class AddressesService: Sendable {
         postalCode: String,
         isDefault: Bool = false
     ) async throws -> ClientAddress {
-        let payload = try JSONEncoder().encode(CreateClientAddressRequest(
+        try await create(CreateClientAddressRequest(
             kind: "SERVICE_ADDRESS",
             label: label,
+            formattedAddress: nil,
             addressLine1: addressLine1,
             addressLine2: addressLine2,
             city: city,
             state: state,
             postalCode: postalCode,
+            countryCode: nil,
+            placeId: nil,
+            lat: nil,
+            lng: nil,
             isDefault: isDefault
         ))
+    }
+
+    /// Add a SERVICE_ADDRESS from a picked Places result — already resolved
+    /// (placeId + exact lat/lng), so the backend keeps the coordinates as-is
+    /// instead of re-geocoding. `apt` is the optional unit the user adds on top.
+    public func createServiceAddress(
+        from place: PlaceDetails,
+        label: String?,
+        apt: String? = nil,
+        isDefault: Bool = false
+    ) async throws -> ClientAddress {
+        try await create(CreateClientAddressRequest(
+            kind: "SERVICE_ADDRESS",
+            label: label,
+            formattedAddress: place.formattedAddress,
+            addressLine1: nil,
+            addressLine2: apt,
+            city: place.city,
+            state: place.state,
+            postalCode: place.postalCode,
+            countryCode: place.countryCode,
+            placeId: place.placeId,
+            lat: place.lat,
+            lng: place.lng,
+            isDefault: isDefault
+        ))
+    }
+
+    private func create(_ request: CreateClientAddressRequest) async throws -> ClientAddress {
+        let payload = try JSONEncoder().encode(request)
         let response: ClientAddressResponse = try await api.request(
             "/client/addresses", method: .post, body: payload
         )
