@@ -1,8 +1,10 @@
-// Pro Calendar — the pro's schedule agenda (GET /api/v1/pro/calendar), the native
-// counterpart of the web `/pro/calendar`. v1 is a grouped agenda: a stats header
-// (today's bookings · pending requests), a "Pending requests" section, then the
-// upcoming bookings + blocks grouped by day. Tapping a booking opens its live-
-// session hub. (The full day/week grid + block editing is a later phase.)
+// Pro Calendar — the pro's schedule (GET /api/v1/pro/calendar), the native
+// counterpart of the web `/pro/calendar`. A view switcher (Day / Week / Month,
+// web `VIEW_ORDER`) over a stats header + "Pending requests" section: Month
+// renders the 6×7 grid (`ProCalendarMonthGrid`); Day / Week render the agenda
+// grouped by day. The visible range drives the fetch (`from`/`to`). Tapping a
+// month day opens that day's agenda; tapping a booking opens its session hub.
+// (The full day/week time-grid + block editing land in later increments.)
 import SwiftUI
 import TovisKit
 
@@ -19,10 +21,19 @@ struct ProCalendarView: View {
     @State private var showNotifications = false
     @State private var hasUnreadNotifications = false
 
+    // View-switcher state (web `view` / `currentDate`). The timezone is seeded
+    // from the device and refined from each response's viewport zone.
+    @State private var view: ProCalendarViewMode = .day   // web DEFAULT_CALENDAR_VIEW
+    @State private var currentDate: Date = ProCalendarGrid.anchorNoon(Date(), timeZone: .current)
+    @State private var calendarTimeZone: TimeZone = .current
+
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
+                VStack(alignment: .leading, spacing: 18) {
+                    if let stats = loadedStats { statsHeader(stats) }
+                    controlsBar
+
                     switch phase {
                     case .loading:
                         loadingState
@@ -42,6 +53,9 @@ struct ProCalendarView: View {
             .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
             .refreshable { await load() }
             .task { if case .loading = phase { await load() } }
+            // Re-fetch when the visible range changes (view switch or nav).
+            .onChange(of: view) { Task { await load() } }
+            .onChange(of: currentDate) { Task { await load() } }
             // Live-sync: a booking made on web (or by a client) shows here.
             .onChange(of: session.refreshTick) { Task { await load(); await loadNotificationSummary() } }
             .task { await poll() }
@@ -81,8 +95,7 @@ struct ProCalendarView: View {
 
     @ViewBuilder
     private func content(_ data: ProCalendarResponse) -> some View {
-        statsHeader(data.stats)
-
+        // Pending requests are not range-scoped — they always surface (web parity).
         if !data.management.pendingRequests.isEmpty {
             BrandSection(title: "Pending requests", trailing: "\(data.management.pendingRequests.count)") {
                 VStack(spacing: 10) {
@@ -91,6 +104,33 @@ struct ProCalendarView: View {
             }
         }
 
+        if view == .month {
+            monthBody(data)
+        } else {
+            agendaBody(data)
+        }
+    }
+
+    // Month: the 6×7 grid. Tapping a day jumps to that day's agenda.
+    @ViewBuilder
+    private func monthBody(_ data: ProCalendarResponse) -> some View {
+        let cells = ProCalendarGrid.monthCells(
+            reference: currentDate, timeZone: calendarTimeZone, today: Date())
+        let eventsByDay = Dictionary(grouping: data.events, by: \.localDateKey)
+
+        ProCalendarMonthGrid(
+            cells: cells,
+            eventsByDay: eventsByDay,
+            onPickDay: { cell in
+                currentDate = ProCalendarGrid.anchorNoon(cell.startOfDay, timeZone: calendarTimeZone)
+                withAnimation(.easeOut(duration: 0.15)) { view = .day }
+            }
+        )
+    }
+
+    // Day / Week: the agenda, grouped by day (scoped to the fetched range).
+    @ViewBuilder
+    private func agendaBody(_ data: ProCalendarResponse) -> some View {
         let upcoming = data.events.filter { $0.isBooking || $0.isBlock }
         if upcoming.isEmpty {
             emptyState
@@ -103,6 +143,22 @@ struct ProCalendarView: View {
                 }
             }
         }
+    }
+
+    private var controlsBar: some View {
+        ProCalendarControls(
+            view: $view,
+            headerLabel: ProCalendarGrid.headerLabel(
+                view: view, reference: currentDate, timeZone: calendarTimeZone),
+            onPrev: { currentDate = ProCalendarGrid.step(view: view, reference: currentDate, by: -1, timeZone: calendarTimeZone) },
+            onToday: { currentDate = ProCalendarGrid.anchorNoon(Date(), timeZone: calendarTimeZone) },
+            onNext: { currentDate = ProCalendarGrid.step(view: view, reference: currentDate, by: 1, timeZone: calendarTimeZone) }
+        )
+    }
+
+    private var loadedStats: ProCalendarStats? {
+        if case let .loaded(data) = phase { return data.stats }
+        return nil
     }
 
     private func statsHeader(_ stats: ProCalendarStats) -> some View {
@@ -230,8 +286,18 @@ struct ProCalendarView: View {
     }
 
     private func load() async {
+        let range = ProCalendarGrid.fetchRange(
+            view: view, reference: currentDate, timeZone: calendarTimeZone)
         do {
-            let data = try await session.client.proCalendar.calendar()
+            let data = try await session.client.proCalendar.calendar(
+                from: ProCalendarGrid.iso(range.from),
+                to: ProCalendarGrid.iso(range.to))
+            // Refine the working zone from the server's viewport (no re-fetch:
+            // events carry `localDateKey`, so grouping/dots stay correct).
+            if let id = data.viewportTimeZone ?? data.timeZone,
+               let zone = TimeZone(identifier: id) {
+                calendarTimeZone = zone
+            }
             phase = .loaded(data)
         } catch let error as APIError {
             phase = .failed(error.userMessage)
