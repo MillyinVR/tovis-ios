@@ -57,6 +57,43 @@ center · Messages · Profile); `ProSessionModel` = native port of `useProSessio
   contract objects green.
 - **B4 calibration plan** (`7a7ef51`) — designed, NOT built (see below).
 
+## ✅ PRO UI SUITE — Phases 3–5 (added 2026-06-28, committed on `tovis-ios` main)
+
+The pro-side UI was built out beyond the shell. Each surface ships a TovisKit service +
+wire models + fixture + decode test — all **decode-only** (like `proSession.json`: most
+pro routes return inline shapes, so no ajv contract entry). Consolidated contract map =
+**`docs/PRO-BACKEND-CONTRACTS.md`**. `swift test` **32** · contract **26** · `xcodebuild`
+Debug **AND** Release green.
+
+- **Phase 3 — booking detail** (`ProBookingDetailView`, `ProBookingService`): calendar
+  agenda is the list (`GET /pro/bookings` doesn't exist); a row opens the detail
+  (`GET /pro/bookings/[id]`) with **accept** / **cancel** (auto-refunds) / **propose next
+  appt** (rebook) / contact tap-actions / **Open·Resume session** → hub.
+- **Phase 4 — profile** (`ProProfileTabView` reworked + `ProProfileManageViews` +
+  `ProProfileService`): header + stats + services + portfolio + reviews (read via existing
+  `GET /professionals/{id}`, keyed by new **`GET /pro/profile`**), **Edit profile**
+  (`PATCH /pro/profile`), **Manage services** (`GET/PATCH /pro/offerings` — toggle active +
+  edit salon/mobile price+duration). 🔶 **Backend companion: tovis-app PR #428** adds
+  `GET /api/v1/pro/profile` — **MERGE + redeploy prod before Release/TestFlight uses the
+  profile tab** (Debug→localhost works once the branch is running).
+- **Phase 5c — notification center** (`ProNotificationsView`, `ProNotificationsService`):
+  web `/pro/notifications` parity (distinct shape: priority/seenAt/reviewId) — feed +
+  icon/tint + unread dot + mark-read/all + pagination; a **bell w/ unread dot** on the
+  Calendar nav bar (`GET /pro/notifications/summary`).
+- **Phase 5b — working hours** (`ProWorkingHoursView`, `ProScheduleService`): per-day
+  open/close + start/end pickers, save (`GET/POST /pro/working-hours`). Profile → Business.
+- **Phase 5a — clients** (`ProClientsView`, `ProClientsService`): searchable directory
+  (`GET /pro/clients/search`, view-gated) → detail (contact + service addresses + append-only
+  **add note**). Profile → Business.
+
+**🔲 Pro-UI sub-screens DEFERRED** (need backend aggregate GETs or lower-value): client
+chart **HISTORY** read (server-rendered, no read API → needs `GET /pro/clients/[id]/chart`
+DTO); aftercare **LIST** (per-booking `GET /pro/bookings/[id]/aftercare` exists; list needs
+a DTO); pro **locations editor**, **payment-settings/membership**, **notification-preferences
+editor** (prefs service methods already exist on `ProNotificationsService`); calendar
+**day/week grid + block create/edit**; offering **CREATE/DELETE** (only toggle/edit shipped).
+**Next pro step:** merge+redeploy PR #428, then live-verify the pro suite on the sim.
+
 ## ⚠️ Make it FULLY FUNCTIONAL — device run + tune pass (do this FIRST)
 
 The whole camera ladder **builds + unit-tests green but has never run against a real camera** — the
