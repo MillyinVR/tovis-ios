@@ -211,9 +211,23 @@ Bell → notifications sheet. Polls every 60s + refresh-tick. That's a *subset* 
    **Web parity gaps (deferred to polish):** working-hours shading (needs per-location `workingHours`), event
    drag/resize + tap-to-create (mouse-oriented; native uses the FAB + detail screen), side-by-side overlap
    columns (web also stacks full-width), sticky header inside the scroll.
-4. **Bars/panels** ← **NEXT** — `MobilePendingRequestBar`, `MobileAutoAcceptBar`, `CalendarStatsPanel`,
-   location bar. (Native already shows a stats strip + pending-requests section + bell; this increment is the
-   auto-accept toggle, the dismissible top pending bar, and the location selector for multi-location pros.)
+4. ✅ **DONE 2026-06-29 (`892a16d`)** — **Bars/panels.** `ProCalendarBars` adds the web `MobileAutoAcceptBar`
+   (toggle → `PATCH /pro/settings {autoAcceptBookings}`, optimistic + revert; seeded from the calendar
+   response's new `autoAcceptBookings`), `MobilePendingRequestBar` (top pending request → quick **Approve**
+   `proBookings.accept` / **Deny** `proBookings.decline` [base PATCH status CANCELLED] / open-detail /
+   dismiss; "+N more" advances on action — **replaced the inline pending list**), and `MobileLocationBar`
+   (multi-location pros → `activeLocationId` re-fetches `calendar(locationId:)`). New `setAutoAccept` +
+   `decline` service methods, `ProSettingsResponse`, 1 fixture + decode test. `swift test` **51** · contract
+   **26** · Debug+Release green. ⚠️ NOT sim-verified.
+   **Deferred:** the web `ManagementModal` (full pending/waitlist/blocked management list) has no native
+   destination — the bar surfaces only the top pending request, and booking-override prompts
+   (`BookingOverrideRequiredError`) just surface the server error inline rather than a retry dialog.
+
+### 🎉 CALENDAR full-mobile-parity build — ✅ ALL 4 INCREMENTS DONE (2026-06-29)
+The native pro Calendar now matches the web mobile shell: view switcher + month grid (inc.1), block-time
+CRUD (inc.2), Day/Week time-grid (inc.3), and bars/panels (inc.4). **Next: live-verify the whole calendar on
+the sim** (re-login after each reinstall — keychain wipe). Remaining parity polish is the deferred list under
+each increment (working-hours shading, drag/resize, management modal, override dialog).
 
 **House rules carry over:** web-parity 1:1 · no dup logic (reuse BrandSurface/Section/Pill/Avatar + the
 agenda row) · decode-only fixtures unless an ajv contract entry is warranted · `requirePro` · backend changes
