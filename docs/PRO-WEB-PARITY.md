@@ -7,10 +7,22 @@
 > live in the web source files cited per section — quote them verbatim when implementing.**
 > Backend contract map = `docs/PRO-BACKEND-CONTRACTS.md`. Web repo = `~/Dev/tovis-app`.
 
-Status (2026-06-29): specs captured for all 5 pages. **DONE: working hours ✅ + notifications feed ✅**
-(commit `b6ea3c3`). **REMAINING: booking detail, profile, clients** (booking-detail + clients chart need
-backend route expansions first; profile needs a tabbed shell + edit/payment forms + services CRUD).
-Pro notification-PREFERENCES screen still not built (service methods exist).
+Status (2026-06-29): **ALL 5 PAGES PARITY-COMPLETE** (committed on `tovis-ios` main).
+- Working hours ✅ + notifications feed ✅ (`b6ea3c3`) · notification **preferences** ✅ (`f56697d`).
+- **Profile** ✅ — payment-settings (`94a2d9d`), fuller edit form w/ live handle check + avatar (`26bd389`),
+  tabbed shell + Your-link + approval + stats + quick actions (`71267fa`), services CRUD add/delete/add-ons/
+  image (`93c3e08`). Backend: tovis-app PR **#431** `GET /pro/services/catalog` (add-service picker).
+- **Booking detail** ✅ — rebuilt (Timing/Payment/Aftercare/Refund + web action set), invented rebook card
+  REMOVED (`9ac2397`). Backend: tovis-app PR **#432** expands `GET /pro/bookings/[id]`.
+- **Clients** ✅ — Add-a-client form (`a74ddf3`) + native 8-tab chart + safety strip (`a8066d0`). Backend:
+  tovis-app PR **#433** aggregate `GET /pro/clients/[id]/chart`.
+
+🔶 OPEN: tovis-app PRs **#431 / #432 / #433** need review+merge, then a prod redeploy (auto-deploy is off)
+so the add-service picker / expanded booking detail / client chart work at runtime in Release. The native
+screens build Debug+Release and decode green now; Debug→localhost works once the branches are running.
+Deferred polish: pro aftercare detail screen ("View full aftercare"), in-app Message deep-link from the
+clients list, per-tab chart write forms (beyond Add-a-note) + technical-record encrypted notes (web-only),
+looks/followers profile stats (not in the public-profile projection). Original gap notes kept below.
 
 ---
 
