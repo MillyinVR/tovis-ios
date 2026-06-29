@@ -152,7 +152,54 @@ or delete).
 reinstall → the pro is logged out after each rebuild (TokenStore = Keychain); batch fixes to minimize
 rebuilds, and the user must re-login after each. Driving the sim via `osascript`/System Events is **blocked
 by TCC** (`-25204`/`-25211`, even with Accessibility toggled on — the spawned osascript isn't the authorized
-app) → fall back to user-navigates / `xcrun simctl io booted screenshot`.
+app) → fall back to user-navigates / `xcrun simctl io booted screenshot`. (A `simctl shutdown` mid-session
+also logs out? No — reboot KEEPS the keychain; only reinstall wipes it.)
+
+---
+
+## ▶️ NEXT UP — CALENDAR full mobile parity (user: "the calendar is important", scope = **FULL mobile parity**, 2026-06-29)
+
+**Decision (user-confirmed):** build the native pro Calendar out to **full web mobile parity**, not just polish.
+This is the **biggest web↔native gap** of the pro pages and a **large, multi-step build** — do it incrementally,
+commit per increment, `swift test` + `xcodebuild` Debug+Release each.
+
+**Current native = agenda only** (`Tovis/ProCalendarView.swift`): stats tiles (Today / Requests / Open) →
+"Pending requests" section → upcoming bookings+blocks grouped by day; tap a booking → `ProBookingDetailView`.
+Bell → notifications sheet. Polls every 60s + refresh-tick. That's a *subset* of the web.
+
+**Web mobile target = `app/pro/calendar/_components/CalendarMobileShell.tsx`**, which composes:
+`MobileCalendarHeader` · `MobileCalendarControls` (Month/Week/Day **view switcher** + prev/next/**Today**) ·
+`MobileMonthGrid` · `DayWeekGrid` (time-slot columns) · `MobilePendingRequestBar` · `MobileAutoAcceptBar` ·
+`MobileCalendarFab` (+ block-time create) · `CalendarStatsPanel` · location bar. Modals:
+`BlockTimeModal` (create), `EditBlockModal` (edit/delete), `BookingModal`. View state: `view: 'month'|'week'|'day'`,
+`currentDate`, `onPrev/onNext/onToday`. Quote copy verbatim from these files.
+
+**Backend — READY (verified 2026-06-29):**
+- `GET /api/v1/pro/calendar` — returns `events[]` (BookingEvent|BlockEvent) + `stats` + `management`
+  buckets `{todaysBookings, pendingRequests, waitlistToday, blockedToday}` + `timeZone`/`viewportTimeZone`.
+  Uses `DEFAULT_CALENDAR_RANGE_DAYS` window. **⚠️ OPEN: confirm whether it takes a date-range/anchor param
+  for month navigation** (was mid-checking the route's `searchParams` when the session paused — grep
+  `app/api/v1/pro/calendar/route.ts` for an anchor/from/to/month param; if none, month nav needs a param add
+  or client-side range fetch). Native model already in `TovisKit/.../Models/*alendar*.swift`
+  (`ProCalendarResponse/Event/Stats/Management`), service = `session.client.proCalendar.calendar()`.
+- **Block CRUD endpoints EXIST:** `POST/GET /pro/calendar/blocked` (create/list), `…/blocked/[id]`
+  (edit/delete) → wire a native `ProCalendarBlockService` (or extend the calendar service) for the FAB +
+  BlockTime/EditBlock modals.
+- Availability: `GET /pro/availability/busy-days` (month dots), `…/availability`.
+
+**Suggested increments (each its own commit, web copy verbatim, decode fixture + test per new DTO):**
+1. **Month grid + view switcher** — `MobileMonthGrid` + `MobileCalendarControls` (Month/Week/Day toggle +
+   prev/next/Today); tap a day → that day's agenda (reuse current agenda rows as the day view). Resolve the
+   month-range param question first.
+2. **Block-time CRUD** — `MobileCalendarFab` "+ Block time" → `BlockTimeModal` create + `EditBlockModal`
+   edit/delete via `/pro/calendar/blocked(/[id])`.
+3. **Day/Week time-grid** — `DayWeekGrid` (time-slot columns w/ booking/block tiles).
+4. **Bars/panels** — `MobilePendingRequestBar`, `MobileAutoAcceptBar`, `CalendarStatsPanel`, location bar.
+
+**House rules carry over:** web-parity 1:1 · no dup logic (reuse BrandSurface/Section/Pill/Avatar + the
+agenda row) · decode-only fixtures unless an ajv contract entry is warranted · `requirePro` · backend changes
+(if month-param needed) branch off `origin/main`, re-run `gen:api-schema` after DTO edits, typecheck+lint+
+static-guards+vitest before push. Re-login after every reinstall (keychain wipe).
 
 **Why booking-detail + clients weren't done this pass:** both need backend route work, and the
 `tovis-app` checkout was on another active session's branch — branch-switching + `prisma generate`
