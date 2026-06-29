@@ -24,6 +24,9 @@ struct ProCapturePhotosView: View {
     @State private var coach: CoachEngine?
     @State private var showSettings = false
     @State private var showBestShots = false
+    /// Guards exit while the coach has auto-harvested best shots the pro hasn't
+    /// reviewed yet — otherwise tapping Done silently discards them.
+    @State private var showExitConfirm = false
     /// A just-recorded clip awaiting frame-by-frame review (nil = none).
     @State private var scrubClip: ScrubClip?
 
@@ -58,6 +61,28 @@ struct ProCapturePhotosView: View {
         }
         .fullScreenCover(item: $scrubClip) { clip in
             FrameScrubberView(videoURL: clip.url, bookingId: bookingId, phase: phase)
+        }
+        .confirmationDialog(
+            "You have unsaved best shots",
+            isPresented: $showExitConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Review best shots") { showBestShots = true }
+            Button("Discard & exit", role: .destructive) { dismiss() }
+            Button("Keep shooting", role: .cancel) {}
+        } message: {
+            Text("The camera captured \(coach?.harvested.count ?? 0) best shots this session. Review them to save to \(phaseLabel) — leaving now discards them.")
+        }
+    }
+
+    /// Leave the camera — but if the coach is holding unreviewed best shots, ask
+    /// first so they're not silently lost. Manually captured photos already
+    /// uploaded, so only the harvest tray is at risk.
+    private func requestExit() {
+        if (coach?.harvested.isEmpty == false) {
+            showExitConfirm = true
+        } else {
+            dismiss()
         }
     }
 
@@ -123,7 +148,7 @@ struct ProCapturePhotosView: View {
 
     private var phaseHeader: some View {
         HStack {
-            Button { dismiss() } label: {
+            Button { requestExit() } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.white)
@@ -236,7 +261,7 @@ struct ProCapturePhotosView: View {
                 .disabled(uploading || camera.status != .ready)
 
                 // Done
-                Button("Done") { dismiss() }
+                Button("Done") { requestExit() }
                     .font(BrandFont.body(15, .semibold))
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, alignment: .trailing)

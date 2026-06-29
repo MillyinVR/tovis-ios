@@ -1,0 +1,34 @@
+{
+  "ok": true,
+  "paymentSettings": {
+    "professionalId": "pro_1",
+    "collectPaymentAt": "AFTER_SERVICE",
+    "depositEnabled": true,
+    "depositType": "PERCENT",
+    "depositFlatAmount": null,
+    "depositPercent": 25,
+    "depositScope": "NEW_DISCOVERY_ONLY",
+    "acceptCash": true,
+    "acceptCardOnFile": false,
+    "acceptTapToPay": false,
+    "acceptVenmo": true,
+    "acceptZelle": false,
+    "acceptAppleCash": false,
+    "acceptPaypal": false,
+    "acceptApplePay": false,
+    "tipsEnabled": true,
+    "allowCustomTip": true,
+    "tipSuggestions": [
+      { "label": "18%", "percent": 18 },
+      { "label": "20%", "percent": 20 },
+      { "label": "25%", "percent": 25 }
+    ],
+    "venmoHandle": "@studio-lumen",
+    "zelleHandle": null,
+    "appleCashHandle": null,
+    "paypalHandle": null,
+    "paymentNote": "Please have payment ready after your booking.",
+    "createdAt": "2026-06-01T00:00:00.000Z",
+    "updatedAt": "2026-06-20T00:00:00.000Z"
+  }
+}

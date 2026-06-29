@@ -23,6 +23,26 @@ public struct ProMyProfile: Decodable, Sendable {
     public let isPremium: Bool
 }
 
+/// `GET /api/v1/pro/profile/handle-available?handle=` → live vanity-handle check.
+/// `status` is one of available/taken/reserved/invalid/yours; `suggestions` is
+/// present only when the handle is taken.
+public struct ProHandleAvailability: Decodable, Sendable {
+    public let handle: String
+    public let status: String
+    public let message: String
+    public let suggestions: [String]?
+
+    /// Statuses that must block Save — the handle can't be persisted as-is
+    /// (mirrors the web `BLOCKING_HANDLE_STATUSES`).
+    public var isBlocking: Bool {
+        status == "taken" || status == "reserved" || status == "invalid"
+    }
+
+    public var isPositive: Bool {
+        status == "available" || status == "yours"
+    }
+}
+
 /// `GET /api/v1/pro/offerings` → `{ offerings: [...] }` (the pro's own services,
 /// active or not — distinct from the public `ProOffering` projection).
 public struct ProOfferingsResponse: Decodable, Sendable {

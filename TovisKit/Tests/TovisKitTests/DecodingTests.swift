@@ -297,6 +297,45 @@ func fixture(_ name: String) throws -> Data {
         #expect(blowout.displayImageUrl == "https://x/blowout.jpg")      // custom override wins
     }
 
+    // GET /api/v1/pro/payment-settings — Fixtures/proPaymentSettings.json. The
+    // pro's payment settings (collection timing / deposits / methods / tips).
+    @Test func decodesProPaymentSettings() throws {
+        let res = try JSONDecoder().decode(ProPaymentSettingsResponse.self, from: fixture("proPaymentSettings"))
+        let s = try #require(res.paymentSettings)
+        #expect(s.collectPaymentAt == "AFTER_SERVICE")
+        #expect(s.depositEnabled)
+        #expect(s.depositType == "PERCENT")
+        #expect(s.depositPercent == 25)
+        #expect(s.depositFlatAmount == nil)
+        #expect(s.acceptCash && s.acceptVenmo && !s.acceptPaypal)
+        #expect(s.venmoHandle == "@studio-lumen")
+        #expect(s.tipsEnabled && s.allowCustomTip)
+        #expect(s.tipSuggestions?.count == 3)
+        #expect(s.tipSuggestions?.first?.label == "18%")
+        #expect(s.tipSuggestions?.first?.percent == 18)
+    }
+
+    // GET /api/v1/pro/payment-settings with no row yet → paymentSettings: null.
+    @Test func decodesProPaymentSettingsNull() throws {
+        let json = Data(#"{"ok":true,"paymentSettings":null}"#.utf8)
+        let res = try JSONDecoder().decode(ProPaymentSettingsResponse.self, from: json)
+        #expect(res.paymentSettings == nil)
+    }
+
+    // GET /api/v1/pro/profile/handle-available — the live vanity-handle check.
+    @Test func decodesProHandleAvailability() throws {
+        let taken = Data(#"{"ok":true,"handle":"tori","status":"taken","message":"That handle is taken.","suggestions":["tori1","tori-co"]}"#.utf8)
+        let a = try JSONDecoder().decode(ProHandleAvailability.self, from: taken)
+        #expect(a.status == "taken")
+        #expect(a.isBlocking && !a.isPositive)
+        #expect(a.suggestions?.count == 2)
+
+        let ok = Data(#"{"ok":true,"handle":"tori","status":"available","message":"tori.tovis.me is available."}"#.utf8)
+        let b = try JSONDecoder().decode(ProHandleAvailability.self, from: ok)
+        #expect(b.isPositive && !b.isBlocking)
+        #expect(b.suggestions == nil)
+    }
+
     // GET /api/v1/pro/notifications — Fixtures/proNotifications.json. The pro
     // notification feed (distinct from the client center: priority/seenAt/reviewId).
     @Test func decodesProNotifications() throws {

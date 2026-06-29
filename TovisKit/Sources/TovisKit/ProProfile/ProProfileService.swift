@@ -85,6 +85,68 @@ public final class ProProfileService: Sendable {
     public func deleteOffering(id: String) async throws {
         try await api.requestVoid("/pro/offerings/\(id)", method: .delete)
     }
+
+    /// GET /api/v1/pro/profile/handle-available?handle= — live availability check
+    /// for the vanity-link claim UI. The PATCH route stays authoritative; this is
+    /// fast feedback. Returns status + message (+ suggestions when taken).
+    public func handleAvailable(_ handle: String) async throws -> ProHandleAvailability {
+        try await api.request(
+            "/pro/profile/handle-available",
+            query: [URLQueryItem(name: "handle", value: handle)]
+        )
+    }
+
+    /// PATCH /api/v1/pro/profile including profession type + avatar (the fuller
+    /// edit form). Mirrors the web Edit profile modal's PATCH body. Returns the
+    /// saved profile.
+    @discardableResult
+    public func updateProfileFull(
+        businessName: String,
+        professionType: String,
+        location: String,
+        bio: String,
+        avatarUrl: String,
+        nameDisplay: String,
+        handle: String?
+    ) async throws -> ProMyProfile {
+        var fields: [String: JSONValue] = [
+            "businessName": .string(businessName),
+            "professionType": .string(professionType),
+            "location": .string(location),
+            "bio": .string(bio),
+            "avatarUrl": .string(avatarUrl),
+            "nameDisplay": .string(nameDisplay),
+        ]
+        if let handle { fields["handle"] = .string(handle) }
+
+        let payload = try JSONEncoder().encode(fields)
+        let response: ProMyProfileResponse = try await api.request(
+            "/pro/profile", method: .patch, body: payload
+        )
+        return response.profile
+    }
+
+    /// GET /api/v1/pro/payment-settings → the pro's payment settings (or nil until
+    /// first save).
+    public func paymentSettings() async throws -> ProPaymentSettings? {
+        let response: ProPaymentSettingsResponse =
+            try await api.request("/pro/payment-settings")
+        return response.paymentSettings
+    }
+
+    /// PATCH /api/v1/pro/payment-settings — upsert + return the saved settings.
+    /// Throws `APIError.server(400,…)` with a user-facing message on a business-rule
+    /// violation (e.g. no method enabled, missing Venmo handle).
+    @discardableResult
+    public func updatePaymentSettings(
+        _ update: ProPaymentSettingsUpdate
+    ) async throws -> ProPaymentSettings? {
+        let payload = try JSONEncoder().encode(update)
+        let response: ProPaymentSettingsResponse = try await api.request(
+            "/pro/payment-settings", method: .patch, body: payload
+        )
+        return response.paymentSettings
+    }
 }
 
 /// A minimal JSON value so sparse PATCH bodies can carry explicit `null`s (which
