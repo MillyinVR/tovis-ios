@@ -38,6 +38,7 @@ struct ProWorkingHoursView: View {
                     Text(message).font(BrandFont.body(15)).foregroundStyle(BrandColor.textSecondary)
                         .frame(maxWidth: .infinity).padding(.top, 60)
                 case .loaded:
+                    headerHint
                     ForEach(days, id: \.label) { day in
                         dayRow(label: day.label, hours: Binding(
                             get: { week[keyPath: day.key] },
@@ -60,15 +61,63 @@ struct ProWorkingHoursView: View {
         .tint(BrandColor.accent)
     }
 
+    private var daysOn: Int {
+        days.filter { week[keyPath: $0.key].enabled }.count
+    }
+
+    // Web parity: eyebrow + "Base schedule" + location-specific blurb + days-on count.
+    private var headerHint: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("◆ Salon hours")
+                .font(BrandFont.mono(11)).tracking(0.6)
+                .foregroundStyle(BrandColor.accent)
+            HStack(alignment: .firstTextBaseline) {
+                Text("Base schedule")
+                    .font(BrandFont.display(22, .semibold))
+                    .foregroundStyle(BrandColor.textPrimary)
+                Spacer()
+                Text("\(daysOn) Days on")
+                    .font(BrandFont.mono(10)).tracking(0.5)
+                    .foregroundStyle(BrandColor.textSecondary)
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(BrandColor.bgSecondary)
+                    .clipShape(Capsule())
+            }
+            Text("Fixed location availability. Applies to your salon, suite, or studio.")
+                .font(BrandFont.body(13))
+                .foregroundStyle(BrandColor.textMuted)
+        }
+        .padding(.bottom, 6)
+    }
+
+    /// "HH:MM" (24h) → "9:00 AM".
+    private func fmt12(_ hhmm: String) -> String {
+        let p = hhmm.split(separator: ":").compactMap { Int($0) }
+        let h = p.first ?? 0, m = p.count > 1 ? p[1] : 0
+        let period = h < 12 ? "AM" : "PM"
+        let h12 = h % 12 == 0 ? 12 : h % 12
+        return String(format: "%d:%02d %@", h12, m, period)
+    }
+
     private func dayRow(label: String, hours: Binding<ProDayHours>) -> some View {
         BrandSurface {
             VStack(spacing: 10) {
-                Toggle(isOn: hours.enabled) {
-                    Text(label)
-                        .font(BrandFont.body(15, .semibold))
-                        .foregroundStyle(BrandColor.textPrimary)
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(label)
+                            .font(BrandFont.body(15, .semibold))
+                            .foregroundStyle(BrandColor.textPrimary)
+                        Text(hours.enabled.wrappedValue
+                             ? "\(fmt12(hours.start.wrappedValue)) → \(fmt12(hours.end.wrappedValue))"
+                             : "Off")
+                            .font(BrandFont.body(12))
+                            .foregroundStyle(BrandColor.textMuted)
+                    }
+                    Spacer()
+                    Toggle("", isOn: hours.enabled)
+                        .labelsHidden()
+                        .tint(BrandColor.accent)
                 }
-                .tint(BrandColor.accent)
 
                 if hours.enabled.wrappedValue {
                     HStack(spacing: 12) {
@@ -103,8 +152,8 @@ struct ProWorkingHoursView: View {
     private var saveButton: some View {
         Button { Task { await save() } } label: {
             Group {
-                if saving { ProgressView().tint(BrandColor.onAccent) }
-                else { Text(savedTick ? "Saved ✓" : "Save hours").font(BrandFont.body(16, .semibold)) }
+                if saving { Text("Saving…").font(BrandFont.body(16, .semibold)) }
+                else { Text(savedTick ? "Saved" : "Save schedule").font(BrandFont.body(16, .semibold)) }
             }
             .frame(maxWidth: .infinity).padding(.vertical, 15)
             .foregroundStyle(BrandColor.onAccent)
@@ -144,8 +193,23 @@ struct ProWorkingHoursView: View {
         }
     }
 
+    /// Minutes-since-midnight for "HH:MM".
+    private func minutes(_ hhmm: String) -> Int {
+        let p = hhmm.split(separator: ":").compactMap { Int($0) }
+        return (p.first ?? 0) * 60 + (p.count > 1 ? p[1] : 0)
+    }
+
     private func save() async {
         guard !saving else { return }
+        // Web parity: each enabled day must have end after start.
+        for day in days {
+            let h = week[keyPath: day.key]
+            if h.enabled, minutes(h.end) <= minutes(h.start) {
+                error = "\(day.label): End time must be after start time."
+                savedTick = false
+                return
+            }
+        }
         saving = true
         error = nil
         savedTick = false
