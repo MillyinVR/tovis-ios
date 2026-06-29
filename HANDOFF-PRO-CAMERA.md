@@ -157,7 +157,12 @@ also logs out? No — reboot KEEPS the keychain; only reinstall wipes it.)
 
 ---
 
-## ▶️ NEXT UP — CALENDAR full mobile parity (user: "the calendar is important", scope = **FULL mobile parity**, 2026-06-29)
+## ✅ DONE — CALENDAR full mobile parity (2026-06-29) — see the build-complete section below
+
+> **This workstream is COMPLETE + sim-verified + polished.** Full detail is in the
+> "🎉 CALENDAR full-mobile-parity build" section further down. The original plan/spec is kept below for
+> reference. **The next session's pick is the un-exercised functional testing (block CRUD, approve/deny) or a
+> new workstream — NOT the calendar build.**
 
 **Decision (user-confirmed):** build the native pro Calendar out to **full web mobile parity**, not just polish.
 This is the **biggest web↔native gap** of the pro pages and a **large, multi-step build** — do it incrementally,
@@ -223,11 +228,33 @@ Bell → notifications sheet. Polls every 60s + refresh-tick. That's a *subset* 
    destination — the bar surfaces only the top pending request, and booking-override prompts
    (`BookingOverrideRequiredError`) just surface the server error inline rather than a retry dialog.
 
-### 🎉 CALENDAR full-mobile-parity build — ✅ ALL 4 INCREMENTS DONE (2026-06-29)
-The native pro Calendar now matches the web mobile shell: view switcher + month grid (inc.1), block-time
-CRUD (inc.2), Day/Week time-grid (inc.3), and bars/panels (inc.4). **Next: live-verify the whole calendar on
-the sim** (re-login after each reinstall — keychain wipe). Remaining parity polish is the deferred list under
-each increment (working-hours shading, drag/resize, management modal, override dialog).
+### 🎉 CALENDAR full-mobile-parity build — ✅ ALL 4 INCREMENTS DONE + SIM-VERIFIED + POLISHED (2026-06-29)
+The native pro Calendar matches the web mobile shell: view switcher + month grid (inc.1), block-time
+CRUD (inc.2), Day/Week time-grid (inc.3), and bars/panels (inc.4). **First full sim walkthrough done**
+(`pro@tovis.app`/`password123` on the local stack — Docker `:5434` + `pnpm dev`; dark mode), which surfaced +
+fixed a batch of layout/UX issues (commits `8ca6134`→`95ad9f7`):
+- **Time-grid 2× offset bug** (`8ca6134`): the day-column ZStack had no intrinsic height, so `.frame(height:)`
+  centered its content — a 10am booking rendered at ~8:30pm + the now-line at the bottom. Fixed with a
+  full-height `Color.clear` spacer; verified the 10am booking lands on 10am.
+- **Stat labels → web copy** (`8ca6134`): Booked / Pending / Free (today / review / "Nh blocked").
+- **Layout rework** (`0b89f64`,`29364c8`,`3ae44e5`): un-nested the grid's scroll, pinned the stats/controls
+  chrome, grid fills the remaining height + opens at "now" (iOS-17 `.scrollPosition(id:)` on an hour anchor
+  ladder — offset views aren't `scrollTo` targets); inline nav title + compact date nav; grid extends to the
+  footer bar (the transparent START coin overlaps it).
+- **Giant header band bug** (`7ec86dd`): the in-grid day header ballooned to ~400pt because the gutter spacer
+  was a bare `Color.clear.frame(width:)` — a `Color` is greedy on BOTH axes. Swapped for a fixed-width
+  `Spacer`; header is now a thin strip and the timeline starts right under the date. ⚠️ **Lesson: never use a
+  bare `Color.clear` as a one-axis spacer — constrain the other axis or use `Spacer`.**
+- **Collapsible chrome + long date** (`79e0f15`,`95ad9f7`): a nav-bar chevron collapses stats/location/
+  auto-accept (view switcher + date nav stay) to maximize the grid, re-snapping to "now" on toggle; the Day
+  header shows the long date ("Monday, June 29"), Week keeps per-column weekday+number.
+
+`swift test` **51** · contract **26** · Debug+Release green. **Remaining deferred parity** (unbuilt, lower
+value): working-hours shading, drag/resize + tap-to-create, the `ManagementModal` (full pending/waitlist list),
+the booking-override retry dialog, and side-by-side overlap columns. The two deferred copy gaps from the web
+compare (the big "Your day." title + defaulting LOC to the active location) were **not** taken (user picked
+stat-labels only). **Functional bits still un-exercised on the sim:** block create/edit/delete via the ＋ FAB,
+and the pending-request bar's Approve/Deny (needs a PENDING booking in range — both seed bookings are ACCEPTED).
 
 **House rules carry over:** web-parity 1:1 · no dup logic (reuse BrandSurface/Section/Pill/Avatar + the
 agenda row) · decode-only fixtures unless an ajv contract entry is warranted · `requirePro` · backend changes
