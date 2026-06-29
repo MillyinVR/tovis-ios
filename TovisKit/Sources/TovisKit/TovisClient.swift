@@ -34,6 +34,8 @@ public final class TovisClient: Sendable {
     public let proBookings: ProBookingService
     /// PRO workspace — the pro's own profile + offerings management.
     public let proProfile: ProProfileService
+    /// PRO workspace — the pro notification center (feed/summary/read/prefs).
+    public let proNotifications: ProNotificationsService
     /// PRO workspace — session media (before/after photo upload + list).
     public let proMedia: ProMediaService
     public let tokenStore: TokenStore
@@ -84,6 +86,7 @@ public final class TovisClient: Sendable {
         self.proCalendar = ProCalendarService(api: api)
         self.proBookings = ProBookingService(api: api)
         self.proProfile = ProProfileService(api: api)
+        self.proNotifications = ProNotificationsService(api: api)
         self.proMedia = ProMediaService(
             api: api,
             supabaseURL: config.supabaseURL,

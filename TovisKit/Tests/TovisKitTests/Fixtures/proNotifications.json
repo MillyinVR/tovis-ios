@@ -1,0 +1,32 @@
+{
+  "ok": true,
+  "items": [
+    {
+      "id": "pn_1",
+      "eventKey": "BOOKING_REQUESTED",
+      "priority": 1,
+      "title": "New booking request",
+      "body": "Jordan requested Balayage on Jul 15.",
+      "href": "/pro/bookings/bk_1",
+      "createdAt": "2026-06-28T17:00:00.000Z",
+      "seenAt": null,
+      "readAt": null,
+      "bookingId": "bk_1",
+      "reviewId": null
+    },
+    {
+      "id": "pn_2",
+      "eventKey": "REVIEW_RECEIVED",
+      "priority": null,
+      "title": "New review",
+      "body": "You got a 5-star review.",
+      "href": "/pro/profile",
+      "createdAt": "2026-06-27T10:00:00.000Z",
+      "seenAt": "2026-06-27T11:00:00.000Z",
+      "readAt": "2026-06-27T11:00:00.000Z",
+      "bookingId": null,
+      "reviewId": "rv_9"
+    }
+  ],
+  "nextCursor": "cursor_abc"
+}

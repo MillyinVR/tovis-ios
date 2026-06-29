@@ -297,6 +297,23 @@ func fixture(_ name: String) throws -> Data {
         #expect(blowout.displayImageUrl == "https://x/blowout.jpg")      // custom override wins
     }
 
+    // GET /api/v1/pro/notifications — Fixtures/proNotifications.json. The pro
+    // notification feed (distinct from the client center: priority/seenAt/reviewId).
+    @Test func decodesProNotifications() throws {
+        let res = try JSONDecoder().decode(ProNotificationListResponse.self, from: fixture("proNotifications"))
+        #expect(res.items.count == 2)
+        #expect(res.nextCursor == "cursor_abc")
+        let first = try #require(res.items.first)
+        #expect(first.eventKey == "BOOKING_REQUESTED")
+        #expect(first.priority == 1)
+        #expect(first.isUnread)
+        #expect(first.bookingId == "bk_1")
+        let second = res.items[1]
+        #expect(!second.isUnread)
+        #expect(second.reviewId == "rv_9")
+        #expect(second.priority == nil)
+    }
+
     // GET /api/v1/client/bookings — Fixtures/clientBookings.json (schema-validated).
     @Test func decodesClientBookings() throws {
         let res = try JSONDecoder().decode(ClientBookingsResponse.self, from: fixture("clientBookings"))

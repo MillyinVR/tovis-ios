@@ -16,6 +16,8 @@ struct ProCalendarView: View {
     }
 
     @State private var phase: Phase = .loading
+    @State private var showNotifications = false
+    @State private var hasUnreadNotifications = false
 
     var body: some View {
         NavigationStack {
@@ -41,9 +43,37 @@ struct ProCalendarView: View {
             .refreshable { await load() }
             .task { if case .loading = phase { await load() } }
             // Live-sync: a booking made on web (or by a client) shows here.
-            .onChange(of: session.refreshTick) { Task { await load() } }
+            .onChange(of: session.refreshTick) { Task { await load(); await loadNotificationSummary() } }
             .task { await poll() }
+            .task { await loadNotificationSummary() }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showNotifications = true } label: {
+                        ZStack(alignment: .topTrailing) {
+                            Image(systemName: "bell")
+                                .font(.system(size: 17, weight: .medium))
+                                .foregroundStyle(BrandColor.textPrimary)
+                            if hasUnreadNotifications {
+                                Circle().fill(BrandColor.accent)
+                                    .frame(width: 8, height: 8)
+                                    .offset(x: 3, y: -2)
+                            }
+                        }
+                    }
+                }
+            }
+            .sheet(isPresented: $showNotifications, onDismiss: {
+                Task { await loadNotificationSummary() }
+            }) {
+                ProNotificationsView()
+            }
             .tint(BrandColor.accent)
+        }
+    }
+
+    private func loadNotificationSummary() async {
+        if let summary = try? await session.client.proNotifications.summary() {
+            hasUnreadNotifications = summary.hasUnread
         }
     }
 
