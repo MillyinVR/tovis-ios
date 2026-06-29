@@ -260,7 +260,8 @@ struct ProCalendarView: View {
                     timeZone: calendarTimeZone,
                     events: data.events,
                     onTapBooking: { id in bookingNav = BookingNav(id: id) },
-                    onTapBlock: { event in openBlockEditor(event) }
+                    onTapBlock: { event in openBlockEditor(event) },
+                    collapseToggle: chromeCollapsed
                 )
                 .frame(maxHeight: .infinity)
             }

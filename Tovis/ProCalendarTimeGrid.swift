@@ -15,6 +15,9 @@ struct ProCalendarTimeGrid: View {
     let events: [ProCalendarEvent]
     let onTapBooking: (String) -> Void
     let onTapBlock: (ProCalendarEvent) -> Void
+    /// Flips when the chrome collapses/expands — re-snaps the timeline to "now"
+    /// after the height change.
+    var collapseToggle: Bool = false
 
     /// Top-most visible hour cell — set to "now" on open (iOS 17 scrollPosition).
     @State private var scrolledHour: Int?
@@ -72,6 +75,10 @@ struct ProCalendarTimeGrid: View {
             .scrollPosition(id: $scrolledHour, anchor: .top)
             .onAppear { setNowScroll() }
             .onChange(of: scrollKey) { setNowScroll() }
+            // Re-snap to "now" once the collapse/expand height change settles.
+            .onChange(of: collapseToggle) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { setNowScroll() }
+            }
         }
         .background(BrandColor.bgPrimary)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
