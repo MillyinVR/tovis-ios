@@ -79,14 +79,16 @@ struct ProCalendarTimeGrid: View {
     private func scrollToNow(_ proxy: ScrollViewProxy) {
         let todayKey = ProCalendarGrid.ymd(Date(), timeZone)
         let todayVisible = days.contains { $0.dayYmd == todayKey }
+        // Center the current hour (or 8am when today isn't in view) so the grid
+        // opens with "now" in view and upcoming hours below it.
         let targetHour: Int = todayVisible
-            ? max(0, ProCalendarGrid.minutesSinceMidnight(Date(), timeZone) / 60 - 1)
+            ? ProCalendarGrid.minutesSinceMidnight(Date(), timeZone) / 60
             : 8
         // Defer past the ScrollView's first layout pass; a single async tick can
         // still beat layout, so re-assert it shortly after.
-        for delay in [0.05, 0.25] {
+        for delay in [0.05, 0.3] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                withAnimation(.none) { proxy.scrollTo(targetHour, anchor: .top) }
+                withAnimation(.none) { proxy.scrollTo(targetHour, anchor: .center) }
             }
         }
     }

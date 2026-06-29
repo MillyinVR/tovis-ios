@@ -51,18 +51,18 @@ struct ProCalendarControls: View {
             .background(BrandColor.bgSecondary)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
-            // Prev · Today (label = range) · Next.
-            HStack(spacing: 10) {
+            // Prev · Today (label = range) · Next. Just tall enough for the date.
+            HStack(spacing: 8) {
                 navButton(system: "chevron.left", label: "Previous calendar range", action: onPrev)
 
                 Button(action: onToday) {
                     Text(headerLabel)
-                        .font(BrandFont.body(15, .semibold))
+                        .font(BrandFont.body(14, .semibold))
                         .foregroundStyle(BrandColor.textPrimary)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 9)
+                        .padding(.vertical, 4)
                         .background(BrandColor.bgSurface)
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
                 .buttonStyle(.plain)
 
@@ -74,11 +74,11 @@ struct ProCalendarControls: View {
     private func navButton(system: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: system)
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(BrandColor.textPrimary)
-                .frame(width: 42, height: 40)
+                .frame(width: 34, height: 28)
                 .background(BrandColor.bgSurface)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)

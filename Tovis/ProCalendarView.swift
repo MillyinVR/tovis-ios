@@ -247,7 +247,9 @@ struct ProCalendarView: View {
                 .frame(maxHeight: .infinity)
             }
             .padding(.horizontal, 20)
-            .padding(.bottom, 96)   // clear the raised footer
+            // Extend the grid down to the footer-bar top; the raised (transparent)
+            // START coin lifts above the bar and is allowed to overlap the grid.
+            .padding(.bottom, 6)
         }
     }
 
