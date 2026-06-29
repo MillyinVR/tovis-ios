@@ -17,6 +17,23 @@ struct ProCalendarView: View {
         case failed(String)
     }
 
+    private enum BlockSheetTarget: Identifiable {
+        case create
+        case edit(ProCalendarBlock)
+        var id: String {
+            switch self {
+            case .create: return "create"
+            case let .edit(block): return "edit-\(block.id)"
+            }
+        }
+        var sheetMode: ProBlockTimeSheet.Mode {
+            switch self {
+            case .create: return .create
+            case let .edit(block): return .edit(block)
+            }
+        }
+    }
+
     @State private var phase: Phase = .loading
     @State private var showNotifications = false
     @State private var hasUnreadNotifications = false
@@ -26,6 +43,12 @@ struct ProCalendarView: View {
     @State private var view: ProCalendarViewMode = .day   // web DEFAULT_CALENDAR_VIEW
     @State private var currentDate: Date = ProCalendarGrid.anchorNoon(Date(), timeZone: .current)
     @State private var calendarTimeZone: TimeZone = .current
+
+    // Blocked-time CRUD (web BlockTimeModal / EditBlockModal). `locations` holds
+    // the bookable locations a block can pin to; an empty list hides the FAB.
+    @State private var locations: [ProLocationSummary] = []
+    @State private var blockSheet: BlockSheetTarget?
+    @State private var editorErrorMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -47,12 +70,32 @@ struct ProCalendarView: View {
                 .padding(.top, 8)
                 .padding(.bottom, 120)   // clear the raised footer
             }
+            // "+ Block time" FAB (web MobileCalendarFab) — hidden until the pro
+            // has a bookable location to pin a block to.
+            .overlay(alignment: .bottomTrailing) {
+                if !locations.isEmpty {
+                    Button { blockSheet = .create } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundStyle(BrandColor.onAccent)
+                            .frame(width: 56, height: 56)
+                            .background(BrandColor.accent)
+                            .clipShape(Circle())
+                            .shadow(color: BrandColor.accent.opacity(0.4), radius: 10, y: 4)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Create blocked time")
+                    .padding(.trailing, 20)
+                    .padding(.bottom, 104)   // clear the raised footer
+                }
+            }
             .background(BrandColor.bgPrimary.ignoresSafeArea())
             .navigationTitle("Calendar")
             .navigationBarTitleDisplayMode(.large)
             .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
             .refreshable { await load() }
             .task { if case .loading = phase { await load() } }
+            .task { await loadLocations() }
             // Re-fetch when the visible range changes (view switch or nav).
             .onChange(of: view) { Task { await load() } }
             .onChange(of: currentDate) { Task { await load() } }
@@ -81,7 +124,58 @@ struct ProCalendarView: View {
             }) {
                 ProNotificationsView()
             }
+            .sheet(item: $blockSheet) { target in
+                ProBlockTimeSheet(
+                    mode: target.sheetMode,
+                    locations: locations,
+                    defaultStart: defaultBlockStart,
+                    timeZone: calendarTimeZone,
+                    onSaved: { Task { await load() } }
+                )
+            }
+            .alert(
+                "Couldn’t open this block",
+                isPresented: Binding(
+                    get: { editorErrorMessage != nil },
+                    set: { if !$0 { editorErrorMessage = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(editorErrorMessage ?? "")
+            }
             .tint(BrandColor.accent)
+        }
+    }
+
+    private func loadLocations() async {
+        if let locs = try? await session.client.proCalendar.locations() {
+            locations = locs.filter { $0.isBookable }
+        }
+    }
+
+    // Default start for a new block: the selected day, bumped to the next 15-min
+    // slot when that day is today (so it isn't already in the past).
+    private var defaultBlockStart: Date {
+        let cal = Calendar.current
+        let now = Date()
+        guard cal.isDate(currentDate, inSameDayAs: now) else { return currentDate }
+        let minute = cal.component(.minute, from: now)
+        let bump = (15 - minute % 15) % 15
+        return cal.date(byAdding: .minute, value: bump == 0 ? 15 : bump, to: now) ?? now
+    }
+
+    // Tapping a block fetches its full row (for the note) then opens the editor.
+    private func openBlockEditor(_ event: ProCalendarEvent) {
+        Task {
+            do {
+                let block = try await session.client.proCalendar.block(id: event.id)
+                blockSheet = .edit(block)
+            } catch let error as APIError {
+                editorErrorMessage = error.userMessage
+            } catch {
+                editorErrorMessage = "Please try again."
+            }
         }
     }
 
@@ -195,7 +289,10 @@ struct ProCalendarView: View {
             }
             .buttonStyle(.plain)
         } else {
-            ProCalendarEventRow(event: event, zone: zone)   // blocks aren't tappable
+            Button { openBlockEditor(event) } label: {   // a block opens its editor
+                ProCalendarEventRow(event: event, zone: zone)
+            }
+            .buttonStyle(.plain)
         }
     }
 

@@ -25,4 +25,57 @@ public final class ProCalendarService: Sendable {
         if let locationId { query.append(URLQueryItem(name: "locationId", value: locationId)) }
         return try await api.request("/pro/calendar", query: query.isEmpty ? nil : query)
     }
+
+    // MARK: - Blocked time (web BlockTimeModal / EditBlockModal)
+
+    /// GET /api/v1/pro/locations — the pro's locations. Block creation must pin to
+    /// a bookable one, so the calendar loads these to populate the location picker.
+    public func locations() async throws -> [ProLocationSummary] {
+        let res: ProLocationsResponse = try await api.request("/pro/locations")
+        return res.locations
+    }
+
+    /// GET /api/v1/pro/calendar/blocked/[id] — one block (carries the `note` the
+    /// calendar BLOCK event doesn't, so the editor can pre-fill it).
+    public func block(id: String) async throws -> ProCalendarBlock {
+        let res: ProCalendarBlockResponse = try await api.request("/pro/calendar/blocked/\(id)")
+        return res.block
+    }
+
+    /// POST /api/v1/pro/calendar/blocked — create a block. `startsAt`/`endsAt` are
+    /// ISO-8601; `locationId` is required. Server validates the 15min–24h window
+    /// and rejects overlaps (booking/hold/block) with a user-facing message.
+    @discardableResult
+    public func createBlock(
+        startsAt: String,
+        endsAt: String,
+        note: String?,
+        locationId: String
+    ) async throws -> ProCalendarBlock {
+        let body = try JSONEncoder().encode(CreateBlockRequest(
+            startsAt: startsAt, endsAt: endsAt, note: note, locationId: locationId))
+        let res: ProCalendarBlockResponse = try await api.request(
+            "/pro/calendar/blocked", method: .post, body: body)
+        return res.block
+    }
+
+    /// PATCH /api/v1/pro/calendar/blocked/[id] — edit a block's window / note.
+    @discardableResult
+    public func updateBlock(
+        id: String,
+        startsAt: String,
+        endsAt: String,
+        note: String?
+    ) async throws -> ProCalendarBlock {
+        let body = try JSONEncoder().encode(UpdateBlockRequest(
+            startsAt: startsAt, endsAt: endsAt, note: note))
+        let res: ProCalendarBlockResponse = try await api.request(
+            "/pro/calendar/blocked/\(id)", method: .patch, body: body)
+        return res.block
+    }
+
+    /// DELETE /api/v1/pro/calendar/blocked/[id] — remove a block.
+    public func deleteBlock(id: String) async throws {
+        try await api.requestVoid("/pro/calendar/blocked/\(id)", method: .delete)
+    }
 }

@@ -572,4 +572,39 @@ func fixture(_ name: String) throws -> Data {
         #expect(reply.parentCommentId == "cmt_1")
         #expect(reply.viewerCanDelete == true)
     }
+
+    // POST/PATCH/GET /api/v1/pro/calendar/blocked[/id] — Fixtures/proCalendarBlock.json.
+    @Test func decodesProCalendarBlock() throws {
+        let res = try JSONDecoder().decode(
+            ProCalendarBlockResponse.self, from: fixture("proCalendarBlock"))
+        #expect(res.block.id == "blk_1")
+        #expect(res.block.note == "Lunch")
+        #expect(res.block.locationId == "loc_1")
+        #expect(res.block.startsAt == "2026-07-15T19:00:00.000Z")
+    }
+
+    // GET /api/v1/pro/locations — Fixtures/proLocations.json (block-create picker).
+    @Test func decodesProLocations() throws {
+        let res = try JSONDecoder().decode(
+            ProLocationsResponse.self, from: fixture("proLocations"))
+        #expect(res.locations.count == 2)
+        let primary = try #require(res.locations.first { $0.isPrimary })
+        #expect(primary.id == "loc_1")
+        #expect(primary.isBookable == true)
+        // A nameless mobile location still decodes (name is optional).
+        #expect(res.locations[1].name == nil)
+        #expect(res.locations[1].type == "MOBILE")
+    }
+
+    // The create-block body omits a nil note (synthesized encodeIfPresent).
+    @Test func createBlockRequestOmitsNilNote() throws {
+        let data = try JSONEncoder().encode(CreateBlockRequest(
+            startsAt: "2026-07-15T19:00:00Z",
+            endsAt: "2026-07-15T20:00:00Z",
+            note: nil,
+            locationId: "loc_1"))
+        let json = String(data: data, encoding: .utf8) ?? ""
+        #expect(json.contains("\"locationId\""))
+        #expect(!json.contains("note"))
+    }
 }

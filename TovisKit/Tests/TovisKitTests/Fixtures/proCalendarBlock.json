@@ -1,0 +1,9 @@
+{
+  "block": {
+    "id": "blk_1",
+    "startsAt": "2026-07-15T19:00:00.000Z",
+    "endsAt": "2026-07-15T20:00:00.000Z",
+    "note": "Lunch",
+    "locationId": "loc_1"
+  }
+}

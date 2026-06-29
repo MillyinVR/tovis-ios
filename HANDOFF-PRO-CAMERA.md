@@ -193,10 +193,16 @@ Bell → notifications sheet. Polls every 60s + refresh-tick. That's a *subset* 
    math (range/cells/header/step) in `TovisKit/.../ProCalendar/ProCalendarGrid.swift` + 6 unit tests
    (`ProCalendarGridTests`). Day/Week reuse the existing agenda rows. `swift test` **43** · Debug+Release green.
    ⚠️ NOT yet sim-verified (keychain wipe on reinstall → re-login needed). Default view = `.day` (web parity).
-2. **Block-time CRUD** ← **NEXT** — `MobileCalendarFab` "+ Block time" → `BlockTimeModal` create + `EditBlockModal`
-   edit/delete via `/pro/calendar/blocked(/[id])`. Needs a native `ProCalendarBlockService` + decode fixtures.
-3. **Day/Week time-grid** — `DayWeekGrid` (time-slot columns w/ booking/block tiles). Replaces the agenda
-   fallback that inc.1 uses for Day/Week.
+2. ✅ **DONE 2026-06-29 (`5411bbc`)** — **Block-time CRUD.** A "+" FAB (web `MobileCalendarFab`) opens
+   `ProBlockTimeSheet` create; tapping a BLOCK row opens the same sheet in edit mode (fetches `GET
+   …/blocked/[id]` for the note) with Save + Delete (confirm). Start/End pickers render in the calendar zone,
+   client-side 15min–24h guard mirrors the server; server conflict/validation messages surface inline.
+   New `ProCalendarBlock` + `ProLocationSummary` models, `ProCalendarService.{locations,createBlock,block,
+   updateBlock,deleteBlock}`, 2 fixtures + 3 decode/encode tests. Create pins to a bookable location
+   (`GET /pro/locations`, primary default, picker when >1); FAB hidden if none. `swift test` **46** ·
+   contract **26** · Debug+Release green. ⚠️ NOT yet sim-verified.
+3. **Day/Week time-grid** ← **NEXT** — `DayWeekGrid` (time-slot columns w/ booking/block tiles). Replaces the
+   agenda fallback that inc.1 uses for Day/Week.
 4. **Bars/panels** — `MobilePendingRequestBar`, `MobileAutoAcceptBar`, `CalendarStatsPanel`, location bar.
 
 **House rules carry over:** web-parity 1:1 · no dup logic (reuse BrandSurface/Section/Pill/Avatar + the

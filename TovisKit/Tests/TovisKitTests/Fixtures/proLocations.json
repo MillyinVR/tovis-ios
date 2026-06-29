@@ -1,0 +1,22 @@
+{
+  "locations": [
+    {
+      "id": "loc_1",
+      "type": "SALON",
+      "name": "Main studio",
+      "isPrimary": true,
+      "isBookable": true,
+      "formattedAddress": "123 Market St, San Francisco, CA",
+      "timeZone": "America/Los_Angeles"
+    },
+    {
+      "id": "loc_2",
+      "type": "MOBILE",
+      "name": null,
+      "isPrimary": false,
+      "isBookable": true,
+      "formattedAddress": null,
+      "timeZone": "America/Los_Angeles"
+    }
+  ]
+}

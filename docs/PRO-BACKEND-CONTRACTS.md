@@ -102,7 +102,9 @@
   {enabled,start"HH:MM",end"HH:MM"} } }`) → `{ workingHours, locationType, locationId, location, usedDefault, … }`.
 - `POST /pro/schedule/publish` → `{ liveModes[], locationsPublished, scheduleConfigVersion, blockedLocations[] }`.
 - Blocked time: `GET/POST /pro/calendar/blocked` (block = `{ id, startsAt, endsAt, note(str|null),
-  locationId(str|null) }`), `GET/PATCH/DELETE /pro/calendar/blocked/[id]`.
+  locationId(str|null) }`), `GET/PATCH/DELETE /pro/calendar/blocked/[id]`. **✅ native (inc.2):**
+  `ProCalendarService.{createBlock,block,updateBlock,deleteBlock}` + `ProBlockTimeSheet`; create
+  pins to a bookable location, server validates 15min–24h window + overlaps.
 - Locations: `GET /pro/locations` → `{ locations:[{ id, type:"SALON"|"SUITE"|"MOBILE_BASE",
   name, isPrimary, isBookable, formattedAddress, addressLine1/2, city, state, postalCode,
   countryCode, placeId, lat(num|null), lng(num|null), timeZone, workingHours, bufferMinutes,
