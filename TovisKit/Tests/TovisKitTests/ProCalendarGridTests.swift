@@ -84,4 +84,51 @@ struct ProCalendarGridTests {
         let nextDay = ProCalendarGrid.step(view: .day, reference: ref, by: 1, timeZone: zone)
         #expect(ProCalendarGrid.ymd(nextDay, zone) == "2026-07-16")
     }
+
+    // ── Day/Week time-grid layout ──
+
+    @Test func eventDayMinutesPositionsWithinDay() {
+        // 10:00–11:30 PT on 2026-07-15.
+        let layout = ProCalendarGrid.eventDayMinutes(
+            startISO: "2026-07-15T17:00:00.000Z", // 10:00 PDT
+            endISO: "2026-07-15T18:30:00.000Z",   // 11:30 PDT
+            durationMinutes: 90,
+            dayYmd: "2026-07-15",
+            timeZone: zone,
+            stepMinutes: 15)
+        #expect(layout?.start == 600)  // 10 * 60
+        #expect(layout?.end == 690)    // 11.5 * 60
+    }
+
+    @Test func eventDayMinutesEnforcesMinimumHeight() {
+        // Zero-ish duration still gets at least one step of height.
+        let layout = ProCalendarGrid.eventDayMinutes(
+            startISO: "2026-07-15T17:00:00.000Z",
+            endISO: "2026-07-15T17:00:00.000Z",
+            durationMinutes: 0,
+            dayYmd: "2026-07-15",
+            timeZone: zone,
+            stepMinutes: 15)
+        #expect(layout?.start == 600)
+        #expect((layout?.end ?? 0) - (layout?.start ?? 0) >= 15)
+    }
+
+    @Test func eventDayMinutesClampsSpilloverDays() {
+        // An event starting the day before this cell renders from midnight.
+        let layout = ProCalendarGrid.eventDayMinutes(
+            startISO: "2026-07-14T22:00:00.000Z",
+            endISO: "2026-07-15T17:30:00.000Z", // ends 10:30 PDT on the 15th
+            durationMinutes: 90,
+            dayYmd: "2026-07-15",
+            timeZone: zone,
+            stepMinutes: 15)
+        #expect(layout?.start == 0)
+        #expect(layout?.end == 630) // 10:30
+    }
+
+    @Test func snapRoundsToStep() {
+        #expect(ProCalendarGrid.snap(607, step: 15) == 600)
+        #expect(ProCalendarGrid.snap(608, step: 15) == 615)
+        #expect(ProCalendarGrid.minutesSinceMidnight(noon(2026, 7, 15), zone) == 720)
+    }
 }

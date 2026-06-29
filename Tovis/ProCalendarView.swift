@@ -50,6 +50,10 @@ struct ProCalendarView: View {
     @State private var blockSheet: BlockSheetTarget?
     @State private var editorErrorMessage: String?
 
+    // Programmatic push to a booking's detail when a time-grid tile is tapped.
+    private struct BookingNav: Identifiable, Hashable { let id: String }
+    @State private var bookingNav: BookingNav?
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -123,6 +127,9 @@ struct ProCalendarView: View {
                 Task { await loadNotificationSummary() }
             }) {
                 ProNotificationsView()
+            }
+            .navigationDestination(item: $bookingNav) { nav in
+                ProBookingDetailView(bookingId: nav.id)
             }
             .sheet(item: $blockSheet) { target in
                 ProBlockTimeSheet(
@@ -201,11 +208,19 @@ struct ProCalendarView: View {
         if view == .month {
             monthBody(data)
         } else {
-            agendaBody(data)
+            ProCalendarTimeGrid(
+                view: view,
+                currentDate: currentDate,
+                timeZone: calendarTimeZone,
+                events: data.events,
+                onTapBooking: { id in bookingNav = BookingNav(id: id) },
+                onTapBlock: { event in openBlockEditor(event) }
+            )
+            .frame(height: 560)
         }
     }
 
-    // Month: the 6×7 grid. Tapping a day jumps to that day's agenda.
+    // Month: the 6×7 grid. Tapping a day jumps to that day's time-grid.
     @ViewBuilder
     private func monthBody(_ data: ProCalendarResponse) -> some View {
         let cells = ProCalendarGrid.monthCells(
@@ -220,23 +235,6 @@ struct ProCalendarView: View {
                 withAnimation(.easeOut(duration: 0.15)) { view = .day }
             }
         )
-    }
-
-    // Day / Week: the agenda, grouped by day (scoped to the fetched range).
-    @ViewBuilder
-    private func agendaBody(_ data: ProCalendarResponse) -> some View {
-        let upcoming = data.events.filter { $0.isBooking || $0.isBlock }
-        if upcoming.isEmpty {
-            emptyState
-        } else {
-            ForEach(groupedByDay(upcoming), id: \.key) { group in
-                BrandSection(title: dayHeading(group.key)) {
-                    VStack(spacing: 10) {
-                        ForEach(group.events) { row(for: $0, zone: data.viewportTimeZone) }
-                    }
-                }
-            }
-        }
     }
 
     private var controlsBar: some View {
@@ -296,38 +294,6 @@ struct ProCalendarView: View {
         }
     }
 
-    // MARK: - Grouping
-
-    private struct DayGroup { let key: String; let events: [ProCalendarEvent] }
-
-    private func groupedByDay(_ events: [ProCalendarEvent]) -> [DayGroup] {
-        let sorted = events.sorted { $0.startsAt < $1.startsAt }
-        var order: [String] = []
-        var byDay: [String: [ProCalendarEvent]] = [:]
-        for e in sorted {
-            if byDay[e.localDateKey] == nil { order.append(e.localDateKey) }
-            byDay[e.localDateKey, default: []].append(e)
-        }
-        return order.map { DayGroup(key: $0, events: byDay[$0] ?? []) }
-    }
-
-    /// "YYYY-MM-DD" → "Wed, Jul 15" (or "Today" / "Tomorrow").
-    private func dayHeading(_ key: String) -> String {
-        let parser = DateFormatter()
-        parser.locale = Locale(identifier: "en_US_POSIX")
-        parser.dateFormat = "yyyy-MM-dd"
-        guard let date = parser.date(from: key) else { return key }
-
-        let cal = Calendar.current
-        if cal.isDateInToday(date) { return "Today" }
-        if cal.isDateInTomorrow(date) { return "Tomorrow" }
-
-        let out = DateFormatter()
-        out.locale = Locale(identifier: "en_US")
-        out.dateFormat = "EEE, MMM d"
-        return out.string(from: date)
-    }
-
     private func hoursLabel(_ hours: Double) -> String {
         hours == hours.rounded() ? "\(Int(hours))h" : String(format: "%.1fh", hours)
     }
@@ -337,20 +303,6 @@ struct ProCalendarView: View {
     private var loadingState: some View {
         HStack { Spacer(); ProgressView().tint(BrandColor.accent); Spacer() }
             .padding(.top, 80)
-    }
-
-    private var emptyState: some View {
-        VStack(spacing: 10) {
-            Text("Nothing on the books")
-                .font(BrandFont.display(20, .semibold))
-                .foregroundStyle(BrandColor.textPrimary)
-            Text("New bookings and requests will appear here.")
-                .font(BrandFont.body(14))
-                .foregroundStyle(BrandColor.textMuted)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 50)
     }
 
     private func errorState(_ message: String) -> some View {

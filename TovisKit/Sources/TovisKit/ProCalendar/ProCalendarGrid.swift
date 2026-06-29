@@ -172,4 +172,115 @@ public enum ProCalendarGrid {
         f.formatOptions = [.withInternetDateTime]
         return f.string(from: date)
     }
+
+    // ─── Day/Week time-grid layout (web _grid/DayColumn buildEventLayout) ────
+
+    public static let minutesPerDay = 24 * 60
+
+    /// Parse a backend ISO-8601 instant (with or without fractional seconds).
+    static func parseISO(_ value: String) -> Date? {
+        let withFraction = ISO8601DateFormatter()
+        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = withFraction.date(from: value) { return date }
+        let plain = ISO8601DateFormatter()
+        plain.formatOptions = [.withInternetDateTime]
+        return plain.date(from: value)
+    }
+
+    /// Minutes since local midnight in `timeZone` (0…1439).
+    public static func minutesSinceMidnight(_ date: Date, _ timeZone: TimeZone) -> Int {
+        let cal = gregorian(timeZone)
+        let comps = cal.dateComponents([.hour, .minute], from: date)
+        return (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
+    }
+
+    /// Round `minutes` to the nearest `step`, clamped to [0, 1440 - step] — the
+    /// web `snapMinutes`.
+    static func snap(_ minutes: Int, step: Int) -> Int {
+        let s = max(1, step)
+        let snapped = Int((Double(minutes) / Double(s)).rounded()) * s
+        return max(0, min(minutesPerDay - s, snapped))
+    }
+
+    /// The minutes-since-midnight `[start, end]` window an event occupies on
+    /// `dayYmd` (the day cell's local key), TZ-aware with multi-day spillover and
+    /// step snapping — the native port of `buildEventLayout`. Returns nil for an
+    /// unparseable/zero-length event. `durationMinutes` is the server-provided
+    /// duration used as the fallback length when the end falls on another day.
+    public static func eventDayMinutes(
+        startISO: String,
+        endISO: String,
+        durationMinutes: Int,
+        dayYmd: String,
+        timeZone: TimeZone,
+        stepMinutes: Int
+    ) -> (start: Int, end: Int)? {
+        guard let start = parseISO(startISO) else { return nil }
+        let end = parseISO(endISO)
+
+        let startYmd = ymd(start, timeZone)
+        let endYmdInclusive = end.map { ymd($0.addingTimeInterval(-0.001), timeZone) } ?? startYmd
+
+        // Only lay out events that intersect this day (web `getDayEvents` filter).
+        if dayYmd < startYmd || dayYmd > endYmdInclusive { return nil }
+
+        let startMinutesRaw = dayYmd == startYmd ? minutesSinceMidnight(start, timeZone) : 0
+        let endMinutesRaw: Int = {
+            if dayYmd == endYmdInclusive, let end { return minutesSinceMidnight(end, timeZone) }
+            return minutesPerDay
+        }()
+
+        let startMinutes = snap(startMinutesRaw, step: stepMinutes)
+        let minEnd = startMinutes + stepMinutes
+
+        let safeDuration = durationMinutes > 0 ? durationMinutes : 60
+        let naturalEnd = endMinutesRaw <= startMinutesRaw
+            ? startMinutesRaw + safeDuration
+            : endMinutesRaw
+
+        let safeEnd = max(minEnd, min(minutesPerDay, naturalEnd))
+        return (startMinutes, safeEnd)
+    }
+
+    /// Whether `dayYmd` (a day cell key) is the local "today" in `timeZone`.
+    public static func isToday(dayYmd: String, timeZone: TimeZone, now: Date) -> Bool {
+        ymd(now, timeZone) == dayYmd
+    }
+
+    /// The day column(s) a timeline view spans — 1 for day, 7 (Mon-start) for
+    /// week (the web `getTimelineDays`). Reuses `ProMonthCell` for the per-day
+    /// key/number/today flags; `isInCurrentMonth` is unused here (always true).
+    public static func timelineDays(
+        view: ProCalendarViewMode,
+        reference: Date,
+        timeZone: TimeZone,
+        today: Date
+    ) -> [ProMonthCell] {
+        let cal = gregorian(timeZone)
+        switch view {
+        case .day:
+            return [dayCell(cal.startOfDay(for: reference), cal: cal, timeZone: timeZone, today: today)]
+        case .week:
+            let start = weekStart(reference: reference, cal: cal)
+            return (0..<7).compactMap { offset in
+                guard let day = cal.date(byAdding: .day, value: offset, to: start) else { return nil }
+                return dayCell(cal.startOfDay(for: day), cal: cal, timeZone: timeZone, today: today)
+            }
+        case .month:
+            return monthCells(reference: reference, timeZone: timeZone, today: today)
+        }
+    }
+
+    private static func dayCell(
+        _ start: Date, cal: Calendar, timeZone: TimeZone, today: Date
+    ) -> ProMonthCell {
+        let key = ymd(start, timeZone)
+        return ProMonthCell(
+            dayYmd: key,
+            dayNumber: cal.component(.day, from: start),
+            isToday: key == ymd(today, timeZone),
+            isInCurrentMonth: true,
+            startOfDay: start
+        )
+    }
 }
