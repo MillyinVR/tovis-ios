@@ -54,12 +54,28 @@ struct ProTabBar: View {
         Button {
             selected = tab.id
         } label: {
-            FooterNavItemLabel(
-                systemImage: tab.systemImage,
-                label: tab.label,
-                active: isActive,
-                badge: badge(for: tab)
-            )
+            if tab.id == .looks {
+                // Web renders the Looks tab with `<BrandMark size={22}/>` (the
+                // brand Eye), not a lucide glyph — mirror that so the pro footer's
+                // Looks icon is the signature mark, matching the web bar 1:1.
+                FooterNavItemLabel(
+                    label: tab.label,
+                    active: isActive,
+                    badge: badge(for: tab)
+                ) {
+                    // 24 to match the native sibling glyphs (web uses 22 for both
+                    // BrandMark and the lucide icons; native symbols render at 24,
+                    // so the Eye matches them to keep the bar internally balanced).
+                    TovisEye(size: 24)
+                }
+            } else {
+                FooterNavItemLabel(
+                    systemImage: tab.systemImage,
+                    label: tab.label,
+                    active: isActive,
+                    badge: badge(for: tab)
+                )
+            }
         }
         .buttonStyle(.plain)
         .accessibilityLabel(tab.label)

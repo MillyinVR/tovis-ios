@@ -19,8 +19,9 @@ struct ProTab: Identifiable, Hashable {
 }
 
 enum ProNav {
-    // lucide → SF Symbol mapping (web ProSessionFooter):
-    //   BrandMark → sparkles · CalendarDays → calendar ·
+    // web ProSessionFooter icon mapping:
+    //   Looks → brand TovisEye mark (rendered by ProTabBar, like web <BrandMark/>;
+    //     systemImage is an unused fallback) · CalendarDays → calendar ·
     //   MessageCircle → message · User → person
     static let tabs: [ProTab] = [
         ProTab(id: .looks,    label: "Looks",    systemImage: "sparkles"),
