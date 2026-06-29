@@ -12,6 +12,14 @@ public final class ProClientsService: Sendable {
         self.api = api
     }
 
+    /// GET /api/v1/pro/clients → the visible client directory (web `/pro/clients`
+    /// parity). Returns every client the pro currently has access to, ordered by
+    /// name, with a per-client "Last booking: …" label. The view filters this
+    /// client-side; the web page has no server search.
+    public func directory() async throws -> ProClientDirectoryResponse {
+        try await api.request("/pro/clients")
+    }
+
     /// GET /api/v1/pro/clients/search?q= → recent + other matches.
     public func search(query: String = "") async throws -> ProClientSearchResponse {
         let q = query.trimmingCharacters(in: .whitespaces)

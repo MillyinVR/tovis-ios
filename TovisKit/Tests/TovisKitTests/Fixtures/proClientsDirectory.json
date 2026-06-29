@@ -1,0 +1,8 @@
+{
+  "ok": true,
+  "count": 2,
+  "clients": [
+    { "id": "cl_1", "fullName": "Jordan Rivera", "canViewClient": true, "email": "jordan@example.com", "phone": "+15555550123", "lastBookingLabel": "Last booking: Jul 1, 2026" },
+    { "id": "cl_2", "fullName": "Sam Park", "canViewClient": true, "email": null, "phone": null, "lastBookingLabel": "No bookings yet" }
+  ]
+}

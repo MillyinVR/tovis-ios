@@ -10,16 +10,29 @@ struct ProClientsView: View {
     @Environment(SessionModel.self) private var session
 
     @State private var query = ""
-    @State private var recent: [ProClientSummary] = []
-    @State private var other: [ProClientSummary] = []
+    @State private var all: [ProClientSummary] = []
     @State private var loading = true
     @State private var error: String?
-    @State private var searchTask: Task<Void, Never>?
     @State private var showAdd = false
+
+    // Web `/pro/clients` has no server search — it lists the whole visible set.
+    // Native loads that directory once and filters in memory.
+    private var filtered: [ProClientSummary] {
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !q.isEmpty else { return all }
+        return all.filter { c in
+            c.fullName.lowercased().contains(q)
+                || (c.email?.lowercased().contains(q) ?? false)
+                || (c.phone?.lowercased().contains(q) ?? false)
+        }
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                Text("Only clients you currently have access to (pending/active/upcoming).")
+                    .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
+
                 addClientCard
 
                 if loading {
@@ -27,18 +40,10 @@ struct ProClientsView: View {
                 } else if let error {
                     Text(error).font(BrandFont.body(15)).foregroundStyle(BrandColor.textSecondary)
                         .frame(maxWidth: .infinity).padding(.top, 60)
+                } else if all.isEmpty {
+                    emptyState
                 } else {
-                    if !recent.isEmpty {
-                        section(title: query.isEmpty ? "Recent" : "Matches", clients: recent)
-                    }
-                    if !other.isEmpty {
-                        section(title: "More clients", clients: other)
-                    }
-                    if recent.isEmpty && other.isEmpty {
-                        Text(query.isEmpty ? "No clients yet." : "No clients match “\(query)”.")
-                            .font(BrandFont.body(14)).foregroundStyle(BrandColor.textMuted)
-                            .frame(maxWidth: .infinity).padding(.top, 50)
-                    }
+                    clientList
                 }
             }
             .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 40)
@@ -48,12 +53,44 @@ struct ProClientsView: View {
         .navigationBarTitleDisplayMode(.large)
         .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
         .searchable(text: $query, prompt: "Search clients")
-        .onChange(of: query) { debouncedSearch() }
         .task { if loading { await load() } }
         .sheet(isPresented: $showAdd) {
             ProAddClientSheet { Task { await load() } }
         }
         .tint(BrandColor.accent)
+    }
+
+    // "Client list" + "{n} visible" count + the web subtitle, mirroring
+    // app/pro/clients/page.tsx.
+    private var clientList: some View {
+        BrandSection(title: "Client list", trailing: "\(filtered.count) visible") {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Only clients with active access are shown here.")
+                    .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
+
+                if filtered.isEmpty {
+                    Text("No clients match “\(query)”.")
+                        .font(BrandFont.body(14)).foregroundStyle(BrandColor.textMuted)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
+                } else {
+                    ForEach(filtered) { client in row(client) }
+                }
+            }
+        }
+    }
+
+    // Web EmptyState copy for a pro with no currently-visible clients.
+    private var emptyState: some View {
+        BrandSurface {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("No clients with active visibility right now.")
+                    .font(BrandFont.body(15, .semibold)).foregroundStyle(BrandColor.textPrimary)
+                Text("Only clients with active access appear here. Share your booking link to bring clients on.")
+                    .font(BrandFont.body(13)).foregroundStyle(BrandColor.textSecondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.top, 8)
     }
 
     private var addClientCard: some View {
@@ -77,14 +114,6 @@ struct ProClientsView: View {
         }
     }
 
-    private func section(title: String, clients: [ProClientSummary]) -> some View {
-        BrandSection(title: title) {
-            VStack(spacing: 10) {
-                ForEach(clients) { client in row(client) }
-            }
-        }
-    }
-
     @ViewBuilder
     private func row(_ client: ProClientSummary) -> some View {
         if client.canViewClient {
@@ -103,8 +132,11 @@ struct ProClientsView: View {
                     Text(client.fullName)
                         .font(BrandFont.body(15, .semibold))
                         .foregroundStyle(BrandColor.textPrimary)
-                    if let sub = client.email ?? client.phone {
-                        Text(sub).font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted).lineLimit(1)
+                    // Web row: "{email || No email}{ • phone}".
+                    Text((client.email ?? "No email") + (client.phone.map { " • \($0)" } ?? ""))
+                        .font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted).lineLimit(1)
+                    if let last = client.lastBookingLabel {
+                        Text(last).font(BrandFont.body(11)).foregroundStyle(BrandColor.textMuted.opacity(0.8)).lineLimit(1)
                     }
                 }
                 Spacer()
@@ -117,21 +149,11 @@ struct ProClientsView: View {
         }
     }
 
-    private func debouncedSearch() {
-        searchTask?.cancel()
-        searchTask = Task {
-            try? await Task.sleep(for: .milliseconds(300))
-            if Task.isCancelled { return }
-            await load()
-        }
-    }
-
     private func load() async {
         error = nil
         do {
-            let res = try await session.client.proClients.search(query: query)
-            recent = res.recentClients
-            other = res.otherClients
+            let res = try await session.client.proClients.directory()
+            all = res.clients
         } catch let e as APIError {
             error = e.userMessage
         } catch {

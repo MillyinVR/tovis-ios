@@ -132,14 +132,22 @@ Did the first real Debug→localhost side-by-side walkthrough as a logged-in pro
 - **Verified ✅:** booking-detail (verbatim copy, #432 data live), profile (Messages quick action
   **intentionally omitted** from a pro's view of their OWN profile per user), notifications.
 
-**🔶 STILL OPEN — Clients list** (vs `app/pro/clients/page.tsx`):
-- Copy drifts: missing header subtitle "Only clients you currently have access to (pending/active/upcoming).",
-  missing "Client list" section header + `{n} visible` count, empty-state copy ("No clients with active
-  visibility right now." + desc + **View profile** action) vs native "No clients yet.".
-- **Functional Q (resolve before fixing copy):** web lists pending/active/upcoming-booking clients (the
-  seeded Test Client has a *pending* booking → shows on web), but native `GET /pro/clients/search` shows
-  "No clients yet." → investigate the search endpoint's default behavior. **Blocks live chart (#433)
-  verification** (need a listed client to open the 8-tab chart).
+**✅ RESOLVED — Clients list** (2026-06-29, vs `app/pro/clients/page.tsx`):
+- **Root cause:** native loaded its directory via `GET /pro/clients/search` with empty `q`, but that route
+  intentionally short-circuits to empty results when there's no query (anti-enumeration) → the list had no
+  source and always showed "No clients yet." The web page has **no search**; it just renders the scoped
+  visible set.
+- **Fix (tovis-app PR #434, OPEN — merge+redeploy before sim-verify):** new **`GET /api/v1/pro/clients`**
+  directory endpoint = 1:1 port of `page.tsx` (same `proClientVisibilityWhere` scope, ordered by name, per-
+  client `lastBookingLabel`); shared `formatLastBookingLabel` helper extracted (web page switched to it).
+- **Native:** `ProClientsService.directory()` + `ProClientDirectoryResponse`; `ProClientSummary` gains
+  `lastBookingLabel`. `ProClientsView` now loads the directory + **filters client-side** (web has no server
+  search), with web copy (header subtitle · "Client list" + `{n} visible` · full empty-state copy · per-row
+  contact + "Last booking: …"). Fixture + decode test. `swift test` **52** · Debug+Release green.
+- **Trade-offs:** empty-state "View profile" action omitted (cross-tab nav on native); header count shows
+  the *filtered* count while searching (= total visible when not searching). ⚠️ NOT yet sim-verified
+  (keychain wipe → re-login). Once #434 is live, this **unblocks live #433 chart verification** (a listed
+  client opens the 8-tab chart).
 
 **Deferred polish (unchanged):** pro **aftercare detail** screen (web "View full aftercare" link omitted —
 no native destination); in-app **Message** deep-link from the clients list; per-tab chart **write forms**

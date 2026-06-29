@@ -418,6 +418,21 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.workingHours.thu.end == "20:00")
     }
 
+    // GET /api/v1/pro/clients — Fixtures/proClientsDirectory.json. The visible
+    // client directory (web `/pro/clients` parity). Inline shape; decode-only.
+    @Test func decodesProClientsDirectory() throws {
+        let res = try JSONDecoder().decode(ProClientDirectoryResponse.self, from: fixture("proClientsDirectory"))
+        #expect(res.count == 2)
+        #expect(res.clients.count == 2)
+        let first = try #require(res.clients.first)
+        #expect(first.fullName == "Jordan Rivera")
+        #expect(first.canViewClient)
+        #expect(first.lastBookingLabel == "Last booking: Jul 1, 2026")
+        #expect(res.clients[1].email == nil)
+        #expect(res.clients[1].phone == nil)
+        #expect(res.clients[1].lastBookingLabel == "No bookings yet")
+    }
+
     // GET /api/v1/pro/clients/search — Fixtures/proClientsSearch.json. The pro
     // clients directory (recent + other). Inline backend shape; decode-only.
     @Test func decodesProClientsSearch() throws {

@@ -75,8 +75,13 @@
 
 ## Phase 5a — clients / chart + aftercare
 
+- `GET /pro/clients` → `{ count, clients:[…] }`, each `{ id, fullName, canViewClient(bool),
+  email(str|null), phone(str|null), lastBookingLabel(str) }` — the **visible client directory**
+  (web `/pro/clients` 1:1: `proClientVisibilityWhere` scope, name-ordered, `take:500`). Native
+  loads this and filters client-side (web has no server search). _tovis-app PR #434._
 - `GET /pro/clients/search?q=` → `{ query, recentClients:[…], otherClients:[…] }`,
-  each `{ id, fullName, canViewClient(bool), email(str|null), phone(str|null) }`.
+  each `{ id, fullName, canViewClient(bool), email(str|null), phone(str|null) }`. Returns empty
+  lists for empty `q` (anti-enumeration) — use the directory GET above for the list, this for typeahead.
 - `POST /pro/clients { firstName, lastName, email, phone }` → `{ id, clientId, userId, email }`.
 - Client chart is **server-rendered** (`/pro/clients/[id]?view=chart&tab=…`) — NO single
   GET API. Chart write endpoints exist: `PATCH .../profile-context {occupation, proCapturedSocialHandle}`,

@@ -1,10 +1,17 @@
 import Foundation
 
-// Wire models for the PRO clients surface — GET /api/v1/pro/clients/search,
-// GET /pro/clients/{id}/service-addresses, POST /pro/clients/{id}/notes.
-// Inline backend shapes (decode-only). The full client CHART history (existing
-// notes/allergies/formula) is server-rendered with no read API — needs a backend
-// aggregate GET before it can be ported. See docs/PRO-BACKEND-CONTRACTS.md.
+// Wire models for the PRO clients surface — GET /api/v1/pro/clients (directory),
+// GET /api/v1/pro/clients/search, GET /pro/clients/{id}/service-addresses,
+// POST /pro/clients/{id}/notes. Inline backend shapes (decode-only). See
+// docs/PRO-BACKEND-CONTRACTS.md.
+
+/// GET /api/v1/pro/clients → the visible client directory (web `/pro/clients`
+/// parity). The native list loads this and filters client-side (the web page
+/// has no server search either).
+public struct ProClientDirectoryResponse: Decodable, Sendable {
+    public let clients: [ProClientSummary]
+    public let count: Int
+}
 
 /// GET /api/v1/pro/clients/search → recent + other matches.
 public struct ProClientSearchResponse: Decodable, Sendable {
@@ -20,6 +27,25 @@ public struct ProClientSummary: Decodable, Sendable, Identifiable {
     public let canViewClient: Bool
     public let email: String?
     public let phone: String?
+    /// "Last booking: …" / "No bookings yet" — present on the directory list,
+    /// absent on search results.
+    public let lastBookingLabel: String?
+
+    public init(
+        id: String,
+        fullName: String,
+        canViewClient: Bool,
+        email: String?,
+        phone: String?,
+        lastBookingLabel: String? = nil
+    ) {
+        self.id = id
+        self.fullName = fullName
+        self.canViewClient = canViewClient
+        self.email = email
+        self.phone = phone
+        self.lastBookingLabel = lastBookingLabel
+    }
 }
 
 /// POST /api/v1/pro/clients — create-shadow-client body.
