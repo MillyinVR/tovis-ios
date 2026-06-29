@@ -53,6 +53,19 @@ public struct RefreshResponse: Codable, Sendable {
     public let token: String
 }
 
+/// POST /api/v1/workspace/switch — request body.
+struct WorkspaceSwitchRequest: Encodable, Sendable {
+    let workspace: String
+}
+
+/// POST /api/v1/workspace/switch — response (`WorkspaceSwitchResponseDTO`).
+/// `token` is the re-minted JWT carrying the new acting role (native swaps to it).
+public struct WorkspaceSwitchResponse: Decodable, Sendable {
+    public let workspace: Role
+    public let href: String
+    public let token: String
+}
+
 // MARK: - Account phone verification (post-signup, e.g. after Sign in with Apple)
 // These act on the authenticated (verification) session — distinct from the
 // passwordless phone-LOGIN flow above.

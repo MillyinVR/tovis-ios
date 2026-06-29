@@ -215,6 +215,28 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.addOns[1].group == nil)        // nullable group decodes
     }
 
+    // GET /api/v1/pro/session — Fixtures/proSession.json. The PRO footer's live-
+    // session state machine (mirrors lib/proSession/types.ts). Envelope is spread,
+    // so the payload fields sit at the top level.
+    @Test func decodesProSession() throws {
+        let res = try JSONDecoder().decode(ProSessionPayload.self, from: fixture("proSession"))
+        #expect(res.mode == .upcoming)
+        #expect(res.center.action == .start)
+        #expect(res.center.href == "/pro/bookings/bk_1/session")
+        let booking = try #require(res.booking)
+        #expect(booking.id == "bk_1")
+        #expect(booking.clientName == "Jordan Rivera")
+        #expect(res.eligibleBookings == nil)
+        // Unknown enum values fall back to .unknown rather than failing to decode.
+        let unknown = """
+        {"ok":true,"mode":"WAT","booking":null,"eligibleBookings":null,
+         "targetStep":null,"center":{"label":"Start","action":"ZAP","href":null}}
+        """.data(using: .utf8)!
+        let u = try JSONDecoder().decode(ProSessionPayload.self, from: unknown)
+        #expect(u.mode == .unknown)
+        #expect(u.center.action == .unknown)
+    }
+
     // GET /api/v1/client/bookings — Fixtures/clientBookings.json (schema-validated).
     @Test func decodesClientBookings() throws {
         let res = try JSONDecoder().decode(ClientBookingsResponse.self, from: fixture("clientBookings"))

@@ -122,6 +122,22 @@ public final class AuthService: Sendable {
         return response
     }
 
+    /// Switch the acting workspace (CLIENT / PRO / ADMIN). The backend re-mints
+    /// the JWT with the new acting role and returns it — native must swap to this
+    /// token (web uses the cookie). Saves the new token so the next request acts
+    /// in the new role; the caller re-points the shell from the new role.
+    /// Entitlement is re-checked server-side (PRO needs an APPROVED profile), so a
+    /// 403 means the user can't act there. Mirrors lib/auth/workspaces.ts.
+    @discardableResult
+    public func switchWorkspace(to role: Role) async throws -> WorkspaceSwitchResponse {
+        let payload = try JSONEncoder().encode(WorkspaceSwitchRequest(workspace: role.rawValue))
+        let response: WorkspaceSwitchResponse = try await api.request(
+            "/workspace/switch", method: .post, body: payload
+        )
+        await tokenStore.save(response.token)
+        return response
+    }
+
     /// Forget the session locally. (Also call DeviceService.unregister first if
     /// you want to stop pushes to this device server-side.)
     public func logout() async {

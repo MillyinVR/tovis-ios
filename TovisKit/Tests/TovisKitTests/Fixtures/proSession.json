@@ -1,0 +1,18 @@
+{
+  "ok": true,
+  "mode": "UPCOMING",
+  "booking": {
+    "id": "bk_1",
+    "serviceName": "Balayage + Toner",
+    "clientName": "Jordan Rivera",
+    "scheduledFor": "2026-07-15T17:00:00.000Z",
+    "sessionStep": "session"
+  },
+  "eligibleBookings": null,
+  "targetStep": "session",
+  "center": {
+    "label": "Start",
+    "action": "START",
+    "href": "/pro/bookings/bk_1/session"
+  }
+}

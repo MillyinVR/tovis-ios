@@ -111,6 +111,12 @@ final class SessionModel {
 
     private(set) var state: State = .loading
     private(set) var currentUser: AuthUser?
+    /// The role the session is acting in — drives which shell shows (client vs
+    /// pro). On a fresh sign-in it comes from the login response; on a cold launch
+    /// it's decoded from the stored JWT (no network call), then reconciled by
+    /// `currentUser` once a screen loads /me. Defaults to client (the common case)
+    /// so an unreadable/legacy token still lands somewhere sane.
+    private(set) var activeRole: Role = .client
     var isWorking = false
     var errorMessage: String?
 
@@ -184,9 +190,42 @@ final class SessionModel {
             state = .needsVerification
             return
         }
+        // Cold-launch: pick the shell from the JWT's acting-role claim so the pro
+        // bar shows immediately, with no network round-trip (reconciled later).
+        if let token = await client.tokenStore.token(),
+           let role = SessionToken.role(from: token) {
+            activeRole = role
+        }
         state = .signedIn
         await startRealtime()
         await startPush()
+    }
+
+    /// Re-read the acting role from the freshly stored JWT after a workspace
+    /// switch (`POST /api/v1/workspace/switch` re-mints the token) and re-point
+    /// the shell. No-op if the token can't be read.
+    func reloadActiveRole() async {
+        guard let token = await client.tokenStore.token(),
+              let role = SessionToken.role(from: token) else { return }
+        activeRole = role
+    }
+
+    /// Switch the acting workspace (e.g. pro → client). Re-mints the token
+    /// server-side, then flips `activeRole` so RootView swaps the shell. Mirrors
+    /// the web workspace switcher; entitlement is enforced by the backend.
+    func switchWorkspace(to role: Role) async {
+        isWorking = true
+        errorMessage = nil
+        defer { isWorking = false }
+        do {
+            let result = try await client.auth.switchWorkspace(to: role)
+            activeRole = result.workspace
+            signalRefresh()
+        } catch let error as APIError {
+            errorMessage = error.userMessage
+        } catch {
+            errorMessage = "Couldn’t switch workspace. Please try again."
+        }
     }
 
     /// Subscribe to this user's live channel. Derives the userId from the stored
@@ -226,6 +265,7 @@ final class SessionModel {
     /// push); otherwise → the in-app verification step.
     private func handleAuthResult(_ result: LoginResponse) async {
         currentUser = result.user
+        activeRole = result.user.role
         emailVerified = result.isEmailVerified
         if result.isFullyVerified {
             state = .signedIn
@@ -397,7 +437,14 @@ struct RootView: View {
             case .needsVerification:
                 PhoneVerificationView()
             case .signedIn:
-                MainTabView()
+                // The acting role picks the shell — mirrors the web RoleFooter,
+                // which renders the pro/client/admin footer from the same role.
+                // ADMIN has no native shell yet, so it falls through to client.
+                if session.activeRole == .pro {
+                    ProMainTabView()
+                } else {
+                    MainTabView()
+                }
             }
         }
         // Stripe Checkout hands back through the `tovis://checkout/return` scheme

@@ -25,6 +25,11 @@ public final class TovisClient: Sendable {
     public let checkout: CheckoutService
     public let looks: LooksService
     public let notifications: NotificationsService
+    /// PRO workspace — the live-session footer state machine. Only meaningful for
+    /// a PRO acting role; CLIENT tokens 403 these endpoints.
+    public let proSession: ProSessionService
+    /// PRO workspace — the calendar/agenda (bookings + blocks + management).
+    public let proCalendar: ProCalendarService
     public let tokenStore: TokenStore
 
     /// Stable per-install id. Persisted in the Keychain-backed store's UserDefaults
@@ -69,6 +74,8 @@ public final class TovisClient: Sendable {
         self.checkout = CheckoutService(api: api)
         self.looks = LooksService(api: api)
         self.notifications = NotificationsService(api: api)
+        self.proSession = ProSessionService(api: api)
+        self.proCalendar = ProCalendarService(api: api)
     }
 
     /// The signed-in user's id, decoded from the stored JWT. Works on a cold

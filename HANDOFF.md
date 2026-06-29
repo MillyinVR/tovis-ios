@@ -74,6 +74,151 @@ verified **live end-to-end** earlier — but the **polish features (#1–#6) are
 The ONLY non-built item left is the on-device **Stripe `tovis://` redirect** confirmation. See
 "Suggested next steps" for the per-item detail + the live-verification checklist.
 
+---
+
+# 🧑‍🎨 PRO APP — port plan (started 2026-06-28)
+
+> **New track.** Everything above is the **CLIENT** app (feature-complete, on TestFlight).
+> This section is the plan to bring the **PRO** (professional) side into the same native app —
+> not a second app. The web pro surface is large: ~35 `/pro/*` pages and ~90 `/api/v1/pro/*`
+> routes. We port it the same way we did the client: native SwiftUI, **web parity 1:1**, one
+> TovisKit service per surface, typed backend DTOs + a contract fixture for every screen, and
+> **no duplicated logic** (reuse the existing brand/components/services).
+
+## The model that makes web ⇄ iOS seamless (read this first)
+
+A single account has a permanent **home role** (`User.role`) and an **acting role** that rides
+in the signed JWT. The acting role — not the home role — decides which shell/footer you see:
+
+- iOS already decodes `AuthUser.role` (`CLIENT | PRO | ADMIN`) from the login/refresh response
+  (`Models/Common.swift`). **It just never branches on it** — `RootView` shows the client
+  `MainTabView` for everyone. Step 1 of the port is role-based routing.
+- Switching workspace is server-side: `POST /api/v1/workspace/switch {workspace}` re-mints the
+  JWT with the new acting role (entitlement re-checked every request; PRO requires an
+  `APPROVED ProfessionalProfile`). Landing routes: `CLIENT→/client`, `PRO→/pro/calendar`.
+- **Why this is the cross-device seam:** switch to Pro on web → the token reflects it → on the
+  next iOS login/refresh `role == .pro` and iOS shows the pro shell. No client-side role state to
+  keep in sync. iOS mirrors it with an in-app workspace switcher (in the Me/Profile menu) that
+  POSTs `/workspace/switch`, then re-bootstraps the shell.
+- **Cold-launch routing:** extend `SessionToken` to read the acting role out of the stored JWT
+  (it already reads `userId` + `sessionKind`) so the shell renders with no network call, then
+  reconcile against `/api/v1/me` (or the login `user.role`).
+
+## Pro footer (web `ProSessionFooter`) → iOS `ProTabBar`
+
+5 destinations, mirroring the web bar 1:1 (reuse `LooksMark`, `BrandColor`, mono labels, active
+dot — the same primitives `TovisTabBar` uses; do NOT fork them):
+
+| Slot | Label | Web route | iOS target | Status |
+|------|-------|-----------|------------|--------|
+| 1 | Looks | `/looks` | existing `LooksView` (role-agnostic) | ✅ reuse |
+| 2 | Calendar | `/pro/calendar` | new `ProCalendarView` | 🔨 build (priority) |
+| **C** | **live session** | dynamic | new center button (state machine) | 🔨 build |
+| 4 | Messages | `/messages` | existing `InboxView` (role-agnostic) | ✅ reuse |
+| 5 | Profile | `/pro/profile/public-profile` | new pro profile view | 🔨 build |
+
+**The center button is the hard part** — a state machine driven by `GET /api/v1/pro/session`
+(contract in `tovis-app/lib/proSession/types.ts`): mode `IDLE | UPCOMING | UPCOMING_PICKER |
+ACTIVE`; center `{label, action, href}` where action ∈ `NONE | START | NAVIGATE | FINISH |
+CAPTURE_BEFORE | CAPTURE_AFTER | PICK_BOOKING`. Behaviour ported from web `useProSession.ts`:
+pulse when live, `PICK_BOOKING` opens a booking picker sheet, `START`/`FINISH` POST then route to
+`center.href`, `CAPTURE_*` shows a camera icon and routes to the photo screen. Endpoints:
+`POST /api/v1/pro/bookings/{id}/session/{start,finish}`, `PATCH .../session/step`,
+`GET .../session/state`. **Decision (2026-06-28): build the FULL live-session flow now** — incl.
+the before/after photo-capture screens — not a stub.
+
+## ✅ Progress (2026-06-28) — footer/shell milestone SHIPPED (committed, build green)
+
+The pro footer now WORKS end-to-end. Built + verified (`swift test` **25**, contract **24**,
+`xcodebuild` Debug **AND** Release green):
+- **Role routing** — `SessionToken.role(from:)` reads the JWT acting-role claim; `SessionModel`
+  tracks `activeRole` (login response + cold-launch JWT); `RootView` shows `ProMainTabView` when
+  `role == .pro`, else the client `MainTabView`.
+- **Pro shell + footer** — `ProTab`/`ProNav`, `ProMainTabView` (mirror of `MainTabView`), `ProTabBar`
+  with the 5 web slots (Looks · Calendar · [center] · Messages · Profile). **DRY:** extracted the
+  shared `FooterNavItemLabel`/`FooterBadgeDot` (now used by BOTH bars) and the `BrandCoin`
+  ring/coin/shadow (now used by both `LooksMark` and the pro center) — no forked footer code.
+- **Live-session center button** — `ProSessionModel` is the native port of `useProSession`:
+  GET `/pro/session` (foreground + 60s poll), correct label/camera/pulse, START/FINISH (idempotent
+  POST), PICK_BOOKING picker sheet, NAVIGATE/CAPTURE → routes to the booking's session hub. TovisKit
+  `ProSessionService` (session/state/start/finish/step) + `Models/ProSession` + fixture + decode test.
+- **Calendar tab (priority)** — `ProCalendarService` (`GET /pro/calendar`) + `ProCalendarView`: stats
+  header, pending-requests section, agenda grouped by day; a booking → session hub.
+- **Session hub** — `ProSessionHubView` shows the authoritative `/session/state` (status · step ·
+  checkout) + a **Finish session** control.
+- **Profile tab** — `ProProfileTabView`: identity, **Switch to client** workspace (real
+  `POST /workspace/switch` re-mint via `AuthService.switchWorkspace` → `SessionModel.switchWorkspace`
+  flips `activeRole` → shell swaps), theme, sign out.
+- Looks + Messages tabs **reuse** the existing `LooksView`/`InboxView` (role-agnostic).
+
+**🔭 Remaining in Phase 1 (next build):**
+- **Before/after photo capture** — a NEW upload subsystem (none exists in iOS yet): `/pro/uploads`
+  presign (typed `MediaUploadInitDTO` already exists) → PUT bytes → `POST /pro/bookings/{id}/media`
+  confirm (uploadSessionId + storagePath `bookings/<id>/<phase>/` + phase + mediaType), plus a
+  camera/PhotosPicker capture UI. The session hub has the entry point; CAPTURE_BEFORE/AFTER center
+  actions already route there. It's self-contained — worth a focused, verifiable pass.
+- **Backend tovis-app companion PR** — typed `ProSessionDTO` + a pro-calendar DTO so the new fixtures
+  get ajv contract entries (today they're decode-only, like the early add-ons fixture). Same pattern
+  as #421/#422; re-run `gen:api-schema`.
+
+## Phases
+
+**Phase 0 — Foundation (role routing + shell). ✅ DONE 2026-06-28.**
+- `SessionToken.role(from:)`; `RootView` branches `signedIn` → `MainTabView` (client) vs
+  `ProMainTabView` (pro) on `currentUser.role`/JWT.
+- `ProNav` (mirror `ClientNav`/`ClientTab`), `ProTabBar` (mirror `TovisTabBar`, reuse its
+  NavItemLabel/BadgeDot/LooksMark — extract shared bits rather than copy), `ProMainTabView`
+  (mirror `MainTabView`: hidden system bar + `safeAreaInset` overlay, messages badge, push deep
+  link, refreshTick).
+- Workspace switcher entry (Me/Profile menu) → `POST /workspace/switch` → re-bootstrap.
+
+**Phase 1 — Live-session center button (FULL). 🟡 center button + hub DONE; photo capture NEXT.**
+- TovisKit `ProSession/ProSessionService` (session GET + start/finish/step) + `Models/ProSession`
+  + fixture + decode test + contract entry.
+- Center button: full `useProSession` port (poll on foreground + 60s, picker sheet, start/finish,
+  navigate, capture). Session screens: **session hub**, **before-photos**, **after-photos**
+  (camera/photo-picker → `POST /api/v1/pro/uploads` presign → `POST /pro/bookings/{id}/media`
+  phase=BEFORE/AFTER; reuse the client upload + `MediaLoading` patterns). Step advancement via
+  `PATCH .../session/step`; finish → final-review.
+
+**Phase 2 — Calendar (priority screen). 🟡 agenda v1 DONE 2026-06-28.**
+- ✅ TovisKit `ProCalendar/ProCalendarService` (`GET /pro/calendar`) + models; `ProCalendarView`
+  agenda (stats + pending requests + day-grouped events; booking → session hub).
+- ⏭️ Later: full day/week grid, block-time create/edit, location switcher.
+
+**Phase 3 — Pro booking detail + bookings list.**
+- `GET /pro/bookings`, `GET /pro/bookings/{id}`; consult proposal, manage (cancel/rebook),
+  session entry. Reuse client `BookingDetailView` structure where the data overlaps.
+
+**Phase 4 — Pro profile (Profile tab) + reviews + portfolio.**
+- `GET/PUT /pro/profile`, `/pro/looks`, `/pro/reviews`. The Profile tab target.
+
+**Phase 5+ — Clients/chart, aftercare, services/offerings, locations, availability/working-hours,
+notifications (reuse client `NotificationsService` shape), reminders, membership/payments, last-
+minute, waitlist, referral-rewards, verification/onboarding, migrate.** Sequence by daily-use
+value: clients + aftercare next, settings/billing later.
+
+## Backend (tovis-app) DTO work — REQUIRED per phase
+
+Unlike the client port (most aggregate DTOs already existed), **most pro routes have NO typed DTO**
+(`lib/dto/` only has `proBookingNew.ts` + partial calendar; session is inline). So each phase ships
+a companion tovis-app PR: extract a typed DTO (`lib/dto/pro*.ts`), `satisfies` it on the route,
+`npm run gen:api-schema`, and add a contract fixture + entry on the iOS side (same pattern as
+#421/#422/#423/#425). Phase 1 needs a `ProSessionDTO` (+ session media/state). ⚠️ Remember: a DTO
+JSDoc edit changes the generated schema — always re-run `gen:api-schema` (see memory).
+
+## Guardrails (carry from the client port)
+
+- **No duplicated logic** (CLAUDE.md house rule). Reuse `BrandColor/BrandFont/Theme`,
+  `LooksMark`, the footer `NavItemLabel`/`BadgeDot`, `APIClient`, `Formatters`, the upload helpers,
+  `NotificationsService`. Extract shared footer bits into a common file rather than copying
+  `TovisTabBar`.
+- **Web parity 1:1** — port from the web components, don't reinvent (brand is exact).
+- **Contract or it didn't ship** — every pro screen gets a fixture + decode test + ajv contract
+  entry so backend DTO drift fails loudly (`scripts/contract`).
+- **Pro screens are `requirePro`** — a CLIENT token 403s them (mirror of the client `requireClient`
+  note). Role routing must be correct before these screens are reachable.
+
 ## 🔔 Notifications — Track A DONE; Track B (push) is next
 
 Two distinct tracks. **Track A (in-app center) is now built + live-verified.** Track B (push/APNs)

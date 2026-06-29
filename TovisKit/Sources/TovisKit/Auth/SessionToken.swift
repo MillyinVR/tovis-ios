@@ -20,6 +20,15 @@ public enum SessionToken {
         claim("sessionKind", from: token)
     }
 
+    /// The acting-role claim ("CLIENT" / "PRO" / "ADMIN"). This is the role the
+    /// session is *currently acting in* (a workspace switch re-mints the token
+    /// with a new role — see lib/auth/workspaces.ts), NOT necessarily the user's
+    /// permanent home role. Lets a cold launch pick the right shell (client vs
+    /// pro) with no network round-trip; reconcile against /api/v1/me afterward.
+    public static func role(from token: String) -> Role? {
+        claim("role", from: token).flatMap(Role.init(rawValue:))
+    }
+
     static func claim(_ name: String, from token: String) -> String? {
         let parts = token.split(separator: ".")
         guard parts.count >= 2 else { return nil }
