@@ -320,26 +320,10 @@ struct ProProfileTabView: View {
             }
 
             BrandSection(title: "Business") {
-                NavigationLink {
-                    ProWorkingHoursView()
-                } label: {
-                    BrandSurface {
-                        HStack(spacing: 12) {
-                            Image(systemName: "clock")
-                                .font(.system(size: 18))
-                                .foregroundStyle(BrandColor.accent)
-                                .frame(width: 28)
-                            Text("Working hours")
-                                .font(BrandFont.body(15, .semibold))
-                                .foregroundStyle(BrandColor.textPrimary)
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(BrandColor.textMuted)
-                        }
-                    }
+                VStack(spacing: 10) {
+                    businessLink(icon: "person.2.fill", title: "Clients") { ProClientsView() }
+                    businessLink(icon: "clock", title: "Working hours") { ProWorkingHoursView() }
                 }
-                .buttonStyle(.plain)
             }
 
             BrandSection(title: "Appearance") {
@@ -368,6 +352,31 @@ struct ProProfileTabView: View {
                     )
             }
         }
+    }
+
+    private func businessLink<Destination: View>(
+        icon: String, title: String, @ViewBuilder destination: @escaping () -> Destination
+    ) -> some View {
+        NavigationLink {
+            destination()
+        } label: {
+            BrandSurface {
+                HStack(spacing: 12) {
+                    Image(systemName: icon)
+                        .font(.system(size: 18))
+                        .foregroundStyle(BrandColor.accent)
+                        .frame(width: 28)
+                    Text(title)
+                        .font(BrandFont.body(15, .semibold))
+                        .foregroundStyle(BrandColor.textPrimary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(BrandColor.textMuted)
+                }
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     private func errorState(_ message: String) -> some View {

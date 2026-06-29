@@ -1,0 +1,11 @@
+{
+  "ok": true,
+  "query": "",
+  "recentClients": [
+    { "id": "cl_1", "fullName": "Jordan Rivera", "canViewClient": true, "email": "jordan@example.com", "phone": "+15555550123" },
+    { "id": "cl_2", "fullName": "Sam Park", "canViewClient": true, "email": null, "phone": "+15555550148" }
+  ],
+  "otherClients": [
+    { "id": "cl_3", "fullName": "Taylor Quinn", "canViewClient": false, "email": "taylor@example.com", "phone": null }
+  ]
+}
