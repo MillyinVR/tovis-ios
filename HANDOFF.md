@@ -509,8 +509,24 @@ Everything below is set up; recorded here so the next session knows the live con
    Poster (`thumbUrl`) under the player until the first frame → no black flash. Debug+Release green;
    22 tests. Verified live? **No —** build-checked; needs a device/sim run on a feed with VIDEO looks
    (local seed feed is sparse — point Debug at prod to see real videos).
-5. **Booking v2 remainder** — mobile mode (+ client address selection via `/client/addresses`).
-   Rebook-confirm still needs a tovis-app DTO field (`pendingRebookConfirmation` on `ClientBookingDTO`).
+5. 🟡 **Booking v2 — MOBILE MODE DONE 2026-06-28; rebook-confirm DEFERRED.**
+   ✅ **Mobile mode + address selection:** `BookingFlowView` now shows a **"Where" SALON/MOBILE switch**
+   (when the offering offers both) and, for MOBILE, a **"Service address"** section listing the client's
+   saved `SERVICE_ADDRESS` rows (default selected) + an **Add-address sheet** (`AddServiceAddressSheet`,
+   typed form — backend geocodes on save). Switching mode re-bootstraps availability + add-ons; the hold
+   carries `locationType` + `clientAddressId` (required for MOBILE); out-of-radius/verify errors surface
+   the backend `userMessage`; Book is gated until a mobile booking has an address. TovisKit: `ClientAddress`
+   model + `AddressesService` (`client.addresses`: list/serviceAddresses/create); `createHold` gains
+   `clientAddressId`. Backend **tovis-app PR #423** adds typed `ClientAddressDTO` + schema (contract **24
+   objects**). Fixture/decode added; Debug+Release green; 23 tests. 🔴 **Merge PR #423.** Verified live?
+   **No** — needs a pro with mobile enabled + a saved/added service address. NOTE: address add is a typed
+   form (no Places autocomplete yet — that rides with #6).
+   ⏸️ **Rebook-confirm DEFERRED** — it's NOT a clean booking-detail action: the state lives in
+   `AftercareSummary` (`rebookMode` BOOKED_NEXT_APPOINTMENT/RECOMMENDED_WINDOW, `rebookedFor`,
+   `rebookDeclinedAt`), confirm is a **token magic-link** (`POST /client/rebook/[token]` with `scheduledFor`)
+   and decline is `POST /client/bookings/[id]/aftercare-rebook {action:"DECLINE"}`. To surface it natively:
+   add `hasPendingRebookConfirmation` + `rebookedFor` to `ClientBookingDTO`, and decide whether the app
+   confirms via an authed path (the token isn't in the booking list). Web shipped this via #236. Own pass.
 6. **Discover** — Google Places autocomplete in the search bar, pin **clustering**, radius/sort filter
    sheet (fixed 25mi / distance sort today). Confirm the Stripe `tovis://` redirect on-device.
 
