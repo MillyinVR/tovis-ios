@@ -19,6 +19,21 @@ public final class ProClientsService: Sendable {
         return try await api.request("/pro/clients/search", query: items)
     }
 
+    /// POST /api/v1/pro/clients — add a shadow client. Returns the created
+    /// client/user ids. `phone` is optional.
+    @discardableResult
+    public func createClient(
+        firstName: String,
+        lastName: String,
+        email: String,
+        phone: String?
+    ) async throws -> ProClientCreated {
+        let payload = try JSONEncoder().encode(
+            ProClientCreateRequest(firstName: firstName, lastName: lastName, email: email, phone: phone)
+        )
+        return try await api.request("/pro/clients", method: .post, body: payload)
+    }
+
     /// GET /api/v1/pro/clients/{id}/service-addresses.
     public func serviceAddresses(clientId: String) async throws -> [ProClientAddress] {
         let response: ProClientAddressesResponse =

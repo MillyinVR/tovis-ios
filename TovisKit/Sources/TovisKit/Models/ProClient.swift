@@ -22,6 +22,21 @@ public struct ProClientSummary: Decodable, Sendable, Identifiable {
     public let phone: String?
 }
 
+/// POST /api/v1/pro/clients — create-shadow-client body.
+struct ProClientCreateRequest: Encodable {
+    let firstName: String
+    let lastName: String
+    let email: String
+    let phone: String?
+}
+
+/// POST /api/v1/pro/clients → `{ ok, id, clientId, userId, email }`.
+public struct ProClientCreated: Decodable, Sendable {
+    public let id: String
+    public let clientId: String?
+    public let email: String?
+}
+
 /// GET /api/v1/pro/clients/{id}/service-addresses.
 public struct ProClientAddressesResponse: Decodable, Sendable {
     public let clientId: String

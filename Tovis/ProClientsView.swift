@@ -15,10 +15,13 @@ struct ProClientsView: View {
     @State private var loading = true
     @State private var error: String?
     @State private var searchTask: Task<Void, Never>?
+    @State private var showAdd = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                addClientCard
+
                 if loading {
                     HStack { Spacer(); ProgressView().tint(BrandColor.accent); Spacer() }.padding(.top, 60)
                 } else if let error {
@@ -47,7 +50,31 @@ struct ProClientsView: View {
         .searchable(text: $query, prompt: "Search clients")
         .onChange(of: query) { debouncedSearch() }
         .task { if loading { await load() } }
+        .sheet(isPresented: $showAdd) {
+            ProAddClientSheet { Task { await load() } }
+        }
         .tint(BrandColor.accent)
+    }
+
+    private var addClientCard: some View {
+        BrandSurface {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Add a client")
+                        .font(BrandFont.body(15, .semibold)).foregroundStyle(BrandColor.textPrimary)
+                    Text("Add shadow clients and attach bookings + aftercare.")
+                        .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
+                }
+                Spacer()
+                Button { showAdd = true } label: {
+                    Text("+ Add")
+                        .font(BrandFont.body(12, .semibold)).foregroundStyle(BrandColor.textPrimary)
+                        .padding(.vertical, 8).padding(.horizontal, 14)
+                        .background(BrandColor.bgSecondary).clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
     }
 
     private func section(title: String, clients: [ProClientSummary]) -> some View {
@@ -300,6 +327,102 @@ struct ProAddNoteSheet: View {
             error = e.userMessage
         } catch {
             self.error = "Couldn’t save the note. Try again."
+        }
+    }
+}
+
+// MARK: - Add a client (NewClientForm parity)
+
+/// Native port of the web NewClientForm — adds a shadow client (POST /pro/clients)
+/// with first/last/email required + optional phone. Presented from the clients list.
+struct ProAddClientSheet: View {
+    @Environment(SessionModel.self) private var session
+    @Environment(\.dismiss) private var dismiss
+    var onAdded: () -> Void
+
+    @State private var firstName = ""
+    @State private var lastName = ""
+    @State private var email = ""
+    @State private var phone = ""
+    @State private var saving = false
+    @State private var error: String?
+    @State private var success = false
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Add shadow clients and attach bookings + aftercare.")
+                        .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
+
+                    HStack(spacing: 10) {
+                        field("First name *", text: $firstName)
+                        field("Last name *", text: $lastName)
+                    }
+                    field("Email *", text: $email, placeholder: "client@email.com", keyboard: .emailAddress)
+                    field("Phone (optional)", text: $phone, placeholder: "For reminders later", keyboard: .phonePad)
+
+                    if let error { Text(error).font(BrandFont.body(13, .semibold)).foregroundStyle(BrandColor.ember) }
+                    if success { Text("Client added.").font(BrandFont.body(13, .semibold)).foregroundStyle(BrandColor.emerald) }
+                }
+                .padding(20)
+            }
+            .background(BrandColor.bgPrimary.ignoresSafeArea())
+            .navigationTitle("Add a client")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }.tint(BrandColor.textSecondary).disabled(saving)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(saving ? "Saving…" : "Add client") { Task { await save() } }
+                        .disabled(saving).tint(BrandColor.accent)
+                }
+            }
+            .tint(BrandColor.accent)
+        }
+    }
+
+    private func field(_ label: String, text: Binding<String>, placeholder: String = "", keyboard: UIKeyboardType = .default) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(label.uppercased()).font(BrandFont.mono(9)).tracking(0.6).foregroundStyle(BrandColor.textSecondary)
+            TextField(placeholder, text: text)
+                .keyboardType(keyboard)
+                .textInputAutocapitalization(keyboard == .emailAddress ? .never : .words)
+                .autocorrectionDisabled(keyboard == .emailAddress)
+                .font(BrandFont.body(14)).foregroundStyle(BrandColor.textPrimary)
+                .padding(12).background(BrandColor.bgSecondary)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .disabled(saving)
+        }
+    }
+
+    private func save() async {
+        guard !saving else { return }
+        let f = firstName.trimmingCharacters(in: .whitespaces)
+        let l = lastName.trimmingCharacters(in: .whitespaces)
+        let e = email.trimmingCharacters(in: .whitespaces)
+        let p = phone.trimmingCharacters(in: .whitespaces)
+        if f.isEmpty || l.isEmpty || e.isEmpty {
+            error = "First name, last name, and email are required."
+            return
+        }
+        saving = true
+        error = nil
+        defer { saving = false }
+        do {
+            _ = try await session.client.proClients.createClient(
+                firstName: f, lastName: l, email: e, phone: p.isEmpty ? nil : p
+            )
+            success = true
+            onAdded()
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            dismiss()
+        } catch let err as APIError {
+            error = err.userMessage
+        } catch {
+            self.error = "Network error while creating client."
         }
     }
 }
