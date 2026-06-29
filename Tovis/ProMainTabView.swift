@@ -13,7 +13,7 @@ import TovisKit
 
 struct ProMainTabView: View {
     @Environment(SessionModel.self) private var session
-    @State private var tab: ProTab.ID = .calendar   // pros land on Calendar (web /pro → /pro/calendar)
+    @State private var tab: ProTab.ID = .overview   // pros land on the Overview home (hosts the top-header tabs)
     @State private var messagesBadge: String?
     @State private var proSession: ProSessionModel?
 
@@ -33,10 +33,13 @@ struct ProMainTabView: View {
     @ViewBuilder
     private func shell(_ proSession: ProSessionModel) -> some View {
         TabView(selection: $tab) {
+            ProOverviewHomeView()
+                .tag(ProTab.ID.overview)
+
             LooksView()
                 .tag(ProTab.ID.looks)
 
-            ProCalendarView()
+            ProCalendarView(onHome: { tab = .overview })
                 .tag(ProTab.ID.calendar)
 
             InboxView()

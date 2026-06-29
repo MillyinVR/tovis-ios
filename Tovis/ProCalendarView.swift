@@ -11,6 +11,10 @@ import TovisKit
 struct ProCalendarView: View {
     @Environment(SessionModel.self) private var session
 
+    /// Returns to the Overview home (the footer has no Overview slot). Supplied
+    /// by `ProMainTabView`; nil when the calendar is shown standalone.
+    var onHome: (() -> Void)? = nil
+
     private enum Phase {
         case loading
         case loaded(ProCalendarResponse)
@@ -135,6 +139,16 @@ struct ProCalendarView: View {
             .task { await poll() }
             .task { await loadNotificationSummary() }
             .toolbar {
+                if let onHome {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button { onHome() } label: {
+                            Image(systemName: "house")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(BrandColor.textPrimary)
+                        }
+                        .accessibilityLabel("Overview home")
+                    }
+                }
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) { chromeCollapsed.toggle() }
