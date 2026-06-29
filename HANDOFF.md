@@ -499,7 +499,16 @@ Everything below is set up; recorded here so the next session knows the live con
    callers emit null — no web churn); schema regenerated. Fixture/decode updated; contract **22 objects**;
    Debug+Release green; 22 tests. 🔴 **Merge PR #422.** Verified live? **No —** needs a booking with a real
    PENDING deposit to round-trip the deposit checkout.
-4. **Looks video playback** — `mediaType==VIDEO` shows the still frame; add `AVPlayer`.
+4. ✅ **Looks video playback DONE 2026-06-28** — VIDEO looks now play like a native social feed.
+   `Tovis/LookVideoPlayer.swift`: a **chromeless `AVPlayerLayer`** in a `UIViewRepresentable`
+   (`LookVideoView`) — deliberately NOT `VideoPlayer`/`AVPlayerViewController` (those add transport
+   chrome). `AVQueuePlayer`+`AVPlayerLooper` loop seamlessly; `.resizeAspectFill` fills the slide.
+   `LooksView` plays **only the snapped slide** (via `.scrollPosition(id:)` → `isActive`); off-screen
+   pauses + seeks to zero (one decoder at a time). **Muted by default** (shared so an unmute sticks
+   while scrolling), tap toggles mute (speaker badge), unmute flips the audio session to `.playback`.
+   Poster (`thumbUrl`) under the player until the first frame → no black flash. Debug+Release green;
+   22 tests. Verified live? **No —** build-checked; needs a device/sim run on a feed with VIDEO looks
+   (local seed feed is sparse — point Debug at prod to see real videos).
 5. **Booking v2 remainder** — mobile mode (+ client address selection via `/client/addresses`).
    Rebook-confirm still needs a tovis-app DTO field (`pendingRebookConfirmation` on `ClientBookingDTO`).
 6. **Discover** — Google Places autocomplete in the search bar, pin **clustering**, radius/sort filter
