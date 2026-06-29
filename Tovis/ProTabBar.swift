@@ -14,10 +14,13 @@ struct ProTabBar: View {
     /// Unread Messages badge text (e.g. "3", "9+"). Nil → no badge.
     var messagesBadge: String? = nil
 
-    // Tunable footer geometry — identical to the client bar.
-    private let barHeight: CGFloat = 68
-    private let centerSize: CGFloat = 84
-    private let centerBottomGap: CGFloat = 8
+    // Footer geometry — matches the web `ProSessionFooter` / `footers.css` 1:1:
+    //   bar min-height 80 · top padding 14 · center coin 72 · center raised so its
+    //   top pokes ~20pt above the bar (web `.tovis-center-lift-lg` = margin-top -34
+    //   on a flex-start row → coin top 20pt above the bar's top edge).
+    private let barHeight: CGFloat = 80
+    private let centerSize: CGFloat = 72
+    private let centerTopLift: CGFloat = 20
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -27,13 +30,13 @@ struct ProTabBar: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.top, 12)
+        .padding(.top, 14)
         .frame(minHeight: barHeight, alignment: .top)
-        // The raised center button is anchored to the bar's BOTTOM and overflows
-        // upward so it pokes slightly above the top edge (web .tovis-center-lift).
-        .overlay(alignment: .bottom) {
+        // The raised center button pokes above the bar's top edge — measured from
+        // the top like the web's margin-top lift (coin top = 20pt above bar top).
+        .overlay(alignment: .top) {
             ProSessionCenterButton(session: session, size: centerSize)
-                .offset(y: -centerBottomGap)
+                .offset(y: -centerTopLift)
         }
         // surface + hairline top border (--bg-surface / --line)
         .background(
@@ -95,7 +98,7 @@ struct ProTabBar: View {
 /// eligible-booking count badge appears in the UPCOMING_PICKER mode.
 struct ProSessionCenterButton: View {
     let session: ProSessionModel
-    var size: CGFloat = 84
+    var size: CGFloat = 72
 
     @State private var pulse = false
 
@@ -116,7 +119,10 @@ struct ProSessionCenterButton: View {
             Button {
                 Task { await session.handleCenterClick() }
             } label: {
-                BrandCoin(size: size, ring: session.isLive ? .cta : .plume) {
+                // Opaque coin (coinOpacity 1) so the dark coin reads solid against
+                // the dark footer like the web's `--tovis-coin`, instead of fading
+                // into the bar — the center is the footer's hero, not see-through.
+                BrandCoin(size: size, ring: session.isLive ? .cta : .plume, coinOpacity: 1) {
                     Group {
                         if session.showsCamera {
                             Image(systemName: "camera.fill")
