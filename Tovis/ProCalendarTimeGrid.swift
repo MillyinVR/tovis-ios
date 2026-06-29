@@ -28,23 +28,42 @@ struct ProCalendarTimeGrid: View {
     }
 
     var body: some View {
-        // The timeline flows in the page's scroll (web mobile "Option A"): a single
-        // 24h column at full height, NOT an inner ScrollView — nesting a second
-        // vertical scroller inside the page broke the gutter/header layout.
+        // A bounded, internally-scrolling timeline (the day headers stay pinned
+        // above it). Opens scrolled to the current hour so a pro lands on "now",
+        // while the page above (stats/controls/etc.) stays visible.
         VStack(spacing: 0) {
             headerRow
-            HStack(alignment: .top, spacing: 0) {
-                timeGutter
-                ForEach(days) { day in
-                    dayColumn(day)
-                    if day.id != days.last?.id {
-                        Rectangle()
-                            .fill(BrandColor.textMuted.opacity(0.12))
-                            .frame(width: 1)
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: true) {
+                    ZStack(alignment: .topLeading) {
+                        // Real-layout anchor ladder: one cell per hour at its true
+                        // height, so ScrollViewReader can target an hour. The visual
+                        // grid uses .offset(), which is NOT a valid scroll target.
+                        VStack(spacing: 0) {
+                            ForEach(0..<24, id: \.self) { hour in
+                                Color.clear
+                                    .frame(height: CGFloat(60) * pxPerMinute)
+                                    .id(hour)
+                            }
+                        }
+
+                        HStack(alignment: .top, spacing: 0) {
+                            timeGutter
+                            ForEach(days) { day in
+                                dayColumn(day)
+                                if day.id != days.last?.id {
+                                    Rectangle()
+                                        .fill(BrandColor.textMuted.opacity(0.12))
+                                        .frame(width: 1)
+                                }
+                            }
+                        }
+                        .frame(height: totalHeight)
                     }
                 }
+                .onAppear { scrollToNow(proxy) }
+                .onChange(of: scrollKey) { scrollToNow(proxy) }
             }
-            .frame(height: totalHeight)
         }
         .background(BrandColor.bgPrimary)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -52,6 +71,29 @@ struct ProCalendarTimeGrid: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(BrandColor.textMuted.opacity(0.12), lineWidth: 1)
         )
+    }
+
+    /// Re-anchors the timeline to the current hour (one hour of headroom above),
+    /// or to 8am when today isn't in view. Deferred a tick so the ScrollView has
+    /// laid out before we target an anchor.
+    private func scrollToNow(_ proxy: ScrollViewProxy) {
+        let todayKey = ProCalendarGrid.ymd(Date(), timeZone)
+        let todayVisible = days.contains { $0.dayYmd == todayKey }
+        let targetHour: Int = todayVisible
+            ? max(0, ProCalendarGrid.minutesSinceMidnight(Date(), timeZone) / 60 - 1)
+            : 8
+        // Defer past the ScrollView's first layout pass; a single async tick can
+        // still beat layout, so re-assert it shortly after.
+        for delay in [0.05, 0.25] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                withAnimation(.none) { proxy.scrollTo(targetHour, anchor: .top) }
+            }
+        }
+    }
+
+    /// Changes whenever the visible range changes, so we re-anchor on nav.
+    private var scrollKey: String {
+        "\(view.rawValue):\(days.first?.dayYmd ?? "")"
     }
 
     // MARK: - Header (weekday + day number, today highlighted)

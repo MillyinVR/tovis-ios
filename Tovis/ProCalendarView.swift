@@ -65,8 +65,9 @@ struct ProCalendarView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+            VStack(spacing: 0) {
+                // Pinned top chrome — always visible.
+                VStack(alignment: .leading, spacing: 14) {
                     if let stats = loadedStats { statsHeader(stats) }
                     controlsBar
 
@@ -77,20 +78,22 @@ struct ProCalendarView: View {
                             onChange: { activeLocationId = $0 }
                         )
                     }
-
-                    switch phase {
-                    case .loading:
-                        loadingState
-                    case let .failed(message):
-                        errorState(message)
-                    case let .loaded(data):
-                        content(data)
-                    }
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
-                .padding(.bottom, 120)   // clear the raised footer
+                .padding(.bottom, 12)
+
+                // Body fills the remaining height (day/week grid scrolls itself).
+                switch phase {
+                case .loading:
+                    Spacer(); loadingState; Spacer()
+                case let .failed(message):
+                    Spacer(); errorState(message); Spacer()
+                case let .loaded(data):
+                    content(data)
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             // "+ Block time" FAB (web MobileCalendarFab) — hidden until the pro
             // has a bookable location to pin a block to.
             .overlay(alignment: .bottomTrailing) {
@@ -214,25 +217,35 @@ struct ProCalendarView: View {
 
     @ViewBuilder
     private func content(_ data: ProCalendarResponse) -> some View {
-        pendingBar(data)
-
-        ProAutoAcceptBar(
-            enabled: autoAccept,
-            saving: savingAutoAccept,
-            onToggle: toggleAutoAccept
-        )
-
         if view == .month {
-            monthBody(data)
+            // Month is short; let it scroll within the remaining space.
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    pendingBar(data)
+                    ProAutoAcceptBar(enabled: autoAccept, saving: savingAutoAccept, onToggle: toggleAutoAccept)
+                    monthBody(data)
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 110)
+            }
         } else {
-            ProCalendarTimeGrid(
-                view: view,
-                currentDate: currentDate,
-                timeZone: calendarTimeZone,
-                events: data.events,
-                onTapBooking: { id in bookingNav = BookingNav(id: id) },
-                onTapBlock: { event in openBlockEditor(event) }
-            )
+            // Day/Week: the time-grid fills the remaining height and scrolls
+            // internally, opening at "now" — the chrome above stays visible.
+            VStack(spacing: 10) {
+                pendingBar(data)
+                ProAutoAcceptBar(enabled: autoAccept, saving: savingAutoAccept, onToggle: toggleAutoAccept)
+                ProCalendarTimeGrid(
+                    view: view,
+                    currentDate: currentDate,
+                    timeZone: calendarTimeZone,
+                    events: data.events,
+                    onTapBooking: { id in bookingNav = BookingNav(id: id) },
+                    onTapBlock: { event in openBlockEditor(event) }
+                )
+                .frame(maxHeight: .infinity)
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 96)   // clear the raised footer
         }
     }
 
