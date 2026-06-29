@@ -396,8 +396,8 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.items.count == 2)
         #expect(res.nextCursor == "cursor_abc")
         let first = try #require(res.items.first)
-        #expect(first.eventKey == "BOOKING_REQUESTED")
-        #expect(first.priority == 1)
+        #expect(first.eventKey == "BOOKING_REQUEST_CREATED")
+        #expect(first.priority == "HIGH")
         #expect(first.isUnread)
         #expect(first.bookingId == "bk_1")
         let second = res.items[1]

@@ -3,11 +3,17 @@
   "items": [
     {
       "id": "pn_1",
-      "eventKey": "BOOKING_REQUESTED",
-      "priority": 1,
+      "eventKey": "BOOKING_REQUEST_CREATED",
+      "priority": "HIGH",
       "title": "New booking request",
       "body": "Jordan requested Balayage on Jul 15.",
       "href": "/pro/bookings/bk_1",
+      "data": {
+        "source": "REQUESTED",
+        "bookingId": "bk_1",
+        "locationType": "SALON",
+        "bookingStatus": "PENDING"
+      },
       "createdAt": "2026-06-28T17:00:00.000Z",
       "seenAt": null,
       "readAt": null,

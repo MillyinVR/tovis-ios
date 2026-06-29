@@ -15,7 +15,10 @@ public struct ProNotification: Decodable, Sendable, Identifiable {
     public let id: String
     /// A `NotificationEventKey` (kept raw so a new backend event never breaks decoding).
     public let eventKey: String
-    public let priority: Int?
+    /// A `NotificationPriority` enum (e.g. "HIGH"/"MEDIUM"/"LOW"); kept raw as a
+    /// string so a new backend priority never breaks decoding. The API serializes
+    /// this as the enum NAME, not a number.
+    public let priority: String?
     public let title: String
     public let body: String?
     /// Internal deep-link path (e.g. "/pro/bookings/bk_1"); may be "".
