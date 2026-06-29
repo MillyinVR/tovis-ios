@@ -29,13 +29,23 @@ struct DiscoverView: View {
     @State private var mapCenter = Self.fallbackCenter        // current viewport center
     @State private var didInitialLocate = false
 
+    // Filters (all already honored server-side via DiscoverService.searchPros).
+    @State private var radiusMiles = 25
+    @State private var sort: DiscoverService.Sort = .distance
+    @State private var mobileOnly = false
+    @State private var showFilters = false
+
     // Los Angeles fallback so the first paint isn't empty before a fix arrives.
     private static let fallbackCenter = CLLocationCoordinate2D(latitude: 34.05, longitude: -118.24)
     private static let fallbackRegion = MKCoordinateRegion(
         center: fallbackCenter,
         span: MKCoordinateSpan(latitudeDelta: 0.25, longitudeDelta: 0.25)
     )
-    private static let radiusMiles = 25
+
+    /// True when any filter differs from the defaults (drives the filter-button dot).
+    private var filtersActive: Bool {
+        radiusMiles != 25 || sort != .distance || mobileOnly
+    }
 
     var body: some View {
         NavigationStack {
@@ -192,6 +202,7 @@ struct DiscoverView: View {
         VStack(spacing: 10) {
             HStack(spacing: 10) {
                 searchField
+                filterButton
                 viewToggle
             }
             categoryRail
@@ -239,6 +250,33 @@ struct DiscoverView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(viewMode == .map ? "Show list" : "Show map")
+    }
+
+    private var filterButton: some View {
+        Button { showFilters = true } label: {
+            Image(systemName: "slider.horizontal.3")
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(filtersActive ? BrandColor.accent : BrandColor.textPrimary)
+                .frame(width: 44, height: 44)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(filtersActive ? BrandColor.accent.opacity(0.6) : BrandColor.textMuted.opacity(0.2),
+                            lineWidth: 1))
+                .overlay(alignment: .topTrailing) {
+                    if filtersActive {
+                        Circle().fill(BrandColor.accent).frame(width: 8, height: 8).padding(5)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Filters")
+        .sheet(isPresented: $showFilters) {
+            DiscoverFilterSheet(
+                radiusMiles: $radiusMiles, sort: $sort, mobileOnly: $mobileOnly,
+                onApply: { Task { await runSearch() } }
+            )
+            .presentationDetents([.height(420), .medium])
+        }
     }
 
     private var categoryRail: some View {
@@ -326,8 +364,10 @@ struct DiscoverView: View {
                 q: query,
                 lat: origin.latitude,
                 lng: origin.longitude,
-                radiusMiles: Self.radiusMiles,
-                categoryId: selectedCategory?.id
+                radiusMiles: radiusMiles,
+                categoryId: selectedCategory?.id,
+                sort: sort,
+                mobileOnly: mobileOnly
             )
             pros = page.items
             if let active = activeProId, !pros.contains(where: { $0.id == active }) {
