@@ -30,6 +30,26 @@ struct MediaUploadInitRequest: Encodable, Sendable {
     let size: Int
 }
 
+/// `POST /api/v1/pro/uploads` — request body for a public, stable-path upload
+/// (`AVATAR_PUBLIC` / `SERVICE_IMAGE_PUBLIC`). No booking/phase; `serviceId` only
+/// for service images. Produces a `publicUrl` (no UploadSession).
+struct PublicUploadInitRequest: Encodable, Sendable {
+    let kind: String
+    let contentType: String
+    let size: Int
+    let serviceId: String?
+}
+
+/// `POST /api/v1/pro/uploads` → presign for a public, stable-path upload. The
+/// route returns `uploadSessionId: null` for these kinds, so it isn't modeled.
+public struct PublicUploadInit: Decodable, Sendable {
+    public let bucket: String
+    public let path: String
+    public let token: String
+    public let publicUrl: String?
+    public let cacheBuster: Int?
+}
+
 /// `POST /api/v1/pro/uploads` → `MediaUploadInitDTO`. The presigned target +
 /// the upload-session handle the confirm step keys on.
 public struct MediaUploadInit: Decodable, Sendable {

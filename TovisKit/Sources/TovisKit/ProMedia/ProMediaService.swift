@@ -93,6 +93,45 @@ public final class ProMediaService: Sendable {
         return response.items
     }
 
+    /// Upload a new avatar (or service image) to its stable public path and return
+    /// the cache-busted public URL to store on the profile/offering. Two steps —
+    /// presign (`AVATAR_PUBLIC`/`SERVICE_IMAGE_PUBLIC`) → signed PUT (`upsert:true`);
+    /// there's no confirm step (the URL is written directly by the profile PATCH).
+    public func uploadPublicImage(
+        kind: String,
+        imageData: Data,
+        contentType: String = "image/jpeg",
+        serviceId: String? = nil
+    ) async throws -> String {
+        let payload = try JSONEncoder().encode(
+            PublicUploadInitRequest(
+                kind: kind, contentType: contentType, size: imageData.count, serviceId: serviceId
+            )
+        )
+        let initData: PublicUploadInit = try await api.request("/pro/uploads", method: .post, body: payload)
+        try await putBytes(
+            imageData, bucket: initData.bucket, path: initData.path,
+            token: initData.token, contentType: contentType, upsert: true
+        )
+        guard let publicUrl = initData.publicUrl else {
+            throw APIError.transport("Upload returned no public URL.")
+        }
+        // Cache-bust so the stable path's CDN copy refreshes (mirrors web withCacheBuster).
+        guard let cb = initData.cacheBuster else { return publicUrl }
+        let separator = publicUrl.contains("?") ? "&" : "?"
+        return "\(publicUrl)\(separator)v=\(cb)"
+    }
+
+    /// Convenience: upload a profile avatar (`AVATAR_PUBLIC`).
+    public func uploadAvatar(imageData: Data, contentType: String = "image/jpeg") async throws -> String {
+        try await uploadPublicImage(kind: "AVATAR_PUBLIC", imageData: imageData, contentType: contentType)
+    }
+
+    /// Convenience: upload a service offering image (`SERVICE_IMAGE_PUBLIC`).
+    public func uploadServiceImage(serviceId: String, imageData: Data, contentType: String = "image/jpeg") async throws -> String {
+        try await uploadPublicImage(kind: "SERVICE_IMAGE_PUBLIC", imageData: imageData, contentType: contentType, serviceId: serviceId)
+    }
+
     // MARK: - Steps
 
     /// Step 1 — get a presigned, booking-scoped upload target (media-private).
@@ -120,16 +159,27 @@ public final class ProMediaService: Sendable {
     /// (see lib/media/uploadWithProgress.ts). `apikey` routes the gateway; no
     /// Authorization bearer (the token is the sole authorizer).
     public func putBytes(_ data: Data, to initData: MediaUploadInit, contentType: String) async throws {
+        try await putBytes(data, bucket: initData.bucket, path: initData.path,
+                           token: initData.token, contentType: contentType, upsert: false)
+    }
+
+    /// Lower-level signed PUT used by both the booking-media pipeline (`upsert:false`,
+    /// unique paths) and the stable public uploads (`upsert:true` — avatar/service
+    /// image paths are intentionally overwritten, mirroring the web's `upsert:true`).
+    public func putBytes(
+        _ data: Data, bucket: String, path: String, token: String,
+        contentType: String, upsert: Bool
+    ) async throws {
         guard let supabaseURL, let supabaseKey else {
             throw APIError.transport("Storage configuration missing.")
         }
         var components = URLComponents(
             url: supabaseURL.appendingPathComponent(
-                "storage/v1/object/upload/sign/\(initData.bucket)/\(initData.path)"
+                "storage/v1/object/upload/sign/\(bucket)/\(path)"
             ),
             resolvingAgainstBaseURL: false
         )
-        components?.queryItems = [URLQueryItem(name: "token", value: initData.token)]
+        components?.queryItems = [URLQueryItem(name: "token", value: token)]
         guard let url = components?.url else {
             throw APIError.transport("Bad upload URL.")
         }
@@ -138,7 +188,7 @@ public final class ProMediaService: Sendable {
         request.httpMethod = "PUT"
         request.setValue(supabaseKey, forHTTPHeaderField: "apikey")
         request.setValue(contentType, forHTTPHeaderField: "Content-Type")
-        request.setValue("false", forHTTPHeaderField: "x-upsert")
+        request.setValue(upsert ? "true" : "false", forHTTPHeaderField: "x-upsert")
         request.httpBody = data
 
         let (respData, response): (Data, URLResponse)
