@@ -314,6 +314,18 @@ func fixture(_ name: String) throws -> Data {
         #expect(second.priority == nil)
     }
 
+    // GET /api/v1/pro/working-hours — Fixtures/proWorkingHours.json. The pro's
+    // weekly hours editor source. Inline backend shape; decode-only.
+    @Test func decodesProWorkingHours() throws {
+        let res = try JSONDecoder().decode(ProWorkingHoursResponse.self, from: fixture("proWorkingHours"))
+        #expect(res.locationType == "SALON")
+        #expect(res.usedDefault == false)
+        #expect(res.workingHours.mon.enabled)
+        #expect(res.workingHours.mon.start == "10:00")
+        #expect(!res.workingHours.sun.enabled)
+        #expect(res.workingHours.thu.end == "20:00")
+    }
+
     // GET /api/v1/client/bookings — Fixtures/clientBookings.json (schema-validated).
     @Test func decodesClientBookings() throws {
         let res = try JSONDecoder().decode(ClientBookingsResponse.self, from: fixture("clientBookings"))

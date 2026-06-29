@@ -319,6 +319,29 @@ struct ProProfileTabView: View {
                 Text(message).font(BrandFont.body(13)).foregroundStyle(BrandColor.ember)
             }
 
+            BrandSection(title: "Business") {
+                NavigationLink {
+                    ProWorkingHoursView()
+                } label: {
+                    BrandSurface {
+                        HStack(spacing: 12) {
+                            Image(systemName: "clock")
+                                .font(.system(size: 18))
+                                .foregroundStyle(BrandColor.accent)
+                                .frame(width: 28)
+                            Text("Working hours")
+                                .font(BrandFont.body(15, .semibold))
+                                .foregroundStyle(BrandColor.textPrimary)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(BrandColor.textMuted)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+
             BrandSection(title: "Appearance") {
                 BrandSurface {
                     Picker("Theme", selection: Binding(
