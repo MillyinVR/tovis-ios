@@ -88,7 +88,7 @@ struct ProClientsView: View {
     @ViewBuilder
     private func row(_ client: ProClientSummary) -> some View {
         if client.canViewClient {
-            NavigationLink { ProClientDetailView(client: client) } label: { rowBody(client) }
+            NavigationLink { ProClientChartView(clientId: client.id, fullName: client.fullName) } label: { rowBody(client) }
                 .buttonStyle(.plain)
         } else {
             rowBody(client)   // not viewable → no chart link (mirrors web gating)

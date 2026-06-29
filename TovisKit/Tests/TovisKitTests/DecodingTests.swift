@@ -346,6 +346,26 @@ func fixture(_ name: String) throws -> Data {
         #expect(b.suggestions == nil)
     }
 
+    // GET /api/v1/pro/clients/[id]/chart — Fixtures/proClientChart.json. The
+    // aggregate client chart powering the native 8-tab chart + safety strip.
+    @Test func decodesProClientChart() throws {
+        let chart = try JSONDecoder().decode(ProClientChart.self, from: fixture("proClientChart"))
+        #expect(chart.header.fullName == "Jordan Rivera")
+        #expect(chart.header.occupation == "Nurse")
+        #expect(chart.header.bookingCount == 4)
+        #expect(chart.alertBanner?.isEmpty == false)
+        #expect(chart.doNotRebook == nil)
+        #expect(chart.allergies.first?.severity == "HIGH")
+        #expect(chart.allergies.first?.recordedBy == "Studio Lumen")
+        #expect(chart.noteGroups.first?.notes.first?.body == "Prefers cooler tones.")
+        #expect(chart.history.first?.isMine == true)
+        #expect(chart.products.first?.brand == "Olaplex")
+        #expect(chart.reviewsLeft.first?.rating == 5)
+        #expect(chart.proFeedback.first?.title == "Punctual")
+        #expect(chart.photos.first?.phase == "AFTER")
+        #expect(!chart.technicalEnabled)
+    }
+
     // GET /api/v1/pro/services/catalog — Fixtures/proServicesCatalog.json. The
     // add-service library tree + the pro's already-added offerings.
     @Test func decodesProServicesCatalog() throws {

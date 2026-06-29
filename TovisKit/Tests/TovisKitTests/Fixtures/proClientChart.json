@@ -1,0 +1,64 @@
+{
+  "ok": true,
+  "header": {
+    "id": "client_1",
+    "fullName": "Jordan Rivera",
+    "email": "jordan@example.com",
+    "phone": "+15555550123",
+    "dateOfBirth": null,
+    "preferredContactMethod": "SMS",
+    "occupation": "Nurse",
+    "socialHandle": "@jordan",
+    "accessUntil": "2026-08-01T00:00:00.000Z",
+    "bookingCount": 4,
+    "reviewCount": 2
+  },
+  "alertBanner": "Sensitive scalp — patch test before color.",
+  "doNotRebook": null,
+  "allergies": [
+    {
+      "id": "al_1",
+      "label": "PPD",
+      "severity": "HIGH",
+      "description": "Reacts to permanent hair dye.",
+      "recordedBy": "Studio Lumen",
+      "createdAt": "2026-05-01T00:00:00.000Z"
+    }
+  ],
+  "noteGroups": [
+    {
+      "kind": "GENERAL",
+      "label": "General",
+      "notes": [
+        { "id": "n_1", "title": null, "body": "Prefers cooler tones.", "createdAt": "2026-06-01T00:00:00.000Z" }
+      ]
+    }
+  ],
+  "history": [
+    {
+      "id": "bk_1",
+      "status": "COMPLETED",
+      "scheduledFor": "2026-07-01T17:00:00.000Z",
+      "timeZone": "America/Los_Angeles",
+      "serviceName": "Balayage",
+      "categoryName": "Hair",
+      "proName": "Studio Lumen",
+      "isMine": true,
+      "total": "180.00",
+      "aftercareNotes": "Gloss refresh in 6 weeks."
+    }
+  ],
+  "products": [
+    { "id": "pr_1", "name": "Purple Shampoo", "brand": "Olaplex", "note": "Twice a week." }
+  ],
+  "reviewsLeft": [
+    { "id": "rv_1", "rating": 5, "headline": "Love it", "body": "Best balayage.", "proName": "Studio Lumen", "createdAt": "2026-07-02T00:00:00.000Z" }
+  ],
+  "proFeedback": [
+    { "id": "fb_1", "title": "Punctual", "body": "Always on time.", "proName": "Studio Lumen", "createdAt": "2026-07-02T00:00:00.000Z" }
+  ],
+  "photos": [
+    { "id": "ph_1", "bookingId": "bk_1", "phase": "AFTER", "caption": "Finished look", "isMine": true, "serviceName": "Balayage", "when": "2026-07-01T19:00:00.000Z", "imageUrl": "https://x/after.jpg" }
+  ],
+  "technicalEnabled": false
+}

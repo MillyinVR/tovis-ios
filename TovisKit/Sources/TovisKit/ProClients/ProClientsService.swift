@@ -34,6 +34,13 @@ public final class ProClientsService: Sendable {
         return try await api.request("/pro/clients", method: .post, body: payload)
     }
 
+    /// GET /api/v1/pro/clients/{id}/chart → the aggregate client chart (header +
+    /// safety strip + allergies + notes + history + products + reviews + feedback +
+    /// photos + technical gate). 404 when the pro can't currently view the client.
+    public func chart(clientId: String) async throws -> ProClientChart {
+        try await api.request("/pro/clients/\(clientId)/chart")
+    }
+
     /// GET /api/v1/pro/clients/{id}/service-addresses.
     public func serviceAddresses(clientId: String) async throws -> [ProClientAddress] {
         let response: ProClientAddressesResponse =
