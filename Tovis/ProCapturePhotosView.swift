@@ -329,8 +329,8 @@ struct ProCapturePhotosView: View {
     private var readinessColor: Color {
         guard settings.showReadinessRing, let readiness = coach?.readiness else { return .white }
         switch readiness {
-        case ..<0.5: return BrandColor.ember
-        case ..<0.8: return BrandColor.gold
+        case ..<CoachTuning.readyWarnThreshold: return BrandColor.ember
+        case ..<CoachTuning.readyThreshold: return BrandColor.gold
         default: return BrandColor.emerald
         }
     }

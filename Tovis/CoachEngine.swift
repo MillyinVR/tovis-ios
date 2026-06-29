@@ -15,19 +15,19 @@ import Vision
 final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
     private let coaches: [ShotCoach]
     private let ciContext = CIContext(options: [.priorityRequestLow: true])
-    private let minInterval: CFTimeInterval = 1.0 / 6.0   // ~6 analyses/sec
+    private let minInterval = 1.0 / CoachTuning.analysisFPS   // light-signal cadence
     private var lastSampleAt: CFTimeInterval = 0
 
     // The light signals (luma, face, sharpness) run every analyzed frame; the heavy
     // Vision requests (person segmentation + body pose) are far costlier, so they run
     // on a slower cadence and their last result is reused between runs.
-    private let heavyInterval: CFTimeInterval = 0.4       // ~2–3 heavy passes/sec
+    private let heavyInterval = 1.0 / CoachTuning.heavyFPS
     private var lastHeavyAt: CFTimeInterval = 0
     private var cachedClutter: Double?
     private var cachedPose: PoseSignal?
     /// Working resolution for the CoreImage / Vision math — full-res frames are
     /// needless cost for these aggregate signals.
-    private let workingMaxDim: CGFloat = 480
+    private let workingMaxDim = CoachTuning.workingMaxDim
 
     /// Set once before the camera starts; called on the frame queue.
     nonisolated(unsafe) var sink: (@Sendable (CoachResult) -> Void)?
@@ -41,9 +41,9 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     nonisolated(unsafe) var onHarvest: (@Sendable (Data, Double) -> Void)?
     private var lastHarvestAt: CFTimeInterval = 0
     private var harvestCount = 0
-    private let minHarvestInterval: CFTimeInterval = 2.5   // ≥1 keeper / 2.5s
-    private let maxHarvest = 24                            // keep the tray curated
-    private let harvestThreshold = 0.85                    // only near-perfect frames
+    private let minHarvestInterval = CoachTuning.minHarvestInterval
+    private let maxHarvest = CoachTuning.maxHarvest
+    private let harvestThreshold = CoachTuning.harvestThreshold
 
     init(coaches: [ShotCoach]) {
         self.coaches = coaches
@@ -179,10 +179,10 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     /// face is present (focus on the face, not a busy background), else whole frame.
     private func sharpness(_ image: CIImage, subject face: CGRect?) -> Double {
         let target = face.map { crop(image, normalizedTopLeft: expandToHead($0)) } ?? image
-        // Edge energy: low for soft/blurred frames. Map through a gentle curve; the
-        // divisor is a hand-tuned typical "sharp" edge-mean (heuristic).
+        // Edge energy: low for soft/blurred frames. Normalize against the reference
+        // "sharp" edge-mean (CoachTuning).
         let energy = averageLuma(edges(target))
-        return min(1.0, energy / 0.12)
+        return min(1.0, energy / CoachTuning.sharpnessReference)
     }
 
     /// Busy-ness of the background, 0 (clean) … 1 (cluttered), via person
@@ -209,15 +209,15 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             .cropped(to: working.extent)
 
         let bgFraction = averageLuma(background)
-        guard bgFraction > 0.05 else { return nil }     // subject fills the frame
+        guard bgFraction > CoachTuning.minBackgroundFraction else { return nil }  // subject fills frame
 
         // Edge energy that falls in the background = edges × background weight.
         let bgEdges = edges(working).applyingFilter("CIMultiplyCompositing", parameters: [
             kCIInputBackgroundImageKey: background,
         ])
         let bgEdgeMean = averageLuma(bgEdges.cropped(to: working.extent))
-        // Normalize by background area, then map to 0…1 (divisor hand-tuned).
-        let clutter = (bgEdgeMean / bgFraction) / 0.18
+        // Normalize by background area, then against the "fully cluttered" reference.
+        let clutter = (bgEdgeMean / bgFraction) / CoachTuning.clutterReference
         return min(1.0, max(0.0, clutter))
     }
 
@@ -247,7 +247,7 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
               let points = try? observation.recognizedPoints(.all) else { return nil }
 
         func point(_ name: VNHumanBodyPoseObservation.JointName) -> CGPoint? {
-            guard let p = points[name], p.confidence > 0.3 else { return nil }
+            guard let p = points[name], p.confidence > CoachTuning.poseJointConfidence else { return nil }
             // Vision origin bottom-left → flip Y to top-left.
             return CGPoint(x: p.location.x, y: 1 - p.location.y)
         }
@@ -264,7 +264,7 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         }
 
         // Clipping: any confident joint hard against a frame edge.
-        let edgePad = 0.02
+        let edgePad = CoachTuning.poseEdgePad
         let clipped = [VNHumanBodyPoseObservation.JointName.leftShoulder, .rightShoulder,
                        .leftHip, .rightHip, .leftWrist, .rightWrist, .neck]
             .compactMap(point)
@@ -300,7 +300,7 @@ final class CoachEngine {
     private var wasReady = false
 
     /// Readiness at/above this reads as "good to shoot" (green ring).
-    static let readyThreshold = 0.8
+    static let readyThreshold = CoachTuning.readyThreshold
 
     var isReady: Bool { readiness >= Self.readyThreshold }
 

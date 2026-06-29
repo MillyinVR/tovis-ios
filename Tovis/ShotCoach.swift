@@ -3,8 +3,9 @@
 // language fix. The engine aggregates them into a readiness value + the single
 // most important tip. Pure + Sendable so they run on the camera's frame queue.
 //
-// Phase B1 ships Lighting + Composition; sharpness/background/pose are next. The
-// `FrameContext` carries pre-computed signals so coaches don't each re-scan.
+// Coaches: Lighting, Composition, Sharpness, Background, Pose. The `FrameContext`
+// carries pre-computed signals so coaches don't each re-scan, and every perception
+// threshold lives in `CoachTuning` (one file to adjust during device tuning).
 import CoreGraphics
 
 enum CoachCategory: String, Sendable {
@@ -75,19 +76,20 @@ struct LightingCoach: ShotCoach {
         let luma = ctx.avgLuma
 
         // Backlit: subject noticeably darker than the overall scene.
-        if let faceLuma = ctx.faceLuma, faceLuma < luma * 0.6, faceLuma < 0.4 {
+        if let faceLuma = ctx.faceLuma,
+           faceLuma < luma * CoachTuning.backlitFaceRatio,
+           faceLuma < CoachTuning.backlitFaceMaxLuma {
             return CoachSignal(score: 0.35, message: "Subject’s backlit — turn them toward the light")
         }
-        if luma < 0.22 {
+        if luma < CoachTuning.lumaTooDark {
             return CoachSignal(score: 0.3, message: "Too dark — find more light")
         }
-        if luma > 0.82 {
+        if luma > CoachTuning.lumaTooBright {
             return CoachSignal(score: 0.4, message: "Too bright — ease off the light")
         }
-        // Ideal band 0.35–0.7; score falls off smoothly outside it.
-        let ideal = 0.5
-        let dist = abs(luma - ideal)
-        let score = max(0.6, 1.0 - dist * 1.6)
+        // Score falls off smoothly away from the ideal exposure.
+        let dist = abs(luma - CoachTuning.lumaIdeal)
+        let score = max(0.6, 1.0 - dist * CoachTuning.lumaFalloff)
         return CoachSignal(score: score, message: nil)
     }
 }
@@ -110,15 +112,16 @@ struct CompositionCoach: ShotCoach {
         let midY = face.midY
 
         // Headroom: face too high (cramped top) or sitting too low.
-        if topY < 0.04 {
+        if topY < CoachTuning.minHeadroom {
             return CoachSignal(score: 0.45, message: "Leave a little headroom — lower the camera")
         }
-        if midY > 0.72 {
+        if midY > CoachTuning.maxSubjectLow {
             return CoachSignal(score: 0.5, message: "Raise the camera — subject’s too low")
         }
         // Horizontal placement: comfortable near center or a third.
-        let nearCenter = abs(centerX - 0.5) < 0.16
-        let nearThird = abs(centerX - 0.33) < 0.1 || abs(centerX - 0.67) < 0.1
+        let nearCenter = abs(centerX - 0.5) < CoachTuning.centerTolerance
+        let nearThird = abs(centerX - 0.33) < CoachTuning.thirdTolerance
+            || abs(centerX - 0.67) < CoachTuning.thirdTolerance
         if !nearCenter && !nearThird {
             return CoachSignal(score: 0.55, message: "Center your subject")
         }
@@ -140,10 +143,10 @@ struct SharpnessCoach: ShotCoach {
 
     func evaluate(_ ctx: FrameContext) -> CoachSignal {
         let s = ctx.sharpness
-        if s < 0.22 {
+        if s < CoachTuning.sharpnessSoft {
             return CoachSignal(score: 0.3, message: "Hold steady — shot looks soft")
         }
-        if s < 0.4 {
+        if s < CoachTuning.sharpnessSlightlySoft {
             return CoachSignal(score: 0.6, message: "Tap to focus — a touch soft")
         }
         // Clearly sharp; reward it.
@@ -162,7 +165,7 @@ struct BackgroundCoach: ShotCoach {
         guard let clutter = ctx.backgroundClutter else {
             return CoachSignal(score: 1.0, message: nil)
         }
-        if clutter > 0.6 {
+        if clutter > CoachTuning.clutterBusy {
             return CoachSignal(score: 0.5, message: "Busy background — find a cleaner backdrop")
         }
         let score = max(0.7, 1.0 - clutter)
@@ -184,7 +187,7 @@ struct PoseCoach: ShotCoach {
         if pose.edgeClipped {
             return CoachSignal(score: 0.5, message: "Subject’s getting clipped — pull back")
         }
-        if let tilt = pose.shoulderTilt, abs(tilt) > 8 {
+        if let tilt = pose.shoulderTilt, abs(tilt) > CoachTuning.shoulderTiltDegrees {
             return CoachSignal(score: 0.6, message: "Level the camera — shoulders are tilted")
         }
         return CoachSignal(score: 0.9, message: nil)

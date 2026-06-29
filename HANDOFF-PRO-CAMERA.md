@@ -57,16 +57,35 @@ center · Messages · Profile); `ProSessionModel` = native port of `useProSessio
   contract objects green.
 - **B4 calibration plan** (`7a7ef51`) — designed, NOT built (see below).
 
-## ▶️ NEXT (pick up here)
+## ⚠️ Make it FULLY FUNCTIONAL — device run + tune pass (do this FIRST)
+
+The whole camera ladder **builds + unit-tests green but has never run against a real camera** — the
+iOS Simulator has no camera, so `CameraController.start()` just lands in `.failed` there. Signing is
+already set up (`DEVELOPMENT_TEAM SB3J675LNU`, automatic), so this is a device run, not more code.
+
+**0a. End-to-end loop on a physical iPhone** (the functional proof). `docker start tovis-dev-postgres`
+   + `pnpm dev`; build to a real device (Debug → localhost; the Mac + phone on the same network, or
+   point at prod with Release). Sign in as a **real APPROVED pro** with an active session → session hub
+   → camera. Walk: **shutter** → presign→PUT→confirm → photo lands in session media + shows in the hub
+   gallery; **silent video** → frame scrubber → save still/clip; **auto-harvest** → best-shots review →
+   upload. The upload contract + publish guard are live (#427 merged), so the backend is ready.
+
+**0b. Tune the coach against real salon light.** Every perception threshold now lives in ONE file —
+   **`Tovis/CoachTuning.swift`** — so tuning is edit-one-file → rebuild → re-watch. Watch the readiness
+   ring + nudges on device and adjust: `sharpnessReference` (is everything called "soft"?),
+   `clutterReference` (is a clean wall called "busy"?), `lumaTooDark/Bright/Ideal`, `shoulderTiltDegrees`,
+   `harvestThreshold`/`readyThreshold`. Per-coach SCORE weights stay inline in `ShotCoach.swift` (design,
+   not calibration). Defaults were set without a device — expect to move several.
+
+## ▶️ NEXT (after it's functional)
 
 1. **Web-client consent toggle** (closes B3b) — backend is **live on main** now (#427 merged); just add
    the same toggle to the web client aftercare/booking-detail surface (`app/client/(gated)/aftercare`
    + booking detail) calling `POST /client/bookings/[id]/media-consent { granted }`.
 2. ~~**More coaches**~~ ✅ DONE this session (Sharpness/Background/Pose + faceLuma backlit). Still
-   open from the original idea: a **HandPose** coach (`VNDetectHumanHandPose`) and **on-device tuning**
-   of the heuristic divisors (`sharpness` /0.12, `clutter` /0.18) + pose thresholds against real salon
-   frames. Extension point is the `ShotCoach` protocol — pure, Sendable, one per aspect; heavy
-   per-frame Vision goes in `CoachAnalyzer` (throttled) and lands on `FrameContext`.
+   open from the original idea: a **HandPose** coach (`VNDetectHumanHandPose`). Extension point is the
+   `ShotCoach` protocol — pure, Sendable, one per aspect; heavy per-frame Vision goes in `CoachAnalyzer`
+   (throttled) and lands on `FrameContext`. **On-device tuning is now item 0 below.**
 3. **Phase C** — before/after **comparison slider** → **publish to portfolio** (now unlocked by B3b
    consent) + the pro-facing "client allowed sharing" indicator (expose consent on
    `ProBookingMediaItemDTO`). Plus service-aware **ShotGuides** (curated shot lists/pose templates per
