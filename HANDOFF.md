@@ -543,11 +543,15 @@ Everything below is set up; recorded here so the next session knows the live con
    keeps them as-is (removes the typed-form re-geocode + "couldn't verify" failures). `AddressesService`
    gained `createServiceAddress(from: PlaceDetails)`. Decode test (**24 tests**); Debug+Release green.
    Places routes are Google-proxy passthroughs (not typed DTOs) → decode-only, no contract entry.
+   ✅ **Places autocomplete in the Discover SEARCH BAR DONE 2026-06-28** — typing shows "jump to a place"
+   suggestions (`PlacesService`, biased to map center, kind ANY); tap → details → recenter map + search pros
+   near there (clears the text → location search). Free-text pro search still runs in parallel. Reuses
+   PlacesService, no new backend. Debug+Release green.
    ⏸️ **Pin clustering DEFERRED** — SwiftUI `Map` (iOS 17) doesn't natively cluster annotations; real
-   clustering needs an `MKMapView` `UIViewRepresentable` rebuild (or manual grid clustering). Low ROI until
-   pro density is high. 🟡 Also still open from #6: **Places autocomplete in the Discover SEARCH BAR**
-   (recenter map to a typed place — the bar does free-text PRO search today; map has "search this area")
-   and **confirm the Stripe `tovis://` redirect on-device**. Verified live? **No** (build/decode only).
+   clustering needs an `MKMapView` `UIViewRepresentable` rebuild (the existing map layer has selection/
+   camera/user-dot/"search this area" wired to SwiftUI `Map`), or manual grid clustering keyed off the
+   camera span. Low ROI until pro density is high — left as the one remaining Discover item.
+   🟡 Also open: **confirm the Stripe `tovis://` redirect on-device** (verification, not code).
 
 **Onboarding note:** native **email/password sign-UP** is still web-only (register has
 captcha/TOS/SMS-consent/CLIENT_ZIP gates). **Apple + phone-OTP are the native account-creation paths**
