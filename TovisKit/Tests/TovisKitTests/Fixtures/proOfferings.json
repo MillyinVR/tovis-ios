@@ -1,0 +1,39 @@
+{
+  "ok": true,
+  "offerings": [
+    {
+      "id": "off_1",
+      "serviceId": "svc_balayage",
+      "description": "Hand-painted, sun-kissed.",
+      "customImageUrl": null,
+      "offersInSalon": true,
+      "offersMobile": false,
+      "salonPriceStartingAt": "180.00",
+      "salonDurationMinutes": 120,
+      "mobilePriceStartingAt": null,
+      "mobileDurationMinutes": null,
+      "isActive": true,
+      "serviceName": "Balayage",
+      "categoryName": "Color",
+      "serviceDefaultImageUrl": "https://x/balayage.jpg",
+      "minPrice": "120.00"
+    },
+    {
+      "id": "off_2",
+      "serviceId": "svc_blowout",
+      "description": null,
+      "customImageUrl": "https://x/blowout.jpg",
+      "offersInSalon": true,
+      "offersMobile": true,
+      "salonPriceStartingAt": "60.00",
+      "salonDurationMinutes": 45,
+      "mobilePriceStartingAt": "85.00",
+      "mobileDurationMinutes": 50,
+      "isActive": false,
+      "serviceName": "Blowout",
+      "categoryName": "Styling",
+      "serviceDefaultImageUrl": null,
+      "minPrice": "50.00"
+    }
+  ]
+}

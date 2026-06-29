@@ -1,0 +1,111 @@
+import Foundation
+
+/// PRO workspace — the pro's own profile + offerings management (web
+/// `/pro/profile/public-profile` + the services manager). The *public* preview
+/// (stats/portfolio/reviews) is read via `ProfileService.professional(id:)` using
+/// the `id` this returns. Authenticated; PRO-only. See docs/PRO-BACKEND-CONTRACTS.md.
+public final class ProProfileService: Sendable {
+    private let api: APIClient
+
+    public init(api: APIClient) {
+        self.api = api
+    }
+
+    /// GET /api/v1/pro/profile → the pro's own editable profile (incl. its id).
+    public func myProfile() async throws -> ProMyProfile {
+        let response: ProMyProfileResponse = try await api.request("/pro/profile")
+        return response.profile
+    }
+
+    /// PATCH /api/v1/pro/profile — sparse update; only the provided fields change.
+    /// Pass an explicit value to set; omit to leave untouched. Returns the saved
+    /// profile. Throws `APIError.server(409,…)` if the handle is taken.
+    @discardableResult
+    public func updateProfile(
+        businessName: String?? = nil,
+        bio: String?? = nil,
+        location: String?? = nil,
+        handle: String?? = nil,
+        nameDisplay: String? = nil,
+        avatarUrl: String?? = nil
+    ) async throws -> ProMyProfile {
+        var fields: [String: JSONValue] = [:]
+        if let businessName { fields["businessName"] = .stringOrNull(businessName) }
+        if let bio { fields["bio"] = .stringOrNull(bio) }
+        if let location { fields["location"] = .stringOrNull(location) }
+        if let handle { fields["handle"] = .stringOrNull(handle) }
+        if let nameDisplay { fields["nameDisplay"] = .string(nameDisplay) }
+        if let avatarUrl { fields["avatarUrl"] = .stringOrNull(avatarUrl) }
+
+        let payload = try JSONEncoder().encode(fields)
+        let response: ProMyProfileResponse = try await api.request(
+            "/pro/profile", method: .patch, body: payload
+        )
+        return response.profile
+    }
+
+    /// GET /api/v1/pro/offerings → the pro's services (active + inactive).
+    public func offerings() async throws -> [ProOfferingAdmin] {
+        let response: ProOfferingsResponse = try await api.request("/pro/offerings")
+        return response.offerings
+    }
+
+    /// PATCH /api/v1/pro/offerings/{id} — sparse update (e.g. toggle `isActive` or
+    /// change a price/duration). Returns the updated offering.
+    @discardableResult
+    public func updateOffering(
+        id: String,
+        isActive: Bool? = nil,
+        description: String?? = nil,
+        offersInSalon: Bool? = nil,
+        offersMobile: Bool? = nil,
+        salonPriceStartingAt: String?? = nil,
+        salonDurationMinutes: Int?? = nil,
+        mobilePriceStartingAt: String?? = nil,
+        mobileDurationMinutes: Int?? = nil
+    ) async throws -> ProOfferingAdmin {
+        var fields: [String: JSONValue] = [:]
+        if let isActive { fields["isActive"] = .bool(isActive) }
+        if let description { fields["description"] = .stringOrNull(description) }
+        if let offersInSalon { fields["offersInSalon"] = .bool(offersInSalon) }
+        if let offersMobile { fields["offersMobile"] = .bool(offersMobile) }
+        if let salonPriceStartingAt { fields["salonPriceStartingAt"] = .stringOrNull(salonPriceStartingAt) }
+        if let salonDurationMinutes { fields["salonDurationMinutes"] = .intOrNull(salonDurationMinutes) }
+        if let mobilePriceStartingAt { fields["mobilePriceStartingAt"] = .stringOrNull(mobilePriceStartingAt) }
+        if let mobileDurationMinutes { fields["mobileDurationMinutes"] = .intOrNull(mobileDurationMinutes) }
+
+        let payload = try JSONEncoder().encode(fields)
+        let response: ProOfferingResponse = try await api.request(
+            "/pro/offerings/\(id)", method: .patch, body: payload
+        )
+        return response.offering
+    }
+
+    /// DELETE /api/v1/pro/offerings/{id} — soft-deletes (sets isActive=false).
+    public func deleteOffering(id: String) async throws {
+        try await api.requestVoid("/pro/offerings/\(id)", method: .delete)
+    }
+}
+
+/// A minimal JSON value so sparse PATCH bodies can carry explicit `null`s (which
+/// `encodeIfPresent`-synthesised Encodables would otherwise drop). Only the cases
+/// the pro write-paths need.
+enum JSONValue: Encodable {
+    case string(String)
+    case bool(Bool)
+    case int(Int)
+    case null
+
+    static func stringOrNull(_ v: String?) -> JSONValue { v.map(JSONValue.string) ?? .null }
+    static func intOrNull(_ v: Int?) -> JSONValue { v.map(JSONValue.int) ?? .null }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        switch self {
+        case let .string(s): try c.encode(s)
+        case let .bool(b): try c.encode(b)
+        case let .int(i): try c.encode(i)
+        case .null: try c.encodeNil()
+        }
+    }
+}

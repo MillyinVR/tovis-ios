@@ -1,0 +1,14 @@
+{
+  "ok": true,
+  "profile": {
+    "id": "pro_1",
+    "businessName": "Studio Lumen",
+    "handle": "studio-lumen",
+    "bio": "Balayage & lived-in color.",
+    "location": "Los Angeles, CA",
+    "avatarUrl": "https://x/avatar.jpg",
+    "professionType": "HAIRSTYLIST",
+    "nameDisplay": "BUSINESS_NAME",
+    "isPremium": true
+  }
+}

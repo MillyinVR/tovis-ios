@@ -271,6 +271,32 @@ func fixture(_ name: String) throws -> Data {
         #expect(b.timeZone == "America/Los_Angeles")
     }
 
+    // GET /api/v1/pro/profile — Fixtures/proMyProfile.json. The pro's own editable
+    // profile (carries its professionalId). Inline backend shape; decode-only.
+    @Test func decodesProMyProfile() throws {
+        let res = try JSONDecoder().decode(ProMyProfileResponse.self, from: fixture("proMyProfile"))
+        #expect(res.profile.id == "pro_1")
+        #expect(res.profile.handle == "studio-lumen")
+        #expect(res.profile.nameDisplay == "BUSINESS_NAME")
+        #expect(res.profile.isPremium)
+    }
+
+    // GET /api/v1/pro/offerings — Fixtures/proOfferings.json. The pro's services
+    // (active + inactive) for the services manager. Inline shape; decode-only.
+    @Test func decodesProOfferings() throws {
+        let res = try JSONDecoder().decode(ProOfferingsResponse.self, from: fixture("proOfferings"))
+        #expect(res.offerings.count == 2)
+        let balayage = try #require(res.offerings.first)
+        #expect(balayage.isActive)
+        #expect(balayage.offersInSalon && !balayage.offersMobile)
+        #expect(balayage.salonPriceStartingAt == "180.00")
+        #expect(balayage.displayImageUrl == "https://x/balayage.jpg")   // falls back to service default
+        let blowout = res.offerings[1]
+        #expect(!blowout.isActive)
+        #expect(blowout.offersMobile)
+        #expect(blowout.displayImageUrl == "https://x/blowout.jpg")      // custom override wins
+    }
+
     // GET /api/v1/client/bookings — Fixtures/clientBookings.json (schema-validated).
     @Test func decodesClientBookings() throws {
         let res = try JSONDecoder().decode(ClientBookingsResponse.self, from: fixture("clientBookings"))
