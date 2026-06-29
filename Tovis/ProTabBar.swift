@@ -24,9 +24,17 @@ struct ProTabBar: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
-            ForEach(ProNav.tabs) { tab in
+            ForEach(Array(ProNav.tabs.enumerated()), id: \.element.id) { index, tab in
                 item(for: tab)
                     .frame(maxWidth: .infinity)
+                // Reserve the CENTER slot (an empty column) after Calendar so the
+                // four nav items distribute as 5 even slots (Looks·Calendar·[center]
+                // ·Messages·Profile) — matching web `justify-content: space-around`.
+                // Without it the items split into quarters and crowd the center
+                // button. The real button is the bottom/top-anchored overlay below.
+                if index == 1 {
+                    Color.clear.frame(maxWidth: .infinity, maxHeight: 1)
+                }
             }
         }
         .padding(.horizontal, 16)
@@ -119,22 +127,31 @@ struct ProSessionCenterButton: View {
             Button {
                 Task { await session.handleCenterClick() }
             } label: {
-                // Opaque coin (coinOpacity 1) so the dark coin reads solid against
-                // the dark footer like the web's `--tovis-coin`, instead of fading
-                // into the bar — the center is the footer's hero, not see-through.
-                BrandCoin(size: size, ring: session.isLive ? .cta : .plume, coinOpacity: 1) {
+                // Idle: coin is slightly translucent (the footer reads faintly
+                // through it) but the outer ring stays full color. Live: the coin
+                // goes solid so the session glow shines off it.
+                BrandCoin(
+                    size: size,
+                    ring: session.isLive ? .cta : .plume,
+                    coinOpacity: session.isLive ? 1 : 0.82
+                ) {
                     Group {
                         if session.showsCamera {
                             Image(systemName: "camera.fill")
                                 .font(.system(size: 22, weight: .semibold))
                         } else {
+                            // High-contrast cream label so the wording is legible
+                            // on the translucent coin (accent teal sank into it); a
+                            // dark shadow lifts it off the see-through background.
                             Text(session.label.uppercased())
                                 .font(BrandFont.mono(12))
-                                .fontWeight(.bold)
+                                .fontWeight(.heavy)
                                 .tracking(0.5)
                                 .minimumScaleFactor(0.7)
                                 .lineLimit(1)
                                 .padding(.horizontal, 4)
+                                .foregroundStyle(BrandColor.textPrimary)
+                                .shadow(color: .black.opacity(0.6), radius: 2, y: 1)
                         }
                     }
                     .foregroundStyle(BrandColor.accent)

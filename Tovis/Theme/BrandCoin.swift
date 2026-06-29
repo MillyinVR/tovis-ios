@@ -60,9 +60,11 @@ struct BrandCoin<Content: View>: View {
     }
 
     var body: some View {
-        // ring padding: max(2.5, size * 0.045)
-        let ringWidth = max(2.5, size * 0.045)
+        // Slightly thicker ring than before so the iridescent border reads bright
+        // against the dark footer (was size * 0.045).
+        let ringWidth = max(3, size * 0.052)
         let innerSize = size - ringWidth * 2
+        let ringGradient = ring == .cta ? Self.cta : Self.plume
 
         ZStack {
             coin(size).opacity(coinOpacity)
@@ -73,7 +75,21 @@ struct BrandCoin<Content: View>: View {
         .padding(ringWidth)
         // Plume/CTA as a RING (stroke), not a filled disc — so nothing opaque
         // sits behind the translucent coin and the footer/content shows through.
-        .overlay(Circle().strokeBorder(ring == .cta ? Self.cta : Self.plume, lineWidth: ringWidth))
+        // A blurred under-copy gives the ring a soft bloom so the border stays
+        // vivid (its blue/purple arc would otherwise sink into the dark footer);
+        // the crisp stroke sits on top, brightness-lifted for full color.
+        .overlay(
+            Circle()
+                .strokeBorder(ringGradient, lineWidth: ringWidth)
+                .blur(radius: 3.5)
+                .opacity(0.85)
+        )
+        .overlay(
+            Circle()
+                .strokeBorder(ringGradient, lineWidth: ringWidth)
+                .brightness(0.08)
+                .saturation(1.1)
+        )
         // boxShadow: 0 14px 30px var(--tovis-acc-shadow) (accent @ 0.45)
         .shadow(color: BrandColor.accent.opacity(0.45), radius: 15, x: 0, y: 14)
         .frame(width: size, height: size)

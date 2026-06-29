@@ -11,10 +11,13 @@ struct TovisTabBar: View {
     /// Unread Inbox badge text (e.g. "3", "9+"). Nil → no badge, matching web.
     var messagesBadge: String? = nil
 
-    // Tunable footer geometry.
-    private let barHeight: CGFloat = 68      // shorter bar (was 80)
-    private let centerSize: CGFloat = 84     // bigger center coin (was 72)
-    private let centerBottomGap: CGFloat = 8 // coin's gap above the bar bottom
+    // Footer geometry — matches the web `ClientSessionFooter` / `footers.css` 1:1:
+    //   bar min-height 80 · top padding 14 · center LooksMark 66 · center raised so
+    //   its top pokes ~16pt above the bar (web `.tovis-center-lift` = margin-top -30
+    //   on a flex-start row → coin top 16pt above the bar's top edge).
+    private let barHeight: CGFloat = 80
+    private let centerSize: CGFloat = 66
+    private let centerTopLift: CGFloat = 16
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -24,17 +27,16 @@ struct TovisTabBar: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.top, 12)
+        .padding(.top, 14)
         .frame(minHeight: barHeight, alignment: .top)
-        // The raised center button is anchored to the bar's BOTTOM (sits low,
-        // close to the footer bottom but not touching) and overflows upward so
-        // it still pokes slightly above the top edge.
-        .overlay(alignment: .bottom) {
+        // The raised center button pokes above the bar's top edge — measured from
+        // the top like the web's margin-top lift (coin top = 16pt above bar top).
+        .overlay(alignment: .top) {
             Button {
                 selected = .looks
             } label: {
                 LooksMark(size: centerSize)
-                    .offset(y: -centerBottomGap)
+                    .offset(y: -centerTopLift)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Looks")
