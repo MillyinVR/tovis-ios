@@ -193,7 +193,7 @@ Bell → notifications sheet. Polls every 60s + refresh-tick. That's a *subset* 
    math (range/cells/header/step) in `TovisKit/.../ProCalendar/ProCalendarGrid.swift` + 6 unit tests
    (`ProCalendarGridTests`). Day/Week reuse the existing agenda rows. `swift test` **43** · Debug+Release green.
    ⚠️ NOT yet sim-verified (keychain wipe on reinstall → re-login needed). Default view = `.day` (web parity).
-2. ✅ **DONE 2026-06-29 (`5411bbc`)** — **Block-time CRUD.** A "+" FAB (web `MobileCalendarFab`) opens
+2. ✅ **DONE 2026-06-29 (`d33c20b`)** — **Block-time CRUD.** A "+" FAB (web `MobileCalendarFab`) opens
    `ProBlockTimeSheet` create; tapping a BLOCK row opens the same sheet in edit mode (fetches `GET
    …/blocked/[id]` for the note) with Save + Delete (confirm). Start/End pickers render in the calendar zone,
    client-side 15min–24h guard mirrors the server; server conflict/validation messages surface inline.
