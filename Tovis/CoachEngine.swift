@@ -18,6 +18,17 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     private let minInterval: CFTimeInterval = 1.0 / 6.0   // ~6 analyses/sec
     private var lastSampleAt: CFTimeInterval = 0
 
+    // The light signals (luma, face, sharpness) run every analyzed frame; the heavy
+    // Vision requests (person segmentation + body pose) are far costlier, so they run
+    // on a slower cadence and their last result is reused between runs.
+    private let heavyInterval: CFTimeInterval = 0.4       // ~2–3 heavy passes/sec
+    private var lastHeavyAt: CFTimeInterval = 0
+    private var cachedClutter: Double?
+    private var cachedPose: PoseSignal?
+    /// Working resolution for the CoreImage / Vision math — full-res frames are
+    /// needless cost for these aggregate signals.
+    private let workingMaxDim: CGFloat = 480
+
     /// Set once before the camera starts; called on the frame queue.
     nonisolated(unsafe) var sink: (@Sendable (CoachResult) -> Void)?
 
@@ -48,12 +59,25 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         lastSampleAt = now
 
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+        // One upright, downscaled image drives all the CoreImage math so face/luma/
+        // sharpness math share a single coordinate space (upright, top-left normalized).
+        let working = downscaled(CIImage(cvPixelBuffer: pixelBuffer).oriented(.right))
+
+        let face = detectFace(pixelBuffer)
+        // Heavy Vision (segmentation + pose) on its own slower cadence; reuse last.
+        if now - lastHeavyAt >= heavyInterval {
+            lastHeavyAt = now
+            cachedClutter = backgroundClutter(pixelBuffer, working: working)
+            cachedPose = bodyPose(pixelBuffer)
+        }
 
         let ctx = FrameContext(
-            avgLuma: averageLuma(ciImage),
-            faceBounds: detectFace(pixelBuffer),
-            faceLuma: nil   // backlit (face-region luma) lands with the lighting upgrade
+            avgLuma: averageLuma(working),
+            faceBounds: face,
+            faceLuma: face.map { regionLuma(working, normalizedTopLeft: $0) },
+            sharpness: sharpness(working, subject: face),
+            backgroundClutter: cachedClutter,
+            pose: cachedPose
         )
 
         let signals = coaches.map { ($0.category, $0.evaluate(ctx)) }
@@ -122,6 +146,133 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         // Vision origin is bottom-left → flip Y to top-left.
         return CGRect(x: bb.minX, y: 1 - bb.maxY, width: bb.width, height: bb.height)
     }
+
+    /// Scale an image down so its largest side ≈ `workingMaxDim` (cheap aggregate math).
+    private func downscaled(_ image: CIImage) -> CIImage {
+        let maxSide = max(image.extent.width, image.extent.height)
+        guard maxSide > workingMaxDim else { return image }
+        let s = workingMaxDim / maxSide
+        return image.transformed(by: CGAffineTransform(scaleX: s, y: s))
+    }
+
+    /// Average luma inside a normalized top-left rect of `image` (upright space).
+    private func regionLuma(_ image: CIImage, normalizedTopLeft rect: CGRect) -> Double {
+        averageLuma(crop(image, normalizedTopLeft: rect))
+    }
+
+    /// Crop an upright image to a normalized top-left rect, mapping to CIImage's
+    /// bottom-left pixel space. Returns the full image if the rect is degenerate.
+    private func crop(_ image: CIImage, normalizedTopLeft rect: CGRect) -> CIImage {
+        let e = image.extent
+        guard e.width > 0, e.height > 0 else { return image }
+        let px = CGRect(
+            x: e.minX + rect.minX * e.width,
+            y: e.minY + (1 - rect.maxY) * e.height,
+            width: rect.width * e.width,
+            height: rect.height * e.height
+        ).intersection(e)
+        guard !px.isNull, px.width >= 1, px.height >= 1 else { return image }
+        return image.cropped(to: px)
+    }
+
+    /// Focus quality 0…1 from edge energy — measured on the subject region when a
+    /// face is present (focus on the face, not a busy background), else whole frame.
+    private func sharpness(_ image: CIImage, subject face: CGRect?) -> Double {
+        let target = face.map { crop(image, normalizedTopLeft: expandToHead($0)) } ?? image
+        // Edge energy: low for soft/blurred frames. Map through a gentle curve; the
+        // divisor is a hand-tuned typical "sharp" edge-mean (heuristic).
+        let energy = averageLuma(edges(target))
+        return min(1.0, energy / 0.12)
+    }
+
+    /// Busy-ness of the background, 0 (clean) … 1 (cluttered), via person
+    /// segmentation: edge energy in the non-person area, area-normalized. Nil when
+    /// no person is found (don't push non-portrait shots toward an empty frame).
+    private func backgroundClutter(_ pixelBuffer: CVPixelBuffer, working: CIImage) -> Double? {
+        let request = VNGeneratePersonSegmentationRequest()
+        request.qualityLevel = .balanced
+        request.outputPixelFormat = kCVPixelFormatType_OneComponent8
+        let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .right, options: [:])
+        try? handler.perform([request])
+        guard let maskBuffer = request.results?.first?.pixelBuffer else { return nil }
+
+        // Scale the (upright) mask onto the working extent. Mask: white = person.
+        var mask = CIImage(cvPixelBuffer: maskBuffer)
+        let me = mask.extent
+        guard me.width > 0, me.height > 0 else { return nil }
+        mask = mask.transformed(by: CGAffineTransform(
+            scaleX: working.extent.width / me.width,
+            y: working.extent.height / me.height
+        ))
+        let background = mask
+            .applyingFilter("CIColorInvert")            // 1 - mask → background weight
+            .cropped(to: working.extent)
+
+        let bgFraction = averageLuma(background)
+        guard bgFraction > 0.05 else { return nil }     // subject fills the frame
+
+        // Edge energy that falls in the background = edges × background weight.
+        let bgEdges = edges(working).applyingFilter("CIMultiplyCompositing", parameters: [
+            kCIInputBackgroundImageKey: background,
+        ])
+        let bgEdgeMean = averageLuma(bgEdges.cropped(to: working.extent))
+        // Normalize by background area, then map to 0…1 (divisor hand-tuned).
+        let clutter = (bgEdgeMean / bgFraction) / 0.18
+        return min(1.0, max(0.0, clutter))
+    }
+
+    /// Edge magnitude image (CIEdges) for energy measurement.
+    private func edges(_ image: CIImage) -> CIImage {
+        image.applyingFilter("CIEdges", parameters: ["inputIntensity": 1.0])
+    }
+
+    /// Expand a face rect to roughly head-and-shoulders so subject-focused math
+    /// (sharpness) doesn't sample only skin. Clamped to the unit square.
+    private func expandToHead(_ face: CGRect) -> CGRect {
+        let cx = face.midX
+        let w = min(1.0, face.width * 2.0)
+        let h = min(1.0, face.height * 2.2)
+        let x = max(0.0, min(1.0 - w, cx - w / 2))
+        let y = max(0.0, min(1.0 - h, face.minY - face.height * 0.3))
+        return CGRect(x: x, y: y, width: w, height: h)
+    }
+
+    /// Body-pose framing read (upright, top-left normalized). Nil unless a body is
+    /// confidently detected. Drives the level-shoulders / clipping tips.
+    private func bodyPose(_ pixelBuffer: CVPixelBuffer) -> PoseSignal? {
+        let request = VNDetectHumanBodyPoseRequest()
+        let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .right, options: [:])
+        try? handler.perform([request])
+        guard let observation = request.results?.first,
+              let points = try? observation.recognizedPoints(.all) else { return nil }
+
+        func point(_ name: VNHumanBodyPoseObservation.JointName) -> CGPoint? {
+            guard let p = points[name], p.confidence > 0.3 else { return nil }
+            // Vision origin bottom-left → flip Y to top-left.
+            return CGPoint(x: p.location.x, y: 1 - p.location.y)
+        }
+
+        // Shoulder tilt off horizontal.
+        var tilt: Double?
+        if let l = point(.leftShoulder), let r = point(.rightShoulder) {
+            tilt = Double(atan2(l.y - r.y, l.x - r.x)) * 180 / .pi
+            // Normalize to the acute deviation from a level line.
+            if let t = tilt {
+                let a = abs(t).truncatingRemainder(dividingBy: 180)
+                tilt = min(a, 180 - a)
+            }
+        }
+
+        // Clipping: any confident joint hard against a frame edge.
+        let edgePad = 0.02
+        let clipped = [VNHumanBodyPoseObservation.JointName.leftShoulder, .rightShoulder,
+                       .leftHip, .rightHip, .leftWrist, .rightWrist, .neck]
+            .compactMap(point)
+            .contains { $0.x <= edgePad || $0.x >= 1 - edgePad || $0.y <= edgePad || $0.y >= 1 - edgePad }
+
+        guard tilt != nil || clipped else { return nil }
+        return PoseSignal(shoulderTilt: tilt, edgeClipped: clipped)
+    }
 }
 
 // MARK: - Engine (MainActor)
@@ -155,7 +306,9 @@ final class CoachEngine {
 
     init(settings: CoachSettings) {
         self.settings = settings
-        self.analyzer = CoachAnalyzer(coaches: [LightingCoach(), CompositionCoach()])
+        self.analyzer = CoachAnalyzer(coaches: [
+            LightingCoach(), CompositionCoach(), SharpnessCoach(), BackgroundCoach(), PoseCoach(),
+        ])
         analyzer.autoHarvestEnabled = settings.autoHarvest
         analyzer.sink = { [weak self] result in
             Task { @MainActor in self?.apply(result) }

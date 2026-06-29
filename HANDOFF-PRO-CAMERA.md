@@ -46,6 +46,15 @@ center · Messages · Profile); `ProSessionModel` = native port of `useProSessio
   `Booking.mediaUseConsentAt` + `publicShareGuard` honors it (3 call sites) + `POST
   /client/bookings/[id]/media-consent` + `ClientBookingDTO.mediaUseConsent`; iOS toggle in
   `BookingDetailView`. **Consent UNLOCKS the pro's publish action; never auto-publishes.**
+- **More coaches** (this session) — `SharpnessCoach` (CoreImage edge energy on the subject
+  region), `BackgroundCoach` (`VNGeneratePersonSegmentation` → background edge clutter),
+  `PoseCoach` (`VNDetectHumanBodyPose` → level-shoulders / subject-clipping) added to
+  `CoachEngine`'s coach list; the deferred **faceLuma backlit** signal is now computed so
+  `LightingCoach`'s backlit branch is live. `FrameContext` gained `sharpness`/
+  `backgroundClutter`/`pose`; the heavy Vision requests (segmentation + pose) run on a slower
+  ~2–3 fps cadence (cached between runs) over a downscaled working image. Tuning divisors are
+  hand-set heuristics (need on-device tuning). Builds Debug+Release; 26 TovisKit tests + 26
+  contract objects green.
 - **B4 calibration plan** (`7a7ef51`) — designed, NOT built (see below).
 
 ## ▶️ NEXT (pick up here)
@@ -53,9 +62,11 @@ center · Messages · Profile); `ProSessionModel` = native port of `useProSessio
 1. **Web-client consent toggle** (closes B3b) — backend is **live on main** now (#427 merged); just add
    the same toggle to the web client aftercare/booking-detail surface (`app/client/(gated)/aftercare`
    + booking detail) calling `POST /client/bookings/[id]/media-consent { granted }`.
-2. **More coaches** — add `SharpnessCoach` / `BackgroundCoach` (`VNGeneratePersonSegmentation`) /
-   `PoseCoach` (`VNDetectHumanBodyPose`/`HandPose`) to `CoachEngine`'s coach list (extension point is
-   the `ShotCoach` protocol — pure, Sendable, one per aspect).
+2. ~~**More coaches**~~ ✅ DONE this session (Sharpness/Background/Pose + faceLuma backlit). Still
+   open from the original idea: a **HandPose** coach (`VNDetectHumanHandPose`) and **on-device tuning**
+   of the heuristic divisors (`sharpness` /0.12, `clutter` /0.18) + pose thresholds against real salon
+   frames. Extension point is the `ShotCoach` protocol — pure, Sendable, one per aspect; heavy
+   per-frame Vision goes in `CoachAnalyzer` (throttled) and lands on `FrameContext`.
 3. **Phase C** — before/after **comparison slider** → **publish to portfolio** (now unlocked by B3b
    consent) + the pro-facing "client allowed sharing" indicator (expose consent on
    `ProBookingMediaItemDTO`). Plus service-aware **ShotGuides** (curated shot lists/pose templates per

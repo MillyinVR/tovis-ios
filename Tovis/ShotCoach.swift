@@ -30,6 +30,17 @@ struct CoachResult: Sendable {
     let nudge: CoachNudge?        // the single most important fix, if any
 }
 
+/// Body-pose framing read for the current frame, present only when a human body is
+/// confidently detected. Coordinates already resolved to the upright frame.
+struct PoseSignal: Sendable {
+    /// Signed angle of the shoulder line off horizontal, in degrees (nil if both
+    /// shoulders weren't found). Positive/negative just means which way it tilts.
+    let shoulderTilt: Double?
+    /// A confidently-detected joint sits hard against a frame edge → subject is
+    /// being clipped.
+    let edgeClipped: Bool
+}
+
 /// Pre-computed, orientation-corrected signals for the current frame. Coordinates
 /// are normalized with origin TOP-LEFT (UIKit-style) so composition math is simple.
 struct FrameContext: Sendable {
@@ -39,6 +50,14 @@ struct FrameContext: Sendable {
     let faceBounds: CGRect?
     /// Average luma inside the face region, if a face was found.
     let faceLuma: Double?
+    /// Focus quality 0…1 (measured on the subject region when a face is present,
+    /// else the whole frame). Low = soft / motion-blurred.
+    let sharpness: Double
+    /// Busy-ness of the area behind the subject, 0 (clean) … 1 (cluttered). Nil
+    /// when no person is segmented, so non-portrait shots aren't nagged.
+    let backgroundClutter: Double?
+    /// Body-pose framing read, when a human body is detected. Nil otherwise.
+    let pose: PoseSignal?
 }
 
 protocol ShotCoach: Sendable {
@@ -108,5 +127,66 @@ struct CompositionCoach: ShotCoach {
         let dx = min(abs(centerX - 0.5), abs(centerX - 0.33), abs(centerX - 0.67))
         let score = max(0.7, 1.0 - dx)
         return CoachSignal(score: score, message: nil)
+    }
+}
+
+// MARK: - Sharpness
+
+/// Flags soft / motion-blurred frames — the single most common reason a shot gets
+/// thrown away. `sharpness` is pre-computed edge energy on the subject; this coach
+/// only nags when a frame is clearly soft so it doesn't fight normal focus hunting.
+struct SharpnessCoach: ShotCoach {
+    let category: CoachCategory = .sharpness
+
+    func evaluate(_ ctx: FrameContext) -> CoachSignal {
+        let s = ctx.sharpness
+        if s < 0.22 {
+            return CoachSignal(score: 0.3, message: "Hold steady — shot looks soft")
+        }
+        if s < 0.4 {
+            return CoachSignal(score: 0.6, message: "Tap to focus — a touch soft")
+        }
+        // Clearly sharp; reward it.
+        return CoachSignal(score: min(1.0, 0.7 + s * 0.5), message: nil)
+    }
+}
+
+// MARK: - Background
+
+/// Rewards a clean backdrop. Stays neutral when no person is segmented (the signal
+/// is nil) so flat-lay / detail shots aren't pushed toward an empty background.
+struct BackgroundCoach: ShotCoach {
+    let category: CoachCategory = .background
+
+    func evaluate(_ ctx: FrameContext) -> CoachSignal {
+        guard let clutter = ctx.backgroundClutter else {
+            return CoachSignal(score: 1.0, message: nil)
+        }
+        if clutter > 0.6 {
+            return CoachSignal(score: 0.5, message: "Busy background — find a cleaner backdrop")
+        }
+        let score = max(0.7, 1.0 - clutter)
+        return CoachSignal(score: score, message: nil)
+    }
+}
+
+// MARK: - Pose
+
+/// Judges body framing when a full(er) body is in shot: level shoulders and not
+/// clipping the subject at an edge. Neutral for head-and-shoulders work (no pose).
+struct PoseCoach: ShotCoach {
+    let category: CoachCategory = .pose
+
+    func evaluate(_ ctx: FrameContext) -> CoachSignal {
+        guard let pose = ctx.pose else {
+            return CoachSignal(score: 1.0, message: nil)
+        }
+        if pose.edgeClipped {
+            return CoachSignal(score: 0.5, message: "Subject’s getting clipped — pull back")
+        }
+        if let tilt = pose.shoulderTilt, abs(tilt) > 8 {
+            return CoachSignal(score: 0.6, message: "Level the camera — shoulders are tilted")
+        }
+        return CoachSignal(score: 0.9, message: nil)
     }
 }
