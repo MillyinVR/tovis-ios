@@ -1,0 +1,38 @@
+{
+  "ok": true,
+  "categories": [
+    {
+      "id": "cat_hair",
+      "name": "Hair",
+      "services": [
+        {
+          "id": "svc_balayage",
+          "name": "Balayage",
+          "minPrice": "180.00",
+          "defaultDurationMinutes": 180,
+          "defaultImageUrl": "https://x/balayage.jpg",
+          "isAddOnEligible": false,
+          "addOnGroup": null
+        }
+      ],
+      "children": [
+        {
+          "id": "cat_color",
+          "name": "Color",
+          "services": [
+            {
+              "id": "svc_toner",
+              "name": "Toner",
+              "minPrice": "40.00",
+              "defaultDurationMinutes": 30,
+              "defaultImageUrl": null,
+              "isAddOnEligible": true,
+              "addOnGroup": "COLOR"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "offerings": [{ "id": "off_1", "serviceId": "svc_balayage" }]
+}

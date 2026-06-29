@@ -1,0 +1,22 @@
+{
+  "ok": true,
+  "eligible": [
+    { "id": "svc_toner", "name": "Toner", "group": "COLOR", "minPrice": "40.00", "defaultDurationMinutes": 30 },
+    { "id": "svc_gloss", "name": "Gloss", "group": "COLOR", "minPrice": "35.00", "defaultDurationMinutes": 20 }
+  ],
+  "attached": [
+    {
+      "id": "addon_1",
+      "addOnServiceId": "svc_toner",
+      "title": "Toner",
+      "group": "COLOR",
+      "isActive": true,
+      "isRecommended": false,
+      "sortOrder": 0,
+      "locationType": null,
+      "priceOverride": null,
+      "durationOverrideMinutes": null,
+      "defaults": { "minPrice": "40.00", "defaultDurationMinutes": 30 }
+    }
+  ]
+}

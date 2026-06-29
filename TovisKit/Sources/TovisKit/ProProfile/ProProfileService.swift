@@ -86,6 +86,67 @@ public final class ProProfileService: Sendable {
         try await api.requestVoid("/pro/offerings/\(id)", method: .delete)
     }
 
+    /// GET /api/v1/pro/services/catalog → the addable service library tree + the
+    /// pro's already-added offerings (so the picker can disable them).
+    public func servicesCatalog() async throws -> ProServiceCatalog {
+        try await api.request("/pro/services/catalog")
+    }
+
+    /// POST /api/v1/pro/offerings — add a service to the pro's menu. Returns the
+    /// created offering.
+    @discardableResult
+    public func createOffering(
+        serviceId: String,
+        description: String?,
+        customImageUrl: String?,
+        offersInSalon: Bool,
+        offersMobile: Bool,
+        salonPriceStartingAt: String?,
+        salonDurationMinutes: Int?,
+        mobilePriceStartingAt: String?,
+        mobileDurationMinutes: Int?
+    ) async throws -> ProOfferingAdmin {
+        var fields: [String: JSONValue] = [
+            "serviceId": .string(serviceId),
+            "offersInSalon": .bool(offersInSalon),
+            "offersMobile": .bool(offersMobile),
+            "description": .stringOrNull(description),
+            "customImageUrl": .stringOrNull(customImageUrl),
+            "salonPriceStartingAt": .stringOrNull(salonPriceStartingAt),
+            "salonDurationMinutes": .intOrNull(salonDurationMinutes),
+            "mobilePriceStartingAt": .stringOrNull(mobilePriceStartingAt),
+            "mobileDurationMinutes": .intOrNull(mobileDurationMinutes),
+        ]
+        fields["title"] = .null
+        let payload = try JSONEncoder().encode(fields)
+        let response: ProOfferingResponse = try await api.request(
+            "/pro/offerings", method: .post, body: payload
+        )
+        return response.offering
+    }
+
+    /// PATCH /api/v1/pro/offerings/{id} — set the custom image URL (after an
+    /// SERVICE_IMAGE_PUBLIC upload). Returns the updated offering.
+    @discardableResult
+    public func setOfferingImage(id: String, customImageUrl: String?) async throws -> ProOfferingAdmin {
+        let payload = try JSONEncoder().encode(["customImageUrl": JSONValue.stringOrNull(customImageUrl)])
+        let response: ProOfferingResponse = try await api.request(
+            "/pro/offerings/\(id)", method: .patch, body: payload
+        )
+        return response.offering
+    }
+
+    /// GET /api/v1/pro/offerings/{id}/add-ons → eligible + attached add-ons.
+    public func addOns(offeringId: String) async throws -> ProAddOns {
+        try await api.request("/pro/offerings/\(offeringId)/add-ons")
+    }
+
+    /// PUT /api/v1/pro/offerings/{id}/add-ons — replace the whole attached set.
+    public func saveAddOns(offeringId: String, items: [ProAddOnInput]) async throws {
+        let payload = try JSONEncoder().encode(["items": items])
+        try await api.requestVoid("/pro/offerings/\(offeringId)/add-ons", method: .put, body: payload)
+    }
+
     /// GET /api/v1/pro/profile/handle-available?handle= — live availability check
     /// for the vanity-link claim UI. The PATCH route stays authoritative; this is
     /// fast feedback. Returns status + message (+ suggestions when taken).

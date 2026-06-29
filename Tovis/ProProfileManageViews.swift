@@ -371,10 +371,18 @@ struct ProOfferingsView: View {
     @State private var phase: Phase = .loading
     @State private var editing: ProOfferingAdmin?
     @State private var busyId: String?
+    @State private var showAdd = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                addServiceCard
+
+                Text("Your current offerings")
+                    .font(BrandFont.body(14, .semibold)).foregroundStyle(BrandColor.textPrimary)
+                Text("Edit pricing, durations, add-ons, and your custom service image (only your menu).")
+                    .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
+
                 switch phase {
                 case .loading:
                     HStack { Spacer(); ProgressView().tint(BrandColor.accent); Spacer() }.padding(.top, 60)
@@ -383,9 +391,9 @@ struct ProOfferingsView: View {
                         .frame(maxWidth: .infinity).padding(.top, 60)
                 case let .loaded(items):
                     if items.isEmpty {
-                        Text("No services yet. Add services on the web to get started.")
+                        Text("You haven't added any services yet.")
                             .font(BrandFont.body(14)).foregroundStyle(BrandColor.textMuted)
-                            .frame(maxWidth: .infinity).multilineTextAlignment(.center).padding(.top, 50)
+                            .frame(maxWidth: .infinity).multilineTextAlignment(.center).padding(.top, 30)
                     } else {
                         ForEach(items) { row($0) }
                     }
@@ -401,7 +409,31 @@ struct ProOfferingsView: View {
         .sheet(item: $editing) { offering in
             ProEditOfferingSheet(offering: offering) { Task { await load() } }
         }
+        .sheet(isPresented: $showAdd) {
+            ProAddServiceSheet { Task { await load() } }
+        }
         .tint(BrandColor.accent)
+    }
+
+    private var addServiceCard: some View {
+        BrandSurface {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Add a service")
+                        .font(BrandFont.body(14, .semibold)).foregroundStyle(BrandColor.textPrimary)
+                    Text("Choose from the library. Your pricing. Platform-consistent names.")
+                        .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
+                }
+                Spacer()
+                Button { showAdd = true } label: {
+                    Text("+ Add")
+                        .font(BrandFont.body(12, .semibold)).foregroundStyle(BrandColor.textPrimary)
+                        .padding(.vertical, 8).padding(.horizontal, 14)
+                        .background(BrandColor.bgSecondary).clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
     }
 
     private func row(_ o: ProOfferingAdmin) -> some View {
@@ -436,10 +468,20 @@ struct ProOfferingsView: View {
                     }
                 }
 
-                Button { editing = o } label: {
-                    Text("Edit pricing")
-                        .font(BrandFont.body(13, .semibold))
-                        .foregroundStyle(BrandColor.accent)
+                HStack(spacing: 18) {
+                    Button { editing = o } label: {
+                        Text("Edit").font(BrandFont.body(13, .semibold)).foregroundStyle(BrandColor.accent)
+                    }
+                    NavigationLink {
+                        ProAddOnsView(offering: o)
+                    } label: {
+                        Text("Add-ons").font(BrandFont.body(13, .semibold)).foregroundStyle(BrandColor.accent)
+                    }
+                    Spacer()
+                    Button(role: .destructive) { Task { await remove(o) } } label: {
+                        Text("Remove").font(BrandFont.body(13, .semibold)).foregroundStyle(BrandColor.ember)
+                    }
+                    .disabled(busyId == o.id)
                 }
             }
         }
@@ -469,6 +511,383 @@ struct ProOfferingsView: View {
         defer { busyId = nil }
         _ = try? await session.client.proProfile.updateOffering(id: o.id, isActive: active)
         await load()
+    }
+
+    private func remove(_ o: ProOfferingAdmin) async {
+        busyId = o.id
+        defer { busyId = nil }
+        try? await session.client.proProfile.deleteOffering(id: o.id)
+        await load()
+    }
+}
+
+// MARK: - Add a service (library picker)
+
+/// Native port of the web Add-service overlay (ServicePicker.tsx), 1:1: category →
+/// subcategory → service pickers (from GET /pro/services/catalog), an optional
+/// service image upload, a description, and Salon/Mobile pricing → POST /pro/offerings.
+struct ProAddServiceSheet: View {
+    @Environment(SessionModel.self) private var session
+    @Environment(\.dismiss) private var dismiss
+
+    var onSaved: () -> Void
+
+    private enum Phase { case loading, ready, failed(String) }
+    @State private var phase: Phase = .loading
+    @State private var catalog: ProServiceCatalog?
+
+    @State private var categoryId = ""
+    @State private var subcategoryId = ""
+    @State private var serviceId = ""
+
+    @State private var description = ""
+    @State private var offersInSalon = true
+    @State private var offersMobile = false
+    @State private var salonPrice = ""
+    @State private var salonDuration = ""
+    @State private var mobilePrice = ""
+    @State private var mobileDuration = ""
+
+    @State private var imageItem: PhotosPickerItem?
+    @State private var imageData: Data?
+
+    @State private var loading = false
+    @State private var error: String?
+    @State private var success: String?
+
+    private var category: ProServiceCategory? { catalog?.categories.first { $0.id == categoryId } }
+    private var subcategory: ProServiceSubcategory? { category?.children.first { $0.id == subcategoryId } }
+    private var servicesForSelection: [ProCatalogService] {
+        if let subcategory { return subcategory.services }
+        if let category { return category.services + category.children.flatMap(\.services) }
+        return []
+    }
+    private var selectedService: ProCatalogService? { servicesForSelection.first { $0.id == serviceId } }
+    private var existingServiceIds: Set<String> { Set(catalog?.offerings.map(\.serviceId) ?? []) }
+    private var alreadyAdded: Bool { selectedService.map { existingServiceIds.contains($0.id) } ?? false }
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                switch phase {
+                case .loading: ProgressView().tint(BrandColor.accent).frame(maxWidth: .infinity, maxHeight: .infinity)
+                case let .failed(message): failed(message)
+                case .ready: form
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(BrandColor.bgPrimary.ignoresSafeArea())
+            .navigationTitle("Add a service")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() }.tint(BrandColor.accent) } }
+            .task { if case .loading = phase { await load() } }
+            .onChange(of: imageItem) { Task { await loadImage() } }
+            .tint(BrandColor.accent)
+        }
+    }
+
+    private var form: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Pick from the library. Your pricing. Platform-consistent names.")
+                    .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
+
+                picker("Main category", selection: $categoryId, options: [("", "Select category")] + (catalog?.categories.map { ($0.id, $0.name) } ?? []))
+                    .onChange(of: categoryId) { subcategoryId = ""; serviceId = ""; resetForService(nil) }
+
+                picker("Subcategory", selection: $subcategoryId, options: [("", "All under this category")] + (category?.children.map { ($0.id, $0.name) } ?? []))
+                    .disabled(category == nil)
+                    .onChange(of: subcategoryId) { serviceId = ""; resetForService(nil) }
+
+                picker("Service", selection: $serviceId, options: [("", "Select service")] + servicesForSelection.map { ($0.id, serviceLabel($0)) })
+                    .disabled(category == nil)
+                    .onChange(of: serviceId) { resetForService(servicesForSelection.first { $0.id == serviceId }) }
+
+                if selectedService != nil {
+                    serviceImageBlock
+                    descriptionBlock
+                    modeToggles
+                    pricingBlock
+                }
+
+                if let error { Text(error).font(BrandFont.body(13)).foregroundStyle(BrandColor.ember) }
+                if let success { Text(success).font(BrandFont.body(13)).foregroundStyle(BrandColor.emerald) }
+
+                Button { Task { await submit() } } label: {
+                    Text(loading ? "Adding…" : (alreadyAdded ? "Already added" : "Add to my menu"))
+                        .font(BrandFont.body(15, .semibold))
+                        .frame(maxWidth: .infinity).padding(.vertical, 14)
+                        .background(BrandColor.accent).foregroundStyle(BrandColor.onAccent)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .disabled(loading || selectedService == nil || alreadyAdded)
+                .opacity(selectedService == nil || alreadyAdded ? 0.6 : 1)
+            }
+            .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 40)
+        }
+    }
+
+    private var serviceImageBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionLabel("Service image (optional)")
+            HStack(spacing: 12) {
+                ZStack {
+                    if let imageData, let img = UIImage(data: imageData) {
+                        Image(uiImage: img).resizable().scaledToFill()
+                    } else { BrandColor.bgSecondary; Image(systemName: "photo").foregroundStyle(BrandColor.textMuted) }
+                }
+                .frame(width: 56, height: 56).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                PhotosPicker(selection: $imageItem, matching: .images) {
+                    Text("Choose image").font(BrandFont.body(13, .semibold)).foregroundStyle(BrandColor.accent)
+                }
+            }
+            Text("This image only overrides how this service displays on your menu.")
+                .font(BrandFont.body(11)).foregroundStyle(BrandColor.textSecondary)
+        }
+    }
+
+    private var descriptionBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionLabel("Description (optional)")
+            TextEditor(text: $description)
+                .frame(minHeight: 70).padding(8).scrollContentBackground(.hidden)
+                .background(BrandColor.bgSecondary).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .font(BrandFont.body(14)).foregroundStyle(BrandColor.textPrimary)
+        }
+    }
+
+    private var modeToggles: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle(isOn: $offersInSalon) { Text("Offer in Salon").font(BrandFont.body(13, .semibold)).foregroundStyle(BrandColor.textPrimary) }
+                .tint(BrandColor.accent)
+            Toggle(isOn: $offersMobile) { Text("Offer Mobile").font(BrandFont.body(13, .semibold)).foregroundStyle(BrandColor.textPrimary) }
+                .tint(BrandColor.accent)
+            if let s = selectedService {
+                Text("Min price: \(Wire.money(s.minPrice) ?? s.minPrice)")
+                    .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
+            }
+        }
+    }
+
+    private var pricingBlock: some View {
+        HStack(alignment: .top, spacing: 10) {
+            if offersInSalon { pricingCard("Salon pricing", price: $salonPrice, duration: $salonDuration) }
+            if offersMobile { pricingCard("Mobile pricing", price: $mobilePrice, duration: $mobileDuration) }
+        }
+    }
+
+    private func pricingCard(_ title: String, price: Binding<String>, duration: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(BrandFont.body(12, .semibold)).foregroundStyle(BrandColor.textPrimary)
+            miniField("Starting at", text: price, placeholder: "e.g. 120", keyboard: .decimalPad)
+            miniField("Duration (minutes)", text: duration, placeholder: "e.g. 90", keyboard: .numberPad)
+        }
+        .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+        .background(BrandColor.bgSecondary).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func miniField(_ label: String, text: Binding<String>, placeholder: String, keyboard: UIKeyboardType) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label.uppercased()).font(BrandFont.mono(9)).tracking(0.5).foregroundStyle(BrandColor.textMuted)
+            TextField(placeholder, text: text).keyboardType(keyboard)
+                .font(BrandFont.body(14)).foregroundStyle(BrandColor.textPrimary)
+                .padding(10).background(BrandColor.bgPrimary).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+    }
+
+    private func picker(_ label: String, selection: Binding<String>, options: [(String, String)]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            sectionLabel(label)
+            Picker(label, selection: selection) {
+                ForEach(options, id: \.0) { Text($0.1).tag($0.0) }
+            }
+            .pickerStyle(.menu).tint(BrandColor.textPrimary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(BrandColor.bgSecondary).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+    }
+
+    private func sectionLabel(_ t: String) -> some View {
+        Text(t).font(BrandFont.body(12, .semibold)).foregroundStyle(BrandColor.textPrimary)
+    }
+
+    private func serviceLabel(_ s: ProCatalogService) -> String {
+        var label = s.name
+        if s.isAddOnEligible { label += s.addOnGroup.map { " (Add-on: \($0))" } ?? " (Add-on)" }
+        if existingServiceIds.contains(s.id) { label += " (added)" }
+        return label
+    }
+
+    private func resetForService(_ service: ProCatalogService?) {
+        error = nil; success = nil; imageData = nil; imageItem = nil
+        description = ""; offersInSalon = true; offersMobile = false
+        guard let service else { salonPrice = ""; salonDuration = ""; mobilePrice = ""; mobileDuration = ""; return }
+        let p = service.minPrice
+        let d = String(service.defaultDurationMinutes)
+        salonPrice = p; salonDuration = d; mobilePrice = p; mobileDuration = d
+    }
+
+    private func failed(_ message: String) -> some View {
+        VStack(spacing: 12) {
+            Text(message).font(BrandFont.body(14)).foregroundStyle(BrandColor.textSecondary).multilineTextAlignment(.center)
+            Button("Try again") { Task { await load() } }.font(BrandFont.body(14, .semibold)).foregroundStyle(BrandColor.accent)
+        }.padding(.horizontal, 40)
+    }
+
+    private func load() async {
+        do { catalog = try await session.client.proProfile.servicesCatalog(); phase = .ready }
+        catch let e as APIError { phase = .failed(e.userMessage) }
+        catch { phase = .failed("Couldn’t load the service library.") }
+    }
+
+    private func loadImage() async {
+        guard let imageItem else { return }
+        if let data = try? await imageItem.loadTransferable(type: Data.self) { imageData = data }
+    }
+
+    private func submit() async {
+        guard !loading, let service = selectedService else { return }
+        if alreadyAdded { error = "You already added this service."; return }
+        if !offersInSalon && !offersMobile { error = "Enable at least Salon or Mobile."; return }
+        loading = true; error = nil; success = nil
+        defer { loading = false }
+
+        // Upload a chosen image first (web uploads before create), then create.
+        var imageUrl: String?
+        if let data = imageData {
+            do { imageUrl = try await session.client.proMedia.uploadServiceImage(serviceId: service.id, imageData: data) }
+            catch { self.error = "Image upload failed."; return }
+        }
+
+        do {
+            _ = try await session.client.proProfile.createOffering(
+                serviceId: service.id,
+                description: description.trimmingCharacters(in: .whitespaces).isEmpty ? nil : description,
+                customImageUrl: imageUrl,
+                offersInSalon: offersInSalon,
+                offersMobile: offersMobile,
+                salonPriceStartingAt: offersInSalon ? trimOrNil(salonPrice) : nil,
+                salonDurationMinutes: offersInSalon ? Int(salonDuration) : nil,
+                mobilePriceStartingAt: offersMobile ? trimOrNil(mobilePrice) : nil,
+                mobileDurationMinutes: offersMobile ? Int(mobileDuration) : nil
+            )
+            success = "Service added to your menu."
+            onSaved()
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            dismiss()
+        } catch let e as APIError {
+            error = e.userMessage
+        } catch {
+            self.error = "Something went wrong while saving this service."
+        }
+    }
+
+    private func trimOrNil(_ s: String) -> String? {
+        let t = s.trimmingCharacters(in: .whitespaces); return t.isEmpty ? nil : t
+    }
+}
+
+// MARK: - Add-ons manager
+
+/// Per-offering add-ons manager (web OfferingManager add-ons editor). Lists the
+/// attached add-ons + the eligible library; toggling attaches/detaches, then Save
+/// replaces the whole set (PUT /pro/offerings/{id}/add-ons).
+struct ProAddOnsView: View {
+    @Environment(SessionModel.self) private var session
+    let offering: ProOfferingAdmin
+
+    private enum Phase { case loading, ready, failed(String) }
+    @State private var phase: Phase = .loading
+    @State private var eligible: [ProAddOnEligible] = []
+    @State private var attached: Set<String> = []   // addOnServiceIds currently attached
+    @State private var saving = false
+    @State private var banner: String?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                switch phase {
+                case .loading: HStack { Spacer(); ProgressView().tint(BrandColor.accent); Spacer() }.padding(.top, 60)
+                case let .failed(message): Text(message).font(BrandFont.body(15)).foregroundStyle(BrandColor.textSecondary).frame(maxWidth: .infinity).padding(.top, 60)
+                case .ready:
+                    Text("Attach add-on services clients can tack onto \(offering.serviceName).")
+                        .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
+                    if eligible.isEmpty {
+                        Text("No add-on-eligible services available.")
+                            .font(BrandFont.body(14)).foregroundStyle(BrandColor.textMuted)
+                            .frame(maxWidth: .infinity).multilineTextAlignment(.center).padding(.top, 40)
+                    } else {
+                        ForEach(eligible) { row($0) }
+                    }
+                    if let banner { Text(banner).font(BrandFont.body(13, .semibold)).foregroundStyle(BrandColor.emerald) }
+                    Button { Task { await save() } } label: {
+                        Text(saving ? "Saving…" : "Save add-ons")
+                            .font(BrandFont.body(15, .semibold)).frame(maxWidth: .infinity).padding(.vertical, 14)
+                            .background(BrandColor.accent).foregroundStyle(BrandColor.onAccent)
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
+                    .disabled(saving)
+                }
+            }
+            .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 40)
+        }
+        .background(BrandColor.bgPrimary.ignoresSafeArea())
+        .navigationTitle("Add-ons")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
+        .task { if case .loading = phase { await load() } }
+        .tint(BrandColor.accent)
+    }
+
+    private func row(_ s: ProAddOnEligible) -> some View {
+        BrandSurface {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(s.name).font(BrandFont.body(15, .semibold)).foregroundStyle(BrandColor.textPrimary)
+                    HStack(spacing: 6) {
+                        if let group = s.group {
+                            Text(group.uppercased()).font(BrandFont.mono(9)).tracking(0.5).foregroundStyle(BrandColor.textMuted)
+                        }
+                        Text("\(Wire.money(s.minPrice) ?? s.minPrice) · \(s.defaultDurationMinutes)m")
+                            .font(BrandFont.body(11)).foregroundStyle(BrandColor.textSecondary)
+                    }
+                }
+                Spacer()
+                Toggle("", isOn: Binding(
+                    get: { attached.contains(s.id) },
+                    set: { on in if on { attached.insert(s.id) } else { attached.remove(s.id) }; banner = nil }
+                ))
+                .labelsHidden().tint(BrandColor.accent)
+            }
+        }
+    }
+
+    private func load() async {
+        do {
+            let result = try await session.client.proProfile.addOns(offeringId: offering.id)
+            eligible = result.eligible
+            attached = Set(result.attached.map(\.addOnServiceId))
+            phase = .ready
+        } catch let e as APIError { phase = .failed(e.userMessage) }
+        catch { phase = .failed("Couldn’t load add-ons.") }
+    }
+
+    private func save() async {
+        guard !saving else { return }
+        saving = true
+        defer { saving = false }
+        // Preserve a stable order from the eligible list.
+        let items = eligible.enumerated()
+            .filter { attached.contains($0.element.id) }
+            .map { ProAddOnInput(addOnServiceId: $0.element.id, sortOrder: $0.offset) }
+        do {
+            try await session.client.proProfile.saveAddOns(offeringId: offering.id, items: items)
+            banner = "Add-ons saved."
+        } catch {
+            banner = nil
+        }
     }
 }
 

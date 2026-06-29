@@ -336,6 +336,29 @@ func fixture(_ name: String) throws -> Data {
         #expect(b.suggestions == nil)
     }
 
+    // GET /api/v1/pro/services/catalog — Fixtures/proServicesCatalog.json. The
+    // add-service library tree + the pro's already-added offerings.
+    @Test func decodesProServicesCatalog() throws {
+        let res = try JSONDecoder().decode(ProServiceCatalog.self, from: fixture("proServicesCatalog"))
+        #expect(res.categories.count == 1)
+        let hair = try #require(res.categories.first)
+        #expect(hair.services.first?.name == "Balayage")
+        #expect(hair.children.first?.name == "Color")
+        let toner = try #require(hair.children.first?.services.first)
+        #expect(toner.isAddOnEligible)
+        #expect(toner.addOnGroup == "COLOR")
+        #expect(res.offerings.first?.serviceId == "svc_balayage")
+    }
+
+    // GET /api/v1/pro/offerings/{id}/add-ons — Fixtures/proAddOns.json.
+    @Test func decodesProAddOns() throws {
+        let res = try JSONDecoder().decode(ProAddOns.self, from: fixture("proAddOns"))
+        #expect(res.eligible.count == 2)
+        #expect(res.attached.count == 1)
+        #expect(res.attached.first?.addOnServiceId == "svc_toner")
+        #expect(res.attached.first?.isActive == true)
+    }
+
     // GET /api/v1/pro/notifications — Fixtures/proNotifications.json. The pro
     // notification feed (distinct from the client center: priority/seenAt/reviewId).
     @Test func decodesProNotifications() throws {
