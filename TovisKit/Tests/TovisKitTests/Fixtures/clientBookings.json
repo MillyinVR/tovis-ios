@@ -47,6 +47,8 @@
         "productSales": [],
         "hasUnreadAftercare": false,
         "hasPendingConsultationApproval": false,
+        "hasPendingRebookConfirmation": false,
+        "rebookProposedFor": null,
         "consultation": null
       }
     ],

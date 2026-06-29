@@ -16,6 +16,11 @@ struct BookingDetailView: View {
     @State private var working = false
     @State private var actionError: String?
 
+    // Rebook confirmation (pro proposed a next appointment)
+    @State private var decidingRebook = false
+    @State private var rebookDecidedLocally = false
+    @State private var rebookError: String?
+
     // Pay leg (hosted Stripe Checkout)
     @State private var checkoutSheet: CheckoutSheet?
     @State private var creatingCheckout = false
@@ -85,6 +90,11 @@ struct BookingDetailView: View {
             (booking.consultation?.approvalStatus?.uppercased() == "PENDING")
     }
 
+    /// The pro proposed a next appointment the client hasn't acted on yet.
+    private var isRebookPending: Bool {
+        booking.hasPendingRebookConfirmation && !rebookDecidedLocally
+    }
+
     /// Reschedule/cancel are offered for an active, still-upcoming booking. Past,
     /// cancelled, or completed bookings can't be changed.
     private var isManageable: Bool {
@@ -111,6 +121,10 @@ struct BookingDetailView: View {
                         icon: "checklist", tint: BrandColor.gold
                     )
                     consultationActions
+                }
+
+                if isRebookPending {
+                    rebookCard
                 }
 
                 if !booking.items.isEmpty {
@@ -533,6 +547,72 @@ struct BookingDetailView: View {
             actionError = error.userMessage
         } catch {
             actionError = "Something went wrong. Please try again."
+        }
+    }
+
+    // MARK: - Rebook (pro proposed a next appointment)
+
+    private var rebookCard: some View {
+        BrandSurface {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    Image(systemName: "calendar.badge.plus").foregroundStyle(BrandColor.accent)
+                    Text("Your pro proposed your next appointment")
+                        .font(BrandFont.body(15, .semibold)).foregroundStyle(BrandColor.textPrimary)
+                }
+                if let when = booking.rebookProposedFor {
+                    Text(Wire.dateTime(when, timeZone: booking.timeZone))
+                        .font(BrandFont.body(14)).foregroundStyle(BrandColor.textSecondary)
+                }
+                Text("Confirm to book it, or decline and your pro can suggest another time.")
+                    .font(BrandFont.body(13)).foregroundStyle(BrandColor.textMuted)
+
+                Button { Task { await decideRebook(confirm: true) } } label: {
+                    rebookActionLabel("Confirm appointment", filled: true)
+                }
+                .disabled(decidingRebook)
+
+                Button { Task { await decideRebook(confirm: false) } } label: {
+                    rebookActionLabel("Decline", filled: false)
+                }
+                .disabled(decidingRebook)
+
+                if let rebookError {
+                    Text(rebookError)
+                        .font(BrandFont.body(13)).foregroundStyle(BrandColor.ember)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+    }
+
+    private func rebookActionLabel(_ title: String, filled: Bool) -> some View {
+        Group {
+            if decidingRebook { ProgressView().tint(filled ? BrandColor.onAccent : BrandColor.accent) }
+            else { Text(title).font(BrandFont.body(16, .semibold)) }
+        }
+        .frame(maxWidth: .infinity).padding(.vertical, 14)
+        .foregroundStyle(filled ? BrandColor.onAccent : BrandColor.ember)
+        .background(filled ? BrandColor.accent : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .stroke(filled ? Color.clear : BrandColor.ember.opacity(0.4), lineWidth: 1))
+    }
+
+    private func decideRebook(confirm: Bool) async {
+        guard !decidingRebook else { return }
+        decidingRebook = true
+        rebookError = nil
+        defer { decidingRebook = false }
+        do {
+            try await session.client.bookings.decideRebook(bookingId: booking.id, confirm: confirm)
+            rebookDecidedLocally = true // hide the card; the new booking shows in Appointments
+            session.signalRefresh()
+            await onDecision()
+        } catch let error as APIError {
+            rebookError = error.userMessage
+        } catch {
+            rebookError = "Couldn’t update that. Please try again."
         }
     }
 

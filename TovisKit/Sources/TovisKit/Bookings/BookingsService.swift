@@ -32,4 +32,25 @@ public final class BookingsService: Sendable {
             body: payload
         )
     }
+
+    /// POST /api/v1/client/bookings/{id}/aftercare-rebook — confirm or decline the
+    /// pro's proposed next appointment. CONFIRM creates the booking at the pro's
+    /// proposed time (returns it); DECLINE just records the decline. Idempotent.
+    @discardableResult
+    public func decideRebook(
+        bookingId: String,
+        confirm: Bool,
+        idempotencyKey: String = UUID().uuidString
+    ) async throws -> RebookedBooking? {
+        let payload = try JSONEncoder().encode(
+            RebookDecisionRequest(action: confirm ? "CONFIRM" : "DECLINE")
+        )
+        let response: RebookDecisionResponse = try await api.request(
+            "/client/bookings/\(bookingId)/aftercare-rebook",
+            method: .post,
+            body: payload,
+            headers: ["idempotency-key": idempotencyKey]
+        )
+        return response.booking
+    }
 }

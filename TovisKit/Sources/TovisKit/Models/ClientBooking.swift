@@ -102,6 +102,10 @@ public struct ClientBooking: Decodable, Sendable, Identifiable {
 
     public let hasUnreadAftercare: Bool
     public let hasPendingConsultationApproval: Bool
+    /// The pro proposed a next appointment the client hasn't confirmed/declined yet.
+    public let hasPendingRebookConfirmation: Bool
+    /// The pro-proposed next-appointment instant (ISO) when a confirmation is pending.
+    public let rebookProposedFor: String?
 }
 
 public struct BookingLocation: Decodable, Sendable, Identifiable {
@@ -197,4 +201,21 @@ public enum ConsultationDecision: Sendable {
 /// POST /api/v1/client/bookings/{id}/consultation — request body.
 struct ConsultationDecisionRequest: Encodable, Sendable {
     let action: String  // "APPROVE" | "REJECT"
+}
+
+// MARK: - Rebook confirmation (POST /api/v1/client/bookings/{id}/aftercare-rebook)
+
+struct RebookDecisionRequest: Encodable, Sendable {
+    let action: String  // "CONFIRM" | "DECLINE"
+}
+
+/// CONFIRM returns the newly created booking; DECLINE returns just `{ ok }`.
+struct RebookDecisionResponse: Decodable, Sendable {
+    let booking: RebookedBooking?
+}
+
+public struct RebookedBooking: Decodable, Sendable, Identifiable {
+    public let id: String
+    public let status: String
+    public let scheduledFor: String
 }
