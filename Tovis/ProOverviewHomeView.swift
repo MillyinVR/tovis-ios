@@ -53,7 +53,7 @@ struct ProOverviewHomeView: View {
         case .lastMinute:
             placeholder("Last-minute openings, pricing and per-service rules. Coming next.")
         case .locations:
-            placeholder("Your salon, suite & mobile base. Coming next.")
+            ProLocationsView()
         }
     }
 
