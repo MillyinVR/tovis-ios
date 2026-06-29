@@ -94,46 +94,43 @@ editor** (prefs service methods already exist on `ProNotificationsService`); cal
 **day/week grid + block create/edit**; offering **CREATE/DELETE** (only toggle/edit shipped).
 **Next pro step:** merge+redeploy PR #428 (✅ MERGED 2026-06-29), then live-verify the pro suite on the sim.
 
-### 🔍 Web-parity audit (2026-06-29) — exact-match status per page
+### 🔍 Web-parity — ✅ ALL 5 PAGES COMPLETE (2026-06-29 pass 2)
 
-> **Full gap lists + per-page web source files + remaining plan = `docs/PRO-WEB-PARITY.md`.** Read it first.
+> **Full per-page detail = `docs/PRO-WEB-PARITY.md`** (status header updated). Every page now
+> builds Debug+Release; `swift test` **38** green. The pass read the real web components and
+> ported each 1:1 (copy quoted verbatim). Commit map (all on `tovis-ios` main):
 
-Read the real web components and diffed against each native screen (full specs were
-captured from `app/pro/**`). Status:
+- **Notification preferences** ✅ `f56697d` — `NotificationPreferencesView(surface:.pro)` reached
+  from a gear in the pro notification center (DRY: one view serves client + pro).
+- **Profile** ✅ — payment-settings sheet `94a2d9d`; fuller edit form (live handle check +
+  suggestions, nameDisplay cards, profession type, avatar upload via AVATAR_PUBLIC) `26bd389`;
+  tabbed shell (portfolio/services/reviews) + Your-link card (locked/reserve/live) + approval
+  notice + stats + quick actions `71267fa`; services CRUD add(library picker)/delete/add-ons/
+  image `93c3e08`.
+- **Booking detail** ✅ `9ac2397` — rebuilt: header (Booking·#id + TOTAL + tap-for-directions),
+  Timing timeline, Payment breakdown, Aftercare snapshot, Refund flow, web action set
+  (PENDING→Accept/Cancel · ACCEPTED→Start booking/Cancel · IN_PROGRESS→Continue session). The
+  **invented "propose next appointment" rebook card was REMOVED**.
+- **Clients** ✅ — Add-a-client form `a74ddf3`; native **8-tab chart** + safety strip + do-not-rebook
+  banner `a8066d0` (list now opens the chart for viewable clients).
 
-- **Working hours** ✅ PARITY DONE (committed): web header (◆ Salon hours / Base schedule
-  / blurb / "N Days on"), per-day summary line, end-after-start validation, "Save schedule".
-- **Notifications feed** ✅ PARITY DONE (committed): filter chips (All · Unread(n) · Requests ·
-  Updates · Cancelled · Reviews · Social) with the web event→category map, date-grouped
-  sections (Today/Yesterday/"Thu, Jun 28") + per-day counts, per-event text badge + "Unread"
-  badge + h:mm timestamp, status line, "You're caught up." empty copy. ⏳ Notification **prefs
-  settings** screen still TODO (quiet hours + per-event channel toggles + SMS consent note;
-  `ProNotificationsService.preferences/updatePreferences` already exist).
-- **Booking detail** 🔶 PARTIAL — needs **backend GET /pro/bookings/[id] expansion** before it
-  can match: add `totalAmount, serviceSubtotalSnapshot, taxAmount, tipAmount, discountAmount,
-  paymentCollectedAt, selectedPaymentMethod, stripePaymentStatus/AmountTotal/Currency,
-  startedAt, finishedAt, sessionStep, aftercareSummary{sentToClientAt,draftSavedAt,version}`.
-  Then iOS: **Timing** timeline (Scheduled/Started/Finished w/ check dots), **Payment** card
-  (status box + Services/Discount/Tax/Tip/Total rows), **Aftercare** snapshot (SENT/DRAFT badge
-  + "View full aftercare"), header "Booking · #id" + TOTAL + location "tap for directions".
-  Action set to match web: PENDING→Accept/Cancel, ACCEPTED→Start booking(session/start)/Cancel,
-  IN_PROGRESS→Continue session, + **Refund** (POST /api/v1/bookings/{id}/refund, when Stripe
-  payment succeeded). ⚠️ **REMOVE the invented "propose next appointment" rebook card** — it's
-  not on the web booking detail (rebook lives on the aftercare page).
-- **Profile** 🔶 LARGE GAP — web has a vanity-link card (copy/QR/share + "Your link" states),
-  stats grid (rating/reviews/favorites/looks/followers), **3 tabs** (portfolio/services/reviews),
-  portfolio grid w/ upload tile + badges, a full **services manager** (add-service overlay w/
-  category→sub→service pickers + per-offering add-ons manager + service-image upload), a big
-  **Edit Profile modal** (handle w/ live availability check + suggestions via
-  `/pro/profile/handle-available`, business name, name-display 3-option, profession type,
-  location, avatar upload, bio), and a **Payment Settings modal** (collection timing, deposits,
-  8 accepted methods w/ handles, tips w/ suggestions, client note → `/pro/payment-settings`).
-  Current native tab ≈ 25%. Exact copy is in the captured spec.
-- **Clients** 🔶 LARGE GAP — list needs an "Add a client" form + Message/View-chart actions;
-  the **chart** is an 8-tab surface (Notes/Allergies/History/Products/Reviews/Pro-feedback/
-  Photos/Technical) + safety strip + relationship-intelligence card. The chart READ has **no
-  API** (server-rendered) → needs a new backend aggregate `GET /pro/clients/[id]/chart` DTO
-  before it can be ported. Current native ≈ 15%.
+**🔶 OPEN — needs the user (I can't merge PRs / deploy prod unilaterally):**
+Three additive backend PRs on `tovis-app` must be **reviewed + merged**, then **prod redeployed**
+(auto-deploy is OFF → `npx vercel@latest --prod`) so the new native screens work at runtime in a
+Release build. Until then they decode green and Debug→localhost works once the branch is running:
+- **#431** `GET /pro/services/catalog` — feeds the add-service picker.
+- **#432** expands `GET /pro/bookings/[id]` — totals/tax/tip/discount/payment/started+finished/
+  sessionStep/aftercareSummary (the booking-detail Timing/Payment/Aftercare cards).
+- **#433** aggregate `GET /pro/clients/[id]/chart` — the whole client chart (gated by
+  `assertProCanViewClient` + the founder technical-record flag).
+
+**Deferred polish (next session):** pro **aftercare detail** screen (web "View full aftercare" link
+omitted — no native destination yet); in-app **Message** deep-link from the clients list (no native
+start-thread-by-client API); per-tab chart **write forms** beyond Add-a-note + technical-record
+encrypted-note **decryption** (web-only by design); **looks/followers** profile stat tiles (not in the
+public-profile projection — would need a small `GET /pro/profile` stat add); contact/service-addresses
+view (`ProClientDetailView` is now orphaned — re-link or delete). **Visual side-by-side verification on
+the sim was NOT done** (compiles only) — do a real Debug→localhost walkthrough of all 5 pages.
 
 **Why booking-detail + clients weren't done this pass:** both need backend route work, and the
 `tovis-app` checkout was on another active session's branch — branch-switching + `prisma generate`
