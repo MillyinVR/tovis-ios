@@ -50,6 +50,11 @@ struct LooksView: View {
     @State private var commentsFor: LooksFeedItem?
     @State private var saveFor: LooksFeedItem?
 
+    /// The currently-snapped slide (drives which video plays). Bound to the
+    /// pager's scroll position. Mute is shared so an unmute sticks while scrolling.
+    @State private var activeId: String?
+    @State private var muted = true
+
     private var commentsOpen: Bool { commentsFor != nil }
     // Roughly the visible fraction above the 0.7-height comments sheet — scales
     // the look to fit in that top gap. Tune alongside the sheet's .fraction(0.7).
@@ -155,6 +160,8 @@ struct LooksView: View {
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                     LookSlide(
                         item: item,
+                        isActive: activeId == item.id,
+                        muted: muted,
                         liked: liked(item),
                         likeCount: likeCount(item),
                         commentCount: commentCount(item),
@@ -163,7 +170,8 @@ struct LooksView: View {
                         onLike: { Task { await toggleLike(item) } },
                         onComment: { commentsFor = item },
                         onSave: { saveFor = item },
-                        onFollow: { Task { await toggleFollow(item) } }
+                        onFollow: { Task { await toggleFollow(item) } },
+                        onToggleMute: { muted.toggle() }
                     )
                     .containerRelativeFrame([.horizontal, .vertical])
                     .onAppear { Task { await loadMoreIfNeeded(at: index, total: items.count) } }
@@ -176,7 +184,11 @@ struct LooksView: View {
             }
             .scrollTargetLayout()
         }
+        .scrollPosition(id: $activeId, anchor: .center)
         .scrollTargetBehavior(.paging)
+        // Start the first slide playing before any scroll happens.
+        .onAppear { if activeId == nil { activeId = items.first?.id } }
+        .onChange(of: items.first?.id) { _, first in if activeId == nil { activeId = first } }
         // Full-bleed up top, but RESPECT the bottom inset so the slide sits
         // above the footer bar (was hidden behind it). The footer — including
         // the center circle that pokes above it — is an overlay on top, so the
@@ -306,6 +318,9 @@ struct LooksView: View {
 
 private struct LookSlide: View {
     let item: LooksFeedItem
+    /// True only for the slide currently snapped in the pager — gates playback.
+    let isActive: Bool
+    let muted: Bool
     let liked: Bool
     let likeCount: Int
     let commentCount: Int
@@ -315,24 +330,13 @@ private struct LookSlide: View {
     let onComment: () -> Void
     let onSave: () -> Void
     let onFollow: () -> Void
+    let onToggleMute: () -> Void
 
     var body: some View {
         ZStack(alignment: .bottom) {
             Color.black
 
-            if let url = URL(string: item.url) {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case let .success(image): image.resizable().scaledToFill()
-                    case .failure: fallback
-                    default: ProgressView().tint(BrandColor.accent)
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipped()
-            } else {
-                fallback
-            }
+            media
 
             LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .center, endPoint: .bottom)
                 .allowsHitTesting(false)
@@ -348,6 +352,71 @@ private struct LookSlide: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black)
         .clipped()
+    }
+
+    /// Video slides get a chromeless looping player (poster underneath until the
+    /// first frame, tap toggles mute); image slides keep the AsyncImage.
+    @ViewBuilder
+    private var media: some View {
+        if item.isVideo, let url = URL(string: item.url) {
+            ZStack {
+                posterImage // shows instantly; the video layer covers it when ready
+                LookVideoView(url: url, isActive: isActive, isMuted: muted)
+                    .allowsHitTesting(false)
+                muteBadge
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
+            .contentShape(Rectangle())
+            .onTapGesture { onToggleMute() }
+        } else if let url = URL(string: item.url) {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case let .success(image): image.resizable().scaledToFill()
+                case .failure: fallback
+                default: ProgressView().tint(BrandColor.accent)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
+        } else {
+            fallback
+        }
+    }
+
+    private var posterImage: some View {
+        Group {
+            if let thumb = item.thumbUrl, let url = URL(string: thumb) {
+                AsyncImage(url: url) { phase in
+                    if case let .success(image) = phase {
+                        image.resizable().scaledToFill()
+                    } else {
+                        Color.black
+                    }
+                }
+            } else {
+                Color.black
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipped()
+    }
+
+    private var muteBadge: some View {
+        VStack {
+            HStack {
+                Spacer()
+                Image(systemName: muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 32, height: 32)
+                    .background(.black.opacity(0.35), in: Circle())
+                    .padding(.top, 64)
+                    .padding(.trailing, 16)
+            }
+            Spacer()
+        }
+        .allowsHitTesting(false)
     }
 
     private var fallback: some View {
