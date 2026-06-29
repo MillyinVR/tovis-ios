@@ -21,6 +21,25 @@
     },
     "timeZone": "America/Los_Angeles",
     "timeZoneSource": "LOCATION",
+    "sessionStep": "NONE",
+    "startedAt": null,
+    "finishedAt": null,
+    "totalAmount": "242.00",
+    "serviceSubtotalSnapshot": "220.00",
+    "taxAmount": "12.00",
+    "tipAmount": "10.00",
+    "discountAmount": null,
+    "paymentCollectedAt": null,
+    "selectedPaymentMethod": null,
+    "stripePaymentStatus": null,
+    "stripeAmountTotal": null,
+    "stripeCurrency": null,
+    "aftercareSummary": {
+      "notes": "Use sulfate-free shampoo; gloss refresh in 6 weeks.",
+      "sentToClientAt": "2026-07-15T20:00:00.000Z",
+      "draftSavedAt": null,
+      "version": 2
+    },
     "serviceItems": [
       {
         "id": "bsi_1",

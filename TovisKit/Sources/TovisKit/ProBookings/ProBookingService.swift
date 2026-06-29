@@ -54,6 +54,39 @@ public final class ProBookingService: Sendable {
         )
     }
 
+    /// POST /api/v1/pro/bookings/{id}/session/start — start the live session for an
+    /// ACCEPTED booking (web "Start booking"). Idempotent.
+    public func startSession(
+        bookingId: String,
+        idempotencyKey: String = UUID().uuidString
+    ) async throws {
+        let payload = try JSONEncoder().encode(["explicitSelection": true])
+        try await api.requestVoid(
+            "/pro/bookings/\(bookingId)/session/start",
+            method: .post,
+            body: payload,
+            headers: ["idempotency-key": idempotencyKey]
+        )
+    }
+
+    /// POST /api/v1/bookings/{id}/refund — refund a captured Stripe payment. Omit
+    /// `amountCents` to refund in full. Idempotent. (Note: this is the shared
+    /// `/bookings` route, not a `/pro` route.)
+    public func refund(
+        bookingId: String,
+        amountCents: Int? = nil,
+        reason: String? = nil,
+        idempotencyKey: String = UUID().uuidString
+    ) async throws {
+        let payload = try JSONEncoder().encode(ProRefundRequest(amountCents: amountCents, reason: reason))
+        try await api.requestVoid(
+            "/bookings/\(bookingId)/refund",
+            method: .post,
+            body: payload,
+            headers: ["idempotency-key": idempotencyKey]
+        )
+    }
+
     /// POST /api/v1/pro/bookings/{id}/rebook — propose the client's next
     /// appointment. `BOOK` schedules it (needs `scheduledFor`); `RECOMMEND_WINDOW`
     /// suggests a date range; `CLEAR` removes a prior proposal. Idempotent.
@@ -102,4 +135,12 @@ struct ProRebookRequest: Encodable {
     let scheduledFor: String?
     let windowStart: String?
     let windowEnd: String?
+}
+
+/// Refund body. Optionals are dropped from the JSON when nil (synthesized
+/// `encodeIfPresent`), so omitting `amountCents` requests a full refund — matching
+/// the web RefundButton.
+struct ProRefundRequest: Encodable {
+    let amountCents: Int?
+    let reason: String?
 }

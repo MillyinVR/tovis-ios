@@ -269,6 +269,16 @@ func fixture(_ name: String) throws -> Data {
         #expect(b.serviceItems.filter { $0.isAddOn }.count == 1)
         #expect(b.baseItem?.serviceId == "svc_balayage")
         #expect(b.timeZone == "America/Los_Angeles")
+        // Expanded payment/timing/aftercare fields (PR #432).
+        #expect(b.totalLabel == "242.00")
+        #expect(b.taxAmount == "12.00")
+        #expect(b.tipAmount == "10.00")
+        #expect(b.discountAmount == nil)
+        #expect(!b.isPaid)               // no paymentCollectedAt + no Stripe SUCCEEDED
+        #expect(!b.canRefund)
+        #expect(b.sessionStep == "NONE")
+        #expect(b.aftercareSummary?.isSent == true)
+        #expect(b.aftercareSummary?.version == 2)
     }
 
     // GET /api/v1/pro/profile — Fixtures/proMyProfile.json. The pro's own editable

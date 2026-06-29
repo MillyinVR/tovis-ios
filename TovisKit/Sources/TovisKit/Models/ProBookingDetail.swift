@@ -30,6 +30,36 @@ public struct ProBookingDetail: Decodable, Sendable, Identifiable {
     public let timeZoneSource: String?
     public let serviceItems: [ProBookingServiceItem]
 
+    // Expanded fields (tovis-app PR #432). All optional so older fixtures decode.
+    /// Session lifecycle (drives the Timing timeline + the action set).
+    public let sessionStep: String?
+    public let startedAt: String?
+    public let finishedAt: String?
+    // Payment breakdown.
+    public let totalAmount: String?
+    public let serviceSubtotalSnapshot: String?
+    public let taxAmount: String?
+    public let tipAmount: String?
+    public let discountAmount: String?
+    public let paymentCollectedAt: String?
+    public let selectedPaymentMethod: String?
+    public let stripePaymentStatus: String?
+    public let stripeAmountTotal: Int?
+    public let stripeCurrency: String?
+    /// Aftercare snapshot card (null until a summary exists).
+    public let aftercareSummary: ProAftercareSnapshot?
+
+    /// The displayed total — totalAmount, else the subtotal snapshot, else 0.
+    public var totalLabel: String { totalAmount ?? subtotalSnapshot ?? "0.00" }
+
+    /// Collected (web: paymentCollectedAt set, or Stripe SUCCEEDED).
+    public var isPaid: Bool {
+        paymentCollectedAt != nil || stripePaymentStatus?.uppercased() == "SUCCEEDED"
+    }
+
+    /// Refund is offered while a captured Stripe payment exists (web canRefund).
+    public var canRefund: Bool { stripePaymentStatus?.uppercased() == "SUCCEEDED" }
+
     /// Base service item (the one whose name titles the booking), else the first.
     public var baseItem: ProBookingServiceItem? {
         serviceItems.first(where: { !$0.isAddOn }) ?? serviceItems.first
@@ -54,6 +84,16 @@ public struct ProBookingDetail: Decodable, Sendable, Identifiable {
     public var isTerminal: Bool {
         ["CANCELLED", "COMPLETED", "NO_SHOW", "DECLINED", "EXPIRED"].contains(statusUpper)
     }
+}
+
+public struct ProAftercareSnapshot: Decodable, Sendable {
+    public let notes: String?
+    public let sentToClientAt: String?
+    public let draftSavedAt: String?
+    public let version: Int?
+
+    public var isSent: Bool { sentToClientAt != nil }
+    public var isDraft: Bool { !isSent && draftSavedAt != nil }
 }
 
 public struct ProBookingClient: Decodable, Sendable {
