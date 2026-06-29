@@ -1,0 +1,47 @@
+{
+  "ok": true,
+  "booking": {
+    "id": "bk_pro_1",
+    "status": "ACCEPTED",
+    "scheduledFor": "2026-07-15T17:00:00.000Z",
+    "endsAt": "2026-07-15T19:30:00.000Z",
+    "locationId": "loc_1",
+    "locationType": "SALON",
+    "locationAddressSnapshot": "742 Evergreen Terrace, Springfield",
+    "locationLatSnapshot": 34.0522,
+    "locationLngSnapshot": -118.2437,
+    "bufferMinutes": 15,
+    "durationMinutes": 135,
+    "totalDurationMinutes": 135,
+    "subtotalSnapshot": "220.00",
+    "client": {
+      "fullName": "Jordan Rivera",
+      "email": "jordan@example.com",
+      "phone": "+15555550123"
+    },
+    "timeZone": "America/Los_Angeles",
+    "timeZoneSource": "LOCATION",
+    "serviceItems": [
+      {
+        "id": "bsi_1",
+        "serviceId": "svc_balayage",
+        "offeringId": "off_1",
+        "itemType": "BASE",
+        "serviceName": "Balayage",
+        "priceSnapshot": "180.00",
+        "durationMinutesSnapshot": 120,
+        "sortOrder": 0
+      },
+      {
+        "id": "bsi_2",
+        "serviceId": "svc_toner",
+        "offeringId": null,
+        "itemType": "ADD_ON",
+        "serviceName": "Gloss & Toner",
+        "priceSnapshot": "40.00",
+        "durationMinutesSnapshot": 15,
+        "sortOrder": 1
+      }
+    ]
+  }
+}

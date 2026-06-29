@@ -103,7 +103,7 @@ struct ProCalendarView: View {
     private func row(for event: ProCalendarEvent, zone: String?) -> some View {
         if event.isBooking {
             NavigationLink {
-                ProSessionHubView(bookingId: event.id)
+                ProBookingDetailView(bookingId: event.id)
             } label: {
                 ProCalendarEventRow(event: event, zone: zone)
             }

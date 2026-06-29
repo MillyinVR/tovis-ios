@@ -30,6 +30,8 @@ public final class TovisClient: Sendable {
     public let proSession: ProSessionService
     /// PRO workspace — the calendar/agenda (bookings + blocks + management).
     public let proCalendar: ProCalendarService
+    /// PRO workspace — one booking's detail + management (accept/cancel/rebook).
+    public let proBookings: ProBookingService
     /// PRO workspace — session media (before/after photo upload + list).
     public let proMedia: ProMediaService
     public let tokenStore: TokenStore
@@ -78,6 +80,7 @@ public final class TovisClient: Sendable {
         self.notifications = NotificationsService(api: api)
         self.proSession = ProSessionService(api: api)
         self.proCalendar = ProCalendarService(api: api)
+        self.proBookings = ProBookingService(api: api)
         self.proMedia = ProMediaService(
             api: api,
             supabaseURL: config.supabaseURL,

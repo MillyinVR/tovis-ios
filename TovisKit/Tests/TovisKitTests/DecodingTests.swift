@@ -252,6 +252,25 @@ func fixture(_ name: String) throws -> Data {
         #expect(after.displayThumbUrl == "https://x/media_2_t.jpg")     // falls back when no render
     }
 
+    // GET /api/v1/pro/bookings/{id} — Fixtures/proBookingDetail.json. Pro booking
+    // detail (inline backend shape; decode-only until a ProBookingDetailDTO PR).
+    @Test func decodesProBookingDetail() throws {
+        let res = try JSONDecoder().decode(ProBookingDetailResponse.self, from: fixture("proBookingDetail"))
+        let b = res.booking
+        #expect(b.id == "bk_pro_1")
+        #expect(b.status == "ACCEPTED")
+        #expect(b.isAccepted)
+        #expect(b.isCancellable)            // ACCEPTED is still cancellable
+        #expect(!b.isTerminal)
+        #expect(b.title == "Balayage")      // base item names the booking
+        #expect(b.subtotalSnapshot == "220.00")
+        #expect(b.client.fullName == "Jordan Rivera")
+        #expect(b.serviceItems.count == 2)
+        #expect(b.serviceItems.filter { $0.isAddOn }.count == 1)
+        #expect(b.baseItem?.serviceId == "svc_balayage")
+        #expect(b.timeZone == "America/Los_Angeles")
+    }
+
     // GET /api/v1/client/bookings — Fixtures/clientBookings.json (schema-validated).
     @Test func decodesClientBookings() throws {
         let res = try JSONDecoder().decode(ClientBookingsResponse.self, from: fixture("clientBookings"))
