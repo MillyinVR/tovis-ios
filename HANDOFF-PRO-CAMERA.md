@@ -96,6 +96,8 @@ editor** (prefs service methods already exist on `ProNotificationsService`); cal
 
 ### 🔍 Web-parity audit (2026-06-29) — exact-match status per page
 
+> **Full gap lists + per-page web source files + remaining plan = `docs/PRO-WEB-PARITY.md`.** Read it first.
+
 Read the real web components and diffed against each native screen (full specs were
 captured from `app/pro/**`). Status:
 
