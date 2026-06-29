@@ -21,6 +21,19 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     /// Set once before the camera starts; called on the frame queue.
     nonisolated(unsafe) var sink: (@Sendable (CoachResult) -> Void)?
 
+    // MARK: - Best-shot harvesting (Session Reel)
+    /// When on, the analyzer grabs a high-res still whenever quality peaks — the
+    /// "captures across the session, keeps the best frames" behavior. Synced from
+    /// the pro's toggle.
+    nonisolated(unsafe) var autoHarvestEnabled = false
+    /// Emits a harvested JPEG + its readiness. The engine stages it for review.
+    nonisolated(unsafe) var onHarvest: (@Sendable (Data, Double) -> Void)?
+    private var lastHarvestAt: CFTimeInterval = 0
+    private var harvestCount = 0
+    private let minHarvestInterval: CFTimeInterval = 2.5   // ≥1 keeper / 2.5s
+    private let maxHarvest = 24                            // keep the tray curated
+    private let harvestThreshold = 0.85                    // only near-perfect frames
+
     init(coaches: [ShotCoach]) {
         self.coaches = coaches
     }
@@ -50,6 +63,27 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         let nudge = worst.flatMap { entry in entry.1.message.map { CoachNudge(category: entry.0, message: $0) } }
 
         sink?(CoachResult(readiness: readiness, nudge: nudge))
+
+        // Harvest a keeper when quality peaks (rate-limited + capped).
+        if autoHarvestEnabled,
+           readiness >= harvestThreshold,
+           now - lastHarvestAt >= minHarvestInterval,
+           harvestCount < maxHarvest,
+           let data = harvest(pixelBuffer) {
+            lastHarvestAt = now
+            harvestCount += 1
+            onHarvest?(data, readiness)
+        }
+    }
+
+    /// Convert the current frame to an upright JPEG for the best-shots tray.
+    private func harvest(_ pixelBuffer: CVPixelBuffer) -> Data? {
+        let image = CIImage(cvPixelBuffer: pixelBuffer).oriented(.right)
+        return ciContext.jpegRepresentation(
+            of: image,
+            colorSpace: CGColorSpaceCreateDeviceRGB(),
+            options: [:]
+        )
     }
 
     // MARK: - Signals
@@ -92,11 +126,22 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
 
 // MARK: - Engine (MainActor)
 
+/// A high-res still the coach auto-harvested at a quality peak — staged for the
+/// pro to review (keep/upload) rather than uploaded silently.
+struct HarvestedShot: Identifiable {
+    let id = UUID()
+    let image: UIImage
+    let data: Data
+    let readiness: Double
+}
+
 @Observable
 @MainActor
 final class CoachEngine {
     private(set) var readiness: Double = 0
     private(set) var nudge: CoachNudge?
+    /// Auto-harvested best shots awaiting review (newest first).
+    private(set) var harvested: [HarvestedShot] = []
 
     let analyzer: CoachAnalyzer
     private let settings: CoachSettings
@@ -111,12 +156,28 @@ final class CoachEngine {
     init(settings: CoachSettings) {
         self.settings = settings
         self.analyzer = CoachAnalyzer(coaches: [LightingCoach(), CompositionCoach()])
+        analyzer.autoHarvestEnabled = settings.autoHarvest
         analyzer.sink = { [weak self] result in
             Task { @MainActor in self?.apply(result) }
         }
+        analyzer.onHarvest = { [weak self] data, readiness in
+            Task { @MainActor in self?.addHarvest(data, readiness) }
+        }
+    }
+
+    /// Drop reviewed shots (kept or discarded) from the tray.
+    func removeHarvested(_ ids: Set<UUID>) {
+        harvested.removeAll { ids.contains($0.id) }
+    }
+
+    private func addHarvest(_ data: Data, _ readiness: Double) {
+        guard let image = UIImage(data: data) else { return }
+        harvested.insert(HarvestedShot(image: image, data: data, readiness: readiness), at: 0)
     }
 
     private func apply(_ result: CoachResult) {
+        // Keep the harvest gate in sync with the live toggle.
+        analyzer.autoHarvestEnabled = settings.autoHarvest
         readiness = result.readiness
 
         if result.nudge != nudge {

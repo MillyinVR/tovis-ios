@@ -23,6 +23,7 @@ struct ProCapturePhotosView: View {
     @State private var settings = CoachSettings()
     @State private var coach: CoachEngine?
     @State private var showSettings = false
+    @State private var showBestShots = false
 
     var body: some View {
         ZStack {
@@ -45,6 +46,11 @@ struct ProCapturePhotosView: View {
         .onDisappear { camera.stop() }
         .sheet(isPresented: $showSettings) {
             CoachSettingsSheet(settings: settings)
+        }
+        .sheet(isPresented: $showBestShots) {
+            if let coach {
+                BestShotsReviewView(coach: coach, bookingId: bookingId, phase: phase)
+            }
         }
     }
 
@@ -146,6 +152,21 @@ struct ProCapturePhotosView: View {
                     .font(BrandFont.body(13))
                     .foregroundStyle(BrandColor.ember)
                     .multilineTextAlignment(.center)
+            }
+
+            // Auto-harvested "best shots" awaiting review (Session Reel).
+            if let coach, !coach.harvested.isEmpty {
+                Button { showBestShots = true } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "sparkles").font(.system(size: 14, weight: .semibold))
+                        Text("\(coach.harvested.count) best \(coach.harvested.count == 1 ? "shot" : "shots") — review")
+                            .font(BrandFont.body(14, .semibold))
+                    }
+                    .foregroundStyle(BrandColor.onAccent)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(BrandColor.accent, in: Capsule())
+                }
             }
 
             // Captured strip (this session)
