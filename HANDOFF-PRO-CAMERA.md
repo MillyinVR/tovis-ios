@@ -177,23 +177,26 @@ Bell → notifications sheet. Polls every 60s + refresh-tick. That's a *subset* 
 **Backend — READY (verified 2026-06-29):**
 - `GET /api/v1/pro/calendar` — returns `events[]` (BookingEvent|BlockEvent) + `stats` + `management`
   buckets `{todaysBookings, pendingRequests, waitlistToday, blockedToday}` + `timeZone`/`viewportTimeZone`.
-  Uses `DEFAULT_CALENDAR_RANGE_DAYS` window. **⚠️ OPEN: confirm whether it takes a date-range/anchor param
-  for month navigation** (was mid-checking the route's `searchParams` when the session paused — grep
-  `app/api/v1/pro/calendar/route.ts` for an anchor/from/to/month param; if none, month nav needs a param add
-  or client-side range fetch). Native model already in `TovisKit/.../Models/*alendar*.swift`
-  (`ProCalendarResponse/Event/Stats/Management`), service = `session.client.proCalendar.calendar()`.
+  Uses `DEFAULT_CALENDAR_RANGE_DAYS` window. **✅ RESOLVED (inc.1): the route accepts `from`/`to` ISO query
+  params** (`route.ts:437-452`, clamped to `MAX_CALENDAR_RANGE_DAYS`) — month nav needs **no** backend
+  change; the native client just passes the view's range. Native model in `TovisKit/.../Models/*alendar*.swift`
+  (`ProCalendarResponse/Event/Stats/Management`), service = `session.client.proCalendar.calendar(from:to:)`.
 - **Block CRUD endpoints EXIST:** `POST/GET /pro/calendar/blocked` (create/list), `…/blocked/[id]`
   (edit/delete) → wire a native `ProCalendarBlockService` (or extend the calendar service) for the FAB +
   BlockTime/EditBlock modals.
 - Availability: `GET /pro/availability/busy-days` (month dots), `…/availability`.
 
 **Suggested increments (each its own commit, web copy verbatim, decode fixture + test per new DTO):**
-1. **Month grid + view switcher** — `MobileMonthGrid` + `MobileCalendarControls` (Month/Week/Day toggle +
-   prev/next/Today); tap a day → that day's agenda (reuse current agenda rows as the day view). Resolve the
-   month-range param question first.
-2. **Block-time CRUD** — `MobileCalendarFab` "+ Block time" → `BlockTimeModal` create + `EditBlockModal`
-   edit/delete via `/pro/calendar/blocked(/[id])`.
-3. **Day/Week time-grid** — `DayWeekGrid` (time-slot columns w/ booking/block tiles).
+1. ✅ **DONE 2026-06-29 (`c97b027`)** — **Month grid + view switcher.** `ProCalendarControls` (Day/Week/Month
+   toggle + prev/Today/next + range label) + `ProCalendarMonthGrid` (6×7 Monday-start, per-day event dots);
+   tap a day → that day's agenda. The visible range now drives the fetch (`calendar(from:to:)`). Pure date
+   math (range/cells/header/step) in `TovisKit/.../ProCalendar/ProCalendarGrid.swift` + 6 unit tests
+   (`ProCalendarGridTests`). Day/Week reuse the existing agenda rows. `swift test` **43** · Debug+Release green.
+   ⚠️ NOT yet sim-verified (keychain wipe on reinstall → re-login needed). Default view = `.day` (web parity).
+2. **Block-time CRUD** ← **NEXT** — `MobileCalendarFab` "+ Block time" → `BlockTimeModal` create + `EditBlockModal`
+   edit/delete via `/pro/calendar/blocked(/[id])`. Needs a native `ProCalendarBlockService` + decode fixtures.
+3. **Day/Week time-grid** — `DayWeekGrid` (time-slot columns w/ booking/block tiles). Replaces the agenda
+   fallback that inc.1 uses for Day/Week.
 4. **Bars/panels** — `MobilePendingRequestBar`, `MobileAutoAcceptBar`, `CalendarStatsPanel`, location bar.
 
 **House rules carry over:** web-parity 1:1 · no dup logic (reuse BrandSurface/Section/Pill/Avatar + the
