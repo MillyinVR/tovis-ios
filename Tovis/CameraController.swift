@@ -22,12 +22,19 @@ final class CameraController: NSObject {
     // guard. `session` is read by CameraPreview (nonisolated → safe to read).
     nonisolated(unsafe) let session = AVCaptureSession()
     nonisolated(unsafe) private let photoOutput = AVCapturePhotoOutput()
+    nonisolated(unsafe) private let videoOutput = AVCaptureVideoDataOutput()
     nonisolated(unsafe) private var configured = false
     nonisolated(unsafe) private var captureContinuation: CheckedContinuation<Data, Error>?
+    /// Live-frame delegate for the on-device coach (set before `start`). Weak —
+    /// the CoachEngine owns it.
+    nonisolated(unsafe) weak var frameDelegate: AVCaptureVideoDataOutputSampleBufferDelegate?
     private let sessionQueue = DispatchQueue(label: "tovis.camera.session")
+    private let frameQueue = DispatchQueue(label: "tovis.camera.frames")
 
     /// Request permission, configure once, and start the preview. Idempotent.
-    func start() async {
+    /// Pass `frameDelegate` to feed the on-device coach the live frames.
+    func start(frameDelegate: AVCaptureVideoDataOutputSampleBufferDelegate? = nil) async {
+        if let frameDelegate { self.frameDelegate = frameDelegate }
         guard await Self.ensureAuthorized() else { status = .denied; return }
 
         if !configured {
@@ -108,6 +115,14 @@ final class CameraController: NSObject {
                     return
                 }
                 self.session.addOutput(self.photoOutput)
+
+                // Live frames for the on-device coach (optional).
+                if let frameDelegate = self.frameDelegate, self.session.canAddOutput(self.videoOutput) {
+                    self.videoOutput.alwaysDiscardsLateVideoFrames = true
+                    self.videoOutput.setSampleBufferDelegate(frameDelegate, queue: self.frameQueue)
+                    self.session.addOutput(self.videoOutput)
+                }
+
                 self.session.commitConfiguration()
                 cont.resume(returning: nil)
             }

@@ -157,10 +157,24 @@ capture → marketing.
 curated ShotGuides now (learn later) · **custom AVFoundation camera** (needed for overlays/onion-skin/
 auto-capture) · **build Phase A first** (capture + upload foundation).
 
-**Camera build ladder:** **A.** capture + upload foundation (custom AVFoundation, BEFORE/AFTER,
-presign→PUT→confirm, gallery) → **B.** on-device real-time coach → **C.** ShotGuides + onion-skin +
-**comparison slider + portfolio publish** → **D.** Claude critique (consented) → **E.** engagement
-learning loop.
+**Camera build ladder:** **A.** ✅ capture + upload foundation (committed `e9296b5`) → **B.** on-device
+real-time coach [**B1 ✅ committed**: toggles + lighting/composition + nudge/ring/grid + voice/haptics;
+**B2 next**: auto-harvest "best shots" tray; **B3**: on-demand video clip → save-as-portfolio + best-
+frame extraction] → **C.** ShotGuides + onion-skin + **comparison slider + portfolio publish** →
+**D.** Claude critique (consented) → **E.** engagement learning loop.
+
+**The "Session Reel" capture model (user-refined 2026-06-28):** instead of recording the entire
+multi-hour appointment (storage-prohibitive), the always-on coach **auto-harvests high-res stills when
+quality peaks** (B2) + the pro can shoot manually + record **on-demand video clips** that save as VIDEO
+portfolio assets and get **best-frame extraction** (B3). Backend already supports VIDEO via the same
+presign→PUT→confirm pipeline (`mediaType:"VIDEO"`, content-type video/mp4).
+
+**Guidance is toggleable (`CoachSettings`, UserDefaults):** on-screen tips · spoken tips
+(AVSpeechSynthesizer) · haptics · readiness ring · thirds grid · auto-capture. The pro chooses how it
+guides them. `CoachEngine` (MainActor) + `CoachAnalyzer` (AVCaptureVideoDataOutput delegate, ~6 fps,
+Vision face + CoreImage luma) → one prioritized nudge + a 0–1 readiness driving the shutter ring.
+Coaches so far: **Lighting** (exposure/backlit) + **Composition** (face centering/headroom); sharpness/
+background/pose next. Extend by adding a `ShotCoach` to the engine's coach list.
 
 **Phase A contracts (verified in tovis-app):** sign `POST /api/v1/pro/uploads {kind:"CONSULT_PRIVATE",
 bookingId, phase, contentType, size}` → `MediaUploadInitDTO {bucket, path, token, signedUrl, uploadSessionId, …}`;

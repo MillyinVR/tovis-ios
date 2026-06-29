@@ -19,6 +19,11 @@ struct ProCapturePhotosView: View {
     @State private var uploading = false
     @State private var errorMessage: String?
 
+    // AI photographer (Phase B1): live coach + how-it-guides toggles.
+    @State private var settings = CoachSettings()
+    @State private var coach: CoachEngine?
+    @State private var showSettings = false
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -32,15 +37,22 @@ struct ProCapturePhotosView: View {
                 cameraUI
             }
         }
-        .task { await camera.start() }
+        .task {
+            let engine = coach ?? CoachEngine(settings: settings)
+            coach = engine
+            await camera.start(frameDelegate: engine.analyzer)
+        }
         .onDisappear { camera.stop() }
+        .sheet(isPresented: $showSettings) {
+            CoachSettingsSheet(settings: settings)
+        }
     }
 
     // MARK: - Camera UI
 
     private var cameraUI: some View {
         VStack(spacing: 0) {
-            // Live preview
+            // Live preview + coaching overlays
             ZStack(alignment: .top) {
                 if camera.status == .ready {
                     CameraPreview(session: camera.session)
@@ -49,11 +61,51 @@ struct ProCapturePhotosView: View {
                     Color.black
                     ProgressView().tint(.white)
                 }
-                phaseHeader
+
+                if settings.showGrid { thirdsGrid }
+
+                VStack(spacing: 0) {
+                    phaseHeader
+                    if settings.showNudge, let message = coach?.nudge?.message {
+                        nudgeChip(message)
+                    }
+                    Spacer()
+                }
             }
 
             controls
         }
+    }
+
+    /// Rule-of-thirds guide.
+    private var thirdsGrid: some View {
+        GeometryReader { geo in
+            Path { path in
+                let w = geo.size.width, h = geo.size.height
+                for i in 1...2 {
+                    let x = w * CGFloat(i) / 3
+                    path.move(to: CGPoint(x: x, y: 0)); path.addLine(to: CGPoint(x: x, y: h))
+                    let y = h * CGFloat(i) / 3
+                    path.move(to: CGPoint(x: 0, y: y)); path.addLine(to: CGPoint(x: w, y: y))
+                }
+            }
+            .stroke(.white.opacity(0.25), lineWidth: 0.5)
+        }
+        .allowsHitTesting(false)
+    }
+
+    /// The single prioritized coaching tip.
+    private func nudgeChip(_ message: String) -> some View {
+        Text(message)
+            .font(BrandFont.body(14, .semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(.black.opacity(0.55), in: Capsule())
+            .overlay(Capsule().strokeBorder(BrandColor.accent.opacity(0.6), lineWidth: 1))
+            .padding(.top, 12)
+            .transition(.move(edge: .top).combined(with: .opacity))
+            .animation(.easeInOut(duration: 0.25), value: message)
     }
 
     private var phaseHeader: some View {
@@ -74,8 +126,14 @@ struct ProCapturePhotosView: View {
                 .padding(.vertical, 8)
                 .background(.black.opacity(0.4), in: Capsule())
             Spacer()
-            // Spacer to balance the close button.
-            Color.clear.frame(width: 38, height: 38)
+            Button { showSettings = true } label: {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 38, height: 38)
+                    .background(.black.opacity(0.4), in: Circle())
+            }
+            .accessibilityLabel("Coaching settings")
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
@@ -118,7 +176,11 @@ struct ProCapturePhotosView: View {
                     Task { await capture() }
                 } label: {
                     ZStack {
-                        Circle().strokeBorder(.white, lineWidth: 4).frame(width: 74, height: 74)
+                        // Readiness ring (green = good to shoot), per the coach.
+                        Circle()
+                            .strokeBorder(readinessColor, lineWidth: 4)
+                            .frame(width: 74, height: 74)
+                            .animation(.easeInOut(duration: 0.3), value: readinessColor)
                         if uploading {
                             ProgressView().tint(.white)
                         } else {
@@ -205,5 +267,52 @@ struct ProCapturePhotosView: View {
         case .after: return "After"
         case .other: return "Session"
         }
+    }
+
+    /// Shutter ring color from the coach's readiness: red → amber → green.
+    private var readinessColor: Color {
+        guard settings.showReadinessRing, let readiness = coach?.readiness else { return .white }
+        switch readiness {
+        case ..<0.5: return BrandColor.ember
+        case ..<0.8: return BrandColor.gold
+        default: return BrandColor.emerald
+        }
+    }
+}
+
+/// How the AI photographer guides the pro — the toggle sheet (gear in the camera).
+private struct CoachSettingsSheet: View {
+    @Bindable var settings: CoachSettings
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Toggle("On-screen tips", isOn: $settings.showNudge)
+                    Toggle("Speak tips aloud", isOn: $settings.speak)
+                    Toggle("Haptic feedback", isOn: $settings.haptics)
+                } header: {
+                    Text("How it guides you")
+                } footer: {
+                    Text("The AI photographer coaches lighting and composition in real time. Pick how you'd like the tips.")
+                }
+
+                Section("On the camera") {
+                    Toggle("Readiness ring", isOn: $settings.showReadinessRing)
+                    Toggle("Rule-of-thirds grid", isOn: $settings.showGrid)
+                    Toggle("Auto-capture best shots", isOn: $settings.autoHarvest)
+                }
+            }
+            .navigationTitle("Camera coaching")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .tint(BrandColor.accent)
+        .presentationDetents([.medium, .large])
     }
 }
