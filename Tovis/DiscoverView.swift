@@ -27,6 +27,7 @@ struct DiscoverView: View {
     @State private var camera: MapCameraPosition = .region(Self.fallbackRegion)
     @State private var searchedOrigin = Self.fallbackCenter   // origin of the last search
     @State private var mapCenter = Self.fallbackCenter        // current viewport center
+    @State private var mapSpan = Self.fallbackRegion.span     // current zoom (for clustering)
     @State private var didInitialLocate = false
 
     // Filters (all already honored server-side via DiscoverService.searchPros).
@@ -89,11 +90,18 @@ struct DiscoverView: View {
 
     private var mapLayer: some View {
         Map(position: $camera, selection: $activeProId) {
-            ForEach(pinnable) { pin in
-                Annotation(pin.item.displayName, coordinate: pin.coordinate) {
-                    ProPin(active: pin.item.id == activeProId)
+            ForEach(clusters) { cluster in
+                if cluster.count == 1, let pro = cluster.items.first {
+                    Annotation(pro.displayName, coordinate: cluster.coordinate) {
+                        ProPin(active: pro.id == activeProId)
+                    }
+                    .tag(pro.id)
+                } else {
+                    Annotation("", coordinate: cluster.coordinate) {
+                        ClusterPin(count: cluster.count)
+                            .onTapGesture { zoomInto(cluster) }
+                    }
                 }
-                .tag(pin.item.id)
             }
             UserAnnotation()
         }
@@ -102,6 +110,7 @@ struct DiscoverView: View {
         .ignoresSafeArea(edges: .top)
         .onMapCameraChange(frequency: .onEnd) { context in
             mapCenter = context.region.center
+            mapSpan = context.region.span
         }
         .overlay(alignment: .top) {
             if showSearchThisArea {
@@ -138,6 +147,52 @@ struct DiscoverView: View {
         pros.compactMap { pro in
             guard let lat = pro.mapLocation?.lat, let lng = pro.mapLocation?.lng else { return nil }
             return Pinnable(item: pro, coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lng))
+        }
+    }
+
+    private struct MapCluster: Identifiable {
+        let id: String
+        let coordinate: CLLocationCoordinate2D
+        let items: [SearchProItem]
+        var count: Int { items.count }
+    }
+
+    /// Grid-cluster the pins so they don't overlap when zoomed out (SwiftUI Map
+    /// has no native clustering). Cells scale with the current zoom span, so pins
+    /// merge when far apart on screen and split as you zoom in.
+    private var clusters: [MapCluster] {
+        let pins = pinnable
+        guard !pins.isEmpty else { return [] }
+        let cellLat = max(mapSpan.latitudeDelta / 8, 0.0004)
+        let cellLng = max(mapSpan.longitudeDelta / 8, 0.0004)
+
+        var buckets: [String: [Pinnable]] = [:]
+        for pin in pins {
+            let row = Int((pin.coordinate.latitude / cellLat).rounded(.down))
+            let col = Int((pin.coordinate.longitude / cellLng).rounded(.down))
+            buckets["\(row):\(col)", default: []].append(pin)
+        }
+
+        return buckets.map { key, group in
+            let lat = group.reduce(0.0) { $0 + $1.coordinate.latitude } / Double(group.count)
+            let lng = group.reduce(0.0) { $0 + $1.coordinate.longitude } / Double(group.count)
+            return MapCluster(
+                id: group.count == 1 ? group[0].id : key,
+                coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lng),
+                items: group.map(\.item)
+            )
+        }
+    }
+
+    private func zoomInto(_ cluster: MapCluster) {
+        withAnimation {
+            camera = .region(MKCoordinateRegion(
+                center: cluster.coordinate,
+                span: MKCoordinateSpan(
+                    latitudeDelta: max(mapSpan.latitudeDelta / 3, 0.002),
+                    longitudeDelta: max(mapSpan.longitudeDelta / 3, 0.002)
+                )
+            ))
         }
     }
 
@@ -515,6 +570,23 @@ private struct ProPin: View {
                 .overlay(Circle().stroke(.white, lineWidth: active ? 0 : 3))
         }
         .shadow(color: .black.opacity(0.4), radius: 4, y: 2)
+    }
+}
+
+/// A grouped-pins bubble shown when several pros overlap at the current zoom; tap
+/// zooms in to split it apart.
+private struct ClusterPin: View {
+    let count: Int
+
+    var body: some View {
+        Text("\(count)")
+            .font(BrandFont.body(14, .bold))
+            .foregroundStyle(BrandColor.onAccent)
+            .frame(minWidth: 30, minHeight: 30)
+            .padding(.horizontal, 6)
+            .background(BrandColor.accent, in: Circle())
+            .overlay(Circle().stroke(.white, lineWidth: 2))
+            .shadow(color: .black.opacity(0.4), radius: 4, y: 2)
     }
 }
 
