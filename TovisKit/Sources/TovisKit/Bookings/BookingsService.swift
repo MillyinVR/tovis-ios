@@ -33,6 +33,20 @@ public final class BookingsService: Sendable {
         )
     }
 
+    /// POST /api/v1/client/bookings/{id}/media-consent — grant or revoke the pro's
+    /// permission to feature this session's photos/video publicly (portfolio/Looks).
+    /// Returns the resulting consent state. Idempotent.
+    @discardableResult
+    public func setMediaConsent(bookingId: String, granted: Bool) async throws -> Bool {
+        let payload = try JSONEncoder().encode(MediaConsentRequest(granted: granted))
+        let response: MediaConsentResponse = try await api.request(
+            "/client/bookings/\(bookingId)/media-consent",
+            method: .post,
+            body: payload
+        )
+        return response.mediaUseConsent
+    }
+
     /// POST /api/v1/client/bookings/{id}/aftercare-rebook — confirm or decline the
     /// pro's proposed next appointment. CONFIRM creates the booking at the pro's
     /// proposed time (returns it); DECLINE just records the decline. Idempotent.

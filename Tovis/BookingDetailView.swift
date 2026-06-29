@@ -32,6 +32,11 @@ struct BookingDetailView: View {
     @State private var depositError: String?
     @State private var depositPaidLocally = false
 
+    // Media-use consent (B3b)
+    @State private var consentLocal: Bool?
+    @State private var consentWorking = false
+    @State private var consentError: String?
+
     // Manage leg (reschedule / cancel)
     @State private var rescheduleSheet: RescheduleContext?
     @State private var loadingReschedule = false
@@ -156,6 +161,8 @@ struct BookingDetailView: View {
                 depositCard
 
                 payCard
+
+                mediaConsentCard
 
                 manageCard
             }
@@ -356,6 +363,76 @@ struct BookingDetailView: View {
             depositError = error.userMessage
         } catch {
             depositError = "Couldn’t start the deposit. Please try again."
+        }
+    }
+
+    // MARK: - Media-use consent (B3b)
+
+    /// Show the consent toggle once the session has happened (there are/will be
+    /// before/after photos to share). Past or completed bookings qualify.
+    private var showsMediaConsent: Bool {
+        if (booking.status ?? "").uppercased() == "COMPLETED" { return true }
+        if let when = Wire.date(booking.scheduledFor) { return when < Date() }
+        return false
+    }
+
+    private var mediaConsentGranted: Bool { consentLocal ?? booking.mediaUseConsent }
+
+    @ViewBuilder
+    private var mediaConsentCard: some View {
+        if showsMediaConsent {
+            BrandSection(title: "Photos & sharing") {
+                BrandSurface {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Toggle(isOn: Binding(
+                            get: { mediaConsentGranted },
+                            set: { newValue in Task { await setConsent(newValue) } }
+                        )) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Allow \(proFirstName) to feature my photos & video")
+                                    .font(BrandFont.body(15, .semibold))
+                                    .foregroundStyle(BrandColor.textPrimary)
+                                Text("Lets your pro share this session's before/after on their portfolio. You can turn this off anytime.")
+                                    .font(BrandFont.body(12))
+                                    .foregroundStyle(BrandColor.textMuted)
+                            }
+                        }
+                        .tint(BrandColor.accent)
+                        .disabled(consentWorking)
+
+                        if let consentError {
+                            Text(consentError)
+                                .font(BrandFont.body(12))
+                                .foregroundStyle(BrandColor.ember)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var proFirstName: String {
+        let name = booking.professional?.displayName ?? "your pro"
+        return name.split(separator: " ").first.map(String.init) ?? name
+    }
+
+    private func setConsent(_ granted: Bool) async {
+        consentWorking = true
+        consentError = nil
+        consentLocal = granted   // optimistic
+        defer { consentWorking = false }
+        do {
+            let result = try await session.client.bookings.setMediaConsent(
+                bookingId: booking.id, granted: granted
+            )
+            consentLocal = result
+            session.signalRefresh()
+        } catch let error as APIError {
+            consentLocal = !granted   // revert
+            consentError = error.userMessage
+        } catch {
+            consentLocal = !granted
+            consentError = "Couldn’t update that. Please try again."
         }
     }
 

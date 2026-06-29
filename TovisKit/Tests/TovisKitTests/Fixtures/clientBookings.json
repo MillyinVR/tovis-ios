@@ -49,6 +49,7 @@
         "hasPendingConsultationApproval": false,
         "hasPendingRebookConfirmation": false,
         "rebookProposedFor": null,
+        "mediaUseConsent": false,
         "consultation": null
       }
     ],

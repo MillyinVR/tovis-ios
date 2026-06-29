@@ -106,6 +106,9 @@ public struct ClientBooking: Decodable, Sendable, Identifiable {
     public let hasPendingRebookConfirmation: Bool
     /// The pro-proposed next-appointment instant (ISO) when a confirmation is pending.
     public let rebookProposedFor: String?
+    /// Whether the client has allowed the pro to feature this session's photos/video
+    /// publicly (portfolio/Looks). Toggle via POST /client/bookings/{id}/media-consent.
+    public let mediaUseConsent: Bool
 }
 
 public struct BookingLocation: Decodable, Sendable, Identifiable {
@@ -218,4 +221,14 @@ public struct RebookedBooking: Decodable, Sendable, Identifiable {
     public let id: String
     public let status: String
     public let scheduledFor: String
+}
+
+// MARK: - Media-use consent (POST /api/v1/client/bookings/{id}/media-consent)
+
+struct MediaConsentRequest: Encodable, Sendable {
+    let granted: Bool
+}
+
+struct MediaConsentResponse: Decodable, Sendable {
+    let mediaUseConsent: Bool
 }

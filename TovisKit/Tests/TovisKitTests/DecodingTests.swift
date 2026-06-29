@@ -265,6 +265,7 @@ func fixture(_ name: String) throws -> Data {
         #expect(booking.checkout.depositAmount == "25.00")
         #expect(booking.hasPendingRebookConfirmation == false)
         #expect(booking.rebookProposedFor == nil)
+        #expect(booking.mediaUseConsent == false)
         // REAL_NAME mode → first + last name.
         #expect(booking.professional?.displayName == "Dana Lee")
         #expect(b.waitlist.first?.professional?.displayName == "Snip")

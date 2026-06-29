@@ -163,9 +163,13 @@ real-time coach [**B1 ✅**: toggles + lighting/composition + nudge/ring/grid + 
 ≥0.85); **B3a ✅**: on-demand **silent** video clip (AVCaptureMovieFileOutput, NO mic — never records
 salon audio) → frame-by-frame scrubber (AVAssetImageGenerator) to extract the best still or save the
 whole clip, both into the same session media (VIDEO via `uploadSessionVideo`); **B3b next**: client
-per-session media-use consent toggle in aftercare; **B4**: NFC-card ColorChecker calibration (see the
-"NFC card camera calibration" section)] → **C.** ShotGuides + onion-skin + **comparison
-slider + portfolio publish** →
+**B3b ✅**: client per-session media-use consent — backend **tovis-app PR #427** (Booking
+.mediaUseConsentAt + publicShareGuard honors it + `POST /client/bookings/{id}/media-consent` +
+ClientBookingDTO.mediaUseConsent) + iOS client toggle in `BookingDetailView` ("Allow [pro] to feature
+my photos & video", `BookingsService.setMediaConsent`). ⚠️ iOS contract passes against the PR-branch
+schema; merge #427 before a Release build relies on it. **B4**: NFC-card ColorChecker calibration (see
+the "NFC card camera calibration" section)] → **C.** ShotGuides + onion-skin + **comparison
+slider + portfolio publish** (now unlocked by B3b consent) →
 **D.** Claude critique (consented) → **E.** engagement learning loop.
 
 **The "Session Reel" capture model (user-refined 2026-06-28):** instead of recording the entire
