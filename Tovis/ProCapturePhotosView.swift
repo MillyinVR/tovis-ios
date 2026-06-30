@@ -13,8 +13,15 @@ struct ProCapturePhotosView: View {
     let phase: MediaPhase
     /// Base service name (e.g. "Balayage") — selects the ShotGuide. Nil → generic.
     var serviceName: String? = nil
+    /// "Before" photos to ghost as onion-skin while shooting AFTER, so the pairs
+    /// line up. Empty for the BEFORE phase (nothing to match yet).
+    var referenceURLs: [URL] = []
 
     @State private var camera = CameraController()
+    /// Onion-skin (before/after matching) state.
+    @State private var onionEnabled = true
+    @State private var onionOpacity: Double = 0.35
+    @State private var referenceIndex = 0
     /// The directed shot list for this service + progress through it.
     @State private var guide: ShotGuide = .generic
     @State private var currentStepID: String?
@@ -47,6 +54,13 @@ struct ProCapturePhotosView: View {
 
     /// The coach reads the frame as good-to-shoot (green ring).
     private var isReady: Bool { coach?.isReady ?? false }
+
+    /// Onion-skin is on, and there's a "before" to ghost (AFTER phase only).
+    private var showOnion: Bool { onionEnabled && !referenceURLs.isEmpty }
+    private var currentReferenceURL: URL? {
+        guard !referenceURLs.isEmpty else { return nil }
+        return referenceURLs[min(max(referenceIndex, 0), referenceURLs.count - 1)]
+    }
 
     var body: some View {
         ZStack {
@@ -82,6 +96,13 @@ struct ProCapturePhotosView: View {
                 camera.stop()
             } else {
                 camera.resume()
+            }
+        }
+        // Ghost the "before" that matches the current guided shot (before/after
+        // were shot in the same order), so the pair lines up. Manual cycle overrides.
+        .onChange(of: currentStepID) {
+            if !referenceURLs.isEmpty {
+                referenceIndex = min(currentStepIndex, referenceURLs.count - 1)
             }
         }
         .sheet(isPresented: $showSettings) {
@@ -131,6 +152,16 @@ struct ProCapturePhotosView: View {
                 } else {
                     Color.black
                     ProgressView().tint(.white)
+                }
+
+                if showOnion, let url = currentReferenceURL {
+                    AsyncImage(url: url) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: { Color.clear }
+                    .opacity(onionOpacity)
+                    .allowsHitTesting(false)
+                    .clipped()
+                    .ignoresSafeArea(edges: .top)
                 }
 
                 if settings.showGrid { thirdsGrid }
@@ -293,6 +324,42 @@ struct ProCapturePhotosView: View {
         .animation(.easeOut(duration: 0.2), value: allStepsDone)
     }
 
+    // MARK: - Onion-skin (before/after matching)
+
+    /// Match-the-before controls: toggle the ghost, set its strength, and cycle
+    /// which "before" to line up against. Only shown when references exist (AFTER).
+    private var onionControls: some View {
+        HStack(spacing: 12) {
+            Button { onionEnabled.toggle() } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: onionEnabled ? "square.on.square.dashed" : "square.on.square")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("Match before").font(BrandFont.body(13, .semibold))
+                }
+                .foregroundStyle(onionEnabled ? BrandColor.onAccent : .white)
+                .padding(.horizontal, 12).padding(.vertical, 7)
+                .background(onionEnabled ? BrandColor.accent : .white.opacity(0.12), in: Capsule())
+            }
+
+            if showOnion {
+                Image(systemName: "circle.lefthalf.filled").font(.system(size: 12)).foregroundStyle(.white.opacity(0.6))
+                Slider(value: $onionOpacity, in: 0.1...0.7).tint(.white)
+
+                if referenceURLs.count > 1 {
+                    Button {
+                        referenceIndex = (referenceIndex + 1) % referenceURLs.count
+                    } label: {
+                        Text("\(min(referenceIndex, referenceURLs.count - 1) + 1)/\(referenceURLs.count)")
+                            .font(BrandFont.mono(12)).foregroundStyle(.white)
+                            .padding(.horizontal, 10).padding(.vertical, 6)
+                            .background(.white.opacity(0.12), in: Capsule())
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 20)
+    }
+
     // MARK: - Fundamentals HUD
 
     /// The order the fundamentals pills appear in (stable so they don't reshuffle
@@ -386,6 +453,8 @@ struct ProCapturePhotosView: View {
 
     private var controls: some View {
         VStack(spacing: 14) {
+            if !referenceURLs.isEmpty { onionControls }
+
             if let errorMessage {
                 Text(errorMessage)
                     .font(BrandFont.body(13))

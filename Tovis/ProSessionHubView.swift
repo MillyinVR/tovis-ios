@@ -39,6 +39,29 @@ struct ProSessionHubView: View {
     private var beforeCount: Int { media.filter { $0.phase == .before }.count }
     private var afterCount: Int { media.filter { $0.phase == .after }.count }
 
+    /// "Before" photos (capture order) the AFTER camera ghosts as onion-skin so the
+    /// after shots line up with the before — only IMAGE rows, not video clips.
+    private var beforeReferenceURLs: [URL] { imageURLs(.before) }
+    private var afterImageURLs: [URL] { imageURLs(.after) }
+
+    private func imageURLs(_ phase: MediaPhase) -> [URL] {
+        media
+            .filter { $0.phase == phase && $0.mediaType == .image }
+            .sorted { $0.createdAt < $1.createdAt }
+            .compactMap { $0.displayUrl.flatMap(URL.init(string:)) }
+    }
+
+    private struct ComparePair: Identifiable {
+        let before: URL; let after: URL
+        var id: String { before.absoluteString + "|" + after.absoluteString }
+    }
+
+    /// Before/after pairs in capture order (the camera shoots both in guide order),
+    /// for the comparison slider.
+    private var comparisonPairs: [ComparePair] {
+        zip(beforeReferenceURLs, afterImageURLs).map { ComparePair(before: $0, after: $1) }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -64,7 +87,8 @@ struct ProSessionHubView: View {
         .onChange(of: session.refreshTick) { Task { await loadMedia() } }
         .fullScreenCover(item: $capturing, onDismiss: { Task { await reloadAfterCapture() } }) { selection in
             ProCapturePhotosView(bookingId: bookingId, phase: selection.phase,
-                                 serviceName: detail?.baseItem?.serviceName)
+                                 serviceName: detail?.baseItem?.serviceName,
+                                 referenceURLs: selection.phase == .after ? beforeReferenceURLs : [])
         }
         .tint(BrandColor.accent)
     }
@@ -308,9 +332,30 @@ struct ProSessionHubView: View {
 
             photoSection(title: "After photos", count: afterCount, phase: .after, primary: false)
 
+            beforeAfterSection()
+
             aftercareLink("Aftercare", primary: true)
 
             Text(checklist.helpText).font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
+        }
+    }
+
+    /// Before & after comparison slider(s) — the transformation payoff. Paged when
+    /// there's more than one matched pair. Hidden until at least one pair exists.
+    @ViewBuilder
+    private func beforeAfterSection() -> some View {
+        if !comparisonPairs.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Before & after").font(BrandFont.body(15, .semibold))
+                    .foregroundStyle(BrandColor.textPrimary)
+                TabView {
+                    ForEach(comparisonPairs) { pair in
+                        BeforeAfterCompareView(beforeURL: pair.before, afterURL: pair.after)
+                    }
+                }
+                .tabViewStyle(.page(indexDisplayMode: comparisonPairs.count > 1 ? .automatic : .never))
+                .frame(height: 412)
+            }
         }
     }
 
