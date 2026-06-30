@@ -13,7 +13,48 @@ on `tovis-ios` `main`; the one backend change is **merged** (`tovis-app` PR #427
 
 ---
 
-## 🟢 RESUME HERE (2026-06-29, pass 3) — PRO TOP-HEADER + OVERVIEW HOME (6 tabs) ✅ DONE · next = Phase S (session flow)
+## 🟢 RESUME HERE (2026-06-29, pass 4) — PHASE S: full booking/session flow ✅ DONE (S1–S4) · next = sim-verify + deferred bits
+
+**Phase S (the native session/booking flow) is built + committed on `tovis-ios` main; `swift test` 65; Debug+Release
+green; contract 26.** None of it is sim-verified yet (keychain wipe on reinstall → re-login each rebuild).
+
+- **S1 — session state machine** (`a9eace2`): `ProSessionHubView` rebuilt into the web 4-step flow
+  (`app/pro/bookings/[id]/session/page.tsx`). `ProSessionFlow.screenKey` (ported pure + unit-tested) maps the
+  server's `effectiveSessionStep` → one of five screens with the persistent 4-step rail (`ProSessionStepRail`):
+  Consultation → Waiting + Before photos → Service in progress → Wrap-up → Done/Terminal. `ProConsultationFormView`
+  = 1:1 port of `ConsultationForm` (line items from booking services + add-from-catalog + edit price/duration/notes +
+  send for approval + undeliverable notice). In-person fallback wired (`recordInPersonDecision`). New TovisKit:
+  `ProSessionFlow` + `ProSessionCloseout` (pure) + `ProConsultationServices` model; `ProSessionState` extended with
+  consultation + aftercare; `ProSessionService` consultationServices/sendConsultationProposal/recordInPersonDecision.
+- **S2 — wrap-up Mark Paid** (`f30e447`): wrap-up closeout checklist (read in S1) + in-person "Mark as paid" control
+  on the payment row (web `MarkPaidButton`) → `POST /checkout/mark-paid`. `ProBookingService.markPaid` + `waiveCheckout`
+  (waive wired but web surfaces no button). `ProPaymentSettings.manualCollectableMethods` (ordered manual methods).
+- **S3 — aftercare authoring** (`5339691`): `ProAftercareAuthorView` (web `/pro/bookings/[id]/aftercare`) — notes +
+  recommended products (name/link/note) + rebook recommendation + Save draft / Send to client. `ProAftercareDetail`
+  model + `ProAftercareSaveRequest`; `ProBookingService.aftercareDetail/saveAftercare`. Wrap-up + Done push to it;
+  the **aftercare LIST card now deep-links here** (was booking detail).
+- **S4 — create booking** (`c153479`): `ProNewBookingView` (web `/pro/bookings/new`) — pick existing client + salon
+  service + salon location + date/time → `POST /pro/bookings`. `ProBookingService.createBooking`. A **`+` toolbar
+  entry on the bookings list** opens it.
+
+### ⚠️ Phase S deferred vs web (noted in source — pick these up next)
+- **Consultation**: prefill notes/proposedTotal come only from booking serviceItems + subtotal/total (the native
+  `/session/state` doesn't return the consultation proposal's notes/proof) → the "Consultation proof recorded" card
+  is omitted.
+- **Aftercare**: the **"Next booking date" rebook mode** (exact picked slot via `RebookSlotPicker`) needs the
+  openings/availability subsystem — only **None + Booking window** are offered. Product reminders + the catalog
+  product picker are deferred (external name+link products only).
+- **New booking**: **existing clients only** (new-client creation is a separate flow), **SALON only** (MOBILE needs
+  the client service-address sub-flow), and the **openings slot-suggestion picker** is deferred (free date/time +
+  override toggles instead).
+
+**NEXT = sim-verify Phase S end-to-end as an APPROVED pro** (consult → send → approve → before → service → finish →
+after → wrap-up → mark paid → aftercare → send; + create-booking), then close the deferred bits above. Camera device
+run+tune (below) + Phase C/B4 still open.
+
+---
+
+## (prior pass) PRO TOP-HEADER + OVERVIEW HOME (6 tabs) ✅ DONE
 
 **What the user asked for:** the iOS pro app was missing (a) the **top header with tabs** the web has, and
 (b) the **full booking/session flow**. This pass delivered the **entire header phase**; the session flow
@@ -66,7 +107,7 @@ baselined `[id]` route reads). ⚠️ The **pre-push hook runs the FULL vitest s
 refactoring. New Swift files auto-build (`PBXFileSystemSynchronizedRootGroup`); fixtures auto-include
 (`.process("Fixtures")`).
 
-### ▶️ NEXT WORKSTREAM — Phase S: the full booking / session flow (NO backend PRs needed — endpoints exist)
+### ✅ DONE WORKSTREAM — Phase S: the full booking / session flow (S1–S4 shipped 2026-06-29 pass 4; see RESUME above)
 The native `ProSessionHubView` is a v1 stub (status + photo capture + one "Finish session" button). The web
 `app/pro/bookings/[id]/session/page.tsx` is a **4-step state machine** to port:
 - **S1** — rebuild `ProSessionHubView` into the web screens, driven by `getSessionScreenKey`/
