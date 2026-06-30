@@ -124,13 +124,15 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         }
     }
 
-    /// Convert the current frame to an upright JPEG for the best-shots tray.
+    /// Convert the current frame to an upright JPEG for the best-shots tray. High
+    /// JPEG quality — these can end up on the profile / Looks feed.
     private func harvest(_ pixelBuffer: CVPixelBuffer) -> Data? {
         let image = CIImage(cvPixelBuffer: pixelBuffer).oriented(.right)
+        let quality = CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String)
         return ciContext.jpegRepresentation(
             of: image,
             colorSpace: CGColorSpaceCreateDeviceRGB(),
-            options: [:]
+            options: [quality: 0.95]
         )
     }
 
