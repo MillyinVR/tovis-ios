@@ -1,0 +1,46 @@
+{
+  "ok": true,
+  "items": [
+    {
+      "id": "rev_1",
+      "rating": 5,
+      "headline": "Best balayage ever",
+      "body": "Jordan nailed the dimension I wanted. Already rebooked.",
+      "bookingId": "bk_1",
+      "createdAtISO": "2026-06-18T20:00:00.000Z",
+      "date": "Jun 18, 2026",
+      "clientName": "Jordan Rivera",
+      "clientHref": "/u/jordan",
+      "mediaTiles": [
+        {
+          "id": "media_1",
+          "caption": "After",
+          "isVideo": false,
+          "isFeaturedInPortfolio": true,
+          "services": [{ "id": "svcrev_1", "serviceName": "Balayage" }],
+          "src": "https://cdn.example.com/rev1.jpg"
+        },
+        {
+          "id": "media_2",
+          "caption": null,
+          "isVideo": true,
+          "isFeaturedInPortfolio": false,
+          "services": [],
+          "src": "https://cdn.example.com/rev2.jpg"
+        }
+      ]
+    },
+    {
+      "id": "rev_2",
+      "rating": 4,
+      "headline": null,
+      "body": "Great cut, ran a little late.",
+      "bookingId": null,
+      "createdAtISO": "2026-06-10T18:00:00.000Z",
+      "date": "Jun 10, 2026",
+      "clientName": "Sam Okafor",
+      "clientHref": null,
+      "mediaTiles": []
+    }
+  ]
+}

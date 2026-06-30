@@ -362,6 +362,29 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.topServices[0].bookings == 12)
     }
 
+    // GET /api/v1/pro/reviews — Fixtures/proReviewsList.json. The pro reviews
+    // list (tovis-app PR #438). Inline shape; decode-only.
+    @Test func decodesProReviewsList() throws {
+        let res = try JSONDecoder().decode(ProReviewsListResponse.self, from: fixture("proReviewsList"))
+        #expect(res.items.count == 2)
+
+        let first = res.items[0]
+        #expect(first.rating == 5)
+        #expect(first.headline == "Best balayage ever")
+        #expect(first.clientName == "Jordan Rivera")
+        #expect(first.bookingId == "bk_1")
+        #expect(first.mediaTiles.count == 2)
+        #expect(first.mediaTiles[0].isFeaturedInPortfolio)
+        #expect(first.mediaTiles[0].services.first?.serviceName == "Balayage")
+        #expect(first.mediaTiles[1].isVideo)
+        #expect(first.mediaTiles[1].services.isEmpty)
+
+        let second = res.items[1]
+        #expect(second.headline == nil)
+        #expect(second.bookingId == nil)
+        #expect(second.mediaTiles.isEmpty)
+    }
+
     // GET /api/v1/pro/profile — Fixtures/proMyProfile.json. The pro's own editable
     // profile (carries its professionalId). Inline backend shape; decode-only.
     @Test func decodesProMyProfile() throws {

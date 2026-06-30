@@ -17,6 +17,13 @@ public final class ProProfileService: Sendable {
         return response.profile
     }
 
+    /// GET /api/v1/pro/reviews → the pro's reviews list (web `/pro/reviews`):
+    /// the 100 most recent reviews + render-safe media tiles. Read-only.
+    public func reviews() async throws -> [ProReviewItem] {
+        let response: ProReviewsListResponse = try await api.request("/pro/reviews")
+        return response.items
+    }
+
     /// PATCH /api/v1/pro/profile — sparse update; only the provided fields change.
     /// Pass an explicit value to set; omit to leave untouched. Returns the saved
     /// profile. Throws `APIError.server(409,…)` if the handle is taken.
