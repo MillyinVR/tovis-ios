@@ -52,9 +52,13 @@ green; contract 26.** None of it is sim-verified yet (keychain wipe on reinstall
   `save()` sends `rebookedFor` + `rebookSlot {offeringId,locationId,locationType,startsAt,endsAt}` for BOOKED.
   ⚠️ MOBILE rebook may not return slots without a client address (SALON fully supported). Product reminders + the
   catalog product picker are still deferred (external name+link products only). NOT sim-verified yet.
-- **Consultation**: prefill notes/proposedTotal come only from booking serviceItems + subtotal/total (the native
-  `/session/state` doesn't return the consultation proposal's notes/proof) → the "Consultation proof recorded" card
-  is omitted (needs a tiny backend add to the state payload).
+- ✅ **Consultation proof card — DONE 2026-06-30 (`b22b40c`).** The "Consultation proof recorded" card (decision ·
+  method · recorded-at) now renders on the consultation + waiting screens. 🔶 **Backend companion = tovis-app PR
+  #441 (OPEN)** adds the proof to the `/session/state` payload (`consultationApproval.proof {decision,method,actedAt}`;
+  audit-only destination/recordedByUserId excluded → PII-free). **MERGE + redeploy prod before Release shows the
+  card** (the native model is backward-compatible — the card just stays hidden until the field arrives). The
+  consultation **prefill** notes/proposedTotal still come only from booking serviceItems + subtotal/total (the
+  proposal's *notes* aren't in the state payload) — minor, not surfaced.
 - **New booking** (remaining): **existing clients only** (new-client creation is a separate flow), **SALON only**
   (MOBILE needs the client service-address sub-flow).
 
