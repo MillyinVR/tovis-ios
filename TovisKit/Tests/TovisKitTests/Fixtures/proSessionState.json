@@ -1,0 +1,27 @@
+{
+  "state": {
+    "bookingId": "bk_1",
+    "status": "IN_PROGRESS",
+    "sessionStep": "CONSULTATION_PENDING_CLIENT",
+    "effectiveSessionStep": "CONSULTATION_PENDING_CLIENT",
+    "terminal": false,
+    "startedAt": "2026-06-30T17:00:00.000Z",
+    "finishedAt": null,
+    "consultation": {
+      "status": "APPROVED",
+      "approvedAt": "2026-06-30T17:10:00.000Z",
+      "rejectedAt": null,
+      "proof": {
+        "decision": "APPROVED",
+        "method": "REMOTE_SECURE_LINK",
+        "actedAt": "2026-06-30T17:09:30.000Z"
+      }
+    },
+    "checkout": {
+      "status": "NOT_READY",
+      "selectedPaymentMethod": null,
+      "paymentCollectedAt": null
+    },
+    "aftercare": null
+  }
+}

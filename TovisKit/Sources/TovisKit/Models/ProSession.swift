@@ -121,6 +121,35 @@ public struct ProSessionStateConsultation: Decodable, Sendable {
     public let status: String?
     public let approvedAt: String?
     public let rejectedAt: String?
+    /// How/when the consultation was decided (remote secure link vs in-person).
+    /// Present once a decision has been recorded (tovis-app PR #441).
+    public let proof: ProSessionStateProof?
+}
+
+public struct ProSessionStateProof: Decodable, Sendable {
+    /// "APPROVED" | "REJECTED".
+    public let decision: String?
+    /// "REMOTE_SECURE_LINK" | "IN_PERSON_PRO_DEVICE".
+    public let method: String?
+    public let actedAt: String?
+
+    /// "Approved" / "Rejected" (web `labelForConsultationDecision`).
+    public var decisionLabel: String {
+        switch decision?.uppercased() {
+        case "APPROVED": return "Approved"
+        case "REJECTED": return "Rejected"
+        default: return "Unknown"
+        }
+    }
+
+    /// "Remote secure link" / "In-person on pro device" (web `labelForProofMethod`).
+    public var methodLabel: String {
+        switch method?.uppercased() {
+        case "REMOTE_SECURE_LINK": return "Remote secure link"
+        case "IN_PERSON_PRO_DEVICE": return "In-person on pro device"
+        default: return "Unknown"
+        }
+    }
 }
 
 public struct ProSessionStateCheckout: Decodable, Sendable {

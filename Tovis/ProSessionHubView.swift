@@ -149,6 +149,35 @@ struct ProSessionHubView: View {
             Text("This booking is pending. Accept it before starting the session.")
                 .font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
         }
+
+        proofCard(state)
+    }
+
+    /// "Consultation proof recorded" card (web `ProofCard`) — shown once a remote
+    /// or in-person decision exists. Decision · method · recorded-at.
+    @ViewBuilder
+    private func proofCard(_ state: ProSessionState) -> some View {
+        if let proof = state.consultation?.proof {
+            BrandSurface {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Consultation proof recorded")
+                        .font(BrandFont.body(14, .semibold)).foregroundStyle(BrandColor.textPrimary)
+                    proofRow("Decision", proof.decisionLabel)
+                    proofRow("Method", proof.methodLabel)
+                    if let actedAt = proof.actedAt {
+                        proofRow("Recorded", Wire.dateTime(actedAt, timeZone: detail?.timeZone))
+                    }
+                }
+            }
+        }
+    }
+
+    private func proofRow(_ label: String, _ value: String) -> some View {
+        HStack {
+            Text(label).font(BrandFont.body(13)).foregroundStyle(BrandColor.textSecondary)
+            Spacer()
+            Text(value).font(BrandFont.body(13, .semibold)).foregroundStyle(BrandColor.textPrimary)
+        }
     }
 
     // MARK: - Waiting on client + before photos (combined)
@@ -204,6 +233,8 @@ struct ProSessionHubView: View {
         if !approved {
             ghostButton("← Back to consultation") { await transition(to: .consultation) }
         }
+
+        proofCard(state)
     }
 
     // MARK: - Service in progress

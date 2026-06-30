@@ -390,6 +390,25 @@ func fixture(_ name: String) throws -> Data {
         #expect(summary.recommendedProducts[1].product?.retailPrice == "28.00")
     }
 
+    // GET /api/v1/pro/bookings/[id]/session/state — the per-booking session
+    // state, incl. the consultation proof (tovis-app PR #441). Decode-only.
+    @Test func decodesProSessionStateWithProof() throws {
+        let res = try JSONDecoder().decode(
+            ProSessionStateResponse.self, from: fixture("proSessionState"))
+        let state = res.state
+
+        #expect(state.bookingId == "bk_1")
+        #expect(state.screenKey == .waitingOnClient)
+        #expect(state.isConsultationApproved)
+
+        let proof = try #require(state.consultation?.proof)
+        #expect(proof.decision == "APPROVED")
+        #expect(proof.decisionLabel == "Approved")
+        #expect(proof.method == "REMOTE_SECURE_LINK")
+        #expect(proof.methodLabel == "Remote secure link")
+        #expect(proof.actedAt == "2026-06-30T17:09:30.000Z")
+    }
+
     // GET /api/v1/pro/overview — Fixtures/proOverview.json. The pro dashboard
     // monthly analytics (tovis-app PR #437). Inline shape; decode-only.
     @Test func decodesProOverview() throws {
