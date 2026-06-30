@@ -165,6 +165,31 @@ public final class ProBookingService: Sendable {
         )
     }
 
+    /// GET /api/v1/pro/bookings/{id}/aftercare — the booking + its existing
+    /// aftercare summary (prefill for the authoring screen).
+    public func aftercareDetail(bookingId: String) async throws -> ProAftercareBooking {
+        let response: ProAftercareDetailResponse = try await api.request(
+            "/pro/bookings/\(bookingId)/aftercare"
+        )
+        return response.booking
+    }
+
+    /// POST /api/v1/pro/bookings/{id}/aftercare — save a draft (`sendToClient`
+    /// false) or finalize + send to the client (true). Idempotent.
+    public func saveAftercare(
+        bookingId: String,
+        request: ProAftercareSaveRequest,
+        idempotencyKey: String = UUID().uuidString
+    ) async throws {
+        let payload = try JSONEncoder().encode(request)
+        try await api.requestVoid(
+            "/pro/bookings/\(bookingId)/aftercare",
+            method: .post,
+            body: payload,
+            headers: ["idempotency-key": idempotencyKey]
+        )
+    }
+
     /// POST /api/v1/pro/bookings/{id}/checkout/waive — waive the booking's checkout
     /// (no payment owed). Idempotent. (Wired for completeness; the web pro screens
     /// don't surface a waive button today.)

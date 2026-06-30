@@ -366,6 +366,30 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.existingBookingItems[0].itemType == "BASE")
     }
 
+    // GET /api/v1/pro/bookings/[id]/aftercare — the authoring screen prefill.
+    // Inline shape; decode-only.
+    @Test func decodesProAftercareDetail() throws {
+        let res = try JSONDecoder().decode(
+            ProAftercareDetailResponse.self, from: fixture("proAftercareDetail"))
+
+        let booking = res.booking
+        #expect(booking.id == "bk_1")
+        #expect(booking.locationTimeZone == "America/Los_Angeles")
+
+        let summary = try #require(booking.aftercareSummary)
+        #expect(summary.rebookMode == "RECOMMENDED_WINDOW")
+        #expect(summary.version == 2)
+        #expect(summary.isFinalized == false)
+        #expect(summary.rebookWindowStart == "2026-07-20T07:00:00.000Z")
+        #expect(summary.recommendedProducts.count == 2)
+
+        // External product (name + url) vs catalog product (nested `product`).
+        #expect(summary.recommendedProducts[0].displayName == "Olaplex No.7")
+        #expect(summary.recommendedProducts[0].externalUrl == "https://example.com/olaplex-7")
+        #expect(summary.recommendedProducts[1].displayName == "Purple Toning Shampoo")
+        #expect(summary.recommendedProducts[1].product?.retailPrice == "28.00")
+    }
+
     // GET /api/v1/pro/overview — Fixtures/proOverview.json. The pro dashboard
     // monthly analytics (tovis-app PR #437). Inline shape; decode-only.
     @Test func decodesProOverview() throws {

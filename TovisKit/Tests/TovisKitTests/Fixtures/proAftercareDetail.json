@@ -1,0 +1,48 @@
+{
+  "booking": {
+    "id": "bk_1",
+    "status": "IN_PROGRESS",
+    "sessionStep": "AFTER_PHOTOS",
+    "scheduledFor": "2026-07-01T17:00:00.000Z",
+    "finishedAt": null,
+    "locationTimeZone": "America/Los_Angeles",
+    "aftercareSummary": {
+      "id": "ac_1",
+      "notes": "Use a sulfate-free shampoo twice a week.",
+      "rebookMode": "RECOMMENDED_WINDOW",
+      "rebookedFor": null,
+      "rebookWindowStart": "2026-07-20T07:00:00.000Z",
+      "rebookWindowEnd": "2026-08-03T06:59:59.999Z",
+      "rebookDeclinedAt": null,
+      "rebookSlot": null,
+      "draftSavedAt": "2026-07-01T18:30:00.000Z",
+      "sentToClientAt": null,
+      "lastEditedAt": "2026-07-01T18:30:00.000Z",
+      "version": 2,
+      "isFinalized": false,
+      "recommendedProducts": [
+        {
+          "id": "rp_1",
+          "note": "AM only",
+          "productId": null,
+          "externalName": "Olaplex No.7",
+          "externalUrl": "https://example.com/olaplex-7",
+          "product": null
+        },
+        {
+          "id": "rp_2",
+          "note": null,
+          "productId": "prod_9",
+          "externalName": null,
+          "externalUrl": null,
+          "product": {
+            "id": "prod_9",
+            "name": "Purple Toning Shampoo",
+            "brand": "Tovis",
+            "retailPrice": "28.00"
+          }
+        }
+      ]
+    }
+  }
+}

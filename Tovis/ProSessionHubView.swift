@@ -276,7 +276,22 @@ struct ProSessionHubView: View {
 
             photoSection(title: "After photos", count: afterCount, phase: .after, primary: false)
 
+            aftercareLink("Aftercare", primary: true)
+
             Text(checklist.helpText).font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
+        }
+    }
+
+    /// A push link to the aftercare authoring screen; reloads the hub on send.
+    private func aftercareLink(_ title: String, primary: Bool) -> some View {
+        NavigationLink {
+            ProAftercareAuthorView(bookingId: bookingId, onSent: { Task { await load() } })
+        } label: {
+            Text(title).font(BrandFont.body(16, .semibold))
+                .frame(maxWidth: .infinity).padding(.vertical, 15)
+                .background(primary ? BrandColor.accent : BrandColor.bgSecondary)
+                .foregroundStyle(primary ? BrandColor.onAccent : BrandColor.textPrimary)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
     }
 
@@ -349,6 +364,7 @@ struct ProSessionHubView: View {
                     .font(BrandFont.body(13)).foregroundStyle(BrandColor.textSecondary)
             }
         }
+        aftercareLink("Open aftercare", primary: true)
     }
 
     @ViewBuilder

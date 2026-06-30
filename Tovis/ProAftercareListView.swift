@@ -2,12 +2,10 @@
 // (app/pro/aftercare/AftercareListClient.tsx), backed by GET /api/v1/pro/aftercare
 // (tovis-app PR #436). Summary tiles + Draft/Sent/Finished filter tabs + search
 // over the derived cards (before/after thumbs · client · service · status ·
-// rebook chip · activity stamp). A card taps through to the booking detail.
+// rebook chip · activity stamp). A card taps through to the aftercare authoring
+// screen (Phase S3, the web "View full aftercare" destination), where the pro
+// writes notes, recommends products, sets a rebook, and sends to the client.
 // Lives on the Overview home's Aftercare tab.
-//
-// Read-focused v1: the Send / Nudge write actions are deferred to the native
-// aftercare authoring screen (Phase S3); the web "View full aftercare" link
-// (the authoring page) maps to the booking detail here for now.
 import SwiftUI
 import TovisKit
 
@@ -79,7 +77,7 @@ struct ProAftercareListView: View {
             VStack(spacing: 10) {
                 ForEach(shown) { item in
                     NavigationLink {
-                        ProBookingDetailView(bookingId: item.bookingId)
+                        ProAftercareAuthorView(bookingId: item.bookingId)
                     } label: {
                         card(item)
                     }
