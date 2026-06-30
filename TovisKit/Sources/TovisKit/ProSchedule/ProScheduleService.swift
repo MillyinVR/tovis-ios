@@ -10,6 +10,13 @@ public final class ProScheduleService: Sendable {
         self.api = api
     }
 
+    /// GET /api/v1/pro/last-minute/workspace — the last-minute settings (master
+    /// toggle, priority offer, tiers, per-day disables) + service rules + blocks +
+    /// active offerings (web `/pro/last-minute`).
+    public func lastMinuteWorkspace() async throws -> ProLastMinuteWorkspace {
+        return try await api.request("/pro/last-minute/workspace")
+    }
+
     /// GET /api/v1/pro/working-hours — the saved (or default) week for a location
     /// type. `locationType` is "SALON" or "MOBILE".
     public func workingHours(

@@ -51,7 +51,7 @@ struct ProOverviewHomeView: View {
         case .bookings:
             ProBookingsListView()
         case .lastMinute:
-            placeholder("Last-minute openings, pricing and per-service rules. Coming next.")
+            ProLastMinuteView()
         case .locations:
             ProLocationsView()
         }

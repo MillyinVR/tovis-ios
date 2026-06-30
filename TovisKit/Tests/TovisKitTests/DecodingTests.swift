@@ -385,6 +385,27 @@ func fixture(_ name: String) throws -> Data {
         #expect(second.mediaTiles.isEmpty)
     }
 
+    // GET /api/v1/pro/last-minute/workspace — Fixtures/proLastMinute.json. The
+    // last-minute settings workspace (tovis-app PR #439). Inline shape; decode-only.
+    @Test func decodesProLastMinuteWorkspace() throws {
+        let res = try JSONDecoder().decode(ProLastMinuteWorkspace.self, from: fixture("proLastMinute"))
+        #expect(res.timeZone == "America/Los_Angeles")
+        #expect(res.settings.enabled)
+        #expect(res.settings.priorityOfferEnabled)
+        #expect(res.settings.priorityOfferMinutes == 30)
+        #expect(res.settings.minCollectedSubtotal == "40.00")
+        #expect(res.settings.disableSun)
+        #expect(res.settings.disableMon == false)
+        #expect(res.settings.serviceRules.count == 2)
+        #expect(res.settings.serviceRules[0].enabled)
+        #expect(res.settings.serviceRules[1].minCollectedSubtotal == nil)
+        #expect(res.settings.blocks.count == 1)
+        #expect(res.settings.blocks[0].reason == "Holiday")
+        #expect(res.offerings.count == 2)
+        #expect(res.offerings[0].name == "Balayage")
+        #expect(res.offerings[0].basePrice == "180.00")
+    }
+
     // GET /api/v1/pro/profile — Fixtures/proMyProfile.json. The pro's own editable
     // profile (carries its professionalId). Inline backend shape; decode-only.
     @Test func decodesProMyProfile() throws {

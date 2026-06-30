@@ -1,0 +1,32 @@
+{
+  "ok": true,
+  "timeZone": "America/Los_Angeles",
+  "settings": {
+    "id": "lm_1",
+    "enabled": true,
+    "priorityOfferEnabled": true,
+    "priorityOfferMinutes": 30,
+    "defaultVisibilityMode": "ALL_CLIENTS",
+    "minCollectedSubtotal": "40.00",
+    "tier2NightBeforeMinutes": 720,
+    "tier3DayOfMinutes": 180,
+    "disableMon": false,
+    "disableTue": false,
+    "disableWed": false,
+    "disableThu": false,
+    "disableFri": false,
+    "disableSat": false,
+    "disableSun": true,
+    "serviceRules": [
+      { "serviceId": "svc_balayage", "enabled": true, "minCollectedSubtotal": "60.00" },
+      { "serviceId": "svc_cut", "enabled": false, "minCollectedSubtotal": null }
+    ],
+    "blocks": [
+      { "id": "blk_1", "startAt": "2026-07-04T00:00:00.000Z", "endAt": "2026-07-05T00:00:00.000Z", "reason": "Holiday" }
+    ]
+  },
+  "offerings": [
+    { "id": "off_1", "serviceId": "svc_balayage", "name": "Balayage", "basePrice": "180.00" },
+    { "id": "off_2", "serviceId": "svc_cut", "name": "Women's Cut", "basePrice": "70.00" }
+  ]
+}
