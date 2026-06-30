@@ -4,10 +4,9 @@
 // either save a draft or finalize + send to the client. GET prefills from any
 // existing summary; POST saves (sendToClient false = draft, true = send).
 //
-// Deferred vs web: the "Next booking date" rebook mode (an exact picked slot via
-// RebookSlotPicker) needs the openings/availability subsystem — offered here are
-// None + Booking window. Product reminders + the product catalog picker are also
-// deferred (external name+link products only).
+// Recommended products are external (name + link + note) — matching the web form,
+// which always sends productId: null (there is no catalog picker on the web
+// aftercare form). Smart reminders (rebook + product follow-up) are supported.
 import SwiftUI
 import TovisKit
 
@@ -47,6 +46,12 @@ struct ProAftercareAuthorView: View {
     @State private var rebookDurationMinutes = 60
     @State private var selectedSlot: String?   // chosen ISO start instant
 
+    // Smart reminders (web "Smart reminders" section).
+    @State private var createRebookReminder = false
+    @State private var rebookReminderDaysBefore = 2
+    @State private var createProductReminder = false
+    @State private var productReminderDaysAfter = 7
+
     private struct EditableProduct: Identifiable {
         let id = UUID()
         var name = ""
@@ -63,6 +68,7 @@ struct ProAftercareAuthorView: View {
                     notesSection
                     rebookSection
                     productsSection
+                    remindersSection
                     if let errorText {
                         Text(errorText).font(BrandFont.body(13)).foregroundStyle(BrandColor.ember)
                     }
@@ -196,6 +202,83 @@ struct ProAftercareAuthorView: View {
                 }
                 .disabled(saving)
             }
+        }
+    }
+
+    /// Whether a rebook reminder can be set — only for an exact picked next
+    /// appointment (web: `BOOKED_NEXT_APPOINTMENT && hasBookedDate`).
+    private var rebookReminderAvailable: Bool {
+        rebookMode == .booked && selectedSlot != nil
+    }
+
+    private var remindersSection: some View {
+        BrandSection(title: "Smart reminders") {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Nudge Future You to check in at the right time.")
+                    .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
+
+                BrandSurface {
+                    VStack(alignment: .leading, spacing: 14) {
+                        // Rebook reminder — only for a single recommended date.
+                        VStack(alignment: .leading, spacing: 8) {
+                            Toggle(isOn: $createRebookReminder) {
+                                Text("Create a rebook reminder").font(BrandFont.body(13, .semibold))
+                            }
+                            .tint(BrandColor.accent)
+                            .disabled(saving || !rebookReminderAvailable)
+                            .opacity(rebookReminderAvailable ? 1 : 0.55)
+                            if rebookReminderAvailable {
+                                if createRebookReminder {
+                                    daysStepper(value: $rebookReminderDaysBefore,
+                                                options: [1, 2, 3, 7], suffix: "before the recommended date")
+                                }
+                            } else {
+                                Text("Rebook reminders only apply to a single recommended date (Next booking date).")
+                                    .font(BrandFont.body(11)).foregroundStyle(BrandColor.textMuted)
+                            }
+                        }
+
+                        Divider().overlay(BrandColor.textMuted.opacity(0.15))
+
+                        // Product follow-up.
+                        VStack(alignment: .leading, spacing: 8) {
+                            Toggle(isOn: $createProductReminder) {
+                                Text("Create a product follow-up").font(BrandFont.body(13, .semibold))
+                            }
+                            .tint(BrandColor.accent).disabled(saving)
+                            if createProductReminder {
+                                daysStepper(value: $productReminderDaysAfter,
+                                            options: [3, 7, 14, 30], suffix: "after the booking")
+                            }
+                        }
+                    }
+                    .foregroundStyle(BrandColor.textPrimary)
+                }
+
+                Text("These go into your Reminders tab so Future You remembers to check in.")
+                    .font(BrandFont.body(11)).foregroundStyle(BrandColor.textMuted)
+            }
+        }
+    }
+
+    private func daysStepper(value: Binding<Int>, options: [Int], suffix: String) -> some View {
+        HStack(spacing: 6) {
+            Menu {
+                ForEach(options, id: \.self) { day in
+                    Button("\(day) day\(day == 1 ? "" : "s")") { value.wrappedValue = day }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text("\(value.wrappedValue) day\(value.wrappedValue == 1 ? "" : "s")")
+                        .font(BrandFont.body(12, .semibold))
+                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 10))
+                }
+                .foregroundStyle(BrandColor.accent)
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .background(BrandColor.accent.opacity(0.12)).clipShape(Capsule())
+            }
+            .disabled(saving)
+            Text(suffix).font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
         }
     }
 
@@ -339,10 +422,11 @@ struct ProAftercareAuthorView: View {
             rebookSlot: bookedSlot,
             rebookWindowStart: rebookMode == .window ? isoStartOfDay(windowStart, zone) : nil,
             rebookWindowEnd: rebookMode == .window ? isoEndOfDay(windowEnd, zone) : nil,
-            createRebookReminder: false,
-            rebookReminderDaysBefore: 2,
-            createProductReminder: false,
-            productReminderDaysAfter: 7,
+            // Rebook reminders only apply to a single picked next appointment.
+            createRebookReminder: rebookReminderAvailable && createRebookReminder,
+            rebookReminderDaysBefore: rebookReminderDaysBefore,
+            createProductReminder: createProductReminder,
+            productReminderDaysAfter: productReminderDaysAfter,
             sendToClient: sendToClient,
             timeZone: timeZone,
             version: version,
