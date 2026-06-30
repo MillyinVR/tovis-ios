@@ -37,16 +37,23 @@ green; contract 26.** None of it is sim-verified yet (keychain wipe on reinstall
   service + salon location + date/time → `POST /pro/bookings`. `ProBookingService.createBooking`. A **`+` toolbar
   entry on the bookings list** opens it.
 
-### ⚠️ Phase S deferred vs web (noted in source — pick these up next)
+### ⚠️ Phase S deferred vs web (pick these up next)
+- ✅ **New-booking open-slot picker — DONE 2026-06-30 (`3df5ebb`).** `ProNewBookingView` now fetches the pro's real
+  open slots for the chosen service+location+date from **`GET /api/v1/availability/day`** (reused via the existing
+  `BookingService.day` + `ProProfileService.myProfile().id`), rendered as tappable time chips in the location zone;
+  a "custom time" toggle keeps the free date/time + overrides for off-grid. **No new endpoint/model — pure reuse.**
+  ⚠️ The handoff's old "`GET /pro/openings`" reference was a misnomer (that route is the **last-minute openings
+  manager**); the web new-booking form itself uses a plain `datetime-local`, so this is a native improvement. **This
+  lays the `availability/day` groundwork the aftercare rebook slot mode needs (below).** NOT sim-verified yet.
+- **Aftercare**: the **"Next booking date" rebook mode** (exact picked slot) is still deferred — but the
+  `availability/day` integration now exists in `ProNewBookingView`'s slot picker, so this is mostly a port of that
+  chip UI into `ProAftercareAuthorView` + sending `rebookSlot {offeringId,locationId,locationType,startsAt,endsAt}`
+  in the save body. Product reminders + the catalog product picker are also deferred (external name+link only).
 - **Consultation**: prefill notes/proposedTotal come only from booking serviceItems + subtotal/total (the native
   `/session/state` doesn't return the consultation proposal's notes/proof) → the "Consultation proof recorded" card
-  is omitted.
-- **Aftercare**: the **"Next booking date" rebook mode** (exact picked slot via `RebookSlotPicker`) needs the
-  openings/availability subsystem — only **None + Booking window** are offered. Product reminders + the catalog
-  product picker are deferred (external name+link products only).
-- **New booking**: **existing clients only** (new-client creation is a separate flow), **SALON only** (MOBILE needs
-  the client service-address sub-flow), and the **openings slot-suggestion picker** is deferred (free date/time +
-  override toggles instead).
+  is omitted (needs a tiny backend add to the state payload).
+- **New booking** (remaining): **existing clients only** (new-client creation is a separate flow), **SALON only**
+  (MOBILE needs the client service-address sub-flow).
 
 ### 🔧 Post-S1 fix — consultation "Add" picker is now base/add-on aware (`4c18ef1`)
 **Sim-found bug:** adding a 2nd service in the consultation form failed with *"Invalid proposed services. Include
