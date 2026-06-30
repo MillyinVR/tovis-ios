@@ -281,6 +281,41 @@ func fixture(_ name: String) throws -> Data {
         #expect(b.aftercareSummary?.version == 2)
     }
 
+    // GET /api/v1/pro/bookings — Fixtures/proBookingsList.json. The native
+    // bookings list (tovis-app PR #435): buckets + stats. Inline shape; decode-only.
+    @Test func decodesProBookingsList() throws {
+        let res = try JSONDecoder().decode(ProBookingsListResponse.self, from: fixture("proBookingsList"))
+        #expect(res.scheduleTimeZone == "America/Los_Angeles")
+        #expect(res.statusFilter == "ALL")
+        #expect(res.stats.today == 2)
+        #expect(res.stats.inSession == 1)
+        #expect(res.stats.paymentDue == 1)
+        #expect(res.today.count == 2)
+        #expect(res.upcoming.count == 1)
+        #expect(res.past.isEmpty)
+        #expect(res.cancelled.count == 1)
+
+        let first = res.today[0]
+        #expect(first.id == "bk_today_1")
+        #expect(first.isInProgress)
+        #expect(first.statusLabel == "In progress")
+        #expect(first.serviceName == "Balayage")
+        #expect(first.addOnNames == ["Toner"])
+        #expect(first.total == "242.00")
+        #expect(first.whenLabel == "Mon, Jun 29 · 10:00 AM")
+        #expect(first.needsCloseout)
+        #expect(first.client.fullName == "Jordan Rivera")
+        #expect(first.client.canViewClient)
+        #expect(first.location.isMobile == false)
+        #expect(first.location.formattedAddress == "123 Palm Ave, Encinitas, CA")
+
+        // Mobile row + null money/contact decode cleanly.
+        #expect(res.today[1].location.isMobile)
+        #expect(res.today[1].client.email == nil)
+        #expect(res.cancelled[0].total == nil)
+        #expect(res.cancelled[0].sessionStep == nil)
+    }
+
     // GET /api/v1/pro/profile — Fixtures/proMyProfile.json. The pro's own editable
     // profile (carries its professionalId). Inline backend shape; decode-only.
     @Test func decodesProMyProfile() throws {

@@ -1,15 +1,23 @@
 import Foundation
 
-/// PRO workspace — reads one booking's detail and runs the management actions the
-/// web `/pro/bookings/[id]` page offers: **accept** a pending request, **cancel**,
-/// and **rebook** (propose the client's next appointment). The bookings *list*
-/// lives on the calendar (`GET /pro/calendar`); there is no `GET /pro/bookings`.
-/// Authenticated; PRO-only (CLIENT tokens 403). See docs/PRO-BACKEND-CONTRACTS.md.
+/// PRO workspace — the bookings *list* (`GET /pro/bookings`, tovis-app PR #435)
+/// plus one booking's detail and the management actions the web `/pro/bookings`
+/// surfaces offer: **accept** a pending request, **cancel**, and **rebook**
+/// (propose the client's next appointment). Authenticated; PRO-only (CLIENT
+/// tokens 403). See docs/PRO-BACKEND-CONTRACTS.md.
 public final class ProBookingService: Sendable {
     private let api: APIClient
 
     public init(api: APIClient) {
         self.api = api
+    }
+
+    /// GET /api/v1/pro/bookings?status= → the bucketed bookings list (web
+    /// `/pro/bookings`): today/upcoming/past/cancelled + at-a-glance stats. Pass
+    /// nil for the default ALL view.
+    public func list(status: String? = nil) async throws -> ProBookingsListResponse {
+        let query = status.map { [URLQueryItem(name: "status", value: $0)] }
+        return try await api.request("/pro/bookings", query: query)
     }
 
     /// GET /api/v1/pro/bookings/{id} → the full booking detail.

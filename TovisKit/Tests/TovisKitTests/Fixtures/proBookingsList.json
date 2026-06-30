@@ -1,0 +1,129 @@
+{
+  "ok": true,
+  "scheduleTimeZone": "America/Los_Angeles",
+  "statusFilter": "ALL",
+  "stats": { "today": 2, "inSession": 1, "paymentDue": 1 },
+  "today": [
+    {
+      "id": "bk_today_1",
+      "status": "IN_PROGRESS",
+      "statusLabel": "In progress",
+      "sessionStep": "SERVICE_IN_PROGRESS",
+      "scheduledFor": "2026-06-29T17:00:00.000Z",
+      "timeZone": "America/Los_Angeles",
+      "whenLabel": "Mon, Jun 29 · 10:00 AM",
+      "serviceName": "Balayage",
+      "addOnNames": ["Toner"],
+      "durationMinutes": 120,
+      "total": "242.00",
+      "client": {
+        "id": "cl_1",
+        "fullName": "Jordan Rivera",
+        "email": "jordan@example.com",
+        "phone": "+15555550123",
+        "canViewClient": true
+      },
+      "location": {
+        "formattedAddress": "123 Palm Ave, Encinitas, CA",
+        "lat": 33.0370,
+        "lng": -117.2920,
+        "isMobile": false
+      },
+      "needsCloseout": true,
+      "startedAt": "2026-06-29T17:05:00.000Z",
+      "finishedAt": null
+    },
+    {
+      "id": "bk_today_2",
+      "status": "ACCEPTED",
+      "statusLabel": "Accepted",
+      "sessionStep": "NONE",
+      "scheduledFor": "2026-06-29T21:00:00.000Z",
+      "timeZone": "America/Los_Angeles",
+      "whenLabel": "Mon, Jun 29 · 2:00 PM",
+      "serviceName": "Men's Cut",
+      "addOnNames": [],
+      "durationMinutes": 45,
+      "total": "55.00",
+      "client": {
+        "id": "cl_2",
+        "fullName": "Sam Okafor",
+        "email": null,
+        "phone": null,
+        "canViewClient": false
+      },
+      "location": {
+        "formattedAddress": "456 Coast Hwy, Encinitas, CA",
+        "lat": null,
+        "lng": null,
+        "isMobile": true
+      },
+      "needsCloseout": false,
+      "startedAt": null,
+      "finishedAt": null
+    }
+  ],
+  "upcoming": [
+    {
+      "id": "bk_up_1",
+      "status": "ACCEPTED",
+      "statusLabel": "Accepted",
+      "sessionStep": "NONE",
+      "scheduledFor": "2026-07-02T18:00:00.000Z",
+      "timeZone": "America/Los_Angeles",
+      "whenLabel": "Thu, Jul 2 · 11:00 AM",
+      "serviceName": "Full Color",
+      "addOnNames": ["Olaplex", "Blowout"],
+      "durationMinutes": 150,
+      "total": "210.00",
+      "client": {
+        "id": "cl_3",
+        "fullName": "Priya Nadkarni",
+        "email": "priya@example.com",
+        "phone": null,
+        "canViewClient": true
+      },
+      "location": {
+        "formattedAddress": null,
+        "lat": null,
+        "lng": null,
+        "isMobile": false
+      },
+      "needsCloseout": false,
+      "startedAt": null,
+      "finishedAt": null
+    }
+  ],
+  "past": [],
+  "cancelled": [
+    {
+      "id": "bk_cx_1",
+      "status": "CANCELLED",
+      "statusLabel": "Cancelled",
+      "sessionStep": null,
+      "scheduledFor": "2026-06-20T17:00:00.000Z",
+      "timeZone": "America/Los_Angeles",
+      "whenLabel": "Sat, Jun 20 · 10:00 AM",
+      "serviceName": "Balayage",
+      "addOnNames": [],
+      "durationMinutes": 120,
+      "total": null,
+      "client": {
+        "id": "cl_4",
+        "fullName": "Riley Chen",
+        "email": null,
+        "phone": null,
+        "canViewClient": false
+      },
+      "location": {
+        "formattedAddress": null,
+        "lat": null,
+        "lng": null,
+        "isMobile": false
+      },
+      "needsCloseout": false,
+      "startedAt": null,
+      "finishedAt": null
+    }
+  ]
+}

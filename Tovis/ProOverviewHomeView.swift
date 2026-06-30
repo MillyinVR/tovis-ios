@@ -49,7 +49,7 @@ struct ProOverviewHomeView: View {
         case .aftercare:
             placeholder("Draft, sent and finished aftercare. Coming next.")
         case .bookings:
-            placeholder("All your bookings by status — today, upcoming, past and cancelled. Coming next.")
+            ProBookingsListView()
         case .lastMinute:
             placeholder("Last-minute openings, pricing and per-service rules. Coming next.")
         case .locations:
