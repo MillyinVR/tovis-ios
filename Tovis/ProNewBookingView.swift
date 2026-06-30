@@ -42,7 +42,21 @@ struct ProNewBookingView: View {
     @State private var offeringId = ""
     @State private var locationId = ""
 
+    // SALON vs MOBILE (the pro's mobile base + the client's service address).
+    @State private var bookingMode: BookingMode = .salon
+
+    // MOBILE address: an existing saved client address OR a new one via Places.
+    @State private var addressMode: AddressMode = .existing
+    @State private var clientAddresses: [ProClientAddress] = []
+    @State private var clientAddressesLoading = false
+    @State private var clientAddressId = ""
+    @State private var pickedPlace: PlaceDetails?
+    @State private var newAddressLabel = ""
+    @State private var newAddressApt = ""
+
     private enum ClientMode: String, CaseIterable { case existing, new }
+    private enum BookingMode: String, CaseIterable { case salon, mobile }
+    private enum AddressMode: String, CaseIterable { case existing, new }
 
     // Slot-picker time selection (the shared ProOpenSlotPicker owns the date).
     @State private var selectedSlot: String?         // chosen ISO instant
@@ -68,8 +82,15 @@ struct ProNewBookingView: View {
     private var hasClient: Bool {
         clientMode == .existing ? !clientId.isEmpty : newClientReady
     }
+    /// SALON needs no address; MOBILE needs a saved address (existing mode) or a
+    /// resolved Places pin (new mode).
+    private var mobileAddressReady: Bool {
+        guard bookingMode == .mobile else { return true }
+        return addressMode == .existing ? !clientAddressId.isEmpty : pickedPlace != nil
+    }
     private var canCreate: Bool {
-        !creating && hasClient && !offeringId.isEmpty && !locationId.isEmpty && hasTime
+        !creating && hasClient && !offeringId.isEmpty && !locationId.isEmpty
+            && hasTime && mobileAddressReady
     }
 
     var body: some View {
@@ -82,8 +103,10 @@ struct ProNewBookingView: View {
             } else {
                 VStack(alignment: .leading, spacing: 18) {
                     clientSection
+                    modeSection
                     serviceSection
                     locationSection
+                    if bookingMode == .mobile { addressSection }
                     timeSection
                     notesSection
                     advancedSection
@@ -101,6 +124,14 @@ struct ProNewBookingView: View {
         .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
         .tint(BrandColor.accent)
         .task { await load() }
+        .onChange(of: bookingMode) { _, _ in revalidateForMode() }
+        .task(id: addressFetchKey) { await loadClientAddresses() }
+    }
+
+    /// Re-fetch the chosen client's saved addresses whenever the MOBILE address
+    /// picker could need them (mode/client changes).
+    private var addressFetchKey: String {
+        "\(bookingMode.rawValue)|\(clientMode.rawValue)|\(clientId)"
     }
 
     // MARK: - Sections
@@ -154,28 +185,96 @@ struct ProNewBookingView: View {
             .disabled(creating)
     }
 
+    private var modeSection: some View {
+        BrandSection(title: "Booking type") {
+            Picker("Booking type", selection: $bookingMode.animation()) {
+                Text("In-salon").tag(BookingMode.salon)
+                Text("Mobile").tag(BookingMode.mobile)
+            }
+            .pickerStyle(.segmented)
+        }
+    }
+
     private var serviceSection: some View {
         BrandSection(title: "Service") {
-            if salonOfferings.isEmpty {
-                emptyHint("No salon services available. Add an in-salon offering first.")
+            if modeOfferings.isEmpty {
+                emptyHint(bookingMode == .mobile
+                    ? "No mobile services available. Enable mobile on an offering first."
+                    : "No salon services available. Add an in-salon offering first.")
             } else {
                 menu(selection: $offeringId,
-                     options: salonOfferings.map { ($0.id, offeringLabel($0)) },
+                     options: modeOfferings.map { ($0.id, offeringLabel($0)) },
                      placeholder: "Choose a service")
             }
         }
     }
 
     private var locationSection: some View {
-        BrandSection(title: "Location") {
-            if salonLocations.isEmpty {
-                emptyHint("No bookable salon location. Add one in your locations.")
+        BrandSection(title: bookingMode == .mobile ? "Mobile base" : "Location") {
+            if modeLocations.isEmpty {
+                emptyHint(bookingMode == .mobile
+                    ? "No mobile base location. Add a mobile base in your locations."
+                    : "No bookable salon location. Add one in your locations.")
             } else {
                 menu(selection: $locationId,
-                     options: salonLocations.map { ($0.id, $0.name ?? $0.formattedAddress ?? "Location") },
+                     options: modeLocations.map { ($0.id, $0.name ?? $0.formattedAddress ?? "Location") },
                      placeholder: "Choose a location")
             }
         }
+    }
+
+    private var addressSection: some View {
+        BrandSection(title: "Service address") {
+            VStack(alignment: .leading, spacing: 12) {
+                if canUseSavedAddresses {
+                    Picker("Address", selection: $addressMode.animation()) {
+                        Text("Saved").tag(AddressMode.existing)
+                        Text("New").tag(AddressMode.new)
+                    }
+                    .pickerStyle(.segmented)
+                }
+
+                if addressMode == .existing && canUseSavedAddresses {
+                    if clientAddressesLoading {
+                        HStack(spacing: 8) {
+                            ProgressView().tint(BrandColor.accent)
+                            Text("Loading addresses…").font(BrandFont.body(13))
+                                .foregroundStyle(BrandColor.textSecondary)
+                        }
+                    } else {
+                        menu(selection: $clientAddressId,
+                             options: clientAddresses.map { ($0.id, savedAddressLabel($0)) },
+                             placeholder: "Choose a saved address")
+                    }
+                } else {
+                    newAddressFields
+                }
+            }
+        }
+    }
+
+    private var newAddressFields: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            PlacesAddressSearchField(picked: $pickedPlace, disabled: creating)
+                .onChange(of: pickedPlace) { _, newValue in
+                    if newValue == nil { newAddressApt = "" }
+                }
+            if pickedPlace != nil {
+                clientField("Label (optional)", text: $newAddressLabel)
+                clientField("Apt / suite (optional)", text: $newAddressApt)
+            }
+            Text(clientMode == .existing && !clientId.isEmpty && clientAddresses.isEmpty
+                ? "This client has no saved address — search a new one."
+                : "Search the address where you’ll perform this service.")
+                .font(BrandFont.body(11)).foregroundStyle(BrandColor.textMuted)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func savedAddressLabel(_ address: ProClientAddress) -> String {
+        let prefix = address.label.isEmpty ? "" : "\(address.label) · "
+        let star = address.isDefault ? " ★" : ""
+        return "\(prefix)\(address.formattedAddress)\(star)"
     }
 
     private var timeSection: some View {
@@ -201,9 +300,10 @@ struct ProNewBookingView: View {
                         serviceId: offering.serviceId,
                         offeringId: offering.id,
                         locationId: location.id,
-                        locationType: (location.type ?? "SALON").uppercased() == "MOBILE" ? "MOBILE" : "SALON",
+                        locationType: bookingMode == .mobile ? "MOBILE" : "SALON",
                         locationTimeZone: location.timeZone,
-                        durationMinutes: offering.salonDurationMinutes ?? 60,
+                        durationMinutes: durationMinutes(offering),
+                        clientAddressId: slotClientAddressId,
                         selectedSlot: $selectedSlot,
                     )
                 } else {
@@ -263,23 +363,50 @@ struct ProNewBookingView: View {
 
     // MARK: - Helpers
 
-    private var salonOfferings: [ProOfferingAdmin] {
-        offerings.filter { $0.isActive && $0.offersInSalon }
+    /// Offerings bookable in the chosen mode (in-salon vs mobile).
+    private var modeOfferings: [ProOfferingAdmin] {
+        offerings.filter {
+            $0.isActive && (bookingMode == .mobile ? $0.offersMobile : $0.offersInSalon)
+        }
     }
-    private var salonLocations: [ProLocationSummary] {
-        locations.filter { $0.isBookable && ($0.type ?? "SALON").uppercased() != "MOBILE" }
+    /// Locations valid for the chosen mode: SALON/SUITE for in-salon, MOBILE_BASE
+    /// for mobile.
+    private var modeLocations: [ProLocationSummary] {
+        locations.filter {
+            guard $0.isBookable else { return false }
+            let isMobileBase = ($0.type ?? "").uppercased() == "MOBILE_BASE"
+            return bookingMode == .mobile ? isMobileBase : !isMobileBase
+        }
     }
     private var selectedOffering: ProOfferingAdmin? {
-        salonOfferings.first { $0.id == offeringId }
+        modeOfferings.first { $0.id == offeringId }
     }
     private var selectedLocation: ProLocationSummary? {
-        salonLocations.first { $0.id == locationId }
+        modeLocations.first { $0.id == locationId }
+    }
+    /// The duration to schedule against for the chosen mode.
+    private func durationMinutes(_ offering: ProOfferingAdmin) -> Int {
+        (bookingMode == .mobile ? offering.mobileDurationMinutes : offering.salonDurationMinutes) ?? 60
+    }
+    /// MOBILE slots respect travel radius only for a saved address; a new
+    /// (unsaved) address has no id yet, so slots fall back to the mobile base.
+    private var slotClientAddressId: String? {
+        guard bookingMode == .mobile, addressMode == .existing, !clientAddressId.isEmpty else { return nil }
+        return clientAddressId
+    }
+    /// Existing-address picker is only offered for an existing client who has
+    /// saved service addresses.
+    private var canUseSavedAddresses: Bool {
+        clientMode == .existing && !clientId.isEmpty && !clientAddresses.isEmpty
     }
 
     private func offeringLabel(_ offering: ProOfferingAdmin) -> String {
-        let price = offering.salonPriceStartingAt ?? offering.minPrice
+        let price = bookingMode == .mobile
+            ? (offering.mobilePriceStartingAt ?? offering.minPrice)
+            : (offering.salonPriceStartingAt ?? offering.minPrice)
         let priceSuffix = price.map { " · $\($0)" } ?? ""
-        let duration = offering.salonDurationMinutes.map { " · \($0) min" } ?? ""
+        let duration = (bookingMode == .mobile ? offering.mobileDurationMinutes : offering.salonDurationMinutes)
+            .map { " · \($0) min" } ?? ""
         return "\(offering.serviceName)\(priceSuffix)\(duration)"
     }
 
@@ -327,8 +454,8 @@ struct ProNewBookingView: View {
             offerings = try await offeringsTask
             locations = try await locationsTask
             professionalId = try await profileTask.id
-            // Default the location to the primary bookable one.
-            locationId = salonLocations.first(where: { $0.isPrimary })?.id ?? salonLocations.first?.id ?? ""
+            // Default the location to the primary bookable one for the mode.
+            locationId = defaultLocationId()
         } catch let error as APIError {
             loadError = error.userMessage
         } catch {
@@ -336,9 +463,50 @@ struct ProNewBookingView: View {
         }
     }
 
+    private func defaultLocationId() -> String {
+        modeLocations.first(where: { $0.isPrimary })?.id ?? modeLocations.first?.id ?? ""
+    }
+
+    /// Switching SALON↔MOBILE invalidates any selection that doesn't support the
+    /// new mode (offerings/locations differ; the slot picker re-fetches on its own).
+    private func revalidateForMode() {
+        if selectedOffering == nil { offeringId = "" }
+        if selectedLocation == nil { locationId = defaultLocationId() }
+        selectedSlot = nil
+    }
+
+    /// Load the chosen existing client's saved service addresses (MOBILE only) and
+    /// default the address mode + selection like the web form.
+    private func loadClientAddresses() async {
+        guard bookingMode == .mobile, clientMode == .existing, !clientId.isEmpty else {
+            clientAddresses = []
+            clientAddressId = ""
+            addressMode = .new
+            return
+        }
+        clientAddressesLoading = true
+        defer { clientAddressesLoading = false }
+        do {
+            let addresses = try await session.client.proClients.serviceAddresses(clientId: clientId)
+            clientAddresses = addresses
+            if addresses.isEmpty {
+                addressMode = .new
+                clientAddressId = ""
+            } else {
+                addressMode = .existing
+                clientAddressId = addresses.first(where: { $0.isDefault })?.id ?? addresses.first?.id ?? ""
+            }
+        } catch {
+            // Non-fatal: fall back to entering a new address.
+            clientAddresses = []
+            clientAddressId = ""
+            addressMode = .new
+        }
+    }
+
 
     private func create() async {
-        guard canCreate, let location = selectedLocation else { return }
+        guard canCreate, selectedLocation != nil else { return }
         errorText = nil
         creating = true
         defer { creating = false }
@@ -366,14 +534,22 @@ struct ProNewBookingView: View {
             )
             : nil
 
+        // MOBILE → either a saved client address id or a new (Places-resolved)
+        // service address. SALON sends neither.
+        let useExistingAddress = bookingMode == .mobile && addressMode == .existing && !clientAddressId.isEmpty
+        let serviceAddress: ProServiceAddressInput? =
+            (bookingMode == .mobile && addressMode == .new) ? buildServiceAddress() : nil
+
         do {
             let newId = try await session.client.proBookings.createBooking(
                 clientId: clientMode == .existing ? clientId : nil,
                 client: newClient,
                 offeringId: offeringId,
                 locationId: locationId,
-                locationType: (location.type ?? "SALON").uppercased() == "MOBILE" ? "MOBILE" : "SALON",
+                locationType: bookingMode == .mobile ? "MOBILE" : "SALON",
                 scheduledFor: scheduledISO,
+                clientAddressId: useExistingAddress ? clientAddressId : nil,
+                serviceAddress: serviceAddress,
                 internalNotes: trimmedNotes.isEmpty ? nil : trimmedNotes,
                 allowOutsideWorkingHours: allowOutsideWorkingHours,
                 allowShortNotice: allowShortNotice,
@@ -387,5 +563,24 @@ struct ProNewBookingView: View {
         } catch {
             errorText = "Couldn’t create the booking. Check your connection and try again."
         }
+    }
+
+    /// Build the inline MOBILE service address from the resolved Places pin
+    /// (placeId + exact lat/lng → no server re-geocode) + optional label/apt.
+    /// Mirrors `AddServiceAddressSheet`'s Places-resolved payload.
+    private func buildServiceAddress() -> ProServiceAddressInput? {
+        guard let place = pickedPlace else { return nil }
+        return ProServiceAddressInput(
+            label: trimmed(newAddressLabel).isEmpty ? nil : trimmed(newAddressLabel),
+            formattedAddress: place.formattedAddress,
+            addressLine2: trimmed(newAddressApt).isEmpty ? nil : trimmed(newAddressApt),
+            city: place.city,
+            state: place.state,
+            postalCode: place.postalCode,
+            countryCode: place.countryCode ?? "US",
+            placeId: place.placeId,
+            lat: place.lat,
+            lng: place.lng,
+        )
     }
 }
