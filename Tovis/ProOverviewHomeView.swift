@@ -47,7 +47,7 @@ struct ProOverviewHomeView: View {
         case .reviews:
             placeholder("Your most recent client reviews. Coming next.")
         case .aftercare:
-            placeholder("Draft, sent and finished aftercare. Coming next.")
+            ProAftercareListView()
         case .bookings:
             ProBookingsListView()
         case .lastMinute:

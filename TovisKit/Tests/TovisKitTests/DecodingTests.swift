@@ -316,6 +316,34 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.cancelled[0].sessionStep == nil)
     }
 
+    // GET /api/v1/pro/aftercare — Fixtures/proAftercareList.json. The "all
+    // aftercare" list (tovis-app PR #436). Inline shape; decode-only.
+    @Test func decodesProAftercareList() throws {
+        let res = try JSONDecoder().decode(ProAftercareListResponse.self, from: fixture("proAftercareList"))
+        #expect(res.items.count == 3)
+
+        let draft = res.items[0]
+        #expect(draft.status == "draft")
+        #expect(draft.clientName == "Jordan Rivera")
+        #expect(draft.initials == "JR")
+        #expect(draft.action == "send")
+        #expect(draft.needsAction)
+        #expect(draft.rebook?.kind == "recommended")
+        #expect(draft.rebook?.value == "Jul 2")
+        #expect(draft.ago?.verb == "saved")
+        #expect(draft.media?.beforeUrl == "https://cdn.example.com/b1.jpg")
+
+        #expect(res.items[1].status == "sent")
+        #expect(res.items[1].rebook?.kind == "overdue")
+        #expect(res.items[1].media?.beforeUrl == nil)
+
+        let finished = res.items[2]
+        #expect(finished.status == "finished")
+        #expect(finished.action == nil)
+        #expect(finished.rebook?.kind == "next")
+        #expect(finished.media == nil)
+    }
+
     // GET /api/v1/pro/profile — Fixtures/proMyProfile.json. The pro's own editable
     // profile (carries its professionalId). Inline backend shape; decode-only.
     @Test func decodesProMyProfile() throws {

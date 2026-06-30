@@ -20,6 +20,13 @@ public final class ProBookingService: Sendable {
         return try await api.request("/pro/bookings", query: query)
     }
 
+    /// GET /api/v1/pro/aftercare → the "all aftercare" list (web `/pro/aftercare`):
+    /// Draft / Sent / Finished cards + rebook chips + before/after thumbs.
+    public func aftercareList() async throws -> [ProAftercareCardItem] {
+        let response: ProAftercareListResponse = try await api.request("/pro/aftercare")
+        return response.items
+    }
+
     /// GET /api/v1/pro/bookings/{id} → the full booking detail.
     public func detail(bookingId: String) async throws -> ProBookingDetail {
         let response: ProBookingDetailResponse = try await api.request(

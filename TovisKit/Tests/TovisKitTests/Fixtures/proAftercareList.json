@@ -1,0 +1,56 @@
+{
+  "ok": true,
+  "items": [
+    {
+      "id": "ac_1",
+      "bookingId": "bk_1",
+      "href": "/pro/bookings/bk_1/aftercare",
+      "serviceName": "Balayage",
+      "clientName": "Jordan Rivera",
+      "initials": "JR",
+      "status": "draft",
+      "bookingDateLabel": "Jun 18",
+      "rebook": { "kind": "recommended", "value": "Jul 2" },
+      "ago": { "verb": "saved", "value": "2h" },
+      "action": "send",
+      "needsAction": true,
+      "searchText": "jordan rivera balayage",
+      "sortKey": 1750000000000,
+      "media": { "beforeUrl": "https://cdn.example.com/b1.jpg", "afterUrl": "https://cdn.example.com/a1.jpg" }
+    },
+    {
+      "id": "ac_2",
+      "bookingId": "bk_2",
+      "href": "/pro/bookings/bk_2/aftercare",
+      "serviceName": "Men's Cut",
+      "clientName": "Sam Okafor",
+      "initials": "SO",
+      "status": "sent",
+      "bookingDateLabel": "Jun 20",
+      "rebook": { "kind": "overdue", "value": "Jun 28" },
+      "ago": { "verb": "sent", "value": "5d" },
+      "action": "nudge",
+      "needsAction": true,
+      "searchText": "sam okafor men's cut",
+      "sortKey": 1749500000000,
+      "media": { "beforeUrl": null, "afterUrl": null }
+    },
+    {
+      "id": "ac_3",
+      "bookingId": "bk_3",
+      "href": "/pro/bookings/bk_3/aftercare",
+      "serviceName": "Full Color",
+      "clientName": "Priya Nadkarni",
+      "initials": "PN",
+      "status": "finished",
+      "bookingDateLabel": "Jun 10",
+      "rebook": { "kind": "next", "value": "Jul 5" },
+      "ago": { "verb": "booked", "value": "1d" },
+      "action": null,
+      "needsAction": false,
+      "searchText": "priya nadkarni full color",
+      "sortKey": 1749000000000,
+      "media": null
+    }
+  ]
+}
