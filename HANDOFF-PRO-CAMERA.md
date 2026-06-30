@@ -11,6 +11,91 @@ The **client** iOS app was already feature-complete (on TestFlight). This workst
 **PRO** side to the same app + an **"AI photographer" session camera**. All shipped work is committed
 on `tovis-ios` `main`; the one backend change is **merged** (`tovis-app` PR #427).
 
+---
+
+## 🟢 RESUME HERE (2026-06-29, pass 3) — PRO TOP-HEADER + OVERVIEW HOME (6 tabs) ✅ DONE · next = Phase S (session flow)
+
+**What the user asked for:** the iOS pro app was missing (a) the **top header with tabs** the web has, and
+(b) the **full booking/session flow**. This pass delivered the **entire header phase**; the session flow
+is the remaining piece (Phase S below).
+
+### ✅ Header phase — ALL DONE (committed on `tovis-ios` main; Debug+Release green; `swift test` **57**)
+The web pro UI has TWO nav layers: the bottom `ProSessionFooter` (already ported as `ProTabBar`) AND a
+global **top header** (`app/pro/ProHeader.tsx`) with 6 secondary tabs. iOS only had the footer. Now:
+
+- **H1 — Overview home + header chrome** (`6a308e9`): new `ProOverviewHomeView` is the pro **launch
+  surface**. `ProTopBar` = web ProHeader chrome (◆ PRO MODE kicker + italic page title + bell w/ unread
+  dot + account "⋯" menu reusing `session.switchWorkspace`/`logout`). `ProHeaderTabsBar` = the swipeable
+  6-tab strip (Overview · Reviews · Aftercare · Bookings · Last Minute · Locations) with active underline.
+  `ProHeaderTab` enum. The strip swaps the body in place (like web routes).
+  - **Placement decision (user-picked):** "dedicated Overview home" — footer KEEPS its 5 web slots
+    (Looks · Calendar · session · Messages · Profile), so Overview is NOT a footer tab. Pro lands on it
+    (`ProMainTabView` default `tab = .overview`, added `.overview` to `ProTab.ID` + the TabView); a
+    **Home button** added to the Calendar nav bar (`ProCalendarView(onHome:)`) returns to it. Calendar
+    otherwise untouched.
+- **H2 — Locations** (`c9cf48b`): `ProLocationsView` read list (`GET /pro/locations`, reuses
+  `ProCalendarService.locations()`). Create/edit/set-primary/publish editor deferred (needs Places picker).
+- **H3 — Bookings** (`e52a49d` + tovis-app **PR #435 MERGED**): `ProBookingsListView` — stats + filter
+  pills + Today/Upcoming/Past/Cancelled → detail. New `GET /api/v1/pro/bookings`.
+- **H4 — Aftercare** (`tovis-ios` commit + **PR #436 MERGED**): `ProAftercareListView` — Drafts/Awaiting/
+  Overdue tiles + Draft/Sent/Finished tabs + search + before/after thumbs. New `GET /api/v1/pro/aftercare`.
+- **H5 — Overview/dashboard** (commit + **PR #437 MERGED**): `ProOverviewView` — month nav + revenue hero
+  + stat cards + top services. New `GET /api/v1/pro/overview` (thin wrapper over `loadProOverviewPage`).
+- **H7 — Reviews** (commit + **PR #438 MERGED**): `ProReviewsListView` — ratings + media grid. New
+  `GET /api/v1/pro/reviews`.
+- **H6 — Last Minute** (commit + **PR #439 MERGED**): `ProLastMinuteView` read summary (tiers, per-day
+  availability, service rules, blocks). New `GET /api/v1/pro/last-minute/workspace`. The web editor
+  (toggles/PATCH) deferred.
+
+**ALL 5 backend PRs (#435–#439) MERGED** (2026-06-29).
+
+### ⚠️ OPEN ACTION ITEMS (do these first next session)
+1. **Redeploy prod** if not already done since the merges (`npx vercel@latest --prod` — auto-deploy is OFF),
+   so all 6 native tabs return live data. (Debug→localhost already works.)
+2. **Sim-verify** the header + all 6 tabs as an APPROVED pro (re-login after each reinstall — keychain wipe).
+   NONE of H1–H7 is sim-verified yet.
+
+### Backend pattern used (reuse for Phase S backend work if any)
+Each list endpoint extracts a **shared loader** under `lib/pro/**` (query + mapping) that BOTH the web page
+and the new GET call — refactor the page to consume it (no duplicate logic, CLAUDE.md). Pro routes return
+**inline shapes** (`jsonOk(body)`); iOS ships a **decode-only fixture + test** (no ajv entry). ⚠️ Relocating
+client `firstName/lastName/phone` reads into a loader trips `check:pii-plaintext-reads` → run
+`node tools/check-pii-plaintext-reads.mjs --update-baseline` (net-neutral; same plaintext fields the
+baselined `[id]` route reads). ⚠️ The **pre-push hook runs the FULL vitest suite** — a page that has a
+`page.test.tsx` (e.g. bookings) mocks `prisma.findMany` in call order, so preserve the query ordering when
+refactoring. New Swift files auto-build (`PBXFileSystemSynchronizedRootGroup`); fixtures auto-include
+(`.process("Fixtures")`).
+
+### ▶️ NEXT WORKSTREAM — Phase S: the full booking / session flow (NO backend PRs needed — endpoints exist)
+The native `ProSessionHubView` is a v1 stub (status + photo capture + one "Finish session" button). The web
+`app/pro/bookings/[id]/session/page.tsx` is a **4-step state machine** to port:
+- **S1** — rebuild `ProSessionHubView` into the web screens, driven by `getSessionScreenKey`/
+  `resolveEffectiveSessionStep`: **Consultation** (ConsultationForm: set services/price → send for approval;
+  in-person fallback) → **Waiting + Before photos** (combined) → **Service in progress** (elapsed timer) →
+  **Wrap-up** → **Done/Terminal**, with the persistent **4-step rail** (Consult · Before · Service ·
+  Wrap-up). Endpoints (already wired in `ProSessionService`/`ProBookingService`): `POST .../session/start|
+  finish`, `POST .../session/step {step}`, `GET .../session/state`, `POST .../consultation-proposal`,
+  `POST .../consultation/in-person-decision`.
+- **S2** — **Wrap-up closeout checklist** (after photos · aftercare sent · payment collected · checkout
+  paid/waived · consultation approved) + **Mark Paid** (`PATCH .../checkout/mark-paid {paymentMethod}`) +
+  waive (`PATCH .../checkout/waive`). See `buildProSessionCloseoutChecklist` + `listManualCollectable
+  PaymentMethods`.
+- **S3** — **Aftercare authoring screen** (web `/pro/bookings/[id]/aftercare`): write notes, recommend
+  products, set rebook, send to client. `GET/POST /pro/bookings/[id]/aftercare` exist. (This is also the
+  native destination the Aftercare-list "View full aftercare" should deep-link to instead of booking detail.)
+- **S4** — **Create booking for client** (web `/pro/bookings/new`): `POST /pro/bookings` (idempotency-key) +
+  `GET /pro/allowed-services` + `GET /pro/openings`. Wire from a "+ New booking" entry (bookings list /
+  Overview).
+
+**Files added this pass** (all on `tovis-ios` main): `Tovis/Pro{TopBar,HeaderTab,OverviewHome,Locations,
+BookingsList,AftercareList,Overview,ReviewsList,LastMinute}View.swift` (+ `ProHeaderTab.swift`);
+`TovisKit/.../Models/Pro{BookingsList,AftercareList,Overview,ReviewsList,LastMinute}.swift`;
+`TovisKit/.../ProOverview/ProOverviewService.swift`; service methods on
+`ProBookingService`/`ProProfileService`/`ProScheduleService`; 5 fixtures + 5 decode tests. tovis-app loaders:
+`lib/pro/proBookingsList.ts` (+test), `lib/aftercare/loadProAftercareList.ts`, `lib/pro/loadProReviewsList.ts`,
+`lib/pro/loadLastMinuteWorkspace.ts`; routes under `app/api/v1/pro/{bookings,aftercare,overview,reviews,
+last-minute/workspace}/route.ts`.
+
 ## Repos & how to run / verify
 
 | Repo | Path | Role |
