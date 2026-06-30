@@ -25,6 +25,11 @@ struct ProSessionHubView: View {
     @State private var working = false
     @State private var actionError: String?
     @State private var capturing: CaptureSelection?
+    /// Manual-collectable payment methods (from the pro's payment settings) +
+    /// the chosen one — drive the wrap-up "Mark as paid" control.
+    @State private var paymentMethods: [ProManualPaymentMethod] = []
+    @State private var selectedMethod: String = ""
+    @State private var markPaidError: String?
 
     private struct CaptureSelection: Identifiable {
         let phase: MediaPhase
@@ -258,7 +263,13 @@ struct ProSessionHubView: View {
                     Text("Wrap-up checklist").font(BrandFont.body(15, .semibold))
                         .foregroundStyle(BrandColor.textPrimary)
                     ForEach(checklist.items) { item in
-                        checklistRow(item)
+                        VStack(alignment: .leading, spacing: 8) {
+                            checklistRow(item)
+                            // Record an in-person payment when nothing's collected yet.
+                            if item.key == .payment && !item.done {
+                                markPaidControl()
+                            }
+                        }
                     }
                 }
             }
@@ -285,6 +296,42 @@ struct ProSessionHubView: View {
             Spacer()
             BrandPill(text: item.done ? "Done" : "To do",
                       tint: item.done ? BrandColor.emerald : BrandColor.gold)
+        }
+    }
+
+    /// The in-person "Mark as paid" control (web `MarkPaidButton`): a method
+    /// picker + button, or an empty-state when no method is enabled.
+    @ViewBuilder
+    private func markPaidControl() -> some View {
+        if paymentMethods.isEmpty {
+            Text("Turn on a payment method in your payment settings to record an in-person payment here.")
+                .font(BrandFont.body(11)).foregroundStyle(BrandColor.textSecondary)
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 10) {
+                    Picker("Payment method", selection: $selectedMethod) {
+                        ForEach(paymentMethods) { method in
+                            Text(method.label).tag(method.value)
+                        }
+                    }
+                    .pickerStyle(.menu).tint(BrandColor.accent)
+                    .padding(.horizontal, 10).padding(.vertical, 8)
+                    .background(BrandColor.bgSecondary)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                    Button { Task { await markPaid() } } label: {
+                        Text(working ? "Recording…" : "Mark as paid")
+                            .font(BrandFont.body(13, .semibold)).foregroundStyle(BrandColor.onAccent)
+                            .padding(.horizontal, 12).padding(.vertical, 9)
+                            .background(BrandColor.emerald)
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
+                    .disabled(working || selectedMethod.isEmpty)
+                }
+                if let markPaidError {
+                    Text(markPaidError).font(BrandFont.body(11)).foregroundStyle(BrandColor.ember)
+                }
+            }
         }
     }
 
@@ -512,6 +559,7 @@ struct ProSessionHubView: View {
             phase = .failed("Couldn’t load this session.")
         }
         await loadMedia()
+        await loadPaymentMethods()
     }
 
     private func loadMedia() async {
@@ -533,6 +581,28 @@ struct ProSessionHubView: View {
 
     private func inPersonDecision(approve: Bool) async {
         await run { try await session.client.proSession.recordInPersonDecision(bookingId: bookingId, approve: approve) }
+    }
+
+    private func markPaid() async {
+        guard !selectedMethod.isEmpty else { return }
+        markPaidError = nil
+        working = true
+        defer { working = false }
+        do {
+            try await session.client.proBookings.markPaid(bookingId: bookingId, selectedPaymentMethod: selectedMethod)
+            session.signalRefresh()
+            await load()
+        } catch let error as APIError {
+            markPaidError = error.userMessage
+        } catch {
+            markPaidError = "Could not record payment. Check your connection and try again."
+        }
+    }
+
+    private func loadPaymentMethods() async {
+        guard let settings = try? await session.client.proProfile.paymentSettings() else { return }
+        paymentMethods = settings.manualCollectableMethods
+        if selectedMethod.isEmpty { selectedMethod = paymentMethods.first?.value ?? "" }
     }
 
     /// Run a session write, then reload + refresh the footer.

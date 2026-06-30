@@ -53,6 +53,27 @@ public struct ProPaymentSettings: Decodable, Sendable {
     public let appleCashHandle: String?
     public let paypalHandle: String?
     public let paymentNote: String?
+
+    /// The payment methods a pro can record as collected in person, in the web's
+    /// display order (`listManualCollectablePaymentMethods`). Excludes Stripe card
+    /// (gated to the Stripe path), Apple Pay, and PayPal.
+    public var manualCollectableMethods: [ProManualPaymentMethod] {
+        var methods: [ProManualPaymentMethod] = []
+        if acceptCash { methods.append(.init(value: "CASH", label: "Cash")) }
+        if acceptTapToPay { methods.append(.init(value: "TAP_TO_PAY", label: "Tap to pay")) }
+        if acceptCardOnFile { methods.append(.init(value: "CARD_ON_FILE", label: "Card on file")) }
+        if acceptVenmo { methods.append(.init(value: "VENMO", label: "Venmo")) }
+        if acceptZelle { methods.append(.init(value: "ZELLE", label: "Zelle")) }
+        if acceptAppleCash { methods.append(.init(value: "APPLE_CASH", label: "Apple Cash")) }
+        return methods
+    }
+}
+
+/// One manual-collectable payment method (value = Prisma `PaymentMethod`).
+public struct ProManualPaymentMethod: Sendable, Identifiable, Equatable {
+    public let value: String
+    public let label: String
+    public var id: String { value }
 }
 
 /// PATCH body. The route reads missing fields as their defaults (e.g. an omitted

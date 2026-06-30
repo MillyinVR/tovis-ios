@@ -147,6 +147,40 @@ public final class ProBookingService: Sendable {
             headers: ["idempotency-key": idempotencyKey]
         )
     }
+
+    /// POST /api/v1/pro/bookings/{id}/checkout/mark-paid — record that the client
+    /// paid in person (for clients who never self-checkout). The chosen method is
+    /// stored on the booking and closes checkout. Idempotent.
+    public func markPaid(
+        bookingId: String,
+        selectedPaymentMethod: String,
+        idempotencyKey: String = UUID().uuidString
+    ) async throws {
+        let payload = try JSONEncoder().encode(["selectedPaymentMethod": selectedPaymentMethod])
+        try await api.requestVoid(
+            "/pro/bookings/\(bookingId)/checkout/mark-paid",
+            method: .post,
+            body: payload,
+            headers: ["idempotency-key": idempotencyKey]
+        )
+    }
+
+    /// POST /api/v1/pro/bookings/{id}/checkout/waive — waive the booking's checkout
+    /// (no payment owed). Idempotent. (Wired for completeness; the web pro screens
+    /// don't surface a waive button today.)
+    public func waiveCheckout(
+        bookingId: String,
+        reason: String? = nil,
+        idempotencyKey: String = UUID().uuidString
+    ) async throws {
+        let payload = try JSONEncoder().encode(["reason": reason])
+        try await api.requestVoid(
+            "/pro/bookings/\(bookingId)/checkout/waive",
+            method: .post,
+            body: payload,
+            headers: ["idempotency-key": idempotencyKey]
+        )
+    }
 }
 
 public enum ProRebookMode: String, Sendable {
