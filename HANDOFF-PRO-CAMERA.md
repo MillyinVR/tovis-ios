@@ -59,8 +59,11 @@ green; contract 26.** None of it is sim-verified yet (keychain wipe on reinstall
   card** (the native model is backward-compatible — the card just stays hidden until the field arrives). The
   consultation **prefill** notes/proposedTotal still come only from booking serviceItems + subtotal/total (the
   proposal's *notes* aren't in the state payload) — minor, not surfaced.
-- **New booking** (remaining): **existing clients only** (new-client creation is a separate flow), **SALON only**
-  (MOBILE needs the client service-address sub-flow).
+- ✅ **New-booking new-client creation — DONE 2026-06-30 (`6f98898`).** `ProNewBookingView` has an Existing/New
+  client toggle; New collects first+last name+email (required) + phone (optional) and creates the client inline
+  (server sends a secure claim invite). No backend change — `POST /pro/bookings` already accepts an inline `client`
+  object; `createBooking` now takes `clientId?` OR `client:ProNewBookingClient?`.
+- **New booking** (remaining): **SALON only** (MOBILE needs the client service-address sub-flow).
 
 ### 🔧 Post-S1 fix — consultation "Add" picker is now base/add-on aware (`4c18ef1`)
 **Sim-found bug:** adding a 2nd service in the consultation form failed with *"Invalid proposed services. Include
