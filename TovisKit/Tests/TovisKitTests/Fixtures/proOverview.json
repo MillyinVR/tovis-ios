@@ -1,0 +1,27 @@
+{
+  "ok": true,
+  "activeMonth": { "key": "2026-06", "label": "June 2026", "timeZone": "America/Los_Angeles" },
+  "months": [
+    { "key": "2026-04", "label": "Apr", "href": "/pro/dashboard?month=2026-04", "active": false },
+    { "key": "2026-05", "label": "May", "href": "/pro/dashboard?month=2026-05", "active": false },
+    { "key": "2026-06", "label": "Jun", "href": "/pro/dashboard?month=2026-06", "active": true }
+  ],
+  "revenue": {
+    "value": "$4,820.00",
+    "trendLabel": "+12% vs last month",
+    "trendTone": "positive",
+    "sub": "Services + products"
+  },
+  "primaryStats": [
+    { "label": "Bookings", "value": "38", "sub": "completed this month" },
+    { "label": "Avg rating", "value": "4.9", "sub": "from 21 reviews" }
+  ],
+  "secondaryStats": [
+    { "label": "New clients", "value": "9", "sub": "first visit" },
+    { "label": "Rebook rate", "value": "64%", "sub": "booked a next appt" }
+  ],
+  "topServices": [
+    { "id": "svc_balayage", "name": "Balayage", "bookings": 12, "revenueLabel": "$2,160.00" },
+    { "id": "svc_cut", "name": "Women's Cut", "bookings": 14, "revenueLabel": "$980.00" }
+  ]
+}

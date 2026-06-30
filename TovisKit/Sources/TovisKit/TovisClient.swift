@@ -42,6 +42,8 @@ public final class TovisClient: Sendable {
     public let proClients: ProClientsService
     /// PRO workspace — session media (before/after photo upload + list).
     public let proMedia: ProMediaService
+    /// PRO workspace — the Overview / dashboard monthly analytics.
+    public let proOverview: ProOverviewService
     public let tokenStore: TokenStore
 
     /// Stable per-install id. Persisted in the Keychain-backed store's UserDefaults
@@ -98,6 +100,7 @@ public final class TovisClient: Sendable {
             supabaseURL: config.supabaseURL,
             supabaseKey: config.supabaseAnonKey
         )
+        self.proOverview = ProOverviewService(api: api)
     }
 
     /// The signed-in user's id, decoded from the stored JWT. Works on a cold

@@ -43,7 +43,7 @@ struct ProOverviewHomeView: View {
     private var tabBody: some View {
         switch selection {
         case .overview:
-            placeholder("Your business at a glance — today's bookings, revenue and ratings. Coming next.")
+            ProOverviewView()
         case .reviews:
             placeholder("Your most recent client reviews. Coming next.")
         case .aftercare:

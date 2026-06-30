@@ -344,6 +344,24 @@ func fixture(_ name: String) throws -> Data {
         #expect(finished.media == nil)
     }
 
+    // GET /api/v1/pro/overview — Fixtures/proOverview.json. The pro dashboard
+    // monthly analytics (tovis-app PR #437). Inline shape; decode-only.
+    @Test func decodesProOverview() throws {
+        let res = try JSONDecoder().decode(ProOverviewResponse.self, from: fixture("proOverview"))
+        #expect(res.activeMonth.key == "2026-06")
+        #expect(res.activeMonth.label == "June 2026")
+        #expect(res.months.count == 3)
+        #expect(res.months.last?.active == true)
+        #expect(res.revenue.value == "$4,820.00")
+        #expect(res.revenue.trendTone == "positive")
+        #expect(res.primaryStats.count == 2)
+        #expect(res.primaryStats[0].label == "Bookings")
+        #expect(res.secondaryStats.count == 2)
+        #expect(res.topServices.count == 2)
+        #expect(res.topServices[0].name == "Balayage")
+        #expect(res.topServices[0].bookings == 12)
+    }
+
     // GET /api/v1/pro/profile — Fixtures/proMyProfile.json. The pro's own editable
     // profile (carries its professionalId). Inline backend shape; decode-only.
     @Test func decodesProMyProfile() throws {
