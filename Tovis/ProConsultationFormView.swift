@@ -1,18 +1,9 @@
 // The consultation form — native port of web `app/pro/bookings/[id]/ConsultationForm.tsx`.
 // Set the line items + total, then send the secure approval link to the client.
-// Line items pre-fill from the booking's services; the pro can edit price/
-// duration/notes per line, remove lines, and add more. Send posts to
-// `POST .../consultation-proposal` and surfaces an undeliverable warning when the
-// client has no contact method (the proposal still saves).
-//
-// A booking is modeled as exactly ONE main (BASE) service + ADD_ONs — enforced
-// server-side in both the proposal route and the finalize write-boundary (totals
-// derive the booking's single primary service from that BASE). So the "Add"
-// picker is base/add-on aware: until a base exists it offers base services; once
-// one is set it offers that offering's add-ons (tagged ADD_ON). The web form
-// only ever added BASE — adding a second one tripped the server's "exactly one
-// base service" rule; offering add-ons is the supported way to bill additional
-// services here.
+// Line items pre-fill from the booking's services; the pro can add from their
+// offering catalog, edit price/duration/notes per line, and remove lines. Send
+// posts to `POST .../consultation-proposal` and surfaces an undeliverable warning
+// when the client has no contact method (the proposal still saves).
 import SwiftUI
 import TovisKit
 
@@ -29,8 +20,7 @@ struct ProConsultationFormView: View {
 
     @State private var items: [ProConsultationLineItem] = []
     @State private var services: [ProConsultationServiceOption] = []
-    @State private var addOns: [ProConsultationAddOnOption] = []
-    @State private var selectedOptionId: String = ""
+    @State private var selectedOfferingId: String = ""
     @State private var notes: String = ""
     @State private var saving = false
     @State private var loadingServices = true
@@ -216,19 +206,14 @@ struct ProConsultationFormView: View {
         if loadingServices {
             Text("Loading your services…")
                 .font(BrandFont.body(13)).foregroundStyle(BrandColor.textSecondary)
-        } else if !hasBaseItem && services.isEmpty {
+        } else if services.isEmpty {
             Text("No services found for your profile. Add offerings before sending consult approvals.")
                 .font(BrandFont.body(13)).foregroundStyle(BrandColor.ember)
-        } else if pickerOptions.isEmpty {
-            // A base service is set but it has no add-ons configured. Additional
-            // services on one booking are modeled as add-ons of the base service.
-            Text("No add-ons available for this service. Add-ons must be set up on your offering to bill additional services here.")
-                .font(BrandFont.body(13)).foregroundStyle(BrandColor.textMuted)
         } else {
             HStack(spacing: 10) {
-                Picker(hasBaseItem ? "Add an add-on" : "Select a service", selection: $selectedOptionId) {
-                    ForEach(pickerOptions) { option in
-                        Text(option.label).tag(option.id)
+                Picker("Select a service", selection: $selectedOfferingId) {
+                    ForEach(services) { service in
+                        Text(serviceOptionLabel(service)).tag(service.offeringId)
                     }
                 }
                 .pickerStyle(.menu)
@@ -273,71 +258,12 @@ struct ProConsultationFormView: View {
         }
     }
 
-    // MARK: - Picker options (base vs add-on)
-    //
-    // The server requires exactly one BASE service per booking; additional
-    // services are ADD_ONs drawn from the base offering's configured add-on set.
-    // So until a base exists the picker offers base services; once one is set it
-    // offers that offering's add-ons (which the server will accept as ADD_ON).
-
-    private struct PickerOption: Identifiable {
-        let id: String
-        let label: String
-        let name: String
-        let isAddOn: Bool
-        let serviceId: String
-        let offeringId: String?
-        let defaultPrice: Double?
-        let defaultDuration: Int?
-        let categoryName: String?
-    }
-
-    private var hasBaseItem: Bool { items.contains { $0.itemType == "BASE" } }
-    private var baseOfferingId: String? {
-        items.first(where: { $0.itemType == "BASE" })?.offeringId
-    }
-
-    private var pickerOptions: [PickerOption] {
-        if !hasBaseItem {
-            return services.map { service in
-                PickerOption(
-                    id: service.offeringId, label: serviceOptionLabel(service),
-                    name: service.serviceName, isAddOn: false,
-                    serviceId: service.serviceId, offeringId: service.offeringId,
-                    defaultPrice: service.defaultPrice,
-                    defaultDuration: service.defaultDurationMinutes,
-                    categoryName: service.categoryName,
-                )
-            }
-        }
-        // Add-ons scoped to the current base offering.
-        return addOns
-            .filter { baseOfferingId == nil || $0.parentOfferingId == baseOfferingId }
-            .map { addOn in
-                PickerOption(
-                    id: "\(addOn.parentOfferingId):\(addOn.serviceId)",
-                    label: addOnOptionLabel(addOn), name: addOn.serviceName, isAddOn: true,
-                    serviceId: addOn.serviceId, offeringId: addOn.parentOfferingId,
-                    defaultPrice: addOn.defaultPrice,
-                    defaultDuration: addOn.defaultDurationMinutes,
-                    categoryName: addOn.categoryName,
-                )
-            }
-    }
-
     // MARK: - Logic (ported from ConsultationForm.tsx)
 
     private func serviceOptionLabel(_ service: ProConsultationServiceOption) -> String {
         let categoryPrefix = service.categoryName.map { "\($0) · " } ?? ""
         let priceSuffix = service.defaultPrice.map { " ($\(ProConsultationMoney.label2($0)))" } ?? ""
         return "\(categoryPrefix)\(service.serviceName)\(priceSuffix)"
-    }
-
-    private func addOnOptionLabel(_ addOn: ProConsultationAddOnOption) -> String {
-        let categoryPrefix = addOn.categoryName.map { "\($0) · " } ?? ""
-        let priceSuffix = addOn.defaultPrice.map { " ($\(ProConsultationMoney.label2($0)))" } ?? ""
-        let recommended = addOn.isRecommended ? " ★" : ""
-        return "Add-on · \(categoryPrefix)\(addOn.serviceName)\(priceSuffix)\(recommended)"
     }
 
     private func loadServices() async {
@@ -347,8 +273,7 @@ struct ProConsultationFormView: View {
         do {
             let response = try await session.client.proSession.consultationServices(bookingId: bookingId)
             services = response.services
-            addOns = response.addOns
-            syncSelectedOption()
+            if selectedOfferingId.isEmpty { selectedOfferingId = response.services.first?.offeringId ?? "" }
         } catch let error as APIError {
             errorText = error.userMessage
         } catch {
@@ -356,40 +281,30 @@ struct ProConsultationFormView: View {
         }
     }
 
-    /// Keep `selectedOptionId` pointing at a valid option as the option set
-    /// changes (base services → that offering's add-ons once a base is added).
-    private func syncSelectedOption() {
-        if !pickerOptions.contains(where: { $0.id == selectedOptionId }) {
-            selectedOptionId = pickerOptions.first?.id ?? ""
-        }
-    }
-
     private func addSelectedService() {
         errorText = nil
         message = nil
-        guard let option = pickerOptions.first(where: { $0.id == selectedOptionId })
-            ?? pickerOptions.first else {
+        guard let service = services.first(where: { $0.offeringId == selectedOfferingId }) else {
             errorText = "Select a service to add."
             return
         }
-
-        // The first base line uses the suggested total when present, else the
-        // offering default. Add-ons always use their own default price.
+        // First line uses the suggested total when present, else the offering default.
         let price: String
-        if !option.isAddOn, items.isEmpty, let suggestedTotal { price = suggestedTotal }
-        else if let defaultPrice = option.defaultPrice { price = ProConsultationMoney.label2(defaultPrice) }
+        if items.isEmpty, let suggestedTotal { price = suggestedTotal }
+        else if let defaultPrice = service.defaultPrice { price = ProConsultationMoney.label2(defaultPrice) }
         else { price = "" }
 
-        let duration = (option.defaultDuration ?? 0) > 0 ? String(option.defaultDuration ?? 0) : ""
+        let duration = (service.defaultDurationMinutes ?? 0) > 0
+            ? String(service.defaultDurationMinutes ?? 0) : ""
 
         items.append(
             ProConsultationLineItem(
                 bookingServiceItemId: nil,
-                offeringId: option.offeringId,
-                serviceId: option.serviceId,
-                itemType: option.isAddOn ? "ADD_ON" : "BASE",
-                label: option.name,
-                categoryName: option.categoryName,
+                offeringId: service.offeringId,
+                serviceId: service.serviceId,
+                itemType: "BASE",
+                label: service.serviceName,
+                categoryName: service.categoryName,
                 price: price,
                 durationMinutes: duration,
                 notes: "",
@@ -398,14 +313,12 @@ struct ProConsultationFormView: View {
             )
         )
         items = ProConsultationLineItem.sorted(items)
-        syncSelectedOption()
     }
 
     private func removeItem(_ id: UUID) {
         items.removeAll { $0.id == id }
         for index in items.indices { items[index].sortOrder = index }
         items = ProConsultationLineItem.sorted(items)
-        syncSelectedOption()
     }
 
     private func submit() async {
