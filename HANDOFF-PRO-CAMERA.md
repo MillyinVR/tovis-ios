@@ -48,6 +48,24 @@ green; contract 26.** None of it is sim-verified yet (keychain wipe on reinstall
   the client service-address sub-flow), and the **openings slot-suggestion picker** is deferred (free date/time +
   override toggles instead).
 
+### 🔧 Post-S1 fix — consultation "Add" picker is now base/add-on aware (`4c18ef1`)
+**Sim-found bug:** adding a 2nd service in the consultation form failed with *"Invalid proposed services. Include
+exactly one base service…"* The form tagged **every** picker-added service as `BASE`, but a booking is modeled as
+**exactly one main (BASE) service + ADD_ONs** — enforced server-side in BOTH `consultation-proposal/route.ts`
+(`parseProposalPayload` baseCount===1) AND `lib/booking/writeBoundary.ts` `assertValidFinalReviewLineItems` (3247),
+and `computeBookingItemLikeTotals` derives the booking's single `primaryServiceId`/`primaryOfferingId` from that one
+BASE. Fix: `ProConsultationFormView`'s picker now offers base services until a base exists, then that offering's
+**add-ons** (from the `addOns` array the `consultation-services` GET already returns), tagged `ADD_ON` w/ the parent
+offering id — which the route's `allowedAddOnServiceIds` + parent-offering checks accept. No-add-ons state is messaged.
+
+### ⏭️ DEFERRED (user-confirmed 2026-06-29) — multiple co-equal BASE services per booking
+User wants pros (and clients, at booking time) to add **multiple main services** (e.g. cut + color as two independent
+services, not add-ons). User chose **"add-ons only"** for now. True multi-base is a **cross-cutting backend invariant
+change** (its own PR): relax `baseCount===1` in `consultation-proposal/route.ts` + `writeBoundary.ts:3247`; the
+`Booking` model carries a single primary `serviceId`/`offeringId` (NOT NULL, drives title/scheduling/location) so the
+"primary service" concept (`serviceItems.ts` `computeBookingItemLikeTotals`) + the client approval UI/DTOs all assume
+one base. Scope carefully across the booking lifecycle; apply the same to the client booking flow.
+
 **NEXT = sim-verify Phase S end-to-end as an APPROVED pro** (consult → send → approve → before → service → finish →
 after → wrap-up → mark paid → aftercare → send; + create-booking), then close the deferred bits above. Camera device
 run+tune (below) + Phase C/B4 still open.
