@@ -10,8 +10,12 @@
 // availability the client booking flow uses. A "custom time" fallback keeps the
 // free date/time entry + scheduling overrides for booking off-grid.
 //
-// Scoped vs web: existing clients only (new-client creation is a separate flow),
-// SALON bookings only (MOBILE needs the client service-address sub-flow).
+// The client is either an existing one (picked from the directory) or a new one
+// created inline (first + last name + email, phone optional) — the server
+// resolves either and sends a new client a secure claim invite.
+//
+// Scoped vs web: SALON bookings only (MOBILE needs the client service-address
+// sub-flow).
 import SwiftUI
 import TovisKit
 
@@ -29,9 +33,16 @@ struct ProNewBookingView: View {
     /// The pro's own professionalId (availability is keyed by it).
     @State private var professionalId = ""
 
+    @State private var clientMode: ClientMode = .existing
     @State private var clientId = ""
+    @State private var newFirstName = ""
+    @State private var newLastName = ""
+    @State private var newEmail = ""
+    @State private var newPhone = ""
     @State private var offeringId = ""
     @State private var locationId = ""
+
+    private enum ClientMode: String, CaseIterable { case existing, new }
 
     // Slot-picker time selection (the shared ProOpenSlotPicker owns the date).
     @State private var selectedSlot: String?         // chosen ISO instant
@@ -50,8 +61,15 @@ struct ProNewBookingView: View {
     @State private var errorText: String?
 
     private var hasTime: Bool { manualMode ? true : selectedSlot != nil }
+    /// New client needs first + last name + email (server contract); phone optional.
+    private var newClientReady: Bool {
+        !trimmed(newFirstName).isEmpty && !trimmed(newLastName).isEmpty && !trimmed(newEmail).isEmpty
+    }
+    private var hasClient: Bool {
+        clientMode == .existing ? !clientId.isEmpty : newClientReady
+    }
     private var canCreate: Bool {
-        !creating && !clientId.isEmpty && !offeringId.isEmpty && !locationId.isEmpty && hasTime
+        !creating && hasClient && !offeringId.isEmpty && !locationId.isEmpty && hasTime
     }
 
     var body: some View {
@@ -89,13 +107,51 @@ struct ProNewBookingView: View {
 
     private var clientSection: some View {
         BrandSection(title: "Client") {
-            if clients.isEmpty {
-                emptyHint("No clients yet. Add a client first.")
-            } else {
-                menu(selection: $clientId, options: clients.map { ($0.id, $0.fullName) },
-                     placeholder: "Choose a client")
+            VStack(alignment: .leading, spacing: 12) {
+                Picker("Client", selection: $clientMode.animation()) {
+                    Text("Existing").tag(ClientMode.existing)
+                    Text("New").tag(ClientMode.new)
+                }
+                .pickerStyle(.segmented)
+
+                if clientMode == .existing {
+                    if clients.isEmpty {
+                        emptyHint("No clients yet. Add a new client instead.")
+                    } else {
+                        menu(selection: $clientId, options: clients.map { ($0.id, $0.fullName) },
+                             placeholder: "Choose a client")
+                    }
+                } else {
+                    newClientFields
+                }
             }
         }
+    }
+
+    private var newClientFields: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 10) {
+                clientField("First name *", text: $newFirstName)
+                clientField("Last name *", text: $newLastName)
+            }
+            clientField("Email *", text: $newEmail, keyboard: .emailAddress)
+            clientField("Phone", text: $newPhone, keyboard: .phonePad)
+            Text("We’ll send this client a secure claim invite.")
+                .font(BrandFont.body(11)).foregroundStyle(BrandColor.textMuted)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func clientField(_ placeholder: String, text: Binding<String>, keyboard: UIKeyboardType = .default) -> some View {
+        TextField(placeholder, text: text)
+            .keyboardType(keyboard)
+            .textInputAutocapitalization(keyboard == .emailAddress ? .never : .words)
+            .autocorrectionDisabled(keyboard == .emailAddress)
+            .font(BrandFont.body(14)).foregroundStyle(BrandColor.textPrimary)
+            .padding(.horizontal, 12).padding(.vertical, 11)
+            .background(BrandColor.bgSecondary)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .disabled(creating)
     }
 
     private var serviceSection: some View {
@@ -231,6 +287,10 @@ struct ProNewBookingView: View {
         Text(text).font(BrandFont.body(13)).foregroundStyle(BrandColor.textMuted)
     }
 
+    private func trimmed(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     /// A bordered menu picker over (id, label) options.
     private func menu(selection: Binding<String>, options: [(String, String)], placeholder: String) -> some View {
         Menu {
@@ -297,10 +357,19 @@ struct ProNewBookingView: View {
         }
 
         let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Existing client → clientId; new client → an inline client to create.
+        let newClient: ProNewBookingClient? = clientMode == .new
+            ? ProNewBookingClient(
+                firstName: trimmed(newFirstName), lastName: trimmed(newLastName),
+                email: trimmed(newEmail),
+                phone: trimmed(newPhone).isEmpty ? nil : trimmed(newPhone),
+            )
+            : nil
 
         do {
             let newId = try await session.client.proBookings.createBooking(
-                clientId: clientId,
+                clientId: clientMode == .existing ? clientId : nil,
+                client: newClient,
                 offeringId: offeringId,
                 locationId: locationId,
                 locationType: (location.type ?? "SALON").uppercased() == "MOBILE" ? "MOBILE" : "SALON",

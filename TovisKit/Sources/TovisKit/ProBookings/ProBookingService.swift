@@ -165,14 +165,16 @@ public final class ProBookingService: Sendable {
         )
     }
 
-    /// POST /api/v1/pro/bookings — create a booking for a client. Requires an
-    /// idempotency key (a fresh one per attempt). Returns the new booking id.
-    /// `locationType` is "SALON" | "MOBILE" (MOBILE also needs an address — not
-    /// wired natively yet). The `allow*` overrides force-create past scheduling
-    /// guards (outside working hours / short notice / far future).
+    /// POST /api/v1/pro/bookings — create a booking. Pass `clientId` for an
+    /// existing client, OR `client` to create a new (unclaimed) one inline — the
+    /// backend resolves either. Requires an idempotency key (fresh per attempt).
+    /// Returns the new booking id. `locationType` is "SALON" | "MOBILE" (MOBILE
+    /// also needs an address — not wired natively yet). The `allow*` overrides
+    /// force-create past scheduling guards (outside hours / short notice / far future).
     @discardableResult
     public func createBooking(
-        clientId: String,
+        clientId: String? = nil,
+        client: ProNewBookingClient? = nil,
         offeringId: String,
         locationId: String,
         locationType: String,
@@ -187,6 +189,7 @@ public final class ProBookingService: Sendable {
         let payload = try JSONEncoder().encode(
             ProBookingCreateRequest(
                 clientId: clientId,
+                client: client,
                 offeringId: offeringId,
                 locationId: locationId,
                 locationType: locationType,
@@ -280,10 +283,12 @@ struct ProRefundRequest: Encodable {
     let reason: String?
 }
 
-/// POST /pro/bookings body (the subset the native form sends — an existing
-/// client + a salon offering/location). Nil optionals are dropped from the JSON.
+/// POST /pro/bookings body (the subset the native form sends — an existing or
+/// new client + a salon offering/location). Nil optionals are dropped from the
+/// JSON, so the body carries either `clientId` or `client`, never both.
 struct ProBookingCreateRequest: Encodable {
-    let clientId: String
+    let clientId: String?
+    let client: ProNewBookingClient?
     let offeringId: String
     let locationId: String
     let locationType: String
@@ -293,6 +298,22 @@ struct ProBookingCreateRequest: Encodable {
     let allowShortNotice: Bool
     let allowFarFuture: Bool
     let overrideReason: String?
+}
+
+/// A new (unclaimed) client to create inline with a booking. The server requires
+/// first + last name + email; phone is optional.
+public struct ProNewBookingClient: Encodable, Sendable {
+    public let firstName: String
+    public let lastName: String
+    public let email: String
+    public let phone: String?
+
+    public init(firstName: String, lastName: String, email: String, phone: String?) {
+        self.firstName = firstName
+        self.lastName = lastName
+        self.email = email
+        self.phone = phone
+    }
 }
 
 /// POST /pro/bookings → `{ ok, booking: { id, … } }` (only the id is read here).
