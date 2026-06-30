@@ -26,6 +26,7 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     private var cachedClutter: Double?
     private var cachedSubjectFill: Double?
     private var cachedPose: PoseSignal?
+    private var cachedColor: ColorSignal?
     /// Working resolution for the CoreImage / Vision math — full-res frames are
     /// needless cost for these aggregate signals.
     private let workingMaxDim = CoachTuning.workingMaxDim
@@ -80,6 +81,7 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             cachedClutter = seg?.clutter
             cachedSubjectFill = seg?.subjectFill
             cachedPose = bodyPose(pixelBuffer)
+            cachedColor = colorSignal(working)
         }
 
         let ctx = FrameContext(
@@ -90,7 +92,8 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             backgroundClutter: cachedClutter,
             subjectFill: cachedSubjectFill,
             pose: cachedPose,
-            deviceTilt: currentDeviceTilt()
+            deviceTilt: currentDeviceTilt(),
+            color: cachedColor
         )
 
         let signals = coaches.map { ($0.category, $0.evaluate(ctx)) }
@@ -133,14 +136,16 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
 
     // MARK: - Signals
 
-    private func averageLuma(_ image: CIImage) -> Double {
+    /// Average color of an image (CIAreaAverage → one pixel), each channel 0…1.
+    /// Nil when the extent is degenerate.
+    private func averageRGB(_ image: CIImage) -> (r: Double, g: Double, b: Double)? {
         let extent = image.extent
         guard extent.width > 0, extent.height > 0,
               let filter = CIFilter(name: "CIAreaAverage", parameters: [
                   kCIInputImageKey: image,
                   kCIInputExtentKey: CIVector(cgRect: extent),
               ]),
-              let output = filter.outputImage else { return 0.5 }
+              let output = filter.outputImage else { return nil }
 
         var pixel = [UInt8](repeating: 0, count: 4)
         ciContext.render(
@@ -151,8 +156,31 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             format: .RGBA8,
             colorSpace: CGColorSpaceCreateDeviceRGB()
         )
-        let r = Double(pixel[0]) / 255, g = Double(pixel[1]) / 255, b = Double(pixel[2]) / 255
-        return 0.299 * r + 0.587 * g + 0.114 * b
+        return (Double(pixel[0]) / 255, Double(pixel[1]) / 255, Double(pixel[2]) / 255)
+    }
+
+    private func averageLuma(_ image: CIImage) -> Double {
+        guard let c = averageRGB(image) else { return 0.5 }
+        return 0.299 * c.r + 0.587 * c.g + 0.114 * c.b
+    }
+
+    /// Color-of-light read: mixed light (warm↔cool spread across vertical thirds —
+    /// window on one side, bulb on the other) + global green / warmth cast.
+    private func colorSignal(_ working: CIImage) -> ColorSignal? {
+        let e = working.extent
+        guard e.width > 0, e.height > 0, let global = averageRGB(working) else { return nil }
+
+        func warmth(_ c: (r: Double, g: Double, b: Double)) -> Double {
+            (c.r - c.b) / (c.r + c.b + 1e-3)
+        }
+        let third = e.width / 3
+        let warms: [Double] = (0..<3).compactMap { i in
+            let rect = CGRect(x: e.minX + CGFloat(i) * third, y: e.minY, width: third, height: e.height)
+            return averageRGB(working.cropped(to: rect)).map(warmth)
+        }
+        let mixed = warms.count >= 2 ? ((warms.max() ?? 0) - (warms.min() ?? 0)) : 0
+        let greenTint = (2 * global.g - global.r - global.b) / (2 * global.g + global.r + global.b + 1e-3)
+        return ColorSignal(mixed: max(0, mixed), greenTint: greenTint, warmth: warmth(global))
     }
 
     /// Largest face, normalized with a TOP-LEFT origin. Back camera in portrait →
@@ -330,7 +358,7 @@ final class CoachEngine {
         self.settings = settings
         self.analyzer = CoachAnalyzer(coaches: [
             LightingCoach(), CompositionCoach(), SharpnessCoach(),
-            BackgroundCoach(), PoseCoach(), LevelCoach(),
+            BackgroundCoach(), PoseCoach(), LevelCoach(), ColorCoach(),
         ])
         analyzer.autoHarvestEnabled = settings.autoHarvest
         analyzer.sink = { [weak self] result in

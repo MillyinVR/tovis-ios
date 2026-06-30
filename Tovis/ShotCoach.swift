@@ -9,15 +9,17 @@
 import CoreGraphics
 
 enum CoachCategory: String, Sendable {
-    case lighting, composition, sharpness, background, pose, level
+    case lighting, composition, sharpness, background, pose, level, color
 
     /// Relative importance in the readiness score + which fix to surface first.
     /// Follows the beauty-photography priority order: light is the whole ballgame,
-    /// then tack-sharp focus, then framing & a level horizon, then background/pose.
+    /// then tack-sharp focus, then color truth & framing & a level horizon, then
+    /// background/pose. Color is make-or-break for beauty, so it carries real weight.
     var weight: Double {
         switch self {
         case .lighting: return 1.6
         case .sharpness: return 1.4
+        case .color: return 1.1
         case .composition: return 1.0
         case .level: return 1.0
         case .background: return 0.8
@@ -65,6 +67,19 @@ struct PoseSignal: Sendable {
     let edgeClipped: Bool
 }
 
+/// Color-of-light read for the frame. Mixed light (warm bulb + cool window) is the
+/// #1 real-world beauty-photo killer; a strong green (fluorescent) or warm/yellow
+/// (incandescent) cast misrepresents skin tone and the work. Daylight (~neutral) is
+/// the target. All values from the frame's average color; no reference card.
+struct ColorSignal: Sendable {
+    /// Spread of warm↔cool across the frame, 0…~1 — high = mixed light sources.
+    let mixed: Double
+    /// Global green tint, signed (+green / −magenta). Strong + = fluorescent.
+    let greenTint: Double
+    /// Global warmth, signed (+warm/yellow / −cool/blue). Strong + = warm bulbs.
+    let warmth: Double
+}
+
 /// Pre-computed, orientation-corrected signals for the current frame. Coordinates
 /// are normalized with origin TOP-LEFT (UIKit-style) so composition math is simple.
 struct FrameContext: Sendable {
@@ -88,6 +103,8 @@ struct FrameContext: Sendable {
     /// Device roll off level, in degrees (signed), from CoreMotion. Nil when motion
     /// is unavailable (e.g. the Simulator). Drives the level / horizon coaching.
     let deviceTilt: Double?
+    /// Color-of-light read (mixed light / cast). Nil if it couldn't be measured.
+    let color: ColorSignal?
 }
 
 protocol ShotCoach: Sendable {
@@ -250,5 +267,32 @@ struct LevelCoach: ShotCoach {
             return CoachSignal(score: 0.7, message: "Almost level — straighten up")
         }
         return CoachSignal(score: 1.0, message: nil)
+    }
+}
+
+// MARK: - Color (light quality / white balance)
+
+/// Flags the light problems that wreck beauty color: mixed sources (the #1 culprit)
+/// and a strong green/fluorescent or warm/yellow cast that misrepresents skin tone.
+/// Neutral when it can't measure (no signal) so it never blocks readiness blindly.
+struct ColorCoach: ShotCoach {
+    let category: CoachCategory = .color
+
+    func evaluate(_ ctx: FrameContext) -> CoachSignal {
+        guard let color = ctx.color else { return CoachSignal(score: 1.0, message: nil) }
+
+        // Mixed light first — it can't be fixed with one white-balance setting.
+        if color.mixed > CoachTuning.mixedLightSpread {
+            return CoachSignal(score: 0.45, message: "Mixed light — turn off the overheads")
+        }
+        if color.greenTint > CoachTuning.greenCastTint {
+            return CoachSignal(score: 0.55, message: "Greenish light — switch to one clean source")
+        }
+        if color.warmth > CoachTuning.warmCastWarmth {
+            return CoachSignal(score: 0.6, message: "Warm/yellow light — daylight reads truer")
+        }
+        // Small penalty for mild mixing; otherwise clean.
+        let score = max(0.75, 1.0 - color.mixed)
+        return CoachSignal(score: score, message: nil)
     }
 }

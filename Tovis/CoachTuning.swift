@@ -94,6 +94,18 @@ enum CoachTuning {
     /// A confident joint within this normalized distance of any edge = clipping.
     static let poseEdgePad: Double = 0.02
 
+    // MARK: - Color (light quality / white balance)
+
+    /// Warm↔cool spread across the frame above which it reads as mixed light (the
+    /// #1 real-world beauty-photo killer — warm bulb on one side, cool window the
+    /// other). The most robust color signal; the cast cutoffs below are stricter.
+    static let mixedLightSpread: Double = 0.13
+    /// Global green tint above which it reads as a fluorescent cast.
+    static let greenCastTint: Double = 0.08
+    /// Global warmth above which it reads as a warm/yellow (incandescent) cast —
+    /// daylight (~5000–5600K, near-neutral) is the beauty target.
+    static let warmCastWarmth: Double = 0.30
+
     // MARK: - Device level (horizon)
 
     /// Device roll (degrees off level) above which the shot reads as clearly tilted

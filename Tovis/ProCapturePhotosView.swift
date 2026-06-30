@@ -365,7 +365,7 @@ struct ProCapturePhotosView: View {
     /// The order the fundamentals pills appear in (stable so they don't reshuffle
     /// frame-to-frame). Pose/clipping stays out of the row — it drives the priority
     /// tip when it fires, but an always-green "pose" pill just adds noise.
-    private static let hudOrder: [CoachCategory] = [.lighting, .level, .composition, .sharpness, .background]
+    private static let hudOrder: [CoachCategory] = [.lighting, .color, .level, .composition, .sharpness, .background]
 
     /// At-a-glance checklist: each fundamental tinted green (good) / amber (minor) /
     /// red (fix now), so the pro can *see* what's not photographer-worthy yet.
@@ -391,6 +391,7 @@ struct ProCapturePhotosView: View {
     private static func hudDisplay(_ c: CoachCategory) -> (label: String, icon: String) {
         switch c {
         case .lighting: return ("LIGHT", "sun.max.fill")
+        case .color: return ("COLOR", "drop.fill")
         case .level: return ("LEVEL", "level.fill")
         case .composition: return ("FRAME", "viewfinder")
         case .sharpness: return ("FOCUS", "camera.metering.center.weighted")
