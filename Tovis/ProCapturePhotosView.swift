@@ -26,6 +26,9 @@ struct ProCapturePhotosView: View {
     @State private var guide: ShotGuide = .generic
     @State private var currentStepID: String?
     @State private var completedStepIDs: Set<String> = []
+    /// Tap-to-focus reticle position (preview space) + a token to time its fade.
+    @State private var focusPoint: CGPoint?
+    @State private var focusToken = 0
     /// Local thumbnails of shots taken this session (newest first) — shown
     /// instantly from the captured bytes, no network round-trip.
     @State private var captured: [UIImage] = []
@@ -147,8 +150,12 @@ struct ProCapturePhotosView: View {
             // Live preview + coaching overlays
             ZStack(alignment: .top) {
                 if camera.status == .ready {
-                    CameraPreview(session: camera.session)
+                    CameraPreview(session: camera.session) { camera.previewLayer = $0 }
                         .ignoresSafeArea(edges: .top)
+                        .overlay { focusReticleOverlay }
+                        .gesture(
+                            SpatialTapGesture().onEnded { handleFocusTap($0.location) }
+                        )
                 } else {
                     Color.black
                     ProgressView().tint(.white)
@@ -201,6 +208,34 @@ struct ProCapturePhotosView: View {
             .stroke(.white.opacity(0.25), lineWidth: 0.5)
         }
         .allowsHitTesting(false)
+    }
+
+    // MARK: - Tap to focus
+
+    /// The focus/exposure reticle, drawn in the preview's coordinate space.
+    @ViewBuilder private var focusReticleOverlay: some View {
+        if let p = focusPoint {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(BrandColor.gold, lineWidth: 1.5)
+                .frame(width: 74, height: 74)
+                .position(p)
+                .allowsHitTesting(false)
+                .transition(.opacity)
+        }
+    }
+
+    /// Tap-to-focus: meter + focus on the tapped point (the work), show the reticle,
+    /// fade it after a beat. Releases any AE/AF lock (handled in the controller).
+    private func handleFocusTap(_ point: CGPoint) {
+        camera.focus(atLayerPoint: point)
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        withAnimation(.easeOut(duration: 0.12)) { focusPoint = point }
+        focusToken += 1
+        let token = focusToken
+        Task {
+            try? await Task.sleep(nanoseconds: 1_100_000_000)
+            if focusToken == token { withAnimation(.easeIn(duration: 0.3)) { focusPoint = nil } }
+        }
     }
 
     /// Camera level / horizon indicator — fixed reference ticks plus a line that
@@ -439,6 +474,20 @@ struct ProCapturePhotosView: View {
                 .padding(.vertical, 8)
                 .background(.black.opacity(0.4), in: Capsule())
             Spacer()
+            Button { camera.setAEAFLock(!camera.aeAfLocked) } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: camera.aeAfLocked ? "lock.fill" : "lock.open")
+                        .font(.system(size: 14, weight: .semibold))
+                    if camera.aeAfLocked {
+                        Text("AE/AF").font(BrandFont.mono(10)).tracking(0.5)
+                    }
+                }
+                .foregroundStyle(camera.aeAfLocked ? BrandColor.gold : .white)
+                .padding(.horizontal, 11).frame(height: 38)
+                .background(.black.opacity(0.4), in: Capsule())
+            }
+            .accessibilityLabel(camera.aeAfLocked ? "Unlock focus and exposure" : "Lock focus and exposure")
+
             Button { showSettings = true } label: {
                 Image(systemName: "slider.horizontal.3")
                     .font(.system(size: 16, weight: .semibold))

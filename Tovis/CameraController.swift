@@ -23,6 +23,13 @@ final class CameraController: NSObject {
     nonisolated(unsafe) let session = AVCaptureSession()
     nonisolated(unsafe) private let photoOutput = AVCapturePhotoOutput()
     nonisolated(unsafe) private let videoOutput = AVCaptureVideoDataOutput()
+    /// The active capture device — kept so tap-to-focus / AE-AF lock can configure
+    /// its focus + exposure.
+    nonisolated(unsafe) private var device: AVCaptureDevice?
+    /// The live preview layer, for converting tap points to device coordinates.
+    nonisolated(unsafe) weak var previewLayer: AVCaptureVideoPreviewLayer?
+    /// Whether focus + exposure are currently locked (AE/AF lock).
+    private(set) var aeAfLocked = false
     /// Records silent video clips (NO mic input — we never capture salon audio).
     nonisolated(unsafe) private let movieOutput = AVCaptureMovieFileOutput()
     nonisolated(unsafe) private var configured = false
@@ -91,8 +98,55 @@ final class CameraController: NSObject {
                 } else {
                     settings = AVCapturePhotoSettings()
                 }
+                // Best possible still for the profile / Looks feed: full sensor
+                // resolution + quality-prioritized processing.
+                settings.photoQualityPrioritization = .quality
+                if let dims = self.device?.activeFormat.supportedMaxPhotoDimensions.last {
+                    settings.maxPhotoDimensions = dims
+                }
                 self.photoOutput.capturePhoto(with: settings, delegate: self)
             }
+        }
+    }
+
+    // MARK: - Focus & exposure
+
+    /// Tap-to-focus + meter at a point in the preview layer's coordinate space.
+    /// Sets a one-shot auto-focus/expose there and releases any AE/AF lock.
+    func focus(atLayerPoint layerPoint: CGPoint) {
+        guard let device, let layer = previewLayer else { return }
+        let point = layer.captureDevicePointConverted(fromLayerPoint: layerPoint)
+        sessionQueue.async {
+            guard (try? device.lockForConfiguration()) != nil else { return }
+            if device.isFocusPointOfInterestSupported {
+                device.focusPointOfInterest = point
+                if device.isFocusModeSupported(.autoFocus) { device.focusMode = .autoFocus }
+            }
+            if device.isExposurePointOfInterestSupported {
+                device.exposurePointOfInterest = point
+                if device.isExposureModeSupported(.autoExpose) { device.exposureMode = .autoExpose }
+            }
+            device.isSubjectAreaChangeMonitoringEnabled = true
+            device.unlockForConfiguration()
+            Task { @MainActor in self.aeAfLocked = false }
+        }
+    }
+
+    /// Lock (or release) focus + exposure so the camera stops re-metering as hands
+    /// and product move through the frame — the pro's "set it and shoot" control.
+    func setAEAFLock(_ locked: Bool) {
+        guard let device else { return }
+        sessionQueue.async {
+            guard (try? device.lockForConfiguration()) != nil else { return }
+            if locked {
+                if device.isFocusModeSupported(.locked) { device.focusMode = .locked }
+                if device.isExposureModeSupported(.locked) { device.exposureMode = .locked }
+            } else {
+                if device.isFocusModeSupported(.continuousAutoFocus) { device.focusMode = .continuousAutoFocus }
+                if device.isExposureModeSupported(.continuousAutoExposure) { device.exposureMode = .continuousAutoExposure }
+            }
+            device.unlockForConfiguration()
+            Task { @MainActor in self.aeAfLocked = locked }
         }
     }
 
@@ -157,6 +211,7 @@ final class CameraController: NSObject {
                     return
                 }
                 self.session.addInput(input)
+                self.device = device
 
                 guard self.session.canAddOutput(self.photoOutput) else {
                     self.session.commitConfiguration()
@@ -164,6 +219,9 @@ final class CameraController: NSObject {
                     return
                 }
                 self.session.addOutput(self.photoOutput)
+                // Prioritize quality — these stills go on the pro's profile + the
+                // Looks feed, so favor the best capture over speed.
+                self.photoOutput.maxPhotoQualityPrioritization = .quality
 
                 // Live frames for the on-device coach (optional).
                 if let frameDelegate = self.frameDelegate, self.session.canAddOutput(self.videoOutput) {
