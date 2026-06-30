@@ -168,9 +168,11 @@ public final class ProBookingService: Sendable {
     /// POST /api/v1/pro/bookings — create a booking. Pass `clientId` for an
     /// existing client, OR `client` to create a new (unclaimed) one inline — the
     /// backend resolves either. Requires an idempotency key (fresh per attempt).
-    /// Returns the new booking id. `locationType` is "SALON" | "MOBILE" (MOBILE
-    /// also needs an address — not wired natively yet). The `allow*` overrides
-    /// force-create past scheduling guards (outside hours / short notice / far future).
+    /// Returns the new booking id. `locationType` is "SALON" | "MOBILE"; a MOBILE
+    /// booking also needs the client's service address — pass EITHER `clientAddressId`
+    /// (an existing saved address) OR `serviceAddress` (a new one). The `allow*`
+    /// overrides force-create past scheduling guards (outside hours / short notice /
+    /// far future).
     @discardableResult
     public func createBooking(
         clientId: String? = nil,
@@ -179,6 +181,8 @@ public final class ProBookingService: Sendable {
         locationId: String,
         locationType: String,
         scheduledFor: String,
+        clientAddressId: String? = nil,
+        serviceAddress: ProServiceAddressInput? = nil,
         internalNotes: String? = nil,
         allowOutsideWorkingHours: Bool = false,
         allowShortNotice: Bool = false,
@@ -194,6 +198,8 @@ public final class ProBookingService: Sendable {
                 locationId: locationId,
                 locationType: locationType,
                 scheduledFor: scheduledFor,
+                clientAddressId: clientAddressId,
+                serviceAddress: serviceAddress,
                 internalNotes: internalNotes,
                 allowOutsideWorkingHours: allowOutsideWorkingHours,
                 allowShortNotice: allowShortNotice,
@@ -284,8 +290,10 @@ struct ProRefundRequest: Encodable {
 }
 
 /// POST /pro/bookings body (the subset the native form sends — an existing or
-/// new client + a salon offering/location). Nil optionals are dropped from the
-/// JSON, so the body carries either `clientId` or `client`, never both.
+/// new client + an offering/location, plus a MOBILE service address). Nil
+/// optionals are dropped from the JSON, so the body carries either `clientId` or
+/// `client` (never both) and, for MOBILE, either `clientAddressId` or
+/// `serviceAddress` (never both); both are omitted for SALON.
 struct ProBookingCreateRequest: Encodable {
     let clientId: String?
     let client: ProNewBookingClient?
@@ -293,11 +301,60 @@ struct ProBookingCreateRequest: Encodable {
     let locationId: String
     let locationType: String
     let scheduledFor: String
+    let clientAddressId: String?
+    let serviceAddress: ProServiceAddressInput?
     let internalNotes: String?
     let allowOutsideWorkingHours: Bool
     let allowShortNotice: Bool
     let allowFarFuture: Bool
     let overrideReason: String?
+}
+
+/// A new MOBILE service address sent inline with a booking (the client has no
+/// saved address to pick). Mirrors the web NewBookingForm `serviceAddress`
+/// payload + the backend `pickServiceAddressPayload` contract. Nil optionals are
+/// dropped from the JSON; the backend geocodes when lat/lng are absent.
+public struct ProServiceAddressInput: Encodable, Sendable {
+    public let label: String?
+    public let formattedAddress: String?
+    public let addressLine1: String?
+    public let addressLine2: String?
+    public let city: String?
+    public let state: String?
+    public let postalCode: String?
+    public let countryCode: String?
+    public let placeId: String?
+    public let lat: Double?
+    public let lng: Double?
+    public let isDefault: Bool
+
+    public init(
+        label: String? = nil,
+        formattedAddress: String? = nil,
+        addressLine1: String? = nil,
+        addressLine2: String? = nil,
+        city: String? = nil,
+        state: String? = nil,
+        postalCode: String? = nil,
+        countryCode: String? = nil,
+        placeId: String? = nil,
+        lat: Double? = nil,
+        lng: Double? = nil,
+        isDefault: Bool = false
+    ) {
+        self.label = label
+        self.formattedAddress = formattedAddress
+        self.addressLine1 = addressLine1
+        self.addressLine2 = addressLine2
+        self.city = city
+        self.state = state
+        self.postalCode = postalCode
+        self.countryCode = countryCode
+        self.placeId = placeId
+        self.lat = lat
+        self.lng = lng
+        self.isDefault = isDefault
+    }
 }
 
 /// A new (unclaimed) client to create inline with a booking. The server requires

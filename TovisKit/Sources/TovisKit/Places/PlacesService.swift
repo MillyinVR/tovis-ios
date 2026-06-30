@@ -15,7 +15,7 @@ public struct PlacePrediction: Decodable, Sendable, Identifiable {
     public var id: String { placeId }
 }
 
-public struct PlaceDetails: Decodable, Sendable {
+public struct PlaceDetails: Decodable, Sendable, Equatable {
     public let placeId: String
     public let formattedAddress: String
     public let lat: Double

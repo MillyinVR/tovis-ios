@@ -17,6 +17,9 @@ struct ProOpenSlotPicker: View {
     /// Timezone the availability `date` param is interpreted in (location zone).
     let locationTimeZone: String?
     let durationMinutes: Int
+    /// For a MOBILE booking, the client's saved service-address id so slots respect
+    /// the pro's travel radius. nil for SALON (or an as-yet-unsaved MOBILE address).
+    var clientAddressId: String? = nil
     /// The chosen slot's ISO start instant.
     @Binding var selectedSlot: String?
 
@@ -28,7 +31,7 @@ struct ProOpenSlotPicker: View {
 
     /// Re-fetch whenever the service/location/date inputs change.
     private var fetchKey: String {
-        "\(professionalId)|\(serviceId)|\(offeringId)|\(locationId)|\(ymd(selectedDate))"
+        "\(professionalId)|\(serviceId)|\(offeringId)|\(locationId)|\(clientAddressId ?? "")|\(ymd(selectedDate))"
     }
 
     var body: some View {
@@ -95,6 +98,7 @@ struct ProOpenSlotPicker: View {
                 durationMinutes: durationMinutes,
                 date: ymd(selectedDate),
                 locationType: locationType,
+                clientAddressId: clientAddressId,
             )
             slots = day.slots
             slotTimeZone = day.timeZone

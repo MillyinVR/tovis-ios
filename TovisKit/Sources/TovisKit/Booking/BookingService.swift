@@ -29,7 +29,9 @@ public final class BookingService: Sendable {
         ])
     }
 
-    /// GET /api/v1/availability/day — exact slots for one date (YYYY-MM-DD).
+    /// GET /api/v1/availability/day — exact slots for one date (YYYY-MM-DD). For a
+    /// MOBILE booking pass `clientAddressId` (the client's saved service address)
+    /// so the slots respect the pro's travel radius for that location.
     public func day(
         professionalId: String,
         serviceId: String,
@@ -37,9 +39,10 @@ public final class BookingService: Sendable {
         locationId: String,
         durationMinutes: Int,
         date: String,
-        locationType: String = "SALON"
+        locationType: String = "SALON",
+        clientAddressId: String? = nil
     ) async throws -> AvailabilityDay {
-        try await api.request("/availability/day", query: [
+        var query = [
             URLQueryItem(name: "professionalId", value: professionalId),
             URLQueryItem(name: "serviceId", value: serviceId),
             URLQueryItem(name: "offeringId", value: offeringId),
@@ -47,7 +50,11 @@ public final class BookingService: Sendable {
             URLQueryItem(name: "locationId", value: locationId),
             URLQueryItem(name: "durationMinutes", value: String(durationMinutes)),
             URLQueryItem(name: "date", value: date),
-        ])
+        ]
+        if let clientAddressId, !clientAddressId.isEmpty {
+            query.append(URLQueryItem(name: "clientAddressId", value: clientAddressId))
+        }
+        return try await api.request("/availability/day", query: query)
     }
 
     /// GET /api/v1/offerings/add-ons — selectable add-ons for an offering in a
