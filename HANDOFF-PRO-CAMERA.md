@@ -109,10 +109,12 @@ global **top header** (`app/pro/ProHeader.tsx`) with 6 secondary tabs. iOS only 
 **ALL 5 backend PRs (#435–#439) MERGED** (2026-06-29).
 
 ### ⚠️ OPEN ACTION ITEMS (do these first next session)
-1. **Redeploy prod** if not already done since the merges (`npx vercel@latest --prod` — auto-deploy is OFF),
-   so all 6 native tabs return live data. (Debug→localhost already works.)
-2. **Sim-verify** the header + all 6 tabs as an APPROVED pro (re-login after each reinstall — keychain wipe).
-   NONE of H1–H7 is sim-verified yet.
+1. ✅ **Prod redeployed 2026-06-30** (`npx vercel@latest --prod`; deploy `dpl_8ztVztGbGjWgoR5VEPrtCXMUKZYZ`,
+   READY). `main` (all merged through #440) is live on prod; `/api/health` + `/api/health/ready` = 200; the native
+   GET endpoints (overview/bookings/aftercare/reviews/clients) return 401 (deployed, auth-gated); Sentry clean (no
+   new/regressed prod errors post-deploy). Auto-deploy stays OFF → future deploys are manual.
+2. **Sim-verify** the header + all 6 tabs AND the full Phase-S flow as an APPROVED pro (re-login after each reinstall
+   — keychain wipe). NONE of H1–H7 or S1–S4 is sim-verified yet — this is the next step.
 
 ### Backend pattern used (reuse for Phase S backend work if any)
 Each list endpoint extracts a **shared loader** under `lib/pro/**` (query + mapping) that BOTH the web page
