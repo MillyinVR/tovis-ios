@@ -45,10 +45,13 @@ green; contract 26.** None of it is sim-verified yet (keychain wipe on reinstall
   ⚠️ The handoff's old "`GET /pro/openings`" reference was a misnomer (that route is the **last-minute openings
   manager**); the web new-booking form itself uses a plain `datetime-local`, so this is a native improvement. **This
   lays the `availability/day` groundwork the aftercare rebook slot mode needs (below).** NOT sim-verified yet.
-- **Aftercare**: the **"Next booking date" rebook mode** (exact picked slot) is still deferred — but the
-  `availability/day` integration now exists in `ProNewBookingView`'s slot picker, so this is mostly a port of that
-  chip UI into `ProAftercareAuthorView` + sending `rebookSlot {offeringId,locationId,locationType,startsAt,endsAt}`
-  in the save body. Product reminders + the catalog product picker are also deferred (external name+link only).
+- ✅ **Aftercare "Next booking date" rebook mode — DONE 2026-06-30 (`52e59a5`).** `ProAftercareAuthorView` now offers
+  all three web modes (None / Next booking date / Booking window). The slot picker was extracted to a shared
+  **`ProOpenSlotPicker`** (used by both new-booking + aftercare; `ProNewBookingView` refactored onto it — no dup
+  logic). Aftercare `load()` also pulls the booking detail (rebook service/location/duration) + the pro's id;
+  `save()` sends `rebookedFor` + `rebookSlot {offeringId,locationId,locationType,startsAt,endsAt}` for BOOKED.
+  ⚠️ MOBILE rebook may not return slots without a client address (SALON fully supported). Product reminders + the
+  catalog product picker are still deferred (external name+link products only). NOT sim-verified yet.
 - **Consultation**: prefill notes/proposedTotal come only from booking serviceItems + subtotal/total (the native
   `/session/state` doesn't return the consultation proposal's notes/proof) → the "Consultation proof recorded" card
   is omitted (needs a tiny backend add to the state payload).
