@@ -67,7 +67,60 @@ green; contract 26.** None of it is sim-verified yet (keychain wipe on reinstall
   client toggle; New collects first+last name+email (required) + phone (optional) and creates the client inline
   (server sends a secure claim invite). No backend change — `POST /pro/bookings` already accepts an inline `client`
   object; `createBooking` now takes `clientId?` OR `client:ProNewBookingClient?`.
-- **New booking** (remaining): **SALON only** (MOBILE needs the client service-address sub-flow).
+- **New booking** (remaining): **SALON only** — MOBILE is the next workstream (see below).
+
+### ▶️ NEXT WORKSTREAMS — start each in a FRESH session (in order)
+> Phase S + all the small deferred items are DONE. Two larger items remain; each is its own session. Do **MOBILE
+> first** (self-contained, no backend change), then **multiple co-equal base services** (a core backend invariant
+> change — investigate + get sign-off first).
+
+#### Workstream 1 — New-booking MOBILE (iOS only, no backend change)
+**Goal:** support MOBILE bookings in `ProNewBookingView` (today it's SALON-only). A MOBILE booking = the pro's mobile
+base location + the **client's service address**.
+- **Backend (already done, verified):** `POST /pro/bookings` accepts `locationType: "MOBILE"` + EITHER `clientAddressId`
+  (an existing client address) OR a `serviceAddress` object `{label, formattedAddress, addressLine1, addressLine2,
+  city, state, postalCode, countryCode, placeId, lat, lng, isDefault}`. `GET /availability/day` takes a
+  `clientAddressId` for MOBILE slots.
+- **Reuse (native, already exists):** `ProClientsService.serviceAddresses(clientId:) -> [ProClientAddress]` (existing
+  addresses); `PlacesService` (Google autocomplete/details, `TovisKit/.../Places/PlacesService.swift`) + the client-side
+  `AddServiceAddressSheet.swift` / `BookingFlowView.swift` MOBILE flow as the UX reference; offering filter uses
+  `offersMobile` + `mobilePriceStartingAt`/`mobileDurationMinutes`; the location is the pro's `MOBILE_BASE`
+  `ProLocationSummary` (`type == "MOBILE_BASE"`).
+- **To build:** (1) add a `clientAddressId` param to `BookingService.day` + `ProOpenSlotPicker` (MOBILE slot fetch needs
+  it). (2) `ProBookingService.createBooking` + `ProBookingCreateRequest`: add `clientAddressId?` + `serviceAddress?`
+  (drop nils — sends one or the other), like `client` was added. (3) `ProNewBookingView`: a SALON/MOBILE location-type
+  toggle; when MOBILE → offering list filters to `offersMobile`, location picks the MOBILE_BASE, and an address
+  sub-section (existing `serviceAddresses` picker OR a new address via `PlacesService`); pass `clientAddressId` (or
+  `serviceAddress`) to BOTH the slot picker and `createBooking`. Files: `Tovis/ProNewBookingView.swift`,
+  `Tovis/ProOpenSlotPicker.swift`, `TovisKit/.../ProBookings/ProBookingService.swift`,
+  `TovisKit/.../Booking/BookingService.swift`. Verify: Debug+Release + `swift test`; commit; update this handoff.
+
+#### Workstream 2 — Multiple co-equal BASE services per booking (CORE backend invariant change — investigate + sign-off FIRST)
+**Goal:** let pros (and clients at booking time) put **multiple full services** on one booking (e.g. cut + color as two
+independent services, not add-ons). User confirmed they want this; it was deferred as the bigger change.
+- ⚠️ **This relaxes a deliberate invariant — do NOT just flip the guard.** First **investigate every assumption**, write
+  up an approach, and **get user sign-off before implementing.** The likely shape: keep ONE *primary* service (the
+  booking's `serviceId`/`offeringId`, NOT NULL — drives title/scheduling-window/location rules) but allow multiple
+  **billable BASE-or-co-equal line items**; OR a deeper model change. Investigation must cover the full lifecycle.
+- **Known touch points (the `baseCount===1` / single-primary assumptions):**
+  - `app/api/v1/pro/bookings/[id]/consultation-proposal/route.ts` — `parseProposalPayload` (`baseCount !== 1` → reject)
+    + the in-tx validation loop (each BASE must map to a valid active offering).
+  - `lib/booking/writeBoundary.ts:3247` — `assertValidFinalReviewLineItems` (`baseCount !== 1` → "exactly one main
+    service") on the approval/finalize path; plus `approveConsultation`.
+  - `lib/booking/serviceItems.ts` — `computeBookingItemLikeTotals` derives `primaryServiceId`/`primaryOfferingId` from
+    the single BASE (sums durations/prices across all items already).
+  - `Booking` model: single primary `serviceId` (NOT NULL) + `offeringId`.
+  - Client approval surfaces/DTOs: `app/api/v1/public/consultation/[token]/route.ts`, `app/api/v1/client/bookings/*`,
+    `lib/dto/clientBooking.ts` (they render/assume one main service).
+  - Native: revert `ProConsultationFormView`'s base/add-on **mode switch** (commit `4c18ef1`) to allow adding multiple
+    base services once the server accepts them; and the client iOS booking flow (`BookingFlowView`) for the
+    client-side multi-service ask.
+- Backend changes branch off `origin/main`, its own PR(s); re-run `gen:api-schema` after any DTO edit;
+  typecheck+lint+static-guards+vitest before push.
+
+**Standing reminders:** ⏳ **tovis-app PR #441 (consultation proof) is MERGED but NOT deployed** — deploy prod
+(`npx vercel@latest --prod`) when the user says so, to light up the proof card. **NOTHING in Phase S or these two
+workstreams is sim-verified yet** — a real-device/sim walkthrough as an APPROVED pro is the highest-value check.
 
 ### 🔧 Post-S1 fix — consultation "Add" picker is now base/add-on aware (`4c18ef1`)
 **Sim-found bug:** adding a 2nd service in the consultation form failed with *"Invalid proposed services. Include
@@ -79,17 +132,11 @@ BASE. Fix: `ProConsultationFormView`'s picker now offers base services until a b
 **add-ons** (from the `addOns` array the `consultation-services` GET already returns), tagged `ADD_ON` w/ the parent
 offering id — which the route's `allowedAddOnServiceIds` + parent-offering checks accept. No-add-ons state is messaged.
 
-### ⏭️ DEFERRED (user-confirmed 2026-06-29) — multiple co-equal BASE services per booking
-User wants pros (and clients, at booking time) to add **multiple main services** (e.g. cut + color as two independent
-services, not add-ons). User chose **"add-ons only"** for now. True multi-base is a **cross-cutting backend invariant
-change** (its own PR): relax `baseCount===1` in `consultation-proposal/route.ts` + `writeBoundary.ts:3247`; the
-`Booking` model carries a single primary `serviceId`/`offeringId` (NOT NULL, drives title/scheduling/location) so the
-"primary service" concept (`serviceItems.ts` `computeBookingItemLikeTotals`) + the client approval UI/DTOs all assume
-one base. Scope carefully across the booking lifecycle; apply the same to the client booking flow.
+> (The earlier standalone "multiple co-equal BASE services" deferred note is now **Workstream 2** above.)
 
-**NEXT = sim-verify Phase S end-to-end as an APPROVED pro** (consult → send → approve → before → service → finish →
-after → wrap-up → mark paid → aftercare → send; + create-booking), then close the deferred bits above. Camera device
-run+tune (below) + Phase C/B4 still open.
+**NEXT = the two NEXT WORKSTREAMS above (MOBILE, then multi-base), each in a fresh session** + the standing
+sim-verify of Phase S end-to-end (consult → send → approve → before → service → finish → after → wrap-up → mark paid →
+aftercare → send; + create-booking). Camera device run+tune (below) + Phase C/B4 still open.
 
 ---
 
