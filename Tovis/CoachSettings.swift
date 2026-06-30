@@ -7,6 +7,10 @@ import SwiftUI
 final class CoachSettings {
     /// Show the single prioritized coaching tip as an on-screen chip.
     var showNudge: Bool { didSet { persist(\.showNudge, "showNudge") } }
+    /// Show the at-a-glance fundamentals checklist (light/level/frame/focus/…).
+    var showChecklist: Bool { didSet { persist(\.showChecklist, "showChecklist") } }
+    /// Show the directed ShotGuide bar (front / profile / back / detail).
+    var showGuides: Bool { didSet { persist(\.showGuides, "showGuides") } }
     /// Speak the tip aloud (AVSpeechSynthesizer) — for hands-busy work.
     var speak: Bool { didSet { persist(\.speak, "speak") } }
     /// Haptic tap when a new tip appears + a success tap when the shot is ready.
@@ -15,16 +19,21 @@ final class CoachSettings {
     var showGrid: Bool { didSet { persist(\.showGrid, "showGrid") } }
     /// Show the readiness ring around the shutter (green = good to shoot).
     var showReadinessRing: Bool { didSet { persist(\.showReadinessRing, "showReadinessRing") } }
+    /// Draw the level / horizon indicator (turns green when the camera is level).
+    var showLevel: Bool { didSet { persist(\.showLevel, "showLevel") } }
     /// Auto-harvest a still when quality peaks (the Session Reel core — B2).
     var autoHarvest: Bool { didSet { persist(\.autoHarvest, "autoHarvest") } }
 
     init() {
         let d = UserDefaults.standard
         showNudge = d.object(forKey: Self.key("showNudge")) as? Bool ?? true
+        showChecklist = d.object(forKey: Self.key("showChecklist")) as? Bool ?? true
+        showGuides = d.object(forKey: Self.key("showGuides")) as? Bool ?? true
         speak = d.object(forKey: Self.key("speak")) as? Bool ?? false
         haptics = d.object(forKey: Self.key("haptics")) as? Bool ?? true
         showGrid = d.object(forKey: Self.key("showGrid")) as? Bool ?? false
         showReadinessRing = d.object(forKey: Self.key("showReadinessRing")) as? Bool ?? true
+        showLevel = d.object(forKey: Self.key("showLevel")) as? Bool ?? true
         autoHarvest = d.object(forKey: Self.key("autoHarvest")) as? Bool ?? true
     }
 

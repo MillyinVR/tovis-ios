@@ -63,7 +63,8 @@ struct ProSessionHubView: View {
         .task { if case .loading = phase { await load() } }
         .onChange(of: session.refreshTick) { Task { await loadMedia() } }
         .fullScreenCover(item: $capturing, onDismiss: { Task { await reloadAfterCapture() } }) { selection in
-            ProCapturePhotosView(bookingId: bookingId, phase: selection.phase)
+            ProCapturePhotosView(bookingId: bookingId, phase: selection.phase,
+                                 serviceName: detail?.baseItem?.serviceName)
         }
         .tint(BrandColor.accent)
     }

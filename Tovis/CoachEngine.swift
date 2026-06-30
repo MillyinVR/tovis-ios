@@ -24,6 +24,7 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     private let heavyInterval = 1.0 / CoachTuning.heavyFPS
     private var lastHeavyAt: CFTimeInterval = 0
     private var cachedClutter: Double?
+    private var cachedSubjectFill: Double?
     private var cachedPose: PoseSignal?
     /// Working resolution for the CoreImage / Vision math — full-res frames are
     /// needless cost for these aggregate signals.
@@ -31,6 +32,14 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
 
     /// Set once before the camera starts; called on the frame queue.
     nonisolated(unsafe) var sink: (@Sendable (CoachResult) -> Void)?
+
+    // Latest device roll (degrees off level) from CoreMotion, written on the main
+    // queue and read on the frame queue — a small lock keeps the cross-queue scalar
+    // safe. Nil until the first motion sample (or on the Simulator).
+    private let tiltLock = NSLock()
+    private var _deviceTilt: Double?
+    func setDeviceTilt(_ value: Double?) { tiltLock.lock(); _deviceTilt = value; tiltLock.unlock() }
+    private func currentDeviceTilt() -> Double? { tiltLock.lock(); defer { tiltLock.unlock() }; return _deviceTilt }
 
     // MARK: - Best-shot harvesting (Session Reel)
     /// When on, the analyzer grabs a high-res still whenever quality peaks — the
@@ -67,7 +76,9 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         // Heavy Vision (segmentation + pose) on its own slower cadence; reuse last.
         if now - lastHeavyAt >= heavyInterval {
             lastHeavyAt = now
-            cachedClutter = backgroundClutter(pixelBuffer, working: working)
+            let seg = segment(pixelBuffer, working: working)
+            cachedClutter = seg?.clutter
+            cachedSubjectFill = seg?.subjectFill
             cachedPose = bodyPose(pixelBuffer)
         }
 
@@ -77,16 +88,26 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             faceLuma: face.map { regionLuma(working, normalizedTopLeft: $0) },
             sharpness: sharpness(working, subject: face),
             backgroundClutter: cachedClutter,
-            pose: cachedPose
+            subjectFill: cachedSubjectFill,
+            pose: cachedPose,
+            deviceTilt: currentDeviceTilt()
         )
 
         let signals = coaches.map { ($0.category, $0.evaluate(ctx)) }
-        let readiness = signals.isEmpty ? 0 : signals.map { $0.1.score }.reduce(0, +) / Double(signals.count)
-        // The single most important fix = the lowest-scoring coach that has a tip.
-        let worst = signals.filter { $0.1.message != nil }.min { $0.1.score < $1.1.score }
+        // Readiness is the importance-weighted mean — light + focus count for more
+        // than a clean backdrop, per the beauty-photography priority order.
+        let totalWeight = signals.reduce(0.0) { $0 + $1.0.weight }
+        let readiness = totalWeight == 0 ? 0
+            : signals.reduce(0.0) { $0 + $1.1.score * $1.0.weight } / totalWeight
+        // The fix to surface = the biggest *weighted* deficiency among coaches that
+        // have a tip — so a lighting problem outranks a slightly-busy background.
+        let worst = signals
+            .filter { $0.1.message != nil }
+            .max { $0.0.weight * (1 - $0.1.score) < $1.0.weight * (1 - $1.1.score) }
         let nudge = worst.flatMap { entry in entry.1.message.map { CoachNudge(category: entry.0, message: $0) } }
+        let statuses = signals.map { CoachStatus(category: $0.0, score: $0.1.score, message: $0.1.message) }
 
-        sink?(CoachResult(readiness: readiness, nudge: nudge))
+        sink?(CoachResult(readiness: readiness, nudge: nudge, statuses: statuses))
 
         // Harvest a keeper when quality peaks (rate-limited + capped).
         if autoHarvestEnabled,
@@ -185,10 +206,13 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         return min(1.0, energy / CoachTuning.sharpnessReference)
     }
 
-    /// Busy-ness of the background, 0 (clean) … 1 (cluttered), via person
-    /// segmentation: edge energy in the non-person area, area-normalized. Nil when
-    /// no person is found (don't push non-portrait shots toward an empty frame).
-    private func backgroundClutter(_ pixelBuffer: CVPixelBuffer, working: CIImage) -> Double? {
+    /// Person-segmentation read for one frame: how much of the frame the subject
+    /// fills (drives "get closer") and how busy the background is (drives "cleaner
+    /// backdrop"). Nil when no person is found — flat-lay / detail shots aren't
+    /// pushed toward an empty frame or nagged to get closer.
+    private struct SegmentSignal { let clutter: Double?; let subjectFill: Double }
+
+    private func segment(_ pixelBuffer: CVPixelBuffer, working: CIImage) -> SegmentSignal? {
         let request = VNGeneratePersonSegmentationRequest()
         request.qualityLevel = .balanced
         request.outputPixelFormat = kCVPixelFormatType_OneComponent8
@@ -203,22 +227,25 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         mask = mask.transformed(by: CGAffineTransform(
             scaleX: working.extent.width / me.width,
             y: working.extent.height / me.height
-        ))
-        let background = mask
-            .applyingFilter("CIColorInvert")            // 1 - mask → background weight
-            .cropped(to: working.extent)
+        )).cropped(to: working.extent)
+        let background = mask.applyingFilter("CIColorInvert")  // 1 - mask → background weight
 
         let bgFraction = averageLuma(background)
-        guard bgFraction > CoachTuning.minBackgroundFraction else { return nil }  // subject fills frame
+        let subjectFill = min(1.0, max(0.0, 1 - bgFraction))
 
+        // Only judge clutter when there's enough background to judge (subject not
+        // filling the whole frame).
+        guard bgFraction > CoachTuning.minBackgroundFraction else {
+            return SegmentSignal(clutter: nil, subjectFill: subjectFill)
+        }
         // Edge energy that falls in the background = edges × background weight.
         let bgEdges = edges(working).applyingFilter("CIMultiplyCompositing", parameters: [
             kCIInputBackgroundImageKey: background,
         ])
         let bgEdgeMean = averageLuma(bgEdges.cropped(to: working.extent))
         // Normalize by background area, then against the "fully cluttered" reference.
-        let clutter = (bgEdgeMean / bgFraction) / CoachTuning.clutterReference
-        return min(1.0, max(0.0, clutter))
+        let clutter = min(1.0, max(0.0, (bgEdgeMean / bgFraction) / CoachTuning.clutterReference))
+        return SegmentSignal(clutter: clutter, subjectFill: subjectFill)
     }
 
     /// Edge magnitude image (CIEdges) for energy measurement.
@@ -252,17 +279,6 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             return CGPoint(x: p.location.x, y: 1 - p.location.y)
         }
 
-        // Shoulder tilt off horizontal.
-        var tilt: Double?
-        if let l = point(.leftShoulder), let r = point(.rightShoulder) {
-            tilt = Double(atan2(l.y - r.y, l.x - r.x)) * 180 / .pi
-            // Normalize to the acute deviation from a level line.
-            if let t = tilt {
-                let a = abs(t).truncatingRemainder(dividingBy: 180)
-                tilt = min(a, 180 - a)
-            }
-        }
-
         // Clipping: any confident joint hard against a frame edge.
         let edgePad = CoachTuning.poseEdgePad
         let clipped = [VNHumanBodyPoseObservation.JointName.leftShoulder, .rightShoulder,
@@ -270,8 +286,8 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             .compactMap(point)
             .contains { $0.x <= edgePad || $0.x >= 1 - edgePad || $0.y <= edgePad || $0.y >= 1 - edgePad }
 
-        guard tilt != nil || clipped else { return nil }
-        return PoseSignal(shoulderTilt: tilt, edgeClipped: clipped)
+        guard clipped else { return nil }
+        return PoseSignal(edgeClipped: clipped)
     }
 }
 
@@ -291,12 +307,18 @@ struct HarvestedShot: Identifiable {
 final class CoachEngine {
     private(set) var readiness: Double = 0
     private(set) var nudge: CoachNudge?
+    /// Per-fundamental live status for the checklist HUD (light/level/frame/…).
+    private(set) var statuses: [CoachStatus] = []
     /// Auto-harvested best shots awaiting review (newest first).
     private(set) var harvested: [HarvestedShot] = []
+    /// Live device roll (degrees off level) for the on-screen horizon indicator.
+    /// Nil until the first motion sample (or on the Simulator).
+    private(set) var deviceRoll: Double?
 
     let analyzer: CoachAnalyzer
     private let settings: CoachSettings
     private let synthesizer = AVSpeechSynthesizer()
+    private let level = DeviceLevelProvider()
     private var wasReady = false
 
     /// Readiness at/above this reads as "good to shoot" (green ring).
@@ -307,7 +329,8 @@ final class CoachEngine {
     init(settings: CoachSettings) {
         self.settings = settings
         self.analyzer = CoachAnalyzer(coaches: [
-            LightingCoach(), CompositionCoach(), SharpnessCoach(), BackgroundCoach(), PoseCoach(),
+            LightingCoach(), CompositionCoach(), SharpnessCoach(),
+            BackgroundCoach(), PoseCoach(), LevelCoach(),
         ])
         analyzer.autoHarvestEnabled = settings.autoHarvest
         analyzer.sink = { [weak self] result in
@@ -316,7 +339,16 @@ final class CoachEngine {
         analyzer.onHarvest = { [weak self] data, readiness in
             Task { @MainActor in self?.addHarvest(data, readiness) }
         }
+        // Feed device roll to both the live horizon UI and the level coach.
+        level.onUpdate = { [weak self] roll in
+            self?.deviceRoll = roll
+            self?.analyzer.setDeviceTilt(roll)
+        }
+        level.start()
     }
+
+    /// Stop the motion stream when the camera leaves the screen.
+    func stop() { level.stop() }
 
     /// Drop reviewed shots (kept or discarded) from the tray.
     func removeHarvested(_ ids: Set<UUID>) {
@@ -332,6 +364,7 @@ final class CoachEngine {
         // Keep the harvest gate in sync with the live toggle.
         analyzer.autoHarvestEnabled = settings.autoHarvest
         readiness = result.readiness
+        statuses = result.statuses
 
         if result.nudge != nudge {
             nudge = result.nudge

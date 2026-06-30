@@ -40,10 +40,12 @@ enum CoachTuning {
 
     /// Whole-frame luma below this = "too dark".
     static let lumaTooDark: Double = 0.22
-    /// …above this = "too bright".
-    static let lumaTooBright: Double = 0.82
-    /// Centre of the ideal exposure band (score falls off away from it).
-    static let lumaIdeal: Double = 0.5
+    /// …above this = "too bright". Set lower than the dark cutoff is high, because
+    /// clipped (blown-out) highlights are unrecoverable — protect them.
+    static let lumaTooBright: Double = 0.78
+    /// Centre of the ideal exposure band. Biased slightly below mid-grey to favour
+    /// protecting highlights (lift shadows later) over blowing them out.
+    static let lumaIdeal: Double = 0.47
     /// How fast the lighting score decays per unit of luma distance from ideal.
     static let lumaFalloff: Double = 1.6
     /// Backlit if the face is darker than `scene × ratio` AND below `maxLuma`.
@@ -60,6 +62,9 @@ enum CoachTuning {
     static let centerTolerance: Double = 0.16
     /// Horizontal "near a third" half-width.
     static let thirdTolerance: Double = 0.1
+    /// A segmented subject filling less than this fraction of the frame = "get
+    /// closer, fill the frame" (the #1 amateur framing mistake).
+    static let minSubjectFill: Double = 0.22
 
     // MARK: - Sharpness
 
@@ -86,8 +91,16 @@ enum CoachTuning {
 
     /// Minimum Vision joint confidence to trust a body point.
     static let poseJointConfidence: Float = 0.3
-    /// Shoulder-line tilt off horizontal (degrees) above which to say "level it".
-    static let shoulderTiltDegrees: Double = 8
     /// A confident joint within this normalized distance of any edge = clipping.
     static let poseEdgePad: Double = 0.02
+
+    // MARK: - Device level (horizon)
+
+    /// Device roll (degrees off level) above which the shot reads as clearly tilted
+    /// — a firm "straighten the camera" nudge.
+    static let tiltBadDegrees: Double = 6
+    /// …above this (but below `tiltBadDegrees`) = slightly off level (gentle nudge).
+    static let tiltWarnDegrees: Double = 2.5
+    /// Within this many degrees of level the on-screen horizon line snaps green.
+    static let tiltLevelDegrees: Double = 1.5
 }

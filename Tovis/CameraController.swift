@@ -67,6 +67,17 @@ final class CameraController: NSObject {
         }
     }
 
+    /// Resume a session that was paused with `stop()` — without re-running auth /
+    /// reconfiguration. Used when the pro returns from reviewing captured shots so
+    /// the camera only runs while they're actually shooting (not behind a sheet,
+    /// where it would keep scoring + auto-harvesting). No-op until configured.
+    func resume() {
+        sessionQueue.async {
+            guard self.configured, !self.session.isRunning else { return }
+            self.session.startRunning()
+        }
+    }
+
     /// Capture a still → JPEG `Data`.
     func capturePhoto() async throws -> Data {
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Data, Error>) in
