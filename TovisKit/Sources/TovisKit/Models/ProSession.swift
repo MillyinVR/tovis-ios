@@ -92,11 +92,54 @@ public struct ProSessionState: Decodable, Sendable {
     public let terminal: Bool
     public let startedAt: String?
     public let finishedAt: String?
+    public let consultation: ProSessionStateConsultation?
     public let checkout: ProSessionStateCheckout?
+    public let aftercare: ProSessionStateAftercare?
+
+    /// The booking session step the server resolved this state to.
+    public var step: SessionStep {
+        SessionStep(serverValue: effectiveSessionStep ?? sessionStep)
+    }
+
+    /// Which hub screen to show for this state.
+    public var screenKey: ProSessionScreenKey {
+        ProSessionFlow.screenKey(effectiveStep: step)
+    }
+
+    public var isConsultationApproved: Bool {
+        consultation?.status?.uppercased() == "APPROVED"
+    }
+    public var isConsultationPending: Bool {
+        consultation?.status?.uppercased() == "PENDING"
+    }
+    public var isConsultationRejected: Bool {
+        consultation?.status?.uppercased() == "REJECTED"
+    }
+}
+
+public struct ProSessionStateConsultation: Decodable, Sendable {
+    public let status: String?
+    public let approvedAt: String?
+    public let rejectedAt: String?
 }
 
 public struct ProSessionStateCheckout: Decodable, Sendable {
     public let status: String?
     public let selectedPaymentMethod: String?
     public let paymentCollectedAt: String?
+
+    /// Checkout is closed once paid or waived (web `hasCheckoutClosed`).
+    public var isClosed: Bool {
+        let s = status?.uppercased()
+        return s == "PAID" || s == "WAIVED"
+    }
+}
+
+public struct ProSessionStateAftercare: Decodable, Sendable {
+    public let draftSavedAt: String?
+    public let sentToClientAt: String?
+    public let version: Int?
+
+    public var hasDraft: Bool { draftSavedAt != nil || sentToClientAt != nil }
+    public var isSent: Bool { sentToClientAt != nil }
 }

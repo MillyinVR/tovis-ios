@@ -1,0 +1,43 @@
+{
+  "services": [
+    {
+      "offeringId": "off_1",
+      "serviceId": "svc_1",
+      "serviceName": "Balayage",
+      "categoryName": "Color",
+      "defaultPrice": 180.0,
+      "defaultDurationMinutes": 120,
+      "itemType": "BASE"
+    },
+    {
+      "offeringId": "off_2",
+      "serviceId": "svc_2",
+      "serviceName": "Women's Cut",
+      "categoryName": null,
+      "defaultPrice": null,
+      "defaultDurationMinutes": null,
+      "itemType": "BASE"
+    }
+  ],
+  "addOns": [
+    {
+      "parentOfferingId": "off_1",
+      "serviceId": "svc_3",
+      "serviceName": "Toner",
+      "categoryName": "Color",
+      "defaultPrice": 35.0,
+      "defaultDurationMinutes": 20,
+      "isRecommended": true,
+      "itemType": "ADD_ON"
+    }
+  ],
+  "existingBookingItems": [
+    {
+      "bookingServiceItemId": "bsi_1",
+      "serviceId": "svc_1",
+      "offeringId": "off_1",
+      "itemType": "BASE",
+      "parentItemId": null
+    }
+  ]
+}

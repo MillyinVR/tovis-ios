@@ -344,6 +344,28 @@ func fixture(_ name: String) throws -> Data {
         #expect(finished.media == nil)
     }
 
+    // GET /api/v1/pro/bookings/[id]/consultation-services — the session flow's
+    // consultation form service catalog. Inline shape; decode-only.
+    @Test func decodesProConsultationServices() throws {
+        let res = try JSONDecoder().decode(
+            ProConsultationServicesResponse.self, from: fixture("proConsultationServices"))
+
+        #expect(res.services.count == 2)
+        #expect(res.services[0].serviceName == "Balayage")
+        #expect(res.services[0].defaultPrice == 180.0)
+        #expect(res.services[0].defaultDurationMinutes == 120)
+        // Nullable defaults decode to nil (no crash).
+        #expect(res.services[1].categoryName == nil)
+        #expect(res.services[1].defaultPrice == nil)
+
+        #expect(res.addOns.count == 1)
+        #expect(res.addOns[0].isRecommended == true)
+        #expect(res.addOns[0].parentOfferingId == "off_1")
+
+        #expect(res.existingBookingItems.count == 1)
+        #expect(res.existingBookingItems[0].itemType == "BASE")
+    }
+
     // GET /api/v1/pro/overview — Fixtures/proOverview.json. The pro dashboard
     // monthly analytics (tovis-app PR #437). Inline shape; decode-only.
     @Test func decodesProOverview() throws {
