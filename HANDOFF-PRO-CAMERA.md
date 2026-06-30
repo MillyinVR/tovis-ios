@@ -50,8 +50,12 @@ green; contract 26.** None of it is sim-verified yet (keychain wipe on reinstall
   **`ProOpenSlotPicker`** (used by both new-booking + aftercare; `ProNewBookingView` refactored onto it — no dup
   logic). Aftercare `load()` also pulls the booking detail (rebook service/location/duration) + the pro's id;
   `save()` sends `rebookedFor` + `rebookSlot {offeringId,locationId,locationType,startsAt,endsAt}` for BOOKED.
-  ⚠️ MOBILE rebook may not return slots without a client address (SALON fully supported). Product reminders + the
-  catalog product picker are still deferred (external name+link products only). NOT sim-verified yet.
+  ⚠️ MOBILE rebook may not return slots without a client address (SALON fully supported). NOT sim-verified yet.
+- ✅ **Aftercare smart reminders — DONE 2026-06-30 (`d97d02e`).** "Smart reminders" section: rebook reminder
+  (1/2/3/7 days before, gated to the Next-booking-date mode + a picked slot) + product follow-up (3/7/14/30 days
+  after); wired into the save body. **Catalog product picker = N/A** — the web aftercare form has no catalog picker
+  (always sends `productId: null`), so products stay external (name+link+note); the old "deferred catalog picker"
+  note was speculative. NOT sim-verified yet.
 - ✅ **Consultation proof card — DONE 2026-06-30 (`b22b40c`).** The "Consultation proof recorded" card (decision ·
   method · recorded-at) now renders on the consultation + waiting screens. 🔶 **Backend companion = tovis-app PR
   #441 (OPEN)** adds the proof to the `/session/state` payload (`consultationApproval.proof {decision,method,actedAt}`;
