@@ -13,6 +13,55 @@ on `tovis-ios` `main`; the one backend change is **merged** (`tovis-app` PR #427
 
 ---
 
+## 🟢 RESUME HERE (2026-06-30, pass 5) — CAMERA made photographer-grade (coach overhaul + before/after) · next = DEVICE TUNE
+
+**The "AI photographer" camera went from a passive shutter to a directed, quality-gating coach.** Two commits on
+`tovis-ios` main; Debug+Release + `swift test` 66 green. **NONE of it is device-verified** — the Simulator has no
+camera, and every perception threshold was set from reasoning + the fundamentals doc, NOT hardware. **The single
+highest-value next step is the on-device tune pass** (see "Make it FULLY FUNCTIONAL" below; all knobs live in
+`Tovis/CoachTuning.swift`).
+
+- **`104a8e2` — direct the shoot + fundamentals weighting.**
+  - **Camera pauses while picking photos** (was still capturing + auto-harvesting behind the review sheet/scrubber/
+    settings). New `CameraController.resume()` ↔ `stop()`; `ProCapturePhotosView.isReviewing` drives it.
+  - **True camera level** via CoreMotion (`Tovis/DeviceLevel.swift` → `DeviceLevelProvider`, gravity→roll) + an
+    on-screen **horizon line** that snaps green when level. New `LevelCoach`; `PoseCoach` trimmed to clipping-only
+    (shoulder-tilt inference deleted — device gravity is far more reliable). `FrameContext.deviceTilt` threaded from
+    the engine into the analyzer via a small lock.
+  - **Fundamentals HUD** — live Light/Level/Frame/Focus/Clean pills (green/amber/red) so the pro SEES what's not
+    photographer-worthy. `CoachResult.statuses` / `CoachEngine.statuses`.
+  - **Capture quality-gate** — shutter dims/shrinks when the coach reads the shot as weak; **flash + haptic** confirm.
+  - **ShotGuides** (`Tovis/ShotGuide.swift`) — directed per-service shot list (hair/nails/lashes-brows/face/generic),
+    resolved from the booking's base service name, X-of-N progress, advanced by each capture. Bar in the camera top.
+  - **Doc-driven tuning** (from `~/Downloads/photography-fundamentals-for-beauty.md`): readiness is now
+    **importance-weighted** (`CoachCategory.weight` — light 1.6 / focus 1.4 > background/pose); the surfaced fix is
+    the biggest *weighted* deficiency. Added **"fill the frame"** (subject-fill from the existing person
+    segmentation; `segment()` now returns clutter + subjectFill from ONE Vision pass) + **highlight-protection**
+    exposure bias (lumaIdeal 0.47, tooBright 0.78). Guide copy aligned to real money-shots (hair back-of-cut; makeup
+    eyes/catchlights/lips).
+- **`74a5daf` — before/after matching (the transformation payoff).**
+  - **Onion-skin**: shooting AFTER ghosts the matching "before" over the live preview (opacity slider + cycle), auto-
+    following the ShotGuide step. References = the booking's before IMAGE rows, passed from the hub (AFTER only).
+  - **`Tovis/BeforeAfterCompareView.swift`** — interactive comparison slider (draggable divider), surfaced in the
+    **wrap-up screen**, paged across matched before/after pairs.
+
+### ⚠️ Camera open items (post-overhaul)
+1. **DEVICE TUNE PASS (do first).** Watch the ring + nudges on a real iPhone; adjust `CoachTuning.swift`
+   (sharpness/clutter references, luma bands, `tiltBadDegrees`, `minSubjectFill`, harvest/ready thresholds). The
+   level-coach left/right sign may need flipping (commented in `LevelCoach`). Onion-skin scaledToFill alignment vs
+   the AVCaptureVideoPreviewLayer gravity needs an eyeball check.
+2. **Still TODO from the fundamentals doc** (real, not built): **color accuracy / white balance** — "sacred" for
+   beauty, but needs a reference → this is exactly the planned **B4 ColorChecker + NFC card**; a lightweight
+   "mixed-light / strong color-cast" warning is the only on-device approximation (false-positive risk). **Video as
+   transformation** (hook→process→hold-the-reveal→loop, ASMR) — our video path is just silent-clip→scrubber; a
+   guided "transformation reel" is unbuilt. **Catchlights** (makeup eye sharpness) — niche.
+3. **Publish before/after → portfolio/Looks from the comparison slider** (consent-gated; B3b already unlocks it) —
+   natural next funnel step; not built.
+
+> Everything below this block predates the camera overhaul. The Phase-S / header / calendar status is unchanged.
+
+---
+
 ## 🟢 RESUME HERE (2026-06-29, pass 4) — PHASE S: full booking/session flow ✅ DONE (S1–S4) · next = sim-verify + deferred bits
 
 **Phase S (the native session/booking flow) is built + committed on `tovis-ios` main; `swift test` 65; Debug+Release
