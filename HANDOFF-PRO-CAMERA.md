@@ -67,33 +67,34 @@ green; contract 26.** None of it is sim-verified yet (keychain wipe on reinstall
   client toggle; New collects first+last name+email (required) + phone (optional) and creates the client inline
   (server sends a secure claim invite). No backend change — `POST /pro/bookings` already accepts an inline `client`
   object; `createBooking` now takes `clientId?` OR `client:ProNewBookingClient?`.
-- **New booking** (remaining): **SALON only** — MOBILE is the next workstream (see below).
+- ✅ **New-booking MOBILE — DONE 2026-06-30** (Workstream 1; 3 commits). `ProNewBookingView` now does SALON **and**
+  MOBILE (pro mobile base + client service address; saved-address picker OR new address via the shared
+  `PlacesAddressSearchField`). Details under **Workstream 1** below. NOT sim-verified yet.
 
 ### ▶️ NEXT WORKSTREAMS — start each in a FRESH session (in order)
-> Phase S + all the small deferred items are DONE. Two larger items remain; each is its own session. Do **MOBILE
-> first** (self-contained, no backend change), then **multiple co-equal base services** (a core backend invariant
-> change — investigate + get sign-off first).
+> Phase S + all the small deferred items are DONE. **Workstream 1 (MOBILE) is now DONE** (2026-06-30). One larger item
+> remains: **multiple co-equal base services** (a core backend invariant change — investigate + get sign-off first).
 
-#### Workstream 1 — New-booking MOBILE (iOS only, no backend change)
-**Goal:** support MOBILE bookings in `ProNewBookingView` (today it's SALON-only). A MOBILE booking = the pro's mobile
-base location + the **client's service address**.
-- **Backend (already done, verified):** `POST /pro/bookings` accepts `locationType: "MOBILE"` + EITHER `clientAddressId`
-  (an existing client address) OR a `serviceAddress` object `{label, formattedAddress, addressLine1, addressLine2,
-  city, state, postalCode, countryCode, placeId, lat, lng, isDefault}`. `GET /availability/day` takes a
-  `clientAddressId` for MOBILE slots.
-- **Reuse (native, already exists):** `ProClientsService.serviceAddresses(clientId:) -> [ProClientAddress]` (existing
-  addresses); `PlacesService` (Google autocomplete/details, `TovisKit/.../Places/PlacesService.swift`) + the client-side
-  `AddServiceAddressSheet.swift` / `BookingFlowView.swift` MOBILE flow as the UX reference; offering filter uses
-  `offersMobile` + `mobilePriceStartingAt`/`mobileDurationMinutes`; the location is the pro's `MOBILE_BASE`
-  `ProLocationSummary` (`type == "MOBILE_BASE"`).
-- **To build:** (1) add a `clientAddressId` param to `BookingService.day` + `ProOpenSlotPicker` (MOBILE slot fetch needs
-  it). (2) `ProBookingService.createBooking` + `ProBookingCreateRequest`: add `clientAddressId?` + `serviceAddress?`
-  (drop nils — sends one or the other), like `client` was added. (3) `ProNewBookingView`: a SALON/MOBILE location-type
-  toggle; when MOBILE → offering list filters to `offersMobile`, location picks the MOBILE_BASE, and an address
-  sub-section (existing `serviceAddresses` picker OR a new address via `PlacesService`); pass `clientAddressId` (or
-  `serviceAddress`) to BOTH the slot picker and `createBooking`. Files: `Tovis/ProNewBookingView.swift`,
-  `Tovis/ProOpenSlotPicker.swift`, `TovisKit/.../ProBookings/ProBookingService.swift`,
-  `TovisKit/.../Booking/BookingService.swift`. Verify: Debug+Release + `swift test`; commit; update this handoff.
+#### ✅ Workstream 1 — New-booking MOBILE — DONE 2026-06-30 (iOS only, no backend change)
+`ProNewBookingView` now supports MOBILE bookings (was SALON-only). A MOBILE booking = the pro's `MOBILE_BASE` location
++ the client's service address. **3 commits on `tovis-ios` main; Debug+Release green; `swift test` 66.** NOT
+sim-verified yet.
+- **What shipped:** An **In-salon / Mobile** segmented toggle. MOBILE filters offerings to `offersMobile` (mobile
+  price/duration in labels + scheduling) and locations to `type == "MOBILE_BASE"`. An **address sub-section** (MOBILE
+  only): a **Saved/New** picker when the existing client has saved service addresses (`ProClientsService.serviceAddresses`),
+  else a **new address** via the new shared `PlacesAddressSearchField` (+ optional label/apt). `clientAddressId` (saved)
+  OR a Places-resolved `serviceAddress` (new) flows to **both** the slot picker and `createBooking`.
+- **Plumbing (commit 1):** `BookingService.day` gained an optional `clientAddressId` query param; `ProOpenSlotPicker`
+  threads `clientAddressId` (default nil) into the day fetch + fetchKey; `ProBookingService.createBooking` +
+  `ProBookingCreateRequest` gained `clientAddressId?` + `serviceAddress?` (new `ProServiceAddressInput`, nil-dropped,
+  mirrors `pickServiceAddressPayload`); `PlaceDetails` is now `Equatable` (for SwiftUI `onChange`).
+- **No-dup (commit 2):** extracted `PlacesAddressSearchField` (autocomplete + resolve → bound `PlaceDetails?`) out of
+  `AddServiceAddressSheet` and refactored that sheet onto it (identical behavior); the pro MOBILE flow reuses it.
+- **Design notes for next time:** a **new (unsaved)** address has no `clientAddressId`, so its slot fetch falls back to
+  **mobile-base availability** (the backend `availability/day` returns base slots when MOBILE + no address — it does
+  NOT hard-fail). The inline `serviceAddress` is sent Places-resolved (placeId + exact lat/lng) so the server keeps the
+  pin instead of re-geocoding. The aftercare rebook slot picker still passes `clientAddressId: nil` (unchanged) — if
+  MOBILE-rebook slots ever need a real address, it can now thread one through the same param.
 
 #### Workstream 2 — Multiple co-equal BASE services per booking (CORE backend invariant change — investigate + sign-off FIRST)
 **Goal:** let pros (and clients at booking time) put **multiple full services** on one booking (e.g. cut + color as two
@@ -134,7 +135,7 @@ offering id — which the route's `allowedAddOnServiceIds` + parent-offering che
 
 > (The earlier standalone "multiple co-equal BASE services" deferred note is now **Workstream 2** above.)
 
-**NEXT = the two NEXT WORKSTREAMS above (MOBILE, then multi-base), each in a fresh session** + the standing
+**NEXT = Workstream 2 (multi-base, in a fresh session — investigate + sign-off first; Workstream 1 MOBILE is DONE)** + the standing
 sim-verify of Phase S end-to-end (consult → send → approve → before → service → finish → after → wrap-up → mark paid →
 aftercare → send; + create-booking). Camera device run+tune (below) + Phase C/B4 still open.
 
