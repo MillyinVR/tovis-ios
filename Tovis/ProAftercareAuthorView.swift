@@ -18,7 +18,9 @@ struct ProAftercareAuthorView: View {
     /// Called after a successful send so the caller (session hub) can refresh.
     var onSent: (() -> Void)?
 
-    private enum RebookMode: String { case none = "NONE", window = "RECOMMENDED_WINDOW" }
+    private enum RebookMode: String {
+        case none = "NONE", booked = "BOOKED_NEXT_APPOINTMENT", window = "RECOMMENDED_WINDOW"
+    }
 
     @State private var loading = true
     @State private var notes = ""
@@ -34,6 +36,16 @@ struct ProAftercareAuthorView: View {
     @State private var saving = false
     @State private var errorText: String?
     @State private var message: String?
+
+    // Rebook-slot context (the source booking's service + location), for the
+    // "Next booking date" mode's open-slot picker.
+    @State private var professionalId = ""
+    @State private var rebookServiceId = ""
+    @State private var rebookOfferingId = ""
+    @State private var rebookLocationId = ""
+    @State private var rebookLocationType = "SALON"
+    @State private var rebookDurationMinutes = 60
+    @State private var selectedSlot: String?   // chosen ISO start instant
 
     private struct EditableProduct: Identifiable {
         let id = UUID()
@@ -91,8 +103,10 @@ struct ProAftercareAuthorView: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {
                     modeChip("None", mode: .none)
+                    modeChip("Next booking date", mode: .booked)
                     modeChip("Booking window", mode: .window)
                 }
+                if rebookMode == .booked { bookedModeBody }
                 if rebookMode == .window {
                     BrandSurface {
                         VStack(alignment: .leading, spacing: 12) {
@@ -102,6 +116,31 @@ struct ProAftercareAuthorView: View {
                             dateRow("Window end", date: $windowEnd, has: $hasWindowEnd)
                         }
                     }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var bookedModeBody: some View {
+        BrandSurface {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Propose an exact next appointment from your open times (same service + location as this booking).")
+                    .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
+                if rebookOfferingId.isEmpty || professionalId.isEmpty {
+                    Text("This booking has no service offering set, so an exact next appointment can’t be proposed. Use “Booking window” instead.")
+                        .font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
+                } else {
+                    ProOpenSlotPicker(
+                        professionalId: professionalId,
+                        serviceId: rebookServiceId,
+                        offeringId: rebookOfferingId,
+                        locationId: rebookLocationId,
+                        locationType: rebookLocationType,
+                        locationTimeZone: timeZone,
+                        durationMinutes: rebookDurationMinutes,
+                        selectedSlot: $selectedSlot,
+                    )
                 }
             }
         }
@@ -217,8 +256,24 @@ struct ProAftercareAuthorView: View {
         loading = true
         defer { loading = false }
         do {
-            let booking = try await session.client.proBookings.aftercareDetail(bookingId: bookingId)
-            timeZone = booking.locationTimeZone
+            // Aftercare summary (prefill) + the booking detail (rebook service +
+            // location context) + the pro's id (availability is keyed by it).
+            async let bookingTask = session.client.proBookings.aftercareDetail(bookingId: bookingId)
+            async let detailTask = try? session.client.proBookings.detail(bookingId: bookingId)
+            async let profileTask = try? session.client.proProfile.myProfile()
+            let booking = try await bookingTask
+            let detail = await detailTask
+            professionalId = await profileTask?.id ?? ""
+
+            timeZone = detail?.timeZone ?? booking.locationTimeZone
+            if let detail {
+                rebookServiceId = detail.baseItem?.serviceId ?? ""
+                rebookOfferingId = detail.baseItem?.offeringId ?? ""
+                rebookLocationId = detail.locationId ?? ""
+                rebookLocationType = detail.locationType.uppercased() == "SALON" ? "SALON" : "MOBILE"
+                rebookDurationMinutes = detail.totalDurationMinutes > 0 ? detail.totalDurationMinutes : 60
+            }
+
             guard let summary = booking.aftercareSummary else { return }
             notes = summary.notes ?? ""
             version = summary.version
@@ -232,7 +287,9 @@ struct ProAftercareAuthorView: View {
                     note: product.note ?? "",
                 )
             }
-            if summary.rebookMode == RebookMode.window.rawValue {
+            if summary.rebookMode == RebookMode.booked.rawValue {
+                rebookMode = .booked   // the slot picker prompts a fresh pick
+            } else if summary.rebookMode == RebookMode.window.rawValue {
                 rebookMode = .window
                 if let start = summary.rebookWindowStart.flatMap(Wire.date) {
                     windowStart = start; hasWindowStart = true
@@ -262,11 +319,24 @@ struct ProAftercareAuthorView: View {
         let zone = TimeZone(identifier: timeZone ?? "") ?? .current
         let payloadProducts = sanitizedProducts(sendToClient: sendToClient)
 
+        // The picked next appointment (BOOKED mode): its start is the canonical
+        // rebookedFor; endsAt = start + the booking's duration.
+        let bookedSlot: ProAftercareSaveRequest.RebookSlot? = {
+            guard rebookMode == .booked, let start = selectedSlot, let startDate = Wire.date(start)
+            else { return nil }
+            let end = startDate.addingTimeInterval(TimeInterval(rebookDurationMinutes * 60))
+            return .init(
+                offeringId: rebookOfferingId, locationId: rebookLocationId,
+                locationType: rebookLocationType, startsAt: start, endsAt: iso(end),
+            )
+        }()
+
         let request = ProAftercareSaveRequest(
             notes: String(notes.trimmingCharacters(in: .whitespacesAndNewlines).prefix(2000)),
             recommendedProducts: payloadProducts,
             rebookMode: rebookMode.rawValue,
-            rebookedFor: nil,
+            rebookedFor: bookedSlot?.startsAt,
+            rebookSlot: bookedSlot,
             rebookWindowStart: rebookMode == .window ? isoStartOfDay(windowStart, zone) : nil,
             rebookWindowEnd: rebookMode == .window ? isoEndOfDay(windowEnd, zone) : nil,
             createRebookReminder: false,
@@ -314,6 +384,14 @@ struct ProAftercareAuthorView: View {
     }
 
     private func validate(sendToClient: Bool) -> String? {
+        if rebookMode == .booked {
+            if rebookOfferingId.isEmpty {
+                return "This booking has no service offering set, so an exact next appointment can’t be proposed. Use “Booking window” instead."
+            }
+            guard let slot = selectedSlot, let date = Wire.date(slot), date > Date() else {
+                return "Pick an available next-appointment time, or change rebook mode to “None”."
+            }
+        }
         if rebookMode == .window {
             guard hasWindowStart, hasWindowEnd else {
                 return "Pick both a start and end date for the recommended booking window."

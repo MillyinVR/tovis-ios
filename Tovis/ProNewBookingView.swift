@@ -33,13 +33,8 @@ struct ProNewBookingView: View {
     @State private var offeringId = ""
     @State private var locationId = ""
 
-    // Slot-picker time selection.
-    @State private var selectedDate = Date()
-    @State private var slots: [String] = []          // ISO-8601 instants
-    @State private var slotTimeZone: String?
+    // Slot-picker time selection (the shared ProOpenSlotPicker owns the date).
     @State private var selectedSlot: String?         // chosen ISO instant
-    @State private var loadingSlots = false
-    @State private var slotError: String?
 
     // Custom-time fallback.
     @State private var manualMode = false
@@ -88,9 +83,6 @@ struct ProNewBookingView: View {
         .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
         .tint(BrandColor.accent)
         .task { await load() }
-        .onChange(of: offeringId) { Task { await fetchSlots() } }
-        .onChange(of: locationId) { Task { await fetchSlots() } }
-        .onChange(of: selectedDate) { Task { await fetchSlots() } }
     }
 
     // MARK: - Sections
@@ -147,42 +139,19 @@ struct ProNewBookingView: View {
                     }
                     Text("Off-grid times may need the scheduling overrides below.")
                         .font(BrandFont.body(11)).foregroundStyle(BrandColor.textMuted)
+                } else if let offering = selectedOffering, let location = selectedLocation {
+                    ProOpenSlotPicker(
+                        professionalId: professionalId,
+                        serviceId: offering.serviceId,
+                        offeringId: offering.id,
+                        locationId: location.id,
+                        locationType: (location.type ?? "SALON").uppercased() == "MOBILE" ? "MOBILE" : "SALON",
+                        locationTimeZone: location.timeZone,
+                        durationMinutes: offering.salonDurationMinutes ?? 60,
+                        selectedSlot: $selectedSlot,
+                    )
                 } else {
-                    BrandSurface {
-                        DatePicker("", selection: $selectedDate, in: Date()..., displayedComponents: [.date])
-                            .labelsHidden().tint(BrandColor.accent)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    slotPicker
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var slotPicker: some View {
-        if offeringId.isEmpty {
-            emptyHint("Choose a service to see open times.")
-        } else if loadingSlots {
-            HStack(spacing: 8) {
-                ProgressView().tint(BrandColor.accent)
-                Text("Loading open times…").font(BrandFont.body(13)).foregroundStyle(BrandColor.textSecondary)
-            }
-        } else if let slotError {
-            Text(slotError).font(BrandFont.body(13)).foregroundStyle(BrandColor.ember)
-        } else if slots.isEmpty {
-            emptyHint("No open times on this day. Try another date, or enter a custom time.")
-        } else {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 84), spacing: 8)], spacing: 8) {
-                ForEach(slots, id: \.self) { slot in
-                    Button { selectedSlot = slot } label: {
-                        Text(slotLabel(slot))
-                            .font(BrandFont.body(13, .semibold))
-                            .frame(maxWidth: .infinity).padding(.vertical, 10)
-                            .background(selectedSlot == slot ? BrandColor.accent : BrandColor.bgSecondary)
-                            .foregroundStyle(selectedSlot == slot ? BrandColor.onAccent : BrandColor.textPrimary)
-                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    }
+                    emptyHint("Choose a service to see open times.")
                 }
             }
         }
@@ -262,25 +231,6 @@ struct ProNewBookingView: View {
         Text(text).font(BrandFont.body(13)).foregroundStyle(BrandColor.textMuted)
     }
 
-    /// "h:mm a" in the slot's (location) timezone.
-    private func slotLabel(_ iso: String) -> String {
-        guard let date = Wire.date(iso) else { return iso }
-        let formatter = DateFormatter()
-        formatter.timeZone = TimeZone(identifier: slotTimeZone ?? "") ?? .current
-        formatter.dateFormat = "h:mm a"
-        return formatter.string(from: date)
-    }
-
-    /// "yyyy-MM-dd" for the chosen date in the location's timezone (how the
-    /// availability endpoint interprets the `date` param).
-    private func ymd(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.timeZone = TimeZone(identifier: selectedLocation?.timeZone ?? "") ?? .current
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
-    }
-
     /// A bordered menu picker over (id, label) options.
     private func menu(selection: Binding<String>, options: [(String, String)], placeholder: String) -> some View {
         Menu {
@@ -326,37 +276,6 @@ struct ProNewBookingView: View {
         }
     }
 
-    /// Load the pro's open slots for the chosen service + location + date.
-    private func fetchSlots() async {
-        selectedSlot = nil
-        slotError = nil
-        guard let offering = selectedOffering, let location = selectedLocation,
-              !professionalId.isEmpty else {
-            slots = []
-            return
-        }
-        loadingSlots = true
-        defer { loadingSlots = false }
-        do {
-            let day = try await session.client.booking.day(
-                professionalId: professionalId,
-                serviceId: offering.serviceId,
-                offeringId: offering.id,
-                locationId: location.id,
-                durationMinutes: offering.salonDurationMinutes ?? 60,
-                date: ymd(selectedDate),
-                locationType: (location.type ?? "SALON").uppercased() == "MOBILE" ? "MOBILE" : "SALON",
-            )
-            slots = day.slots
-            slotTimeZone = day.timeZone
-        } catch let error as APIError {
-            slots = []
-            slotError = error.userMessage
-        } catch {
-            slots = []
-            slotError = "Couldn’t load open times."
-        }
-    }
 
     private func create() async {
         guard canCreate, let location = selectedLocation else { return }

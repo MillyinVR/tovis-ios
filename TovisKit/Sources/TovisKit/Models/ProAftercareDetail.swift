@@ -75,6 +75,8 @@ public struct ProAftercareSaveRequest: Encodable, Sendable {
     /// "NONE" | "RECOMMENDED_WINDOW" | "BOOKED_NEXT_APPOINTMENT".
     public let rebookMode: String
     public let rebookedFor: String?
+    /// The exact picked slot (BOOKED_NEXT_APPOINTMENT only; null otherwise).
+    public let rebookSlot: RebookSlot?
     public let rebookWindowStart: String?
     public let rebookWindowEnd: String?
     public let createRebookReminder: Bool
@@ -99,11 +101,29 @@ public struct ProAftercareSaveRequest: Encodable, Sendable {
         }
     }
 
+    /// The picked next-appointment slot sent for `BOOKED_NEXT_APPOINTMENT`.
+    public struct RebookSlot: Encodable, Sendable {
+        public let offeringId: String
+        public let locationId: String
+        public let locationType: String
+        public let startsAt: String
+        public let endsAt: String
+
+        public init(offeringId: String, locationId: String, locationType: String, startsAt: String, endsAt: String) {
+            self.offeringId = offeringId
+            self.locationId = locationId
+            self.locationType = locationType
+            self.startsAt = startsAt
+            self.endsAt = endsAt
+        }
+    }
+
     public init(
         notes: String,
         recommendedProducts: [Product],
         rebookMode: String,
         rebookedFor: String?,
+        rebookSlot: RebookSlot?,
         rebookWindowStart: String?,
         rebookWindowEnd: String?,
         createRebookReminder: Bool,
@@ -118,6 +138,7 @@ public struct ProAftercareSaveRequest: Encodable, Sendable {
         self.recommendedProducts = recommendedProducts
         self.rebookMode = rebookMode
         self.rebookedFor = rebookedFor
+        self.rebookSlot = rebookSlot
         self.rebookWindowStart = rebookWindowStart
         self.rebookWindowEnd = rebookWindowEnd
         self.createRebookReminder = createRebookReminder
