@@ -69,6 +69,16 @@ struct ProBookingsListView: View {
         .task { if case .loading = phase { await load() } }
         .onChange(of: filter) { Task { await load() } }
         .onChange(of: session.refreshTick) { Task { await load() } }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink {
+                    ProNewBookingView()
+                } label: {
+                    Image(systemName: "plus").font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(BrandColor.accent)
+                }
+            }
+        }
     }
 
     // MARK: - Stats

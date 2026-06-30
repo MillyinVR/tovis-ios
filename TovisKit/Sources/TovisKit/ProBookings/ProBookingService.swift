@@ -165,6 +165,48 @@ public final class ProBookingService: Sendable {
         )
     }
 
+    /// POST /api/v1/pro/bookings — create a booking for a client. Requires an
+    /// idempotency key (a fresh one per attempt). Returns the new booking id.
+    /// `locationType` is "SALON" | "MOBILE" (MOBILE also needs an address — not
+    /// wired natively yet). The `allow*` overrides force-create past scheduling
+    /// guards (outside working hours / short notice / far future).
+    @discardableResult
+    public func createBooking(
+        clientId: String,
+        offeringId: String,
+        locationId: String,
+        locationType: String,
+        scheduledFor: String,
+        internalNotes: String? = nil,
+        allowOutsideWorkingHours: Bool = false,
+        allowShortNotice: Bool = false,
+        allowFarFuture: Bool = false,
+        overrideReason: String? = nil,
+        idempotencyKey: String = UUID().uuidString
+    ) async throws -> String {
+        let payload = try JSONEncoder().encode(
+            ProBookingCreateRequest(
+                clientId: clientId,
+                offeringId: offeringId,
+                locationId: locationId,
+                locationType: locationType,
+                scheduledFor: scheduledFor,
+                internalNotes: internalNotes,
+                allowOutsideWorkingHours: allowOutsideWorkingHours,
+                allowShortNotice: allowShortNotice,
+                allowFarFuture: allowFarFuture,
+                overrideReason: overrideReason,
+            )
+        )
+        let response: ProBookingCreateResponse = try await api.request(
+            "/pro/bookings",
+            method: .post,
+            body: payload,
+            headers: ["idempotency-key": idempotencyKey]
+        )
+        return response.booking.id
+    }
+
     /// GET /api/v1/pro/bookings/{id}/aftercare — the booking + its existing
     /// aftercare summary (prefill for the authoring screen).
     public func aftercareDetail(bookingId: String) async throws -> ProAftercareBooking {
@@ -236,4 +278,25 @@ struct ProRebookRequest: Encodable {
 struct ProRefundRequest: Encodable {
     let amountCents: Int?
     let reason: String?
+}
+
+/// POST /pro/bookings body (the subset the native form sends — an existing
+/// client + a salon offering/location). Nil optionals are dropped from the JSON.
+struct ProBookingCreateRequest: Encodable {
+    let clientId: String
+    let offeringId: String
+    let locationId: String
+    let locationType: String
+    let scheduledFor: String
+    let internalNotes: String?
+    let allowOutsideWorkingHours: Bool
+    let allowShortNotice: Bool
+    let allowFarFuture: Bool
+    let overrideReason: String?
+}
+
+/// POST /pro/bookings → `{ ok, booking: { id, … } }` (only the id is read here).
+struct ProBookingCreateResponse: Decodable {
+    let booking: CreatedBooking
+    struct CreatedBooking: Decodable { let id: String }
 }
