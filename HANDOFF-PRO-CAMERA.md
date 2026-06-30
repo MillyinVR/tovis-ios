@@ -58,6 +58,25 @@ highest-value next step is the on-device tune pass** (see "Make it FULLY FUNCTIO
 3. **Publish before/after → portfolio/Looks from the comparison slider** (consent-gated; B3b already unlocks it) —
    natural next funnel step; not built.
 
+### 🎨 ColorCoach shipped + research-driven roadmap (`fcb7112`)
+Two research docs in `~/Downloads/` (`photography-fundamentals-for-beauty.md` + `compass_artifact_*.md`) drove the
+coach work. **`fcb7112` — ColorCoach**: flags **mixed light** (warm↔cool spread across vertical thirds — the named
+#1 real-world killer), **green/fluorescent** cast, and **warm/yellow/incandescent** cast (daylight ~5000–5600K is the
+beauty target); new COLOR pill in the HUD; thresholds in `CoachTuning`. **Durable, camera-relevant items still
+UNBUILT** (from the 2nd doc, all buildable on-device — good next picks, in rough value order):
+1. **AE/AF lock + tap-to-focus** — the doc calls "lock focus & exposure so the camera stops hunting" a durable best
+   practice; we have neither. Add tap-to-focus/expose on the preview + an AE/AF-lock toggle (`AVCaptureDevice`
+   focus/exposure modes + `setFocusPointOfInterest`). High value, self-contained.
+2. **Crop-safe framing guide** — Reels crop to 4:5 (feed) / 3:4 (grid); keep the money shot centered. A toggleable
+   4:5/3:4 safe-area overlay (sibling to the thirds grid).
+3. **Macro hint on "Detail" guide steps** (nails/lashes) + "avoid Portrait mode on detail work" — copy/guide only.
+4. **Before/after credibility = same LIGHT too** (not just angle, which onion-skin covers) — surface the before's
+   measured warmth/luma so the after can be matched; ties ColorCoach + onion-skin together.
+Non-camera (product) items from the research: photo/video **release in the intake form** (we have per-session B3b
+consent; a stored signed release is broader), **portfolio→booking funnel** (bio keyword + one-tap booking + Highlights
+funnel), **carousel/Reel content strategy** (3-step transformation carousel, save/send-optimized hooks). These are
+web/product, not the native camera.
+
 > Everything below this block predates the camera overhaul. The Phase-S / header / calendar status is unchanged.
 
 ---
