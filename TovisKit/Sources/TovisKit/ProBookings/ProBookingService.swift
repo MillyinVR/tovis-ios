@@ -167,12 +167,16 @@ public final class ProBookingService: Sendable {
 
     /// POST /api/v1/pro/bookings — create a booking. Pass `clientId` for an
     /// existing client, OR `client` to create a new (unclaimed) one inline — the
-    /// backend resolves either. Requires an idempotency key (fresh per attempt).
-    /// Returns the new booking id. `locationType` is "SALON" | "MOBILE"; a MOBILE
-    /// booking also needs the client's service address — pass EITHER `clientAddressId`
-    /// (an existing saved address) OR `serviceAddress` (a new one). The `allow*`
-    /// overrides force-create past scheduling guards (outside hours / short notice /
-    /// far future).
+    /// backend resolves either. Pass a *stable* `idempotencyKey` for a single
+    /// logical attempt (reuse it across an override retry so a network re-send
+    /// can't double-book). Returns the new booking id plus, for a freshly
+    /// created unclaimed client, its claim status and one-time invite token so
+    /// the caller can confirm/share the claim link. `locationType` is
+    /// "SALON" | "MOBILE"; a MOBILE booking also needs the client's service
+    /// address — pass EITHER `clientAddressId` (an existing saved address) OR
+    /// `serviceAddress` (a new one). The `allow*` overrides force-create past
+    /// scheduling guards (outside hours / short notice / far future); pair them
+    /// with `overrideReason` for the audit log.
     @discardableResult
     public func createBooking(
         clientId: String? = nil,
@@ -189,7 +193,7 @@ public final class ProBookingService: Sendable {
         allowFarFuture: Bool = false,
         overrideReason: String? = nil,
         idempotencyKey: String = UUID().uuidString
-    ) async throws -> String {
+    ) async throws -> ProBookingCreateResult {
         let payload = try JSONEncoder().encode(
             ProBookingCreateRequest(
                 clientId: clientId,
@@ -213,7 +217,12 @@ public final class ProBookingService: Sendable {
             body: payload,
             headers: ["idempotency-key": idempotencyKey]
         )
-        return response.booking.id
+        return ProBookingCreateResult(
+            bookingId: response.booking.id,
+            clientId: response.client?.id,
+            claimStatus: response.client?.claimStatus,
+            inviteToken: response.invite?.token
+        )
     }
 
     /// GET /api/v1/pro/bookings/{id}/aftercare — the booking + its existing
@@ -373,8 +382,45 @@ public struct ProNewBookingClient: Encodable, Sendable {
     }
 }
 
-/// POST /pro/bookings → `{ ok, booking: { id, … } }` (only the id is read here).
+/// POST /pro/bookings → `{ ok, booking: { id, … }, client: { id, claimStatus },
+/// invite?: { id, token } }`. The `invite.token` is the raw claim token, sent
+/// back exactly once for immediate display/sharing (the server has already
+/// enqueued the SMS/email); it's null for an already-claimed client.
 struct ProBookingCreateResponse: Decodable {
     let booking: CreatedBooking
+    let client: CreatedClient?
+    let invite: CreatedInvite?
+
     struct CreatedBooking: Decodable { let id: String }
+    struct CreatedClient: Decodable {
+        let id: String?
+        let claimStatus: String?
+    }
+    struct CreatedInvite: Decodable { let token: String? }
+}
+
+/// The outcome of creating a booking: always the new booking id, plus — when
+/// the booking created a brand-new unclaimed client — that client's id, its
+/// claim status, and the one-time raw claim-invite token (nil for an existing
+/// or already-claimed client). Callers can use `invitedUnclaimedClient` to show
+/// a "claim invite sent" confirmation or offer to share the link.
+public struct ProBookingCreateResult: Sendable {
+    public let bookingId: String
+    public let clientId: String?
+    public let claimStatus: String?
+    public let inviteToken: String?
+
+    public init(bookingId: String, clientId: String?, claimStatus: String?, inviteToken: String?) {
+        self.bookingId = bookingId
+        self.clientId = clientId
+        self.claimStatus = claimStatus
+        self.inviteToken = inviteToken
+    }
+
+    /// True when this booking just created an unclaimed client who was sent a
+    /// claim invite (the server delivers it; `inviteToken` is the shareable link
+    /// token when present).
+    public var invitedUnclaimedClient: Bool {
+        claimStatus?.uppercased() == "UNCLAIMED"
+    }
 }

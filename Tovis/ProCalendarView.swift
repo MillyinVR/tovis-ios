@@ -67,6 +67,13 @@ struct ProCalendarView: View {
     private struct BookingNav: Identifiable, Hashable { let id: String }
     @State private var bookingNav: BookingNav?
 
+    // Programmatic push to the new-booking form, prefilled to a tapped empty slot.
+    private struct NewBookingNav: Identifiable, Hashable {
+        let id = UUID()
+        let date: Date
+    }
+    @State private var newBookingNav: NewBookingNav?
+
     // Collapses the stats / location / auto-accept chrome to give the grid room.
     @State private var chromeCollapsed = false
 
@@ -182,6 +189,12 @@ struct ProCalendarView: View {
             .navigationDestination(item: $bookingNav) { nav in
                 ProBookingDetailView(bookingId: nav.id)
             }
+            .navigationDestination(item: $newBookingNav) { nav in
+                ProNewBookingView(
+                    onCreated: { _ in Task { await load() } },
+                    prefillDate: nav.date
+                )
+            }
             .sheet(item: $blockSheet) { target in
                 ProBlockTimeSheet(
                     mode: target.sheetMode,
@@ -275,6 +288,7 @@ struct ProCalendarView: View {
                     events: data.events,
                     onTapBooking: { id in bookingNav = BookingNav(id: id) },
                     onTapBlock: { event in openBlockEditor(event) },
+                    onTapEmptySlot: { date in newBookingNav = NewBookingNav(date: date) },
                     collapseToggle: chromeCollapsed
                 )
                 .frame(maxHeight: .infinity)

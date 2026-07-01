@@ -316,6 +316,47 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.cancelled[0].sessionStep == nil)
     }
 
+    // POST /api/v1/pro/bookings — the create response. When the booking creates
+    // a new unclaimed client the body carries `client.claimStatus` + a one-time
+    // `invite.token`; both are read so the UI can confirm/share the claim link.
+    // Inline shape; decode-only.
+    @Test func decodesProBookingCreateWithInvite() throws {
+        let json = Data("""
+        {
+          "ok": true,
+          "booking": { "id": "bk_new_1" },
+          "client": { "id": "cl_new_1", "claimStatus": "UNCLAIMED" },
+          "invite": { "id": "inv_1", "token": "raw-claim-token" }
+        }
+        """.utf8)
+        let res = try JSONDecoder().decode(ProBookingCreateResponse.self, from: json)
+        #expect(res.booking.id == "bk_new_1")
+        #expect(res.client?.claimStatus == "UNCLAIMED")
+        #expect(res.invite?.token == "raw-claim-token")
+
+        // Existing/claimed client: no invite block, token absent — must still decode.
+        let claimed = Data("""
+        { "ok": true, "booking": { "id": "bk_2" },
+          "client": { "id": "cl_2", "claimStatus": "CLAIMED" } }
+        """.utf8)
+        let res2 = try JSONDecoder().decode(ProBookingCreateResponse.self, from: claimed)
+        #expect(res2.booking.id == "bk_2")
+        #expect(res2.invite == nil)
+    }
+
+    // Override-gated scheduling codes map to the flag that authorizes a retry
+    // (native port of web overridePrompts.ts). Non-override codes → nil.
+    @Test func mapsBookingOverridePromptCodes() {
+        #expect(bookingOverridePrompt(forErrorCode: "ADVANCE_NOTICE_REQUIRED", intent: .create)?.flag == .allowShortNotice)
+        #expect(bookingOverridePrompt(forErrorCode: "MAX_DAYS_AHEAD_EXCEEDED", intent: .create)?.flag == .allowFarFuture)
+        #expect(bookingOverridePrompt(forErrorCode: "OUTSIDE_WORKING_HOURS", intent: .create)?.flag == .allowOutsideWorkingHours)
+        #expect(bookingOverridePrompt(forErrorCode: "TIME_BOOKED", intent: .create) == nil)
+        #expect(bookingOverridePrompt(forErrorCode: nil, intent: .create) == nil)
+        // Also reachable straight off an APIError.
+        let err = APIError.server(status: 409, message: "x", code: "OUTSIDE_WORKING_HOURS")
+        #expect(err.bookingOverridePrompt(intent: .create)?.flag == .allowOutsideWorkingHours)
+    }
+
     // GET /api/v1/pro/aftercare — Fixtures/proAftercareList.json. The "all
     // aftercare" list (tovis-app PR #436). Inline shape; decode-only.
     @Test func decodesProAftercareList() throws {

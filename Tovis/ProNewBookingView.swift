@@ -24,6 +24,9 @@ struct ProNewBookingView: View {
     @Environment(\.dismiss) private var dismiss
     /// Called with the new booking id on success so the caller can refresh/open it.
     var onCreated: ((String) -> Void)?
+    /// When set (e.g. from tapping an empty calendar slot), the form opens in
+    /// custom-time mode seeded to this instant so the pro can create right away.
+    var prefillDate: Date?
 
     @State private var loading = true
     @State private var loadError: String?
@@ -74,6 +77,15 @@ struct ProNewBookingView: View {
     @State private var creating = false
     @State private var errorText: String?
 
+    // One logical create attempt: a stable idempotency key reused across an
+    // override retry (so a network re-send can't double-book), the override
+    // flags the pro has confirmed this attempt, and the pending confirm prompt.
+    @State private var attemptKey: String?
+    @State private var appliedOverrides: Set<BookingOverrideFlag> = []
+    @State private var overridePrompt: BookingOverridePrompt?
+    /// Optional free-text reason recorded on the override audit log.
+    @State private var overrideReason = ""
+
     private var hasTime: Bool { manualMode ? true : selectedSlot != nil }
     /// New client needs first + last name + email (server contract); phone optional.
     private var newClientReady: Bool {
@@ -123,9 +135,28 @@ struct ProNewBookingView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
         .tint(BrandColor.accent)
-        .task { await load() }
+        .task {
+            await load()
+            // Seed a tapped calendar slot into the custom-time picker.
+            if let prefillDate {
+                manualTime = prefillDate
+                manualMode = true
+            }
+        }
         .onChange(of: bookingMode) { _, _ in revalidateForMode() }
         .task(id: addressFetchKey) { await loadClientAddresses() }
+        .alert("Confirm booking", isPresented: overrideAlertBinding, presenting: overridePrompt) { prompt in
+            TextField(prompt.reasonPlaceholder, text: $overrideReason)
+            Button("Book anyway") { Task { await confirmOverride(prompt) } }
+            Button("Cancel", role: .cancel) { attemptKey = nil; overrideReason = "" }
+        } message: { prompt in
+            Text(prompt.question)
+        }
+    }
+
+    /// Drives the override confirm alert off the optional `overridePrompt`.
+    private var overrideAlertBinding: Binding<Bool> {
+        Binding(get: { overridePrompt != nil }, set: { if !$0 { overridePrompt = nil } })
     }
 
     /// Re-fetch the chosen client's saved addresses whenever the MOBILE address
@@ -505,8 +536,29 @@ struct ProNewBookingView: View {
     }
 
 
+    /// Start a fresh create attempt: mint one idempotency key (stable across an
+    /// override retry) and clear any override flags carried from a prior attempt.
     private func create() async {
         guard canCreate, selectedLocation != nil else { return }
+        appliedOverrides = []
+        overrideReason = ""
+        attemptKey = UUID().uuidString
+        await submitBooking()
+    }
+
+    /// The pro confirmed an override-gated prompt — apply the flag and re-submit
+    /// under the same idempotency key.
+    private func confirmOverride(_ prompt: BookingOverridePrompt) async {
+        appliedOverrides.insert(prompt.flag)
+        await submitBooking()
+    }
+
+    /// POST the booking for the current attempt. On an override-gated rejection
+    /// (short notice / far future / outside hours) it surfaces a confirm prompt
+    /// and, on approval, retries with the flag instead of dead-ending — matching
+    /// the web NewBookingForm.
+    private func submitBooking() async {
+        guard let key = attemptKey, canCreate, selectedLocation != nil else { return }
         errorText = nil
         creating = true
         defer { creating = false }
@@ -540,8 +592,14 @@ struct ProNewBookingView: View {
         let serviceAddress: ProServiceAddressInput? =
             (bookingMode == .mobile && addressMode == .new) ? buildServiceAddress() : nil
 
+        // The manual "Scheduling overrides" toggles PLUS any flag the pro just
+        // confirmed via the prompt.
+        let outsideHours = allowOutsideWorkingHours || appliedOverrides.contains(.allowOutsideWorkingHours)
+        let shortNotice = allowShortNotice || appliedOverrides.contains(.allowShortNotice)
+        let farFuture = allowFarFuture || appliedOverrides.contains(.allowFarFuture)
+
         do {
-            let newId = try await session.client.proBookings.createBooking(
+            let result = try await session.client.proBookings.createBooking(
                 clientId: clientMode == .existing ? clientId : nil,
                 client: newClient,
                 offeringId: offeringId,
@@ -551,16 +609,29 @@ struct ProNewBookingView: View {
                 clientAddressId: useExistingAddress ? clientAddressId : nil,
                 serviceAddress: serviceAddress,
                 internalNotes: trimmedNotes.isEmpty ? nil : trimmedNotes,
-                allowOutsideWorkingHours: allowOutsideWorkingHours,
-                allowShortNotice: allowShortNotice,
-                allowFarFuture: allowFarFuture,
+                allowOutsideWorkingHours: outsideHours,
+                allowShortNotice: shortNotice,
+                allowFarFuture: farFuture,
+                overrideReason: appliedOverrides.isEmpty || trimmed(overrideReason).isEmpty
+                    ? nil : trimmed(overrideReason),
+                idempotencyKey: key,
             )
+            attemptKey = nil
             session.signalRefresh()
-            onCreated?(newId)
+            onCreated?(result.bookingId)
             dismiss()
         } catch let error as APIError {
-            errorText = error.userMessage
+            // Override-gated? Offer a "book anyway?" retry (unless we already
+            // applied that flag — then it's a genuine failure, don't loop).
+            if let prompt = error.bookingOverridePrompt(intent: .create),
+               !appliedOverrides.contains(prompt.flag) {
+                overridePrompt = prompt
+            } else {
+                attemptKey = nil
+                errorText = error.userMessage
+            }
         } catch {
+            attemptKey = nil
             errorText = "Couldn’t create the booking. Check your connection and try again."
         }
     }

@@ -15,6 +15,9 @@ struct ProCalendarTimeGrid: View {
     let events: [ProCalendarEvent]
     let onTapBooking: (String) -> Void
     let onTapBlock: (ProCalendarEvent) -> Void
+    /// Tapping empty grid space → start a new booking prefilled to that instant
+    /// (the tapped column's day + y-position, snapped to the 15-min step).
+    var onTapEmptySlot: ((Date) -> Void)? = nil
     /// Flips when the chrome collapses/expands — re-snaps the timeline to "now"
     /// after the height change.
     var collapseToggle: Bool = false
@@ -187,16 +190,28 @@ struct ProCalendarTimeGrid: View {
             // Full-height spacer establishes the ZStack's intrinsic height so the
             // .offset(y:) children measure from the TOP. Without it the ZStack has
             // no intrinsic height and the outer .frame centers everything (the 2×
-            // offset bug — a 10am tile landed at ~8:30pm).
-            Color.clear.frame(maxWidth: .infinity, minHeight: totalHeight, maxHeight: totalHeight)
+            // offset bug — a 10am tile landed at ~8:30pm). It also backs the
+            // empty-slot tap: event tiles (Buttons) sit on top and take their own
+            // taps, so this only fires for genuinely empty space.
+            Color.clear
+                .frame(maxWidth: .infinity, minHeight: totalHeight, maxHeight: totalHeight)
+                .contentShape(Rectangle())
+                .gesture(
+                    SpatialTapGesture().onEnded { value in
+                        if let date = emptySlotDate(day: day, y: value.location.y) {
+                            onTapEmptySlot?(date)
+                        }
+                    }
+                )
 
-            // Hour rules.
+            // Hour rules (decorative — let taps fall through to the slot layer).
             ForEach(0..<24) { hour in
                 Rectangle()
                     .fill(BrandColor.textMuted.opacity(0.16))
                     .frame(height: 1)
                     .offset(y: CGFloat(hour * 60) * pxPerMinute)
             }
+            .allowsHitTesting(false)
 
             // Event tiles.
             ForEach(layouts, id: \.event.id) { item in
@@ -207,10 +222,24 @@ struct ProCalendarTimeGrid: View {
 
             // Now-line (today only).
             if day.isToday {
-                nowLine
+                nowLine.allowsHitTesting(false)
             }
         }
         .background(day.isToday ? BrandColor.accent.opacity(0.04) : Color.clear)
+    }
+
+    /// Maps a tap's y-position in a day column to the instant it represents:
+    /// y → minutes-since-midnight (floored to the 15-min step), added to the
+    /// column's local midnight in the calendar timezone. Nil for an out-of-range
+    /// tap (below midnight / past the day's end).
+    private func emptySlotDate(day: ProMonthCell, y: CGFloat) -> Date? {
+        let raw = Int(y / pxPerMinute)
+        guard raw >= 0, raw < ProCalendarGrid.minutesPerDay else { return nil }
+        let snapped = min((raw / stepMinutes) * stepMinutes,
+                          ProCalendarGrid.minutesPerDay - stepMinutes)
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = timeZone
+        return cal.date(byAdding: .minute, value: snapped, to: day.startOfDay)
     }
 
     private var nowLine: some View {
