@@ -54,16 +54,19 @@ public final class BookingsService: Sendable {
     public func decideRebook(
         bookingId: String,
         confirm: Bool,
-        idempotencyKey: String = UUID().uuidString
+        idempotencyKey: String? = nil
     ) async throws -> RebookedBooking? {
         let payload = try JSONEncoder().encode(
             RebookDecisionRequest(action: confirm ? "CONFIRM" : "DECLINE")
         )
+        let key = idempotencyKey ?? buildClientIdempotencyKey(
+            scope: "booking", entityId: bookingId, action: "aftercare-rebook",
+            nonce: idempotencyNonce(payload))
         let response: RebookDecisionResponse = try await api.request(
             "/client/bookings/\(bookingId)/aftercare-rebook",
             method: .post,
             body: payload,
-            headers: ["idempotency-key": idempotencyKey]
+            headers: ["idempotency-key": key]
         )
         return response.booking
     }

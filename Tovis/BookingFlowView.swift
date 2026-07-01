@@ -440,13 +440,13 @@ struct BookingFlowView: View {
             if let rescheduleBookingId {
                 let result = try await session.client.booking.reschedule(
                     bookingId: rescheduleBookingId, holdId: hold.id,
-                    locationType: mode, idempotencyKey: UUID().uuidString
+                    locationType: mode
                 )
                 scheduledFor = result.scheduledFor
             } else {
                 let result = try await session.client.booking.finalize(
                     holdId: hold.id, offeringId: offering.id, locationType: mode,
-                    addOnIds: Array(selectedAddOnIds), idempotencyKey: UUID().uuidString
+                    addOnIds: Array(selectedAddOnIds)
                 )
                 scheduledFor = result.scheduledFor
             }

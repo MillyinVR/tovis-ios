@@ -40,16 +40,19 @@ public final class ProBookingService: Sendable {
     public func accept(
         bookingId: String,
         notifyClient: Bool = true,
-        idempotencyKey: String = UUID().uuidString
+        idempotencyKey: String? = nil
     ) async throws {
         let payload = try JSONEncoder().encode(
             ProBookingStatusRequest(status: "ACCEPTED", notifyClient: notifyClient)
         )
+        let key = idempotencyKey ?? buildClientIdempotencyKey(
+            scope: "pro-booking", entityId: bookingId, action: "accept",
+            nonce: idempotencyNonce(payload))
         try await api.requestVoid(
             "/pro/bookings/\(bookingId)",
             method: .patch,
             body: payload,
-            headers: ["idempotency-key": idempotencyKey]
+            headers: ["idempotency-key": key]
         )
     }
 
@@ -59,16 +62,19 @@ public final class ProBookingService: Sendable {
     public func decline(
         bookingId: String,
         notifyClient: Bool = true,
-        idempotencyKey: String = UUID().uuidString
+        idempotencyKey: String? = nil
     ) async throws {
         let payload = try JSONEncoder().encode(
             ProBookingStatusRequest(status: "CANCELLED", notifyClient: notifyClient)
         )
+        let key = idempotencyKey ?? buildClientIdempotencyKey(
+            scope: "pro-booking", entityId: bookingId, action: "decline",
+            nonce: idempotencyNonce(payload))
         try await api.requestVoid(
             "/pro/bookings/\(bookingId)",
             method: .patch,
             body: payload,
-            headers: ["idempotency-key": idempotencyKey]
+            headers: ["idempotency-key": key]
         )
     }
 
@@ -77,14 +83,17 @@ public final class ProBookingService: Sendable {
     public func cancel(
         bookingId: String,
         reason: String? = nil,
-        idempotencyKey: String = UUID().uuidString
+        idempotencyKey: String? = nil
     ) async throws {
         let payload = try JSONEncoder().encode(ProBookingCancelRequest(reason: reason))
+        let key = idempotencyKey ?? buildClientIdempotencyKey(
+            scope: "pro-booking", entityId: bookingId, action: "cancel",
+            nonce: idempotencyNonce(payload))
         try await api.requestVoid(
             "/pro/bookings/\(bookingId)/cancel",
             method: .patch,
             body: payload,
-            headers: ["idempotency-key": idempotencyKey]
+            headers: ["idempotency-key": key]
         )
     }
 
@@ -92,14 +101,16 @@ public final class ProBookingService: Sendable {
     /// ACCEPTED booking (web "Start booking"). Idempotent.
     public func startSession(
         bookingId: String,
-        idempotencyKey: String = UUID().uuidString
+        idempotencyKey: String? = nil
     ) async throws {
         let payload = try JSONEncoder().encode(["explicitSelection": true])
+        let key = idempotencyKey ?? buildClientIdempotencyKey(
+            scope: "pro-booking", entityId: bookingId, action: "session-start")
         try await api.requestVoid(
             "/pro/bookings/\(bookingId)/session/start",
             method: .post,
             body: payload,
-            headers: ["idempotency-key": idempotencyKey]
+            headers: ["idempotency-key": key]
         )
     }
 
@@ -110,14 +121,17 @@ public final class ProBookingService: Sendable {
         bookingId: String,
         amountCents: Int? = nil,
         reason: String? = nil,
-        idempotencyKey: String = UUID().uuidString
+        idempotencyKey: String? = nil
     ) async throws {
         let payload = try JSONEncoder().encode(ProRefundRequest(amountCents: amountCents, reason: reason))
+        let key = idempotencyKey ?? buildClientIdempotencyKey(
+            scope: "booking", entityId: bookingId, action: "refund",
+            nonce: idempotencyNonce(payload))
         try await api.requestVoid(
             "/bookings/\(bookingId)/refund",
             method: .post,
             body: payload,
-            headers: ["idempotency-key": idempotencyKey]
+            headers: ["idempotency-key": key]
         )
     }
 
@@ -130,7 +144,7 @@ public final class ProBookingService: Sendable {
         scheduledFor: String? = nil,
         windowStart: String? = nil,
         windowEnd: String? = nil,
-        idempotencyKey: String = UUID().uuidString
+        idempotencyKey: String? = nil
     ) async throws {
         let payload = try JSONEncoder().encode(
             ProRebookRequest(
@@ -140,11 +154,14 @@ public final class ProBookingService: Sendable {
                 windowEnd: windowEnd
             )
         )
+        let key = idempotencyKey ?? buildClientIdempotencyKey(
+            scope: "pro-booking", entityId: bookingId, action: "rebook",
+            nonce: idempotencyNonce(payload))
         try await api.requestVoid(
             "/pro/bookings/\(bookingId)/rebook",
             method: .post,
             body: payload,
-            headers: ["idempotency-key": idempotencyKey]
+            headers: ["idempotency-key": key]
         )
     }
 
@@ -154,22 +171,27 @@ public final class ProBookingService: Sendable {
     public func markPaid(
         bookingId: String,
         selectedPaymentMethod: String,
-        idempotencyKey: String = UUID().uuidString
+        idempotencyKey: String? = nil
     ) async throws {
         let payload = try JSONEncoder().encode(["selectedPaymentMethod": selectedPaymentMethod])
+        let key = idempotencyKey ?? buildClientIdempotencyKey(
+            scope: "pro-booking", entityId: bookingId, action: "mark-paid",
+            nonce: idempotencyNonce(payload))
         try await api.requestVoid(
             "/pro/bookings/\(bookingId)/checkout/mark-paid",
             method: .post,
             body: payload,
-            headers: ["idempotency-key": idempotencyKey]
+            headers: ["idempotency-key": key]
         )
     }
 
     /// POST /api/v1/pro/bookings — create a booking. Pass `clientId` for an
     /// existing client, OR `client` to create a new (unclaimed) one inline — the
-    /// backend resolves either. Pass a *stable* `idempotencyKey` for a single
-    /// logical attempt (reuse it across an override retry so a network re-send
-    /// can't double-book). Returns the new booking id plus, for a freshly
+    /// backend resolves either. The `idempotencyKey` must follow "same key ⇒ same
+    /// body": keep it stable only across an identical network re-send, and mint a
+    /// NEW key whenever the body changes (e.g. an override retry that adds an
+    /// `allow*` flag) — reusing a key with a changed body is a 409 conflict.
+    /// Returns the new booking id plus, for a freshly
     /// created unclaimed client, its claim status and one-time invite token so
     /// the caller can confirm/share the claim link. `locationType` is
     /// "SALON" | "MOBILE"; a MOBILE booking also needs the client's service
@@ -192,7 +214,7 @@ public final class ProBookingService: Sendable {
         allowShortNotice: Bool = false,
         allowFarFuture: Bool = false,
         overrideReason: String? = nil,
-        idempotencyKey: String = UUID().uuidString
+        idempotencyKey: String? = nil
     ) async throws -> ProBookingCreateResult {
         let payload = try JSONEncoder().encode(
             ProBookingCreateRequest(
@@ -211,11 +233,17 @@ public final class ProBookingService: Sendable {
                 overrideReason: overrideReason,
             )
         )
+        // Body-derived fallback: whenever the caller doesn't pin a key, the key
+        // tracks the exact body — so an added override flag (a changed body)
+        // yields a new key automatically instead of a 409 conflict.
+        let key = idempotencyKey ?? buildClientIdempotencyKey(
+            scope: "pro-booking", entityId: offeringId, action: "create",
+            nonce: idempotencyNonce(payload))
         let response: ProBookingCreateResponse = try await api.request(
             "/pro/bookings",
             method: .post,
             body: payload,
-            headers: ["idempotency-key": idempotencyKey]
+            headers: ["idempotency-key": key]
         )
         return ProBookingCreateResult(
             bookingId: response.booking.id,
@@ -239,14 +267,17 @@ public final class ProBookingService: Sendable {
     public func saveAftercare(
         bookingId: String,
         request: ProAftercareSaveRequest,
-        idempotencyKey: String = UUID().uuidString
+        idempotencyKey: String? = nil
     ) async throws {
         let payload = try JSONEncoder().encode(request)
+        let key = idempotencyKey ?? buildClientIdempotencyKey(
+            scope: "pro-booking", entityId: bookingId, action: "aftercare-save",
+            nonce: idempotencyNonce(payload))
         try await api.requestVoid(
             "/pro/bookings/\(bookingId)/aftercare",
             method: .post,
             body: payload,
-            headers: ["idempotency-key": idempotencyKey]
+            headers: ["idempotency-key": key]
         )
     }
 
@@ -280,14 +311,17 @@ public final class ProBookingService: Sendable {
     public func waiveCheckout(
         bookingId: String,
         reason: String? = nil,
-        idempotencyKey: String = UUID().uuidString
+        idempotencyKey: String? = nil
     ) async throws {
         let payload = try JSONEncoder().encode(["reason": reason])
+        let key = idempotencyKey ?? buildClientIdempotencyKey(
+            scope: "pro-booking", entityId: bookingId, action: "waive-checkout",
+            nonce: idempotencyNonce(payload))
         try await api.requestVoid(
             "/pro/bookings/\(bookingId)/checkout/waive",
             method: .post,
             body: payload,
-            headers: ["idempotency-key": idempotencyKey]
+            headers: ["idempotency-key": key]
         )
     }
 }

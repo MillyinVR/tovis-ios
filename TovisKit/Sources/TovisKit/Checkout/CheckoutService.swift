@@ -24,17 +24,20 @@ public final class CheckoutService: Sendable {
     public func createCheckoutSession(
         bookingId: String,
         tipAmount: String? = nil,
-        idempotencyKey: String = UUID().uuidString
+        idempotencyKey: String? = nil
     ) async throws -> StripeCheckoutSession {
         let payload = try JSONEncoder().encode(
             CheckoutStripeSessionRequest(tipAmount: tipAmount)
         )
+        let key = idempotencyKey ?? buildClientIdempotencyKey(
+            scope: "checkout", entityId: bookingId, action: "stripe-session",
+            nonce: idempotencyNonce(payload))
         let response: CheckoutStripeSessionResponse = try await api.request(
             "/client/bookings/\(bookingId)/checkout/stripe-session",
             method: .post,
             body: payload,
             headers: [
-                Self.idempotencyHeader: idempotencyKey,
+                Self.idempotencyHeader: key,
                 Self.nativeReturnHeader: "native",
             ]
         )
@@ -45,14 +48,16 @@ public final class CheckoutService: Sendable {
     /// discovery deposit + one-time platform fee. Returns the hosted session.
     public func createDepositSession(
         bookingId: String,
-        idempotencyKey: String = UUID().uuidString
+        idempotencyKey: String? = nil
     ) async throws -> DepositStripeSessionResponse {
-        try await api.request(
+        let key = idempotencyKey ?? buildClientIdempotencyKey(
+            scope: "checkout", entityId: bookingId, action: "deposit-session")
+        return try await api.request(
             "/client/bookings/\(bookingId)/deposit/stripe-session",
             method: .post,
             body: nil,
             headers: [
-                Self.idempotencyHeader: idempotencyKey,
+                Self.idempotencyHeader: key,
                 Self.nativeReturnHeader: "native",
             ]
         )

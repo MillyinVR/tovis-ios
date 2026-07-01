@@ -537,7 +537,7 @@ struct BookingDetailView: View {
         defer { cancelling = false }
         do {
             _ = try await session.client.booking.cancel(
-                bookingId: booking.id, idempotencyKey: UUID().uuidString
+                bookingId: booking.id
             )
             cancelledLocally = true
             session.signalRefresh()

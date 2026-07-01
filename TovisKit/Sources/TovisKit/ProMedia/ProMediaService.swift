@@ -213,7 +213,7 @@ public final class ProMediaService: Sendable {
         phase: MediaPhase,
         mediaType: MediaType,
         caption: String? = nil,
-        idempotencyKey: String = UUID().uuidString
+        idempotencyKey: String? = nil
     ) async throws -> ProBookingMediaItem {
         let payload = try JSONEncoder().encode(
             MediaConfirmRequest(
@@ -223,11 +223,16 @@ public final class ProMediaService: Sendable {
                 caption: caption
             )
         )
+        // Key off the upload session (the server's own dedup anchor) so a retry of
+        // the same confirm collapses to one MediaAsset.
+        let key = idempotencyKey ?? buildClientIdempotencyKey(
+            scope: "pro-media", entityId: uploadSessionId, action: "confirm",
+            nonce: idempotencyNonce(payload))
         let response: ProBookingMediaCreateResponse = try await api.request(
             "/pro/bookings/\(bookingId)/media",
             method: .post,
             body: payload,
-            headers: ["Idempotency-Key": idempotencyKey, "x-idempotency-key": idempotencyKey]
+            headers: ["Idempotency-Key": key, "x-idempotency-key": key]
         )
         return response.item
     }

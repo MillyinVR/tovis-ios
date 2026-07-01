@@ -91,64 +91,75 @@ public final class BookingService: Sendable {
         return response.hold
     }
 
-    /// POST /api/v1/bookings/finalize — turn a hold into a booking. Requires an
-    /// idempotency key so a retry can't double-book.
+    /// POST /api/v1/bookings/finalize — turn a hold into a booking. Idempotent:
+    /// omit `idempotencyKey` to derive a stable key from the hold + payload so a
+    /// double-tap can't double-book, while a genuinely different finalize gets a
+    /// fresh key.
     public func finalize(
         holdId: String,
         offeringId: String,
         locationType: String = "SALON",
         addOnIds: [String] = [],
         source: String = "REQUESTED",
-        idempotencyKey: String
+        idempotencyKey: String? = nil
     ) async throws -> FinalizedBooking {
         let payload = try JSONEncoder().encode(FinalizeBookingRequest(
             holdId: holdId, offeringId: offeringId,
             locationType: locationType, addOnIds: addOnIds, source: source
         ))
+        let key = idempotencyKey ?? buildClientIdempotencyKey(
+            scope: "booking", entityId: holdId, action: "finalize",
+            nonce: idempotencyNonce(payload))
         let response: FinalizeBookingResponse = try await api.request(
             "/bookings/finalize",
             method: .post,
             body: payload,
-            headers: ["idempotency-key": idempotencyKey]
+            headers: ["idempotency-key": key]
         )
         return response.booking
     }
 
     /// POST /api/v1/bookings/{id}/reschedule — move a booking to a new time. The
     /// new slot must already be held (create the hold for the SAME offering, then
-    /// pass its id here). Requires an idempotency key so a retry can't double-apply.
+    /// pass its id here). Idempotent: omit `idempotencyKey` to derive a stable key
+    /// from the target booking + new hold so a retry can't double-apply.
     public func reschedule(
         bookingId: String,
         holdId: String,
         locationType: String = "SALON",
-        idempotencyKey: String
+        idempotencyKey: String? = nil
     ) async throws -> RescheduledBooking {
         let payload = try JSONEncoder().encode(
             RescheduleBookingRequest(holdId: holdId, locationType: locationType)
         )
+        let key = idempotencyKey ?? buildClientIdempotencyKey(
+            scope: "booking", entityId: bookingId, action: "reschedule",
+            nonce: idempotencyNonce(payload))
         let response: RescheduleBookingResponse = try await api.request(
             "/bookings/\(bookingId)/reschedule",
             method: .post,
             body: payload,
-            headers: ["idempotency-key": idempotencyKey]
+            headers: ["idempotency-key": key]
         )
         return response.booking
     }
 
     /// POST /api/v1/bookings/{id}/cancel — cancel a booking. No body; the server
     /// applies its own refund policy (a client cancelling ≥24h out is refunded).
-    /// Requires an idempotency key so a retry can't double-cancel. Returns the
-    /// booking's new status.
+    /// Idempotent: omit `idempotencyKey` to derive a stable per-booking key so a
+    /// retry can't double-cancel. Returns the booking's new status.
     @discardableResult
     public func cancel(
         bookingId: String,
-        idempotencyKey: String
+        idempotencyKey: String? = nil
     ) async throws -> String {
+        let key = idempotencyKey ?? buildClientIdempotencyKey(
+            scope: "booking", entityId: bookingId, action: "cancel")
         let response: CancelBookingResponse = try await api.request(
             "/bookings/\(bookingId)/cancel",
             method: .post,
             body: Data("{}".utf8),
-            headers: ["idempotency-key": idempotencyKey]
+            headers: ["idempotency-key": key]
         )
         return response.status
     }

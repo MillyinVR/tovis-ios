@@ -77,9 +77,13 @@ struct ProNewBookingView: View {
     @State private var creating = false
     @State private var errorText: String?
 
-    // One logical create attempt: a stable idempotency key reused across an
-    // override retry (so a network re-send can't double-book), the override
-    // flags the pro has confirmed this attempt, and the pending confirm prompt.
+    // The idempotency key for the in-flight POST. The server contract is "same
+    // key ⇒ same body": the key stays stable only across an *identical* network
+    // re-send, and MUST be re-minted whenever the body changes — otherwise the
+    // server 409s ("idempotency key already used with a different request body").
+    // A confirmed override adds a flag (a different body), so `confirmOverride`
+    // re-mints it; each distinct body still gets exactly one key, so a network
+    // re-send of that body can't double-book.
     @State private var attemptKey: String?
     @State private var appliedOverrides: Set<BookingOverrideFlag> = []
     @State private var overridePrompt: BookingOverridePrompt?
@@ -614,10 +618,14 @@ struct ProNewBookingView: View {
         await submitBooking()
     }
 
-    /// The pro confirmed an override-gated prompt — apply the flag and re-submit
-    /// under the same idempotency key.
+    /// The pro confirmed an override-gated prompt — apply the flag and re-submit.
+    /// Confirming adds an override flag, so the request body changes; mint a fresh
+    /// idempotency key so the server sees a new logical request instead of 409ing
+    /// on "same key, different body". (The prior key's record is already released
+    /// server-side by the override rejection.)
     private func confirmOverride(_ prompt: BookingOverridePrompt) async {
         appliedOverrides.insert(prompt.flag)
+        attemptKey = UUID().uuidString
         await submitBooking()
     }
 

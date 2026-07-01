@@ -29,17 +29,20 @@ public final class ProSessionService: Sendable {
     }
 
     /// POST /api/v1/pro/bookings/{id}/session/start. Returns the `nextHref` the
-    /// footer should navigate to (the session hub for that booking). Idempotent —
-    /// a fresh key per attempt, same as the web hook.
+    /// footer should navigate to (the session hub for that booking). Idempotent:
+    /// omit `idempotencyKey` to derive a stable per-booking key so a double-tap
+    /// dedupes server-side (see `buildClientIdempotencyKey`).
     @discardableResult
     public func start(
         bookingId: String,
-        idempotencyKey: String = UUID().uuidString
+        idempotencyKey: String? = nil
     ) async throws -> String? {
+        let key = idempotencyKey ?? buildClientIdempotencyKey(
+            scope: "pro-session", entityId: bookingId, action: "start")
         let response: ProSessionActionResponse = try await api.request(
             "/pro/bookings/\(bookingId)/session/start",
             method: .post,
-            headers: idempotencyHeaders(idempotencyKey)
+            headers: idempotencyHeaders(key)
         )
         return response.nextHref
     }
@@ -49,12 +52,14 @@ public final class ProSessionService: Sendable {
     @discardableResult
     public func finish(
         bookingId: String,
-        idempotencyKey: String = UUID().uuidString
+        idempotencyKey: String? = nil
     ) async throws -> String? {
+        let key = idempotencyKey ?? buildClientIdempotencyKey(
+            scope: "pro-session", entityId: bookingId, action: "finish")
         let response: ProSessionActionResponse = try await api.request(
             "/pro/bookings/\(bookingId)/session/finish",
             method: .post,
-            headers: idempotencyHeaders(idempotencyKey)
+            headers: idempotencyHeaders(key)
         )
         return response.nextHref
     }
@@ -64,14 +69,17 @@ public final class ProSessionService: Sendable {
     public func advanceStep(
         bookingId: String,
         to step: String,
-        idempotencyKey: String = UUID().uuidString
+        idempotencyKey: String? = nil
     ) async throws {
         let payload = try JSONEncoder().encode(["step": step])
+        let key = idempotencyKey ?? buildClientIdempotencyKey(
+            scope: "pro-session", entityId: bookingId, action: "step",
+            nonce: idempotencyNonce(payload))
         try await api.requestVoid(
             "/pro/bookings/\(bookingId)/session/step",
             method: .post,
             body: payload,
-            headers: idempotencyHeaders(idempotencyKey)
+            headers: idempotencyHeaders(key)
         )
     }
 
@@ -95,7 +103,7 @@ public final class ProSessionService: Sendable {
         notes: String?,
         proposedTotal: String,
         items: [ProConsultationProposalItem],
-        idempotencyKey: String = UUID().uuidString
+        idempotencyKey: String? = nil
     ) async throws -> ProConsultationProposalResult {
         let body = try JSONEncoder().encode(
             ConsultationProposalBody(
@@ -105,11 +113,14 @@ public final class ProSessionService: Sendable {
             )
         )
 
+        let key = idempotencyKey ?? buildClientIdempotencyKey(
+            scope: "pro-session", entityId: bookingId, action: "consultation-proposal",
+            nonce: idempotencyNonce(body))
         let response: ConsultationProposalResponse = try await api.request(
             "/pro/bookings/\(bookingId)/consultation-proposal",
             method: .post,
             body: body,
-            headers: idempotencyHeaders(idempotencyKey),
+            headers: idempotencyHeaders(key),
         )
 
         let delivery = response.consultationActionDelivery
@@ -122,14 +133,17 @@ public final class ProSessionService: Sendable {
     public func recordInPersonDecision(
         bookingId: String,
         approve: Bool,
-        idempotencyKey: String = UUID().uuidString
+        idempotencyKey: String? = nil
     ) async throws {
         let body = try JSONEncoder().encode(["action": approve ? "APPROVED" : "REJECTED"])
+        let key = idempotencyKey ?? buildClientIdempotencyKey(
+            scope: "pro-session", entityId: bookingId, action: "in-person-decision",
+            nonce: idempotencyNonce(body))
         try await api.requestVoid(
             "/pro/bookings/\(bookingId)/consultation/in-person-decision",
             method: .post,
             body: body,
-            headers: idempotencyHeaders(idempotencyKey),
+            headers: idempotencyHeaders(key),
         )
     }
 
