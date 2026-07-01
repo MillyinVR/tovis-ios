@@ -106,6 +106,11 @@ struct ProCapturePhotosView: View {
             // engine is reused, so the level stream must be restarted here or
             // the horizon (and LevelCoach) freeze at stale tilt.
             engine.start()
+            // The photographer meters for the face: feed the coach's face
+            // detection into exposure so "too dark"/"backlit" fix themselves.
+            engine.onFaceCenter = { [weak camera = camera] center in
+                camera?.setFaceExposure(center: center)
+            }
             await camera.start(frameDelegate: engine.analyzer)
         }
         .onDisappear { camera.stop(); coach?.stop() }

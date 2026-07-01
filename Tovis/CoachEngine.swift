@@ -132,7 +132,8 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             let center = averageRGB(working.cropped(to: centerRect)) ?? (0.5, 0.5, 0.5)
 
             sink?(CoachResult(readiness: readiness, nudge: nudge, statuses: statuses,
-                              centerR: center.r, centerG: center.g, centerB: center.b))
+                              centerR: center.r, centerG: center.g, centerB: center.b,
+                              faceCenter: face.map { CGPoint(x: $0.midX, y: $0.midY) }))
 
             // Harvest a keeper when quality peaks (rate-limited + capped).
             if autoHarvestEnabled,
@@ -375,6 +376,9 @@ final class CoachEngine {
     private var readySince: Date?
     /// Latest center-region average color — the neutral sample for gray-card WB.
     private(set) var centerSample: (r: Double, g: Double, b: Double) = (0.5, 0.5, 0.5)
+    /// Face-priority exposure feed — the camera view wires this to
+    /// `CameraController.setFaceExposure` so the camera meters for the face.
+    var onFaceCenter: ((CGPoint?) -> Void)?
 
     let analyzer: CoachAnalyzer
     private let settings: CoachSettings
@@ -446,6 +450,7 @@ final class CoachEngine {
         readiness = result.readiness
         statuses = result.statuses
         centerSample = (result.centerR, result.centerG, result.centerB)
+        onFaceCenter?(result.faceCenter)
 
         if result.nudge != nudge {
             nudge = result.nudge

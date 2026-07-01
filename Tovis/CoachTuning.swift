@@ -54,6 +54,9 @@ enum CoachTuning {
     /// Backlit if the face is darker than `scene × ratio` AND below `maxLuma`.
     static let backlitFaceRatio: Double = 0.6
     static let backlitFaceMaxLuma: Double = 0.4
+    /// EV bias applied while exposure is metering a face — slightly under to
+    /// protect highlights (hair shine / skin sheen clip unrecoverably).
+    static let faceExposureBias: Float = -0.3
 
     // MARK: - Composition (face placement, normalized top-left)
 

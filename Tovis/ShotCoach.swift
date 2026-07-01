@@ -59,6 +59,9 @@ struct CoachResult: Sendable {
     let centerR: Double
     let centerG: Double
     let centerB: Double
+    /// Face center (upright, top-left normalized) — drives face-priority
+    /// exposure metering. Nil when no face is in frame.
+    let faceCenter: CGPoint?
 }
 
 /// Body-pose framing read for the current frame, present only when a human body is

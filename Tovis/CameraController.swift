@@ -147,6 +147,7 @@ final class CameraController: NSObject {
             }
             device.isSubjectAreaChangeMonitoringEnabled = true
             device.unlockForConfiguration()
+            self.userMeteringActive = true   // face metering stands down
             Task { @MainActor in self.aeAfLocked = false }
         }
     }
@@ -161,6 +162,49 @@ final class CameraController: NSObject {
         if device.isExposureModeSupported(.continuousAutoExposure) { device.exposureMode = .continuousAutoExposure }
         device.isSubjectAreaChangeMonitoringEnabled = false
         device.unlockForConfiguration()
+        userMeteringActive = false
+    }
+
+    // MARK: - Face-priority exposure
+
+    /// A user tap-to-focus meter is in play (until the scene moves on) — face
+    /// metering stands down so it doesn't fight the pro's explicit intent.
+    /// sessionQueue-confined.
+    nonisolated(unsafe) private var userMeteringActive = false
+    /// Last face point we metered at (device space), to rate-limit updates.
+    nonisolated(unsafe) private var lastFaceExposurePoint: CGPoint?
+
+    /// Continuously meter exposure for the subject's face — what a photographer
+    /// does by default, and what silently fixes "too dark" / "backlit" instead
+    /// of asking the pro to. `center` is the face center in upright,
+    /// top-left-normalized frame coords (nil = no face → back to center-weighted).
+    /// Stands down while AE/AF is locked or a tap-to-focus meter is active.
+    /// Fed by the coach's per-frame face detection (already running).
+    func setFaceExposure(center: CGPoint?) {
+        guard let device else { return }
+        sessionQueue.async {
+            guard !self.userMeteringActive,
+                  device.exposureMode != .locked,
+                  device.isExposurePointOfInterestSupported else { return }
+            // Upright top-left (x, y) → device space (sensor landscape-right,
+            // top-left origin): (y, 1 − x). ⚠️ Verify on hardware, like the
+            // level sign — sensor mounting can flip this.
+            let target = center.map { CGPoint(x: $0.y, y: 1 - $0.x) } ?? CGPoint(x: 0.5, y: 0.5)
+            if let last = self.lastFaceExposurePoint,
+               abs(last.x - target.x) < 0.08, abs(last.y - target.y) < 0.08 { return }
+            guard (try? device.lockForConfiguration()) != nil else { return }
+            device.exposurePointOfInterest = target
+            if device.isExposureModeSupported(.continuousAutoExposure) {
+                device.exposureMode = .continuousAutoExposure
+            }
+            // Slight under-expose while metering a face: blown highlights (hair
+            // shine, skin sheen) are unrecoverable; lifted shadows are fine.
+            let bias: Float = center == nil ? 0 : CoachTuning.faceExposureBias
+            device.setExposureTargetBias(
+                min(max(bias, device.minExposureTargetBias), device.maxExposureTargetBias))
+            device.unlockForConfiguration()
+            self.lastFaceExposurePoint = target
+        }
     }
 
     /// Lock (or release) focus + exposure so the camera stops re-metering as hands
@@ -179,6 +223,7 @@ final class CameraController: NSObject {
             // The explicit lock supersedes any pending tap-to-focus revert.
             device.isSubjectAreaChangeMonitoringEnabled = false
             device.unlockForConfiguration()
+            self.userMeteringActive = false
             Task { @MainActor in self.aeAfLocked = locked }
         }
     }
