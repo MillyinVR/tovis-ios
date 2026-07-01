@@ -250,6 +250,19 @@ public final class ProBookingService: Sendable {
         )
     }
 
+    /// POST /api/v1/pro/bookings/{id}/aftercare/nudge — re-ping a client about an
+    /// aftercare that was already sent (the one-tap "Nudge" on the aftercare list).
+    /// Re-issues the aftercare magic link and refreshes the AFTERCARE_READY
+    /// notification. Only valid once the summary has been sent. Deliberately
+    /// non-idempotent — each call re-sends, so no idempotency key is used; spam is
+    /// bounded by the server's pro write rate limit.
+    public func nudgeAftercare(bookingId: String) async throws {
+        try await api.requestVoid(
+            "/pro/bookings/\(bookingId)/aftercare/nudge",
+            method: .post
+        )
+    }
+
     /// POST /api/v1/pro/bookings/{id}/checkout/waive — waive the booking's checkout
     /// (no payment owed). Idempotent. (Wired for completeness; the web pro screens
     /// don't surface a waive button today.)
