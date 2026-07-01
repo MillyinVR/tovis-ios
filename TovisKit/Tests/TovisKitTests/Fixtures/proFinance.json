@@ -54,6 +54,7 @@
         "source": "MANUAL",
         "amountCents": 18740,
         "amountLabel": "$187.40",
+        "mileageMiles": null,
         "label": "CosmoProf order",
         "notes": null,
         "dateLabel": "Apr 3",
@@ -69,10 +70,27 @@
         "source": "MANUAL",
         "amountCents": 65000,
         "amountLabel": "$650.00",
+        "mileageMiles": null,
         "label": "Suite rent – April",
         "notes": "Monthly suite",
         "dateLabel": "Apr 1",
         "spentAtIso": "2026-04-01T07:00:00.000Z",
+        "hasReceipt": false,
+        "receiptMediaId": null
+      },
+      {
+        "id": "exp_3",
+        "category": "MILEAGE",
+        "categoryLabel": "Mileage (mobile pros)",
+        "categoryRisk": "yellow",
+        "source": "MANUAL",
+        "amountCents": 7250,
+        "amountLabel": "$72.50",
+        "mileageMiles": 100,
+        "label": "Drive to client",
+        "notes": null,
+        "dateLabel": "Apr 5",
+        "spentAtIso": "2026-04-05T07:00:00.000Z",
         "hasReceipt": false,
         "receiptMediaId": null
       }
@@ -94,6 +112,8 @@
         "tooltip": "Generally NOT deductible. Nails, hair, and everyday clothing don’t qualify.",
         "examples": ["Branded aprons/uniforms only — not grooming or regular clothes"]
       }
-    ]
+    ],
+    "mileageRateCents": 72.5,
+    "mileageRateLabel": "72.5¢/mi"
   }
 }

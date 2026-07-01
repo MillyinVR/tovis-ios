@@ -15,22 +15,40 @@ struct ProExpenseFormView: View {
     /// submitted "YYYY-MM-DD" resolve in THIS zone, not the device's, so an
     /// expense added on a month-end evening files under the pro's calendar day.
     let timeZone: String
+    /// Current IRS mileage rate (cents/mile) for the live deduction preview.
+    let mileageRateCents: Double
     let onSaved: () -> Void
 
     private var zone: TimeZone { TimeZone(identifier: timeZone) ?? .current }
 
     @State private var category = ""
     @State private var amount = ""
+    @State private var miles = ""
     @State private var label = ""
     @State private var date = Date()
     @State private var notes = ""
     @State private var submitting = false
     @State private var errorText: String?
 
+    private var isMileage: Bool { category == "MILEAGE" }
+
+    private var milesValue: Double? {
+        let n = Double(miles.trimmingCharacters(in: .whitespaces))
+        return (n ?? 0) > 0 ? n : nil
+    }
+
+    /// Live-computed deduction (cents) for the entered miles.
+    private var mileagePreviewCents: Int? {
+        guard let m = milesValue else { return nil }
+        return Int((m * mileageRateCents).rounded())
+    }
+
     private var canSubmit: Bool {
-        !category.isEmpty
-            && !amount.trimmingCharacters(in: .whitespaces).isEmpty
-            && !label.trimmingCharacters(in: .whitespaces).isEmpty
+        guard !category.isEmpty, !label.trimmingCharacters(in: .whitespaces).isEmpty
+        else { return false }
+        return isMileage
+            ? milesValue != nil
+            : !amount.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     var body: some View {
@@ -48,10 +66,23 @@ struct ProExpenseFormView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
-                    field("Amount") {
-                        TextField("50 or 49.99", text: $amount)
-                            .keyboardType(.decimalPad)
-                            .textFieldStyle(.plain)
+                    if isMileage {
+                        field("Miles") {
+                            VStack(alignment: .leading, spacing: 4) {
+                                TextField("e.g. 45", text: $miles)
+                                    .keyboardType(.decimalPad)
+                                    .textFieldStyle(.plain)
+                                Text(mileageDeductionHint)
+                                    .font(BrandFont.body(11))
+                                    .foregroundStyle(BrandColor.textMuted)
+                            }
+                        }
+                    } else {
+                        field("Amount") {
+                            TextField("50 or 49.99", text: $amount)
+                                .keyboardType(.decimalPad)
+                                .textFieldStyle(.plain)
+                        }
                     }
 
                     field("Description") {
@@ -121,10 +152,24 @@ struct ProExpenseFormView: View {
         }
     }
 
+    private var mileageRateString: String { String(format: "%g", mileageRateCents) }
+
+    private var mileageDeductionHint: String {
+        let rate = "\(mileageRateString)¢/mi"
+        if let cents = mileagePreviewCents {
+            return "= " + String(format: "$%.2f", Double(cents) / 100) + " deduction at " + rate
+        }
+        return "Business miles only at " + rate
+    }
+
     private func seed() {
         if let editing {
             category = editing.category
-            amount = String(format: "%.2f", Double(editing.amountCents) / 100)
+            if let loggedMiles = editing.mileageMiles {
+                miles = String(format: "%g", loggedMiles)
+            } else {
+                amount = String(format: "%.2f", Double(editing.amountCents) / 100)
+            }
             label = editing.label
             notes = editing.notes ?? ""
             date = parseDate(editing.spentAtIso) ?? Date()
@@ -140,13 +185,22 @@ struct ProExpenseFormView: View {
         errorText = nil
 
         let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
-        let request = ProExpenseWriteRequest(
-            category: category,
-            amount: amount.trimmingCharacters(in: .whitespaces),
-            label: label.trimmingCharacters(in: .whitespaces),
-            date: formatDate(date),
-            notes: trimmedNotes.isEmpty ? nil : trimmedNotes
-        )
+        let notesValue = trimmedNotes.isEmpty ? nil : trimmedNotes
+        let request = isMileage
+            ? ProExpenseWriteRequest(
+                category: category,
+                miles: miles.trimmingCharacters(in: .whitespaces),
+                label: label.trimmingCharacters(in: .whitespaces),
+                date: formatDate(date),
+                notes: notesValue
+            )
+            : ProExpenseWriteRequest(
+                category: category,
+                amount: amount.trimmingCharacters(in: .whitespaces),
+                label: label.trimmingCharacters(in: .whitespaces),
+                date: formatDate(date),
+                notes: notesValue
+            )
 
         do {
             if let editing {

@@ -83,6 +83,7 @@ struct ProFinanceView: View {
                 categories: loaded?.finance.categories ?? [],
                 editing: editing,
                 timeZone: loaded?.activeMonth.timeZone ?? "America/Los_Angeles",
+                mileageRateCents: loaded?.finance.mileageRateCents ?? 72.5,
                 onSaved: { Task { await load() } }
             )
         }
@@ -321,6 +322,12 @@ struct ProFinanceView: View {
                         Text(expense.dateLabel)
                             .font(BrandFont.body(12))
                             .foregroundStyle(BrandColor.textMuted)
+                        if let miles = expense.mileageMiles {
+                            Text("·").foregroundStyle(BrandColor.textMuted)
+                            Text("\(String(format: "%g", miles)) mi")
+                                .font(BrandFont.body(12))
+                                .foregroundStyle(BrandColor.textMuted)
+                        }
                     }
                 }
                 Spacer()

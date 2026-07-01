@@ -30,6 +30,10 @@ public struct ProFinanceResponse: Decodable, Sendable {
         public let quarterlyReminder: QuarterlyReminder
         public let expenses: [ExpenseItem]
         public let categories: [CategoryInfo]
+        /// Current IRS standard mileage rate in cents/mile (e.g. 72.5) — lets the
+        /// add-expense form preview a trip's deduction live.
+        public let mileageRateCents: Double
+        public let mileageRateLabel: String
     }
 
     public struct SummaryCard: Decodable, Sendable, Identifiable {
@@ -63,6 +67,8 @@ public struct ProFinanceResponse: Decodable, Sendable {
         public let source: String
         public let amountCents: Int
         public let amountLabel: String
+        /// Logged business miles for a MILEAGE expense; null otherwise.
+        public let mileageMiles: Double?
         public let label: String
         public let notes: String?
         public let dateLabel: String
@@ -87,7 +93,10 @@ public struct ProFinanceResponse: Decodable, Sendable {
 /// fine (the server treats it as a full update of the edited row).
 public struct ProExpenseWriteRequest: Encodable, Sendable {
     public let category: String
-    public let amount: String
+    /// Dollar amount for a normal expense; nil (omitted) for mileage.
+    public let amount: String?
+    /// Business miles for a MILEAGE expense; the server computes the deduction.
+    public let miles: String?
     public let label: String
     /// "YYYY-MM-DD".
     public let date: String
@@ -95,13 +104,15 @@ public struct ProExpenseWriteRequest: Encodable, Sendable {
 
     public init(
         category: String,
-        amount: String,
+        amount: String? = nil,
+        miles: String? = nil,
         label: String,
         date: String,
         notes: String?
     ) {
         self.category = category
         self.amount = amount
+        self.miles = miles
         self.label = label
         self.date = date
         self.notes = notes

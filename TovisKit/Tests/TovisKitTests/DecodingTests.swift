@@ -484,12 +484,18 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.finance.summaryCards[3].tone == "warn")
         #expect(res.finance.incomeBreakdown.count == 3)
         #expect(res.finance.quarterlyReminder.dueDateLabel == "June 15, 2026")
-        #expect(res.finance.expenses.count == 2)
+        #expect(res.finance.expenses.count == 3)
         #expect(res.finance.expenses[0].categoryRisk == "green")
         #expect(res.finance.expenses[0].notes == nil)
+        #expect(res.finance.expenses[0].mileageMiles == nil)
         #expect(res.finance.expenses[1].notes == "Monthly suite")
         #expect(res.finance.categories.count == 2)
         #expect(res.finance.categories[1].risk == "red")
+        // Mileage expense + rate.
+        #expect(res.finance.expenses[2].category == "MILEAGE")
+        #expect(res.finance.expenses[2].mileageMiles == 100)
+        #expect(res.finance.mileageRateCents == 72.5)
+        #expect(res.finance.mileageRateLabel == "72.5¢/mi")
     }
 
     // GET /api/v1/pro/reviews — Fixtures/proReviewsList.json. The pro reviews
