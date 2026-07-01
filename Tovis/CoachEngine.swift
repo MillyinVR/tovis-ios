@@ -161,33 +161,15 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     }
 
     // MARK: - Signals
+    // (Shared measurement math lives in FrameMath — one implementation for the
+    // live coach, post-capture QC, and the before/after light matcher.)
 
-    /// Average color of an image (CIAreaAverage → one pixel), each channel 0…1.
-    /// Nil when the extent is degenerate.
     private func averageRGB(_ image: CIImage) -> (r: Double, g: Double, b: Double)? {
-        let extent = image.extent
-        guard extent.width > 0, extent.height > 0,
-              let filter = CIFilter(name: "CIAreaAverage", parameters: [
-                  kCIInputImageKey: image,
-                  kCIInputExtentKey: CIVector(cgRect: extent),
-              ]),
-              let output = filter.outputImage else { return nil }
-
-        var pixel = [UInt8](repeating: 0, count: 4)
-        ciContext.render(
-            output,
-            toBitmap: &pixel,
-            rowBytes: 4,
-            bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
-            format: .RGBA8,
-            colorSpace: CGColorSpaceCreateDeviceRGB()
-        )
-        return (Double(pixel[0]) / 255, Double(pixel[1]) / 255, Double(pixel[2]) / 255)
+        FrameMath.averageRGB(image, context: ciContext)
     }
 
     private func averageLuma(_ image: CIImage) -> Double {
-        guard let c = averageRGB(image) else { return 0.5 }
-        return 0.299 * c.r + 0.587 * c.g + 0.114 * c.b
+        FrameMath.averageLuma(image, context: ciContext)
     }
 
     /// Color-of-light read: mixed light (warm↔cool spread across vertical thirds —
@@ -196,17 +178,14 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         let e = working.extent
         guard e.width > 0, e.height > 0, let global = averageRGB(working) else { return nil }
 
-        func warmth(_ c: (r: Double, g: Double, b: Double)) -> Double {
-            (c.r - c.b) / (c.r + c.b + 1e-3)
-        }
         let third = e.width / 3
         let warms: [Double] = (0..<3).compactMap { i in
             let rect = CGRect(x: e.minX + CGFloat(i) * third, y: e.minY, width: third, height: e.height)
-            return averageRGB(working.cropped(to: rect)).map(warmth)
+            return averageRGB(working.cropped(to: rect)).map(FrameMath.warmth)
         }
         let mixed = warms.count >= 2 ? ((warms.max() ?? 0) - (warms.min() ?? 0)) : 0
         let greenTint = (2 * global.g - global.r - global.b) / (2 * global.g + global.r + global.b + 1e-3)
-        return ColorSignal(mixed: max(0, mixed), greenTint: greenTint, warmth: warmth(global))
+        return ColorSignal(mixed: max(0, mixed), greenTint: greenTint, warmth: FrameMath.warmth(global))
     }
 
     /// Largest face, normalized with a TOP-LEFT origin. Back camera in portrait →
@@ -224,40 +203,17 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
 
     /// Scale an image down so its largest side ≈ `workingMaxDim` (cheap aggregate math).
     private func downscaled(_ image: CIImage) -> CIImage {
-        let maxSide = max(image.extent.width, image.extent.height)
-        guard maxSide > workingMaxDim else { return image }
-        let s = workingMaxDim / maxSide
-        return image.transformed(by: CGAffineTransform(scaleX: s, y: s))
+        FrameMath.downscaled(image, maxDim: workingMaxDim)
     }
 
     /// Average luma inside a normalized top-left rect of `image` (upright space).
     private func regionLuma(_ image: CIImage, normalizedTopLeft rect: CGRect) -> Double {
-        averageLuma(crop(image, normalizedTopLeft: rect))
+        averageLuma(FrameMath.crop(image, normalizedTopLeft: rect))
     }
 
-    /// Crop an upright image to a normalized top-left rect, mapping to CIImage's
-    /// bottom-left pixel space. Returns the full image if the rect is degenerate.
-    private func crop(_ image: CIImage, normalizedTopLeft rect: CGRect) -> CIImage {
-        let e = image.extent
-        guard e.width > 0, e.height > 0 else { return image }
-        let px = CGRect(
-            x: e.minX + rect.minX * e.width,
-            y: e.minY + (1 - rect.maxY) * e.height,
-            width: rect.width * e.width,
-            height: rect.height * e.height
-        ).intersection(e)
-        guard !px.isNull, px.width >= 1, px.height >= 1 else { return image }
-        return image.cropped(to: px)
-    }
-
-    /// Focus quality 0…1 from edge energy — measured on the subject region when a
-    /// face is present (focus on the face, not a busy background), else whole frame.
+    /// Focus quality 0…1 from edge energy on the subject region (see FrameMath).
     private func sharpness(_ image: CIImage, subject face: CGRect?) -> Double {
-        let target = face.map { crop(image, normalizedTopLeft: expandToHead($0)) } ?? image
-        // Edge energy: low for soft/blurred frames. Normalize against the reference
-        // "sharp" edge-mean (CoachTuning).
-        let energy = averageLuma(edges(target))
-        return min(1.0, energy / CoachTuning.sharpnessReference)
+        FrameMath.sharpness(image, subject: face, context: ciContext)
     }
 
     /// Person-segmentation read for one frame: how much of the frame the subject
@@ -293,29 +249,13 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             return SegmentSignal(clutter: nil, subjectFill: subjectFill)
         }
         // Edge energy that falls in the background = edges × background weight.
-        let bgEdges = edges(working).applyingFilter("CIMultiplyCompositing", parameters: [
+        let bgEdges = FrameMath.edges(working).applyingFilter("CIMultiplyCompositing", parameters: [
             kCIInputBackgroundImageKey: background,
         ])
         let bgEdgeMean = averageLuma(bgEdges.cropped(to: working.extent))
         // Normalize by background area, then against the "fully cluttered" reference.
         let clutter = min(1.0, max(0.0, (bgEdgeMean / bgFraction) / CoachTuning.clutterReference))
         return SegmentSignal(clutter: clutter, subjectFill: subjectFill)
-    }
-
-    /// Edge magnitude image (CIEdges) for energy measurement.
-    private func edges(_ image: CIImage) -> CIImage {
-        image.applyingFilter("CIEdges", parameters: ["inputIntensity": 1.0])
-    }
-
-    /// Expand a face rect to roughly head-and-shoulders so subject-focused math
-    /// (sharpness) doesn't sample only skin. Clamped to the unit square.
-    private func expandToHead(_ face: CGRect) -> CGRect {
-        let cx = face.midX
-        let w = min(1.0, face.width * 2.0)
-        let h = min(1.0, face.height * 2.2)
-        let x = max(0.0, min(1.0 - w, cx - w / 2))
-        let y = max(0.0, min(1.0 - h, face.minY - face.height * 0.3))
-        return CGRect(x: x, y: y, width: w, height: h)
     }
 
     /// Body-pose framing read (upright, top-left normalized). Nil unless a body is

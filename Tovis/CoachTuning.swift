@@ -112,6 +112,19 @@ enum CoachTuning {
     /// daylight (~5000–5600K, near-neutral) is the beauty target.
     static let warmCastWarmth: Double = 0.30
 
+    // MARK: - Post-capture QC (verifies the ACTUAL capture, not the preview)
+
+    /// Normalized sharpness below this on the captured image = offer a retake.
+    /// Deliberately looser than the live `sharpnessSoft` — QC only flags clear
+    /// failures, it doesn't re-nag.
+    static let qcSharpnessMin: Double = 0.15
+    /// Captured luma outside this band = retake offer.
+    static let qcLumaMin: Double = 0.14
+    static let qcLumaMax: Double = 0.88
+    /// How many frames the guided auto-shot may take to get one past QC (it
+    /// keeps the first pass, or discards the round and re-arms).
+    static let autoCaptureAttempts = 3
+
     // MARK: - Device level (horizon)
 
     /// Device roll (degrees off level) above which the shot reads as clearly tilted

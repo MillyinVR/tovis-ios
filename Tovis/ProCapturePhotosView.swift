@@ -48,6 +48,15 @@ struct ProCapturePhotosView: View {
         let id = UUID()
         let image: UIImage
     }
+
+    /// A manual shot the photographer check flagged — held for the pro's
+    /// keep-or-retake call instead of silently entering the portfolio.
+    @State private var pendingRetake: PendingRetake?
+    private struct PendingRetake: Identifiable {
+        let id = UUID()
+        let data: Data
+        let reason: String
+    }
     /// Brief white flash on a successful capture (shutter confirmation).
     @State private var flash = false
 
@@ -159,6 +168,28 @@ struct ProCapturePhotosView: View {
         }
         .fullScreenCover(item: $scrubClip) { clip in
             FrameScrubberView(videoURL: clip.url, bookingId: bookingId, phase: phase)
+        }
+        .confirmationDialog(
+            "Photographer check",
+            isPresented: Binding(
+                get: { pendingRetake != nil },
+                set: { if !$0 { pendingRetake = nil } }   // dismiss = retake
+            ),
+            titleVisibility: .visible,
+            presenting: pendingRetake
+        ) { shot in
+            Button("Retake") { pendingRetake = nil }
+            Button("Keep it anyway") {
+                let data = shot.data
+                pendingRetake = nil
+                Task {
+                    uploading = true
+                    await finalize(data)
+                    uploading = false
+                }
+            }
+        } message: { shot in
+            Text("\(shot.reason). Retake it while they’re still in position?")
         }
         .confirmationDialog(
             "You have unsaved best shots",
@@ -375,9 +406,9 @@ struct ProCapturePhotosView: View {
         autoArmed = false
         Task {
             let title = currentStep?.title
-            await capture()          // full pipeline: marks the step done + advances
+            let kept = await capture(trigger: .auto)   // burst + QC; advances only on a keeper
             coach?.resetHold()
-            if settings.speak, let title { coach?.announce("Got the \(title).") }
+            if kept, settings.speak, let title { coach?.announce("Got the \(title).") }
         }
     }
 
@@ -855,25 +886,82 @@ struct ProCapturePhotosView: View {
 
     // MARK: - Capture + upload
 
-    private func capture() async {
+    private enum CaptureTrigger { case manual, auto }
+
+    /// Take a shot. Manual = single capture, then the photographer check
+    /// (post-capture QC on the real image) offers a retake if it failed.
+    /// Auto = up to `autoCaptureAttempts` frames, keeping the first that
+    /// passes QC — a photographer fires again; they don't keep the blink.
+    /// Returns whether a shot was kept (uploaded + guide advanced).
+    @discardableResult
+    private func capture(trigger: CaptureTrigger = .manual) async -> Bool {
         // One capture at a time — the guided auto-shot and a manual shutter tap
         // can otherwise interleave (a second capturePhoto would be rejected by
         // the controller, but never let it get that far).
-        guard !uploading else { return }
+        guard !uploading else { return false }
         uploading = true
         errorMessage = nil
         defer { uploading = false }
+
+        if trigger == .auto { return await autoCaptureBest() }
+
         let data: Data
         do {
             data = try await camera.capturePhoto()
         } catch {
             errorMessage = "Couldn’t take that photo. Please try again."
-            return
+            return false
         }
-        // Shutter confirmation: a brief flash + a light tap.
+        shutterFeedback()
+        let qc = await PhotoQC.evaluate(data, checkBlink: blinkCheckApplies)
+        if let reason = qc.retakeReason {
+            pendingRetake = PendingRetake(data: data, reason: reason)
+            return false
+        }
+        await finalize(data)
+        return true
+    }
+
+    /// The auto-shot's burst: capture → QC → keep the first pass; if nothing
+    /// passes, say why and let the hold re-arm (nothing uploads, the guide
+    /// doesn't advance) — the subject is still in position for the next try.
+    private func autoCaptureBest() async -> Bool {
+        var best: (data: Data, qc: PhotoQCReport)?
+        for _ in 0..<CoachTuning.autoCaptureAttempts {
+            guard let data = try? await camera.capturePhoto() else { break }
+            let qc = await PhotoQC.evaluate(data, checkBlink: blinkCheckApplies)
+            if qc.passed { best = (data, qc); break }
+            if best == nil || qc.sharpness > best!.qc.sharpness { best = (data, qc) }
+        }
+        guard let best else {
+            errorMessage = "Couldn’t take that photo. Please try again."
+            return false
+        }
+        guard best.qc.passed else {
+            if settings.speak, let reason = best.qc.retakeReason {
+                coach?.announce("\(reason) — let’s take that one again.")
+            }
+            errorMessage = best.qc.retakeReason.map { "\($0) — holding for another try." }
+            return false
+        }
+        shutterFeedback()
+        await finalize(best.data)
+        return true
+    }
+
+    /// Whether the blink check applies to the current shot (skipped when closed
+    /// eyes are intended — lash work — or no face belongs in frame).
+    private var blinkCheckApplies: Bool { true }
+
+    /// Shutter confirmation: a brief flash + a light tap.
+    private func shutterFeedback() {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         withAnimation(.easeOut(duration: 0.08)) { flash = true }
         withAnimation(.easeIn(duration: 0.18).delay(0.08)) { flash = false }
+    }
+
+    /// Keep a shot: thumbnail, complete the guided step, upload.
+    private func finalize(_ data: Data) async {
         if let img = UIImage(data: data) { captured.insert(CapturedShot(image: img), at: 0) }
         markCurrentCaptured()   // complete the guided shot + advance
         await upload(data)
