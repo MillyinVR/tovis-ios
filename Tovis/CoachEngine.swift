@@ -69,65 +69,77 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         lastSampleAt = now
 
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-        // One upright, downscaled image drives all the CoreImage math so face/luma/
-        // sharpness math share a single coordinate space (upright, top-left normalized).
-        let working = downscaled(CIImage(cvPixelBuffer: pixelBuffer).oriented(.right))
 
-        let face = detectFace(pixelBuffer)
-        // Heavy Vision (segmentation + pose) on its own slower cadence; reuse last.
-        if now - lastHeavyAt >= heavyInterval {
-            lastHeavyAt = now
-            let seg = segment(pixelBuffer, working: working)
-            cachedClutter = seg?.clutter
-            cachedSubjectFill = seg?.subjectFill
-            cachedPose = bodyPose(pixelBuffer)
-            cachedColor = colorSignal(working)
-        }
+        // Every analyzed frame allocates a lot of transient CoreImage/Vision backing
+        // (downscaled CIImages, GPU render intermediates, Vision mask buffers, the
+        // harvest JPEG). CoreImage/Vision hand those back as *autoreleased* objects,
+        // and on this busy serial frame queue the thread's pool is not drained
+        // reliably between back-to-back frames — so without an explicit pool the
+        // footprint climbs until iOS jetsam-kills the app a few seconds in. Draining
+        // per frame keeps peak memory flat. (Runs fully only with a real subject in
+        // frame — an empty test scene short-circuits the heavy path, which is why
+        // this only bit during a live session.)
+        autoreleasepool {
+            // One upright, downscaled image drives all the CoreImage math so face/luma/
+            // sharpness math share a single coordinate space (upright, top-left normalized).
+            let working = downscaled(CIImage(cvPixelBuffer: pixelBuffer).oriented(.right))
 
-        let ctx = FrameContext(
-            avgLuma: averageLuma(working),
-            faceBounds: face,
-            faceLuma: face.map { regionLuma(working, normalizedTopLeft: $0) },
-            sharpness: sharpness(working, subject: face),
-            backgroundClutter: cachedClutter,
-            subjectFill: cachedSubjectFill,
-            pose: cachedPose,
-            deviceTilt: currentDeviceTilt(),
-            color: cachedColor
-        )
+            let face = detectFace(pixelBuffer)
+            // Heavy Vision (segmentation + pose) on its own slower cadence; reuse last.
+            if now - lastHeavyAt >= heavyInterval {
+                lastHeavyAt = now
+                let seg = segment(pixelBuffer, working: working)
+                cachedClutter = seg?.clutter
+                cachedSubjectFill = seg?.subjectFill
+                cachedPose = bodyPose(pixelBuffer)
+                cachedColor = colorSignal(working)
+            }
 
-        let signals = coaches.map { ($0.category, $0.evaluate(ctx)) }
-        // Readiness is the importance-weighted mean — light + focus count for more
-        // than a clean backdrop, per the beauty-photography priority order.
-        let totalWeight = signals.reduce(0.0) { $0 + $1.0.weight }
-        let readiness = totalWeight == 0 ? 0
-            : signals.reduce(0.0) { $0 + $1.1.score * $1.0.weight } / totalWeight
-        // The fix to surface = the biggest *weighted* deficiency among coaches that
-        // have a tip — so a lighting problem outranks a slightly-busy background.
-        let worst = signals
-            .filter { $0.1.message != nil }
-            .max { $0.0.weight * (1 - $0.1.score) < $1.0.weight * (1 - $1.1.score) }
-        let nudge = worst.flatMap { entry in entry.1.message.map { CoachNudge(category: entry.0, message: $0) } }
-        let statuses = signals.map { CoachStatus(category: $0.0, score: $0.1.score, message: $0.1.message) }
+            let ctx = FrameContext(
+                avgLuma: averageLuma(working),
+                faceBounds: face,
+                faceLuma: face.map { regionLuma(working, normalizedTopLeft: $0) },
+                sharpness: sharpness(working, subject: face),
+                backgroundClutter: cachedClutter,
+                subjectFill: cachedSubjectFill,
+                pose: cachedPose,
+                deviceTilt: currentDeviceTilt(),
+                color: cachedColor
+            )
 
-        // Center-region average color — the neutral sample for gray-card WB.
-        let e = working.extent
-        let centerRect = CGRect(x: e.minX + e.width * 0.3, y: e.minY + e.height * 0.3,
-                                width: e.width * 0.4, height: e.height * 0.4)
-        let center = averageRGB(working.cropped(to: centerRect)) ?? (0.5, 0.5, 0.5)
+            let signals = coaches.map { ($0.category, $0.evaluate(ctx)) }
+            // Readiness is the importance-weighted mean — light + focus count for more
+            // than a clean backdrop, per the beauty-photography priority order.
+            let totalWeight = signals.reduce(0.0) { $0 + $1.0.weight }
+            let readiness = totalWeight == 0 ? 0
+                : signals.reduce(0.0) { $0 + $1.1.score * $1.0.weight } / totalWeight
+            // The fix to surface = the biggest *weighted* deficiency among coaches that
+            // have a tip — so a lighting problem outranks a slightly-busy background.
+            let worst = signals
+                .filter { $0.1.message != nil }
+                .max { $0.0.weight * (1 - $0.1.score) < $1.0.weight * (1 - $1.1.score) }
+            let nudge = worst.flatMap { entry in entry.1.message.map { CoachNudge(category: entry.0, message: $0) } }
+            let statuses = signals.map { CoachStatus(category: $0.0, score: $0.1.score, message: $0.1.message) }
 
-        sink?(CoachResult(readiness: readiness, nudge: nudge, statuses: statuses,
-                          centerR: center.r, centerG: center.g, centerB: center.b))
+            // Center-region average color — the neutral sample for gray-card WB.
+            let e = working.extent
+            let centerRect = CGRect(x: e.minX + e.width * 0.3, y: e.minY + e.height * 0.3,
+                                    width: e.width * 0.4, height: e.height * 0.4)
+            let center = averageRGB(working.cropped(to: centerRect)) ?? (0.5, 0.5, 0.5)
 
-        // Harvest a keeper when quality peaks (rate-limited + capped).
-        if autoHarvestEnabled,
-           readiness >= harvestThreshold,
-           now - lastHarvestAt >= minHarvestInterval,
-           harvestCount < maxHarvest,
-           let data = harvest(pixelBuffer) {
-            lastHarvestAt = now
-            harvestCount += 1
-            onHarvest?(data, readiness)
+            sink?(CoachResult(readiness: readiness, nudge: nudge, statuses: statuses,
+                              centerR: center.r, centerG: center.g, centerB: center.b))
+
+            // Harvest a keeper when quality peaks (rate-limited + capped).
+            if autoHarvestEnabled,
+               readiness >= harvestThreshold,
+               now - lastHarvestAt >= minHarvestInterval,
+               harvestCount < maxHarvest,
+               let data = harvest(pixelBuffer) {
+                lastHarvestAt = now
+                harvestCount += 1
+                onHarvest?(data, readiness)
+            }
         }
     }
 
