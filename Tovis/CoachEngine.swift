@@ -66,9 +66,6 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     /// reviewing shots re-opens harvest headroom — the cap bounds the *tray*, not
     /// the whole session. Same cross-queue pattern as `autoHarvestEnabled`.
     nonisolated(unsafe) var stagedCount = 0
-    private let minHarvestInterval = CoachTuning.minHarvestInterval
-    private let maxHarvest = CoachTuning.maxHarvest
-    private let harvestThreshold = CoachTuning.harvestThreshold
 
     init(coaches: [ShotCoach]) {
         self.coaches = coaches
@@ -144,16 +141,33 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                                     width: e.width * 0.4, height: e.height * 0.4)
             let center = averageRGB(working.cropped(to: centerRect)) ?? (0.5, 0.5, 0.5)
 
+            var debug: [DebugSignal]?
+            if CoachDebug.captureSignals {
+                debug = [
+                    DebugSignal(name: "luma", value: avgLuma),
+                    DebugSignal(name: "faceLuma", value: ctx.faceLuma ?? -1),
+                    DebugSignal(name: "sharpness", value: ctx.sharpness),
+                    DebugSignal(name: "clutter", value: ctx.backgroundClutter ?? -1),
+                    DebugSignal(name: "fill", value: ctx.subjectFill ?? -1),
+                    DebugSignal(name: "tilt°", value: ctx.deviceTilt ?? 0),
+                    DebugSignal(name: "mixed", value: ctx.color?.mixed ?? -1),
+                    DebugSignal(name: "green", value: ctx.color?.greenTint ?? -1),
+                    DebugSignal(name: "warmth", value: ctx.color?.warmth ?? -1),
+                    DebugSignal(name: "READY", value: readiness),
+                ]
+            }
+
             sink?(CoachResult(readiness: readiness, nudge: nudge, statuses: statuses,
                               centerR: center.r, centerG: center.g, centerB: center.b,
                               faceCenter: face.map { CGPoint(x: $0.midX, y: $0.midY) },
-                              frameLuma: avgLuma, frameWarmth: cachedColor?.warmth))
+                              frameLuma: avgLuma, frameWarmth: cachedColor?.warmth,
+                              debug: debug))
 
             // Harvest a keeper when quality peaks (rate-limited + capped).
             if autoHarvestEnabled,
-               readiness >= harvestThreshold,
-               now - lastHarvestAt >= minHarvestInterval,
-               stagedCount < maxHarvest,
+               readiness >= CoachTuning.harvestThreshold,
+               now - lastHarvestAt >= CoachTuning.minHarvestInterval,
+               stagedCount < CoachTuning.maxHarvest,
                let data = harvest(pixelBuffer) {
                 lastHarvestAt = now
                 stagedCount += 1   // engine overwrites with the real tray count
@@ -337,6 +351,8 @@ final class CoachEngine {
     /// Face-priority exposure feed — the camera view wires this to
     /// `CameraController.setFaceExposure` so the camera meters for the face.
     var onFaceCenter: ((CGPoint?) -> Void)?
+    /// Raw perception values for the DEBUG tuning console (empty when closed).
+    private(set) var debugSignals: [DebugSignal] = []
 
     let analyzer: CoachAnalyzer
     private let settings: CoachSettings
@@ -347,10 +363,9 @@ final class CoachEngine {
     /// first utterance — so camera sessions with voice off never touch audio).
     private var audioSessionConfigured = false
 
-    /// Readiness at/above this reads as "good to shoot" (green ring).
-    static let readyThreshold = CoachTuning.readyThreshold
-
-    var isReady: Bool { readiness >= Self.readyThreshold }
+    /// Readiness at/above the tuning threshold reads as "good to shoot" (green
+    /// ring). Read live (not captured) so the tuning console applies instantly.
+    var isReady: Bool { readiness >= CoachTuning.readyThreshold }
 
     init(settings: CoachSettings) {
         self.settings = settings
@@ -410,6 +425,7 @@ final class CoachEngine {
         centerSample = (result.centerR, result.centerG, result.centerB)
         frameLuma = result.frameLuma
         if let warmth = result.frameWarmth { frameWarmth = warmth }
+        if let debug = result.debug { debugSignals = debug }
         onFaceCenter?(result.faceCenter)
 
         if result.nudge != nudge {

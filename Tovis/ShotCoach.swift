@@ -66,6 +66,23 @@ struct CoachResult: Sendable {
     /// before/after light matcher (compared against the before's stamp).
     let frameLuma: Double
     let frameWarmth: Double?
+    /// Raw perception values for the DEBUG tuning console. Nil unless the
+    /// console is open (`CoachDebug.captureSignals`) — zero cost otherwise.
+    let debug: [DebugSignal]?
+}
+
+/// One raw perception value surfaced in the DEBUG tuning console.
+struct DebugSignal: Sendable, Identifiable, Equatable {
+    let name: String
+    let value: Double
+    var id: String { name }
+}
+
+/// DEBUG-only switch: when the tuning console is open, the analyzer attaches
+/// raw signal values to each result so thresholds can be set against what the
+/// camera actually measures (instead of guessed).
+enum CoachDebug {
+    nonisolated(unsafe) static var captureSignals = false
 }
 
 /// Body-pose framing read for the current frame, present only when a human body is

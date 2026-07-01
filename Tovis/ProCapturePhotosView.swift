@@ -70,6 +70,8 @@ struct ProCapturePhotosView: View {
     @State private var settings = CoachSettings()
     @State private var coach: CoachEngine?
     @State private var showSettings = false
+    /// DEBUG tuning console (rides over the live camera; not a reviewing state).
+    @State private var showTuning = false
     @State private var showBestShots = false
     /// Guards exit while the coach has auto-harvested best shots the pro hasn't
     /// reviewed yet — otherwise tapping Done silently discards them.
@@ -185,8 +187,23 @@ struct ProCapturePhotosView: View {
             if steady, autoArmed { attemptGuidedCapture() }
         }
         .sheet(isPresented: $showSettings) {
+            #if DEBUG
+            CoachSettingsSheet(settings: settings, onOpenTuning: { showTuning = true })
+            #else
             CoachSettingsSheet(settings: settings)
+            #endif
         }
+        #if DEBUG
+        // The tuning console rides a half-height sheet over the LIVE camera —
+        // preview on top, sliders below, signals streaming (not in isReviewing).
+        .sheet(isPresented: $showTuning) {
+            if let coach {
+                CoachTuningHUD(coach: coach)
+                    .presentationDetents([.fraction(0.45), .large])
+                    .presentationBackgroundInteraction(.enabled(upThrough: .large))
+            }
+        }
+        #endif
         .sheet(isPresented: $showBestShots) {
             if let coach {
                 BestShotsReviewView(coach: coach, bookingId: bookingId, phase: phase)
@@ -1197,6 +1214,9 @@ struct ProCapturePhotosView: View {
 /// How the AI photographer guides the pro — the toggle sheet (gear in the camera).
 private struct CoachSettingsSheet: View {
     @Bindable var settings: CoachSettings
+    /// DEBUG tuning console entry — dismisses this sheet and opens the console
+    /// over the LIVE camera (this sheet pauses it; tuning needs frames).
+    var onOpenTuning: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -1226,6 +1246,16 @@ private struct CoachSettingsSheet: View {
                 } footer: {
                     Text("Auto-capture takes each guided shot for you once it looks great and holds steady — like a photographer pressing the shutter at the right moment. You can always tap the shutter yourself.")
                 }
+
+                #if DEBUG
+                Section("Developer") {
+                    Button("Coach tuning console") {
+                        dismiss()
+                        onOpenTuning?()
+                    }
+                    .disabled(onOpenTuning == nil)
+                }
+                #endif
             }
             .navigationTitle("Camera coaching")
             .navigationBarTitleDisplayMode(.inline)
