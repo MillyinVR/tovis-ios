@@ -85,6 +85,20 @@ struct ProNewBookingView: View {
     @State private var overridePrompt: BookingOverridePrompt?
     /// Optional free-text reason recorded on the override audit log.
     @State private var overrideReason = ""
+    /// Set after booking a new/unclaimed client — shows the claim-invite
+    /// confirmation with a shareable link before the screen dismisses.
+    @State private var claimInvite: ClaimInvite?
+
+    /// The one-time claim invite for a freshly booked unclaimed client. The
+    /// server has already sent it (SMS/email); this lets the pro share it too.
+    private struct ClaimInvite: Identifiable {
+        let id = UUID()
+        let token: String
+        let clientName: String
+        /// Web claim landing page (`/claim/{token}`) — matches the link the
+        /// server delivers. Mirrors the app's other ShareLink origins.
+        var url: URL? { URL(string: "https://www.tovis.app/claim/\(token)") }
+    }
 
     private var hasTime: Bool { manualMode ? true : selectedSlot != nil }
     /// New client needs first + last name + email (server contract); phone optional.
@@ -152,6 +166,60 @@ struct ProNewBookingView: View {
         } message: { prompt in
             Text(prompt.question)
         }
+        .sheet(item: $claimInvite, onDismiss: { dismiss() }) { invite in
+            claimInviteSheet(invite)
+        }
+    }
+
+    /// Post-create confirmation for a new/unclaimed client: the server already
+    /// sent the claim invite; this reassures the pro and offers to share the
+    /// link. Closing the sheet dismisses the whole form (via `onDismiss`).
+    private func claimInviteSheet(_ invite: ClaimInvite) -> some View {
+        VStack(spacing: 18) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 48))
+                .foregroundStyle(BrandColor.accent)
+            Text("Booking created")
+                .font(BrandFont.display(20, .semibold))
+                .foregroundStyle(BrandColor.textPrimary)
+            Text("We’ve texted or emailed \(invite.clientName) a secure link to confirm and finish setting up their profile. You can share it yourself too.")
+                .font(BrandFont.body(14))
+                .foregroundStyle(BrandColor.textSecondary)
+                .multilineTextAlignment(.center)
+            if let url = invite.url {
+                ShareLink(item: url) {
+                    Text("Share claim link")
+                        .font(BrandFont.body(16, .semibold))
+                        .foregroundStyle(BrandColor.onAccent)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(BrandColor.accent)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+            }
+            Button { claimInvite = nil } label: {
+                Text("Done")
+                    .font(BrandFont.body(15, .semibold))
+                    .foregroundStyle(BrandColor.textSecondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .background(BrandColor.bgPrimary.ignoresSafeArea())
+        .presentationDetents([.medium])
+    }
+
+    /// Display name for the just-booked client — the inline new-client name, or
+    /// the picked existing client's name.
+    private var createdClientName: String {
+        if clientMode == .new {
+            let name = "\(trimmed(newFirstName)) \(trimmed(newLastName))"
+                .trimmingCharacters(in: .whitespaces)
+            return name.isEmpty ? "your client" : name
+        }
+        return clients.first { $0.id == clientId }?.fullName ?? "your client"
     }
 
     /// Drives the override confirm alert off the optional `overridePrompt`.
@@ -619,7 +687,13 @@ struct ProNewBookingView: View {
             attemptKey = nil
             session.signalRefresh()
             onCreated?(result.bookingId)
-            dismiss()
+            // A new/unclaimed client got a claim invite — confirm + let the pro
+            // share the link before dismissing. Everyone else pops straight back.
+            if result.invitedUnclaimedClient, let token = result.inviteToken {
+                claimInvite = ClaimInvite(token: token, clientName: createdClientName)
+            } else {
+                dismiss()
+            }
         } catch let error as APIError {
             // Override-gated? Offer a "book anyway?" retry (unless we already
             // applied that flag — then it's a genuine failure, don't loop).
