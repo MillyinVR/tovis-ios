@@ -33,6 +33,9 @@ final class CameraController: NSObject {
     private(set) var aeAfLocked = false
     /// Whether white balance is locked to a calibrated (gray-card) value.
     private(set) var whiteBalanceCalibrated = false
+    /// Fired (on the main actor) with the final locked WB gains — the camera
+    /// view persists them per booking so before + after share one calibration.
+    var onWhiteBalanceLocked: ((Double, Double, Double) -> Void)?
     /// Records silent video clips (NO mic input — we never capture salon audio).
     nonisolated(unsafe) private let movieOutput = AVCaptureMovieFileOutput()
     nonisolated(unsafe) private var configured = false
@@ -249,6 +252,26 @@ final class CameraController: NSObject {
             func clamp(_ x: Double) -> Float { min(max(Float(x), 1), maxGain) }
             let gains = AVCaptureDevice.WhiteBalanceGains(
                 redGain: clamp(target.r), greenGain: clamp(target.g), blueGain: clamp(target.b))
+            device.setWhiteBalanceModeLocked(with: gains, completionHandler: nil)
+            device.unlockForConfiguration()
+            Task { @MainActor in
+                self.whiteBalanceCalibrated = true
+                self.onWhiteBalanceLocked?(Double(gains.redGain), Double(gains.greenGain), Double(gains.blueGain))
+            }
+        }
+    }
+
+    /// Re-apply previously locked WB gains (persisted per booking) so the AFTER
+    /// shoot uses the same calibration as the BEFORE without re-carding.
+    func applyWhiteBalanceGains(r: Double, g: Double, b: Double) {
+        guard let device else { return }
+        sessionQueue.async {
+            guard device.isWhiteBalanceModeSupported(.locked),
+                  (try? device.lockForConfiguration()) != nil else { return }
+            let maxGain = device.maxWhiteBalanceGain
+            func clamp(_ x: Double) -> Float { min(max(Float(x), 1), maxGain) }
+            let gains = AVCaptureDevice.WhiteBalanceGains(
+                redGain: clamp(r), greenGain: clamp(g), blueGain: clamp(b))
             device.setWhiteBalanceModeLocked(with: gains, completionHandler: nil)
             device.unlockForConfiguration()
             Task { @MainActor in self.whiteBalanceCalibrated = true }

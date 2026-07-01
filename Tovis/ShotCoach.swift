@@ -62,6 +62,10 @@ struct CoachResult: Sendable {
     /// Face center (upright, top-left normalized) — drives face-priority
     /// exposure metering. Nil when no face is in frame.
     let faceCenter: CGPoint?
+    /// Whole-frame luma + warmth of this frame — the live side of the
+    /// before/after light matcher (compared against the before's stamp).
+    let frameLuma: Double
+    let frameWarmth: Double?
 }
 
 /// Body-pose framing read for the current frame, present only when a human body is

@@ -115,6 +115,13 @@ enum CoachTuning {
     /// daylight (~5000–5600K, near-neutral) is the beauty target.
     static let warmCastWarmth: Double = 0.30
 
+    // MARK: - Light matching (before/after credibility)
+
+    /// |Δ luma| vs the before shot within this = "light matches".
+    static let lightMatchLumaTolerance: Double = 0.08
+    /// |Δ warmth| vs the before shot within this = "light matches".
+    static let lightMatchWarmthTolerance: Double = 0.07
+
     // MARK: - Post-capture QC (verifies the ACTUAL capture, not the preview)
 
     /// Normalized sharpness below this on the captured image = offer a retake.

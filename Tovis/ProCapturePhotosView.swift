@@ -57,6 +57,12 @@ struct ProCapturePhotosView: View {
         let data: Data
         let reason: String
     }
+
+    /// Measured light (luma + warmth) of each "before" reference — the target
+    /// the AFTER shoot matches so the transformation compare is credible
+    /// (same angle via onion-skin, same LIGHT via this).
+    @State private var referenceLight: [URL: LightStamp] = [:]
+    private struct LightStamp: Equatable { let luma: Double; let warmth: Double }
     /// Brief white flash on a successful capture (shutter confirmation).
     @State private var flash = false
 
@@ -121,7 +127,21 @@ struct ProCapturePhotosView: View {
                 camera?.setFaceExposure(center: center)
             }
             engine.analyzer.setExpectations(activeExpectations)
+            // Persist gray-card WB per booking: the AFTER shoot re-applies the
+            // BEFORE's calibration automatically (one card, one session).
+            camera.onWhiteBalanceLocked = { r, g, b in
+                UserDefaults.standard.set([r, g, b], forKey: wbDefaultsKey)
+            }
             await camera.start(frameDelegate: engine.analyzer)
+            if !camera.whiteBalanceCalibrated,
+               let gains = UserDefaults.standard.array(forKey: wbDefaultsKey) as? [Double],
+               gains.count == 3 {
+                camera.applyWhiteBalanceGains(r: gains[0], g: gains[1], b: gains[2])
+            }
+            // Stamp each "before" reference's light so the AFTER can match it.
+            if referenceLight.isEmpty, !referenceURLs.isEmpty {
+                await loadReferenceLight()
+            }
         }
         // Keep the coach judging "ready for THIS shot" — expectations follow the
         // current guided step (and clear for freeform / all-done shooting).
@@ -363,7 +383,10 @@ struct ProCapturePhotosView: View {
                         .background(BrandColor.accent, in: Capsule())
                 }
                 if camera.whiteBalanceCalibrated {
-                    Button { camera.resetWhiteBalance() } label: {
+                    Button {
+                        camera.resetWhiteBalance()
+                        UserDefaults.standard.removeObject(forKey: wbDefaultsKey)
+                    } label: {
                         Text("Auto").font(BrandFont.body(14, .semibold)).foregroundStyle(.white)
                             .padding(.horizontal, 14).padding(.vertical, 10)
                             .background(.white.opacity(0.14), in: Capsule())
@@ -595,6 +618,66 @@ struct ProCapturePhotosView: View {
         .animation(.easeOut(duration: 0.2), value: ready)
     }
 
+    // MARK: - Light matching (before/after)
+
+    /// Where this booking's locked white-balance gains persist (before + after
+    /// share one calibration).
+    private var wbDefaultsKey: String { "tovis.camera.wb.\(bookingId)" }
+
+    /// Measure each before-reference's luma + warmth once (downscaled, same
+    /// math as the live frame) — the target the after shoot matches.
+    private func loadReferenceLight() async {
+        for url in referenceURLs where referenceLight[url] == nil {
+            guard let (data, _) = try? await URLSession.shared.data(from: url),
+                  let image = CIImage(data: data, options: [.applyOrientationProperty: true])
+            else { continue }
+            let stamp = await Task.detached(priority: .utility) {
+                let working = FrameMath.downscaled(image, maxDim: 240)
+                let luma = FrameMath.averageLuma(working, context: FrameMath.context)
+                let rgb = FrameMath.averageRGB(working, context: FrameMath.context) ?? (0.5, 0.5, 0.5)
+                return LightStamp(luma: luma, warmth: FrameMath.warmth(rgb))
+            }.value
+            referenceLight[url] = stamp
+        }
+    }
+
+    /// The live light vs the current before-reference: matched, or the single
+    /// biggest mismatch phrased as a fix. Nil when there's nothing to match.
+    private var lightMatch: (label: String, ok: Bool)? {
+        guard showOnion, let url = currentReferenceURL, let stamp = referenceLight[url],
+              let coach else { return nil }
+        let dLuma = coach.frameLuma - stamp.luma
+        let dWarmth = (coach.frameWarmth ?? stamp.warmth) - stamp.warmth
+        // Normalize each axis by its tolerance so they compare fairly.
+        let lumaSeverity = abs(dLuma) / CoachTuning.lightMatchLumaTolerance
+        let warmthSeverity = abs(dWarmth) / CoachTuning.lightMatchWarmthTolerance
+        if lumaSeverity <= 1, warmthSeverity <= 1 {
+            return ("Light matches the before", true)
+        }
+        if lumaSeverity >= warmthSeverity {
+            return (dLuma > 0 ? "Brighter than the before — dim a touch"
+                              : "Darker than the before — add light", false)
+        }
+        return (dWarmth > 0 ? "Warmer than the before — cool the light"
+                            : "Cooler than the before — warm the light", false)
+    }
+
+    /// The match-the-before light pill (AFTER phase, when a stamp is known).
+    @ViewBuilder private var lightMatchPill: some View {
+        if let match = lightMatch {
+            HStack(spacing: 6) {
+                Image(systemName: match.ok ? "checkmark.circle.fill" : "sun.max.trianglebadge.exclamationmark")
+                    .font(.system(size: 11, weight: .bold))
+                Text(match.label).font(BrandFont.body(12, .semibold))
+            }
+            .foregroundStyle(match.ok ? BrandColor.emerald : BrandColor.gold)
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(.black.opacity(0.45), in: Capsule())
+            .overlay(Capsule().strokeBorder(
+                (match.ok ? BrandColor.emerald : BrandColor.gold).opacity(0.5), lineWidth: 1))
+        }
+    }
+
     // MARK: - Onion-skin (before/after matching)
 
     /// Match-the-before controls: toggle the ghost, set its strength, and cycle
@@ -750,6 +833,7 @@ struct ProCapturePhotosView: View {
     private var controls: some View {
         VStack(spacing: 14) {
             if calibrating { calibrationControls }
+            lightMatchPill
             if !referenceURLs.isEmpty { onionControls }
 
             if let errorMessage {
