@@ -36,6 +36,14 @@ struct ProFinanceView: View {
     @State private var editing: ProFinanceResponse.ExpenseItem?
     @State private var pendingDelete: ProFinanceResponse.ExpenseItem?
     @State private var showDeleteConfirm = false
+    @State private var exporting = false
+    @State private var shareItem: ShareItem?
+    @State private var exportError: String?
+
+    struct ShareItem: Identifiable {
+        let id = UUID()
+        let url: URL
+    }
 
     private var loaded: ProFinanceResponse? {
         if case let .loaded(data) = phase { return data }
@@ -87,6 +95,17 @@ struct ProFinanceView: View {
                 Task { await deleteExpense(item) }
             }
             Button("Cancel", role: .cancel) {}
+        }
+        .sheet(item: $shareItem) { item in
+            ShareSheet(items: [item.url])
+        }
+        .alert(
+            "Export failed",
+            isPresented: Binding(get: { exportError != nil }, set: { if !$0 { exportError = nil } })
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(exportError ?? "")
         }
     }
 
@@ -408,18 +427,24 @@ struct ProFinanceView: View {
             .font(BrandFont.body(14))
             .foregroundStyle(BrandColor.textSecondary)
 
-        exportRow("Monthly Summary", "\(data.activeMonth.label) — income + expenses")
-        exportRow("Year-to-Date Summary", String(data.finance.taxYear))
-        exportRow("Full Year Export", "\(data.finance.taxYear) — all months")
-        exportRow("Schedule C Ready", "Formatted for your CPA or tax software")
+        let monthKey = data.activeMonth.key
+        exportRow("Monthly Summary", "\(data.activeMonth.label) — income + expenses",
+                  scope: "month", monthKey: monthKey)
+        exportRow("Year-to-Date Summary", String(data.finance.taxYear),
+                  scope: "ytd", monthKey: monthKey)
+        exportRow("Full Year Export", "\(data.finance.taxYear) — all months",
+                  scope: "year", monthKey: monthKey)
+        // PDF Schedule C export isn't built yet — informational only.
+        exportRow("Schedule C Ready", "Formatted for your CPA or tax software",
+                  scope: nil, monthKey: monthKey)
 
         BrandSurface(tint: BrandColor.bgSecondary) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("CSV & SCHEDULE-C EXPORT")
+            VStack(alignment: .leading, spacing: 6) {
+                Text("◆ FORWARD RECEIPTS")
                     .font(BrandFont.mono(10))
                     .tracking(1.2)
                     .foregroundStyle(BrandColor.textMuted)
-                Text("Download your CSV and Schedule-C exports from the Tovis web dashboard. In-app export is coming soon.")
+                Text("Soon you’ll be able to forward receipts to your inbox and we’ll parse and categorize them as expenses. Coming soon.")
                     .font(BrandFont.body(13))
                     .foregroundStyle(BrandColor.textSecondary)
             }
@@ -427,20 +452,54 @@ struct ProFinanceView: View {
         }
     }
 
-    private func exportRow(_ title: String, _ sub: String) -> some View {
-        BrandSurface(tint: BrandColor.bgSecondary) {
-            HStack {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title)
-                        .font(BrandFont.body(15, .semibold))
-                        .foregroundStyle(BrandColor.textPrimary)
-                    Text(sub)
-                        .font(BrandFont.body(12))
-                        .foregroundStyle(BrandColor.textMuted)
+    private func exportRow(_ title: String, _ sub: String, scope: String?, monthKey: String) -> some View {
+        Button {
+            if let scope { Task { await exportCsv(scope: scope, monthKey: monthKey) } }
+        } label: {
+            BrandSurface(tint: BrandColor.bgSecondary) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(title)
+                            .font(BrandFont.body(15, .semibold))
+                            .foregroundStyle(BrandColor.textPrimary)
+                        Text(sub)
+                            .font(BrandFont.body(12))
+                            .foregroundStyle(BrandColor.textMuted)
+                    }
+                    Spacer()
+                    if scope == nil {
+                        Text("PDF · soon")
+                            .font(BrandFont.body(12, .semibold))
+                            .foregroundStyle(BrandColor.textMuted)
+                    } else if exporting {
+                        ProgressView().tint(BrandColor.accent)
+                    } else {
+                        Text("CSV")
+                            .font(BrandFont.body(13, .bold))
+                            .foregroundStyle(BrandColor.accent)
+                    }
                 }
-                Spacer()
             }
         }
+        .buttonStyle(.plain)
+        .disabled(scope == nil || exporting)
+    }
+
+    private func exportCsv(scope: String, monthKey: String) async {
+        exporting = true
+        exportError = nil
+        do {
+            let data = try await session.client.proFinance.exportCsv(scope: scope, month: monthKey)
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("finance-\(scope)-\(monthKey).csv")
+            try data.write(to: url, options: .atomic)
+            shareItem = ShareItem(url: url)
+        } catch let error as APIError {
+            exportError = error.userMessage
+        } catch {
+            exportError = "Couldn’t export your data."
+        }
+        exporting = false
     }
 
     // MARK: Shared

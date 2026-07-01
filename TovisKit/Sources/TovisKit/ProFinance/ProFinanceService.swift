@@ -47,4 +47,17 @@ public final class ProFinanceService: Sendable {
             method: .delete
         )
     }
+
+    /// GET /api/v1/pro/finance/export?scope=&month= → raw CSV bytes (CPA /
+    /// Schedule C). `scope` is "month" | "ytd" | "year"; month is "YYYY-MM".
+    public func exportCsv(scope: String, month: String) async throws -> Data {
+        try await api.requestVoid(
+            "/pro/finance/export",
+            method: .get,
+            query: [
+                URLQueryItem(name: "scope", value: scope),
+                URLQueryItem(name: "month", value: month),
+            ]
+        )
+    }
 }
