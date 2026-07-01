@@ -89,7 +89,10 @@ struct ProAftercareListView: View {
 
     private func summaryRow(_ items: [ProAftercareCardItem]) -> some View {
         let drafts = items.filter { $0.status == "draft" }.count
-        let awaiting = items.filter { $0.status == "sent" }.count
+        // Awaiting your follow-up: any open rebook loop where a nudge is offered —
+        // a sent card OR a finished (paid) card that hasn't rebooked yet. Mirrors
+        // the web summarize (action === 'nudge'), so the tile matches 1:1.
+        let awaiting = items.filter { $0.action == "nudge" }.count
         let overdue = items.filter { $0.rebook?.kind == "overdue" }.count
         return HStack(spacing: 10) {
             summaryTile(value: drafts, label: "Drafts", tint: BrandColor.gold)
