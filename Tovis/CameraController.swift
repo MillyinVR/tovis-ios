@@ -6,6 +6,7 @@
 // this is capture-only; the AVCaptureVideoDataOutput coaching hook lands in B.
 import AVFoundation
 import SwiftUI
+import TovisKit
 
 enum CameraError: Error { case noData }
 
@@ -30,6 +31,8 @@ final class CameraController: NSObject {
     nonisolated(unsafe) weak var previewLayer: AVCaptureVideoPreviewLayer?
     /// Whether focus + exposure are currently locked (AE/AF lock).
     private(set) var aeAfLocked = false
+    /// Whether white balance is locked to a calibrated (gray-card) value.
+    private(set) var whiteBalanceCalibrated = false
     /// Records silent video clips (NO mic input — we never capture salon audio).
     nonisolated(unsafe) private let movieOutput = AVCaptureMovieFileOutput()
     nonisolated(unsafe) private var configured = false
@@ -147,6 +150,46 @@ final class CameraController: NSObject {
             }
             device.unlockForConfiguration()
             Task { @MainActor in self.aeAfLocked = locked }
+        }
+    }
+
+    // MARK: - White balance (gray-card calibration)
+
+    /// Lock white balance so the room's color cast is neutralized — computed from a
+    /// neutral (gray card / white towel) sample the pro fills the frame with. Gives
+    /// true, consistent color for the profile / Looks feed. `sample` is the average
+    /// linear-ish RGB (0…1) of the neutral patch.
+    func lockWhiteBalance(sampleR: Double, sampleG: Double, sampleB: Double) {
+        guard let device else { return }
+        sessionQueue.async {
+            guard device.isWhiteBalanceModeSupported(.locked),
+                  (try? device.lockForConfiguration()) != nil else { return }
+            let current = device.deviceWhiteBalanceGains
+            let maxGain = device.maxWhiteBalanceGain
+            let target = CameraCalibration.neutralizingGains(
+                sample: RGB(sampleR, sampleG, sampleB),
+                current: RGB(Double(current.redGain), Double(current.greenGain), Double(current.blueGain)),
+                maxGain: Double(maxGain)
+            )
+            func clamp(_ x: Double) -> Float { min(max(Float(x), 1), maxGain) }
+            let gains = AVCaptureDevice.WhiteBalanceGains(
+                redGain: clamp(target.r), greenGain: clamp(target.g), blueGain: clamp(target.b))
+            device.setWhiteBalanceModeLocked(with: gains, completionHandler: nil)
+            device.unlockForConfiguration()
+            Task { @MainActor in self.whiteBalanceCalibrated = true }
+        }
+    }
+
+    /// Back to automatic white balance (drop the calibration).
+    func resetWhiteBalance() {
+        guard let device else { return }
+        sessionQueue.async {
+            guard (try? device.lockForConfiguration()) != nil else { return }
+            if device.isWhiteBalanceModeSupported(.continuousAutoWhiteBalance) {
+                device.whiteBalanceMode = .continuousAutoWhiteBalance
+            }
+            device.unlockForConfiguration()
+            Task { @MainActor in self.whiteBalanceCalibrated = false }
         }
     }
 

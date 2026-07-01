@@ -21,7 +21,12 @@ final class CoachSettings {
     var showReadinessRing: Bool { didSet { persist(\.showReadinessRing, "showReadinessRing") } }
     /// Draw the level / horizon indicator (turns green when the camera is level).
     var showLevel: Bool { didSet { persist(\.showLevel, "showLevel") } }
-    /// Auto-harvest a still when quality peaks (the Session Reel core — B2).
+    /// Guided auto-capture: when the current guided shot holds good + steady, the
+    /// camera takes it for you (full quality) and moves to the next — the
+    /// "photographer is shooting for you" core.
+    var autoCapture: Bool { didSet { persist(\.autoCapture, "autoCapture") } }
+    /// Auto-harvest extra stills (video-res) when quality peaks — a background
+    /// safety net, off by default now that guided auto-capture is the primary flow.
     var autoHarvest: Bool { didSet { persist(\.autoHarvest, "autoHarvest") } }
 
     init() {
@@ -34,7 +39,8 @@ final class CoachSettings {
         showGrid = d.object(forKey: Self.key("showGrid")) as? Bool ?? false
         showReadinessRing = d.object(forKey: Self.key("showReadinessRing")) as? Bool ?? true
         showLevel = d.object(forKey: Self.key("showLevel")) as? Bool ?? true
-        autoHarvest = d.object(forKey: Self.key("autoHarvest")) as? Bool ?? true
+        autoCapture = d.object(forKey: Self.key("autoCapture")) as? Bool ?? true
+        autoHarvest = d.object(forKey: Self.key("autoHarvest")) as? Bool ?? false
     }
 
     private static func key(_ name: String) -> String { "tovis.coach.\(name)" }

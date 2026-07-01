@@ -29,6 +29,11 @@ struct ProCapturePhotosView: View {
     /// Tap-to-focus reticle position (preview space) + a token to time its fade.
     @State private var focusPoint: CGPoint?
     @State private var focusToken = 0
+    /// Guided auto-capture is armed (fires once per stabilization — must drop out
+    /// of "ready" and settle again before the next auto-shot).
+    @State private var autoArmed = true
+    /// Showing the white-balance calibration target (fill it with a neutral surface).
+    @State private var calibrating = false
     /// Local thumbnails of shots taken this session (newest first) — shown
     /// instantly from the captured bytes, no network round-trip.
     @State private var captured: [UIImage] = []
@@ -107,6 +112,18 @@ struct ProCapturePhotosView: View {
             if !referenceURLs.isEmpty {
                 referenceIndex = min(currentStepIndex, referenceURLs.count - 1)
             }
+            // The photographer calls the next shot.
+            if settings.speak, !allStepsDone, let step = currentStep {
+                coach?.announce("Next, the \(step.title). \(step.hint)")
+            }
+        }
+        // Guided auto-capture: re-arm when the shot drops out of "ready", and shoot
+        // once it has held good + steady (isSteadyReady) while armed.
+        .onChange(of: coach?.isReady ?? false) { _, ready in
+            if !ready { autoArmed = true }
+        }
+        .onChange(of: coach?.isSteadyReady ?? false) { _, steady in
+            if steady, autoArmed { attemptGuidedCapture() }
         }
         .sheet(isPresented: $showSettings) {
             CoachSettingsSheet(settings: settings)
@@ -173,16 +190,21 @@ struct ProCapturePhotosView: View {
 
                 if settings.showGrid { thirdsGrid }
                 if settings.showLevel, let roll = coach?.deviceRoll { levelIndicator(roll) }
+                if calibrating { calibrationTarget }
 
                 VStack(spacing: 0) {
                     phaseHeader
                     if settings.showGuides, !guide.steps.isEmpty {
                         guideBar
+                        guidanceBanner
                     }
                     if settings.showChecklist, let statuses = coach?.statuses, !statuses.isEmpty {
                         fundamentalsHUD(statuses)
                     }
-                    if settings.showNudge, let message = coach?.nudge?.message {
+                    // When not in guided mode, the single nudge chip stands in for
+                    // the banner.
+                    if (!settings.showGuides || guide.steps.isEmpty),
+                       settings.showNudge, let message = coach?.nudge?.message {
                         nudgeChip(message)
                     }
                     Spacer()
@@ -210,6 +232,65 @@ struct ProCapturePhotosView: View {
         .allowsHitTesting(false)
     }
 
+    // MARK: - White balance (gray-card calibration)
+
+    /// The center target the pro fills with a neutral surface — matches the region
+    /// sampled for white balance (center 40% of the frame).
+    private var calibrationTarget: some View {
+        GeometryReader { geo in
+            let w = geo.size.width * 0.4, h = geo.size.height * 0.4
+            ZStack {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(BrandColor.gold, style: StrokeStyle(lineWidth: 2, dash: [7, 5]))
+                    .frame(width: w, height: h)
+                Text("Fill this with a white towel or gray card")
+                    .font(BrandFont.body(12, .semibold)).foregroundStyle(.white)
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(.black.opacity(0.6), in: Capsule())
+                    .offset(y: -h / 2 - 24)
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+        }
+        .allowsHitTesting(false)
+    }
+
+    /// The calibration action row (shown in the controls while calibrating).
+    private var calibrationControls: some View {
+        VStack(spacing: 8) {
+            Text(camera.whiteBalanceCalibrated
+                 ? "White balance locked — colors are true now"
+                 : "Point at a neutral surface, then set")
+                .font(BrandFont.body(12)).foregroundStyle(.white.opacity(0.85))
+            HStack(spacing: 10) {
+                Button { setWhiteBalance() } label: {
+                    Text("Set white balance").font(BrandFont.body(14, .semibold))
+                        .foregroundStyle(BrandColor.onAccent)
+                        .padding(.horizontal, 16).padding(.vertical, 10)
+                        .background(BrandColor.accent, in: Capsule())
+                }
+                if camera.whiteBalanceCalibrated {
+                    Button { camera.resetWhiteBalance() } label: {
+                        Text("Auto").font(BrandFont.body(14, .semibold)).foregroundStyle(.white)
+                            .padding(.horizontal, 14).padding(.vertical, 10)
+                            .background(.white.opacity(0.14), in: Capsule())
+                    }
+                }
+                Button { calibrating = false } label: {
+                    Text("Done").font(BrandFont.body(14, .semibold)).foregroundStyle(.white.opacity(0.85))
+                        .padding(.horizontal, 12).padding(.vertical, 10)
+                }
+            }
+        }
+        .padding(.horizontal, 20)
+    }
+
+    /// Sample the center patch + lock white balance to neutralize the room's cast.
+    private func setWhiteBalance() {
+        let s = coach?.centerSample ?? (r: 0.5, g: 0.5, b: 0.5)
+        camera.lockWhiteBalance(sampleR: s.r, sampleG: s.g, sampleB: s.b)
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+
     // MARK: - Tap to focus
 
     /// The focus/exposure reticle, drawn in the preview's coordinate space.
@@ -235,6 +316,24 @@ struct ProCapturePhotosView: View {
         Task {
             try? await Task.sleep(nanoseconds: 1_100_000_000)
             if focusToken == token { withAnimation(.easeIn(duration: 0.3)) { focusPoint = nil } }
+        }
+    }
+
+    // MARK: - Guided auto-capture
+
+    /// The photographer takes the shot: once the current guided shot has held good +
+    /// steady, fire the full-quality capture, confirm, and advance. Disarms until the
+    /// shot drops out of "ready" again so it shoots once per setup, not continuously.
+    private func attemptGuidedCapture() {
+        guard settings.autoCapture, settings.showGuides, !guide.steps.isEmpty,
+              !allStepsDone, !uploading, !isReviewing, !calibrating,
+              camera.status == .ready else { return }
+        autoArmed = false
+        Task {
+            let title = currentStep?.title
+            await capture()          // full pipeline: marks the step done + advances
+            coach?.resetHold()
+            if settings.speak, let title { coach?.announce("Got the \(title).") }
         }
     }
 
@@ -359,6 +458,41 @@ struct ProCapturePhotosView: View {
         .animation(.easeOut(duration: 0.2), value: allStepsDone)
     }
 
+    // MARK: - Guidance banner (the photographer's voice)
+
+    /// One clear directive for the current moment — sets the shot, calls the single
+    /// most important fix, or says "hold steady" as it's about to capture.
+    private var guidanceText: String {
+        if allStepsDone { return "That's the full set — beautiful work." }
+        let title = currentStep?.title ?? "Shot"
+        if isReady { return "\(title) looks great — hold steady…" }
+        if let fix = coach?.nudge?.message { return "\(title) — \(fix)" }
+        if let hint = currentStep?.hint { return "\(title) — \(hint)" }
+        return title
+    }
+
+    private var guidanceBanner: some View {
+        let ready = isReady || allStepsDone
+        return HStack(spacing: 10) {
+            Image(systemName: allStepsDone ? "checkmark.seal.fill" : (isReady ? "camera.aperture" : "viewfinder"))
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(ready ? BrandColor.emerald : BrandColor.accent)
+            Text(guidanceText)
+                .font(BrandFont.body(15, .semibold))
+                .foregroundStyle(.white)
+                .lineLimit(2).multilineTextAlignment(.leading)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 11)
+        .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder((ready ? BrandColor.emerald : BrandColor.accent).opacity(0.5), lineWidth: 1)
+        )
+        .padding(.horizontal, 16).padding(.top, 8)
+        .animation(.easeOut(duration: 0.2), value: ready)
+    }
+
     // MARK: - Onion-skin (before/after matching)
 
     /// Match-the-before controls: toggle the ghost, set its strength, and cycle
@@ -474,6 +608,16 @@ struct ProCapturePhotosView: View {
                 .padding(.vertical, 8)
                 .background(.black.opacity(0.4), in: Capsule())
             Spacer()
+            Button { calibrating.toggle() } label: {
+                Image(systemName: camera.whiteBalanceCalibrated ? "eyedropper.halffull" : "eyedropper")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(camera.whiteBalanceCalibrated ? BrandColor.emerald
+                                     : (calibrating ? BrandColor.gold : .white))
+                    .frame(width: 38, height: 38)
+                    .background(.black.opacity(0.4), in: Circle())
+            }
+            .accessibilityLabel("White balance calibration")
+
             Button { camera.setAEAFLock(!camera.aeAfLocked) } label: {
                 HStack(spacing: 5) {
                     Image(systemName: camera.aeAfLocked ? "lock.fill" : "lock.open")
@@ -503,6 +647,7 @@ struct ProCapturePhotosView: View {
 
     private var controls: some View {
         VStack(spacing: 14) {
+            if calibrating { calibrationControls }
             if !referenceURLs.isEmpty { onionControls }
 
             if let errorMessage {
@@ -577,6 +722,14 @@ struct ProCapturePhotosView: View {
                             .strokeBorder(readinessColor, lineWidth: 4)
                             .frame(width: 74, height: 74)
                             .animation(.easeInOut(duration: 0.3), value: readinessColor)
+                        // Auto-capture "filling" ring — the photographer deciding,
+                        // completing as the shot holds steady, then it fires.
+                        Circle()
+                            .trim(from: 0, to: coach?.holdProgress ?? 0)
+                            .stroke(BrandColor.emerald, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                            .rotationEffect(.degrees(-90))
+                            .frame(width: 74, height: 74)
+                            .animation(.linear(duration: 0.12), value: coach?.holdProgress ?? 0)
                         if uploading {
                             ProgressView().tint(.white)
                         } else {
@@ -717,11 +870,16 @@ private struct CoachSettingsSheet: View {
                     Text("The AI photographer coaches lighting and composition in real time. Pick how you'd like the tips.")
                 }
 
-                Section("On the camera") {
+                Section {
+                    Toggle("Auto-capture each shot", isOn: $settings.autoCapture)
                     Toggle("Readiness ring", isOn: $settings.showReadinessRing)
                     Toggle("Level / horizon", isOn: $settings.showLevel)
                     Toggle("Rule-of-thirds grid", isOn: $settings.showGrid)
-                    Toggle("Auto-capture best shots", isOn: $settings.autoHarvest)
+                    Toggle("Extra best-shots (background)", isOn: $settings.autoHarvest)
+                } header: {
+                    Text("On the camera")
+                } footer: {
+                    Text("Auto-capture takes each guided shot for you once it looks great and holds steady — like a photographer pressing the shutter at the right moment. You can always tap the shutter yourself.")
                 }
             }
             .navigationTitle("Camera coaching")

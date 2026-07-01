@@ -110,7 +110,14 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         let nudge = worst.flatMap { entry in entry.1.message.map { CoachNudge(category: entry.0, message: $0) } }
         let statuses = signals.map { CoachStatus(category: $0.0, score: $0.1.score, message: $0.1.message) }
 
-        sink?(CoachResult(readiness: readiness, nudge: nudge, statuses: statuses))
+        // Center-region average color — the neutral sample for gray-card WB.
+        let e = working.extent
+        let centerRect = CGRect(x: e.minX + e.width * 0.3, y: e.minY + e.height * 0.3,
+                                width: e.width * 0.4, height: e.height * 0.4)
+        let center = averageRGB(working.cropped(to: centerRect)) ?? (0.5, 0.5, 0.5)
+
+        sink?(CoachResult(readiness: readiness, nudge: nudge, statuses: statuses,
+                          centerR: center.r, centerG: center.g, centerB: center.b))
 
         // Harvest a keeper when quality peaks (rate-limited + capped).
         if autoHarvestEnabled,
@@ -344,6 +351,14 @@ final class CoachEngine {
     /// Live device roll (degrees off level) for the on-screen horizon indicator.
     /// Nil until the first motion sample (or on the Simulator).
     private(set) var deviceRoll: Double?
+    /// How long the shot has been continuously good, 0…1 toward the auto-capture
+    /// hold — drives the shutter "filling" ring so the pro sees it deciding.
+    private(set) var holdProgress: Double = 0
+    /// True once the shot has been good + steady long enough to auto-capture.
+    private(set) var isSteadyReady = false
+    private var readySince: Date?
+    /// Latest center-region average color — the neutral sample for gray-card WB.
+    private(set) var centerSample: (r: Double, g: Double, b: Double) = (0.5, 0.5, 0.5)
 
     let analyzer: CoachAnalyzer
     private let settings: CoachSettings
@@ -395,6 +410,7 @@ final class CoachEngine {
         analyzer.autoHarvestEnabled = settings.autoHarvest
         readiness = result.readiness
         statuses = result.statuses
+        centerSample = (result.centerR, result.centerG, result.centerB)
 
         if result.nudge != nudge {
             nudge = result.nudge
@@ -407,7 +423,31 @@ final class CoachEngine {
         let nowReady = isReady
         if nowReady && !wasReady && settings.haptics { tap(.success) }
         wasReady = nowReady
+
+        // Track how long the shot has held good, for auto-capture + the filling ring.
+        if nowReady {
+            if readySince == nil { readySince = Date() }
+            let held = Date().timeIntervalSince(readySince ?? Date())
+            holdProgress = min(1, held / CoachTuning.autoCaptureHoldSeconds)
+            isSteadyReady = held >= CoachTuning.autoCaptureHoldSeconds
+        } else {
+            readySince = nil
+            holdProgress = 0
+            isSteadyReady = false
+        }
     }
+
+    /// Re-arm the auto-capture hold after a shot fires (so it doesn't immediately
+    /// re-trigger before the pro moves to the next angle).
+    func resetHold() {
+        readySince = nil
+        holdProgress = 0
+        isSteadyReady = false
+    }
+
+    /// Speak a one-off line (guided directives / capture confirmations). The caller
+    /// decides whether voice is enabled.
+    func announce(_ text: String) { speak(text) }
 
     private func speak(_ text: String) {
         // Don't stack utterances — replace any in-flight tip.

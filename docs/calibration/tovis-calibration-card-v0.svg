@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="85.6mm" height="54.0mm" viewBox="0 0 85.6 54.0">
+<rect x="0" y="0" width="85.6" height="54.0" fill="#FFFFFF"/>
+<rect x="2.5" y="2.5" width="80.6" height="46.0" fill="none" stroke="#111111" stroke-width="0.2"/>
+<rect x="2.500" y="3.250" width="6.258" height="9.500" fill="#735244"/>
+<rect x="9.258" y="3.250" width="6.258" height="9.500" fill="#C29682"/>
+<rect x="16.017" y="3.250" width="6.258" height="9.500" fill="#627A9D"/>
+<rect x="22.775" y="3.250" width="6.258" height="9.500" fill="#576C43"/>
+<rect x="29.533" y="3.250" width="6.258" height="9.500" fill="#8580B1"/>
+<rect x="36.292" y="3.250" width="6.258" height="9.500" fill="#67BDAA"/>
+<rect x="43.050" y="3.250" width="6.258" height="9.500" fill="#D67E2C"/>
+<rect x="49.808" y="3.250" width="6.258" height="9.500" fill="#505BA6"/>
+<rect x="56.567" y="3.250" width="6.258" height="9.500" fill="#C15A63"/>
+<rect x="63.325" y="3.250" width="6.258" height="9.500" fill="#5E3C6C"/>
+<rect x="70.083" y="3.250" width="6.258" height="9.500" fill="#9DBC40"/>
+<rect x="76.842" y="3.250" width="6.258" height="9.500" fill="#E0A32E"/>
+<rect x="2.500" y="39.250" width="6.258" height="8.500" fill="#383D96"/>
+<rect x="9.258" y="39.250" width="6.258" height="8.500" fill="#469449"/>
+<rect x="16.017" y="39.250" width="6.258" height="8.500" fill="#AF363C"/>
+<rect x="22.775" y="39.250" width="6.258" height="8.500" fill="#E7C71F"/>
+<rect x="29.533" y="39.250" width="6.258" height="8.500" fill="#BB5695"/>
+<rect x="36.292" y="39.250" width="6.258" height="8.500" fill="#0885A1"/>
+<rect x="43.050" y="39.250" width="6.258" height="8.500" fill="#F3F3F2"/>
+<rect x="49.808" y="39.250" width="6.258" height="8.500" fill="#C8C8C8"/>
+<rect x="56.567" y="39.250" width="6.258" height="8.500" fill="#A0A0A0"/>
+<rect x="63.325" y="39.250" width="6.258" height="8.500" fill="#7A7A79"/>
+<rect x="70.083" y="39.250" width="6.258" height="8.500" fill="#555555"/>
+<rect x="76.842" y="39.250" width="6.258" height="8.500" fill="#343434"/>
+<rect x="2.5" y="13.5" width="80.6" height="25.0" fill="#808080"/>
+<text x="42.80" y="16.70" font-family="Helvetica,Arial" font-size="2.4" fill="#FFFFFF" text-anchor="middle">WHITE BALANCE — fill the frame with this</text>
+<circle cx="3.90" cy="3.90" r="0.9" fill="#111111"/>
+<text x="2.50" y="50.60" font-family="Helvetica,Arial" font-size="2.2" fill="#111111">TOVIS  CALIBRATION</text>
+<text x="83.10" y="50.60" font-family="Helvetica,Arial" font-size="2.2" fill="#111111" text-anchor="end">card v0 · CR-80 · 300dpi</text>
+</svg>

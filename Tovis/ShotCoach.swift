@@ -55,6 +55,10 @@ struct CoachResult: Sendable {
     let readiness: Double         // 0…1 overall
     let nudge: CoachNudge?        // the single most important fix, if any
     let statuses: [CoachStatus]   // per-fundamental status for the checklist HUD
+    // Average color of the center region — the sample for gray-card white balance.
+    let centerR: Double
+    let centerG: Double
+    let centerB: Double
 }
 
 /// Body-pose framing read for the current frame, present only when a human body is

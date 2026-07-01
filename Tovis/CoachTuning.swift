@@ -29,6 +29,9 @@ enum CoachTuning {
     static let readyThreshold: Double = 0.8
     /// Readiness below this is the red ring; in between is amber.
     static let readyWarnThreshold: Double = 0.5
+    /// How long (seconds) the shot must hold good before the guided flow auto-fires
+    /// the shutter — long enough to avoid catching motion, short enough to feel snappy.
+    static let autoCaptureHoldSeconds: Double = 0.7
     /// Auto-harvest (Session Reel) only grabs frames at/above this readiness.
     static let harvestThreshold: Double = 0.85
     /// Minimum spacing between auto-harvested keepers (seconds).
