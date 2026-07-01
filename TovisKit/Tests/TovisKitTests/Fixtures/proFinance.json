@@ -1,0 +1,99 @@
+{
+  "ok": true,
+  "activeMonth": { "key": "2026-06", "label": "June 2026", "timeZone": "America/Los_Angeles" },
+  "months": [
+    { "key": "2026-04", "label": "Apr", "href": "/pro/dashboard?month=2026-04", "active": false },
+    { "key": "2026-05", "label": "May", "href": "/pro/dashboard?month=2026-05", "active": false },
+    { "key": "2026-06", "label": "Jun", "href": "/pro/dashboard?month=2026-06", "active": true }
+  ],
+  "revenue": {
+    "value": "$4,020.00",
+    "trendLabel": "+12% vs last month",
+    "trendTone": "positive",
+    "sub": "Services + products"
+  },
+  "primaryStats": [
+    { "label": "Bookings", "value": "38", "sub": "completed this month" },
+    { "label": "Avg rating", "value": "4.9", "sub": "from 21 reviews" }
+  ],
+  "secondaryStats": [
+    { "label": "New clients", "value": "9", "sub": "first visit" },
+    { "label": "Rebook rate", "value": "64%", "sub": "booked a next appt" }
+  ],
+  "topServices": [
+    { "id": "svc_balayage", "name": "Balayage", "bookings": 12, "revenueLabel": "$2,160.00" }
+  ],
+  "finance": {
+    "taxYear": 2026,
+    "incomeTotalCents": 464000,
+    "expenseTotalCents": 96140,
+    "netProfitCents": 367860,
+    "estTaxCents": 103001,
+    "expenseTotalLabel": "$961.40",
+    "summaryCards": [
+      { "label": "INCOME", "value": "$4,640.00", "sub": "services + tips + products", "tone": "positive" },
+      { "label": "EXPENSES", "value": "$961.40", "sub": "tracked this month", "tone": "negative" },
+      { "label": "NET PROFIT", "value": "$3,678.60", "sub": "before tax", "tone": "neutral" },
+      { "label": "EST. TAX OWED", "value": "$1,030.01", "sub": "~28% self-employed rate", "tone": "warn" }
+    ],
+    "incomeBreakdown": [
+      { "label": "Services", "source": "auto-pulled from bookings", "value": "$3,840.00", "amountCents": 384000 },
+      { "label": "Tips", "source": "auto-pulled from bookings", "value": "$620.00", "amountCents": 62000 },
+      { "label": "Product Sales", "source": "auto-pulled from checkout", "value": "$180.00", "amountCents": 18000 }
+    ],
+    "quarterlyReminder": {
+      "dueDateLabel": "June 15, 2026",
+      "body": "Set aside 25–30% of net income each month to avoid surprises. Consider a separate savings account just for taxes."
+    },
+    "expenses": [
+      {
+        "id": "exp_1",
+        "category": "SUPPLIES_PRODUCTS",
+        "categoryLabel": "Supplies & Products",
+        "categoryRisk": "green",
+        "source": "MANUAL",
+        "amountCents": 18740,
+        "amountLabel": "$187.40",
+        "label": "CosmoProf order",
+        "notes": null,
+        "dateLabel": "Apr 3",
+        "spentAtIso": "2026-04-03T07:00:00.000Z",
+        "hasReceipt": false,
+        "receiptMediaId": null
+      },
+      {
+        "id": "exp_2",
+        "category": "BOOTH_SUITE_RENT",
+        "categoryLabel": "Booth Rent / Suite Rent",
+        "categoryRisk": "green",
+        "source": "MANUAL",
+        "amountCents": 65000,
+        "amountLabel": "$650.00",
+        "label": "Suite rent – April",
+        "notes": "Monthly suite",
+        "dateLabel": "Apr 1",
+        "spentAtIso": "2026-04-01T07:00:00.000Z",
+        "hasReceipt": false,
+        "receiptMediaId": null
+      }
+    ],
+    "categories": [
+      {
+        "id": "SUPPLIES_PRODUCTS",
+        "label": "Supplies & Products",
+        "risk": "green",
+        "riskLabel": "Clearly Deductible",
+        "tooltip": "Shampoo, color, developer, nail supplies, wax, skincare used on clients. Keep receipts.",
+        "examples": ["Color", "Developer", "Shampoo"]
+      },
+      {
+        "id": "CLOTHING_APPEARANCE",
+        "label": "Clothing / Appearance",
+        "risk": "red",
+        "riskLabel": "Proceed With Caution",
+        "tooltip": "Generally NOT deductible. Nails, hair, and everyday clothing don’t qualify.",
+        "examples": ["Branded aprons/uniforms only — not grooming or regular clothes"]
+      }
+    ]
+  }
+}

@@ -68,6 +68,11 @@ const CHECKS = [
     def: 'ProBookingMediaItemDTO',
     pick: (d) => d.items,
   },
+  {
+    file: 'proFinance.json',
+    def: 'ProFinancePageData',
+    pick: (d) => [d],
+  },
 ]
 
 function fail(msg) {

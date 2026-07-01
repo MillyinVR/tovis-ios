@@ -468,6 +468,30 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.topServices[0].bookings == 12)
     }
 
+    // GET /api/v1/pro/finance — Fixtures/proFinance.json. The Finance & Tax tab
+    // (tovis-app), a superset of the Overview view-model + a `finance` block.
+    @Test func decodesProFinance() throws {
+        let res = try JSONDecoder().decode(ProFinanceResponse.self, from: fixture("proFinance"))
+        // Superset carries the Overview fields.
+        #expect(res.activeMonth.key == "2026-06")
+        #expect(res.revenue.value == "$4,020.00")
+        #expect(res.topServices.count == 1)
+        // Finance block.
+        #expect(res.finance.taxYear == 2026)
+        #expect(res.finance.netProfitCents == 367860)
+        #expect(res.finance.summaryCards.count == 4)
+        #expect(res.finance.summaryCards[0].tone == "positive")
+        #expect(res.finance.summaryCards[3].tone == "warn")
+        #expect(res.finance.incomeBreakdown.count == 3)
+        #expect(res.finance.quarterlyReminder.dueDateLabel == "June 15, 2026")
+        #expect(res.finance.expenses.count == 2)
+        #expect(res.finance.expenses[0].categoryRisk == "green")
+        #expect(res.finance.expenses[0].notes == nil)
+        #expect(res.finance.expenses[1].notes == "Monthly suite")
+        #expect(res.finance.categories.count == 2)
+        #expect(res.finance.categories[1].risk == "red")
+    }
+
     // GET /api/v1/pro/reviews — Fixtures/proReviewsList.json. The pro reviews
     // list (tovis-app PR #438). Inline shape; decode-only.
     @Test func decodesProReviewsList() throws {

@@ -44,12 +44,12 @@ struct ProOverviewView: View {
     @ViewBuilder
     private func content(_ data: ProOverviewResponse) -> some View {
         monthNav(data.months)
-        revenueCard(data.revenue)
-        statGrid(data.primaryStats)
-        if !data.secondaryStats.isEmpty {
-            statGrid(data.secondaryStats)
-        }
-        topServices(data.topServices)
+        ProPerformanceSectionsView(
+            revenue: data.revenue,
+            primaryStats: data.primaryStats,
+            secondaryStats: data.secondaryStats,
+            topServices: data.topServices
+        )
     }
 
     private func monthNav(_ months: [ProOverviewResponse.MonthNav]) -> some View {
@@ -75,87 +75,6 @@ struct ProOverviewView: View {
                 }
             }
             .padding(.vertical, 1)
-        }
-    }
-
-    private func revenueCard(_ revenue: ProOverviewResponse.Revenue) -> some View {
-        BrandSurface(tint: BrandColor.bgSecondary) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("REVENUE")
-                    .font(BrandFont.mono(9))
-                    .tracking(1.6)
-                    .foregroundStyle(BrandColor.textSecondary)
-                Text(revenue.value)
-                    .font(BrandFont.display(34, .bold))
-                    .foregroundStyle(BrandColor.textPrimary)
-                HStack(spacing: 8) {
-                    Text(revenue.trendLabel)
-                        .font(BrandFont.body(12, .semibold))
-                        .foregroundStyle(trendTint(revenue.trendTone))
-                    Text(revenue.sub)
-                        .font(BrandFont.body(12))
-                        .foregroundStyle(BrandColor.textMuted)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    private func statGrid(_ metrics: [ProOverviewResponse.Metric]) -> some View {
-        HStack(spacing: 10) {
-            ForEach(metrics) { metric in
-                BrandSurface(tint: BrandColor.bgSecondary) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(metric.value)
-                            .font(BrandFont.display(22, .bold))
-                            .foregroundStyle(BrandColor.textPrimary)
-                        Text(metric.label)
-                            .font(BrandFont.body(12, .semibold))
-                            .foregroundStyle(BrandColor.textSecondary)
-                        Text(metric.sub)
-                            .font(BrandFont.body(11))
-                            .foregroundStyle(BrandColor.textMuted)
-                            .lineLimit(1)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func topServices(_ services: [ProOverviewResponse.TopService]) -> some View {
-        if !services.isEmpty {
-            BrandSection(title: "Top services") {
-                VStack(spacing: 10) {
-                    ForEach(services) { service in
-                        BrandSurface(tint: BrandColor.bgSecondary) {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(service.name)
-                                        .font(BrandFont.body(14, .bold))
-                                        .foregroundStyle(BrandColor.textPrimary)
-                                    Text("\(service.bookings) booking\(service.bookings == 1 ? "" : "s")")
-                                        .font(BrandFont.body(12))
-                                        .foregroundStyle(BrandColor.textMuted)
-                                }
-                                Spacer()
-                                Text(service.revenueLabel)
-                                    .font(BrandFont.body(14, .semibold))
-                                    .foregroundStyle(BrandColor.accent)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func trendTint(_ tone: String) -> Color {
-        switch tone {
-        case "positive": return BrandColor.emerald
-        case "negative": return BrandColor.ember
-        default: return BrandColor.textMuted
         }
     }
 

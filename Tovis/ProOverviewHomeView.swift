@@ -43,7 +43,9 @@ struct ProOverviewHomeView: View {
     private var tabBody: some View {
         switch selection {
         case .overview:
-            ProOverviewView()
+            // Folded Finance & Tax hub (web repointed Overview → /pro/finance).
+            // Its Overview sub-tab still renders the retained performance stats.
+            ProFinanceView()
         case .reviews:
             ProReviewsListView()
         case .aftercare:

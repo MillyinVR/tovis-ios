@@ -13,10 +13,12 @@ enum ProHeaderTab: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    /// The strip label (web tab `label`).
+    /// The strip label (web tab `label`). The first tab is the folded Finance &
+    /// Tax hub (web repointed its "Overview" tab to `/pro/finance`); the enum case
+    /// stays `.overview` since it's this home's default landing slot.
     var label: String {
         switch self {
-        case .overview:   return "Overview"
+        case .overview:   return "Finance"
         case .reviews:    return "Reviews"
         case .aftercare:  return "Aftercare"
         case .bookings:   return "Bookings"
@@ -25,7 +27,11 @@ enum ProHeaderTab: String, CaseIterable, Identifiable {
         }
     }
 
-    /// The big page title (web `PRO_HEADER_ROUTE_TITLES`). Same text as the strip
-    /// label today, but kept separate so a tab can show a different title later.
-    var title: String { label }
+    /// The big page title (web `PRO_HEADER_ROUTE_TITLES`).
+    var title: String {
+        switch self {
+        case .overview: return "Tax & Finance"
+        default:        return label
+        }
+    }
 }

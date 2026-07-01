@@ -44,6 +44,8 @@ public final class TovisClient: Sendable {
     public let proMedia: ProMediaService
     /// PRO workspace — the Overview / dashboard monthly analytics.
     public let proOverview: ProOverviewService
+    /// PRO workspace — the Finance & Tax tab (income/expenses/tax + expense CRUD).
+    public let proFinance: ProFinanceService
     public let tokenStore: TokenStore
 
     /// Stable per-install id. Persisted in the Keychain-backed store's UserDefaults
@@ -101,6 +103,7 @@ public final class TovisClient: Sendable {
             supabaseKey: config.supabaseAnonKey
         )
         self.proOverview = ProOverviewService(api: api)
+        self.proFinance = ProFinanceService(api: api)
     }
 
     /// The signed-in user's id, decoded from the stored JWT. Works on a cold
