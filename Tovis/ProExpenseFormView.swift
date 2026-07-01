@@ -11,7 +11,13 @@ struct ProExpenseFormView: View {
 
     let categories: [ProFinanceResponse.CategoryInfo]
     let editing: ProFinanceResponse.ExpenseItem?
+    /// The pro's timezone (from the finance response). The date picker + the
+    /// submitted "YYYY-MM-DD" resolve in THIS zone, not the device's, so an
+    /// expense added on a month-end evening files under the pro's calendar day.
+    let timeZone: String
     let onSaved: () -> Void
+
+    private var zone: TimeZone { TimeZone(identifier: timeZone) ?? .current }
 
     @State private var category = ""
     @State private var amount = ""
@@ -57,6 +63,7 @@ struct ProExpenseFormView: View {
                         DatePicker("", selection: $date, displayedComponents: .date)
                             .labelsHidden()
                             .tint(BrandColor.accent)
+                            .environment(\.timeZone, zone)
                     }
 
                     field("Notes (optional)") {
@@ -120,7 +127,7 @@ struct ProExpenseFormView: View {
             amount = String(format: "%.2f", Double(editing.amountCents) / 100)
             label = editing.label
             notes = editing.notes ?? ""
-            date = Self.parseDate(editing.spentAtIso) ?? Date()
+            date = parseDate(editing.spentAtIso) ?? Date()
         } else {
             category = categories.first?.id ?? ""
             date = Date()
@@ -137,7 +144,7 @@ struct ProExpenseFormView: View {
             category: category,
             amount: amount.trimmingCharacters(in: .whitespaces),
             label: label.trimmingCharacters(in: .whitespaces),
-            date: Self.formatDate(date),
+            date: formatDate(date),
             notes: trimmedNotes.isEmpty ? nil : trimmedNotes
         )
 
@@ -158,19 +165,21 @@ struct ProExpenseFormView: View {
         }
     }
 
-    private static let ymd: DateFormatter = {
+    // Formats/parses "YYYY-MM-DD" in the PRO's timezone (not the device's).
+    private var ymd: DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = zone
         return formatter
-    }()
+    }
 
-    private static func formatDate(_ date: Date) -> String {
+    private func formatDate(_ date: Date) -> String {
         ymd.string(from: date)
     }
 
     /// spentAtIso is "2026-04-03T07:00:00.000Z" — seed the picker from its date part.
-    private static func parseDate(_ iso: String) -> Date? {
+    private func parseDate(_ iso: String) -> Date? {
         ymd.date(from: String(iso.prefix(10)))
     }
 }

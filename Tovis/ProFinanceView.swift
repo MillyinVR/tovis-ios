@@ -74,6 +74,7 @@ struct ProFinanceView: View {
             ProExpenseFormView(
                 categories: loaded?.finance.categories ?? [],
                 editing: editing,
+                timeZone: loaded?.activeMonth.timeZone ?? "America/Los_Angeles",
                 onSaved: { Task { await load() } }
             )
         }
