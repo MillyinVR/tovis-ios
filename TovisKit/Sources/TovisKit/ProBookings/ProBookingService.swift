@@ -250,6 +250,17 @@ public final class ProBookingService: Sendable {
         )
     }
 
+    /// POST /api/v1/pro/bookings/{id}/aftercare/send — send an already-saved
+    /// aftercare draft to the client (the one-tap "Send" on a draft card in the
+    /// aftercare list). Flips the draft to sent, queues the magic-link delivery,
+    /// and raises AFTERCARE_READY. Idempotent — a no-op if it was already sent.
+    public func sendAftercareDraft(bookingId: String) async throws {
+        try await api.requestVoid(
+            "/pro/bookings/\(bookingId)/aftercare/send",
+            method: .post
+        )
+    }
+
     /// POST /api/v1/pro/bookings/{id}/aftercare/nudge — re-ping a client about an
     /// aftercare that was already sent (the one-tap "Nudge" on the aftercare list).
     /// Re-issues the aftercare magic link and refreshes the AFTERCARE_READY

@@ -40,7 +40,7 @@ struct ProAftercareListView: View {
     @State private var phase: Phase = .loading
     @State private var tab: Tab = .all
     @State private var query = ""
-    @State private var nudgeState: [String: NudgeState] = [:]
+    @State private var actionState: [String: NudgeState] = [:]
 
     var body: some View {
         ScrollView {
@@ -92,12 +92,12 @@ struct ProAftercareListView: View {
                             }
                             .buttonStyle(.plain)
 
-                            // One-tap re-ping for an already-sent aftercare whose
-                            // rebook loop is still open (server marks these
-                            // action == "nudge"). Mirrors the web list's Nudge
-                            // button → POST .../aftercare/nudge.
-                            if item.action == "nudge" {
-                                nudgeControl(item)
+                            // One-tap contextual action, mirroring the web list:
+                            // a draft card offers "Send" (POST .../aftercare/send);
+                            // an already-sent card with an open rebook loop offers
+                            // "Nudge" (POST .../aftercare/nudge).
+                            if item.action == "send" || item.action == "nudge" {
+                                actionControl(item)
                             }
                         }
                     }
@@ -226,23 +226,24 @@ struct ProAftercareListView: View {
     }
 
     @ViewBuilder
-    private func nudgeControl(_ item: ProAftercareCardItem) -> some View {
-        let state = nudgeState[item.bookingId]
+    private func actionControl(_ item: ProAftercareCardItem) -> some View {
+        let isSend = item.action == "send"
+        let state = actionState[item.bookingId]
         VStack(alignment: .leading, spacing: 6) {
             Button {
-                Task { await nudge(item) }
+                Task { await runAction(item) }
             } label: {
                 HStack(spacing: 6) {
                     switch state {
                     case .sending:
                         ProgressView().tint(BrandColor.onAccent).scaleEffect(0.8)
-                        Text("Nudging…")
+                        Text(isSend ? "Sending…" : "Nudging…")
                     case .sent:
                         Image(systemName: "checkmark")
-                        Text("Nudge sent")
+                        Text(isSend ? "Sent" : "Nudge sent")
                     default:
-                        Image(systemName: "bell.badge")
-                        Text("Nudge")
+                        Image(systemName: isSend ? "paperplane.fill" : "bell.badge")
+                        Text(isSend ? "Send" : "Nudge")
                     }
                 }
                 .font(BrandFont.body(12, .semibold))
@@ -363,15 +364,20 @@ struct ProAftercareListView: View {
         }
     }
 
-    private func nudge(_ item: ProAftercareCardItem) async {
-        nudgeState[item.bookingId] = .sending
+    private func runAction(_ item: ProAftercareCardItem) async {
+        let isSend = item.action == "send"
+        actionState[item.bookingId] = .sending
         do {
-            try await session.client.proBookings.nudgeAftercare(bookingId: item.bookingId)
-            nudgeState[item.bookingId] = .sent
+            if isSend {
+                try await session.client.proBookings.sendAftercareDraft(bookingId: item.bookingId)
+            } else {
+                try await session.client.proBookings.nudgeAftercare(bookingId: item.bookingId)
+            }
+            actionState[item.bookingId] = .sent
         } catch let error as APIError {
-            nudgeState[item.bookingId] = .failed(error.userMessage)
+            actionState[item.bookingId] = .failed(error.userMessage)
         } catch {
-            nudgeState[item.bookingId] = .failed("Couldn’t nudge the client.")
+            actionState[item.bookingId] = .failed(isSend ? "Couldn’t send the aftercare." : "Couldn’t nudge the client.")
         }
     }
 }
