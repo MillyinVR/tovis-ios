@@ -112,6 +112,9 @@ struct FrameContext: Sendable {
     let deviceTilt: Double?
     /// Color-of-light read (mixed light / cast). Nil if it couldn't be measured.
     let color: ColorSignal?
+    /// What the current directed shot should contain (nil = freeform shooting —
+    /// judge like a generic portrait).
+    let expectations: ShotExpectations?
 }
 
 protocol ShotCoach: Sendable {
@@ -156,14 +159,35 @@ struct CompositionCoach: ShotCoach {
     let category: CoachCategory = .composition
 
     func evaluate(_ ctx: FrameContext) -> CoachSignal {
-        // Fill the frame — the #1 amateur mistake is standing too far back. Works
-        // for any segmented subject (face or back-of-head), so it fires even when
-        // there's no face to place.
-        if let fill = ctx.subjectFill, fill < CoachTuning.minSubjectFill {
-            return CoachSignal(score: 0.5, message: "Move in closer — fill the frame")
+        let expects = ctx.expectations
+
+        // Fill the frame — the #1 amateur mistake is standing too far back.
+        // Judged against the current shot's band when the guide sets one
+        // (a detail shot wants much more fill than a portrait), else the
+        // global floor. Detail/macro shots skip the floor — partial subjects
+        // are the point.
+        if let fill = ctx.subjectFill {
+            if let band = expects?.fillBand {
+                if fill < band.lowerBound {
+                    return CoachSignal(score: 0.5, message: "Move in closer — fill the frame")
+                }
+                if fill > band.upperBound {
+                    return CoachSignal(score: 0.55, message: "Too tight — step back a touch")
+                }
+            } else if expects?.isDetail != true, fill < CoachTuning.minSubjectFill {
+                return CoachSignal(score: 0.5, message: "Move in closer — fill the frame")
+            }
         }
 
+        // Face placement only when the face belongs in this shot: a stray
+        // mirror face must not drive headroom rules on a back-of-cut.
+        if expects?.face == .absent {
+            return CoachSignal(score: 1.0, message: nil)
+        }
         guard let face = ctx.faceBounds else {
+            if expects?.face == .required {
+                return CoachSignal(score: 0.6, message: "Frame their face for this shot")
+            }
             return CoachSignal(score: 1.0, message: nil)
         }
 
@@ -203,10 +227,13 @@ struct SharpnessCoach: ShotCoach {
 
     func evaluate(_ ctx: FrameContext) -> CoachSignal {
         let s = ctx.sharpness
-        if s < CoachTuning.sharpnessSoft {
+        // Detail/macro shots demand more: raise the bar so "sharp enough for a
+        // portrait" doesn't pass for a close-up of the work.
+        let factor = ctx.expectations?.isDetail == true ? CoachTuning.detailSharpnessFactor : 1
+        if s < CoachTuning.sharpnessSoft * factor {
             return CoachSignal(score: 0.3, message: "Hold steady — shot looks soft")
         }
-        if s < CoachTuning.sharpnessSlightlySoft {
+        if s < CoachTuning.sharpnessSlightlySoft * factor {
             return CoachSignal(score: 0.6, message: "Tap to focus — a touch soft")
         }
         // Clearly sharp; reward it.
@@ -222,7 +249,10 @@ struct BackgroundCoach: ShotCoach {
     let category: CoachCategory = .background
 
     func evaluate(_ ctx: FrameContext) -> CoachSignal {
-        guard let clutter = ctx.backgroundClutter else {
+        // A detail/macro shot fills the frame with the work — whatever scraps of
+        // background remain shouldn't be judged.
+        guard ctx.expectations?.isDetail != true,
+              let clutter = ctx.backgroundClutter else {
             return CoachSignal(score: 1.0, message: nil)
         }
         if clutter > CoachTuning.clutterBusy {

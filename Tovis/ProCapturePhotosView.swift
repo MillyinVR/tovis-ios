@@ -120,7 +120,13 @@ struct ProCapturePhotosView: View {
             engine.onFaceCenter = { [weak camera = camera] center in
                 camera?.setFaceExposure(center: center)
             }
+            engine.analyzer.setExpectations(activeExpectations)
             await camera.start(frameDelegate: engine.analyzer)
+        }
+        // Keep the coach judging "ready for THIS shot" — expectations follow the
+        // current guided step (and clear for freeform / all-done shooting).
+        .onChange(of: activeExpectations) { _, expectations in
+            coach?.analyzer.setExpectations(expectations)
         }
         .onDisappear { camera.stop(); coach?.stop() }
         // A recorded clip is one-shot: once its review closes (saved or not),
@@ -169,28 +175,13 @@ struct ProCapturePhotosView: View {
         .fullScreenCover(item: $scrubClip) { clip in
             FrameScrubberView(videoURL: clip.url, bookingId: bookingId, phase: phase)
         }
-        .confirmationDialog(
-            "Photographer check",
-            isPresented: Binding(
-                get: { pendingRetake != nil },
-                set: { if !$0 { pendingRetake = nil } }   // dismiss = retake
-            ),
-            titleVisibility: .visible,
-            presenting: pendingRetake
-        ) { shot in
-            Button("Retake") { pendingRetake = nil }
-            Button("Keep it anyway") {
-                let data = shot.data
-                pendingRetake = nil
-                Task {
-                    uploading = true
-                    await finalize(data)
-                    uploading = false
-                }
+        .modifier(RetakeDialog(pendingRetake: $pendingRetake, keep: { data in
+            Task {
+                uploading = true
+                await finalize(data)
+                uploading = false
             }
-        } message: { shot in
-            Text("\(shot.reason). Retake it while they’re still in position?")
-        }
+        }))
         .confirmationDialog(
             "You have unsaved best shots",
             isPresented: $showExitConfirm,
@@ -201,6 +192,35 @@ struct ProCapturePhotosView: View {
             Button("Keep shooting", role: .cancel) {}
         } message: {
             Text("The camera captured \(coach?.harvested.count ?? 0) best shots this session. Review them to save to \(phaseLabel) — leaving now discards them.")
+        }
+    }
+
+    /// The photographer-check keep-or-retake dialog, extracted as a modifier —
+    /// inlining it pushed the body's modifier chain past what the type-checker
+    /// resolves in reasonable time.
+    private struct RetakeDialog: ViewModifier {
+        @Binding var pendingRetake: PendingRetake?
+        let keep: (Data) -> Void
+
+        func body(content: Content) -> some View {
+            content.confirmationDialog(
+                "Photographer check",
+                isPresented: Binding(
+                    get: { pendingRetake != nil },
+                    set: { if !$0 { pendingRetake = nil } }   // dismiss = retake
+                ),
+                titleVisibility: .visible,
+                presenting: pendingRetake
+            ) { shot in
+                Button("Retake") { pendingRetake = nil }
+                Button("Keep it anyway") {
+                    let data = shot.data
+                    pendingRetake = nil
+                    keep(data)
+                }
+            } message: { shot in
+                Text("\(shot.reason). Retake it while they’re still in position?")
+            }
         }
     }
 
@@ -445,6 +465,13 @@ struct ProCapturePhotosView: View {
 
     private var currentStep: ShotStep? {
         guide.steps.first { $0.id == currentStepID } ?? guide.steps.first
+    }
+
+    /// What the coach should expect of the frame right now — the current guided
+    /// shot's expectations, or nil for freeform shooting (guides off / done).
+    private var activeExpectations: ShotExpectations? {
+        guard settings.showGuides, !guide.steps.isEmpty, !allStepsDone else { return nil }
+        return currentStep?.expects
     }
     private var currentStepIndex: Int {
         guide.steps.firstIndex { $0.id == currentStepID } ?? 0
@@ -951,7 +978,10 @@ struct ProCapturePhotosView: View {
 
     /// Whether the blink check applies to the current shot (skipped when closed
     /// eyes are intended — lash work — or no face belongs in frame).
-    private var blinkCheckApplies: Bool { true }
+    private var blinkCheckApplies: Bool {
+        guard let expects = activeExpectations else { return true }
+        return expects.face != .absent && !expects.allowsClosedEyes
+    }
 
     /// Shutter confirmation: a brief flash + a light tap.
     private func shutterFeedback() {

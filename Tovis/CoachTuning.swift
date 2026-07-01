@@ -81,6 +81,9 @@ enum CoachTuning {
     static let sharpnessSoft: Double = 0.22
     /// …below this = a touch soft (gentle nudge).
     static let sharpnessSlightlySoft: Double = 0.4
+    /// Detail/macro shots multiply the sharpness cutoffs by this — a close-up
+    /// of the work must be crisper than a portrait to pass.
+    static let detailSharpnessFactor: Double = 1.25
 
     // MARK: - Background
 

@@ -42,6 +42,17 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     func setDeviceTilt(_ value: Double?) { tiltLock.lock(); _deviceTilt = value; tiltLock.unlock() }
     private func currentDeviceTilt() -> Double? { tiltLock.lock(); defer { tiltLock.unlock() }; return _deviceTilt }
 
+    // The current guided shot's expectations (nil = freeform), written from the
+    // camera view on step change and read per frame — same cross-queue pattern.
+    private let expectationsLock = NSLock()
+    private var _expectations: ShotExpectations?
+    func setExpectations(_ value: ShotExpectations?) {
+        expectationsLock.lock(); _expectations = value; expectationsLock.unlock()
+    }
+    private func currentExpectations() -> ShotExpectations? {
+        expectationsLock.lock(); defer { expectationsLock.unlock() }; return _expectations
+    }
+
     // MARK: - Best-shot harvesting (Session Reel)
     /// When on, the analyzer grabs a high-res still whenever quality peaks — the
     /// "captures across the session, keeps the best frames" behavior. Synced from
@@ -108,7 +119,8 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                 subjectFill: cachedSubjectFill,
                 pose: cachedPose,
                 deviceTilt: currentDeviceTilt(),
-                color: cachedColor
+                color: cachedColor,
+                expectations: currentExpectations()
             )
 
             let signals = coaches.map { ($0.category, $0.evaluate(ctx)) }
