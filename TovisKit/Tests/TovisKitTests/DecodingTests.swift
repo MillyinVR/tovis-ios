@@ -496,6 +496,11 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.finance.expenses[2].mileageMiles == 100)
         #expect(res.finance.mileageRateCents == 72.5)
         #expect(res.finance.mileageRateLabel == "72.5¢/mi")
+        // Receipt inbox + forwarding address.
+        #expect(res.finance.receiptInbox.count == 1)
+        #expect(res.finance.receiptInbox[0].source == "COSMOPROF")
+        #expect(res.finance.receiptInbox[0].parsedAmountCents == 24219)
+        #expect(res.finance.receiptInboxAddress == "jadehair@tovis.me")
     }
 
     // GET /api/v1/pro/reviews — Fixtures/proReviewsList.json. The pro reviews

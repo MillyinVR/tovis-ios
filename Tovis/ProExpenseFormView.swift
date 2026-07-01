@@ -17,9 +17,16 @@ struct ProExpenseFormView: View {
     let timeZone: String
     /// Current IRS mileage rate (cents/mile) for the live deduction preview.
     let mileageRateCents: Double
+    /// When set, the form CONFIRMS this receipt inbox item into an expense
+    /// (instead of creating a fresh one), prefilled from the seed values.
+    var confirmReceiptId: String? = nil
+    var seedAmount: String? = nil
+    var seedLabel: String? = nil
+    var seedDate: String? = nil
     let onSaved: () -> Void
 
     private var zone: TimeZone { TimeZone(identifier: timeZone) ?? .current }
+    private var isReview: Bool { confirmReceiptId != nil }
 
     @State private var category = ""
     @State private var amount = ""
@@ -111,7 +118,7 @@ struct ProExpenseFormView: View {
                 .padding(20)
             }
             .background(BrandColor.bgPrimary.ignoresSafeArea())
-            .navigationTitle(editing == nil ? "Add expense" : "Edit expense")
+            .navigationTitle(isReview ? "Review receipt" : editing == nil ? "Add expense" : "Edit expense")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -119,7 +126,7 @@ struct ProExpenseFormView: View {
                         .tint(BrandColor.textSecondary)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(editing == nil ? "Add" : "Save") { Task { await save() } }
+                    Button(isReview ? "Add" : editing == nil ? "Add" : "Save") { Task { await save() } }
                         .tint(BrandColor.accent)
                         .disabled(!canSubmit || submitting)
                 }
@@ -175,7 +182,13 @@ struct ProExpenseFormView: View {
             date = parseDate(editing.spentAtIso) ?? Date()
         } else {
             category = categories.first?.id ?? ""
-            date = Date()
+            if let seedAmount { amount = seedAmount }
+            if let seedLabel { label = seedLabel }
+            if let seedDate, let seeded = ymd.date(from: seedDate) {
+                date = seeded
+            } else {
+                date = Date()
+            }
         }
     }
 
@@ -203,7 +216,9 @@ struct ProExpenseFormView: View {
             )
 
         do {
-            if let editing {
+            if let confirmReceiptId {
+                try await session.client.proFinance.confirmReceipt(id: confirmReceiptId, request)
+            } else if let editing {
                 try await session.client.proFinance.updateExpense(id: editing.id, request)
             } else {
                 try await session.client.proFinance.createExpense(request)

@@ -61,6 +61,28 @@ public final class ProFinanceService: Sendable {
         )
     }
 
+    /// POST /api/v1/pro/finance/receipts/{id} — confirm a pending receipt into an
+    /// expense (body is the same as an expense create).
+    public func confirmReceipt(
+        id: String,
+        _ request: ProExpenseWriteRequest
+    ) async throws {
+        let body = try JSONEncoder().encode(request)
+        _ = try await api.requestVoid(
+            "/pro/finance/receipts/\(id)",
+            method: .post,
+            body: body
+        )
+    }
+
+    /// DELETE /api/v1/pro/finance/receipts/{id} — dismiss a pending receipt.
+    public func dismissReceipt(id: String) async throws {
+        _ = try await api.requestVoid(
+            "/pro/finance/receipts/\(id)",
+            method: .delete
+        )
+    }
+
     /// GET /api/v1/pro/finance/export?format=pdf → the "Schedule C Ready" PDF
     /// (annual, expenses mapped to Schedule C line numbers).
     public func exportScheduleCPdf(month: String) async throws -> Data {

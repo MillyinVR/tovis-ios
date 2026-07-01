@@ -34,6 +34,25 @@ public struct ProFinanceResponse: Decodable, Sendable {
         /// add-expense form preview a trip's deduction live.
         public let mileageRateCents: Double
         public let mileageRateLabel: String
+        /// Captured receipts awaiting review (all-time PENDING, newest first).
+        public let receiptInbox: [ReceiptInboxItem]
+        /// The pro's forwarding address (<handle>@tovis.me) — premium only, else nil.
+        public let receiptInboxAddress: String?
+    }
+
+    public struct ReceiptInboxItem: Decodable, Sendable, Identifiable {
+        public let id: String
+        public let source: String
+        public let sourceLabel: String
+        public let title: String
+        public let receivedAtIso: String
+        public let receivedLabel: String
+        public let parsedAmountCents: Int?
+        public let parsedAmountLabel: String?
+        public let dateHint: String?
+        public let emailFrom: String?
+        public let hasReceipt: Bool
+        public let receiptMediaId: String?
     }
 
     public struct SummaryCard: Decodable, Sendable, Identifiable {

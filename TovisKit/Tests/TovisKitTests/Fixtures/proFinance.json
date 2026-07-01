@@ -114,6 +114,23 @@
       }
     ],
     "mileageRateCents": 72.5,
-    "mileageRateLabel": "72.5¢/mi"
+    "mileageRateLabel": "72.5¢/mi",
+    "receiptInbox": [
+      {
+        "id": "rcpt_1",
+        "source": "COSMOPROF",
+        "sourceLabel": "CosmoProf",
+        "title": "CosmoProf",
+        "receivedAtIso": "2026-06-30T18:00:00.000Z",
+        "receivedLabel": "Jun 30",
+        "parsedAmountCents": 24219,
+        "parsedAmountLabel": "$242.19",
+        "dateHint": "2026-06-30",
+        "emailFrom": "orders@cosmoprof.com",
+        "hasReceipt": false,
+        "receiptMediaId": null
+      }
+    ],
+    "receiptInboxAddress": "jadehair@tovis.me"
   }
 }

@@ -34,6 +34,7 @@ struct ProFinanceView: View {
     @State private var sub: Sub = .overview
     @State private var showExpenseForm = false
     @State private var editing: ProFinanceResponse.ExpenseItem?
+    @State private var reviewing: ProFinanceResponse.ReceiptInboxItem?
     @State private var pendingDelete: ProFinanceResponse.ExpenseItem?
     @State private var showDeleteConfirm = false
     @State private var exporting = false
@@ -78,12 +79,16 @@ struct ProFinanceView: View {
         .refreshable { await load() }
         .task { if case .loading = phase { await load() } }
         .onChange(of: session.refreshTick) { Task { await load() } }
-        .sheet(isPresented: $showExpenseForm) {
+        .sheet(isPresented: $showExpenseForm, onDismiss: { reviewing = nil }) {
             ProExpenseFormView(
                 categories: loaded?.finance.categories ?? [],
                 editing: editing,
                 timeZone: loaded?.activeMonth.timeZone ?? "America/Los_Angeles",
                 mileageRateCents: loaded?.finance.mileageRateCents ?? 72.5,
+                confirmReceiptId: reviewing?.id,
+                seedAmount: reviewing?.parsedAmountCents.map { String(format: "%.2f", Double($0) / 100) },
+                seedLabel: reviewing?.title,
+                seedDate: reviewing?.dateHint,
                 onSaved: { Task { await load() } }
             )
         }
@@ -251,6 +256,16 @@ struct ProFinanceView: View {
 
     @ViewBuilder
     private func expensesPanel(_ data: ProFinanceResponse) -> some View {
+        if !data.finance.receiptInbox.isEmpty {
+            BrandSection(title: "Receipts to review · \(data.finance.receiptInbox.count)") {
+                VStack(spacing: 10) {
+                    ForEach(data.finance.receiptInbox) { item in
+                        receiptReviewRow(item)
+                    }
+                }
+            }
+        }
+
         HStack(alignment: .bottom) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("TOTAL TRACKED")
@@ -264,6 +279,7 @@ struct ProFinanceView: View {
             Spacer()
             Button {
                 editing = nil
+                reviewing = nil
                 showExpenseForm = true
             } label: {
                 Text("+ Add")
@@ -303,6 +319,59 @@ struct ProFinanceView: View {
                     .multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity)
+        }
+    }
+
+    private func receiptReviewRow(_ item: ProFinanceResponse.ReceiptInboxItem) -> some View {
+        BrandSurface(tint: BrandColor.bgSecondary) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(item.title)
+                        .font(BrandFont.body(15, .bold))
+                        .foregroundStyle(BrandColor.textPrimary)
+                        .lineLimit(1)
+                    HStack(spacing: 6) {
+                        Text(item.sourceLabel)
+                            .font(BrandFont.body(12, .semibold))
+                            .foregroundStyle(BrandColor.accent)
+                        Text("·").foregroundStyle(BrandColor.textMuted)
+                        Text(item.receivedLabel)
+                            .font(BrandFont.body(12))
+                            .foregroundStyle(BrandColor.textMuted)
+                        if let amount = item.parsedAmountLabel {
+                            Text("·").foregroundStyle(BrandColor.textMuted)
+                            Text(amount)
+                                .font(BrandFont.body(12))
+                                .foregroundStyle(BrandColor.textMuted)
+                        }
+                    }
+                }
+                Spacer()
+                Button {
+                    reviewing = item
+                    editing = nil
+                    showExpenseForm = true
+                } label: {
+                    Text("Review")
+                        .font(BrandFont.body(13, .bold))
+                        .foregroundStyle(BrandColor.onAccent)
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 14)
+                        .background(BrandColor.accent)
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                Menu {
+                    Button("Dismiss", role: .destructive) {
+                        Task { await dismissReceipt(item) }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(BrandColor.textMuted)
+                        .frame(width: 30, height: 30)
+                }
+            }
         }
     }
 
@@ -450,9 +519,22 @@ struct ProFinanceView: View {
                     .font(BrandFont.mono(10))
                     .tracking(1.2)
                     .foregroundStyle(BrandColor.textMuted)
-                Text("Soon you’ll be able to forward receipts to your inbox and we’ll parse and categorize them as expenses. Coming soon.")
-                    .font(BrandFont.body(13))
-                    .foregroundStyle(BrandColor.textSecondary)
+                if let address = data.finance.receiptInboxAddress {
+                    Text("Forward receipts to")
+                        .font(BrandFont.body(13))
+                        .foregroundStyle(BrandColor.textSecondary)
+                    Text(address)
+                        .font(BrandFont.mono(13))
+                        .foregroundStyle(BrandColor.accent)
+                        .textSelection(.enabled)
+                    Text("— or set it as your receipt email in CosmoProf / Salon Centric — and they’ll appear in your review inbox automatically.")
+                        .font(BrandFont.body(13))
+                        .foregroundStyle(BrandColor.textSecondary)
+                } else {
+                    Text("Claim your handle to get a personal receipt-forwarding address — forward or auto-send receipts and they land in your review inbox.")
+                        .font(BrandFont.body(13))
+                        .foregroundStyle(BrandColor.textSecondary)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -565,6 +647,15 @@ struct ProFinanceView: View {
     private func deleteExpense(_ expense: ProFinanceResponse.ExpenseItem) async {
         do {
             try await session.client.proFinance.deleteExpense(id: expense.id)
+            await load()
+        } catch {
+            // Non-fatal; a reload will reflect the true state.
+        }
+    }
+
+    private func dismissReceipt(_ item: ProFinanceResponse.ReceiptInboxItem) async {
+        do {
+            try await session.client.proFinance.dismissReceipt(id: item.id)
             await load()
         } catch {
             // Non-fatal; a reload will reflect the true state.
