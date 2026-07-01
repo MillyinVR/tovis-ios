@@ -265,10 +265,11 @@ struct ProCapturePhotosView: View {
                     CameraPreview(session: camera.session) { camera.previewLayer = $0 }
                         .ignoresSafeArea(edges: .top)
                         .overlay { focusReticleOverlay }
-                        // Drawn as a preview overlay so it shares the preview
-                        // layer's coordinate space (the box maps the sampled
-                        // sensor region exactly).
+                        // Drawn as preview overlays so they share the preview
+                        // layer's coordinate space (boxes map sensor regions
+                        // exactly).
                         .overlay { if calibrating { calibrationTarget } }
+                        .overlay { if settings.showCropGuide { cropSafeOverlay } }
                         .gesture(
                             SpatialTapGesture().onEnded { handleFocusTap($0.location) }
                         )
@@ -355,17 +356,69 @@ struct ProCapturePhotosView: View {
         .allowsHitTesting(false)
     }
 
-    /// Preview-space rect of the analyzer's white-balance sample region. The
-    /// sample is the center 40% of the frame in both dimensions, which is
-    /// rotation-invariant — so the same normalized rect works as a metadata
-    /// output rect. Falls back to a centered box before the layer has geometry.
+    /// Preview-space rect of the analyzer's white-balance sample region (the
+    /// center 40% of the frame in both dimensions).
     private func sampledRegionRect(in size: CGSize) -> CGRect {
-        let normalized = CGRect(x: 0.3, y: 0.3, width: 0.4, height: 0.4)
+        previewRect(uprightNormalized: CGRect(x: 0.3, y: 0.3, width: 0.4, height: 0.4), in: size)
+    }
+
+    /// Map a CENTERED upright-normalized frame rect into the preview layer's
+    /// coordinate space (aspect-fill aware). Centered rects survive the
+    /// upright→sensor rotation by swapping axes, so this stays exact without
+    /// caring about the rotation direction. Falls back to a naive screen-space
+    /// box before the layer has geometry.
+    private func previewRect(uprightNormalized r: CGRect, in size: CGSize) -> CGRect {
         if let layer = camera.previewLayer, layer.bounds.width > 0 {
-            return layer.layerRectConverted(fromMetadataOutputRect: normalized)
+            let metadata = CGRect(x: r.minY, y: r.minX, width: r.height, height: r.width)
+            return layer.layerRectConverted(fromMetadataOutputRect: metadata)
         }
-        return CGRect(x: size.width * 0.3, y: size.height * 0.3,
-                      width: size.width * 0.4, height: size.height * 0.4)
+        return CGRect(x: size.width * r.minX, y: size.height * r.minY,
+                      width: size.width * r.width, height: size.height * r.height)
+    }
+
+    // MARK: - Crop-safe guide (publish crops)
+
+    /// Publishing crops beauty work actually ships in: 4:5 (feed) and 9:16
+    /// (reel/story). Drawn from the sensor frame through the preview layer so
+    /// what's inside the lines is exactly what survives each crop — keep the
+    /// money shot inside the tighter box.
+    private var cropSafeOverlay: some View {
+        GeometryReader { geo in
+            ZStack {
+                cropBox(aspect: 4.0 / 5.0, label: "4:5", in: geo.size)
+                cropBox(aspect: 9.0 / 16.0, label: "9:16", in: geo.size)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    /// A centered crop of `aspect` (w/h) within the upright 3:4 capture frame,
+    /// mapped to preview space.
+    private func cropBox(aspect: CGFloat, label: String, in size: CGSize) -> some View {
+        let frameAspect: CGFloat = 3.0 / 4.0   // upright sensor frame w/h (.photo preset)
+        let normalized: CGRect
+        if aspect > frameAspect {
+            // Wider than the frame → full width, cropped height.
+            let h = frameAspect / aspect
+            normalized = CGRect(x: 0, y: (1 - h) / 2, width: 1, height: h)
+        } else {
+            // Narrower → full height, cropped width.
+            let w = aspect / frameAspect
+            normalized = CGRect(x: (1 - w) / 2, y: 0, width: w, height: 1)
+        }
+        let box = previewRect(uprightNormalized: normalized, in: size)
+        return Rectangle()
+            .strokeBorder(.white.opacity(0.3), lineWidth: 1)
+            .frame(width: box.width, height: box.height)
+            .overlay(alignment: .topLeading) {
+                Text(label)
+                    .font(BrandFont.mono(9)).tracking(0.5)
+                    .foregroundStyle(.white.opacity(0.55))
+                    .padding(.horizontal, 5).padding(.vertical, 2)
+                    .background(.black.opacity(0.35), in: Capsule())
+                    .padding(4)
+            }
+            .position(x: box.midX, y: box.midY)
     }
 
     /// The calibration action row (shown in the controls while calibrating).
@@ -1166,6 +1219,7 @@ private struct CoachSettingsSheet: View {
                     Toggle("Readiness ring", isOn: $settings.showReadinessRing)
                     Toggle("Level / horizon", isOn: $settings.showLevel)
                     Toggle("Rule-of-thirds grid", isOn: $settings.showGrid)
+                    Toggle("Crop-safe guide (4:5 · 9:16)", isOn: $settings.showCropGuide)
                     Toggle("Extra best-shots (background)", isOn: $settings.autoHarvest)
                 } header: {
                     Text("On the camera")

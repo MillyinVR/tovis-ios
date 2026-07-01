@@ -17,6 +17,9 @@ final class CoachSettings {
     var haptics: Bool { didSet { persist(\.haptics, "haptics") } }
     /// Draw a rule-of-thirds grid over the preview.
     var showGrid: Bool { didSet { persist(\.showGrid, "showGrid") } }
+    /// Draw the publish-crop safe areas (4:5 feed · 9:16 reel) so the money
+    /// shot stays inside what survives the crop.
+    var showCropGuide: Bool { didSet { persist(\.showCropGuide, "showCropGuide") } }
     /// Show the readiness ring around the shutter (green = good to shoot).
     var showReadinessRing: Bool { didSet { persist(\.showReadinessRing, "showReadinessRing") } }
     /// Draw the level / horizon indicator (turns green when the camera is level).
@@ -37,6 +40,7 @@ final class CoachSettings {
         speak = d.object(forKey: Self.key("speak")) as? Bool ?? false
         haptics = d.object(forKey: Self.key("haptics")) as? Bool ?? true
         showGrid = d.object(forKey: Self.key("showGrid")) as? Bool ?? false
+        showCropGuide = d.object(forKey: Self.key("showCropGuide")) as? Bool ?? false
         showReadinessRing = d.object(forKey: Self.key("showReadinessRing")) as? Bool ?? true
         showLevel = d.object(forKey: Self.key("showLevel")) as? Bool ?? true
         autoCapture = d.object(forKey: Self.key("autoCapture")) as? Bool ?? true
