@@ -13,7 +13,47 @@ on `tovis-ios` `main`; the one backend change is **merged** (`tovis-app` PR #427
 
 ---
 
-## 🟢 RESUME HERE (2026-06-30, pass 5) — CAMERA made photographer-grade (coach overhaul + before/after) · next = DEVICE TUNE
+## 🟢 RESUME HERE (2026-07-01, pass 6) — audit fixes + "photographer quality every time" build · next = DEVICE TUNE (now console-driven)
+
+**Two passes on 2026-07-01 (all on `tovis-ios` main; 81 TovisKit tests + Debug/Release green; NONE device-verified):**
+
+1. **Full camera audit → all 8 findings fixed (`0d7cf6f`)** — details in memory `ios-camera-audit-2026-07-01`.
+   Highlights: `TovisConfig.local` LAN-IP revert (⚠️ never commit a device-test IP), level/horizon restarts after
+   the scrubber round-trip (`CoachEngine.start()` from `.task`), tap-to-focus reverts to continuous AF via a
+   subject-area-change observer, capture re-entry guard, harvest cap now bounds the UNREVIEWED tray, WB target box
+   maps the exact sampled sensor region, failed-upload retry queue ("Retry N unsaved photos"), `.interrupted`
+   status + auto-resume, spoken tips through the silent switch (`.playback` session), temp-clip cleanup.
+2. **Quality-guarantee features (user-approved plan, 6 commits):**
+   - `3178158` **Face-priority auto-exposure** — camera meters the coach-detected face + highlight-protect bias
+     (`CoachTuning.faceExposureBias`); stands down for tap-to-focus/AE-AF-lock. ⚠️ upright→sensor point mapping
+     `(x,y)→(y,1−x)` needs hardware verification (like the level sign).
+   - `ceb05f4` **Post-capture QC + auto-burst** — `PhotoQC` verifies the ACTUAL capture (sharpness on subject,
+     exposure band, CIDetector blink w/ both-eyes rule). Manual shot → "Photographer check" retake dialog;
+     auto-shot → up to 3 frames, keeps first QC pass, else re-arms without advancing. Shared math extracted to
+     `FrameMath` (analyzer + QC + light-match use ONE implementation).
+   - `60b5a19` **Per-step ShotExpectations** — steps declare face required/absent, fill band, detail, closed-eyes-
+     intended; coaches judge "ready for THIS shot" (back-of-cut ignores stray faces; detail shots demand more
+     sharpness, skip background; lash eyes-closed steps skip the blink check).
+   - `91ab9e5` **Before/after light matching + per-booking WB** — before-references stamped (luma+warmth), live
+     "match the before" pill phrases the biggest mismatch; gray-card WB persists per booking (UserDefaults
+     `tovis.camera.wb.{bookingId}`) and auto-re-applies on the AFTER shoot.
+   - `bcfb9c3` **Crop-safe guides** — 4:5 feed + 9:16 reel boxes mapped through the preview layer (settings toggle).
+   - `f0f5bdb` **DEBUG tuning console** — `CoachTuningHUD`: live raw signals + ~22 threshold sliders over the LIVE
+     camera (half-height sheet, background interaction), "Copy values" → paste back into `CoachTuning.swift`.
+     Tunable statics are now `nonisolated(unsafe) static var`. Entry: coaching settings → Developer.
+
+**▶️ NEXT = the on-device tune pass** (now cheap: open the console, walk window/mixed/tungsten salon light, drag
+sliders, copy values back into `CoachTuning.swift`). Verify on hardware: level sign, face-exposure point mapping,
+onion-skin alignment, photo EXIF orientation in the web gallery, WB gains behavior. Then (discussed, not built):
+directive per-step guidance language, torch-as-fill suggestion, Claude vision critique at wrap-up (Phase D),
+publish before/after → Looks funnel, measured ColorChecker card (B4 — blocked on physical card).
+
+> Corrections to the block below (pass 5 predates 2026-07-01 work): "AE/AF lock + tap-to-focus" and "color
+> accuracy / white balance" are NOW BUILT (`e73e966` + pass-6 work); the OOM crash is fixed (`e3f88ae`).
+
+---
+
+## (prior) 🟢 RESUME (2026-06-30, pass 5) — CAMERA made photographer-grade (coach overhaul + before/after)
 
 **The "AI photographer" camera went from a passive shutter to a directed, quality-gating coach.** Two commits on
 `tovis-ios` main; Debug+Release + `swift test` 66 green. **NONE of it is device-verified** — the Simulator has no
