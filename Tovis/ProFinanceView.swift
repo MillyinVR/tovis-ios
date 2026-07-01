@@ -436,14 +436,13 @@ struct ProFinanceView: View {
 
         let monthKey = data.activeMonth.key
         exportRow("Monthly Summary", "\(data.activeMonth.label) — income + expenses",
-                  scope: "month", monthKey: monthKey)
+                  scope: "month", format: "csv", monthKey: monthKey)
         exportRow("Year-to-Date Summary", String(data.finance.taxYear),
-                  scope: "ytd", monthKey: monthKey)
+                  scope: "ytd", format: "csv", monthKey: monthKey)
         exportRow("Full Year Export", "\(data.finance.taxYear) — all months",
-                  scope: "year", monthKey: monthKey)
-        // PDF Schedule C export isn't built yet — informational only.
-        exportRow("Schedule C Ready", "Formatted for your CPA or tax software",
-                  scope: nil, monthKey: monthKey)
+                  scope: "year", format: "csv", monthKey: monthKey)
+        exportRow("Schedule C Ready", "Mapped to form lines for your CPA",
+                  scope: "year", format: "pdf", monthKey: monthKey)
 
         BrandSurface(tint: BrandColor.bgSecondary) {
             VStack(alignment: .leading, spacing: 6) {
@@ -459,9 +458,9 @@ struct ProFinanceView: View {
         }
     }
 
-    private func exportRow(_ title: String, _ sub: String, scope: String?, monthKey: String) -> some View {
+    private func exportRow(_ title: String, _ sub: String, scope: String, format: String, monthKey: String) -> some View {
         Button {
-            if let scope { Task { await exportCsv(scope: scope, monthKey: monthKey) } }
+            Task { await exportData(scope: scope, format: format, monthKey: monthKey) }
         } label: {
             BrandSurface(tint: BrandColor.bgSecondary) {
                 HStack {
@@ -474,14 +473,10 @@ struct ProFinanceView: View {
                             .foregroundStyle(BrandColor.textMuted)
                     }
                     Spacer()
-                    if scope == nil {
-                        Text("PDF · soon")
-                            .font(BrandFont.body(12, .semibold))
-                            .foregroundStyle(BrandColor.textMuted)
-                    } else if exporting {
+                    if exporting {
                         ProgressView().tint(BrandColor.accent)
                     } else {
-                        Text("CSV")
+                        Text(format.uppercased())
                             .font(BrandFont.body(13, .bold))
                             .foregroundStyle(BrandColor.accent)
                     }
@@ -489,16 +484,23 @@ struct ProFinanceView: View {
             }
         }
         .buttonStyle(.plain)
-        .disabled(scope == nil || exporting)
+        .disabled(exporting)
     }
 
-    private func exportCsv(scope: String, monthKey: String) async {
+    private func exportData(scope: String, format: String, monthKey: String) async {
         exporting = true
         exportError = nil
         do {
-            let data = try await session.client.proFinance.exportCsv(scope: scope, month: monthKey)
-            let url = FileManager.default.temporaryDirectory
-                .appendingPathComponent("finance-\(scope)-\(monthKey).csv")
+            let data: Data
+            let filename: String
+            if format == "pdf" {
+                data = try await session.client.proFinance.exportScheduleCPdf(month: monthKey)
+                filename = "schedule-c-\(monthKey.prefix(4)).pdf"
+            } else {
+                data = try await session.client.proFinance.exportCsv(scope: scope, month: monthKey)
+                filename = "finance-\(scope)-\(monthKey).csv"
+            }
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
             try data.write(to: url, options: .atomic)
             shareItem = ShareItem(url: url)
         } catch let error as APIError {

@@ -60,4 +60,18 @@ public final class ProFinanceService: Sendable {
             ]
         )
     }
+
+    /// GET /api/v1/pro/finance/export?format=pdf → the "Schedule C Ready" PDF
+    /// (annual, expenses mapped to Schedule C line numbers).
+    public func exportScheduleCPdf(month: String) async throws -> Data {
+        try await api.requestVoid(
+            "/pro/finance/export",
+            method: .get,
+            query: [
+                URLQueryItem(name: "scope", value: "year"),
+                URLQueryItem(name: "month", value: month),
+                URLQueryItem(name: "format", value: "pdf"),
+            ]
+        )
+    }
 }
