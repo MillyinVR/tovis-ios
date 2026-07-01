@@ -35,7 +35,9 @@ struct ShotGuide: Sendable, Equatable {
         func has(_ words: [String]) -> Bool { words.contains { s.contains($0) } }
 
         if has(["nail", "mani", "pedi", "gel", "acrylic"]) { return .nails }
-        if has(["lash", "brow", "wax", "tint", "lamination"]) { return .lashesBrows }
+        // "wax" alone is deliberately NOT a keyword — a leg/body wax would get
+        // the eye-focused shot list ("brow wax" still matches via "brow").
+        if has(["lash", "brow", "tint", "lamination"]) { return .lashesBrows }
         if has(["facial", "skin", "peel", "derma", "makeup", "glam"]) { return .face }
         if has(["hair", "cut", "color", "colour", "balayage", "blowout",
                 "braid", "style", "barber", "fade", "extensions", "weave"]) { return .hair }

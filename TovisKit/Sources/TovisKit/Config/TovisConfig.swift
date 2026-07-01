@@ -33,11 +33,10 @@ public struct TovisConfig: Sendable {
     /// Live-sync points at the same Supabase project the local backend uses
     /// (local dev shares the dev Supabase project).
     public static let local = TovisConfig(
-        // TEMP (device testing 2026-06-30): pointed at the Mac's LAN IP so a
-        // physical phone reaches the dev server over Wi-Fi (`localhost` on-device
-        // = the phone itself). ⚠️ REVERT to http://localhost:3000/api/v1 before
-        // committing — this IP is machine/network-specific.
-        baseURL: URL(string: "http://192.168.4.192:3000/api/v1")!,
+        // For physical-device testing, temporarily point this at the Mac's LAN
+        // IP (`localhost` on-device = the phone itself) — but never commit
+        // that: the IP is machine/network-specific.
+        baseURL: URL(string: "http://localhost:3000/api/v1")!,
         supabaseURL: supabaseProjectURL,
         supabaseAnonKey: supabasePublishableKey
     )

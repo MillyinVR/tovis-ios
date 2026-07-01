@@ -8,12 +8,12 @@ import AVFoundation
 import SwiftUI
 import TovisKit
 
-enum CameraError: Error { case noData }
+enum CameraError: Error { case noData, captureInProgress }
 
 @Observable
 @MainActor
 final class CameraController: NSObject {
-    enum Status: Equatable { case idle, configuring, ready, denied, failed(String) }
+    enum Status: Equatable { case idle, configuring, ready, interrupted, denied, failed(String) }
 
     private(set) var status: Status = .idle
 
@@ -44,8 +44,15 @@ final class CameraController: NSObject {
     /// Live-frame delegate for the on-device coach (set before `start`). Weak —
     /// the CoachEngine owns it.
     nonisolated(unsafe) weak var frameDelegate: AVCaptureVideoDataOutputSampleBufferDelegate?
+    /// Notification tokens (subject-area change + session interruption), removed
+    /// on deinit.
+    nonisolated(unsafe) private var observers: [any NSObjectProtocol] = []
     private let sessionQueue = DispatchQueue(label: "tovis.camera.session")
     private let frameQueue = DispatchQueue(label: "tovis.camera.frames")
+
+    deinit {
+        observers.forEach(NotificationCenter.default.removeObserver)
+    }
 
     /// Request permission, configure once, and start the preview. Idempotent.
     /// Pass `frameDelegate` to feed the on-device coach the live frames.
@@ -92,6 +99,12 @@ final class CameraController: NSObject {
     func capturePhoto() async throws -> Data {
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Data, Error>) in
             sessionQueue.async {
+                // One capture at a time — a second call would overwrite the
+                // stored continuation and strand the first caller forever.
+                guard self.captureContinuation == nil else {
+                    cont.resume(throwing: CameraError.captureInProgress)
+                    return
+                }
                 self.captureContinuation = cont
                 // Force JPEG so the bytes match the "image/jpeg" content-type we
                 // presign with (the device default can be HEIC).
@@ -115,7 +128,10 @@ final class CameraController: NSObject {
     // MARK: - Focus & exposure
 
     /// Tap-to-focus + meter at a point in the preview layer's coordinate space.
-    /// Sets a one-shot auto-focus/expose there and releases any AE/AF lock.
+    /// Sets a one-shot auto-focus/expose there and releases any AE/AF lock. The
+    /// subject-area-change observer (registered in `configureSession`) restores
+    /// continuous AF/AE once the scene moves on, so a tap doesn't pin focus for
+    /// the rest of the shoot.
     func focus(atLayerPoint layerPoint: CGPoint) {
         guard let device, let layer = previewLayer else { return }
         let point = layer.captureDevicePointConverted(fromLayerPoint: layerPoint)
@@ -135,6 +151,18 @@ final class CameraController: NSObject {
         }
     }
 
+    /// Scene changed after a tap-to-focus — hand focus/exposure back to the
+    /// continuous system so the camera tracks the shoot again. Runs on
+    /// `sessionQueue`. (An engaged AE/AF lock turns monitoring off, so this
+    /// never fights the lock.)
+    nonisolated private func restoreContinuousFocus() {
+        guard let device, (try? device.lockForConfiguration()) != nil else { return }
+        if device.isFocusModeSupported(.continuousAutoFocus) { device.focusMode = .continuousAutoFocus }
+        if device.isExposureModeSupported(.continuousAutoExposure) { device.exposureMode = .continuousAutoExposure }
+        device.isSubjectAreaChangeMonitoringEnabled = false
+        device.unlockForConfiguration()
+    }
+
     /// Lock (or release) focus + exposure so the camera stops re-metering as hands
     /// and product move through the frame — the pro's "set it and shoot" control.
     func setAEAFLock(_ locked: Bool) {
@@ -148,6 +176,8 @@ final class CameraController: NSObject {
                 if device.isFocusModeSupported(.continuousAutoFocus) { device.focusMode = .continuousAutoFocus }
                 if device.isExposureModeSupported(.continuousAutoExposure) { device.exposureMode = .continuousAutoExposure }
             }
+            // The explicit lock supersedes any pending tap-to-focus revert.
+            device.isSubjectAreaChangeMonitoringEnabled = false
             device.unlockForConfiguration()
             Task { @MainActor in self.aeAfLocked = locked }
         }
@@ -279,10 +309,47 @@ final class CameraController: NSObject {
                     Task { @MainActor in self.recordingAvailable = true }
                 }
 
+                self.registerObservers(device: device)
                 self.session.commitConfiguration()
                 cont.resume(returning: nil)
             }
         }
+    }
+
+    /// One-time notification wiring, called from `configureSession` on the
+    /// session queue: revert tap-to-focus when the scene changes, and surface
+    /// session interruptions (phone call, camera claimed elsewhere) instead of
+    /// leaving a frozen preview that still claims to be ready.
+    nonisolated private func registerObservers(device: AVCaptureDevice) {
+        let center = NotificationCenter.default
+        observers.append(center.addObserver(
+            forName: AVCaptureDevice.subjectAreaDidChangeNotification,
+            object: device, queue: nil
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.sessionQueue.async { self.restoreContinuousFocus() }
+        })
+        observers.append(center.addObserver(
+            forName: AVCaptureSession.wasInterruptedNotification,
+            object: session, queue: nil
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.status == .ready else { return }
+                self.status = .interrupted
+            }
+        })
+        observers.append(center.addObserver(
+            forName: AVCaptureSession.interruptionEndedNotification,
+            object: session, queue: nil
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.sessionQueue.async {
+                if self.configured, !self.session.isRunning { self.session.startRunning() }
+                Task { @MainActor in
+                    if self.status == .interrupted { self.status = .ready }
+                }
+            }
+        })
     }
 }
 

@@ -19,6 +19,7 @@ final class DeviceLevelProvider {
     var onUpdate: ((Double?) -> Void)?
 
     func start() {
+        guard timer == nil else { return }   // idempotent — safe to call on re-appear
         guard motion.isDeviceMotionAvailable else { onUpdate?(nil); return }
         motion.deviceMotionUpdateInterval = 1.0 / 30.0
         motion.startDeviceMotionUpdates()

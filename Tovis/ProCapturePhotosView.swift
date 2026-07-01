@@ -2,6 +2,7 @@
 // Phase A: live preview + shutter → upload (presign→PUT→confirm) + a strip of
 // what you've shot this session. The on-device AI coach (overlays, readiness
 // ring, pose templates) layers onto this preview in Phase B.
+import AVFoundation
 import SwiftUI
 import TovisKit
 
@@ -36,9 +37,17 @@ struct ProCapturePhotosView: View {
     @State private var calibrating = false
     /// Local thumbnails of shots taken this session (newest first) — shown
     /// instantly from the captured bytes, no network round-trip.
-    @State private var captured: [UIImage] = []
+    @State private var captured: [CapturedShot] = []
+    /// Captured JPEGs whose upload failed — kept for retry so a flaky connection
+    /// never loses a shot the pro already took.
+    @State private var failedUploads: [Data] = []
     @State private var uploading = false
     @State private var errorMessage: String?
+
+    private struct CapturedShot: Identifiable {
+        let id = UUID()
+        let image: UIImage
+    }
     /// Brief white flash on a successful capture (shutter confirmation).
     @State private var flash = false
 
@@ -53,7 +62,7 @@ struct ProCapturePhotosView: View {
     /// A just-recorded clip awaiting frame-by-frame review (nil = none).
     @State private var scrubClip: ScrubClip?
 
-    private struct ScrubClip: Identifiable { let url: URL; var id: String { url.absoluteString } }
+    private struct ScrubClip: Identifiable, Equatable { let url: URL; var id: String { url.absoluteString } }
 
     /// True while a selection/review surface is up (best-shots tray, frame
     /// scrubber, or settings) — the live camera pauses so it isn't still
@@ -92,9 +101,19 @@ struct ProCapturePhotosView: View {
             if currentStepID == nil { currentStepID = guide.steps.first?.id }
             let engine = coach ?? CoachEngine(settings: settings)
             coach = engine
+            // Re-arm CoreMotion: the frame scrubber is a fullScreenCover, which
+            // fires this view's onDisappear → engine.stop(); on return the
+            // engine is reused, so the level stream must be restarted here or
+            // the horizon (and LevelCoach) freeze at stale tilt.
+            engine.start()
             await camera.start(frameDelegate: engine.analyzer)
         }
         .onDisappear { camera.stop(); coach?.stop() }
+        // A recorded clip is one-shot: once its review closes (saved or not),
+        // clear the temp file so tovis-clip-*.mov files don't pile up in tmp.
+        .onChange(of: scrubClip) { old, new in
+            if let old, new == nil { try? FileManager.default.removeItem(at: old.url) }
+        }
         // Pause the live camera while the pro is reviewing/picking shots or in
         // settings — otherwise it keeps capturing, scoring, and auto-harvesting
         // behind the sheet. Resume when they return to shooting.
@@ -170,6 +189,10 @@ struct ProCapturePhotosView: View {
                     CameraPreview(session: camera.session) { camera.previewLayer = $0 }
                         .ignoresSafeArea(edges: .top)
                         .overlay { focusReticleOverlay }
+                        // Drawn as a preview overlay so it shares the preview
+                        // layer's coordinate space (the box maps the sampled
+                        // sensor region exactly).
+                        .overlay { if calibrating { calibrationTarget } }
                         .gesture(
                             SpatialTapGesture().onEnded { handleFocusTap($0.location) }
                         )
@@ -190,7 +213,6 @@ struct ProCapturePhotosView: View {
 
                 if settings.showGrid { thirdsGrid }
                 if settings.showLevel, let roll = coach?.deviceRoll { levelIndicator(roll) }
-                if calibrating { calibrationTarget }
 
                 VStack(spacing: 0) {
                     phaseHeader
@@ -234,24 +256,40 @@ struct ProCapturePhotosView: View {
 
     // MARK: - White balance (gray-card calibration)
 
-    /// The center target the pro fills with a neutral surface — matches the region
-    /// sampled for white balance (center 40% of the frame).
+    /// The target the pro fills with a neutral surface — the EXACT region the
+    /// analyzer samples for white balance (center 40% of the sensor frame),
+    /// mapped through the preview layer's aspect-fill so the box on screen is
+    /// the area being measured (an aspect-filled preview crops the sensor, so a
+    /// naive "40% of the screen" box would under-show the sampled area).
     private var calibrationTarget: some View {
         GeometryReader { geo in
-            let w = geo.size.width * 0.4, h = geo.size.height * 0.4
+            let box = sampledRegionRect(in: geo.size)
             ZStack {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(BrandColor.gold, style: StrokeStyle(lineWidth: 2, dash: [7, 5]))
-                    .frame(width: w, height: h)
+                    .frame(width: box.width, height: box.height)
                 Text("Fill this with a white towel or gray card")
                     .font(BrandFont.body(12, .semibold)).foregroundStyle(.white)
                     .padding(.horizontal, 12).padding(.vertical, 6)
                     .background(.black.opacity(0.6), in: Capsule())
-                    .offset(y: -h / 2 - 24)
+                    .offset(y: -box.height / 2 - 24)
             }
-            .frame(width: geo.size.width, height: geo.size.height)
+            .position(x: box.midX, y: box.midY)
         }
         .allowsHitTesting(false)
+    }
+
+    /// Preview-space rect of the analyzer's white-balance sample region. The
+    /// sample is the center 40% of the frame in both dimensions, which is
+    /// rotation-invariant — so the same normalized rect works as a metadata
+    /// output rect. Falls back to a centered box before the layer has geometry.
+    private func sampledRegionRect(in size: CGSize) -> CGRect {
+        let normalized = CGRect(x: 0.3, y: 0.3, width: 0.4, height: 0.4)
+        if let layer = camera.previewLayer, layer.bounds.width > 0 {
+            return layer.layerRectConverted(fromMetadataOutputRect: normalized)
+        }
+        return CGRect(x: size.width * 0.3, y: size.height * 0.3,
+                      width: size.width * 0.4, height: size.height * 0.4)
     }
 
     /// The calibration action row (shown in the controls while calibrating).
@@ -327,6 +365,7 @@ struct ProCapturePhotosView: View {
     private func attemptGuidedCapture() {
         guard settings.autoCapture, settings.showGuides, !guide.steps.isEmpty,
               !allStepsDone, !uploading, !isReviewing, !calibrating,
+              !camera.isRecording,   // don't auto-fire stills mid-clip
               camera.status == .ready else { return }
         autoArmed = false
         Task {
@@ -657,6 +696,22 @@ struct ProCapturePhotosView: View {
                     .multilineTextAlignment(.center)
             }
 
+            // Shots whose upload failed — kept locally, retried on demand.
+            if !failedUploads.isEmpty {
+                Button { Task { await retryFailedUploads() } } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.clockwise").font(.system(size: 13, weight: .semibold))
+                        Text("Retry \(failedUploads.count) unsaved photo\(failedUploads.count == 1 ? "" : "s")")
+                            .font(BrandFont.body(14, .semibold))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(BrandColor.ember.opacity(0.85), in: Capsule())
+                }
+                .disabled(uploading)
+            }
+
             // Auto-harvested "best shots" awaiting review (Session Reel).
             if let coach, !coach.harvested.isEmpty {
                 Button { showBestShots = true } label: {
@@ -676,8 +731,8 @@ struct ProCapturePhotosView: View {
             if !captured.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        ForEach(Array(captured.enumerated()), id: \.offset) { _, img in
-                            Image(uiImage: img)
+                        ForEach(captured) { shot in
+                            Image(uiImage: shot.image)
                                 .resizable()
                                 .scaledToFill()
                                 .frame(width: 54, height: 54)
@@ -796,17 +851,33 @@ struct ProCapturePhotosView: View {
     // MARK: - Capture + upload
 
     private func capture() async {
+        // One capture at a time — the guided auto-shot and a manual shutter tap
+        // can otherwise interleave (a second capturePhoto would be rejected by
+        // the controller, but never let it get that far).
+        guard !uploading else { return }
         uploading = true
         errorMessage = nil
         defer { uploading = false }
+        let data: Data
         do {
-            let data = try await camera.capturePhoto()
-            // Shutter confirmation: a brief flash + a light tap.
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            withAnimation(.easeOut(duration: 0.08)) { flash = true }
-            withAnimation(.easeIn(duration: 0.18).delay(0.08)) { flash = false }
-            if let img = UIImage(data: data) { captured.insert(img, at: 0) }
-            markCurrentCaptured()   // complete the guided shot + advance
+            data = try await camera.capturePhoto()
+        } catch {
+            errorMessage = "Couldn’t take that photo. Please try again."
+            return
+        }
+        // Shutter confirmation: a brief flash + a light tap.
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        withAnimation(.easeOut(duration: 0.08)) { flash = true }
+        withAnimation(.easeIn(duration: 0.18).delay(0.08)) { flash = false }
+        if let img = UIImage(data: data) { captured.insert(CapturedShot(image: img), at: 0) }
+        markCurrentCaptured()   // complete the guided shot + advance
+        await upload(data)
+    }
+
+    /// Upload one captured photo. On failure the bytes join the retry queue —
+    /// a flaky connection must never lose a shot the pro already took.
+    private func upload(_ data: Data) async {
+        do {
             try await session.client.proMedia.uploadSessionPhoto(
                 bookingId: bookingId,
                 phase: phase,
@@ -815,9 +886,22 @@ struct ProCapturePhotosView: View {
             session.signalRefresh()   // the hub's gallery refreshes
         } catch let error as APIError {
             errorMessage = error.userMessage
+            failedUploads.append(data)
         } catch {
-            errorMessage = "Couldn’t save that photo. Please try again."
+            errorMessage = "Couldn’t save that photo — it’s kept here to retry."
+            failedUploads.append(data)
         }
+    }
+
+    /// Re-attempt every queued failed upload; whatever fails again re-queues.
+    private func retryFailedUploads() async {
+        guard !uploading, !failedUploads.isEmpty else { return }
+        uploading = true
+        errorMessage = nil
+        defer { uploading = false }
+        let pending = failedUploads
+        failedUploads = []
+        for data in pending { await upload(data) }
     }
 
     private func toggleRecording() async {

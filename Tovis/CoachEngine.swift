@@ -50,7 +50,11 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     /// Emits a harvested JPEG + its readiness. The engine stages it for review.
     nonisolated(unsafe) var onHarvest: (@Sendable (Data, Double) -> Void)?
     private var lastHarvestAt: CFTimeInterval = 0
-    private var harvestCount = 0
+    /// How many harvested shots are currently staged (unreviewed) in the tray.
+    /// The engine writes the authoritative tray count after every add/review, so
+    /// reviewing shots re-opens harvest headroom — the cap bounds the *tray*, not
+    /// the whole session. Same cross-queue pattern as `autoHarvestEnabled`.
+    nonisolated(unsafe) var stagedCount = 0
     private let minHarvestInterval = CoachTuning.minHarvestInterval
     private let maxHarvest = CoachTuning.maxHarvest
     private let harvestThreshold = CoachTuning.harvestThreshold
@@ -134,10 +138,10 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             if autoHarvestEnabled,
                readiness >= harvestThreshold,
                now - lastHarvestAt >= minHarvestInterval,
-               harvestCount < maxHarvest,
+               stagedCount < maxHarvest,
                let data = harvest(pixelBuffer) {
                 lastHarvestAt = now
-                harvestCount += 1
+                stagedCount += 1   // engine overwrites with the real tray count
                 onHarvest?(data, readiness)
             }
         }
@@ -377,6 +381,9 @@ final class CoachEngine {
     private let synthesizer = AVSpeechSynthesizer()
     private let level = DeviceLevelProvider()
     private var wasReady = false
+    /// Whether we've claimed the audio session for spoken tips (lazily, on the
+    /// first utterance — so camera sessions with voice off never touch audio).
+    private var audioSessionConfigured = false
 
     /// Readiness at/above this reads as "good to shoot" (green ring).
     static let readyThreshold = CoachTuning.readyThreshold
@@ -404,17 +411,33 @@ final class CoachEngine {
         level.start()
     }
 
-    /// Stop the motion stream when the camera leaves the screen.
-    func stop() { level.stop() }
+    /// Restart the motion stream when the camera (re)appears. `init` starts it,
+    /// but presenting a fullScreenCover (the frame scrubber) fires the camera
+    /// view's `onDisappear` → `stop()`, and the engine is reused on return — so
+    /// the view's `.task` must re-arm the level or the horizon freezes stale.
+    func start() { level.start() }
 
-    /// Drop reviewed shots (kept or discarded) from the tray.
+    /// Stop the motion stream when the camera leaves the screen.
+    func stop() {
+        level.stop()
+        // Release the speech audio session so ducked audio (salon music) recovers.
+        if audioSessionConfigured {
+            audioSessionConfigured = false
+            try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+        }
+    }
+
+    /// Drop reviewed shots (kept or discarded) from the tray. Reviewing re-opens
+    /// harvest headroom (the cap bounds the unreviewed tray, not the session).
     func removeHarvested(_ ids: Set<UUID>) {
         harvested.removeAll { ids.contains($0.id) }
+        analyzer.stagedCount = harvested.count
     }
 
     private func addHarvest(_ data: Data, _ readiness: Double) {
         guard let image = UIImage(data: data) else { return }
         harvested.insert(HarvestedShot(image: image, data: data, readiness: readiness), at: 0)
+        analyzer.stagedCount = harvested.count
     }
 
     private func apply(_ result: CoachResult) {
@@ -462,6 +485,15 @@ final class CoachEngine {
     func announce(_ text: String) { speak(text) }
 
     private func speak(_ text: String) {
+        // `.playback` sounds through the silent switch — a salon phone is almost
+        // always on silent, which would otherwise mute every spoken tip. Duck
+        // (don't stop) any music playing in the salon.
+        if !audioSessionConfigured {
+            audioSessionConfigured = true
+            let session = AVAudioSession.sharedInstance()
+            try? session.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers])
+            try? session.setActive(true)
+        }
         // Don't stack utterances — replace any in-flight tip.
         if synthesizer.isSpeaking { synthesizer.stopSpeaking(at: .immediate) }
         let utterance = AVSpeechUtterance(string: text)
