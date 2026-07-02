@@ -42,11 +42,26 @@ on `tovis-ios` `main`; the one backend change is **merged** (`tovis-app` PR #427
      camera (half-height sheet, background interaction), "Copy values" → paste back into `CoachTuning.swift`.
      Tunable statics are now `nonisolated(unsafe) static var`. Entry: coaching settings → Developer.
 
+3. **Card-applied color correction + card-anchored exposure (`cbc4d83`)** — the calibration card now changes the
+   pixels (the per-room adaptation layer; user's stated goal). Two-shot scan (calibration → **Card** mode →
+   Scan card): shot 1 neutral band → WB lock; shot 2 under locked WB → gain-normalized LINEAR-space chromatic 3×3
+   (+ gray-ramp validity gate) + **exposure EV anchor** at the camera (composes w/ face-metering bias).
+   `CardCorrection` bakes the matrix into EVERY uploaded JPEG (captures, retries-once-only, best shots, scrubber
+   stills) via CIColorMatrix in linear working space. Persists per booking (`tovis.camera.cardcal.{bookingId}`).
+   TovisKit: `CardGeometry` (mirrors `docs/calibration/generate_card.py`), sRGB↔linear, `chromaticCorrection`,
+   `exposureBiasEV`, `isPlausible`, `looksLikeGrayRamp` — **90 tests green**. ⚠️ Still on the PLACEHOLDER nominal
+   profile — measure a real print batch (incl. the band gray) before trusting fine color. Video clips uncorrected.
+   **Design decision (user-confirmed): CoachTuning = the universal rubric (one-time device tune, ships for
+   everyone); the CARD = the per-room/per-pro adaptation (WB + matrix + exposure at runtime).** Don't build
+   per-salon tuning profiles.
+
 **▶️ NEXT = the on-device tune pass** (now cheap: open the console, walk window/mixed/tungsten salon light, drag
 sliders, copy values back into `CoachTuning.swift`). Verify on hardware: level sign, face-exposure point mapping,
-onion-skin alignment, photo EXIF orientation in the web gallery, WB gains behavior. Then (discussed, not built):
-directive per-step guidance language, torch-as-fill suggestion, Claude vision critique at wrap-up (Phase D),
-publish before/after → Looks funnel, measured ColorChecker card (B4 — blocked on physical card).
+onion-skin alignment, photo EXIF orientation in the web gallery, WB gains behavior, **and the card scan flow
+(print the v0 PDF on any decent printer to smoke-test alignment/glare handling before the real Zebra batch)**.
+Then (discussed, not built): directive per-step guidance language, torch-as-fill suggestion, Claude vision
+critique at wrap-up (Phase D), publish before/after → Looks funnel, NFC card identify + measured batch profiles
+(B4 remainder — blocked on physical cards).
 
 > Corrections to the block below (pass 5 predates 2026-07-01 work): "AE/AF lock + tap-to-focus" and "color
 > accuracy / white balance" are NOW BUILT (`e73e966` + pass-6 work); the OOM crash is fixed (`e3f88ae`).
