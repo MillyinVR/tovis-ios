@@ -333,22 +333,28 @@ struct ProProfileTabView: View {
         } else {
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
                 ForEach(tiles.prefix(60)) { tile in
-                    Button {
-                        viewingMedia = FullscreenMedia.remote(id: tile.id, urlString: tile.src, isVideo: tile.isVideo)
-                    } label: {
-                        ZStack {
-                            BrandColor.bgSecondary
-                            if let u = URL(string: tile.displayUrl) {
-                                AsyncImage(url: u) { $0.resizable().scaledToFill() } placeholder: { ProgressView().tint(BrandColor.accent) }
+                    if let before = tile.before, let beforeStr = before.displayUrl,
+                       let beforeURL = URL(string: beforeStr), let afterURL = URL(string: tile.displayUrl) {
+                        // Paired before/after → the comparison slider fills the cell.
+                        BeforeAfterCompareView(beforeURL: beforeURL, afterURL: afterURL, height: 120, cornerRadius: 12)
+                    } else {
+                        Button {
+                            viewingMedia = FullscreenMedia.remote(id: tile.id, urlString: tile.src, isVideo: tile.isVideo)
+                        } label: {
+                            ZStack {
+                                BrandColor.bgSecondary
+                                if let u = URL(string: tile.displayUrl) {
+                                    AsyncImage(url: u) { $0.resizable().scaledToFill() } placeholder: { ProgressView().tint(BrandColor.accent) }
+                                }
+                                if tile.isVideo {
+                                    Image(systemName: "play.circle.fill").font(.system(size: 20)).foregroundStyle(.white.opacity(0.9))
+                                }
                             }
-                            if tile.isVideo {
-                                Image(systemName: "play.circle.fill").font(.system(size: 20)).foregroundStyle(.white.opacity(0.9))
-                            }
+                            .frame(height: 120)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         }
-                        .frame(height: 120)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
             }
             .mediaFullscreenCover($viewingMedia)
