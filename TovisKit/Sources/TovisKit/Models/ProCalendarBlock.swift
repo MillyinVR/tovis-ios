@@ -27,8 +27,10 @@ public struct ProCalendarBlockDeleteResponse: Decodable, Sendable {
 
 // ─── Locations (block create needs a target location) ──────────────────────────
 
-/// One of the pro's locations (`GET /pro/locations` → `{ locations }`). Only the
-/// fields the calendar's block flow needs are modeled; unknown keys are ignored.
+/// One of the pro's locations (`GET /pro/locations` → `{ locations }`). Models the
+/// fields the calendar's block flow and the locations editor need; unknown keys
+/// are ignored. `city`/`state`/`postalCode`/`advanceNoticeMinutes` are optional —
+/// they back the edit sheet (e.g. a mobile base's ZIP + the per-location lead time).
 public struct ProLocationSummary: Decodable, Sendable, Identifiable, Equatable {
     public let id: String
     public let type: String?
@@ -37,6 +39,13 @@ public struct ProLocationSummary: Decodable, Sendable, Identifiable, Equatable {
     public let isBookable: Bool
     public let formattedAddress: String?
     public let timeZone: String?
+    public let city: String?
+    public let state: String?
+    public let postalCode: String?
+    public let advanceNoticeMinutes: Int?
+
+    /// True for the ZIP-anchored travel base (`MOBILE_BASE`).
+    public var isMobileBase: Bool { type == "MOBILE_BASE" }
 }
 
 public struct ProLocationsResponse: Decodable, Sendable {

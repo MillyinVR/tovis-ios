@@ -38,6 +38,8 @@ public final class TovisClient: Sendable {
     public let proNotifications: ProNotificationsService
     /// PRO workspace — weekly working hours.
     public let proSchedule: ProScheduleService
+    /// PRO workspace — the pro's locations (list + add + edit + publish + remove).
+    public let proLocations: ProLocationsService
     /// PRO workspace — the clients directory (search + addresses + notes).
     public let proClients: ProClientsService
     /// PRO workspace — session media (before/after photo upload + list).
@@ -98,6 +100,7 @@ public final class TovisClient: Sendable {
         self.proProfile = ProProfileService(api: api)
         self.proNotifications = ProNotificationsService(api: api)
         self.proSchedule = ProScheduleService(api: api)
+        self.proLocations = ProLocationsService(api: api)
         self.proClients = ProClientsService(api: api)
         self.proMedia = ProMediaService(
             api: api,
