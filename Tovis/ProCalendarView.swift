@@ -52,6 +52,9 @@ struct ProCalendarView: View {
     // the bookable locations a block can pin to; an empty list hides the FAB.
     @State private var locations: [ProLocationSummary] = []
     @State private var blockSheet: BlockSheetTarget?
+    // The "+" FAB opens this chooser: add an appointment or block personal time
+    // (web MobileCalendarFab + CalendarCreateSheet).
+    @State private var showCreateChooser = false
     @State private var editorErrorMessage: String?
 
     // Auto-accept toggle + active-location filter + pending-request quick actions
@@ -109,11 +112,13 @@ struct ProCalendarView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            // "+ Block time" FAB (web MobileCalendarFab) — hidden until the pro
-            // has a bookable location to pin a block to.
+            // "+" FAB (web MobileCalendarFab + CalendarCreateSheet) — opens a
+            // chooser to add an appointment or block personal time. Hidden until
+            // the pro has a bookable location (an appointment needs one; a block
+            // pins to one).
             .overlay(alignment: .bottomTrailing) {
                 if !locations.isEmpty {
-                    Button { blockSheet = .create } label: {
+                    Button { showCreateChooser = true } label: {
                         Image(systemName: "plus")
                             .font(.system(size: 22, weight: .semibold))
                             .foregroundStyle(BrandColor.onAccent)
@@ -123,7 +128,7 @@ struct ProCalendarView: View {
                             .shadow(color: BrandColor.accent.opacity(0.4), radius: 10, y: 4)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Create blocked time")
+                    .accessibilityLabel("Add to calendar")
                     .padding(.trailing, 20)
                     .padding(.bottom, 104)   // clear the raised footer
                 }
@@ -203,6 +208,21 @@ struct ProCalendarView: View {
                     timeZone: calendarTimeZone,
                     onSaved: { Task { await load() } }
                 )
+            }
+            // The "+" chooser: both branches reuse existing flows — the new-booking
+            // form (prefilled to the viewed day) and the block-time sheet.
+            .confirmationDialog(
+                "Add to your calendar",
+                isPresented: $showCreateChooser,
+                titleVisibility: .visible
+            ) {
+                Button("Add appointment") {
+                    newBookingNav = NewBookingNav(date: defaultBlockStart)
+                }
+                Button("Block personal time") {
+                    blockSheet = .create
+                }
+                Button("Cancel", role: .cancel) {}
             }
             .alert(
                 "Couldn’t open this block",
