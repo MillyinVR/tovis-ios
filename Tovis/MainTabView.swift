@@ -5,6 +5,10 @@
 // (the web reaches bookings from the home cards and the Me tab, not the footer);
 // HomeView pushes to it, and the Me tab links to it.
 //
+// Social-first landing: clients open on the Looks feed (the center feather),
+// matching the web, where login/verify default a client to `/looks`. Tovis is a
+// social platform first, so the feed is always the first thing a client sees.
+//
 // We keep a real SwiftUI TabView for per-tab state + lazy loading, hide its
 // system bar, and overlay our branded bar via safeAreaInset so the raised
 // feather can lift above the bar like the web's .tovis-center-lift.
@@ -13,7 +17,7 @@ import TovisKit
 
 struct MainTabView: View {
     @Environment(SessionModel.self) private var session
-    @State private var tab: ClientTab.ID = .home
+    @State private var tab: ClientTab.ID = .looks
     @State private var messagesBadge: String?
     /// A booking surfaced by a tapped push (`tovis://`-style `href` deep link),
     /// presented over the shell. nil when nothing is being deep-linked.
