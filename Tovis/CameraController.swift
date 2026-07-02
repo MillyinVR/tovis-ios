@@ -123,13 +123,13 @@ final class CameraController: NSObject {
                 // strip thumbnails) and the upload — transients that piled into
                 // the jetsam kills — with no visible gain on the feed/profile.
                 settings.photoQualityPrioritization = .quality
-                if let dims = self.device?.activeFormat.supportedMaxPhotoDimensions {
-                    // Ascending order — largest that stays within budget, else
-                    // the smallest offered.
-                    let capped = dims.last { Int($0.width) * Int($0.height) <= 24_500_000 }
-                    if let pick = capped ?? dims.first {
-                        settings.maxPhotoDimensions = pick
-                    }
+                // Match the output's declared ceiling exactly (set once in
+                // `configureSession`). AVFoundation requires
+                // `settings.maxPhotoDimensions ≤ photoOutput.maxPhotoDimensions`
+                // or `capturePhoto` throws NSInvalidArgumentException.
+                let outputMax = self.photoOutput.maxPhotoDimensions
+                if outputMax.width > 0, outputMax.height > 0 {
+                    settings.maxPhotoDimensions = outputMax
                 }
                 self.photoOutput.capturePhoto(with: settings, delegate: self)
             }
@@ -367,6 +367,16 @@ final class CameraController: NSObject {
 
     // MARK: - Setup
 
+    /// The largest still dimensions we'll shoot for a device's active format:
+    /// the biggest at/under ~24 MP (full-sensor 48 MP stills just balloon every
+    /// downstream decode/upload with no feed/profile gain), else the smallest
+    /// offered. Both the photo output's ceiling and each capture's `settings`
+    /// derive from this so they always agree — see `capturePhoto`.
+    nonisolated private static func cappedPhotoDimensions(for device: AVCaptureDevice) -> CMVideoDimensions? {
+        let dims = device.activeFormat.supportedMaxPhotoDimensions
+        return dims.last(where: { Int($0.width) * Int($0.height) <= 24_500_000 }) ?? dims.first
+    }
+
     private static func ensureAuthorized() async -> Bool {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized: return true
@@ -405,6 +415,14 @@ final class CameraController: NSObject {
                 // Prioritize quality — these stills go on the pro's profile + the
                 // Looks feed, so favor the best capture over speed.
                 self.photoOutput.maxPhotoQualityPrioritization = .quality
+                // Declare the output's max still dimensions up front. Per-capture
+                // `settings.maxPhotoDimensions` may not exceed this, so both are
+                // set from the same cap (else `capturePhoto` throws). Capped at
+                // ~24 MP: full-sensor 48 MP stills balloon every downstream
+                // decode/upload with no feed/profile gain.
+                if let dims = Self.cappedPhotoDimensions(for: device) {
+                    self.photoOutput.maxPhotoDimensions = dims
+                }
 
                 // Live frames for the on-device coach (optional).
                 if let frameDelegate = self.frameDelegate, self.session.canAddOutput(self.videoOutput) {
