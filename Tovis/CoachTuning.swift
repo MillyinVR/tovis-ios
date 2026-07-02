@@ -129,6 +129,15 @@ enum CoachTuning {
     /// |Δ warmth| vs the before shot within this = "light matches".
     nonisolated(unsafe) static var lightMatchWarmthTolerance: Double = 0.07
 
+    // MARK: - Calibration drift (re-scan nudge)
+
+    /// |Δ warmth| vs the card-scan moment that reads as "the light changed"
+    /// (sun moved, overheads flipped) — the calibration is going stale.
+    nonisolated(unsafe) static var calibrationDriftWarmth: Double = 0.12
+    /// The drift must hold this long (seconds) before nudging a re-scan —
+    /// someone walking past a window shouldn't trigger it.
+    nonisolated(unsafe) static var calibrationDriftSeconds: Double = 8
+
     // MARK: - Post-capture QC (verifies the ACTUAL capture, not the preview)
 
     /// Normalized sharpness below this on the captured image = offer a retake.

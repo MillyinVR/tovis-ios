@@ -11,9 +11,11 @@
 // at the camera (EV bias from the band) because AE re-meters between the card
 // shot and the subject shot. Math + geometry live in TovisKit CameraCalibration
 // (pure, unit-tested); this file is the CoreImage glue.
+import AVFoundation
 import CoreImage
 import Foundation
 import TovisKit
+import Vision
 
 enum CardScanner {
     /// One card read: every swatch + the neutral band, sampled from a captured
@@ -23,25 +25,80 @@ enum CardScanner {
         let neutralBand: RGB
     }
 
-    /// Sample the card from a captured JPEG. `cardRegion` is the upright,
-    /// top-left-normalized frame rect the on-screen alignment box showed — the
-    /// card is assumed to fill it. Nil when the bytes don't decode.
+    /// Sample the card from a captured JPEG. The card is FOUND, not assumed:
+    /// rectangle detection + perspective rectification locate it anywhere in
+    /// frame (held at an angle, off-center — fine), falling back to the
+    /// on-screen alignment box region (`cardRegion`, upright top-left
+    /// normalized) when detection finds nothing. An upside-down card reverses
+    /// the swatch order, so a read whose gray ramp doesn't validate is retried
+    /// 180°-flipped (the neutral band is centered, so it's flip-immune either
+    /// way). Nil when the bytes don't decode.
     static func read(jpeg: Data, cardRegion: CGRect) async -> Reading? {
         await Task.detached(priority: .userInitiated) {
             guard let full = CIImage(data: jpeg, options: [.applyOrientationProperty: true]) else {
                 return nil
             }
-            let card = FrameMath.crop(full, normalizedTopLeft: cardRegion)
-            func sample(_ rect: CGRect) -> RGB {
-                let cell = FrameMath.crop(card, normalizedTopLeft: rect)
-                let avg = FrameMath.averageRGB(cell, context: FrameMath.context) ?? (0.5, 0.5, 0.5)
-                return RGB(avg.r, avg.g, avg.b)
+            let card = detectAndRectify(full) ?? FrameMath.crop(full, normalizedTopLeft: cardRegion)
+            guard let reading = sampleGrid(card) else { return nil }
+            if CameraCalibration.looksLikeGrayRamp(measuredSRGB: reading.swatches) {
+                return reading
             }
-            return Reading(
-                swatches: CardGeometry.swatchSampleRects().map(sample),
-                neutralBand: sample(CardGeometry.wbSampleRect)
-            )
+            let e = card.extent
+            let flipped = card.transformed(by: CGAffineTransform(
+                a: -1, b: 0, c: 0, d: -1,
+                tx: e.minX + e.maxX, ty: e.minY + e.maxY))
+            if let flippedReading = sampleGrid(flipped),
+               CameraCalibration.looksLikeGrayRamp(measuredSRGB: flippedReading.swatches) {
+                return flippedReading
+            }
+            // Neither orientation validates — hand back the unflipped read and
+            // let the caller's gate reject it with a re-scan message.
+            return reading
         }.value
+    }
+
+    /// Find the card-shaped rectangle and warp it flat. Nil = no candidate.
+    private static func detectAndRectify(_ image: CIImage) -> CIImage? {
+        let request = VNDetectRectanglesRequest()
+        // CR-80 short/long ≈ 0.63; leave slack for perspective foreshortening.
+        request.minimumAspectRatio = 0.5
+        request.maximumAspectRatio = 0.78
+        request.minimumSize = 0.2          // the card should be a real chunk of frame
+        request.minimumConfidence = 0.6
+        request.maximumObservations = 3
+        let handler = VNImageRequestHandler(ciImage: image, options: [:])
+        try? handler.perform([request])
+        guard let best = request.results?.max(by: {
+            $0.boundingBox.width * $0.boundingBox.height
+                < $1.boundingBox.width * $1.boundingBox.height
+        }) else { return nil }
+
+        // Vision corners are normalized bottom-left; CIPerspectiveCorrection
+        // wants image-space points (also bottom-left) — scale by the extent.
+        let e = image.extent
+        func point(_ p: CGPoint) -> CIVector {
+            CIVector(x: e.minX + p.x * e.width, y: e.minY + p.y * e.height)
+        }
+        return image.applyingFilter("CIPerspectiveCorrection", parameters: [
+            "inputTopLeft": point(best.topLeft),
+            "inputTopRight": point(best.topRight),
+            "inputBottomLeft": point(best.bottomLeft),
+            "inputBottomRight": point(best.bottomRight),
+        ])
+    }
+
+    /// Sample the swatch grid + neutral band from a flattened card image.
+    private static func sampleGrid(_ card: CIImage) -> Reading? {
+        guard card.extent.width > 8, card.extent.height > 8 else { return nil }
+        func sample(_ rect: CGRect) -> RGB {
+            let cell = FrameMath.crop(card, normalizedTopLeft: rect)
+            let avg = FrameMath.averageRGB(cell, context: FrameMath.context) ?? (0.5, 0.5, 0.5)
+            return RGB(avg.r, avg.g, avg.b)
+        }
+        return Reading(
+            swatches: CardGeometry.swatchSampleRects().map(sample),
+            neutralBand: sample(CardGeometry.wbSampleRect)
+        )
     }
 }
 
@@ -70,5 +127,40 @@ enum CardCorrection {
             return FrameMath.context.jpegRepresentation(
                 of: corrected, colorSpace: srgb, options: [quality: 0.95])
         }.value
+    }
+
+    /// Bake the matrix into a recorded clip: re-export with a CoreImage
+    /// composition applying the same CIColorMatrix per frame. Returns the
+    /// corrected temp-file URL (caller deletes it after upload), nil on any
+    /// failure — callers fall back to the original clip. Video color
+    /// management is looser than stills (BT.709 vs sRGB primaries), so this is
+    /// a close approximation, not colorimetric truth.
+    static func applyToVideo(_ matrix: ColorMatrix3x3, at url: URL) async -> URL? {
+        let asset = AVURLAsset(url: url)
+        let m = matrix.m
+        let composition = AVMutableVideoComposition(asset: asset) { request in
+            let corrected = request.sourceImage.applyingFilter("CIColorMatrix", parameters: [
+                "inputRVector": CIVector(x: m[0], y: m[1], z: m[2], w: 0),
+                "inputGVector": CIVector(x: m[3], y: m[4], z: m[5], w: 0),
+                "inputBVector": CIVector(x: m[6], y: m[7], z: m[8], w: 0),
+                "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
+                "inputBiasVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+            ])
+            request.finish(with: corrected, context: FrameMath.context)
+        }
+        guard let export = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHighestQuality) else {
+            return nil
+        }
+        let out = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tovis-clip-corrected-\(UUID().uuidString).mov")
+        export.videoComposition = composition
+        export.outputURL = out
+        export.outputFileType = .mov
+        await export.export()
+        guard export.status == .completed else {
+            try? FileManager.default.removeItem(at: out)
+            return nil
+        }
+        return out
     }
 }

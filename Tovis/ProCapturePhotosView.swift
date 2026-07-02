@@ -45,6 +45,13 @@ struct ProCapturePhotosView: View {
     @State private var cardMatrix: ColorMatrix3x3?
     /// One-line calibration feedback ("Card locked — …" / "Couldn't read…").
     @State private var calibrationStatus: String?
+    /// Scene warmth at card-scan time — the drift detector compares the live
+    /// warmth against this to notice "the light changed since calibration."
+    @State private var calibrationWarmth: Double?
+    /// When the live warmth first drifted past tolerance (nil = not drifting).
+    @State private var driftSince: Date?
+    /// The re-scan nudge was acted on/shown — don't nag again this session.
+    @State private var driftDismissed = false
     /// Local thumbnails of shots taken this session (newest first) — shown
     /// instantly from the captured bytes, no network round-trip.
     @State private var captured: [CapturedShot] = []
@@ -106,7 +113,15 @@ struct ProCapturePhotosView: View {
         return referenceURLs[min(max(referenceIndex, 0), referenceURLs.count - 1)]
     }
 
+    // The view is assembled in three layers (stack → lifecycle → presentation)
+    // because one flat modifier chain exceeds what the type-checker resolves
+    // in reasonable time.
     var body: some View {
+        presentationLayer
+    }
+
+    /// The camera stack itself.
+    private var cameraStack: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
@@ -123,6 +138,11 @@ struct ProCapturePhotosView: View {
                 Color.white.ignoresSafeArea().transition(.opacity)
             }
         }
+    }
+
+    /// Lifecycle wiring: startup, teardown, and the live onChange reactions.
+    private var lifecycleLayer: some View {
+        cameraStack
         .task {
             guide = ShotGuide.resolve(forServiceNamed: serviceName)
             if currentStepID == nil { currentStepID = guide.steps.first?.id }
@@ -150,12 +170,14 @@ struct ProCapturePhotosView: View {
                gains.count == 3 {
                 camera.applyWhiteBalanceGains(r: gains[0], g: gains[1], b: gains[2])
             }
-            // Same for a card calibration (matrix + exposure anchor).
+            // Same for a card calibration (matrix + exposure anchor [+ the
+            // scan-time warmth the drift detector compares against]).
             if cardMatrix == nil,
                let stored = UserDefaults.standard.array(forKey: cardCalDefaultsKey) as? [Double],
-               stored.count == 10 {
+               stored.count >= 10 {
                 cardMatrix = ColorMatrix3x3(Array(stored[0..<9]))
                 camera.setCalibrationExposureBias(Float(stored[9]))
+                calibrationWarmth = stored.count >= 11 ? stored[10] : nil
             }
             // Stamp each "before" reference's light so the AFTER can match it.
             if referenceLight.isEmpty, !referenceURLs.isEmpty {
@@ -166,6 +188,10 @@ struct ProCapturePhotosView: View {
         // current guided step (and clear for freeform / all-done shooting).
         .onChange(of: activeExpectations) { _, expectations in
             coach?.analyzer.setExpectations(expectations)
+        }
+        // Watch for the room's light drifting away from the card calibration.
+        .onChange(of: coach?.frameWarmth ?? 0) { _, warmth in
+            updateDrift(warmth)
         }
         .onDisappear { camera.stop(); coach?.stop() }
         // A recorded clip is one-shot: once its review closes (saved or not),
@@ -203,6 +229,11 @@ struct ProCapturePhotosView: View {
         .onChange(of: coach?.isSteadyReady ?? false) { _, steady in
             if steady, autoArmed { attemptGuidedCapture() }
         }
+    }
+
+    /// Sheets, covers, and dialogs over the live camera.
+    private var presentationLayer: some View {
+        lifecycleLayer
         .sheet(isPresented: $showSettings) {
             #if DEBUG
             CoachSettingsSheet(settings: settings, onOpenTuning: { showTuning = true })
@@ -539,6 +570,9 @@ struct ProCapturePhotosView: View {
         camera.resetWhiteBalance()
         cardMatrix = nil
         calibrationStatus = nil
+        calibrationWarmth = nil
+        driftSince = nil
+        driftDismissed = false
         UserDefaults.standard.removeObject(forKey: wbDefaultsKey)
         UserDefaults.standard.removeObject(forKey: cardCalDefaultsKey)
     }
@@ -582,9 +616,56 @@ struct ProCapturePhotosView: View {
         }
         cardMatrix = matrix
         camera.setCalibrationExposureBias(Float(ev))
-        UserDefaults.standard.set(matrix.m + [ev], forKey: cardCalDefaultsKey)
+        // Remember the scan-moment warmth so the drift detector can notice the
+        // room's light changing out from under the calibration.
+        calibrationWarmth = coach?.frameWarmth
+        driftSince = nil
+        driftDismissed = false
+        let stored = matrix.m + [ev] + (calibrationWarmth.map { [$0] } ?? [])
+        UserDefaults.standard.set(stored, forKey: cardCalDefaultsKey)
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         calibrationStatus = "Card locked — color & exposure are calibrated."
+    }
+
+    // MARK: - Calibration drift (the light changed since the card scan)
+
+    /// Sustained warmth drift vs the scan moment → surface the re-scan nudge.
+    private func updateDrift(_ warmth: Double) {
+        guard cardMatrix != nil, let calibrated = calibrationWarmth, !driftDismissed else {
+            driftSince = nil
+            return
+        }
+        if abs(warmth - calibrated) > CoachTuning.calibrationDriftWarmth {
+            if driftSince == nil { driftSince = Date() }
+        } else {
+            driftSince = nil
+        }
+    }
+
+    private var driftNudgeActive: Bool {
+        guard let since = driftSince else { return false }
+        return Date().timeIntervalSince(since) >= CoachTuning.calibrationDriftSeconds
+    }
+
+    /// One-tap path back to the card scan when the light has moved on.
+    @ViewBuilder private var driftNudgePill: some View {
+        if driftNudgeActive {
+            Button {
+                driftDismissed = true
+                calibrating = true
+                cardMode = true
+                calibrationStatus = nil
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "lightbulb.max").font(.system(size: 11, weight: .bold))
+                    Text("Light’s changed — re-scan the card").font(BrandFont.body(12, .semibold))
+                }
+                .foregroundStyle(BrandColor.gold)
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .background(.black.opacity(0.45), in: Capsule())
+                .overlay(Capsule().strokeBorder(BrandColor.gold.opacity(0.5), lineWidth: 1))
+            }
+        }
     }
 
     /// Sample the center patch + lock white balance to neutralize the room's cast.
@@ -1022,6 +1103,7 @@ struct ProCapturePhotosView: View {
         VStack(spacing: 14) {
             if calibrating { calibrationControls }
             lightMatchPill
+            driftNudgePill
             if !referenceURLs.isEmpty { onionControls }
 
             if let errorMessage {

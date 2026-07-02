@@ -185,9 +185,22 @@ struct FrameScrubberView: View {
     private func saveVideo() async {
         working = true; message = nil
         defer { working = false }
+        // Bake the card correction into the clip too (falls back to the
+        // original if the re-export fails — a raw clip beats a lost one).
+        var uploadURL = videoURL
+        if let correction {
+            message = "Applying color correction…"
+            if let corrected = await CardCorrection.applyToVideo(correction, at: videoURL) {
+                uploadURL = corrected
+            }
+            message = nil
+        }
+        defer {
+            if uploadURL != videoURL { try? FileManager.default.removeItem(at: uploadURL) }
+        }
         do {
             try await session.client.proMedia.uploadSessionVideo(
-                bookingId: bookingId, phase: phase, fileURL: videoURL
+                bookingId: bookingId, phase: phase, fileURL: uploadURL
             )
             session.signalRefresh()
             message = "Saved the clip."
