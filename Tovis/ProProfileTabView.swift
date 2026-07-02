@@ -148,9 +148,14 @@ struct ProProfileTabView: View {
                     pillButton("Edit") { editing = true }
                     pillButton("Payment settings") { showPayment = true }
                     if isApproved {
-                        Text("View as client ›")
-                            .font(BrandFont.body(12, .semibold))
-                            .foregroundStyle(BrandColor.accent)
+                        NavigationLink {
+                            ProProfileView(professionalId: mine.id, fallbackName: name)
+                        } label: {
+                            Text("View as client ›")
+                                .font(BrandFont.body(12, .semibold))
+                                .foregroundStyle(BrandColor.accent)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }

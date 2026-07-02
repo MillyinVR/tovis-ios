@@ -62,7 +62,15 @@ on `tovis-ios` `main`; the one backend change is **merged** (`tovis-app` PR #427
    photograph Tovis card + ColorChecker side-by-side in the same light → derive the batch's true swatch values
    → new `CardReferenceProfile` keyed by NFC batch id. Pros only ever touch their Tovis card.**
 
-**▶️ NEXT = the on-device tune pass** (now cheap: open the console, walk window/mixed/tungsten salon light, drag
+4. **Trending shot packs + pose direction (`b895f64` + tovis-app PR #453 OPEN)** — the "smart/viral" camera.
+   Server-driven pose/shot recipes (`lib/pro/cameraShotPacks.ts`, `GET /pro/camera/shot-packs`): trend CONTENT
+   updates server-side weekly (later: generated from Looks engagement); the app ships the measurable pose-rule
+   VOCABULARY (handNearFace/bothHandsVisible/shouldersTilted/shouldersLevel/faceNearShoulder) and drops unknown
+   kinds (fixture proves forward-compat decode). `PoseSignal` now carries body joints; `PoseCoach` evaluates the
+   step's rules with aspect-corrected geometry — first unmet rule = the spoken/shown directive, readiness held at
+   0.45 until the subject is IN the pose (auto-capture waits for it). "Trending" flame menu in the guide bar
+   switches standard set ↔ matching packs. v1 packs: The Reveal · Over-Shoulder Glance · Claw & Sparkle · Golden
+   Glow. **MERGE #453 + deploy before the menu lights up** (camera falls back to standard guides silently).
 sliders, copy values back into `CoachTuning.swift`). Verify on hardware: level sign, face-exposure point mapping,
 onion-skin alignment, photo EXIF orientation in the web gallery, WB gains behavior, **and the card scan flow
 (print the v0 PDF on any decent printer to smoke-test alignment/glare handling before the real Zebra batch)**.
