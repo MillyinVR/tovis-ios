@@ -116,36 +116,53 @@ struct ProReviewsListView: View {
     }
 
     private func mediaGrid(_ tiles: [ProReviewItem.MediaTile]) -> some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
-            ForEach(tiles) { tile in
-                Button {
-                    // `src` is a signed thumbnail/source URL (poster for video),
-                    // so open it as an image — reliable full-size view of the shot.
-                    viewingMedia = FullscreenMedia.remote(id: tile.id, urlString: tile.src, isVideo: false)
-                } label: {
-                    ZStack(alignment: .topTrailing) {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous).fill(BrandColor.bgPrimary)
-                        if let url = URL(string: tile.src) {
-                            AsyncImage(url: url) { image in
-                                image.resizable().scaledToFill()
-                            } placeholder: {
-                                ProgressView().tint(BrandColor.accent)
+        // A paired before is subsumed by its after's slider, so drop it from the grid.
+        let beforeIds = Set(tiles.compactMap { $0.before?.id })
+        let visible = tiles.filter { !beforeIds.contains($0.id) }
+        return LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
+            ForEach(visible) { tile in
+                if let before = tile.before, let beforeStr = before.displayUrl,
+                   let beforeURL = URL(string: beforeStr), let afterURL = URL(string: tile.src) {
+                    // Paired before/after → the comparison slider fills the square cell.
+                    Color.clear
+                        .aspectRatio(1, contentMode: .fit)
+                        .overlay {
+                            GeometryReader { geo in
+                                BeforeAfterCompareView(beforeURL: beforeURL, afterURL: afterURL, height: geo.size.height, cornerRadius: 10)
+                                    .frame(width: geo.size.width, height: geo.size.height)
                             }
                         }
-                        if tile.isVideo {
-                            Text("VIDEO")
-                                .font(BrandFont.mono(8))
-                                .foregroundStyle(BrandColor.textPrimary)
-                                .padding(.horizontal, 5).padding(.vertical, 2)
-                                .background(BrandColor.bgPrimary.opacity(0.72))
-                                .clipShape(Capsule())
-                                .padding(6)
+                        .clipped()
+                } else {
+                    Button {
+                        // `src` is a signed thumbnail/source URL (poster for video),
+                        // so open it as an image — reliable full-size view of the shot.
+                        viewingMedia = FullscreenMedia.remote(id: tile.id, urlString: tile.src, isVideo: false)
+                    } label: {
+                        ZStack(alignment: .topTrailing) {
+                            RoundedRectangle(cornerRadius: 10, style: .continuous).fill(BrandColor.bgPrimary)
+                            if let url = URL(string: tile.src) {
+                                AsyncImage(url: url) { image in
+                                    image.resizable().scaledToFill()
+                                } placeholder: {
+                                    ProgressView().tint(BrandColor.accent)
+                                }
+                            }
+                            if tile.isVideo {
+                                Text("VIDEO")
+                                    .font(BrandFont.mono(8))
+                                    .foregroundStyle(BrandColor.textPrimary)
+                                    .padding(.horizontal, 5).padding(.vertical, 2)
+                                    .background(BrandColor.bgPrimary.opacity(0.72))
+                                    .clipShape(Capsule())
+                                    .padding(6)
+                            }
                         }
+                        .aspectRatio(1, contentMode: .fill)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     }
-                    .aspectRatio(1, contentMode: .fill)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
         }
     }

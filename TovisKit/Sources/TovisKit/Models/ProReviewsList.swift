@@ -30,6 +30,8 @@ public struct ProReviewItem: Decodable, Sendable, Identifiable {
         public let services: [ServiceTag]
         /// Render-safe (signed) thumbnail/source URL.
         public let src: String
+        /// Opt-in before/after pairing → this after tile renders as the slider.
+        public let before: PairedBeforeMedia?
 
         public struct ServiceTag: Decodable, Sendable, Identifiable {
             public let id: String
