@@ -12,6 +12,9 @@ struct BestShotsReviewView: View {
     let coach: CoachEngine
     let bookingId: String
     let phase: MediaPhase
+    /// Card-solved color correction — baked into each kept shot at upload,
+    /// same as manual captures. Nil = no card scanned.
+    var correction: ColorMatrix3x3? = nil
 
     @State private var selected: Set<UUID> = []
     @State private var uploading = false
@@ -144,11 +147,15 @@ struct BestShotsReviewView: View {
         var uploaded: Set<UUID> = []
         for (index, shot) in shots.enumerated() {
             progress = "Uploading \(index + 1) of \(shots.count)…"
+            var payload = shot.data
+            if let correction, let corrected = await CardCorrection.apply(correction, to: shot.data) {
+                payload = corrected
+            }
             do {
                 try await session.client.proMedia.uploadSessionPhoto(
                     bookingId: bookingId,
                     phase: phase,
-                    imageData: shot.data
+                    imageData: payload
                 )
                 uploaded.insert(shot.id)
             } catch let error as APIError {

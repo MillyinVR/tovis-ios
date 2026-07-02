@@ -9,6 +9,7 @@
 //      the printed card's *measured* swatches, keyed by the NFC card-version id.
 //      SCAFFOLD — the reference profile below is a placeholder until a real card
 //      batch is measured.
+import CoreGraphics
 import Foundation
 
 /// A linear RGB triple in 0…1 (working space for the calibration math).
@@ -68,6 +69,103 @@ public enum CameraCalibration {
         return ColorMatrix3x3([rr[0], rr[1], rr[2], rg[0], rg[1], rg[2], rb[0], rb[1], rb[2]])
     }
 
+    // MARK: - sRGB ↔ linear (color math belongs in linear light)
+
+    /// sRGB EOTF: gamma-encoded 0…1 → linear 0…1.
+    public static func srgbToLinear(_ v: Double) -> Double {
+        v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+    }
+
+    public static func srgbToLinear(_ c: RGB) -> RGB {
+        RGB(srgbToLinear(c.r), srgbToLinear(c.g), srgbToLinear(c.b))
+    }
+
+    /// Rec.709 luma of a LINEAR color.
+    public static func linearLuma(_ c: RGB) -> Double {
+        0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
+    }
+
+    // MARK: - Card-applied correction (chromatic matrix + exposure anchor)
+
+    /// The full card solve, from gamma-encoded sRGB samples (what the camera
+    /// pipeline hands back) to a LINEAR-space chromatic correction matrix:
+    /// linearize both sides, least-squares solve, then normalize overall gain so
+    /// the neutral swatch keeps its measured luma — the matrix corrects COLOR
+    /// only. Exposure is anchored separately (`exposureBiasEV`) at the camera,
+    /// because auto-exposure re-meters between the card shot and the subject
+    /// shot, so baking the card shot's gain into the matrix would mis-expose
+    /// every other frame. Nil when the solve fails or reads as implausible
+    /// (badly aligned card, glare) — callers should tell the pro to re-scan.
+    public static func chromaticCorrection(
+        measuredSRGB: [RGB],
+        profile: CardReferenceProfile
+    ) -> ColorMatrix3x3? {
+        guard measuredSRGB.count == profile.referenceSwatches.count else { return nil }
+        let measured = measuredSRGB.map(srgbToLinear)
+        let reference = profile.referenceSwatches.map(srgbToLinear)
+        guard var matrix = correctionMatrix(measured: measured, reference: reference) else { return nil }
+
+        // Strip the exposure component: the neutral swatch's luma must survive
+        // the correction unchanged.
+        let neutral = measured[profile.neutralPatchIndex]
+        let before = linearLuma(neutral)
+        let after = linearLuma(matrix.apply(neutral))
+        guard before > 1e-4, after > 1e-4 else { return nil }
+        let gain = after / before
+        matrix = ColorMatrix3x3(matrix.m.map { $0 / gain })
+
+        guard isPlausible(matrix) else { return nil }
+        return matrix
+    }
+
+    /// Exposure anchor from the card's neutral region: how many EV the camera
+    /// should bias so the neutral renders at its reference luma. Positive =
+    /// scene under-exposed → push exposure up. Clamped — a huge value means a
+    /// bad read, not a huge correction.
+    public static func exposureBiasEV(
+        measuredNeutralSRGB: RGB,
+        referenceNeutralSRGB: RGB,
+        clampEV: Double = 1.5
+    ) -> Double? {
+        let measured = linearLuma(srgbToLinear(measuredNeutralSRGB))
+        let reference = linearLuma(srgbToLinear(referenceNeutralSRGB))
+        guard measured > 1e-4, reference > 1e-4 else { return nil }
+        let ev = log2(reference / measured)
+        return min(max(ev, -clampEV), clampEV)
+    }
+
+    /// Sanity gate for a solved matrix: near-diagonal-dominant with a healthy
+    /// determinant. A wildly off matrix means the swatches weren't actually
+    /// read (misaligned card, glare, occlusion) — better to reject and re-scan
+    /// than to "correct" every photo with garbage.
+    public static func isPlausible(_ matrix: ColorMatrix3x3) -> Bool {
+        let m = matrix.m
+        for d in [m[0], m[4], m[8]] where !(0.4...2.5).contains(d) { return false }
+        for o in [m[1], m[2], m[3], m[5], m[6], m[7]] where abs(o) > 0.6 { return false }
+        let det = m[0] * (m[4] * m[8] - m[5] * m[7])
+                - m[1] * (m[3] * m[8] - m[5] * m[6])
+                + m[2] * (m[3] * m[7] - m[4] * m[6])
+        return det > 0.05
+    }
+
+    /// "Did we actually read a card?" — the last six swatches are a gray ramp
+    /// (light → dark). A real read shows monotonically decreasing, near-neutral
+    /// luma; a misaligned card or a random scene won't. Cheap and decisive.
+    public static func looksLikeGrayRamp(measuredSRGB: [RGB]) -> Bool {
+        guard measuredSRGB.count >= 24 else { return false }
+        let ramp = Array(measuredSRGB[18...23]).map(srgbToLinear)
+        let lumas = ramp.map(linearLuma)
+        // Monotonic decreasing with real spread end-to-end.
+        for i in 1..<lumas.count where lumas[i] >= lumas[i - 1] - 1e-4 { return false }
+        guard lumas[0] > lumas[5] * 2 else { return false }
+        // Near-neutral: no channel dominates (WB is locked before this check).
+        for c in ramp {
+            let mx = max(c.r, c.g, c.b), mn = min(c.r, c.g, c.b)
+            if mx > 1e-3, (mx - mn) / mx > 0.35 { return false }
+        }
+        return true
+    }
+
     /// Invert a row-major 3×3 matrix (adjugate / determinant). Nil if singular.
     static func invert3x3(_ m: [Double]) -> [Double]? {
         let a = m[0], b = m[1], c = m[2]
@@ -98,6 +196,56 @@ public struct ColorMatrix3x3: Sendable, Equatable {
             m[6] * c.r + m[7] * c.g + m[8] * c.b
         )
     }
+}
+
+/// Where things are on the printed v0 card — mirrors `docs/calibration/
+/// generate_card.py` exactly (CR-80 85.6×54 mm, landscape: 12 swatches top,
+/// 12 bottom, big neutral-gray band center). All rects are normalized to the
+/// card's own bounds (top-left origin) so the sampler just needs the card's
+/// region in the photo.
+public enum CardGeometry {
+    public static let widthMM = 85.6
+    public static let heightMM = 54.0
+    /// Card aspect (w/h) for the on-screen alignment box.
+    public static let aspect = widthMM / heightMM
+
+    // Layout constants from generate_card.py (mm, top-left origin).
+    private static let border = 2.5
+    private static let topY = 2.5, topH = 11.0
+    private static let botY = 38.5, botH = 10.0
+    private static let swatchPad = 0.75, gap = 0.5
+
+    /// The 24 swatch sampling rects in reading order (top row 1–12, bottom row
+    /// 13–24), each inset toward its swatch's center so a slightly misaligned
+    /// hand-held card still samples paint, not borders. `inset` is the fraction
+    /// shaved off EACH side (0.28 keeps the central ~44%).
+    public static func swatchSampleRects(inset: Double = 0.28) -> [CGRect] {
+        rowRects(y: topY, h: topH, inset: inset) + rowRects(y: botY, h: botH, inset: inset)
+    }
+
+    private static func rowRects(y: Double, h: Double, inset: Double) -> [CGRect] {
+        let innerW = widthMM - 2 * border
+        let w = (innerW - gap * 11) / 12
+        let swatchY = y + swatchPad
+        let swatchH = h - 2 * swatchPad
+        return (0..<12).map { i in
+            let x = border + Double(i) * (w + gap)
+            let insetX = w * inset, insetY = swatchH * inset
+            return CGRect(
+                x: (x + insetX) / widthMM,
+                y: (swatchY + insetY) / heightMM,
+                width: (w - 2 * insetX) / widthMM,
+                height: (swatchH - 2 * insetY) / heightMM
+            )
+        }
+    }
+
+    /// Sampling rect inside the central neutral-gray band — kept below the
+    /// band's printed label text and well inside its edges.
+    public static let wbSampleRect = CGRect(x: 0.30, y: 0.40, width: 0.40, height: 0.22)
+    /// The band's nominal paint (pure 128-gray). ⚠️ Like the swatches, replace
+    /// with the batch's MEASURED value once cards are printed and measured.
+    public static let wbNominalSRGB = RGB(128.0 / 255, 128.0 / 255, 128.0 / 255)
 }
 
 /// A calibration card's known reference values, keyed by the print-batch version

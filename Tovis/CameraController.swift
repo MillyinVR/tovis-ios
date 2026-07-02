@@ -176,6 +176,13 @@ final class CameraController: NSObject {
     nonisolated(unsafe) private var userMeteringActive = false
     /// Last face point we metered at (device space), to rate-limit updates.
     nonisolated(unsafe) private var lastFaceExposurePoint: CGPoint?
+    /// Whether a face is currently driving the meter (the no-face fallback
+    /// point is dead center, so the point alone can't tell). sessionQueue-confined.
+    nonisolated(unsafe) private var faceMeteringActive = false
+    /// Card-anchored exposure: EV bias from the calibration card's neutral band
+    /// ("this gray must render at reference luma in THIS room's light").
+    /// Composes with the face-metering highlight bias. sessionQueue-confined.
+    nonisolated(unsafe) private var calibrationBiasEV: Float = 0
 
     /// Continuously meter exposure for the subject's face — what a photographer
     /// does by default, and what silently fixes "too dark" / "backlit" instead
@@ -193,20 +200,42 @@ final class CameraController: NSObject {
             // top-left origin): (y, 1 − x). ⚠️ Verify on hardware, like the
             // level sign — sensor mounting can flip this.
             let target = center.map { CGPoint(x: $0.y, y: 1 - $0.x) } ?? CGPoint(x: 0.5, y: 0.5)
-            if let last = self.lastFaceExposurePoint,
+            let faceActive = center != nil
+            let faceChanged = faceActive != self.faceMeteringActive
+            self.faceMeteringActive = faceActive
+            // Rate-limit — but a face appearing/vanishing must update the bias
+            // even when the meter point barely moves.
+            if !faceChanged, let last = self.lastFaceExposurePoint,
                abs(last.x - target.x) < 0.08, abs(last.y - target.y) < 0.08 { return }
             guard (try? device.lockForConfiguration()) != nil else { return }
             device.exposurePointOfInterest = target
             if device.isExposureModeSupported(.continuousAutoExposure) {
                 device.exposureMode = .continuousAutoExposure
             }
-            // Slight under-expose while metering a face: blown highlights (hair
-            // shine, skin sheen) are unrecoverable; lifted shadows are fine.
-            let bias: Float = center == nil ? 0 : CoachTuning.faceExposureBias
+            // Slight under-expose while metering a face (blown highlights are
+            // unrecoverable; lifted shadows are fine), on top of any card-
+            // anchored calibration bias for this room's light.
+            let bias = self.calibrationBiasEV + (center == nil ? 0 : CoachTuning.faceExposureBias)
             device.setExposureTargetBias(
                 min(max(bias, device.minExposureTargetBias), device.maxExposureTargetBias))
             device.unlockForConfiguration()
             self.lastFaceExposurePoint = target
+        }
+    }
+
+    /// Anchor exposure to the calibration card: EV bias so the card's neutral
+    /// band renders at its reference luma in this room's light. Applied
+    /// immediately and folded into every subsequent face-metering update.
+    func setCalibrationExposureBias(_ ev: Float) {
+        guard let device else { return }
+        sessionQueue.async {
+            self.calibrationBiasEV = ev
+            guard device.exposureMode != .locked,
+                  (try? device.lockForConfiguration()) != nil else { return }
+            let faceBias: Float = self.faceMeteringActive ? CoachTuning.faceExposureBias : 0
+            device.setExposureTargetBias(
+                min(max(ev + faceBias, device.minExposureTargetBias), device.maxExposureTargetBias))
+            device.unlockForConfiguration()
         }
     }
 
@@ -278,7 +307,8 @@ final class CameraController: NSObject {
         }
     }
 
-    /// Back to automatic white balance (drop the calibration).
+    /// Back to automatic white balance (drop the calibration — including any
+    /// card-anchored exposure bias).
     func resetWhiteBalance() {
         guard let device else { return }
         sessionQueue.async {
@@ -286,6 +316,10 @@ final class CameraController: NSObject {
             if device.isWhiteBalanceModeSupported(.continuousAutoWhiteBalance) {
                 device.whiteBalanceMode = .continuousAutoWhiteBalance
             }
+            self.calibrationBiasEV = 0
+            let faceBias: Float = self.faceMeteringActive ? CoachTuning.faceExposureBias : 0
+            device.setExposureTargetBias(
+                min(max(faceBias, device.minExposureTargetBias), device.maxExposureTargetBias))
             device.unlockForConfiguration()
             Task { @MainActor in self.whiteBalanceCalibrated = false }
         }

@@ -13,6 +13,10 @@ struct FrameScrubberView: View {
     let videoURL: URL
     let bookingId: String
     let phase: MediaPhase
+    /// Card-solved color correction — baked into an extracted still at upload
+    /// (the saved VIDEO clip stays uncorrected — video correction is a
+    /// different pipeline). Nil = no card scanned.
+    var correction: ColorMatrix3x3? = nil
 
     @State private var duration: Double = 0
     @State private var position: Double = 0           // seconds
@@ -160,9 +164,13 @@ struct FrameScrubberView: View {
         guard let frame, let data = frame.jpegData(compressionQuality: 0.9) else { return }
         working = true; message = nil
         defer { working = false }
+        var payload = data
+        if let correction, let corrected = await CardCorrection.apply(correction, to: data) {
+            payload = corrected
+        }
         do {
             try await session.client.proMedia.uploadSessionPhoto(
-                bookingId: bookingId, phase: phase, imageData: data
+                bookingId: bookingId, phase: phase, imageData: payload
             )
             session.signalRefresh()
             message = "Saved that frame."

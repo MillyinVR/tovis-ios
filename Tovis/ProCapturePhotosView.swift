@@ -35,6 +35,16 @@ struct ProCapturePhotosView: View {
     @State private var autoArmed = true
     /// Showing the white-balance calibration target (fill it with a neutral surface).
     @State private var calibrating = false
+    /// Within calibration: card mode (scan the printed calibration card —
+    /// color matrix + exposure anchor) vs towel mode (WB only).
+    @State private var cardMode = false
+    /// A card scan is in flight (two captures + solve).
+    @State private var scanningCard = false
+    /// The active card-solved chromatic correction, baked into every captured
+    /// JPEG before upload. Persisted per booking (before + after match).
+    @State private var cardMatrix: ColorMatrix3x3?
+    /// One-line calibration feedback ("Card locked — …" / "Couldn't read…").
+    @State private var calibrationStatus: String?
     /// Local thumbnails of shots taken this session (newest first) — shown
     /// instantly from the captured bytes, no network round-trip.
     @State private var captured: [CapturedShot] = []
@@ -140,6 +150,13 @@ struct ProCapturePhotosView: View {
                gains.count == 3 {
                 camera.applyWhiteBalanceGains(r: gains[0], g: gains[1], b: gains[2])
             }
+            // Same for a card calibration (matrix + exposure anchor).
+            if cardMatrix == nil,
+               let stored = UserDefaults.standard.array(forKey: cardCalDefaultsKey) as? [Double],
+               stored.count == 10 {
+                cardMatrix = ColorMatrix3x3(Array(stored[0..<9]))
+                camera.setCalibrationExposureBias(Float(stored[9]))
+            }
             // Stamp each "before" reference's light so the AFTER can match it.
             if referenceLight.isEmpty, !referenceURLs.isEmpty {
                 await loadReferenceLight()
@@ -206,11 +223,13 @@ struct ProCapturePhotosView: View {
         #endif
         .sheet(isPresented: $showBestShots) {
             if let coach {
-                BestShotsReviewView(coach: coach, bookingId: bookingId, phase: phase)
+                BestShotsReviewView(coach: coach, bookingId: bookingId, phase: phase,
+                                    correction: cardMatrix)
             }
         }
         .fullScreenCover(item: $scrubClip) { clip in
-            FrameScrubberView(videoURL: clip.url, bookingId: bookingId, phase: phase)
+            FrameScrubberView(videoURL: clip.url, bookingId: bookingId, phase: phase,
+                              correction: cardMatrix)
         }
         .modifier(RetakeDialog(pendingRetake: $pendingRetake, keep: { data in
             Task {
@@ -350,19 +369,22 @@ struct ProCapturePhotosView: View {
 
     // MARK: - White balance (gray-card calibration)
 
-    /// The target the pro fills with a neutral surface — the EXACT region the
-    /// analyzer samples for white balance (center 40% of the sensor frame),
-    /// mapped through the preview layer's aspect-fill so the box on screen is
-    /// the area being measured (an aspect-filled preview crops the sensor, so a
-    /// naive "40% of the screen" box would under-show the sampled area).
+    /// The calibration target. Towel mode: the EXACT region the analyzer
+    /// samples for white balance (center 40% of the sensor frame). Card mode:
+    /// a card-shaped (CR-80) alignment box — the scanner samples the swatch
+    /// grid inside it. Both mapped through the preview layer's aspect-fill so
+    /// the box on screen is the area being measured.
     private var calibrationTarget: some View {
         GeometryReader { geo in
-            let box = sampledRegionRect(in: geo.size)
+            let box = cardMode
+                ? previewRect(uprightNormalized: cardRegion, in: geo.size)
+                : sampledRegionRect(in: geo.size)
             ZStack {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(BrandColor.gold, style: StrokeStyle(lineWidth: 2, dash: [7, 5]))
                     .frame(width: box.width, height: box.height)
-                Text("Fill this with a white towel or gray card")
+                Text(cardMode ? "Line the calibration card up with this box"
+                              : "Fill this with a white towel or gray card")
                     .font(BrandFont.body(12, .semibold)).foregroundStyle(.white)
                     .padding(.horizontal, 12).padding(.vertical, 6)
                     .background(.black.opacity(0.6), in: Capsule())
@@ -371,6 +393,15 @@ struct ProCapturePhotosView: View {
             .position(x: box.midX, y: box.midY)
         }
         .allowsHitTesting(false)
+    }
+
+    /// Upright-normalized frame region the card alignment box covers: 80% of
+    /// the frame width, height from the card's physical CR-80 aspect. Centered
+    /// (required by `previewRect`'s axis-swap mapping).
+    private var cardRegion: CGRect {
+        let width = 0.8
+        let height = width * (3.0 / 4.0) / CardGeometry.aspect   // frame is 3:4 (w/h)
+        return CGRect(x: (1 - width) / 2, y: (1 - height) / 2, width: width, height: height)
     }
 
     /// Preview-space rect of the analyzer's white-balance sample region (the
@@ -438,37 +469,122 @@ struct ProCapturePhotosView: View {
             .position(x: box.midX, y: box.midY)
     }
 
-    /// The calibration action row (shown in the controls while calibrating).
+    /// The calibration action row (shown in the controls while calibrating):
+    /// a Towel/Card mode switch, the mode's action, Auto (reset), Done.
     private var calibrationControls: some View {
         VStack(spacing: 8) {
-            Text(camera.whiteBalanceCalibrated
-                 ? "White balance locked — colors are true now"
-                 : "Point at a neutral surface, then set")
+            Text(calibrationStatusText)
                 .font(BrandFont.body(12)).foregroundStyle(.white.opacity(0.85))
-            HStack(spacing: 10) {
-                Button { setWhiteBalance() } label: {
-                    Text("Set white balance").font(BrandFont.body(14, .semibold))
-                        .foregroundStyle(BrandColor.onAccent)
-                        .padding(.horizontal, 16).padding(.vertical, 10)
-                        .background(BrandColor.accent, in: Capsule())
-                }
-                if camera.whiteBalanceCalibrated {
-                    Button {
-                        camera.resetWhiteBalance()
-                        UserDefaults.standard.removeObject(forKey: wbDefaultsKey)
-                    } label: {
-                        Text("Auto").font(BrandFont.body(14, .semibold)).foregroundStyle(.white)
+                .multilineTextAlignment(.center)
+            HStack(spacing: 8) {
+                calibrationModeChip("Towel", active: !cardMode) { cardMode = false }
+                calibrationModeChip("Card", active: cardMode) { cardMode = true }
+
+                if cardMode {
+                    Button { Task { await scanCard() } } label: {
+                        Text(scanningCard ? "Scanning…" : "Scan card")
+                            .font(BrandFont.body(14, .semibold))
+                            .foregroundStyle(BrandColor.onAccent)
                             .padding(.horizontal, 14).padding(.vertical, 10)
+                            .background(BrandColor.accent, in: Capsule())
+                    }
+                    .disabled(scanningCard || camera.status != .ready)
+                } else {
+                    Button { setWhiteBalance() } label: {
+                        Text("Set white balance").font(BrandFont.body(14, .semibold))
+                            .foregroundStyle(BrandColor.onAccent)
+                            .padding(.horizontal, 14).padding(.vertical, 10)
+                            .background(BrandColor.accent, in: Capsule())
+                    }
+                }
+                if camera.whiteBalanceCalibrated || cardMatrix != nil {
+                    Button { resetCalibration() } label: {
+                        Text("Auto").font(BrandFont.body(14, .semibold)).foregroundStyle(.white)
+                            .padding(.horizontal, 12).padding(.vertical, 10)
                             .background(.white.opacity(0.14), in: Capsule())
                     }
                 }
                 Button { calibrating = false } label: {
                     Text("Done").font(BrandFont.body(14, .semibold)).foregroundStyle(.white.opacity(0.85))
-                        .padding(.horizontal, 12).padding(.vertical, 10)
+                        .padding(.horizontal, 10).padding(.vertical, 10)
                 }
             }
         }
         .padding(.horizontal, 20)
+    }
+
+    private func calibrationModeChip(_ label: String, active: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label).font(BrandFont.body(13, .semibold))
+                .foregroundStyle(active ? BrandColor.onAccent : .white)
+                .padding(.horizontal, 11).padding(.vertical, 8)
+                .background(active ? BrandColor.gold : .white.opacity(0.12), in: Capsule())
+        }
+    }
+
+    private var calibrationStatusText: String {
+        if let calibrationStatus { return calibrationStatus }
+        if cardMode {
+            return cardMatrix != nil
+                ? "Card locked — color & exposure are calibrated"
+                : "Line the card up in the box, then scan"
+        }
+        return camera.whiteBalanceCalibrated
+            ? "White balance locked — colors are true now"
+            : "Point at a neutral surface, then set"
+    }
+
+    /// Drop every calibration (WB, card matrix, exposure anchor) for this booking.
+    private func resetCalibration() {
+        camera.resetWhiteBalance()
+        cardMatrix = nil
+        calibrationStatus = nil
+        UserDefaults.standard.removeObject(forKey: wbDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: cardCalDefaultsKey)
+    }
+
+    /// The two-shot card scan. Shot 1 reads the neutral band → locks white
+    /// balance. Shot 2 (under the locked WB) reads the swatch grid → solves the
+    /// chromatic matrix (residual print/spectrum error only — WB is already
+    /// handled, so no double-correction) + the exposure anchor. The gray-ramp
+    /// check gates a misaligned/glared read before anything is applied.
+    private func scanCard() async {
+        guard !scanningCard, !uploading, camera.status == .ready else { return }
+        scanningCard = true
+        defer { scanningCard = false }
+        calibrationStatus = "Reading the card…"
+
+        guard let first = try? await camera.capturePhoto(),
+              let firstRead = await CardScanner.read(jpeg: first, cardRegion: cardRegion) else {
+            calibrationStatus = "Couldn’t read the card — line it up with the box."
+            return
+        }
+        camera.lockWhiteBalance(sampleR: firstRead.neutralBand.r,
+                                sampleG: firstRead.neutralBand.g,
+                                sampleB: firstRead.neutralBand.b)
+        // Let the locked gains settle before the swatch shot.
+        try? await Task.sleep(nanoseconds: 400_000_000)
+
+        guard let second = try? await camera.capturePhoto(),
+              let read = await CardScanner.read(jpeg: second, cardRegion: cardRegion),
+              CameraCalibration.looksLikeGrayRamp(measuredSRGB: read.swatches) else {
+            calibrationStatus = "Couldn’t read the card — avoid glare and fill the box."
+            return
+        }
+        guard let matrix = CameraCalibration.chromaticCorrection(
+                  measuredSRGB: read.swatches,
+                  profile: .placeholderClassic),
+              let ev = CameraCalibration.exposureBiasEV(
+                  measuredNeutralSRGB: read.neutralBand,
+                  referenceNeutralSRGB: CardGeometry.wbNominalSRGB) else {
+            calibrationStatus = "Card read wasn’t clean — try again in steadier light."
+            return
+        }
+        cardMatrix = matrix
+        camera.setCalibrationExposureBias(Float(ev))
+        UserDefaults.standard.set(matrix.m + [ev], forKey: cardCalDefaultsKey)
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        calibrationStatus = "Card locked — color & exposure are calibrated."
     }
 
     /// Sample the center patch + lock white balance to neutralize the room's cast.
@@ -693,6 +809,8 @@ struct ProCapturePhotosView: View {
     /// Where this booking's locked white-balance gains persist (before + after
     /// share one calibration).
     private var wbDefaultsKey: String { "tovis.camera.wb.\(bookingId)" }
+    /// Where this booking's card calibration persists (9 matrix values + EV).
+    private var cardCalDefaultsKey: String { "tovis.camera.cardcal.\(bookingId)" }
 
     /// Measure each before-reference's luma + warmth once (downscaled, same
     /// math as the live frame) — the target the after shoot matches.
@@ -1151,22 +1269,34 @@ struct ProCapturePhotosView: View {
         await upload(data)
     }
 
-    /// Upload one captured photo. On failure the bytes join the retry queue —
-    /// a flaky connection must never lose a shot the pro already took.
+    /// Upload one captured photo, baking in the card-solved color correction
+    /// when a card has been scanned (an uncorrected photo beats a lost one, so
+    /// a failed render falls back to the original bytes). On failure the
+    /// (already-corrected) bytes join the retry queue — a flaky connection
+    /// must never lose a shot the pro already took.
     private func upload(_ data: Data) async {
+        var payload = data
+        if let cardMatrix, let corrected = await CardCorrection.apply(cardMatrix, to: data) {
+            payload = corrected
+        }
+        await uploadCorrected(payload)
+    }
+
+    /// Upload bytes that are already color-final (retries must not re-correct).
+    private func uploadCorrected(_ payload: Data) async {
         do {
             try await session.client.proMedia.uploadSessionPhoto(
                 bookingId: bookingId,
                 phase: phase,
-                imageData: data
+                imageData: payload
             )
             session.signalRefresh()   // the hub's gallery refreshes
         } catch let error as APIError {
             errorMessage = error.userMessage
-            failedUploads.append(data)
+            failedUploads.append(payload)
         } catch {
             errorMessage = "Couldn’t save that photo — it’s kept here to retry."
-            failedUploads.append(data)
+            failedUploads.append(payload)
         }
     }
 
@@ -1178,7 +1308,7 @@ struct ProCapturePhotosView: View {
         defer { uploading = false }
         let pending = failedUploads
         failedUploads = []
-        for data in pending { await upload(data) }
+        for payload in pending { await uploadCorrected(payload) }
     }
 
     private func toggleRecording() async {

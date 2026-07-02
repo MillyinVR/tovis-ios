@@ -72,4 +72,115 @@ struct CameraCalibrationTests {
         let n = p.referenceSwatches[p.neutralPatchIndex]
         #expect(abs(n.r - n.g) < 0.02 && abs(n.g - n.b) < 0.02)
     }
+
+    // MARK: - sRGB ↔ linear
+
+    @Test func linearizationMatchesKnownAnchors() {
+        #expect(abs(CameraCalibration.srgbToLinear(0.0)) < 1e-12)
+        #expect(abs(CameraCalibration.srgbToLinear(1.0) - 1.0) < 1e-9)
+        // 50% sRGB gray is ~21.4% linear — the classic anchor.
+        #expect(abs(CameraCalibration.srgbToLinear(0.5) - 0.2140) < 1e-3)
+    }
+
+    // MARK: - Chromatic correction (card-applied)
+
+    @Test func perfectReadYieldsNearIdentity() {
+        // Measured == reference → nothing to correct.
+        let profile = CardReferenceProfile.placeholderClassic
+        let solved = CameraCalibration.chromaticCorrection(
+            measuredSRGB: profile.referenceSwatches, profile: profile)
+        let m = try! #require(solved)
+        for i in 0..<9 {
+            #expect(abs(m.m[i] - ColorMatrix3x3.identity.m[i]) < 1e-6)
+        }
+    }
+
+    @Test func uniformDimmingIsAbsorbedByGainNormalization() {
+        // The whole card measured darker (AE under-exposed) but color-true →
+        // the CHROMATIC matrix must stay ~identity-shaped (scaled), preserving
+        // the neutral's luma: exposure is the EV anchor's job, not the matrix's.
+        let profile = CardReferenceProfile.placeholderClassic
+        // Dim in LINEAR light: linearize, halve, re-encode.
+        func dim(_ c: RGB) -> RGB {
+            let l = CameraCalibration.srgbToLinear(c)
+            func enc(_ v: Double) -> Double {
+                v <= 0.0031308 ? v * 12.92 : 1.055 * pow(v, 1 / 2.4) - 0.055
+            }
+            return RGB(enc(l.r * 0.5), enc(l.g * 0.5), enc(l.b * 0.5))
+        }
+        let measured = profile.referenceSwatches.map(dim)
+        let solved = try! #require(CameraCalibration.chromaticCorrection(
+            measuredSRGB: measured, profile: profile))
+        // Neutral swatch luma survives the correction unchanged.
+        let neutral = CameraCalibration.srgbToLinear(measured[profile.neutralPatchIndex])
+        let before = CameraCalibration.linearLuma(neutral)
+        let after = CameraCalibration.linearLuma(solved.apply(neutral))
+        #expect(abs(after - before) < 1e-9)
+        // And the matrix is still plausible (no wild gain baked in).
+        #expect(CameraCalibration.isPlausible(solved))
+    }
+
+    @Test func implausibleMatrixIsRejected() {
+        #expect(!CameraCalibration.isPlausible(ColorMatrix3x3([5, 0, 0, 0, 1, 0, 0, 0, 1])))
+        #expect(!CameraCalibration.isPlausible(ColorMatrix3x3([1, 0.9, 0, 0, 1, 0, 0, 0, 1])))
+        #expect(CameraCalibration.isPlausible(.identity))
+    }
+
+    // MARK: - Exposure anchor
+
+    @Test func halfLumaNeutralReadsAsPlusOneEV() {
+        // Neutral measured at half its reference LINEAR luma → +1 EV.
+        let reference = RGB(0.5, 0.5, 0.5)
+        let refLinear = CameraCalibration.srgbToLinear(0.5)
+        func enc(_ v: Double) -> Double {
+            v <= 0.0031308 ? v * 12.92 : 1.055 * pow(v, 1 / 2.4) - 0.055
+        }
+        let half = enc(refLinear * 0.5)
+        let ev = try! #require(CameraCalibration.exposureBiasEV(
+            measuredNeutralSRGB: RGB(half, half, half), referenceNeutralSRGB: reference))
+        #expect(abs(ev - 1.0) < 1e-6)
+    }
+
+    @Test func exposureBiasClampsWildReads() {
+        let ev = try! #require(CameraCalibration.exposureBiasEV(
+            measuredNeutralSRGB: RGB(0.02, 0.02, 0.02),
+            referenceNeutralSRGB: RGB(0.9, 0.9, 0.9)))
+        #expect(abs(ev - 1.5) < 1e-9)   // clamped, not ±6 EV
+    }
+
+    // MARK: - Card-read validation (gray ramp)
+
+    @Test func realGrayRampPasses() {
+        #expect(CameraCalibration.looksLikeGrayRamp(
+            measuredSRGB: CardReferenceProfile.placeholderClassic.referenceSwatches))
+    }
+
+    @Test func nonMonotonicOrColorfulRampFails() {
+        var shuffled = CardReferenceProfile.placeholderClassic.referenceSwatches
+        shuffled.swapAt(19, 22)   // break monotonicity
+        #expect(!CameraCalibration.looksLikeGrayRamp(measuredSRGB: shuffled))
+
+        var tinted = CardReferenceProfile.placeholderClassic.referenceSwatches
+        tinted[20] = RGB(0.8, 0.4, 0.3)   // a "gray" that isn't
+        #expect(!CameraCalibration.looksLikeGrayRamp(measuredSRGB: tinted))
+    }
+
+    // MARK: - Card geometry
+
+    @Test func cardGeometryIsSane() {
+        let rects = CardGeometry.swatchSampleRects()
+        #expect(rects.count == 24)
+        for r in rects {
+            #expect(r.minX >= 0 && r.maxX <= 1 && r.minY >= 0 && r.maxY <= 1)
+            #expect(r.width > 0 && r.height > 0)
+        }
+        // Reading order: 12 top-row rects strictly left→right, then 12 bottom.
+        for i in 1..<12 { #expect(rects[i].minX > rects[i - 1].minX) }
+        for i in 13..<24 { #expect(rects[i].minX > rects[i - 1].minX) }
+        // Top row sits above the WB band; bottom row below it.
+        for i in 0..<12 { #expect(rects[i].maxY < CardGeometry.wbSampleRect.minY) }
+        for i in 12..<24 { #expect(rects[i].minY > CardGeometry.wbSampleRect.maxY) }
+        // The WB band sample avoids the swatch rows entirely.
+        #expect(CardGeometry.aspect > 1.5 && CardGeometry.aspect < 1.7)
+    }
 }
