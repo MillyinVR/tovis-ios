@@ -47,9 +47,20 @@ public struct ProCalendarEvent: Decodable, Sendable, Identifiable {
     public let locationType: String?
     /// The event's local date in the viewport zone — used to group the agenda.
     public let localDateKey: String
+    /// ClientProfile id — present only when the pro may open this client's chart
+    /// (server-gated, so nil means "render the name as plain text, no link").
+    public let clientProfileId: String?
+    /// Waitlist rows only: human label for the client's preferred time
+    /// (e.g. "Any time", "Morning", "Jun 14").
+    public let preferenceLabel: String?
+    /// Waitlist rows only: web deep-link (`/pro/bookings/new?...`) carrying the
+    /// client + offering the pro can offer a matching slot for. nil when the pro
+    /// has no active offering for the requested service.
+    public let offerHref: String?
 
     public var isBooking: Bool { kind == "BOOKING" }
     public var isBlock: Bool { kind == "BLOCK" }
+    public var isWaitlist: Bool { status == "WAITLIST" }
 }
 
 public struct ProCalendarStats: Decodable, Sendable {

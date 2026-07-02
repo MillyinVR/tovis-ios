@@ -27,6 +27,10 @@ struct ProNewBookingView: View {
     /// When set (e.g. from tapping an empty calendar slot), the form opens in
     /// custom-time mode seeded to this instant so the pro can create right away.
     var prefillDate: Date?
+    /// When set (e.g. offering a waitlist client a slot), the form opens with
+    /// this existing client + offering pre-selected so the pro just picks a time.
+    var prefillClientId: String?
+    var prefillOfferingId: String?
 
     @State private var loading = true
     @State private var loadError: String?
@@ -159,6 +163,15 @@ struct ProNewBookingView: View {
             if let prefillDate {
                 manualTime = prefillDate
                 manualMode = true
+            }
+            // Seed an existing client + offering (e.g. offering a waitlist client
+            // a slot) once the pickers' options are loaded.
+            if let prefillClientId, clients.contains(where: { $0.id == prefillClientId }) {
+                clientMode = .existing
+                clientId = prefillClientId
+            }
+            if let prefillOfferingId, offerings.contains(where: { $0.id == prefillOfferingId }) {
+                offeringId = prefillOfferingId
             }
         }
         .onChange(of: bookingMode) { _, _ in revalidateForMode() }

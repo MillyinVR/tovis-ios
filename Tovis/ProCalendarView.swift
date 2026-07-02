@@ -80,13 +80,20 @@ struct ProCalendarView: View {
     // Collapses the stats / location / auto-accept chrome to give the grid room.
     @State private var chromeCollapsed = false
 
+    // Management sheet (web ManagementModal): tapping a stats tile opens the
+    // Booked / Pending / Blocked / Waitlist lists. Block edit/add is routed back
+    // here (a block editor is itself a sheet) via `pendingManagementAction`.
+    @State private var managementTab: ProCalendarManagementTab?
+    private enum PendingManagementAction { case editBlock(ProCalendarBlock), addBlock }
+    @State private var pendingManagementAction: PendingManagementAction?
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 // Pinned top chrome. Stats / location collapse to free grid space;
                 // the view switcher + date nav stay so you can always navigate.
                 VStack(alignment: .leading, spacing: 14) {
-                    if !chromeCollapsed, let stats = loadedStats { statsHeader(stats) }
+                    if !chromeCollapsed, let data = loadedData { statsHeader(data) }
                     controlsBar
 
                     if !chromeCollapsed, locations.count > 1 {
@@ -209,6 +216,27 @@ struct ProCalendarView: View {
                     onSaved: { Task { await load() } }
                 )
             }
+            // Management sheet (web ManagementModal). Block edit/add is deferred to
+            // this sheet's onDismiss so the block editor (itself a sheet) doesn't
+            // race the dismissal.
+            .sheet(item: $managementTab, onDismiss: runPendingManagementAction) { tab in
+                if let data = loadedData {
+                    ProCalendarManagementSheet(
+                        events: data.events,
+                        management: data.management,
+                        timeZone: data.viewportTimeZone,
+                        headerLabel: ProCalendarGrid.headerLabel(
+                            view: view, reference: currentDate, timeZone: calendarTimeZone),
+                        onReload: { await load() },
+                        onEditBlock: openBlockFromManagement,
+                        onAddBlock: {
+                            pendingManagementAction = .addBlock
+                            managementTab = nil
+                        },
+                        selectedTab: tab
+                    )
+                }
+            }
             // The "+" chooser: both branches reuse existing flows — the new-booking
             // form (prefilled to the viewed day) and the block-time sheet.
             .confirmationDialog(
@@ -267,6 +295,37 @@ struct ProCalendarView: View {
             } catch {
                 editorErrorMessage = "Please try again."
             }
+        }
+    }
+
+    // Editing a block from the management sheet: fetch the full row, stash the
+    // intent, then dismiss the management sheet — the editor opens in onDismiss.
+    private func openBlockFromManagement(_ event: ProCalendarEvent) {
+        Task {
+            do {
+                let block = try await session.client.proCalendar.block(id: event.id)
+                pendingManagementAction = .editBlock(block)
+            } catch let error as APIError {
+                editorErrorMessage = error.userMessage
+            } catch {
+                editorErrorMessage = "Please try again."
+            }
+            managementTab = nil
+        }
+    }
+
+    // Runs after the management sheet fully dismisses so the block editor (a
+    // sheet) never overlaps it.
+    private func runPendingManagementAction() {
+        let action = pendingManagementAction
+        pendingManagementAction = nil
+        switch action {
+        case .addBlock:
+            blockSheet = .create
+        case let .editBlock(block):
+            blockSheet = .edit(block)
+        case .none:
+            break
         }
     }
 
@@ -348,38 +407,54 @@ struct ProCalendarView: View {
         )
     }
 
-    private var loadedStats: ProCalendarStats? {
-        if case let .loaded(data) = phase { return data.stats }
+    private var loadedData: ProCalendarResponse? {
+        if case let .loaded(data) = phase { return data }
         return nil
     }
 
-    // Web parity (CalendarStatsPanel): Booked / Pending / Free with sub-labels.
-    private func statsHeader(_ stats: ProCalendarStats) -> some View {
-        HStack(spacing: 12) {
-            statTile("\(stats.todaysBookings)", "Booked", "today")
-            statTile("\(stats.pendingRequests)", "Pending", "review")
+    // Web parity (CalendarStatsPanel): Booked / Pending / (Waitlist) / Free with
+    // sub-labels. Each tile opens the management sheet on its matching tab — the
+    // Waitlist tile only appears when clients are waiting.
+    private func statsHeader(_ data: ProCalendarResponse) -> some View {
+        let stats = data.stats
+        return HStack(spacing: 10) {
+            statTile("\(stats.todaysBookings)", "Booked", "today", tab: .booked)
+            statTile("\(stats.pendingRequests)", "Pending", "review", tab: .pending)
+            if !data.management.waitlistToday.isEmpty {
+                statTile(
+                    "\(data.management.waitlistToday.count)", "Waitlist", "people", tab: .waitlist)
+            }
             statTile(
                 stats.availableHours.map(hoursLabel) ?? "—",
                 "Free",
-                "\(hoursLabel(stats.blockedHours)) blocked")
+                "\(hoursLabel(stats.blockedHours)) blocked",
+                tab: .blocked)
         }
     }
 
-    private func statTile(_ value: String, _ label: String, _ sub: String) -> some View {
-        BrandSurface {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(label.uppercased())
-                    .font(BrandFont.mono(10))
-                    .tracking(0.8)
-                    .foregroundStyle(BrandColor.textMuted)
-                Text(value)
-                    .font(BrandFont.display(24, .semibold))
-                    .foregroundStyle(BrandColor.textPrimary)
-                Text(sub)
-                    .font(BrandFont.body(12))
-                    .foregroundStyle(BrandColor.textMuted)
+    private func statTile(
+        _ value: String, _ label: String, _ sub: String, tab: ProCalendarManagementTab
+    ) -> some View {
+        Button { managementTab = tab } label: {
+            BrandSurface {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(label.uppercased())
+                        .font(BrandFont.mono(10))
+                        .tracking(0.8)
+                        .foregroundStyle(BrandColor.textMuted)
+                    Text(value)
+                        .font(BrandFont.display(24, .semibold))
+                        .foregroundStyle(BrandColor.textPrimary)
+                    Text(sub)
+                        .font(BrandFont.body(12))
+                        .foregroundStyle(BrandColor.textMuted)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(label): \(value), \(sub)")
     }
 
     // The top pending request with quick approve/deny (web MobilePendingRequestBar).
