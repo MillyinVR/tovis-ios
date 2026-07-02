@@ -54,6 +54,13 @@ on `tovis-ios` `main`; the one backend change is **merged** (`tovis-app` PR #427
    **Design decision (user-confirmed): CoachTuning = the universal rubric (one-time device tune, ships for
    everyone); the CARD = the per-room/per-pro adaptation (WB + matrix + exposure at runtime).** Don't build
    per-salon tuning profiles.
+   **+ `d35e7de` follow-ons:** card AUTO-DETECTION (Vision rectangle → CIPerspectiveCorrection warp, anywhere in
+   frame; box = fallback; upside-down retried 180°-flipped via the ramp gate), LIGHT-DRIFT re-scan nudge
+   (scan-time warmth persisted; sustained drift → one-tap "re-scan the card" pill; `calibrationDriftWarmth/
+   Seconds`), and saved VIDEO clips now corrected too (AVMutableVideoComposition re-export, raw-clip fallback).
+   **Batch-measurement workflow (user-confirmed): founder owns ONE real ColorChecker; per print batch,
+   photograph Tovis card + ColorChecker side-by-side in the same light → derive the batch's true swatch values
+   → new `CardReferenceProfile` keyed by NFC batch id. Pros only ever touch their Tovis card.**
 
 **▶️ NEXT = the on-device tune pass** (now cheap: open the console, walk window/mixed/tungsten salon light, drag
 sliders, copy values back into `CoachTuning.swift`). Verify on hardware: level sign, face-exposure point mapping,
