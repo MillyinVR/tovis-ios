@@ -4,9 +4,11 @@
 // consistent set — and the SAME angles before and after, so they line up.
 //
 // The guide is resolved from the booking's base service name (keyword match) with
-// a sensible generic fallback. Pure data + selection logic; the camera view owns
-// progress + the on-screen bar.
+// a sensible generic fallback — or built from a server-driven trending shot pack
+// (see `ShotGuide.init(pack:)`). Pure data + selection logic; the camera view
+// owns progress + the on-screen bar.
 import Foundation
+import TovisKit
 
 /// What the current directed shot should contain — lets the coach judge "ready
 /// for THIS shot" (a back-of-cut wants no face and a filled frame; a detail
@@ -31,13 +33,17 @@ struct ShotExpectations: Sendable, Equatable {
     /// Closed eyes are intended here (lash work) — post-capture QC skips the
     /// blink check.
     let allowsClosedEyes: Bool
+    /// Pose rules (from a trending shot pack) the coach enforces — readiness
+    /// holds until the subject is actually in the pose. Empty = no pose brief.
+    let poseRules: [PoseRule]
 
     init(face: Face, fillBand: ClosedRange<Double>?, isDetail: Bool,
-         allowsClosedEyes: Bool = false) {
+         allowsClosedEyes: Bool = false, poseRules: [PoseRule] = []) {
         self.face = face
         self.fillBand = fillBand
         self.isDetail = isDetail
         self.allowsClosedEyes = allowsClosedEyes
+        self.poseRules = poseRules
     }
 
     static let portrait = ShotExpectations(face: .required, fillBand: 0.22...0.85, isDetail: false)
@@ -87,6 +93,53 @@ struct ShotGuide: Sendable, Equatable {
         if has(["hair", "cut", "color", "colour", "balayage", "blowout",
                 "braid", "style", "barber", "fade", "extensions", "weave"]) { return .hair }
         return .generic
+    }
+
+    // MARK: - Trending packs (server-driven)
+
+    /// Build a directed guide from a trending shot pack: steps map 1:1 into
+    /// the existing guide machinery (expectations condition the coaches; pose
+    /// rules gate readiness). Unknown pose-rule kinds are dropped here — the
+    /// server can ship new vocabulary ahead of this build.
+    init(pack: ProShotPack) {
+        self.name = pack.name
+        self.steps = pack.steps.map { step in
+            let face: ShotExpectations.Face
+            switch step.face {
+            case "required": face = .required
+            case "absent": face = .absent
+            default: face = .either
+            }
+            var band: ClosedRange<Double>?
+            if let lo = step.fillBandMin, let hi = step.fillBandMax, lo < hi {
+                band = lo...hi
+            }
+            let rules: [PoseRule] = step.pose.compactMap { wire in
+                guard let kind = PoseRule.Kind(rawValue: wire.kind) else { return nil }
+                return PoseRule(kind: kind, params: wire.params ?? [:], tip: wire.tip)
+            }
+            return ShotStep(step.title, step.hint, icon: step.icon,
+                            expects: ShotExpectations(face: face, fillBand: band,
+                                                      isDetail: step.isDetail,
+                                                      allowsClosedEyes: step.allowsClosedEyes,
+                                                      poseRules: rules))
+        }
+    }
+
+    /// The default catalog init (custom inits above suppress the memberwise one).
+    init(name: String, steps: [ShotStep]) {
+        self.name = name
+        self.steps = steps
+    }
+
+    /// The packs relevant to this booking's base service (keyword match, same
+    /// contract as `resolve`).
+    static func matchingPacks(_ packs: [ProShotPack], serviceName: String?) -> [ProShotPack] {
+        let service = (serviceName ?? "").lowercased()
+        guard !service.isEmpty else { return [] }
+        return packs.filter { pack in
+            pack.serviceKeywords.contains { service.contains($0) }
+        }
     }
 
     // MARK: - Catalog

@@ -85,14 +85,46 @@ enum CoachDebug {
     nonisolated(unsafe) static var captureSignals = false
 }
 
-/// Body-pose framing read for the current frame, present only when a human body is
-/// confidently detected. Coordinates already resolved to the upright frame.
-/// (Camera tilt is judged by `LevelCoach` from the device's gravity vector — far
-/// more reliable than inferring it from the subject's shoulders.)
+/// Key body joints the pose engine reasons about (subset of Vision's set).
+enum PoseJoint: Sendable, Hashable {
+    case leftShoulder, rightShoulder, leftWrist, rightWrist, leftHip, rightHip, neck, nose
+}
+
+/// Body-pose read for the current frame, present when a human body is
+/// confidently detected. Coordinates already resolved to the upright frame
+/// (top-left normalized). (Camera tilt is judged by `LevelCoach` from the
+/// device's gravity vector — far more reliable than inferring it from the
+/// subject's shoulders.)
 struct PoseSignal: Sendable {
     /// A confidently-detected joint sits hard against a frame edge → subject is
     /// being clipped.
     let edgeClipped: Bool
+    /// Confident joints only (low-confidence points are absent, not zeroed).
+    let joints: [PoseJoint: CGPoint]
+}
+
+/// One measurable pose constraint from a trending shot pack. The VOCABULARY is
+/// fixed app-side (these kinds map to evaluators in `PoseCoach`); the server
+/// composes current trends from it, and unknown kinds are dropped at parse
+/// time so the server can ship new vocabulary ahead of old app builds.
+struct PoseRule: Sendable, Equatable {
+    enum Kind: String, Sendable {
+        /// A wrist within `maxFaceHeights` of the face center.
+        case handNearFace
+        /// Both wrists confidently in frame.
+        case bothHandsVisible
+        /// Shoulder line at least `minDegrees` off level (dropped-shoulder look).
+        case shouldersTilted
+        /// Shoulder line within `maxDegrees` of level.
+        case shouldersLevel
+        /// Face center within `maxFaceWidths` of a shoulder (over-the-shoulder).
+        case faceNearShoulder
+    }
+
+    let kind: Kind
+    let params: [String: Double]
+    /// The directive shown/spoken while the rule is unmet.
+    let tip: String
 }
 
 /// Color-of-light read for the frame. Mixed light (warm bulb + cool window) is the
@@ -286,21 +318,94 @@ struct BackgroundCoach: ShotCoach {
 
 // MARK: - Pose
 
-/// Judges body framing when a full(er) body is in shot: not clipping the subject at
-/// an edge. Neutral for head-and-shoulders work (no pose). Camera tilt is judged
-/// separately by `LevelCoach`.
+/// Judges body framing (not clipping the subject at an edge) AND, when the
+/// current trending shot declares pose rules, whether the subject is actually
+/// IN the pose — the directive engine behind "the camera poses your client."
+/// Rules gate readiness, so guided auto-capture literally waits for the pose.
+/// Neutral for head-and-shoulders work. Camera tilt is judged by `LevelCoach`.
 struct PoseCoach: ShotCoach {
     let category: CoachCategory = .pose
 
+    /// Upright frame is 3:4 (w:h) — normalized deltas must be aspect-scaled
+    /// before angles/distances mean anything physical.
+    private static let aspectX = 3.0, aspectY = 4.0
+
     func evaluate(_ ctx: FrameContext) -> CoachSignal {
-        guard let pose = ctx.pose else {
-            return CoachSignal(score: 1.0, message: nil)
-        }
-        if pose.edgeClipped {
+        if let pose = ctx.pose, pose.edgeClipped {
             return CoachSignal(score: 0.5, message: "Subject’s getting clipped — pull back")
         }
-        return CoachSignal(score: 0.9, message: nil)
+
+        let rules = ctx.expectations?.poseRules ?? []
+        if !rules.isEmpty {
+            guard let pose = ctx.pose, !pose.joints.isEmpty else {
+                // Can't see the body yet — hold readiness gently, don't nag.
+                return CoachSignal(score: 0.75, message: nil)
+            }
+            // Surface the FIRST unmet rule (pack order = direction order).
+            for rule in rules where !Self.satisfied(rule, pose: pose, ctx: ctx) {
+                return CoachSignal(score: 0.45, message: rule.tip)
+            }
+            return CoachSignal(score: 1.0, message: nil)
+        }
+
+        return CoachSignal(score: ctx.pose == nil ? 1.0 : 0.9, message: nil)
     }
+
+    // MARK: Rule evaluators
+
+    private static func satisfied(_ rule: PoseRule, pose: PoseSignal, ctx: FrameContext) -> Bool {
+        switch rule.kind {
+        case .bothHandsVisible:
+            return pose.joints[.leftWrist] != nil && pose.joints[.rightWrist] != nil
+
+        case .handNearFace:
+            guard let face = ctx.faceBounds else { return false }
+            let maxFaceHeights = rule.params["maxFaceHeights"] ?? 1.3
+            let limit = maxFaceHeights * physicalFaceHeight(face)
+            let center = CGPoint(x: face.midX, y: face.midY)
+            return [pose.joints[.leftWrist], pose.joints[.rightWrist]]
+                .compactMap { $0 }
+                .contains { physicalDistance($0, center) <= limit }
+
+        case .faceNearShoulder:
+            guard let face = ctx.faceBounds else { return false }
+            let maxFaceWidths = rule.params["maxFaceWidths"] ?? 1.1
+            let limit = maxFaceWidths * physicalFaceWidth(face)
+            let center = CGPoint(x: face.midX, y: face.midY)
+            return [pose.joints[.leftShoulder], pose.joints[.rightShoulder]]
+                .compactMap { $0 }
+                .contains { physicalDistance($0, center) <= limit }
+
+        case .shouldersTilted:
+            guard let angle = shoulderAngleDegrees(pose) else { return false }
+            return abs(angle) >= (rule.params["minDegrees"] ?? 6)
+
+        case .shouldersLevel:
+            guard let angle = shoulderAngleDegrees(pose) else { return false }
+            return abs(angle) <= (rule.params["maxDegrees"] ?? 6)
+        }
+    }
+
+    /// Shoulder-line angle off level, in physical degrees. Nil without both
+    /// shoulders.
+    private static func shoulderAngleDegrees(_ pose: PoseSignal) -> Double? {
+        guard let left = pose.joints[.leftShoulder],
+              let right = pose.joints[.rightShoulder] else { return nil }
+        let dx = (right.x - left.x) * aspectX
+        let dy = (right.y - left.y) * aspectY
+        guard abs(dx) > 1e-6 else { return nil }
+        return atan2(dy, dx) * 180 / .pi
+    }
+
+    /// Euclidean distance in aspect-corrected (physical-ish) units.
+    private static func physicalDistance(_ a: CGPoint, _ b: CGPoint) -> Double {
+        let dx = (a.x - b.x) * aspectX
+        let dy = (a.y - b.y) * aspectY
+        return (dx * dx + dy * dy).squareRoot()
+    }
+
+    private static func physicalFaceHeight(_ face: CGRect) -> Double { face.height * aspectY }
+    private static func physicalFaceWidth(_ face: CGRect) -> Double { face.width * aspectX }
 }
 
 // MARK: - Level

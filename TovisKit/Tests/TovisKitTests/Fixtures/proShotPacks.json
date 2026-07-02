@@ -1,0 +1,74 @@
+{
+  "ok": true,
+  "version": 1,
+  "packs": [
+    {
+      "id": "hair-reveal-v1",
+      "name": "The Reveal",
+      "tagline": "The transformation money-shot set — back canvas first, then the turn.",
+      "serviceKeywords": ["hair", "cut", "color", "balayage"],
+      "trendScore": 100,
+      "steps": [
+        {
+          "title": "Back canvas",
+          "hint": "Square to their back — the full color & shape, edges sharp",
+          "icon": "arrow.uturn.down",
+          "face": "absent",
+          "fillBandMin": 0.25,
+          "fillBandMax": 0.9,
+          "isDetail": false,
+          "allowsClosedEyes": false,
+          "pose": [
+            {
+              "kind": "shouldersLevel",
+              "params": { "maxDegrees": 6 },
+              "tip": "Square their shoulders to the camera"
+            }
+          ]
+        },
+        {
+          "title": "The turn",
+          "hint": "Chin to the shoulder, eyes back to the lens — hold it",
+          "icon": "arrow.turn.up.left",
+          "face": "required",
+          "fillBandMin": 0.22,
+          "fillBandMax": 0.85,
+          "isDetail": false,
+          "allowsClosedEyes": false,
+          "pose": [
+            {
+              "kind": "faceNearShoulder",
+              "params": { "maxFaceWidths": 1.1 },
+              "tip": "Bring their chin toward the shoulder"
+            },
+            {
+              "kind": "someFutureRuleKind",
+              "params": { "mystery": 3 },
+              "tip": "A rule this app build does not know yet"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "nails-claw-sparkle-v1",
+      "name": "Claw & Sparkle",
+      "tagline": "Hands framing the face — the nail set that stops the scroll.",
+      "serviceKeywords": ["nail", "gel"],
+      "trendScore": 85,
+      "steps": [
+        {
+          "title": "Macro shine",
+          "hint": "One nail, low angle — catch the sparkle",
+          "icon": "magnifyingglass",
+          "face": "either",
+          "fillBandMin": null,
+          "fillBandMax": null,
+          "isDetail": true,
+          "allowsClosedEyes": false,
+          "pose": []
+        }
+      ]
+    }
+  ]
+}

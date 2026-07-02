@@ -27,6 +27,14 @@ struct ProCapturePhotosView: View {
     @State private var guide: ShotGuide = .generic
     @State private var currentStepID: String?
     @State private var completedStepIDs: Set<String> = []
+    /// The standard (built-in) guide for this service — what "guide" returns
+    /// to when the pro switches off a trending pack.
+    @State private var standardGuide: ShotGuide = .generic
+    /// Trending shot packs matching this service (server-driven, fetched once
+    /// per camera open; empty on failure → standard guides only).
+    @State private var trendingPacks: [ProShotPack] = []
+    /// The active trending pack id (nil = the standard set).
+    @State private var activePackID: String?
     /// Tap-to-focus reticle position (preview space) + a token to time its fade.
     @State private var focusPoint: CGPoint?
     @State private var focusToken = 0
@@ -144,7 +152,8 @@ struct ProCapturePhotosView: View {
     private var lifecycleLayer: some View {
         cameraStack
         .task {
-            guide = ShotGuide.resolve(forServiceNamed: serviceName)
+            standardGuide = ShotGuide.resolve(forServiceNamed: serviceName)
+            if activePackID == nil { guide = standardGuide }
             if currentStepID == nil { currentStepID = guide.steps.first?.id }
             let engine = coach ?? CoachEngine(settings: settings)
             coach = engine
@@ -182,6 +191,12 @@ struct ProCapturePhotosView: View {
             // Stamp each "before" reference's light so the AFTER can match it.
             if referenceLight.isEmpty, !referenceURLs.isEmpty {
                 await loadReferenceLight()
+            }
+            // Trending shot packs for this service (server-driven; silent
+            // failure → the standard guides carry the shoot).
+            if trendingPacks.isEmpty,
+               let response = try? await session.client.proCamera.shotPacks() {
+                trendingPacks = ShotGuide.matchingPacks(response.packs, serviceName: serviceName)
             }
         }
         // Keep the coach judging "ready for THIS shot" — expectations follow the
@@ -787,6 +802,59 @@ struct ProCapturePhotosView: View {
         }
     }
 
+    /// Switch the directed shoot between the standard set and a trending pack.
+    /// Progress resets — a pack is a different shot list, not a reordering.
+    private func selectPack(_ pack: ProShotPack?) {
+        let newID = pack?.id
+        guard newID != activePackID else { return }
+        activePackID = newID
+        guide = pack.map(ShotGuide.init(pack:)) ?? standardGuide
+        completedStepIDs = []
+        currentStepID = guide.steps.first?.id
+        if settings.speak, let pack {
+            coach?.announce("Trending set: \(pack.name). \(pack.tagline)")
+        }
+    }
+
+    /// The trending-pack menu (only when packs match this service): standard
+    /// set + each pack, hottest first. Flame fills gold while a pack drives
+    /// the shoot.
+    @ViewBuilder private var trendingMenu: some View {
+        if !trendingPacks.isEmpty {
+            Menu {
+                Button {
+                    selectPack(nil)
+                } label: {
+                    if activePackID == nil {
+                        Label(standardGuide.name, systemImage: "checkmark")
+                    } else {
+                        Text(standardGuide.name)
+                    }
+                }
+                ForEach(trendingPacks) { pack in
+                    Button {
+                        selectPack(pack)
+                    } label: {
+                        if activePackID == pack.id {
+                            Label("\(pack.name) — \(pack.tagline)", systemImage: "checkmark")
+                        } else {
+                            Text("\(pack.name) — \(pack.tagline)")
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: activePackID == nil ? "flame" : "flame.fill")
+                        .font(.system(size: 11, weight: .bold))
+                    Text("Trending").font(BrandFont.mono(10)).tracking(0.5)
+                }
+                .foregroundStyle(activePackID == nil ? .white.opacity(0.8) : BrandColor.gold)
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .background(.white.opacity(0.1), in: Capsule())
+            }
+        }
+    }
+
     /// The directed-shoot bar: progress dots + the current shot (title + how-to) +
     /// Prev/Next, so the pro is guided through a complete, consistent set.
     private var guideBar: some View {
@@ -799,6 +867,7 @@ struct ProCapturePhotosView: View {
                         .frame(width: 6, height: 6)
                 }
                 Spacer()
+                trendingMenu
                 Text("\(completedStepIDs.count)/\(guide.steps.count)")
                     .font(BrandFont.mono(11)).foregroundStyle(.white.opacity(0.7))
             }

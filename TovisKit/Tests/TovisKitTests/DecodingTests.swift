@@ -450,6 +450,34 @@ func fixture(_ name: String) throws -> Data {
         #expect(proof.actedAt == "2026-06-30T17:09:30.000Z")
     }
 
+    // GET /api/v1/pro/camera/shot-packs — Fixtures/proShotPacks.json. Trending
+    // camera shot packs (tovis-app PR #453). Inline shape; decode-only. The
+    // fixture deliberately includes an UNKNOWN pose-rule kind — `kind` is a
+    // plain string on the wire so old builds can decode new server vocabulary
+    // (the app drops unknown kinds at guide-build time, not decode time).
+    @Test func decodesProShotPacks() throws {
+        let res = try JSONDecoder().decode(ProShotPacksResponse.self, from: fixture("proShotPacks"))
+        #expect(res.version == 1)
+        #expect(res.packs.count == 2)
+        let reveal = try #require(res.packs.first)
+        #expect(reveal.id == "hair-reveal-v1")
+        #expect(reveal.name == "The Reveal")
+        #expect(reveal.trendScore == 100)
+        #expect(reveal.serviceKeywords.contains("balayage"))
+        #expect(reveal.steps.count == 2)
+        #expect(reveal.steps[0].face == "absent")
+        #expect(reveal.steps[0].fillBandMin == 0.25)
+        #expect(reveal.steps[0].pose.first?.kind == "shouldersLevel")
+        #expect(reveal.steps[0].pose.first?.params?["maxDegrees"] == 6)
+        // The unknown-vocabulary rule still decodes (kind = plain string).
+        #expect(reveal.steps[1].pose.count == 2)
+        #expect(reveal.steps[1].pose[1].kind == "someFutureRuleKind")
+        let nails = res.packs[1]
+        #expect(nails.steps[0].isDetail)
+        #expect(nails.steps[0].fillBandMin == nil)
+        #expect(nails.steps[0].pose.isEmpty)
+    }
+
     // GET /api/v1/pro/overview — Fixtures/proOverview.json. The pro dashboard
     // monthly analytics (tovis-app PR #437). Inline shape; decode-only.
     @Test func decodesProOverview() throws {

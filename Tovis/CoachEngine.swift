@@ -286,8 +286,9 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         return SegmentSignal(clutter: clutter, subjectFill: subjectFill)
     }
 
-    /// Body-pose framing read (upright, top-left normalized). Nil unless a body is
-    /// confidently detected. Drives the level-shoulders / clipping tips.
+    /// Body-pose read (upright, top-left normalized). Nil unless a body is
+    /// confidently detected. Drives the clipping tip AND the trending-pose
+    /// rules (PoseCoach reasons over the joints).
     private func bodyPose(_ pixelBuffer: CVPixelBuffer) -> PoseSignal? {
         let request = VNDetectHumanBodyPoseRequest()
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .right, options: [:])
@@ -301,15 +302,27 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             return CGPoint(x: p.location.x, y: 1 - p.location.y)
         }
 
-        // Clipping: any confident joint hard against a frame edge.
+        let mapping: [(VNHumanBodyPoseObservation.JointName, PoseJoint)] = [
+            (.leftShoulder, .leftShoulder), (.rightShoulder, .rightShoulder),
+            (.leftWrist, .leftWrist), (.rightWrist, .rightWrist),
+            (.leftHip, .leftHip), (.rightHip, .rightHip),
+            (.neck, .neck), (.nose, .nose),
+        ]
+        var joints: [PoseJoint: CGPoint] = [:]
+        for (vision, joint) in mapping {
+            if let p = point(vision) { joints[joint] = p }
+        }
+        guard !joints.isEmpty else { return nil }
+
+        // Clipping: a confident TORSO/ARM joint hard against a frame edge
+        // (nose excluded — a close-up face isn't "clipped").
         let edgePad = CoachTuning.poseEdgePad
-        let clipped = [VNHumanBodyPoseObservation.JointName.leftShoulder, .rightShoulder,
-                       .leftHip, .rightHip, .leftWrist, .rightWrist, .neck]
-            .compactMap(point)
+        let clipped = joints
+            .filter { $0.key != .nose }
+            .values
             .contains { $0.x <= edgePad || $0.x >= 1 - edgePad || $0.y <= edgePad || $0.y >= 1 - edgePad }
 
-        guard clipped else { return nil }
-        return PoseSignal(edgeClipped: clipped)
+        return PoseSignal(edgeClipped: clipped, joints: joints)
     }
 }
 
