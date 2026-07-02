@@ -26,6 +26,8 @@ struct ProSessionHubView: View {
     @State private var working = false
     @State private var actionError: String?
     @State private var capturing: CaptureSelection?
+    /// The before/after shot currently open full-screen (tap a thumbnail).
+    @State private var viewingMedia: FullscreenMedia?
     /// Manual-collectable payment methods (from the pro's payment settings) +
     /// the chosen one — drive the wrap-up "Mark as paid" control.
     @State private var paymentMethods: [ProManualPaymentMethod] = []
@@ -96,6 +98,9 @@ struct ProSessionHubView: View {
             ProCapturePhotosView(bookingId: bookingId, phase: selection.phase,
                                  serviceName: detail?.baseItem?.serviceName,
                                  referenceURLs: selection.phase == .after ? beforeReferenceURLs : [])
+        }
+        .fullScreenCover(item: $viewingMedia) { item in
+            MediaFullscreenViewer(media: item) { viewingMedia = nil }
         }
         .tint(BrandColor.accent)
     }
@@ -708,18 +713,29 @@ struct ProSessionHubView: View {
 
     @ViewBuilder
     private func thumbnail(_ item: ProBookingMediaItem) -> some View {
-        ZStack {
-            BrandColor.bgSecondary
-            if let urlString = item.displayThumbUrl, let url = URL(string: urlString) {
-                AsyncImage(url: url) { image in image.resizable().scaledToFill() } placeholder: {
-                    ProgressView().tint(BrandColor.accent)
+        Button {
+            viewingMedia = FullscreenMedia.session(item)
+        } label: {
+            ZStack {
+                BrandColor.bgSecondary
+                if let urlString = item.displayThumbUrl, let url = URL(string: urlString) {
+                    AsyncImage(url: url) { image in image.resizable().scaledToFill() } placeholder: {
+                        ProgressView().tint(BrandColor.accent)
+                    }
+                } else {
+                    Image(systemName: "photo").foregroundStyle(BrandColor.textMuted)
                 }
-            } else {
-                Image(systemName: "photo").foregroundStyle(BrandColor.textMuted)
+                if item.mediaType == .video {
+                    Image(systemName: "play.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundStyle(.white.opacity(0.9))
+                        .shadow(radius: 3)
+                }
             }
+            .frame(width: 64, height: 64)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
-        .frame(width: 64, height: 64)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .buttonStyle(.plain)
     }
 
     private func primaryButton(_ title: String, action: @escaping () async -> Void) -> some View {

@@ -28,6 +28,7 @@ struct ProClientChartView: View {
     @State private var phase: Phase = .loading
     @State private var tab: Tab = .notes
     @State private var showAddNote = false
+    @State private var viewingMedia: FullscreenMedia?
 
     var body: some View {
         ScrollView {
@@ -327,18 +328,24 @@ struct ProClientChartView: View {
             } else {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
                     ForEach(chart.photos) { photo in
-                        ZStack(alignment: .topLeading) {
-                            BrandColor.bgSecondary
-                            if let url = URL(string: photo.imageUrl) {
-                                AsyncImage(url: url) { $0.resizable().scaledToFill() } placeholder: { ProgressView().tint(BrandColor.accent) }
+                        Button {
+                            viewingMedia = FullscreenMedia.remote(id: photo.id, urlString: photo.imageUrl, isVideo: false)
+                        } label: {
+                            ZStack(alignment: .topLeading) {
+                                BrandColor.bgSecondary
+                                if let url = URL(string: photo.imageUrl) {
+                                    AsyncImage(url: url) { $0.resizable().scaledToFill() } placeholder: { ProgressView().tint(BrandColor.accent) }
+                                }
+                                Text(photo.phase).font(BrandFont.mono(8)).tracking(0.6).foregroundStyle(.white)
+                                    .padding(.horizontal, 6).padding(.vertical, 3).background(.black.opacity(0.5)).clipShape(Capsule())
+                                    .padding(6)
                             }
-                            Text(photo.phase).font(BrandFont.mono(8)).tracking(0.6).foregroundStyle(.white)
-                                .padding(.horizontal, 6).padding(.vertical, 3).background(.black.opacity(0.5)).clipShape(Capsule())
-                                .padding(6)
+                            .frame(height: 110).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         }
-                        .frame(height: 110).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .buttonStyle(.plain)
                     }
                 }
+                .mediaFullscreenCover($viewingMedia)
             }
         }
     }

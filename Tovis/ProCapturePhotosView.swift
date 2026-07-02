@@ -77,6 +77,8 @@ struct ProCapturePhotosView: View {
     /// Local thumbnails of shots taken this session (newest first) — shown
     /// instantly from the captured bytes, no network round-trip.
     @State private var captured: [CapturedShot] = []
+    /// A captured shot opened full-screen (tap the captured strip).
+    @State private var viewingMedia: FullscreenMedia?
     /// Captured JPEGs whose upload failed — kept for retry so a flaky connection
     /// never loses a shot the pro already took.
     @State private var failedUploads: [Data] = []
@@ -334,6 +336,7 @@ struct ProCapturePhotosView: View {
             FrameScrubberView(videoURL: clip.url, bookingId: bookingId, phase: phase,
                               correction: cardMatrix)
         }
+        .mediaFullscreenCover($viewingMedia)
         .modifier(RetakeDialog(pendingRetake: $pendingRetake, keep: { data in
             Task {
                 uploading = true
@@ -1423,11 +1426,16 @@ struct ProCapturePhotosView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         ForEach(captured) { shot in
-                            Image(uiImage: shot.image)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 54, height: 54)
-                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            Button {
+                                viewingMedia = FullscreenMedia.local(id: shot.id.uuidString, image: shot.image)
+                            } label: {
+                                Image(uiImage: shot.image)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 54, height: 54)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                     .padding(.horizontal, 20)

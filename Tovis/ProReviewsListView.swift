@@ -18,6 +18,7 @@ struct ProReviewsListView: View {
     }
 
     @State private var phase: Phase = .loading
+    @State private var viewingMedia: FullscreenMedia?
 
     var body: some View {
         ScrollView {
@@ -50,6 +51,7 @@ struct ProReviewsListView: View {
         .refreshable { await load() }
         .task { if case .loading = phase { await load() } }
         .onChange(of: session.refreshTick) { Task { await load() } }
+        .mediaFullscreenCover($viewingMedia)
     }
 
     private func reviewCard(_ review: ProReviewItem) -> some View {
@@ -116,27 +118,34 @@ struct ProReviewsListView: View {
     private func mediaGrid(_ tiles: [ProReviewItem.MediaTile]) -> some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
             ForEach(tiles) { tile in
-                ZStack(alignment: .topTrailing) {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous).fill(BrandColor.bgPrimary)
-                    if let url = URL(string: tile.src) {
-                        AsyncImage(url: url) { image in
-                            image.resizable().scaledToFill()
-                        } placeholder: {
-                            ProgressView().tint(BrandColor.accent)
+                Button {
+                    // `src` is a signed thumbnail/source URL (poster for video),
+                    // so open it as an image — reliable full-size view of the shot.
+                    viewingMedia = FullscreenMedia.remote(id: tile.id, urlString: tile.src, isVideo: false)
+                } label: {
+                    ZStack(alignment: .topTrailing) {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous).fill(BrandColor.bgPrimary)
+                        if let url = URL(string: tile.src) {
+                            AsyncImage(url: url) { image in
+                                image.resizable().scaledToFill()
+                            } placeholder: {
+                                ProgressView().tint(BrandColor.accent)
+                            }
+                        }
+                        if tile.isVideo {
+                            Text("VIDEO")
+                                .font(BrandFont.mono(8))
+                                .foregroundStyle(BrandColor.textPrimary)
+                                .padding(.horizontal, 5).padding(.vertical, 2)
+                                .background(BrandColor.bgPrimary.opacity(0.72))
+                                .clipShape(Capsule())
+                                .padding(6)
                         }
                     }
-                    if tile.isVideo {
-                        Text("VIDEO")
-                            .font(BrandFont.mono(8))
-                            .foregroundStyle(BrandColor.textPrimary)
-                            .padding(.horizontal, 5).padding(.vertical, 2)
-                            .background(BrandColor.bgPrimary.opacity(0.72))
-                            .clipShape(Capsule())
-                            .padding(6)
-                    }
+                    .aspectRatio(1, contentMode: .fill)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
-                .aspectRatio(1, contentMode: .fill)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .buttonStyle(.plain)
             }
         }
     }

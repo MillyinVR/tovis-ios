@@ -41,6 +41,7 @@ struct ProAftercareListView: View {
     @State private var tab: Tab = .all
     @State private var query = ""
     @State private var actionState: [String: NudgeState] = [:]
+    @State private var viewingMedia: FullscreenMedia?
 
     var body: some View {
         ScrollView {
@@ -63,6 +64,7 @@ struct ProAftercareListView: View {
         .refreshable { await load() }
         .task { if case .loading = phase { await load() } }
         .onChange(of: session.refreshTick) { Task { await load() } }
+        .mediaFullscreenCover($viewingMedia)
     }
 
     // MARK: - Content
@@ -266,33 +268,39 @@ struct ProAftercareListView: View {
     }
 
     private func thumb(_ urlString: String?, label: String) -> some View {
-        ZStack(alignment: .bottomLeading) {
-            RoundedRectangle(cornerRadius: 10, style: .continuous).fill(BrandColor.bgPrimary)
-            if let urlString, let url = URL(string: urlString) {
-                AsyncImage(url: url) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    ProgressView().tint(BrandColor.accent)
+        Button {
+            viewingMedia = FullscreenMedia.remote(id: urlString ?? label, urlString: urlString, isVideo: false)
+        } label: {
+            ZStack(alignment: .bottomLeading) {
+                RoundedRectangle(cornerRadius: 10, style: .continuous).fill(BrandColor.bgPrimary)
+                if let urlString, let url = URL(string: urlString) {
+                    AsyncImage(url: url) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        ProgressView().tint(BrandColor.accent)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                } else {
+                    Image(systemName: "photo")
+                        .foregroundStyle(BrandColor.textMuted)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            } else {
-                Image(systemName: "photo")
-                    .foregroundStyle(BrandColor.textMuted)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                Text(label)
+                    .font(BrandFont.mono(8))
+                    .tracking(1.0)
+                    .foregroundStyle(BrandColor.textPrimary)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(BrandColor.bgPrimary.opacity(0.7))
+                    .clipShape(Capsule())
+                    .padding(6)
             }
-            Text(label)
-                .font(BrandFont.mono(8))
-                .tracking(1.0)
-                .foregroundStyle(BrandColor.textPrimary)
-                .padding(.horizontal, 5)
-                .padding(.vertical, 2)
-                .background(BrandColor.bgPrimary.opacity(0.7))
-                .clipShape(Capsule())
-                .padding(6)
+            .frame(height: 96)
+            .frame(maxWidth: .infinity)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
-        .frame(height: 96)
-        .frame(maxWidth: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .buttonStyle(.plain)
+        .disabled(urlString == nil)
     }
 
     // MARK: - Helpers

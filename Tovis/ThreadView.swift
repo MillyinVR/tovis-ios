@@ -128,17 +128,33 @@ private struct MessageBubble: View {
     let message: Message
     let isMine: Bool
 
+    @State private var viewingMedia: FullscreenMedia?
+
     var body: some View {
         HStack {
             if isMine { Spacer(minLength: 40) }
             VStack(alignment: isMine ? .trailing : .leading, spacing: 6) {
                 ForEach(message.attachments) { att in
                     if let url = URL(string: att.url) {
-                        AsyncImage(url: url) { $0.resizable().scaledToFill() } placeholder: {
-                            BrandColor.bgSecondary
+                        let isVideo = att.mediaType?.uppercased() == "VIDEO"
+                        Button {
+                            viewingMedia = FullscreenMedia.remote(id: att.id, urlString: att.url, isVideo: isVideo)
+                        } label: {
+                            ZStack {
+                                AsyncImage(url: url) { $0.resizable().scaledToFill() } placeholder: {
+                                    BrandColor.bgSecondary
+                                }
+                                if isVideo {
+                                    Image(systemName: "play.circle.fill")
+                                        .font(.system(size: 26))
+                                        .foregroundStyle(.white.opacity(0.9))
+                                        .shadow(radius: 3)
+                                }
+                            }
+                            .frame(maxWidth: 220, maxHeight: 220)
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                         }
-                        .frame(maxWidth: 220, maxHeight: 220)
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .buttonStyle(.plain)
                     }
                 }
                 if let body = message.body, !body.isEmpty {
@@ -156,6 +172,7 @@ private struct MessageBubble: View {
             }
             if !isMine { Spacer(minLength: 40) }
         }
+        .mediaFullscreenCover($viewingMedia)
     }
 
     private var timeLabel: String {
