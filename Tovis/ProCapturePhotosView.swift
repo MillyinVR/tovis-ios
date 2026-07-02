@@ -3,6 +3,7 @@
 // what you've shot this session. The on-device AI coach (overlays, readiness
 // ring, pose templates) layers onto this preview in Phase B.
 import AVFoundation
+import PhotosUI
 import SwiftUI
 import TovisKit
 
@@ -35,6 +36,13 @@ struct ProCapturePhotosView: View {
     @State private var trendingPacks: [ProShotPack] = []
     /// The active trending pack id (nil = the standard set).
     @State private var activePackID: String?
+    /// "Match a look": a pro-picked reference photo measured (on-device) into
+    /// a one-shot guided brief. Non-nil = it drives the guide, the ghost, and
+    /// the light target.
+    @State private var matchLook: ReferenceLook?
+    @State private var showLookPicker = false
+    @State private var lookPickerItem: PhotosPickerItem?
+    @State private var analyzingLook = false
     /// Tap-to-focus reticle position (preview space) + a token to time its fade.
     @State private var focusPoint: CGPoint?
     @State private var focusToken = 0
@@ -107,15 +115,20 @@ struct ProCapturePhotosView: View {
     private struct ScrubClip: Identifiable, Equatable { let url: URL; var id: String { url.absoluteString } }
 
     /// True while a selection/review surface is up (best-shots tray, frame
-    /// scrubber, or settings) — the live camera pauses so it isn't still
-    /// capturing + auto-harvesting while the pro picks photos.
-    private var isReviewing: Bool { showBestShots || showSettings || scrubClip != nil }
+    /// scrubber, settings, or the look picker) — the live camera pauses so it
+    /// isn't still capturing + auto-harvesting while the pro picks photos.
+    private var isReviewing: Bool {
+        showBestShots || showSettings || showLookPicker || scrubClip != nil
+    }
 
     /// The coach reads the frame as good-to-shoot (green ring).
     private var isReady: Bool { coach?.isReady ?? false }
 
-    /// Onion-skin is on, and there's a "before" to ghost (AFTER phase only).
-    private var showOnion: Bool { onionEnabled && !referenceURLs.isEmpty }
+    /// Onion-skin is on, and there's something to ghost — a "before" (AFTER
+    /// phase) or an active match-look reference (which takes precedence).
+    private var showOnion: Bool {
+        onionEnabled && (matchLook != nil || !referenceURLs.isEmpty)
+    }
     private var currentReferenceURL: URL? {
         guard !referenceURLs.isEmpty else { return nil }
         return referenceURLs[min(max(referenceIndex, 0), referenceURLs.count - 1)]
@@ -208,6 +221,21 @@ struct ProCapturePhotosView: View {
         .onChange(of: coach?.frameWarmth ?? 0) { _, warmth in
             updateDrift(warmth)
         }
+        // A picked "match a look" photo → measure it on-device into the brief.
+        .onChange(of: lookPickerItem) { _, item in
+            guard let item else { return }
+            lookPickerItem = nil
+            Task {
+                analyzingLook = true
+                defer { analyzingLook = false }
+                guard let data = try? await item.loadTransferable(type: Data.self),
+                      let look = await ReferenceLookAnalyzer.analyze(data) else {
+                    errorMessage = "Couldn’t read that photo — try a different one."
+                    return
+                }
+                selectMatchLook(look)
+            }
+        }
         .onDisappear { camera.stop(); coach?.stop() }
         // A recorded clip is one-shot: once its review closes (saved or not),
         // clear the temp file so tovis-clip-*.mov files don't pile up in tmp.
@@ -249,6 +277,9 @@ struct ProCapturePhotosView: View {
     /// Sheets, covers, and dialogs over the live camera.
     private var presentationLayer: some View {
         lifecycleLayer
+        // "Match a look": pick any photo (screenshot of a viral post, a shot
+        // they admire) — measured on-device into a guided brief.
+        .photosPicker(isPresented: $showLookPicker, selection: $lookPickerItem, matching: .images)
         .sheet(isPresented: $showSettings) {
             #if DEBUG
             CoachSettingsSheet(settings: settings, onOpenTuning: { showTuning = true })
@@ -360,10 +391,16 @@ struct ProCapturePhotosView: View {
                     ProgressView().tint(.white)
                 }
 
-                if showOnion, let url = currentReferenceURL {
-                    AsyncImage(url: url) { image in
-                        image.resizable().scaledToFill()
-                    } placeholder: { Color.clear }
+                if showOnion {
+                    Group {
+                        if let look = matchLook {
+                            Image(uiImage: look.image).resizable().scaledToFill()
+                        } else if let url = currentReferenceURL {
+                            AsyncImage(url: url) { image in
+                                image.resizable().scaledToFill()
+                            } placeholder: { Color.clear }
+                        }
+                    }
                     .opacity(onionOpacity)
                     .allowsHitTesting(false)
                     .clipped()
@@ -804,9 +841,11 @@ struct ProCapturePhotosView: View {
 
     /// Switch the directed shoot between the standard set and a trending pack.
     /// Progress resets — a pack is a different shot list, not a reordering.
+    /// Clears any active match-look (the sources are mutually exclusive).
     private func selectPack(_ pack: ProShotPack?) {
         let newID = pack?.id
-        guard newID != activePackID else { return }
+        guard newID != activePackID || matchLook != nil else { return }
+        matchLook = nil
         activePackID = newID
         guide = pack.map(ShotGuide.init(pack:)) ?? standardGuide
         completedStepIDs = []
@@ -816,42 +855,65 @@ struct ProCapturePhotosView: View {
         }
     }
 
-    /// The trending-pack menu (only when packs match this service): standard
-    /// set + each pack, hottest first. Flame fills gold while a pack drives
-    /// the shoot.
+    /// Drive the shoot from a measured reference look ("Match a look").
+    private func selectMatchLook(_ look: ReferenceLook) {
+        matchLook = look
+        activePackID = nil
+        guide = look.guide
+        completedStepIDs = []
+        currentStepID = guide.steps.first?.id
+        onionEnabled = true   // the ghost is the point
+        if settings.speak {
+            coach?.announce("Matching your reference look.")
+        }
+    }
+
+    /// The inspiration menu: standard set, trending packs (hottest first, when
+    /// any match this service), and "Match a photo…". Flame fills gold while
+    /// anything other than the standard set drives the shoot.
+    private var inspoActive: Bool { activePackID != nil || matchLook != nil }
+
     @ViewBuilder private var trendingMenu: some View {
-        if !trendingPacks.isEmpty {
-            Menu {
-                Button {
-                    selectPack(nil)
-                } label: {
-                    if activePackID == nil {
-                        Label(standardGuide.name, systemImage: "checkmark")
-                    } else {
-                        Text(standardGuide.name)
-                    }
-                }
-                ForEach(trendingPacks) { pack in
-                    Button {
-                        selectPack(pack)
-                    } label: {
-                        if activePackID == pack.id {
-                            Label("\(pack.name) — \(pack.tagline)", systemImage: "checkmark")
-                        } else {
-                            Text("\(pack.name) — \(pack.tagline)")
-                        }
-                    }
-                }
+        Menu {
+            Button {
+                selectPack(nil)
             } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: activePackID == nil ? "flame" : "flame.fill")
-                        .font(.system(size: 11, weight: .bold))
-                    Text("Trending").font(BrandFont.mono(10)).tracking(0.5)
+                if !inspoActive {
+                    Label(standardGuide.name, systemImage: "checkmark")
+                } else {
+                    Text(standardGuide.name)
                 }
-                .foregroundStyle(activePackID == nil ? .white.opacity(0.8) : BrandColor.gold)
-                .padding(.horizontal, 8).padding(.vertical, 4)
-                .background(.white.opacity(0.1), in: Capsule())
             }
+            ForEach(trendingPacks) { pack in
+                Button {
+                    selectPack(pack)
+                } label: {
+                    if activePackID == pack.id {
+                        Label("\(pack.name) — \(pack.tagline)", systemImage: "checkmark")
+                    } else {
+                        Text("\(pack.name) — \(pack.tagline)")
+                    }
+                }
+            }
+            Divider()
+            Button {
+                showLookPicker = true
+            } label: {
+                if matchLook != nil {
+                    Label("Match a photo…", systemImage: "checkmark")
+                } else {
+                    Label("Match a photo…", systemImage: "photo.on.rectangle.angled")
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: inspoActive ? "flame.fill" : "flame")
+                    .font(.system(size: 11, weight: .bold))
+                Text("Inspo").font(BrandFont.mono(10)).tracking(0.5)
+            }
+            .foregroundStyle(inspoActive ? BrandColor.gold : .white.opacity(0.8))
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(.white.opacity(0.1), in: Capsule())
         }
     }
 
@@ -979,25 +1041,33 @@ struct ProCapturePhotosView: View {
         }
     }
 
-    /// The live light vs the current before-reference: matched, or the single
-    /// biggest mismatch phrased as a fix. Nil when there's nothing to match.
+    /// The live light vs the active target (a match-look reference wins over
+    /// the before shot): matched, or the single biggest mismatch phrased as a
+    /// fix. Nil when there's nothing to match.
     private var lightMatch: (label: String, ok: Bool)? {
-        guard showOnion, let url = currentReferenceURL, let stamp = referenceLight[url],
-              let coach else { return nil }
-        let dLuma = coach.frameLuma - stamp.luma
-        let dWarmth = (coach.frameWarmth ?? stamp.warmth) - stamp.warmth
+        guard showOnion, let coach else { return nil }
+        let target: (luma: Double, warmth: Double, noun: String)
+        if let look = matchLook {
+            target = (look.luma, look.warmth, "reference")
+        } else if let url = currentReferenceURL, let stamp = referenceLight[url] {
+            target = (stamp.luma, stamp.warmth, "before")
+        } else {
+            return nil
+        }
+        let dLuma = coach.frameLuma - target.luma
+        let dWarmth = (coach.frameWarmth ?? target.warmth) - target.warmth
         // Normalize each axis by its tolerance so they compare fairly.
         let lumaSeverity = abs(dLuma) / CoachTuning.lightMatchLumaTolerance
         let warmthSeverity = abs(dWarmth) / CoachTuning.lightMatchWarmthTolerance
         if lumaSeverity <= 1, warmthSeverity <= 1 {
-            return ("Light matches the before", true)
+            return ("Light matches the \(target.noun)", true)
         }
         if lumaSeverity >= warmthSeverity {
-            return (dLuma > 0 ? "Brighter than the before — dim a touch"
-                              : "Darker than the before — add light", false)
+            return (dLuma > 0 ? "Brighter than the \(target.noun) — dim a touch"
+                              : "Darker than the \(target.noun) — add light", false)
         }
-        return (dWarmth > 0 ? "Warmer than the before — cool the light"
-                            : "Cooler than the before — warm the light", false)
+        return (dWarmth > 0 ? "Warmer than the \(target.noun) — cool the light"
+                            : "Cooler than the \(target.noun) — warm the light", false)
     }
 
     /// The match-the-before light pill (AFTER phase, when a stamp is known).
@@ -1018,15 +1088,17 @@ struct ProCapturePhotosView: View {
 
     // MARK: - Onion-skin (before/after matching)
 
-    /// Match-the-before controls: toggle the ghost, set its strength, and cycle
-    /// which "before" to line up against. Only shown when references exist (AFTER).
+    /// Ghost controls: toggle the overlay, set its strength, and (before/after
+    /// mode only) cycle which "before" to line up against. Shown for AFTER
+    /// references or an active match-look.
     private var onionControls: some View {
         HStack(spacing: 12) {
             Button { onionEnabled.toggle() } label: {
                 HStack(spacing: 6) {
                     Image(systemName: onionEnabled ? "square.on.square.dashed" : "square.on.square")
                         .font(.system(size: 13, weight: .semibold))
-                    Text("Match before").font(BrandFont.body(13, .semibold))
+                    Text(matchLook != nil ? "Match the look" : "Match before")
+                        .font(BrandFont.body(13, .semibold))
                 }
                 .foregroundStyle(onionEnabled ? BrandColor.onAccent : .white)
                 .padding(.horizontal, 12).padding(.vertical, 7)
@@ -1037,7 +1109,7 @@ struct ProCapturePhotosView: View {
                 Image(systemName: "circle.lefthalf.filled").font(.system(size: 12)).foregroundStyle(.white.opacity(0.6))
                 Slider(value: $onionOpacity, in: 0.1...0.7).tint(.white)
 
-                if referenceURLs.count > 1 {
+                if matchLook == nil, referenceURLs.count > 1 {
                     Button {
                         referenceIndex = (referenceIndex + 1) % referenceURLs.count
                     } label: {
@@ -1173,7 +1245,13 @@ struct ProCapturePhotosView: View {
             if calibrating { calibrationControls }
             lightMatchPill
             driftNudgePill
-            if !referenceURLs.isEmpty { onionControls }
+            if analyzingLook {
+                HStack(spacing: 8) {
+                    ProgressView().tint(.white)
+                    Text("Reading the look…").font(BrandFont.body(13)).foregroundStyle(.white.opacity(0.85))
+                }
+            }
+            if matchLook != nil || !referenceURLs.isEmpty { onionControls }
 
             if let errorMessage {
                 Text(errorMessage)

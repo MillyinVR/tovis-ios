@@ -81,6 +81,25 @@ enum FrameMath {
         return min(1.0, energy / CoachTuning.sharpnessReference)
     }
 
+    /// Scale a person-segmentation mask (white = person) onto `working` and
+    /// derive the background-weight image + fractions — shared by the live
+    /// coach (clutter/fill) and the reference-look analyzer (fill).
+    static func segmentation(
+        maskBuffer: CVPixelBuffer, working: CIImage, context: CIContext
+    ) -> (background: CIImage, backgroundFraction: Double, subjectFill: Double)? {
+        var mask = CIImage(cvPixelBuffer: maskBuffer)
+        let me = mask.extent
+        guard me.width > 0, me.height > 0 else { return nil }
+        mask = mask.transformed(by: CGAffineTransform(
+            scaleX: working.extent.width / me.width,
+            y: working.extent.height / me.height
+        )).cropped(to: working.extent)
+        let background = mask.applyingFilter("CIColorInvert")  // 1 - mask → background weight
+        let backgroundFraction = averageLuma(background, context: context)
+        let subjectFill = min(1.0, max(0.0, 1 - backgroundFraction))
+        return (background, backgroundFraction, subjectFill)
+    }
+
     /// Expand a face rect to roughly head-and-shoulders so subject-focused math
     /// (sharpness) doesn't sample only skin. Clamped to the unit square.
     static func expandToHead(_ face: CGRect) -> CGRect {

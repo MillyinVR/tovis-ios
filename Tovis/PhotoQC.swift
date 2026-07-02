@@ -36,6 +36,17 @@ enum PhotoQC {
         }.value
     }
 
+    /// Whether the largest face in an image reads as eyes-closed — used by the
+    /// reference-look analyzer so a closed-eye reference (shimmer looks) doesn't
+    /// get blink-blocked when the pro recreates it.
+    static func eyesClosedRead(in image: CIImage) -> Bool {
+        guard let detector = faceDetector else { return false }
+        let faces = detector.features(in: image, options: [CIDetectorEyeBlink: true])
+            .compactMap { $0 as? CIFaceFeature }
+        guard let face = faces.max(by: { $0.bounds.width < $1.bounds.width }) else { return false }
+        return face.leftEyeClosed && face.rightEyeClosed
+    }
+
     private static func evaluateSync(_ jpeg: Data, checkBlink: Bool) -> PhotoQCReport {
         guard let full = CIImage(data: jpeg, options: [.applyOrientationProperty: true]) else {
             // Unreadable bytes → don't block the flow; upload will surface it.

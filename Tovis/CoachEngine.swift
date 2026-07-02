@@ -216,17 +216,12 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         return ColorSignal(mixed: max(0, mixed), greenTint: greenTint, warmth: FrameMath.warmth(global))
     }
 
-    /// Largest face, normalized with a TOP-LEFT origin. Back camera in portrait →
-    /// orient `.right` so Vision works in an upright frame.
+    /// Largest face (upright top-left normalized). Back camera in portrait →
+    /// orient `.right` so Vision works in an upright frame. Shared extraction
+    /// lives in VisionDetect (the reference-look analyzer uses the same eyes).
     private func detectFace(_ pixelBuffer: CVPixelBuffer) -> CGRect? {
-        let request = VNDetectFaceRectanglesRequest()
-        let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .right, options: [:])
-        try? handler.perform([request])
-        guard let faces = request.results, !faces.isEmpty else { return nil }
-        let largest = faces.max { $0.boundingBox.width * $0.boundingBox.height < $1.boundingBox.width * $1.boundingBox.height }
-        guard let bb = largest?.boundingBox else { return nil }
-        // Vision origin is bottom-left → flip Y to top-left.
-        return CGRect(x: bb.minX, y: 1 - bb.maxY, width: bb.width, height: bb.height)
+        VisionDetect.largestFace(performing: VNImageRequestHandler(
+            cvPixelBuffer: pixelBuffer, orientation: .right, options: [:]))
     }
 
     /// Scale an image down so its largest side ≈ `workingMaxDim` (cheap aggregate math).
@@ -256,73 +251,30 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         request.outputPixelFormat = kCVPixelFormatType_OneComponent8
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .right, options: [:])
         try? handler.perform([request])
-        guard let maskBuffer = request.results?.first?.pixelBuffer else { return nil }
-
-        // Scale the (upright) mask onto the working extent. Mask: white = person.
-        var mask = CIImage(cvPixelBuffer: maskBuffer)
-        let me = mask.extent
-        guard me.width > 0, me.height > 0 else { return nil }
-        mask = mask.transformed(by: CGAffineTransform(
-            scaleX: working.extent.width / me.width,
-            y: working.extent.height / me.height
-        )).cropped(to: working.extent)
-        let background = mask.applyingFilter("CIColorInvert")  // 1 - mask → background weight
-
-        let bgFraction = averageLuma(background)
-        let subjectFill = min(1.0, max(0.0, 1 - bgFraction))
+        guard let maskBuffer = request.results?.first?.pixelBuffer,
+              let seg = FrameMath.segmentation(maskBuffer: maskBuffer, working: working,
+                                               context: ciContext) else { return nil }
 
         // Only judge clutter when there's enough background to judge (subject not
         // filling the whole frame).
-        guard bgFraction > CoachTuning.minBackgroundFraction else {
-            return SegmentSignal(clutter: nil, subjectFill: subjectFill)
+        guard seg.backgroundFraction > CoachTuning.minBackgroundFraction else {
+            return SegmentSignal(clutter: nil, subjectFill: seg.subjectFill)
         }
         // Edge energy that falls in the background = edges × background weight.
         let bgEdges = FrameMath.edges(working).applyingFilter("CIMultiplyCompositing", parameters: [
-            kCIInputBackgroundImageKey: background,
+            kCIInputBackgroundImageKey: seg.background,
         ])
         let bgEdgeMean = averageLuma(bgEdges.cropped(to: working.extent))
         // Normalize by background area, then against the "fully cluttered" reference.
-        let clutter = min(1.0, max(0.0, (bgEdgeMean / bgFraction) / CoachTuning.clutterReference))
-        return SegmentSignal(clutter: clutter, subjectFill: subjectFill)
+        let clutter = min(1.0, max(0.0, (bgEdgeMean / seg.backgroundFraction) / CoachTuning.clutterReference))
+        return SegmentSignal(clutter: clutter, subjectFill: seg.subjectFill)
     }
 
     /// Body-pose read (upright, top-left normalized). Nil unless a body is
-    /// confidently detected. Drives the clipping tip AND the trending-pose
-    /// rules (PoseCoach reasons over the joints).
+    /// confidently detected. Shared extraction lives in VisionDetect.
     private func bodyPose(_ pixelBuffer: CVPixelBuffer) -> PoseSignal? {
-        let request = VNDetectHumanBodyPoseRequest()
-        let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .right, options: [:])
-        try? handler.perform([request])
-        guard let observation = request.results?.first,
-              let points = try? observation.recognizedPoints(.all) else { return nil }
-
-        func point(_ name: VNHumanBodyPoseObservation.JointName) -> CGPoint? {
-            guard let p = points[name], p.confidence > CoachTuning.poseJointConfidence else { return nil }
-            // Vision origin bottom-left → flip Y to top-left.
-            return CGPoint(x: p.location.x, y: 1 - p.location.y)
-        }
-
-        let mapping: [(VNHumanBodyPoseObservation.JointName, PoseJoint)] = [
-            (.leftShoulder, .leftShoulder), (.rightShoulder, .rightShoulder),
-            (.leftWrist, .leftWrist), (.rightWrist, .rightWrist),
-            (.leftHip, .leftHip), (.rightHip, .rightHip),
-            (.neck, .neck), (.nose, .nose),
-        ]
-        var joints: [PoseJoint: CGPoint] = [:]
-        for (vision, joint) in mapping {
-            if let p = point(vision) { joints[joint] = p }
-        }
-        guard !joints.isEmpty else { return nil }
-
-        // Clipping: a confident TORSO/ARM joint hard against a frame edge
-        // (nose excluded — a close-up face isn't "clipped").
-        let edgePad = CoachTuning.poseEdgePad
-        let clipped = joints
-            .filter { $0.key != .nose }
-            .values
-            .contains { $0.x <= edgePad || $0.x >= 1 - edgePad || $0.y <= edgePad || $0.y >= 1 - edgePad }
-
-        return PoseSignal(edgeClipped: clipped, joints: joints)
+        VisionDetect.poseSignal(performing: VNImageRequestHandler(
+            cvPixelBuffer: pixelBuffer, orientation: .right, options: [:]))
     }
 }
 
