@@ -1,14 +1,18 @@
 // Public professional profile — loads GET /api/v1/professionals/{id} and renders
-// header, stats, bio, offerings, portfolio, and reviews. Pushed from any pro
-// name/avatar across the app.
+// the same surface as the web profile page (app/professionals/[id]): a full-bleed
+// hero (avatar image + gradient, @handle, display name, verified/license badges,
+// subtext), a bio quote, a 4-up stats strip, a Book / Message CTA row, an
+// accepted-payments card, and Portfolio / Services / Reviews tabs. Pushed from any
+// pro name/avatar across the app.
 import SwiftUI
 import TovisKit
 
 struct ProProfileView: View {
     @Environment(SessionModel.self) private var session
+    @Environment(\.dismiss) private var dismiss
 
     let professionalId: String
-    /// Optional name shown in the nav bar / loading state before the load lands.
+    /// Optional name shown while the load is in flight.
     var fallbackName: String? = nil
 
     private enum Phase {
@@ -17,122 +21,269 @@ struct ProProfileView: View {
         case failed(String)
     }
 
+    private enum ProfileTab: CaseIterable, Hashable {
+        case portfolio, services, reviews
+
+        var title: String {
+            switch self {
+            case .portfolio: return "Portfolio"
+            case .services: return "Services"
+            case .reviews: return "Reviews"
+            }
+        }
+    }
+
+    private let heroHeight: CGFloat = 360
+
     @State private var phase: Phase = .loading
+    @State private var selectedTab: ProfileTab = .portfolio
+
+    // Pro favorite (the hero heart).
     @State private var isFavorited = false
     @State private var favoriteWorking = false
+
+    // Per-service "Save" state, seeded from the offerings' isFavorited flags.
+    @State private var savedServiceIds: Set<String> = []
+    @State private var savingServiceIds: Set<String> = []
+
+    // Per-review "Helpful" state, seeded from each review.
+    @State private var helpfulByReview: [String: Bool] = [:]
+    @State private var helpfulCountByReview: [String: Int] = [:]
+    @State private var helpfulBusy: Set<String> = []
+
+    // Booking / messaging / lightbox presentation.
     @State private var bookingOffering: ProOffering?
     @State private var bookingProName = ""
+    @State private var messageNav: MessageThreadNav?
+    @State private var messageWorking = false
+    @State private var fullscreenMedia: FullscreenMedia?
+
+    /// Identifiable + Hashable wrapper so a resolved `MessageThread` can drive a
+    /// `navigationDestination(item:)` push (MessageThread itself isn't Hashable).
+    private struct MessageThreadNav: Identifiable, Hashable {
+        let thread: MessageThread
+        var id: String { thread.id }
+        static func == (lhs: MessageThreadNav, rhs: MessageThreadNav) -> Bool { lhs.id == rhs.id }
+        func hash(into hasher: inout Hasher) { hasher.combine(id) }
+    }
+
+    private var shareURL: URL? {
+        URL(string: "https://www.tovis.app/professionals/\(professionalId)")
+    }
+
+    private var isLoaded: Bool {
+        if case .loaded = phase { return true }
+        return false
+    }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                switch phase {
-                case .loading:
-                    loadingState
-                case let .failed(message):
-                    errorState(message)
-                case let .loaded(profile):
-                    content(profile)
-                }
+            switch phase {
+            case .loading:
+                loadingState
+            case let .failed(message):
+                errorState(message)
+            case let .loaded(profile):
+                content(profile)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 8)
-            .padding(.bottom, 40)
         }
-        .background(BrandColor.bgPrimary.ignoresSafeArea())
-        .navigationTitle(fallbackName ?? "Profile")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
+        .background(BrandColor.bgPrimary)
+        .ignoresSafeArea(edges: .top)
+        .toolbar(.hidden, for: .navigationBar)
+        .overlay(alignment: .topLeading) {
+            if !isLoaded {
+                ghostCircleButton(system: "chevron.left") { dismiss() }
+                    .padding(.leading, 16)
+                    .padding(.top, 54)
+            }
+        }
         .task {
             if case .loading = phase { await load() }
         }
         .sheet(item: $bookingOffering) { offering in
             BookingFlowView(professionalId: professionalId, proName: bookingProName, offering: offering)
         }
+        .navigationDestination(item: $messageNav) { nav in
+            ThreadView(thread: nav.thread)
+        }
+        .mediaFullscreenCover($fullscreenMedia)
     }
 
     // MARK: - Content
 
     @ViewBuilder
     private func content(_ profile: ProProfile) -> some View {
-        headerCard(profile.header)
-        statsRow(profile.stats)
+        VStack(spacing: 0) {
+            heroImageBlock(profile)
 
-        if let bio = profile.header.bio, !bio.isEmpty {
-            Text(bio)
-                .font(BrandFont.body(15))
-                .foregroundStyle(BrandColor.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-
-        if !profile.offerings.isEmpty {
-            BrandSection(title: "Services") {
-                VStack(spacing: 10) {
-                    ForEach(profile.offerings) { offering in
-                        Button {
-                            bookingProName = profile.header.displayName
-                            bookingOffering = offering
-                        } label: {
-                            OfferingRow(offering: offering)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
+            // Bio / stats / CTA — full-bleed blocks with hairline dividers, matching
+            // the web hero card's stacked sections.
+            if let bio = profile.header.bio, !bio.isEmpty {
+                hairline
+                bioQuote(bio)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 14)
             }
-        }
 
-        if !profile.portfolioTiles.isEmpty {
-            BrandSection(title: "Portfolio") {
-                PortfolioGrid(tiles: profile.portfolioTiles)
-            }
-        }
+            hairline
+            statsStrip(profile.stats)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 14)
 
-        if !profile.reviews.isEmpty {
-            BrandSection(title: "Reviews", trailing: profile.stats.averageRatingLabel.map { "★ \($0)" }) {
-                VStack(spacing: 10) {
-                    ForEach(profile.reviews) { ReviewRow(review: $0) }
-                }
+            hairline
+            ctaRow(profile)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 14)
+
+            if !profile.acceptedPayments.isEmpty {
+                acceptedPaymentsCard(profile.acceptedPayments)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 16)
             }
+
+            hairline.padding(.top, 16)
+            tabsBar()
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+            hairline
+
+            tabContent(profile)
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 44)
         }
     }
 
-    private func headerCard(_ header: ProProfileHeader) -> some View {
-        BrandSurface {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 14) {
-                    BrandAvatar(name: header.displayName, avatarUrl: header.avatarUrl, size: 64)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(header.displayName)
-                            .font(BrandFont.display(20, .semibold))
-                            .foregroundStyle(BrandColor.textPrimary)
-                        Text(header.professionLabel)
-                            .font(BrandFont.body(14))
-                            .foregroundStyle(BrandColor.textSecondary)
-                        if let location = header.location {
-                            Label(location, systemImage: "mappin.and.ellipse")
-                                .font(BrandFont.body(13))
-                                .foregroundStyle(BrandColor.textMuted)
-                        }
-                    }
-                    Spacer()
-                    favoriteButton
-                }
+    // MARK: - Hero
 
-                if header.isPremium || header.isLicenseVerified || header.displayHandle != nil {
-                    HStack(spacing: 8) {
-                        if header.isLicenseVerified {
-                            BrandPill(text: "✓ Licensed", tint: BrandColor.emerald)
-                        }
-                        if header.isPremium {
-                            BrandPill(text: "Premium", tint: BrandColor.gold)
-                        }
-                        if let handle = header.displayHandle {
-                            BrandPill(text: handle, tint: BrandColor.iris)
-                        }
-                    }
+    private func heroImageBlock(_ profile: ProProfile) -> some View {
+        ZStack(alignment: .bottomLeading) {
+            heroBackground(profile.header.avatarUrl)
+                .frame(height: heroHeight)
+                .frame(maxWidth: .infinity)
+                .clipped()
+
+            LinearGradient(
+                stops: [
+                    .init(color: BrandColor.bgPrimary.opacity(0.38), location: 0),
+                    .init(color: .clear, location: 0.32),
+                    .init(color: BrandColor.bgPrimary.opacity(0.98), location: 1.0),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+
+            heroBottomContent(profile.header, stats: profile.stats)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 18)
+        }
+        .frame(height: heroHeight)
+        .frame(maxWidth: .infinity)
+        .clipped()
+        .overlay(alignment: .top) {
+            heroActions(profile.header)
+                .padding(.horizontal, 16)
+                .padding(.top, 54)
+        }
+    }
+
+    @ViewBuilder
+    private func heroBackground(_ avatarUrl: String?) -> some View {
+        if let raw = avatarUrl, let url = URL(string: raw) {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case let .success(image):
+                    image.resizable().scaledToFill()
+                default:
+                    heroFallback
                 }
             }
+        } else {
+            heroFallback
         }
+    }
+
+    private var heroFallback: some View {
+        LinearGradient(
+            colors: [
+                BrandColor.accent.opacity(0.35),
+                BrandColor.bgSecondary,
+                BrandColor.iris.opacity(0.35),
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    private func heroActions(_ header: ProProfileHeader) -> some View {
+        HStack(spacing: 8) {
+            ghostCircleButton(system: "chevron.left") { dismiss() }
+            Spacer()
+            if let url = shareURL {
+                ShareLink(item: url) {
+                    ghostPillLabel(system: "square.and.arrow.up", text: "Share")
+                }
+                .buttonStyle(.plain)
+            }
+            favoriteButton
+        }
+    }
+
+    private func heroBottomContent(_ header: ProProfileHeader, stats: ProProfileStats) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let handle = header.displayHandle, !handle.isEmpty {
+                Text(handle)
+                    .font(BrandFont.mono(10))
+                    .tracking(1.2)
+                    .textCase(.uppercase)
+                    .foregroundStyle(BrandColor.textMuted)
+            }
+
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(header.displayName)
+                    .font(BrandFont.display(32, .semibold))
+                    .italic()
+                    .foregroundStyle(BrandColor.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                if header.isPremium {
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.system(size: 15))
+                        .foregroundStyle(BrandColor.iris)
+                        .accessibilityLabel("Verified professional")
+                }
+            }
+
+            if header.isLicenseVerified {
+                licenseBadge
+            }
+
+            subtextRow(header, stats: stats)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var licenseBadge: some View {
+        Text("✓ License verified")
+            .font(BrandFont.mono(10))
+            .textCase(.uppercase)
+            .tracking(0.5)
+            .foregroundStyle(BrandColor.iris)
+            .padding(.vertical, 4)
+            .padding(.horizontal, 8)
+            .background(BrandColor.iris.opacity(0.14), in: Capsule())
+            .overlay(Capsule().stroke(BrandColor.iris.opacity(0.4), lineWidth: 1))
+    }
+
+    private func subtextRow(_ header: ProProfileHeader, stats: ProProfileStats) -> some View {
+        var parts: [String] = [header.professionLabel]
+        if let location = header.location, !location.isEmpty { parts.append(location) }
+        if let rating = stats.averageRatingLabel { parts.append("★ \(rating)") }
+
+        return Text(parts.joined(separator: "   ·   "))
+            .font(BrandFont.body(12))
+            .foregroundStyle(BrandColor.textSecondary)
+            .lineLimit(2)
     }
 
     private var favoriteButton: some View {
@@ -140,48 +291,365 @@ struct ProProfileView: View {
             Task { await toggleFavorite() }
         } label: {
             Image(systemName: isFavorited ? "heart.fill" : "heart")
-                .font(.system(size: 22))
-                .foregroundStyle(isFavorited ? BrandColor.ember : BrandColor.textMuted)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(isFavorited ? BrandColor.ember : .white)
+                .frame(width: 38, height: 38)
+                .background(BrandColor.bgPrimary.opacity(0.45), in: Circle())
+                .overlay(Circle().stroke(.white.opacity(0.14), lineWidth: 1))
         }
+        .buttonStyle(.plain)
         .disabled(favoriteWorking)
+        .accessibilityLabel(isFavorited ? "Saved" : "Save pro")
     }
 
-    private func toggleFavorite() async {
-        guard !favoriteWorking else { return }
-        favoriteWorking = true
-        defer { favoriteWorking = false }
+    // MARK: - Bio / stats / CTA
 
-        let target = !isFavorited
-        isFavorited = target  // optimistic
-        do {
-            let result = try await session.client.profiles.setFavorite(
-                professionalId: professionalId, favorited: target
-            )
-            isFavorited = result.favorited
-        } catch {
-            isFavorited = !target  // revert on failure
+    private func bioQuote(_ bio: String) -> some View {
+        Text("“\(bio)”")
+            .font(BrandFont.display(15, .regular))
+            .italic()
+            .foregroundStyle(BrandColor.textSecondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func statsStrip(_ stats: ProProfileStats) -> some View {
+        HStack(spacing: 0) {
+            statCell("From", stats.priceFromLabel ?? "—")
+            statCell("Booked", stats.completedBookingsLabel)
+            statCell("Rating", stats.averageRatingLabel ?? "—")
+            statCell("Saved", stats.favoritesLabel)
         }
     }
 
-    private func statsRow(_ stats: ProProfileStats) -> some View {
-        HStack(spacing: 10) {
-            if let rating = stats.averageRatingLabel {
-                StatChip(value: "★ \(rating)", label: stats.reviewCountLabel)
+    private func statCell(_ label: String, _ value: String) -> some View {
+        VStack(spacing: 4) {
+            Text(value)
+                .font(BrandFont.display(19, .semibold))
+                .foregroundStyle(BrandColor.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+            Text(label)
+                .font(BrandFont.mono(10))
+                .textCase(.uppercase)
+                .tracking(0.5)
+                .foregroundStyle(BrandColor.textMuted)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func ctaRow(_ profile: ProProfile) -> some View {
+        HStack(spacing: 8) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) { selectedTab = .services }
+            } label: {
+                Text("Book now")
+                    .font(BrandFont.body(15, .semibold))
+                    .foregroundStyle(BrandColor.onAccent)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(BrandColor.accent, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
-            StatChip(value: stats.completedBookingsLabel, label: "completed")
-            StatChip(value: stats.favoritesLabel, label: "saves")
+            .buttonStyle(.plain)
+
+            Button {
+                Task { await openMessageThread() }
+            } label: {
+                HStack(spacing: 6) {
+                    if messageWorking {
+                        ProgressView().tint(BrandColor.textPrimary).scaleEffect(0.75)
+                    }
+                    Text("Message")
+                }
+                .font(BrandFont.body(14, .semibold))
+                .foregroundStyle(BrandColor.textPrimary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(BrandColor.bgSurface.opacity(0.6), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(BrandColor.textMuted.opacity(0.2), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(messageWorking)
         }
+    }
+
+    private func acceptedPaymentsCard(_ methods: [String]) -> some View {
+        BrandSurface {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Accepted payments")
+                    .font(BrandFont.body(12, .heavy))
+                    .foregroundStyle(BrandColor.textPrimary)
+
+                FlowLayout(spacing: 8, lineSpacing: 8) {
+                    ForEach(methods, id: \.self) { method in
+                        Text(method)
+                            .font(BrandFont.body(12, .heavy))
+                            .foregroundStyle(BrandColor.textPrimary)
+                            .padding(.vertical, 6)
+                            .padding(.horizontal, 12)
+                            .background(BrandColor.bgSecondary, in: Capsule())
+                            .overlay(Capsule().stroke(BrandColor.textMuted.opacity(0.15), lineWidth: 1))
+                    }
+                }
+
+                Text("Payment details are shared at checkout after you book.")
+                    .font(BrandFont.body(11))
+                    .foregroundStyle(BrandColor.textSecondary)
+            }
+        }
+    }
+
+    // MARK: - Tabs
+
+    private func tabsBar() -> some View {
+        HStack(spacing: 24) {
+            ForEach(ProfileTab.allCases, id: \.self) { tab in
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) { selectedTab = tab }
+                } label: {
+                    VStack(spacing: 8) {
+                        Text(tab.title)
+                            .font(BrandFont.body(13, .heavy))
+                            .foregroundStyle(selectedTab == tab ? BrandColor.textPrimary : BrandColor.textMuted)
+                        Rectangle()
+                            .fill(selectedTab == tab ? BrandColor.accent : Color.clear)
+                            .frame(height: 2)
+                    }
+                    .fixedSize()
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    @ViewBuilder
+    private func tabContent(_ profile: ProProfile) -> some View {
+        switch selectedTab {
+        case .portfolio:
+            portfolioTab(profile.portfolioTiles)
+        case .services:
+            servicesTab(profile)
+        case .reviews:
+            reviewsTab(profile)
+        }
+    }
+
+    // MARK: - Portfolio
+
+    @ViewBuilder
+    private func portfolioTab(_ tiles: [ProPortfolioTile]) -> some View {
+        if tiles.isEmpty {
+            emptyCard("No portfolio posts yet.")
+        } else {
+            LazyVGrid(
+                columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 3),
+                spacing: 2
+            ) {
+                ForEach(Array(tiles.enumerated()), id: \.element.id) { index, tile in
+                    portfolioTile(tile, isFirst: index == 0)
+                }
+            }
+        }
+    }
+
+    private func portfolioTile(_ tile: ProPortfolioTile, isFirst: Bool) -> some View {
+        Button {
+            fullscreenMedia = FullscreenMedia.remote(id: tile.id, urlString: tile.src, isVideo: tile.isVideo)
+        } label: {
+            Rectangle()
+                .fill(BrandColor.bgSecondary)
+                .aspectRatio(3.0 / 4.0, contentMode: .fit)
+                .overlay {
+                    if let url = URL(string: tile.displayUrl) {
+                        AsyncImage(url: url) { image in
+                            image.resizable().scaledToFill()
+                        } placeholder: {
+                            BrandColor.bgSecondary
+                        }
+                    }
+                }
+                .clipped()
+                .overlay(alignment: .topLeading) {
+                    if isFirst && tile.isFeaturedInPortfolio {
+                        chip("★ FEAT", tint: BrandColor.iris).padding(6)
+                    }
+                }
+                .overlay(alignment: .topTrailing) {
+                    if tile.isVideo {
+                        chip("VIDEO", tint: .white).padding(6)
+                    }
+                }
+                .overlay(alignment: .bottomLeading) {
+                    if !tile.serviceIds.isEmpty {
+                        chip("SERVICE", tint: .white).padding(6)
+                    }
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func chip(_ text: String, tint: Color) -> some View {
+        Text(text)
+            .font(BrandFont.mono(9))
+            .foregroundStyle(tint)
+            .padding(.vertical, 3)
+            .padding(.horizontal, 6)
+            .background(.black.opacity(0.55), in: Capsule())
+    }
+
+    // MARK: - Services
+
+    @ViewBuilder
+    private func servicesTab(_ profile: ProProfile) -> some View {
+        if profile.offerings.isEmpty {
+            emptyCard("No services listed yet.")
+        } else {
+            VStack(spacing: 12) {
+                ForEach(profile.offerings) { offering in
+                    ServiceCard(
+                        offering: offering,
+                        saved: savedServiceIds.contains(offering.serviceId),
+                        busy: savingServiceIds.contains(offering.serviceId),
+                        onBook: {
+                            bookingProName = profile.header.displayName
+                            bookingOffering = offering
+                        },
+                        onToggleSave: {
+                            Task { await toggleServiceSave(offering.serviceId) }
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    // MARK: - Reviews
+
+    @ViewBuilder
+    private func reviewsTab(_ profile: ProProfile) -> some View {
+        VStack(spacing: 12) {
+            reviewSummaryCard(profile.stats)
+
+            if profile.reviews.isEmpty {
+                emptyCard("No reviews yet.")
+            } else {
+                ForEach(profile.reviews) { review in
+                    ReviewCard(
+                        review: review,
+                        helpful: helpfulByReview[review.id] ?? review.viewerHelpful,
+                        helpfulCount: helpfulCountByReview[review.id] ?? review.helpfulCount,
+                        busy: helpfulBusy.contains(review.id),
+                        onToggleHelpful: { Task { await toggleHelpful(review) } },
+                        onOpenMedia: { media in
+                            fullscreenMedia = FullscreenMedia.remote(
+                                id: media.id, urlString: media.url, isVideo: media.isVideo
+                            )
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    private func reviewSummaryCard(_ stats: ProProfileStats) -> some View {
+        BrandSurface {
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(stats.averageRatingLabel ?? "—")
+                        .font(BrandFont.display(40, .semibold))
+                        .foregroundStyle(BrandColor.textPrimary)
+                    Text("\(stats.reviewCountLabel) reviews")
+                        .font(BrandFont.mono(10))
+                        .textCase(.uppercase)
+                        .tracking(0.5)
+                        .foregroundStyle(BrandColor.textMuted)
+                }
+                .frame(width: 92, alignment: .leading)
+
+                VStack(spacing: 0) {
+                    summaryLine("Reviews", stats.reviewCountLabel)
+                    summaryLine("Rating", stats.averageRatingLabel ?? "—")
+                    summaryLine("Saved", stats.favoritesLabel)
+                }
+            }
+        }
+    }
+
+    private func summaryLine(_ label: String, _ value: String) -> some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(label)
+                    .font(BrandFont.body(12))
+                    .foregroundStyle(BrandColor.textSecondary)
+                Spacer()
+                Text(value)
+                    .font(BrandFont.body(12, .semibold))
+                    .foregroundStyle(BrandColor.textPrimary)
+            }
+            .padding(.vertical, 8)
+            Rectangle().fill(BrandColor.textMuted.opacity(0.1)).frame(height: 1)
+        }
+    }
+
+    // MARK: - Shared pieces
+
+    private func emptyCard(_ text: String) -> some View {
+        BrandSurface {
+            Text(text)
+                .font(BrandFont.body(13))
+                .foregroundStyle(BrandColor.textSecondary)
+        }
+    }
+
+    private var hairline: some View {
+        Rectangle()
+            .fill(BrandColor.textMuted.opacity(0.12))
+            .frame(height: 1)
+            .frame(maxWidth: .infinity)
+    }
+
+    private func ghostCircleButton(system: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: system)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 38, height: 38)
+                .background(BrandColor.bgPrimary.opacity(0.45), in: Circle())
+                .overlay(Circle().stroke(.white.opacity(0.14), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Back")
+    }
+
+    private func ghostPillLabel(system: String, text: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: system).font(.system(size: 12, weight: .semibold))
+            Text(text).font(BrandFont.body(13, .semibold))
+        }
+        .foregroundStyle(.white)
+        .padding(.vertical, 9)
+        .padding(.horizontal, 14)
+        .background(BrandColor.bgPrimary.opacity(0.45), in: Capsule())
+        .overlay(Capsule().stroke(.white.opacity(0.14), lineWidth: 1))
     }
 
     // MARK: - States
 
     private var loadingState: some View {
         HStack { Spacer(); ProgressView().tint(BrandColor.accent); Spacer() }
-            .padding(.top, 80)
+            .padding(.top, 160)
     }
 
     private func errorState(_ message: String) -> some View {
         VStack(spacing: 14) {
+            Text(fallbackName ?? "Profile")
+                .font(BrandFont.display(20, .semibold))
+                .foregroundStyle(BrandColor.textPrimary)
             Text(message)
                 .font(BrandFont.body(15))
                 .foregroundStyle(BrandColor.textSecondary)
@@ -199,16 +667,26 @@ struct ProProfileView: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 70)
+        .padding(.horizontal, 24)
+        .padding(.top, 150)
     }
 
-    // MARK: - Load
+    // MARK: - Actions
 
     private func load() async {
         phase = .loading
         do {
             let profile = try await session.client.profiles.professional(id: professionalId)
             isFavorited = profile.isFavoritedByMe
+            savedServiceIds = Set(profile.offerings.filter { $0.isFavorited }.map { $0.serviceId })
+            helpfulByReview = Dictionary(
+                profile.reviews.map { ($0.id, $0.viewerHelpful) },
+                uniquingKeysWith: { first, _ in first }
+            )
+            helpfulCountByReview = Dictionary(
+                profile.reviews.map { ($0.id, $0.helpfulCount) },
+                uniquingKeysWith: { first, _ in first }
+            )
             phase = .loaded(profile)
         } catch let error as APIError {
             phase = .failed(error.userMessage)
@@ -216,130 +694,286 @@ struct ProProfileView: View {
             phase = .failed("Something went wrong. Please try again.")
         }
     }
-}
 
-// MARK: - Pieces
+    private func toggleFavorite() async {
+        guard !favoriteWorking else { return }
+        favoriteWorking = true
+        defer { favoriteWorking = false }
 
-private struct StatChip: View {
-    let value: String
-    let label: String
+        let target = !isFavorited
+        isFavorited = target // optimistic
+        do {
+            let result = try await session.client.profiles.setFavorite(
+                professionalId: professionalId, favorited: target
+            )
+            isFavorited = result.favorited
+        } catch {
+            isFavorited = !target // revert on failure
+        }
+    }
 
-    var body: some View {
-        BrandSurface {
-            VStack(spacing: 2) {
-                Text(value)
-                    .font(BrandFont.body(15, .semibold))
-                    .foregroundStyle(BrandColor.textPrimary)
-                    .lineLimit(1)
-                Text(label)
-                    .font(BrandFont.mono(10))
-                    .foregroundStyle(BrandColor.textMuted)
-                    .lineLimit(1)
+    private func toggleServiceSave(_ serviceId: String) async {
+        guard !savingServiceIds.contains(serviceId) else { return }
+        savingServiceIds.insert(serviceId)
+        defer { savingServiceIds.remove(serviceId) }
+
+        let wasSaved = savedServiceIds.contains(serviceId)
+        let target = !wasSaved
+        if target { savedServiceIds.insert(serviceId) } else { savedServiceIds.remove(serviceId) }
+
+        do {
+            let result = try await session.client.profiles.setServiceFavorite(
+                serviceId: serviceId, favorited: target
+            )
+            if result.favorited { savedServiceIds.insert(serviceId) } else { savedServiceIds.remove(serviceId) }
+        } catch {
+            if wasSaved { savedServiceIds.insert(serviceId) } else { savedServiceIds.remove(serviceId) }
+        }
+    }
+
+    private func toggleHelpful(_ review: ProReview) async {
+        let id = review.id
+        guard !helpfulBusy.contains(id) else { return }
+        helpfulBusy.insert(id)
+        defer { helpfulBusy.remove(id) }
+
+        let wasHelpful = helpfulByReview[id] ?? review.viewerHelpful
+        let baseCount = helpfulCountByReview[id] ?? review.helpfulCount
+        let target = !wasHelpful
+
+        helpfulByReview[id] = target
+        helpfulCountByReview[id] = max(0, baseCount + (target ? 1 : -1))
+
+        do {
+            let result = try await session.client.profiles.setReviewHelpful(reviewId: id, helpful: target)
+            helpfulByReview[id] = result.helpful
+            helpfulCountByReview[id] = result.helpfulCount
+        } catch {
+            helpfulByReview[id] = wasHelpful
+            helpfulCountByReview[id] = baseCount
+        }
+    }
+
+    private func openMessageThread() async {
+        guard !messageWorking else { return }
+        messageWorking = true
+        defer { messageWorking = false }
+
+        do {
+            if let thread = try await session.client.messages.openProfileThread(professionalId: professionalId) {
+                messageNav = MessageThreadNav(thread: thread)
             }
-            .frame(maxWidth: .infinity)
+        } catch {
+            // Best-effort: leave the user on the profile if the thread can't resolve.
         }
     }
 }
 
-private struct OfferingRow: View {
+// MARK: - Service card
+
+private struct ServiceCard: View {
     let offering: ProOffering
+    let saved: Bool
+    let busy: Bool
+    let onBook: () -> Void
+    let onToggleSave: () -> Void
 
     var body: some View {
         BrandSurface {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
+            HStack(alignment: .top, spacing: 12) {
+                thumbnail
+
+                VStack(alignment: .leading, spacing: 4) {
                     Text(offering.name)
-                        .font(BrandFont.body(15, .semibold))
+                        .font(BrandFont.body(14, .heavy))
                         .foregroundStyle(BrandColor.textPrimary)
-                    Spacer()
-                    if let price = offering.priceFromLabel {
-                        Text(price)
-                            .font(BrandFont.body(14, .semibold))
-                            .foregroundStyle(BrandColor.accent)
-                    }
-                }
-                if let description = offering.description, !description.isEmpty {
-                    Text(description)
-                        .font(BrandFont.body(13))
-                        .foregroundStyle(BrandColor.textSecondary)
-                        .lineLimit(2)
-                }
-                HStack(spacing: 8) {
-                    if let duration = offering.durationMinutes {
-                        BrandPill(text: "\(duration) min")
-                    }
-                    if offering.offersInSalon { BrandPill(text: "Salon") }
-                    if offering.offersMobile { BrandPill(text: "Mobile") }
-                    Spacer()
-                    HStack(spacing: 4) {
-                        Text("Book").font(BrandFont.mono(10)).tracking(0.6)
-                        Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold))
-                    }
-                    .foregroundStyle(BrandColor.accent)
-                }
-            }
-        }
-    }
-}
+                        .lineLimit(1)
 
-private struct PortfolioGrid: View {
-    let tiles: [ProPortfolioTile]
+                    if let description = offering.description, !description.isEmpty {
+                        Text(description)
+                            .font(BrandFont.body(12, .semibold))
+                            .foregroundStyle(BrandColor.textSecondary)
+                            .lineLimit(2)
+                    }
 
-    private let columns = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
-
-    var body: some View {
-        LazyVGrid(columns: columns, spacing: 8) {
-            ForEach(tiles) { tile in
-                ZStack(alignment: .bottomTrailing) {
-                    if let url = URL(string: tile.displayUrl) {
-                        AsyncImage(url: url) { image in
-                            image.resizable().scaledToFill()
-                        } placeholder: {
-                            BrandColor.bgSecondary
-                        }
+                    if offering.pricingLines.isEmpty {
+                        Text("Pricing not set")
+                            .font(BrandFont.body(12, .semibold))
+                            .foregroundStyle(BrandColor.textSecondary)
+                            .opacity(0.8)
                     } else {
-                        BrandColor.bgSecondary
-                    }
-                    if tile.isVideo {
-                        Image(systemName: "play.circle.fill")
-                            .font(.system(size: 18))
-                            .foregroundStyle(.white)
-                            .padding(6)
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(offering.pricingLines, id: \.self) { line in
+                                Text(line)
+                                    .font(BrandFont.body(12, .semibold))
+                                    .foregroundStyle(BrandColor.textSecondary)
+                            }
+                        }
                     }
                 }
-                .frame(height: 150)
-                .frame(maxWidth: .infinity)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                Spacer(minLength: 8)
+
+                VStack(alignment: .trailing, spacing: 8) {
+                    Button(action: onBook) {
+                        HStack(spacing: 4) {
+                            Text("Book")
+                            Image(systemName: "arrow.right").font(.system(size: 10, weight: .bold))
+                        }
+                        .font(BrandFont.body(12, .semibold))
+                        .foregroundStyle(BrandColor.onAccent)
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 12)
+                        .background(BrandColor.accent, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: onToggleSave) {
+                        Text(busy ? "…" : (saved ? "Saved" : "Save"))
+                            .font(BrandFont.body(12, .heavy))
+                            .foregroundStyle(saved ? BrandColor.textPrimary : BrandColor.textSecondary)
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 12)
+                            .background(
+                                (saved ? BrandColor.textPrimary : BrandColor.bgPrimary)
+                                    .opacity(saved ? 0.14 : 0.45),
+                                in: Capsule()
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(busy)
+                    .accessibilityLabel(saved ? "Unsave service" : "Save service")
+                }
             }
         }
     }
+
+    private var thumbnail: some View {
+        ZStack {
+            if let raw = offering.imageUrl, let url = URL(string: raw) {
+                AsyncImage(url: url) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
+                    fallback
+                }
+            } else {
+                fallback
+            }
+        }
+        .frame(width: 56, height: 56)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(BrandColor.textMuted.opacity(0.15), lineWidth: 1)
+        )
+    }
+
+    private var fallback: some View {
+        LinearGradient(
+            colors: [BrandColor.accent.opacity(0.3), BrandColor.iris.opacity(0.3)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
 }
 
-private struct ReviewRow: View {
+// MARK: - Review card
+
+private struct ReviewCard: View {
     let review: ProReview
+    let helpful: Bool
+    let helpfulCount: Int
+    let busy: Bool
+    let onToggleHelpful: () -> Void
+    let onOpenMedia: (ProReviewMedia) -> Void
 
     var body: some View {
         BrandSurface {
-            VStack(alignment: .leading, spacing: 5) {
-                HStack {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(review.clientName)
+                            .font(BrandFont.body(13, .semibold))
+                            .foregroundStyle(BrandColor.textPrimary)
+                        if !review.createdAt.isEmpty {
+                            Text(Wire.dateOnly(review.createdAt))
+                                .font(BrandFont.mono(10))
+                                .foregroundStyle(BrandColor.textMuted)
+                        }
+                    }
+                    Spacer()
                     Text(stars)
                         .font(BrandFont.body(13))
                         .foregroundStyle(BrandColor.gold)
-                    Spacer()
-                    Text(review.clientName)
-                        .font(BrandFont.body(12))
-                        .foregroundStyle(BrandColor.textMuted)
                 }
+
                 if let headline = review.headline, !headline.isEmpty {
                     Text(headline)
-                        .font(BrandFont.body(14, .semibold))
+                        .font(BrandFont.body(13, .semibold))
                         .foregroundStyle(BrandColor.textPrimary)
                 }
+
                 if let body = review.body, !body.isEmpty {
                     Text(body)
-                        .font(BrandFont.body(13))
+                        .font(BrandFont.body(12))
                         .foregroundStyle(BrandColor.textSecondary)
                 }
+
+                if !review.mediaAssets.isEmpty {
+                    FlowLayout(spacing: 6, lineSpacing: 6) {
+                        ForEach(review.mediaAssets) { media in
+                            Button {
+                                onOpenMedia(media)
+                            } label: {
+                                reviewThumb(media)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+
+                helpfulControl
+            }
+        }
+    }
+
+    private func reviewThumb(_ media: ProReviewMedia) -> some View {
+        ZStack {
+            BrandColor.bgSecondary
+            if let url = URL(string: media.displayUrl) {
+                AsyncImage(url: url) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
+                    BrandColor.bgSecondary
+                }
+            }
+            if media.isVideo {
+                Image(systemName: "play.circle.fill")
+                    .font(.system(size: 16))
+                    .foregroundStyle(.white)
+            }
+        }
+        .frame(width: 60, height: 60)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var helpfulControl: some View {
+        HStack(spacing: 8) {
+            Button(action: onToggleHelpful) {
+                Text(helpful ? "Helpful ✓" : "Helpful")
+                    .font(BrandFont.body(11, .semibold))
+                    .foregroundStyle(helpful ? BrandColor.accent : BrandColor.textSecondary)
+                    .padding(.vertical, 5)
+                    .padding(.horizontal, 12)
+                    .background((helpful ? BrandColor.accent : BrandColor.textMuted).opacity(0.12), in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(busy)
+
+            if helpfulCount > 0 {
+                Text("\(helpfulCount) helpful")
+                    .font(BrandFont.mono(10))
+                    .foregroundStyle(BrandColor.textMuted)
             }
         }
     }

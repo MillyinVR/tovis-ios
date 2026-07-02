@@ -26,4 +26,25 @@ public final class ProfileService: Sendable {
             method: favorited ? .post : .delete
         )
     }
+
+    /// Save (POST) or unsave (DELETE) one of the pro's services for the current
+    /// client. Returns the new saved state + total save count. Client-only — a
+    /// guest gets `APIError.server(401, …)` (the caller should route to login).
+    @discardableResult
+    public func setServiceFavorite(serviceId: String, favorited: Bool) async throws -> FavoriteResult {
+        try await api.request(
+            "/services/\(serviceId)/favorite",
+            method: favorited ? .post : .delete
+        )
+    }
+
+    /// Mark (POST) or unmark (DELETE) a review as "helpful" for the current
+    /// client. Returns the new state + total helpful count. Client-only.
+    @discardableResult
+    public func setReviewHelpful(reviewId: String, helpful: Bool) async throws -> ReviewHelpfulResult {
+        try await api.request(
+            "/reviews/\(reviewId)/helpful",
+            method: helpful ? .post : .delete
+        )
+    }
 }
