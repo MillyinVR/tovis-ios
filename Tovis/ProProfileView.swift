@@ -456,7 +456,35 @@ struct ProProfileView: View {
         }
     }
 
+    @ViewBuilder
     private func portfolioTile(_ tile: ProPortfolioTile, isFirst: Bool) -> some View {
+        if let before = tile.before,
+           let beforeStr = before.displayUrl,
+           let beforeURL = URL(string: beforeStr),
+           let afterURL = URL(string: tile.displayUrl) {
+            // Paired before/after → the interactive comparison slider fills the
+            // cell (parity with the web public portfolio grid). The slider owns
+            // the tap/drag, so there's no fullscreen button here.
+            Color.clear
+                .aspectRatio(3.0 / 4.0, contentMode: .fit)
+                .overlay {
+                    GeometryReader { geo in
+                        BeforeAfterCompareView(
+                            beforeURL: beforeURL,
+                            afterURL: afterURL,
+                            height: geo.size.height,
+                            cornerRadius: 0
+                        )
+                        .frame(width: geo.size.width, height: geo.size.height)
+                    }
+                }
+                .clipped()
+        } else {
+            standardPortfolioTile(tile, isFirst: isFirst)
+        }
+    }
+
+    private func standardPortfolioTile(_ tile: ProPortfolioTile, isFirst: Bool) -> some View {
         Button {
             fullscreenMedia = FullscreenMedia.remote(id: tile.id, urlString: tile.src, isVideo: tile.isVideo)
         } label: {

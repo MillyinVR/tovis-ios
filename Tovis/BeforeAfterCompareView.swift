@@ -8,6 +8,9 @@ struct BeforeAfterCompareView: View {
     let beforeURL: URL
     let afterURL: URL
     var height: CGFloat = 400
+    /// Corner radius of the clipped frame. Defaults to 16 (the standalone card
+    /// look); pass 0 to sit flush in a sharp-cornered grid cell.
+    var cornerRadius: CGFloat = 16
 
     /// How much of the "before" is revealed from the left, 0…1.
     @State private var fraction: CGFloat = 0.5
@@ -38,7 +41,7 @@ struct BeforeAfterCompareView: View {
             )
         }
         .frame(height: height)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
 
     private func fullImage(_ url: URL, size: CGSize) -> some View {

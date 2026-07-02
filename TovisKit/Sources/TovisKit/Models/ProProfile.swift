@@ -99,6 +99,18 @@ public struct ProOffering: Decodable, Sendable, Identifiable {
     }
 }
 
+/// The chosen "before" counterpart of an opt-in before/after pair, resolved to
+/// renderable URLs. Present on a portfolio tile / review after-photo the pro or
+/// client paired; nil → render as a single tile. Mirrors the web `PairedBeforeDto`.
+public struct PairedBeforeMedia: Decodable, Sendable {
+    public let id: String
+    public let thumbUrl: String?
+    public let fullUrl: String?
+
+    /// The thumbnail to render, falling back to the full-size URL.
+    public var displayUrl: String? { thumbUrl ?? fullUrl }
+}
+
 public struct ProPortfolioTile: Decodable, Sendable, Identifiable {
     public let id: String
     public let caption: String?
@@ -109,12 +121,14 @@ public struct ProPortfolioTile: Decodable, Sendable, Identifiable {
     public let isFeaturedInPortfolio: Bool
     /// Services tagged on this post — drives the "SERVICE" chip.
     public let serviceIds: [String]
+    /// Opt-in before/after pairing → render the comparison slider when present.
+    public let before: PairedBeforeMedia?
 
     /// The thumbnail to render (falls back to the full source).
     public var displayUrl: String { thumbUrl ?? src }
 
     private enum CodingKeys: String, CodingKey {
-        case id, caption, src, thumbUrl, isVideo, isFeaturedInPortfolio, serviceIds
+        case id, caption, src, thumbUrl, isVideo, isFeaturedInPortfolio, serviceIds, before
     }
 
     public init(from decoder: Decoder) throws {
@@ -126,6 +140,7 @@ public struct ProPortfolioTile: Decodable, Sendable, Identifiable {
         isVideo = try c.decodeIfPresent(Bool.self, forKey: .isVideo) ?? false
         isFeaturedInPortfolio = try c.decodeIfPresent(Bool.self, forKey: .isFeaturedInPortfolio) ?? false
         serviceIds = try c.decodeIfPresent([String].self, forKey: .serviceIds) ?? []
+        before = try c.decodeIfPresent(PairedBeforeMedia.self, forKey: .before)
     }
 }
 
