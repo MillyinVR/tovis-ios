@@ -185,11 +185,8 @@ struct ProAftercareListView: View {
 
     private func cardBody(_ item: ProAftercareCardItem) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            if let media = item.media, media.beforeUrl != nil || media.afterUrl != nil {
-                HStack(spacing: 8) {
-                    thumb(media.beforeUrl, label: "BEFORE")
-                    thumb(media.afterUrl, label: "AFTER")
-                }
+            if let media = item.media {
+                beforeAfterMedia(media)
             }
 
             HStack(spacing: 8) {
@@ -265,6 +262,22 @@ struct ProAftercareListView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // Both halves present → the interactive comparison slider, matching the pro
+    // session hub (BeforeAfterCompareView) and the web BeforeAfterReveal. Only
+    // one half → fall back to the side-by-side labelled thumbnails.
+    @ViewBuilder
+    private func beforeAfterMedia(_ media: ProAftercareCardItem.Media) -> some View {
+        if let beforeStr = media.beforeUrl, let afterStr = media.afterUrl,
+           let beforeURL = URL(string: beforeStr), let afterURL = URL(string: afterStr) {
+            BeforeAfterCompareView(beforeURL: beforeURL, afterURL: afterURL, height: 220)
+        } else if media.beforeUrl != nil || media.afterUrl != nil {
+            HStack(spacing: 8) {
+                thumb(media.beforeUrl, label: "BEFORE")
+                thumb(media.afterUrl, label: "AFTER")
+            }
+        }
     }
 
     private func thumb(_ urlString: String?, label: String) -> some View {
