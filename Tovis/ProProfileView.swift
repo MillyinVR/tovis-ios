@@ -948,19 +948,41 @@ private struct ReviewCard: View {
                 }
 
                 if !review.mediaAssets.isEmpty {
-                    FlowLayout(spacing: 6, lineSpacing: 6) {
-                        ForEach(review.mediaAssets) { media in
-                            Button {
-                                onOpenMedia(media)
-                            } label: {
-                                reviewThumb(media)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
+                    reviewMedia
                 }
 
                 helpfulControl
+            }
+        }
+    }
+
+    // A paired "after" (carries `before`) renders as the full-width comparison
+    // slider above the remaining thumbnails; the paired before + after drop out
+    // of the flow so nothing shows twice (parity with the web ReviewsPanel).
+    @ViewBuilder
+    private var reviewMedia: some View {
+        let paired = review.mediaAssets.first(where: { $0.before?.displayUrl != nil })
+        let beforeId = paired?.before?.id
+        let rest = review.mediaAssets.filter { $0.id != paired?.id && $0.id != beforeId }
+
+        VStack(alignment: .leading, spacing: 6) {
+            if let paired,
+               let beforeStr = paired.before?.displayUrl,
+               let beforeURL = URL(string: beforeStr),
+               let afterURL = URL(string: paired.displayUrl) {
+                BeforeAfterCompareView(beforeURL: beforeURL, afterURL: afterURL, height: 220, cornerRadius: 12)
+            }
+            if !rest.isEmpty {
+                FlowLayout(spacing: 6, lineSpacing: 6) {
+                    ForEach(rest) { media in
+                        Button {
+                            onOpenMedia(media)
+                        } label: {
+                            reviewThumb(media)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
             }
         }
     }

@@ -180,12 +180,14 @@ public struct ProReviewMedia: Decodable, Sendable, Identifiable {
     public let url: String
     public let thumbUrl: String?
     public let isVideo: Bool
+    /// Opt-in before/after pairing → this after photo renders as the slider.
+    public let before: PairedBeforeMedia?
 
     /// Best URL for a thumbnail (thumb when available, else the full asset).
     public var displayUrl: String { thumbUrl ?? url }
 
     private enum CodingKeys: String, CodingKey {
-        case id, url, thumbUrl, mediaType
+        case id, url, thumbUrl, mediaType, before
     }
 
     public init(from decoder: Decoder) throws {
@@ -195,6 +197,7 @@ public struct ProReviewMedia: Decodable, Sendable, Identifiable {
         thumbUrl = try c.decodeIfPresent(String.self, forKey: .thumbUrl)
         let mediaType = try c.decodeIfPresent(String.self, forKey: .mediaType)
         isVideo = (mediaType ?? "").uppercased() == "VIDEO"
+        before = try c.decodeIfPresent(PairedBeforeMedia.self, forKey: .before)
     }
 }
 
