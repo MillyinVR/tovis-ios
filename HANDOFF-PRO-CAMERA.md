@@ -71,6 +71,19 @@ on `tovis-ios` `main`; the one backend change is **merged** (`tovis-app` PR #427
    0.45 until the subject is IN the pose (auto-capture waits for it). "Trending" flame menu in the guide bar
    switches standard set ↔ matching packs. v1 packs: The Reveal · Over-Shoulder Glance · Claw & Sparkle · Golden
    Glow. **MERGE #453 + deploy before the menu lights up** (camera falls back to standard guides silently).
+
+5. **Match a look (`de241d4`)** — pro picks ANY photo (screenshot of a viral post) via the **Inspo menu**
+   (formerly "Trending"; now always shown) → measured ON-DEVICE (nothing uploads) with the shared extraction
+   (`VisionDetect` + `FrameMath.segmentation` + `PoseGeometry` w/ per-image aspect) → synthesized into the same
+   brief vocabulary (pose rules from measured geometry, fill band ±0.12, detail heuristic, closed-eye reference
+   skips blink QC) → one-step "Match the look" guide: the reference ghosts via onion-skin, the light-match pill
+   targets the reference, auto-capture waits for the pose. `ReferenceLook.swift` + `ReferenceLookAnalyzer`.
+   **▶️ PHASE D IS NEXT (user-confirmed; do it in a FRESH session):** tovis-app endpoint proxying Claude vision
+   (API key server-side; check the `claude-api` skill when implementing) → richer reference briefs (expression /
+   head-tilt / hand-styling direction lines the geometry can't measure) + wrap-up set critique. Needs user
+   decisions: consent copy + per-critique cost model.
+
+**▶️ NEXT = the on-device tune pass** (now cheap: open the console, walk window/mixed/tungsten salon light, drag
 sliders, copy values back into `CoachTuning.swift`). Verify on hardware: level sign, face-exposure point mapping,
 onion-skin alignment, photo EXIF orientation in the web gallery, WB gains behavior, **and the card scan flow
 (print the v0 PDF on any decent printer to smoke-test alignment/glare handling before the real Zebra batch)**.
