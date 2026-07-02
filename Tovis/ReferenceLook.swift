@@ -11,6 +11,7 @@
 // brightness, warmth) — not expression, exact head tilt, or editing. Phase D
 // (Claude vision) upgrades this same flow with a richer brief.
 import CoreImage
+import TovisKit
 import UIKit
 import Vision
 
@@ -23,6 +24,10 @@ struct ReferenceLook {
     let warmth: Double
     /// One-step directed guide carrying the synthesized brief.
     let guide: ShotGuide
+    /// Claude's one-line read of the look (Phase D AI enhance; nil = measured only).
+    var aiSummary: String? = nil
+    /// Claude's spoken/shown direction lines, in coaching order (empty = none).
+    var directionLines: [String] = []
 }
 
 enum ReferenceLookAnalyzer {
@@ -145,5 +150,72 @@ enum ReferenceLookAnalyzer {
                                                   isDetail: isDetail,
                                                   allowsClosedEyes: eyesClosed,
                                                   poseRules: rules))
+    }
+}
+
+// MARK: - Phase D: Claude-vision enhancement
+
+extension ReferenceLook {
+    /// Compact digest of what the on-device analyzer measured — sent with the
+    /// AI-enhance request so Claude ADDS direction instead of repeating it.
+    var measuredSummary: String {
+        guard let step = guide.steps.first else { return "" }
+        let expects = step.expects
+
+        var parts: [String] = []
+        switch expects.face {
+        case .required: parts.append("face present")
+        case .absent: parts.append("no face (back/detail shot)")
+        case .either: break
+        }
+        if let band = expects.fillBand {
+            parts.append(String(format: "subject fills %.0f-%.0f%% of frame",
+                                band.lowerBound * 100, band.upperBound * 100))
+        }
+        if expects.isDetail { parts.append("detail/macro shot") }
+        if expects.allowsClosedEyes { parts.append("eyes closed in the reference") }
+        if !expects.poseRules.isEmpty {
+            let kinds = expects.poseRules.map { $0.kind.rawValue }.joined(separator: ", ")
+            parts.append("pose rules already derived: \(kinds)")
+        }
+        parts.append(String(format: "brightness %.2f, warmth %+.2f", luma, warmth))
+        return parts.joined(separator: "; ")
+    }
+
+    /// Fold Claude's brief into the measured look: AI pose rules ADD to the
+    /// measured ones (measured geometry wins any overlap — and a measured
+    /// shoulder rule blocks the AI's opposite, they're mutually exclusive);
+    /// the direction lines ride along for the coach to speak/show. Unknown
+    /// rule kinds are dropped here, exactly like trending packs.
+    func enhanced(with brief: ProLookBrief) -> ReferenceLook {
+        guard let step = guide.steps.first else { return self }
+
+        func blocked(by kinds: Set<PoseRule.Kind>, _ kind: PoseRule.Kind) -> Bool {
+            if kinds.contains(kind) { return true }
+            if kind == .shouldersTilted { return kinds.contains(.shouldersLevel) }
+            if kind == .shouldersLevel { return kinds.contains(.shouldersTilted) }
+            return false
+        }
+
+        var kinds = Set(step.expects.poseRules.map(\.kind))
+        var rules = step.expects.poseRules
+        for wire in brief.poseRules {
+            guard let kind = PoseRule.Kind(rawValue: wire.kind),
+                  !blocked(by: kinds, kind) else { continue }
+            kinds.insert(kind)
+            rules.append(PoseRule(kind: kind, params: wire.params ?? [:], tip: wire.tip))
+        }
+
+        let expects = step.expects
+        let merged = ShotStep(step.title, step.hint, icon: step.icon,
+                              expects: ShotExpectations(face: expects.face,
+                                                        fillBand: expects.fillBand,
+                                                        isDetail: expects.isDetail,
+                                                        allowsClosedEyes: expects.allowsClosedEyes,
+                                                        poseRules: rules))
+        return ReferenceLook(image: image, luma: luma, warmth: warmth,
+                             guide: ShotGuide(name: guide.name, steps: [merged]),
+                             aiSummary: brief.summary.isEmpty ? nil : brief.summary,
+                             directionLines: brief.directionLines)
     }
 }

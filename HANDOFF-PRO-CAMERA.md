@@ -78,18 +78,42 @@ on `tovis-ios` `main`; the one backend change is **merged** (`tovis-app` PR #427
    brief vocabulary (pose rules from measured geometry, fill band ±0.12, detail heuristic, closed-eye reference
    skips blink QC) → one-step "Match the look" guide: the reference ghosts via onion-skin, the light-match pill
    targets the reference, auto-capture waits for the pose. `ReferenceLook.swift` + `ReferenceLookAnalyzer`.
-   **▶️ PHASE D IS NEXT (user-confirmed; do it in a FRESH session):** tovis-app endpoint proxying Claude vision
-   (API key server-side; check the `claude-api` skill when implementing) → richer reference briefs (expression /
-   head-tilt / hand-styling direction lines the geometry can't measure) + wrap-up set critique. Needs user
-   decisions: consent copy + per-critique cost model.
+
+6. **✅ PHASE D SHIPPED (2026-07-01) — Claude vision: AI-enhanced look briefs + wrap-up set critique.**
+   Backend = **tovis-app PR #454 (OPEN)**, branch `feat/camera-claude-vision`: `POST /pro/camera/look-brief` +
+   `POST /pro/camera/set-critique` — Anthropic key SERVER-SIDE only (`ANTHROPIC_API_KEY`; model default
+   `claude-opus-4-8`, override `CAMERA_VISION_MODEL`), images analyzed in-flight, never stored/logged;
+   `lib/pro/cameraVision.ts` owns prompts/structured-output schemas/sanitizers (unknown pose kinds filtered
+   server-side too); **free w/ daily cap** (25 look-briefs, 10 critiques /pro/day, `lib/rateLimit` buckets).
+   ⚠️ **MERGE #454 + set `ANTHROPIC_API_KEY` in Vercel + deploy** before the buttons work in prod (until then:
+   look enhance fails silently to the measured brief; critique shows a retryable error). Native (this repo):
+   - **Look enhance:** picking a Match-a-look photo ALSO sends it to Claude (after the measured brief is already
+     live — enhance failing costs nothing): merged pose rules (measured wins conflicts incl. the shoulders
+     level/tilted pair; unknown kinds dropped like packs) + a **tappable/spoken AI direction card**
+     (`aiDirectionCard`: expression / head angle / hands / light lines). `ReferenceLook.enhanced(with:)` +
+     `.measuredSummary`; coaching-settings toggle "AI-enhance matched looks" (`CoachSettings.aiEnhanceLooks`).
+   - **Wrap-up critique:** "Photographer's review" card in the session-hub wrap-up (`critiqueSection`) —
+     downloads the set from signed URLs (≤10, AFTERs prioritized), downscales client-side (1024px q0.6), POSTs;
+     renders overall + strengths + per-photo verdict chips (portfolio/keep/retake + retake tip; unknown verdicts
+     render neutrally) + "Review again".
+   - **Consent (user-picked copy):** ONE persisted opt-in for both flows (`tovis.camera.ai.consented`,
+     `CameraVisionConsent` in `Tovis/CameraVision.swift`), first-use confirmationDialog per flow: "This photo
+     leaves your device for AI analysis by Claude (Anthropic). It isn't stored." (plural variant for the set) +
+     standing caption lines (enhance progress row, critique card, settings footer). Declining the look dialog
+     flips the settings toggle off.
+   - TovisKit: `Models/ProCameraVision.swift` (pose rules REUSE `ProShotPackPoseRule`), `ProCameraService.
+     lookBrief/setCritique`, fixtures `proLookBrief.json`/`proSetCritique.json` w/ unknown-kind + unknown-verdict
+     forward-compat decode tests; endpoints documented in `docs/PRO-BACKEND-CONTRACTS.md` ("Camera" section).
+     **93 TovisKit tests + Debug/Release green; contract 27. NOT sim-verified** (needs #454 deployed or a local
+     dev server with `ANTHROPIC_API_KEY`).
 
 **▶️ NEXT = the on-device tune pass** (now cheap: open the console, walk window/mixed/tungsten salon light, drag
 sliders, copy values back into `CoachTuning.swift`). Verify on hardware: level sign, face-exposure point mapping,
 onion-skin alignment, photo EXIF orientation in the web gallery, WB gains behavior, **and the card scan flow
 (print the v0 PDF on any decent printer to smoke-test alignment/glare handling before the real Zebra batch)**.
-Then (discussed, not built): directive per-step guidance language, torch-as-fill suggestion, Claude vision
-critique at wrap-up (Phase D), publish before/after → Looks funnel, NFC card identify + measured batch profiles
-(B4 remainder — blocked on physical cards).
+Then (discussed, not built): directive per-step guidance language, torch-as-fill suggestion, publish
+before/after → Looks funnel, NFC card identify + measured batch profiles (B4 remainder — blocked on physical
+cards). (Phase D Claude vision = ✅ SHIPPED, item 6 above.)
 
 > Corrections to the block below (pass 5 predates 2026-07-01 work): "AE/AF lock + tap-to-focus" and "color
 > accuracy / white balance" are NOW BUILT (`e73e966` + pass-6 work); the OOM crash is fixed (`e3f88ae`).

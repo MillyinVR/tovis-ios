@@ -31,6 +31,11 @@ final class CoachSettings {
     /// Auto-harvest extra stills (video-res) when quality peaks — a background
     /// safety net, off by default now that guided auto-capture is the primary flow.
     var autoHarvest: Bool { didSet { persist(\.autoHarvest, "autoHarvest") } }
+    /// "Match a look" AI enhance (Phase D): also send the picked reference to
+    /// Claude for the parts geometry can't measure (expression, head angle,
+    /// hands, light direction). Consent-gated on first use — the photo is
+    /// analyzed in-flight and never stored.
+    var aiEnhanceLooks: Bool { didSet { persist(\.aiEnhanceLooks, "aiEnhanceLooks") } }
 
     init() {
         let d = UserDefaults.standard
@@ -45,6 +50,7 @@ final class CoachSettings {
         showLevel = d.object(forKey: Self.key("showLevel")) as? Bool ?? true
         autoCapture = d.object(forKey: Self.key("autoCapture")) as? Bool ?? true
         autoHarvest = d.object(forKey: Self.key("autoHarvest")) as? Bool ?? false
+        aiEnhanceLooks = d.object(forKey: Self.key("aiEnhanceLooks")) as? Bool ?? true
     }
 
     private static func key(_ name: String) -> String { "tovis.coach.\(name)" }

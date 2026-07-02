@@ -8,6 +8,7 @@
 import Combine
 import SwiftUI
 import TovisKit
+import UIKit
 
 struct ProSessionHubView: View {
     @Environment(SessionModel.self) private var session
@@ -30,6 +31,12 @@ struct ProSessionHubView: View {
     @State private var paymentMethods: [ProManualPaymentMethod] = []
     @State private var selectedMethod: String = ""
     @State private var markPaidError: String?
+    /// Phase D: the wrap-up "photographer's review" of the before/after set
+    /// (Claude vision via POST /pro/camera/set-critique; consent-gated).
+    @State private var critique: ProSetCritique?
+    @State private var critiqueLoading = false
+    @State private var critiqueError: String?
+    @State private var showCritiqueConsent = false
 
     private struct CaptureSelection: Identifiable {
         let phase: MediaPhase
@@ -334,6 +341,8 @@ struct ProSessionHubView: View {
 
             beforeAfterSection()
 
+            critiqueSection()
+
             aftercareLink("Aftercare", primary: true)
 
             Text(checklist.helpText).font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
@@ -357,6 +366,198 @@ struct ProSessionHubView: View {
                 .frame(height: 412)
             }
         }
+    }
+
+    // MARK: - Photographer's review (Phase D — Claude vision set critique)
+
+    /// The wrap-up "photographer's review" card: what's strong, what to retake
+    /// while the client is still in the chair, what's portfolio-worthy. The
+    /// set leaves the device only after explicit consent; the server analyzes
+    /// in-flight and stores nothing. Free with a daily cap (server-enforced).
+    private func critiqueSection() -> some View {
+        BrandSurface {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(BrandColor.gold)
+                    Text("Photographer’s review").font(BrandFont.body(15, .semibold))
+                        .foregroundStyle(BrandColor.textPrimary)
+                }
+
+                if let result = critique {
+                    critiqueResult(result)
+                } else if critiqueLoading {
+                    HStack(spacing: 10) {
+                        ProgressView().tint(BrandColor.accent)
+                        Text("Reviewing your set…").font(BrandFont.body(13))
+                            .foregroundStyle(BrandColor.textSecondary)
+                    }
+                } else {
+                    Text("A shot-by-shot read of this set — what to publish, what to retake while they’re still in the chair.")
+                        .font(BrandFont.body(13)).foregroundStyle(BrandColor.textSecondary)
+                    Button { requestCritique() } label: {
+                        Text("Review my set").font(BrandFont.body(14, .semibold))
+                            .frame(maxWidth: .infinity).padding(.vertical, 11)
+                            .background(BrandColor.bgSecondary)
+                            .foregroundStyle(BrandColor.textPrimary)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                    if let critiqueError {
+                        Text(critiqueError).font(BrandFont.body(12))
+                            .foregroundStyle(BrandColor.ember)
+                    }
+                    Text(CameraVisionConsent.critiqueDisclosure)
+                        .font(BrandFont.body(11)).foregroundStyle(BrandColor.textMuted)
+                }
+            }
+        }
+        .confirmationDialog("Review with AI?", isPresented: $showCritiqueConsent,
+                            titleVisibility: .visible) {
+            Button("Review photos") {
+                CameraVisionConsent.granted = true
+                startCritique()
+            }
+            Button("Not now", role: .cancel) {}
+        } message: {
+            Text(CameraVisionConsent.critiqueDisclosure)
+        }
+    }
+
+    @ViewBuilder
+    private func critiqueResult(_ result: ProSetCritique) -> some View {
+        if !result.overall.isEmpty {
+            Text(result.overall).font(BrandFont.body(13))
+                .foregroundStyle(BrandColor.textPrimary)
+        }
+        ForEach(result.strengths, id: \.self) { strength in
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "checkmark.circle.fill").font(.system(size: 12))
+                    .foregroundStyle(BrandColor.emerald).padding(.top, 2)
+                Text(strength).font(BrandFont.body(12))
+                    .foregroundStyle(BrandColor.textSecondary)
+            }
+        }
+        ForEach(result.photos) { note in
+            critiquePhotoRow(note)
+        }
+        Button { requestCritique() } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.clockwise").font(.system(size: 11, weight: .semibold))
+                Text("Review again").font(BrandFont.body(12, .semibold))
+            }
+            .foregroundStyle(BrandColor.textSecondary)
+        }
+        .disabled(critiqueLoading)
+    }
+
+    private func critiquePhotoRow(_ note: ProSetCritiquePhotoNote) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            if let item = media.first(where: { $0.id == note.id }),
+               let urlString = item.displayThumbUrl ?? item.displayUrl,
+               let url = URL(string: urlString) {
+                AsyncImage(url: url) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
+                    BrandColor.bgSecondary
+                }
+                .frame(width: 44, height: 44)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                critiqueVerdictChip(note.verdict)
+                if !note.note.isEmpty {
+                    Text(note.note).font(BrandFont.body(12))
+                        .foregroundStyle(BrandColor.textSecondary)
+                }
+                if let tip = note.retakeTip, !tip.isEmpty {
+                    Text(tip).font(BrandFont.body(12, .semibold))
+                        .foregroundStyle(BrandColor.accent)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    /// Verdicts arrive as plain strings (forward-compat) — unknown ones render
+    /// neutrally instead of breaking the card.
+    private func critiqueVerdictChip(_ verdict: String) -> some View {
+        let label: String, icon: String, color: Color
+        switch verdict {
+        case "portfolio": (label, icon, color) = ("Portfolio-worthy", "sparkles", BrandColor.gold)
+        case "retake": (label, icon, color) = ("Retake", "arrow.counterclockwise", BrandColor.ember)
+        case "keep": (label, icon, color) = ("Keep", "checkmark", BrandColor.emerald)
+        default: (label, icon, color) = (verdict.capitalized, "photo", BrandColor.textMuted)
+        }
+        return HStack(spacing: 4) {
+            Image(systemName: icon).font(.system(size: 10, weight: .bold))
+            Text(label).font(BrandFont.mono(10)).tracking(0.5)
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, 8).padding(.vertical, 3)
+        .background(color.opacity(0.12), in: Capsule())
+    }
+
+    private func requestCritique() {
+        critiqueError = nil
+        if CameraVisionConsent.granted {
+            startCritique()
+        } else {
+            showCritiqueConsent = true
+        }
+    }
+
+    private func startCritique() {
+        guard !critiqueLoading else { return }
+        critiqueLoading = true
+        Task {
+            defer { critiqueLoading = false }
+            do {
+                let request = try await buildCritiqueRequest()
+                critique = try await session.client.proCamera.setCritique(request)
+            } catch let error as CritiqueBuildError {
+                critiqueError = error.message
+            } catch let error as APIError {
+                critiqueError = error.userMessage
+            } catch {
+                critiqueError = "Couldn’t review the set. Please try again."
+            }
+        }
+    }
+
+    private struct CritiqueBuildError: Error {
+        let message = "Couldn’t load the photos to review — check your connection."
+    }
+
+    /// The set Claude reviews: every AFTER image plus BEFOREs while there's
+    /// room (cap 10, newest kept), in capture order so before→after reads
+    /// naturally. Each is downloaded from its signed URL, downscaled, and
+    /// inlined — the transient analysis payload never enters the media pipeline.
+    private func buildCritiqueRequest() async throws -> ProSetCritiqueRequest {
+        func images(_ phase: MediaPhase) -> [ProBookingMediaItem] {
+            media
+                .filter { $0.phase == phase && $0.mediaType == .image }
+                .sorted { $0.createdAt < $1.createdAt }
+        }
+        let maxPhotos = 10
+        let afters = Array(images(.after).suffix(maxPhotos))
+        let befores = Array(images(.before).suffix(max(0, maxPhotos - afters.count)))
+
+        var photos: [ProSetCritiqueRequest.Photo] = []
+        for item in befores + afters {
+            guard let urlString = item.displayUrl, let url = URL(string: urlString),
+                  let (data, _) = try? await URLSession.shared.data(from: url),
+                  let image = UIImage(data: data),
+                  let payload = CameraVisionPayload.imagePayload(
+                      image, maxDimension: 1024, quality: 0.6)
+            else { continue }
+            photos.append(.init(id: item.id,
+                                phase: item.phase == .before ? "BEFORE" : "AFTER",
+                                image: payload))
+        }
+        guard !photos.isEmpty else { throw CritiqueBuildError() }
+        return ProSetCritiqueRequest(photos: photos,
+                                     serviceName: detail?.baseItem?.serviceName)
     }
 
     /// A push link to the aftercare authoring screen; reloads the hub on send.

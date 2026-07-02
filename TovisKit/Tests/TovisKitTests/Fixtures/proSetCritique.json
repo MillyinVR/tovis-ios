@@ -1,0 +1,30 @@
+{
+  "ok": true,
+  "critique": {
+    "overall": "Publish the glance and the back canvas; retake the macro before they leave.",
+    "strengths": [
+      "Even, warm light across the whole set",
+      "Backgrounds stay clean behind the subject"
+    ],
+    "photos": [
+      {
+        "id": "media-1",
+        "verdict": "portfolio",
+        "note": "Hero shot — tone and shape razor sharp",
+        "retakeTip": null
+      },
+      {
+        "id": "media-2",
+        "verdict": "retake",
+        "note": "Soft focus on the ends undercuts the finish",
+        "retakeTip": "Step closer and tap to focus on the ends"
+      },
+      {
+        "id": "media-3",
+        "verdict": "someFutureVerdict",
+        "note": "Unknown verdicts stay decodable on old builds",
+        "retakeTip": null
+      }
+    ]
+  }
+}

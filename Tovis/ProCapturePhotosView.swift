@@ -43,6 +43,12 @@ struct ProCapturePhotosView: View {
     @State private var showLookPicker = false
     @State private var lookPickerItem: PhotosPickerItem?
     @State private var analyzingLook = false
+    /// Phase D AI enhance: the matched look is being enriched by Claude (in
+    /// flight) / is waiting on the pro's first-use consent.
+    @State private var enhancingLook = false
+    @State private var pendingEnhanceLook: ReferenceLook?
+    /// Which AI direction line the pro is on (tap the card to advance).
+    @State private var lookDirectionIndex = 0
     /// Tap-to-focus reticle position (preview space) + a token to time its fade.
     @State private var focusPoint: CGPoint?
     @State private var focusToken = 0
@@ -234,6 +240,7 @@ struct ProCapturePhotosView: View {
                     return
                 }
                 selectMatchLook(look)
+                maybeEnhanceLook(look)
             }
         }
         .onDisappear { camera.stop(); coach?.stop() }
@@ -280,6 +287,25 @@ struct ProCapturePhotosView: View {
         // "Match a look": pick any photo (screenshot of a viral post, a shot
         // they admire) — measured on-device into a guided brief.
         .photosPicker(isPresented: $showLookPicker, selection: $lookPickerItem, matching: .images)
+        // Phase D first-use consent — the ONE place a reference photo leaves
+        // the device. Declining turns the enhance setting off (re-enable in
+        // coaching settings); the measured on-device brief keeps working.
+        .confirmationDialog("Enhance with AI?", isPresented: Binding(
+            get: { pendingEnhanceLook != nil },
+            set: { if !$0 { pendingEnhanceLook = nil } }
+        ), titleVisibility: .visible) {
+            Button("Enhance photo") {
+                CameraVisionConsent.granted = true
+                if let look = pendingEnhanceLook { runEnhanceLook(look) }
+                pendingEnhanceLook = nil
+            }
+            Button("Not now", role: .cancel) {
+                settings.aiEnhanceLooks = false
+                pendingEnhanceLook = nil
+            }
+        } message: {
+            Text(CameraVisionConsent.lookDisclosure)
+        }
         .sheet(isPresented: $showSettings) {
             #if DEBUG
             CoachSettingsSheet(settings: settings, onOpenTuning: { showTuning = true })
@@ -862,9 +888,55 @@ struct ProCapturePhotosView: View {
         guide = look.guide
         completedStepIDs = []
         currentStepID = guide.steps.first?.id
+        lookDirectionIndex = 0
         onionEnabled = true   // the ghost is the point
         if settings.speak {
             coach?.announce("Matching your reference look.")
+        }
+    }
+
+    /// Phase D: optionally enrich the measured look with Claude vision — only
+    /// the parts geometry can't measure. First use asks consent (the photo
+    /// leaves the device); after that it runs automatically while the
+    /// coaching-settings toggle is on.
+    private func maybeEnhanceLook(_ look: ReferenceLook) {
+        guard settings.aiEnhanceLooks else { return }
+        if CameraVisionConsent.granted {
+            runEnhanceLook(look)
+        } else {
+            pendingEnhanceLook = look
+        }
+    }
+
+    private func runEnhanceLook(_ look: ReferenceLook) {
+        enhancingLook = true
+        Task {
+            defer { enhancingLook = false }
+            // Downscale + encode off the main actor; the live camera keeps running.
+            let payload = await Task.detached(priority: .userInitiated) { [image = look.image] in
+                CameraVisionPayload.imagePayload(image, maxDimension: 1568, quality: 0.7)
+            }.value
+            guard let payload else { return }
+            do {
+                let brief = try await session.client.proCamera.lookBrief(ProLookBriefRequest(
+                    image: payload, serviceName: serviceName,
+                    measuredSummary: look.measuredSummary))
+                // Apply only if this look still drives the shoot (the pro may
+                // have switched packs or picked another photo meanwhile).
+                guard matchLook?.image === look.image else { return }
+                let enhanced = look.enhanced(with: brief)
+                matchLook = enhanced
+                guide = enhanced.guide
+                lookDirectionIndex = 0
+                if settings.speak, let first = enhanced.directionLines.first {
+                    coach?.announce("AI direction ready. \(first)")
+                }
+            } catch {
+                // The measured on-device brief is already driving the shoot —
+                // enhance failing (offline, daily cap, refusal) costs nothing.
+                guard matchLook?.image === look.image else { return }
+                errorMessage = "AI enhance didn’t come through — shooting with the measured brief."
+            }
         }
     }
 
@@ -979,6 +1051,44 @@ struct ProCapturePhotosView: View {
         .padding(.horizontal, 16).padding(.top, 10)
         .animation(.easeOut(duration: 0.2), value: currentStepID)
         .animation(.easeOut(duration: 0.2), value: allStepsDone)
+    }
+
+    /// Claude's direction lines for the matched look — tap to step through;
+    /// each line is spoken when voice tips are on. (The pose rules merged into
+    /// the brief already gate readiness; these are the human-coaching extras —
+    /// expression, head angle, hands, light — that no evaluator can measure.)
+    private func aiDirectionCard(_ look: ReferenceLook) -> some View {
+        let lines = look.directionLines
+        let index = min(lookDirectionIndex, lines.count - 1)
+        return Button {
+            let next = (index + 1) % lines.count
+            lookDirectionIndex = next
+            if settings.speak { coach?.announce(lines[next]) }
+        } label: {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(BrandColor.gold)
+                    Text(look.aiSummary ?? "AI direction")
+                        .font(BrandFont.mono(10)).tracking(0.5)
+                        .foregroundStyle(.white.opacity(0.7))
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    Text("\(index + 1)/\(lines.count)")
+                        .font(BrandFont.mono(10)).foregroundStyle(.white.opacity(0.5))
+                }
+                Text(lines[index])
+                    .font(BrandFont.body(13, .semibold)).foregroundStyle(.white)
+                    .multilineTextAlignment(.leading)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.black.opacity(0.5), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 16)
+        .animation(.easeOut(duration: 0.15), value: lookDirectionIndex)
     }
 
     // MARK: - Guidance banner (the photographer's voice)
@@ -1250,6 +1360,22 @@ struct ProCapturePhotosView: View {
                     ProgressView().tint(.white)
                     Text("Reading the look…").font(BrandFont.body(13)).foregroundStyle(.white.opacity(0.85))
                 }
+            }
+            if enhancingLook {
+                VStack(spacing: 3) {
+                    HStack(spacing: 8) {
+                        ProgressView().tint(.white)
+                        Text("Enhancing with AI…").font(BrandFont.body(13)).foregroundStyle(.white.opacity(0.85))
+                    }
+                    // The standing disclosure — this is the moment bytes leave the device.
+                    Text(CameraVisionConsent.lookDisclosure)
+                        .font(BrandFont.body(10)).foregroundStyle(.white.opacity(0.55))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
+                }
+            }
+            if let look = matchLook, !look.directionLines.isEmpty {
+                aiDirectionCard(look)
             }
             if matchLook != nil || !referenceURLs.isEmpty { onionControls }
 
@@ -1604,6 +1730,14 @@ private struct CoachSettingsSheet: View {
                     Text("On the camera")
                 } footer: {
                     Text("Auto-capture takes each guided shot for you once it looks great and holds steady — like a photographer pressing the shutter at the right moment. You can always tap the shutter yourself.")
+                }
+
+                Section {
+                    Toggle("AI-enhance matched looks", isOn: $settings.aiEnhanceLooks)
+                } header: {
+                    Text("AI analysis")
+                } footer: {
+                    Text("When you match a photo, Claude also reads what geometry can't measure — expression, head angle, hands, light direction. \(CameraVisionConsent.lookDisclosure)")
                 }
 
                 #if DEBUG

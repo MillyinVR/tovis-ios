@@ -478,6 +478,41 @@ func fixture(_ name: String) throws -> Data {
         #expect(nails.steps[0].pose.isEmpty)
     }
 
+    // POST /api/v1/pro/camera/look-brief — Fixtures/proLookBrief.json. The
+    // Claude-vision enhanced "Match a look" brief (tovis-app PR #454). Inline
+    // shape; decode-only. Pose rules ride the SAME wire type as shot packs —
+    // the fixture's unknown kind proves new server vocabulary still decodes
+    // (dropped at guide-build, not decode).
+    @Test func decodesProLookBrief() throws {
+        let res = try JSONDecoder().decode(ProLookBriefResponse.self, from: fixture("proLookBrief"))
+        #expect(res.brief.summary.hasPrefix("Golden-hour glam"))
+        #expect(res.brief.poseRules.count == 2)
+        #expect(res.brief.poseRules[0].kind == "handNearFace")
+        #expect(res.brief.poseRules[0].params?["maxFaceHeights"] == 1.2)
+        #expect(res.brief.poseRules[0].tip == "Bring their hand up to graze the jaw")
+        #expect(res.brief.poseRules[1].kind == "someFutureRuleKind")
+        #expect(res.brief.directionLines.count == 3)
+        #expect(res.brief.directionLines[0] == "Soft smile, eyes just past the lens")
+    }
+
+    // POST /api/v1/pro/camera/set-critique — Fixtures/proSetCritique.json.
+    // The wrap-up photographer's review (tovis-app PR #454). Inline shape;
+    // decode-only. `verdict` is a plain string — the fixture's unknown verdict
+    // proves future verdicts decode on old builds (rendered neutrally).
+    @Test func decodesProSetCritique() throws {
+        let res = try JSONDecoder().decode(ProSetCritiqueResponse.self, from: fixture("proSetCritique"))
+        #expect(res.critique.overall.contains("retake the macro"))
+        #expect(res.critique.strengths.count == 2)
+        #expect(res.critique.photos.count == 3)
+        let hero = try #require(res.critique.photos.first)
+        #expect(hero.id == "media-1")
+        #expect(hero.verdict == "portfolio")
+        #expect(hero.retakeTip == nil)
+        #expect(res.critique.photos[1].verdict == "retake")
+        #expect(res.critique.photos[1].retakeTip == "Step closer and tap to focus on the ends")
+        #expect(res.critique.photos[2].verdict == "someFutureVerdict")
+    }
+
     // GET /api/v1/pro/overview — Fixtures/proOverview.json. The pro dashboard
     // monthly analytics (tovis-app PR #437). Inline shape; decode-only.
     @Test func decodesProOverview() throws {

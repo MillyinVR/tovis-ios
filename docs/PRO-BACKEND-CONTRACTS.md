@@ -136,3 +136,23 @@
 - `GET /pro/payments/stripe/status` → adds `stripeAccount:{ connected, chargesEnabled, payoutsEnabled,
   detailsSubmitted, status:"NOT_STARTED"|"ONBOARDING_STARTED"|"DISABLED"|"RESTRICTED"|"ENABLED",
   requirements:{currentlyDue[],eventuallyDue[],disabledReason} }`.
+
+## Camera (AI photographer)
+
+- `GET /pro/camera/shot-packs` → `{ ok, version, packs:[{ id, name, tagline,
+  serviceKeywords[], trendScore, steps:[{ title, hint, icon, face:"required"|"absent"|"either",
+  fillBandMin(num|null), fillBandMax(num|null), isDetail, allowsClosedEyes,
+  pose:[{ kind, params(obj|null), tip }] }] }] }`. Inline; decode-only
+  (`proShotPacks.json`). Unknown pose-rule kinds are DROPPED at guide-build.
+- `POST /pro/camera/look-brief` (PR #454) — body `{ image:{ base64, mediaType },
+  serviceName?, measuredSummary? }` → `{ ok, brief:{ summary, poseRules:[same
+  wire shape as pack pose rules], directionLines:[str] } }`. Claude-vision
+  enhance of a "Match a look" reference; consent-gated in the UI; image ≤ ~4 MB
+  base64; free w/ daily cap (429 when exhausted); 502 upstream-down, 422 unreadable.
+  Inline; decode-only (`proLookBrief.json`).
+- `POST /pro/camera/set-critique` (PR #454) — body `{ photos:[{ id, phase:
+  "BEFORE"|"AFTER", image:{ base64, mediaType } }] (1–10, ≤ ~3.9 MB total),
+  serviceName? }` → `{ ok, critique:{ overall, strengths:[str], photos:[{ id,
+  verdict:"portfolio"|"keep"|"retake" (plain string — render unknowns neutrally),
+  note, retakeTip(str|null) }] } }`. Same consent/cap/error posture. Inline;
+  decode-only (`proSetCritique.json`).

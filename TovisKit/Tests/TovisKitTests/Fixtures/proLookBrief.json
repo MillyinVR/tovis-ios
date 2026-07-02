@@ -1,0 +1,23 @@
+{
+  "ok": true,
+  "brief": {
+    "summary": "Golden-hour glam — soft, confident, lit from the window",
+    "poseRules": [
+      {
+        "kind": "handNearFace",
+        "params": { "maxFaceHeights": 1.2 },
+        "tip": "Bring their hand up to graze the jaw"
+      },
+      {
+        "kind": "someFutureRuleKind",
+        "params": { "mystery": 1 },
+        "tip": "Future vocabulary still decodes as a plain string"
+      }
+    ],
+    "directionLines": [
+      "Soft smile, eyes just past the lens",
+      "Chin down a touch, then eyes up",
+      "Turn their face toward the window light"
+    ]
+  }
+}
