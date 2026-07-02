@@ -34,27 +34,33 @@ enum CardScanner {
     /// 180°-flipped (the neutral band is centered, so it's flip-immune either
     /// way). Nil when the bytes don't decode.
     static func read(jpeg: Data, cardRegion: CGRect) async -> Reading? {
+        // Pooled: full-res Vision + CoreImage on a detached-task thread, same
+        // reasoning as the live coach's per-frame pool.
         await Task.detached(priority: .userInitiated) {
-            guard let full = CIImage(data: jpeg, options: [.applyOrientationProperty: true]) else {
-                return nil
-            }
-            let card = detectAndRectify(full) ?? FrameMath.crop(full, normalizedTopLeft: cardRegion)
-            guard let reading = sampleGrid(card) else { return nil }
-            if CameraCalibration.looksLikeGrayRamp(measuredSRGB: reading.swatches) {
-                return reading
-            }
-            let e = card.extent
-            let flipped = card.transformed(by: CGAffineTransform(
-                a: -1, b: 0, c: 0, d: -1,
-                tx: e.minX + e.maxX, ty: e.minY + e.maxY))
-            if let flippedReading = sampleGrid(flipped),
-               CameraCalibration.looksLikeGrayRamp(measuredSRGB: flippedReading.swatches) {
-                return flippedReading
-            }
-            // Neither orientation validates — hand back the unflipped read and
-            // let the caller's gate reject it with a re-scan message.
-            return reading
+            autoreleasepool { readSync(jpeg: jpeg, cardRegion: cardRegion) }
         }.value
+    }
+
+    private static func readSync(jpeg: Data, cardRegion: CGRect) -> Reading? {
+        guard let full = CIImage(data: jpeg, options: [.applyOrientationProperty: true]) else {
+            return nil
+        }
+        let card = detectAndRectify(full) ?? FrameMath.crop(full, normalizedTopLeft: cardRegion)
+        guard let reading = sampleGrid(card) else { return nil }
+        if CameraCalibration.looksLikeGrayRamp(measuredSRGB: reading.swatches) {
+            return reading
+        }
+        let e = card.extent
+        let flipped = card.transformed(by: CGAffineTransform(
+            a: -1, b: 0, c: 0, d: -1,
+            tx: e.minX + e.maxX, ty: e.minY + e.maxY))
+        if let flippedReading = sampleGrid(flipped),
+           CameraCalibration.looksLikeGrayRamp(measuredSRGB: flippedReading.swatches) {
+            return flippedReading
+        }
+        // Neither orientation validates — hand back the unflipped read and
+        // let the caller's gate reject it with a re-scan message.
+        return reading
     }
 
     /// Find the card-shaped rectangle and warp it flat. Nil = no candidate.
@@ -109,24 +115,30 @@ enum CardCorrection {
     /// stay consistent. Returns nil on decode/render failure; callers fall
     /// back to the original bytes (an uncorrected photo beats a lost one).
     static func apply(_ matrix: ColorMatrix3x3, to jpeg: Data) async -> Data? {
+        // Pooled: the full-res render for the JPEG re-encode is the largest
+        // transient in the whole capture path.
         await Task.detached(priority: .userInitiated) {
-            guard let image = CIImage(data: jpeg, options: [.applyOrientationProperty: true]) else {
-                return nil
-            }
-            let m = matrix.m
-            let corrected = image.applyingFilter("CIColorMatrix", parameters: [
-                "inputRVector": CIVector(x: m[0], y: m[1], z: m[2], w: 0),
-                "inputGVector": CIVector(x: m[3], y: m[4], z: m[5], w: 0),
-                "inputBVector": CIVector(x: m[6], y: m[7], z: m[8], w: 0),
-                "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
-                "inputBiasVector": CIVector(x: 0, y: 0, z: 0, w: 0),
-            ])
-            guard let srgb = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
-            let quality = CIImageRepresentationOption(
-                rawValue: kCGImageDestinationLossyCompressionQuality as String)
-            return FrameMath.context.jpegRepresentation(
-                of: corrected, colorSpace: srgb, options: [quality: 0.95])
+            autoreleasepool { applySync(matrix, to: jpeg) }
         }.value
+    }
+
+    private static func applySync(_ matrix: ColorMatrix3x3, to jpeg: Data) -> Data? {
+        guard let image = CIImage(data: jpeg, options: [.applyOrientationProperty: true]) else {
+            return nil
+        }
+        let m = matrix.m
+        let corrected = image.applyingFilter("CIColorMatrix", parameters: [
+            "inputRVector": CIVector(x: m[0], y: m[1], z: m[2], w: 0),
+            "inputGVector": CIVector(x: m[3], y: m[4], z: m[5], w: 0),
+            "inputBVector": CIVector(x: m[6], y: m[7], z: m[8], w: 0),
+            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
+            "inputBiasVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+        ])
+        guard let srgb = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
+        let quality = CIImageRepresentationOption(
+            rawValue: kCGImageDestinationLossyCompressionQuality as String)
+        return FrameMath.context.jpegRepresentation(
+            of: corrected, colorSpace: srgb, options: [quality: 0.95])
     }
 
     /// Bake the matrix into a recorded clip: re-export with a CoreImage

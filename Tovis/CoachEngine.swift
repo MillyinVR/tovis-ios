@@ -284,6 +284,7 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
 /// pro to review (keep/upload) rather than uploaded silently.
 struct HarvestedShot: Identifiable {
     let id = UUID()
+    /// Tray-cell thumbnail — `data` holds the full still.
     let image: UIImage
     let data: Data
     let readiness: Double
@@ -377,7 +378,9 @@ final class CoachEngine {
     }
 
     private func addHarvest(_ data: Data, _ readiness: Double) {
-        guard let image = UIImage(data: data) else { return }
+        // Tray-cell decode only (up to 24 staged — full decodes would be GBs);
+        // the JPEG bytes ride along untouched for upload.
+        guard let image = ImageDownsample.thumbnailSync(from: data, maxPixel: 640) else { return }
         harvested.insert(HarvestedShot(image: image, data: data, readiness: readiness), at: 0)
         analyzer.stagedCount = harvested.count
     }

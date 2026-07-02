@@ -48,6 +48,13 @@ enum PhotoQC {
     }
 
     private static func evaluateSync(_ jpeg: Data, checkBlink: Bool) -> PhotoQCReport {
+        // Full-res CoreImage/detector work on a detached-task thread — pool it
+        // so the autoreleased intermediates drain per evaluation (bursts run
+        // several back-to-back), same reasoning as the live coach's pool.
+        autoreleasepool { evaluatePooled(jpeg, checkBlink: checkBlink) }
+    }
+
+    private static func evaluatePooled(_ jpeg: Data, checkBlink: Bool) -> PhotoQCReport {
         guard let full = CIImage(data: jpeg, options: [.applyOrientationProperty: true]) else {
             // Unreadable bytes → don't block the flow; upload will surface it.
             return PhotoQCReport(retakeReason: nil, sharpness: 1, luma: 0.5, eyesClosed: false)

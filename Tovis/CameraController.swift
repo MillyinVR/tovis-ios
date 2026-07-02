@@ -117,11 +117,19 @@ final class CameraController: NSObject {
                 } else {
                     settings = AVCapturePhotoSettings()
                 }
-                // Best possible still for the profile / Looks feed: full sensor
-                // resolution + quality-prioritized processing.
+                // Quality-prioritized processing, capped at 24 MP (the native
+                // camera's own default on 48 MP sensors). Full-sensor stills
+                // double every downstream decode/render (QC, card correction,
+                // strip thumbnails) and the upload — transients that piled into
+                // the jetsam kills — with no visible gain on the feed/profile.
                 settings.photoQualityPrioritization = .quality
-                if let dims = self.device?.activeFormat.supportedMaxPhotoDimensions.last {
-                    settings.maxPhotoDimensions = dims
+                if let dims = self.device?.activeFormat.supportedMaxPhotoDimensions {
+                    // Ascending order — largest that stays within budget, else
+                    // the smallest offered.
+                    let capped = dims.last { Int($0.width) * Int($0.height) <= 24_500_000 }
+                    if let pick = capped ?? dims.first {
+                        settings.maxPhotoDimensions = pick
+                    }
                 }
                 self.photoOutput.capturePhoto(with: settings, delegate: self)
             }

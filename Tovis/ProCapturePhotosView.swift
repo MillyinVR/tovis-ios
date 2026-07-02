@@ -422,9 +422,10 @@ struct ProCapturePhotosView: View {
                         if let look = matchLook {
                             Image(uiImage: look.image).resizable().scaledToFill()
                         } else if let url = currentReferenceURL {
-                            AsyncImage(url: url) { image in
-                                image.resizable().scaledToFill()
-                            } placeholder: { Color.clear }
+                            // Bounded decode — AsyncImage would pin the ORIGINAL
+                            // "before" upload's full-resolution bitmap for the
+                            // whole AFTER shoot.
+                            DownsampledRemoteImage(url: url) { Color.clear }
                         }
                     }
                     .opacity(onionOpacity)
@@ -1619,7 +1620,11 @@ struct ProCapturePhotosView: View {
 
     /// Keep a shot: thumbnail, complete the guided step, upload.
     private func finalize(_ data: Data) async {
-        if let img = UIImage(data: data) { captured.insert(CapturedShot(image: img), at: 0) }
+        // Strip-sized decode only — holding the full-sensor UIImage here pinned
+        // ~100–200 MB per shot and jetsam-killed real sessions.
+        if let thumb = await ImageDownsample.thumbnail(from: data, maxPixel: 216) {
+            captured.insert(CapturedShot(image: thumb), at: 0)
+        }
         markCurrentCaptured()   // complete the guided shot + advance
         await upload(data)
     }

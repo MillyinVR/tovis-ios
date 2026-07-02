@@ -545,9 +545,11 @@ struct ProSessionHubView: View {
 
         var photos: [ProSetCritiqueRequest.Photo] = []
         for item in befores + afters {
+            // Bounded decode — these are ORIGINAL uploads (full-sensor stills);
+            // a plain UIImage(data:) decode of each would spike ~100 MB apiece.
             guard let urlString = item.displayUrl, let url = URL(string: urlString),
                   let (data, _) = try? await URLSession.shared.data(from: url),
-                  let image = UIImage(data: data),
+                  let image = await ImageDownsample.thumbnail(from: data, maxPixel: 1024),
                   let payload = CameraVisionPayload.imagePayload(
                       image, maxDimension: 1024, quality: 0.6)
             else { continue }

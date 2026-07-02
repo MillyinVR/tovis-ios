@@ -38,7 +38,16 @@ enum ReferenceLookAnalyzer {
     }
 
     private static func analyzeSync(_ data: Data) -> ReferenceLook? {
-        guard let uiImage = UIImage(data: data),
+        autoreleasepool { analyzePooled(data) }
+    }
+
+    /// Full-res CoreImage/Vision on a detached-task thread — pooled by
+    /// `analyzeSync` so the intermediates drain when the analysis ends.
+    private static func analyzePooled(_ data: Data) -> ReferenceLook? {
+        // The ghost only ever renders at screen size — a full-res library pick
+        // (or 48 MP still) would otherwise stay decoded for the whole shoot.
+        guard let uiImage = ImageDownsample.thumbnailSync(
+                  from: data, maxPixel: ImageDownsample.screenMaxPixel),
               let full = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
             return nil
         }

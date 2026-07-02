@@ -42,9 +42,9 @@ struct BeforeAfterCompareView: View {
     }
 
     private func fullImage(_ url: URL, size: CGSize) -> some View {
-        AsyncImage(url: url) { image in
-            image.resizable().scaledToFill()
-        } placeholder: {
+        // Bounded decode — these are ORIGINAL uploads; two full-resolution
+        // AsyncImage decodes side by side is a jetsam-sized allocation.
+        DownsampledRemoteImage(url: url) {
             ZStack { BrandColor.bgSecondary; ProgressView().tint(BrandColor.accent) }
         }
         .frame(width: size.width, height: size.height)
