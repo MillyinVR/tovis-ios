@@ -332,6 +332,15 @@ private struct CommentRow: View {
                 HStack(spacing: 6) {
                     Text(comment.user.displayName)
                         .font(BrandFont.body(13, .semibold)).foregroundStyle(BrandColor.textPrimary)
+                    if let badge = comment.user.badgeLabel {
+                        Text(badge.uppercased())
+                            .font(BrandFont.body(9, .bold))
+                            .foregroundStyle(BrandColor.textPrimary)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(BrandColor.accent.opacity(0.14))
+                            .clipShape(Capsule())
+                            .overlay(Capsule().stroke(BrandColor.accent.opacity(0.35), lineWidth: 1))
+                    }
                     Text(relativeTime(comment.createdAt))
                         .font(BrandFont.body(11)).foregroundStyle(BrandColor.textMuted)
                 }

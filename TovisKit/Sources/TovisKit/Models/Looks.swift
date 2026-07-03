@@ -195,6 +195,18 @@ public struct LooksCommentUser: Decodable, Sendable, Identifiable {
     public let displayName: String
     public let avatarUrl: String?
     public let profileHref: String?
+    /// The commenter authored the look this comment sits on ("Creator" badge).
+    /// Optional so older API responses still decode.
+    public let isLookAuthor: Bool?
+    /// The commenter is a professional on the platform ("Pro" badge).
+    public let isPro: Bool?
+
+    /// Badge label for the comment row, if any (Creator wins over Pro).
+    public var badgeLabel: String? {
+        if isLookAuthor == true { return "Creator" }
+        if isPro == true { return "Pro" }
+        return nil
+    }
 }
 
 // MARK: - Request bodies
