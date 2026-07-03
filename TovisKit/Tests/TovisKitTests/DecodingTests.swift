@@ -632,6 +632,22 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.profile.handle == "studio-lumen")
         #expect(res.profile.nameDisplay == "BUSINESS_NAME")
         #expect(res.profile.isPremium)
+        #expect(res.profile.instagramHandle == "studio.lumen")
+        #expect(res.profile.tiktokHandle == "studiolumen")
+        #expect(res.profile.websiteUrl == "https://studiolumen.com/")
+    }
+
+    // Social fields ship with web PR #478 — an older backend omits them and the
+    // profile must still decode (chips just don't render).
+    @Test func proMyProfileDecodesWithoutSocialFields() throws {
+        let json = """
+        { "ok": true, "profile": { "id": "pro_1", "businessName": null, "handle": null,
+          "bio": null, "location": null, "avatarUrl": null, "professionType": null,
+          "nameDisplay": null, "isPremium": false } }
+        """.data(using: .utf8)!
+        let res = try JSONDecoder().decode(ProMyProfileResponse.self, from: json)
+        #expect(res.profile.instagramHandle == nil)
+        #expect(res.profile.websiteUrl == nil)
     }
 
     // GET /api/v1/pro/offerings — Fixtures/proOfferings.json. The pro's services
@@ -825,10 +841,14 @@ func fixture(_ name: String) throws -> Data {
         let p = res.professional
         #expect(p.header.displayName == "Dana Lee")
         #expect(p.header.isLicenseVerified == true)
+        #expect(p.header.instagramHandle == "dana.hair")
+        #expect(p.header.tiktokHandle == "danadoeshair")
+        #expect(p.header.websiteUrl == "https://plumestudio.com/")
         #expect(p.offerings.first?.pricingLines.count == 2)
         #expect(p.portfolioTiles.first?.displayUrl == "https://x/1t.jpg")
         #expect(p.reviews.first?.rating == 5)
         #expect(p.stats.averageRatingLabel == "4.9")
+        #expect(p.acceptedPayments == ["Cash", "Venmo"])
     }
 
     // POST/DELETE /api/v1/professionals/{id}/favorite → { ok, favorited, count }.

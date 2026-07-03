@@ -9,6 +9,9 @@
     "avatarUrl": "https://x/avatar.jpg",
     "professionType": "HAIRSTYLIST",
     "nameDisplay": "BUSINESS_NAME",
-    "isPremium": true
+    "isPremium": true,
+    "instagramHandle": "studio.lumen",
+    "tiktokHandle": "studiolumen",
+    "websiteUrl": "https://studiolumen.com/"
   }
 }

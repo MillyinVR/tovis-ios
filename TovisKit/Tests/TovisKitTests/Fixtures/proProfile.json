@@ -17,7 +17,10 @@
       "professionType": "HAIRSTYLIST",
       "professionLabel": "Hair Stylist",
       "location": "Los Angeles, CA",
-      "timeZone": "America/Los_Angeles"
+      "timeZone": "America/Los_Angeles",
+      "instagramHandle": "dana.hair",
+      "tiktokHandle": "danadoeshair",
+      "websiteUrl": "https://plumestudio.com/"
     },
     "stats": {
       "priceFromLabel": "From $100",
@@ -34,12 +37,16 @@
         "name": "Balayage",
         "description": "Hand-painted highlights.",
         "imageUrl": null,
-        "pricingLines": ["Salon from $100", "Mobile from $140"],
+        "pricingLines": [
+          "Salon from $100",
+          "Mobile from $140"
+        ],
         "priceFromLabel": "From $100",
         "priceFromNumber": 100,
         "durationMinutes": 90,
         "offersInSalon": true,
-        "offersMobile": true
+        "offersMobile": true,
+        "isFavorited": false
       }
     ],
     "portfolioTiles": [
@@ -53,7 +60,10 @@
         "visibility": "PUBLIC",
         "isEligibleForLooks": true,
         "isFeaturedInPortfolio": true,
-        "serviceIds": ["svc_1"]
+        "serviceIds": [
+          "svc_1"
+        ],
+        "before": null
       }
     ],
     "reviews": [
@@ -67,9 +77,14 @@
         "clientHref": null,
         "helpfulCount": 3,
         "viewerHelpful": false,
-        "mediaAssets": []
+        "mediaAssets": [],
+        "proReply": null
       }
     ],
-    "isFavoritedByMe": false
+    "isFavoritedByMe": false,
+    "acceptedPayments": [
+      "Cash",
+      "Venmo"
+    ]
   }
 }

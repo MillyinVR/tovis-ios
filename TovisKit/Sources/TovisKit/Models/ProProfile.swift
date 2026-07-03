@@ -54,6 +54,12 @@ public struct ProProfileHeader: Decodable, Sendable {
     public let displayHandle: String?
     public let isPremium: Bool
     public let isLicenseVerified: Bool
+    /// Public social presence (tovis-app PR #478). Handles are stored without
+    /// the leading "@"; websiteUrl is a full https:// URL. Absent on an older
+    /// (not-yet-deployed) backend → nil, chips simply don't render.
+    public let instagramHandle: String?
+    public let tiktokHandle: String?
+    public let websiteUrl: String?
 }
 
 public struct ProProfileStats: Decodable, Sendable {

@@ -29,6 +29,9 @@ struct ProEditProfileSheet: View {
     @State private var location: String
     @State private var avatarUrl: String
     @State private var nameDisplay: String
+    @State private var instagramHandle: String
+    @State private var tiktokHandle: String
+    @State private var websiteUrl: String
 
     @State private var avatarItem: PhotosPickerItem?
     @State private var avatarData: Data?
@@ -60,6 +63,9 @@ struct ProEditProfileSheet: View {
         _location = State(initialValue: profile.location ?? "")
         _avatarUrl = State(initialValue: profile.avatarUrl ?? "")
         _nameDisplay = State(initialValue: profile.nameDisplay ?? "BUSINESS_NAME")
+        _instagramHandle = State(initialValue: profile.instagramHandle ?? "")
+        _tiktokHandle = State(initialValue: profile.tiktokHandle ?? "")
+        _websiteUrl = State(initialValue: profile.websiteUrl ?? "")
     }
 
     private var busy: Bool { saving || uploadingAvatar }
@@ -82,6 +88,7 @@ struct ProEditProfileSheet: View {
                     nameDisplaySection
                     field(title: "Profession type", text: $professionType, placeholder: "e.g. MAKEUP_ARTIST", autocap: false)
                     field(title: "Location", text: $location, placeholder: "e.g. San Diego, CA")
+                    socialSection
                     avatarSection
                     bioSection
 
@@ -240,6 +247,22 @@ struct ProEditProfileSheet: View {
         }
     }
 
+    // MARK: - Social presence
+
+    /// Public social links shown as chips on the profile (web PR #478). The
+    /// server strips a leading "@" from handles and coerces the website to
+    /// https://; leaving a field empty clears it.
+    private var socialSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            fieldLabel("Social presence")
+            field(title: "", text: $instagramHandle, placeholder: "Instagram handle (e.g. tori.hair)", autocap: false)
+            field(title: "", text: $tiktokHandle, placeholder: "TikTok handle (e.g. tori.hair)", autocap: false)
+            field(title: "", text: $websiteUrl, placeholder: "Website (e.g. tori.com)", autocap: false)
+            Text("Shown as tappable chips on your public profile. Leave a field blank to remove its chip.")
+                .font(BrandFont.body(11)).foregroundStyle(BrandColor.textSecondary)
+        }
+    }
+
     // MARK: - Avatar + bio
 
     private var avatarSection: some View {
@@ -349,7 +372,10 @@ struct ProEditProfileSheet: View {
                 bio: bio,
                 avatarUrl: nextAvatarUrl,
                 nameDisplay: nameDisplay,
-                handle: canEditHandle ? handle : nil
+                handle: canEditHandle ? handle : nil,
+                instagramHandle: instagramHandle.trimmingCharacters(in: .whitespaces),
+                tiktokHandle: tiktokHandle.trimmingCharacters(in: .whitespaces),
+                websiteUrl: websiteUrl.trimmingCharacters(in: .whitespaces)
             )
             onSaved(saved)
             session.signalRefresh()

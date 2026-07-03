@@ -21,6 +21,11 @@ public struct ProMyProfile: Decodable, Sendable {
     public let professionType: String?
     public let nameDisplay: String?
     public let isPremium: Bool
+    /// Public social presence (tovis-app PR #478). Handles stored without "@";
+    /// websiteUrl is a full https:// URL. Optional so an older backend decodes.
+    public let instagramHandle: String?
+    public let tiktokHandle: String?
+    public let websiteUrl: String?
 }
 
 /// `GET /api/v1/pro/profile/handle-available?handle=` → live vanity-handle check.

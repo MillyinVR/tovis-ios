@@ -259,8 +259,47 @@ struct ProProfileView: View {
             }
 
             subtextRow(header, stats: stats)
+
+            socialChips(header)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Outbound social-presence chips — the web SocialLinkChips (PR #478).
+    /// Handles arrive without "@"; nothing renders when all three are unset.
+    @ViewBuilder
+    private func socialChips(_ header: ProProfileHeader) -> some View {
+        let chips: [(label: String, url: URL?)] = [
+            header.instagramHandle.flatMap { h in
+                ("IG @\(h)", URL(string: "https://instagram.com/\(h)"))
+            },
+            header.tiktokHandle.flatMap { h in
+                ("TikTok @\(h)", URL(string: "https://www.tiktok.com/@\(h)"))
+            },
+            header.websiteUrl.flatMap { w in
+                ("Website", URL(string: w))
+            },
+        ].compactMap { $0 }
+
+        if !chips.isEmpty {
+            HStack(spacing: 8) {
+                ForEach(chips, id: \.label) { chip in
+                    if let url = chip.url {
+                        Link(destination: url) {
+                            Text(chip.label)
+                                .font(BrandFont.body(11, .bold))
+                                .foregroundStyle(.white.opacity(0.85))
+                                .padding(.vertical, 6)
+                                .padding(.horizontal, 10)
+                                .background(BrandColor.bgPrimary.opacity(0.4), in: Capsule())
+                                .overlay(Capsule().stroke(.white.opacity(0.2), lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .padding(.top, 4)
+        }
     }
 
     private var licenseBadge: some View {

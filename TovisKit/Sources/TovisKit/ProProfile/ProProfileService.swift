@@ -50,7 +50,10 @@ public final class ProProfileService: Sendable {
         location: String?? = nil,
         handle: String?? = nil,
         nameDisplay: String? = nil,
-        avatarUrl: String?? = nil
+        avatarUrl: String?? = nil,
+        instagramHandle: String?? = nil,
+        tiktokHandle: String?? = nil,
+        websiteUrl: String?? = nil
     ) async throws -> ProMyProfile {
         var fields: [String: JSONValue] = [:]
         if let businessName { fields["businessName"] = .stringOrNull(businessName) }
@@ -59,6 +62,11 @@ public final class ProProfileService: Sendable {
         if let handle { fields["handle"] = .stringOrNull(handle) }
         if let nameDisplay { fields["nameDisplay"] = .string(nameDisplay) }
         if let avatarUrl { fields["avatarUrl"] = .stringOrNull(avatarUrl) }
+        // Social presence (PR #478): the server treats "" as clear and
+        // normalizes otherwise ("@tori" → "tori"; website coerced to https).
+        if let instagramHandle { fields["instagramHandle"] = .stringOrNull(instagramHandle) }
+        if let tiktokHandle { fields["tiktokHandle"] = .stringOrNull(tiktokHandle) }
+        if let websiteUrl { fields["websiteUrl"] = .stringOrNull(websiteUrl) }
 
         let payload = try JSONEncoder().encode(fields)
         let response: ProMyProfileResponse = try await api.request(
@@ -191,7 +199,10 @@ public final class ProProfileService: Sendable {
         bio: String,
         avatarUrl: String,
         nameDisplay: String,
-        handle: String?
+        handle: String?,
+        instagramHandle: String,
+        tiktokHandle: String,
+        websiteUrl: String
     ) async throws -> ProMyProfile {
         var fields: [String: JSONValue] = [
             "businessName": .string(businessName),
@@ -200,6 +211,11 @@ public final class ProProfileService: Sendable {
             "bio": .string(bio),
             "avatarUrl": .string(avatarUrl),
             "nameDisplay": .string(nameDisplay),
+            // Social presence (PR #478): "" clears; otherwise server-normalized
+            // ("@tori" → "tori"; website coerced to https://).
+            "instagramHandle": .string(instagramHandle),
+            "tiktokHandle": .string(tiktokHandle),
+            "websiteUrl": .string(websiteUrl),
         ]
         if let handle { fields["handle"] = .string(handle) }
 
