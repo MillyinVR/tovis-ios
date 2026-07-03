@@ -51,6 +51,14 @@ struct LooksView: View {
     @State private var commentsFor: LooksFeedItem?
     @State private var saveFor: LooksFeedItem?
 
+    /// Programmatic navigation to a pro profile (avatar tap + the BOOK fallback
+    /// when a look has no bookable service to preselect).
+    @State private var navPath: [LooksProfessional] = []
+    /// Drives the booking sheet with a preselected offering (web BOOK parity).
+    @State private var bookLaunch: BookLaunch?
+    /// The look id whose BOOK button is mid-resolve (shows a spinner).
+    @State private var resolvingBookId: String?
+
     /// The currently-snapped slide (drives which video plays). Bound to the
     /// pager's scroll position. Mute is shared so an unmute sticks while scrolling.
     @State private var activeId: String?
@@ -62,7 +70,7 @@ struct LooksView: View {
     private static let mediaShrinkScale: CGFloat = 0.37
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navPath) {
             ZStack(alignment: .top) {
                 BrandColor.bgPrimary.ignoresSafeArea()
 
@@ -111,6 +119,13 @@ struct LooksView: View {
             }
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
+        }
+        .sheet(item: $bookLaunch) { launch in
+            BookingFlowView(
+                professionalId: launch.pro.id,
+                proName: launch.pro.displayName,
+                offering: launch.offering
+            )
         }
     }
 
@@ -171,11 +186,13 @@ struct LooksView: View {
                         following: following(item),
                         saved: saved(item),
                         shareURL: shareURL(item),
+                        bookResolving: resolvingBookId == item.id,
                         onLike: { Task { await toggleLike(item) } },
                         onComment: { commentsFor = item },
                         onSave: { saveFor = item },
                         onFollow: { Task { await toggleFollow(item) } },
                         onShared: { Task { await recordShare(item) } },
+                        onBook: { Task { await startBooking(item) } },
                         onToggleMute: { muted.toggle() }
                     )
                     .containerRelativeFrame([.horizontal, .vertical])
@@ -299,6 +316,36 @@ struct LooksView: View {
         URL(string: "https://www.tovis.app/looks/\(i.id)")
     }
 
+    /// 1-tap Book — web parity on THE conversion. On web the feed BOOK button
+    /// opens the availability drawer preloaded with the look's service
+    /// (buildAvailabilityDrawerContext). Here we fetch the pro's profile, find the
+    /// offering whose serviceId matches this look, and present BookingFlowView with
+    /// it preselected. If the look carries no service, the fetch fails, or the
+    /// service is no longer offered, fall back to the pro profile so the client can
+    /// still pick a service.
+    private func startBooking(_ item: LooksFeedItem) async {
+        guard let pro = item.professional else { return }
+        guard resolvingBookId == nil else { return } // ignore double-taps
+        resolvingBookId = item.id
+        defer { resolvingBookId = nil }
+
+        func fallbackToProfile() {
+            if navPath.last != pro { navPath.append(pro) }
+        }
+
+        guard let serviceId = item.serviceId else { fallbackToProfile(); return }
+        do {
+            let profile = try await session.client.profiles.professional(id: pro.id)
+            guard let offering = profile.offerings.first(where: { $0.serviceId == serviceId }) else {
+                fallbackToProfile()
+                return
+            }
+            bookLaunch = BookLaunch(pro: pro, offering: offering)
+        } catch {
+            fallbackToProfile()
+        }
+    }
+
     private func toggleLike(_ item: LooksFeedItem) async {
         let next = !liked(item)
         let base = likeCount(item)
@@ -327,6 +374,16 @@ struct LooksView: View {
     }
 }
 
+// MARK: - Booking launch (BOOK button → availability sheet)
+
+/// Carries the resolved offering for the booking sheet. Identified by the look's
+/// professional so `.sheet(item:)` re-presents cleanly per tap.
+private struct BookLaunch: Identifiable {
+    let pro: LooksProfessional
+    let offering: ProOffering
+    var id: String { pro.id }
+}
+
 // MARK: - One full-screen slide
 
 private struct LookSlide: View {
@@ -340,11 +397,15 @@ private struct LookSlide: View {
     let following: Bool
     let saved: Bool
     let shareURL: URL?
+    /// True while the pro profile is being fetched to preselect the look's
+    /// service — the BOOK button shows a spinner instead of the calendar icon.
+    let bookResolving: Bool
     let onLike: () -> Void
     let onComment: () -> Void
     let onSave: () -> Void
     let onFollow: () -> Void
     let onShared: () -> Void
+    let onBook: () -> Void
     let onToggleMute: () -> Void
 
     var body: some View {
@@ -557,20 +618,31 @@ private struct LookSlide: View {
             .shadow(color: .black.opacity(0.4), radius: 4, y: 1)
     }
 
+    // 1-tap Book — web parity: opens the availability sheet directly with this
+    // look's service preselected (mirrors buildAvailabilityDrawerContext on web),
+    // rather than just navigating to the profile. The async fetch to resolve the
+    // offering lives in the parent; here we just fire onBook and show a spinner.
     private func bookButton(pro: LooksProfessional) -> some View {
-        NavigationLink(value: pro) {
+        Button(action: onBook) {
             VStack(spacing: 5) {
-                Image(systemName: "calendar")
-                    .font(.system(size: 24, weight: .regular))
-                    .foregroundStyle(BrandColor.onAccent)
-                    .frame(width: 52, height: 52)
-                    .background(BrandColor.accent, in: Circle())
-                    .shadow(color: BrandColor.accent.opacity(0.55), radius: 10, y: 3)
+                Group {
+                    if bookResolving {
+                        ProgressView().tint(BrandColor.onAccent)
+                    } else {
+                        Image(systemName: "calendar")
+                            .font(.system(size: 24, weight: .regular))
+                    }
+                }
+                .foregroundStyle(BrandColor.onAccent)
+                .frame(width: 52, height: 52)
+                .background(BrandColor.accent, in: Circle())
+                .shadow(color: BrandColor.accent.opacity(0.55), radius: 10, y: 3)
                 Text("BOOK").font(BrandFont.mono(11)).tracking(0.6).foregroundStyle(.white)
                     .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
             }
         }
         .buttonStyle(.plain)
+        .disabled(bookResolving)
     }
 
     private func railButton(icon: String, tint: Color, count: Int?, action: @escaping () -> Void) -> some View {
