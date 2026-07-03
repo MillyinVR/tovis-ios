@@ -300,6 +300,8 @@ private struct NotificationStyle {
             return .init(symbol: "bolt.fill", tint: BrandColor.gold)
         case "REVIEW_RECEIVED", "VIRAL_REQUEST_APPROVED":
             return .init(symbol: "star.fill", tint: BrandColor.gold)
+        case "REVIEW_REQUESTED":
+            return .init(symbol: "star.bubble", tint: BrandColor.gold)
         case "LOOK_FOLLOWER_NEW", "CLIENT_FOLLOW":
             return .init(symbol: "person.badge.plus", tint: BrandColor.iris)
         case "REFERRAL_TAP_RECEIVED", "REFERRAL_CONFIRMED", "REFERRAL_CONVERTED":

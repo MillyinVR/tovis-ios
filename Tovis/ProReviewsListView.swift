@@ -3,8 +3,9 @@
 // star rating, headline/body, client + date, and a media grid; a review with a
 // booking taps through to its detail. Lives on the Overview home's Reviews tab.
 //
-// Read-only by design — clients author reviews. The web "feature in portfolio"
-// toggle on review media is web-only (omitted here).
+// Clients author reviews; the pro may post one public response per review
+// (PUT/DELETE /pro/reviews/{id}/reply, tovis-app PR #475). The web "feature in
+// portfolio" toggle on review media is web-only (omitted here).
 import SwiftUI
 import TovisKit
 
@@ -19,6 +20,8 @@ struct ProReviewsListView: View {
 
     @State private var phase: Phase = .loading
     @State private var viewingMedia: FullscreenMedia?
+    @State private var composingReplyFor: ProReviewItem?
+    @State private var removingReplyFor: ProReviewItem?
 
     var body: some View {
         ScrollView {
@@ -52,6 +55,22 @@ struct ProReviewsListView: View {
         .task { if case .loading = phase { await load() } }
         .onChange(of: session.refreshTick) { Task { await load() } }
         .mediaFullscreenCover($viewingMedia)
+        .sheet(item: $composingReplyFor) { review in
+            ProReviewReplySheet(review: review) { Task { await load() } }
+        }
+        .alert(
+            "Remove your response?",
+            isPresented: Binding(
+                get: { removingReplyFor != nil },
+                set: { if !$0 { removingReplyFor = nil } }
+            ),
+            presenting: removingReplyFor
+        ) { review in
+            Button("Remove", role: .destructive) { Task { await removeReply(review) } }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("Your public response will no longer appear under this review.")
+        }
     }
 
     private func reviewCard(_ review: ProReviewItem) -> some View {
@@ -80,6 +99,12 @@ struct ProReviewsListView: View {
                         .foregroundStyle(BrandColor.textPrimary.opacity(0.85))
                 }
 
+                if let reply = review.proReply {
+                    proReplyBlock(reply)
+                }
+
+                replyActions(review)
+
                 if !review.mediaTiles.isEmpty {
                     mediaGrid(review.mediaTiles)
                 }
@@ -102,6 +127,62 @@ struct ProReviewsListView: View {
                 }
             }
         }
+    }
+
+    /// The pro's public response, rendered as a left-bordered quote block.
+    private func proReplyBlock(_ reply: ProReviewItem.ProReviewReply) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Your public response · \(Wire.dateOnly(reply.repliedAtISO))")
+                .font(BrandFont.body(11, .semibold))
+                .foregroundStyle(BrandColor.textMuted)
+            Text(reply.body)
+                .font(BrandFont.body(13))
+                .foregroundStyle(BrandColor.textPrimary.opacity(0.85))
+        }
+        .padding(.leading, 10)
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 1)
+                .fill(BrandColor.accent.opacity(0.5))
+                .frame(width: 2)
+        }
+        .padding(.top, 2)
+    }
+
+    private func replyActions(_ review: ProReviewItem) -> some View {
+        HStack(spacing: 10) {
+            Button {
+                composingReplyFor = review
+            } label: {
+                Text(review.proReply == nil ? "Reply publicly" : "Edit response")
+                    .font(BrandFont.body(12, .semibold))
+                    .foregroundStyle(BrandColor.textPrimary)
+                    .padding(.vertical, 7)
+                    .padding(.horizontal, 14)
+                    .overlay(
+                        Capsule().stroke(BrandColor.textMuted.opacity(0.30), lineWidth: 1)
+                    )
+            }
+            .buttonStyle(.plain)
+
+            if review.proReply != nil {
+                Button {
+                    removingReplyFor = review
+                } label: {
+                    Text("Remove")
+                        .font(BrandFont.body(12, .semibold))
+                        .foregroundStyle(BrandColor.ember)
+                        .padding(.vertical, 7)
+                        .padding(.horizontal, 14)
+                        .overlay(
+                            Capsule().stroke(BrandColor.ember.opacity(0.30), lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+
+            Spacer()
+        }
+        .padding(.top, 2)
     }
 
     private func stars(_ rating: Int) -> some View {
@@ -195,6 +276,105 @@ struct ProReviewsListView: View {
             phase = .failed(error.userMessage)
         } catch {
             phase = .failed("Couldn’t load your reviews.")
+        }
+    }
+
+    private func removeReply(_ review: ProReviewItem) async {
+        do {
+            try await session.client.proProfile.deleteReviewReply(reviewId: review.id)
+            await load()
+        } catch {
+            // Non-fatal; a reload will reflect the true state.
+        }
+    }
+}
+
+// MARK: - Reply compose
+
+/// Compose the pro's public response to a review — PUT /pro/reviews/{id}/reply
+/// upserts (1–1000 chars), so the same sheet writes and edits. Pre-fills the
+/// existing reply when editing; `onSaved` refreshes the list.
+struct ProReviewReplySheet: View {
+    @Environment(SessionModel.self) private var session
+    @Environment(\.dismiss) private var dismiss
+    let review: ProReviewItem
+    var onSaved: () -> Void
+
+    @State private var text: String
+    @State private var posting = false
+    @State private var error: String?
+
+    private let maxLength = 1000
+
+    init(review: ProReviewItem, onSaved: @escaping () -> Void) {
+        self.review = review
+        self.onSaved = onSaved
+        _text = State(initialValue: review.proReply?.body ?? "")
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Your response is public — everyone who sees this review sees it.")
+                        .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
+
+                    TextEditor(text: $text)
+                        .frame(minHeight: 160)
+                        .padding(8)
+                        .scrollContentBackground(.hidden)
+                        .background(BrandColor.bgSecondary)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .font(BrandFont.body(15))
+                        .foregroundStyle(BrandColor.textPrimary)
+                        .onChange(of: text) {
+                            if text.count > maxLength { text = String(text.prefix(maxLength)) }
+                        }
+
+                    Text("\(text.count)/\(maxLength)")
+                        .font(BrandFont.mono(11))
+                        .foregroundStyle(BrandColor.textMuted)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+
+                    if let error {
+                        Text(error).font(BrandFont.body(13)).foregroundStyle(BrandColor.ember)
+                    }
+                }
+                .padding(20)
+            }
+            .background(BrandColor.bgPrimary.ignoresSafeArea())
+            .navigationTitle(review.proReply == nil ? "Reply publicly" : "Edit response")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }.tint(BrandColor.textSecondary)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(posting ? "Posting…" : "Post") { Task { await post() } }
+                        .disabled(posting || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .tint(BrandColor.accent)
+                }
+            }
+            .tint(BrandColor.accent)
+        }
+    }
+
+    private func post() async {
+        guard !posting else { return }
+        posting = true
+        error = nil
+        defer { posting = false }
+        do {
+            try await session.client.proProfile.upsertReviewReply(
+                reviewId: review.id,
+                body: text.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+            onSaved()
+            dismiss()
+        } catch let e as APIError {
+            error = e.userMessage
+        } catch {
+            self.error = "Couldn’t post your response. Try again."
         }
     }
 }

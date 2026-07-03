@@ -18,10 +18,26 @@ public final class ProProfileService: Sendable {
     }
 
     /// GET /api/v1/pro/reviews → the pro's reviews list (web `/pro/reviews`):
-    /// the 100 most recent reviews + render-safe media tiles. Read-only.
+    /// the 100 most recent reviews + render-safe media tiles.
     public func reviews() async throws -> [ProReviewItem] {
         let response: ProReviewsListResponse = try await api.request("/pro/reviews")
         return response.items
+    }
+
+    /// PUT /api/v1/pro/reviews/{id}/reply — upsert the pro's public response to a
+    /// review (1–1000 chars; tovis-app PR #475). Returns the saved reply.
+    @discardableResult
+    public func upsertReviewReply(reviewId: String, body: String) async throws -> ProReviewItem.ProReviewReply {
+        let payload = try JSONEncoder().encode(["body": body])
+        let response: ProReviewReplyResponse = try await api.request(
+            "/pro/reviews/\(reviewId)/reply", method: .put, body: payload
+        )
+        return response.reply
+    }
+
+    /// DELETE /api/v1/pro/reviews/{id}/reply — remove the pro's public response.
+    public func deleteReviewReply(reviewId: String) async throws {
+        try await api.requestVoid("/pro/reviews/\(reviewId)/reply", method: .delete)
     }
 
     /// PATCH /api/v1/pro/profile — sparse update; only the provided fields change.

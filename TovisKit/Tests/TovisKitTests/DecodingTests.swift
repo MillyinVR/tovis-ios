@@ -582,10 +582,14 @@ func fixture(_ name: String) throws -> Data {
         #expect(first.mediaTiles[0].services.first?.serviceName == "Balayage")
         #expect(first.mediaTiles[1].isVideo)
         #expect(first.mediaTiles[1].services.isEmpty)
+        // Pro public reply (tovis-app PR #475).
+        #expect(first.proReply?.body == "Thank you, Jordan! See you at the gloss refresh.")
+        #expect(first.proReply?.repliedAtISO == "2026-06-19T15:00:00.000Z")
 
         let second = res.items[1]
         #expect(second.headline == nil)
         #expect(second.bookingId == nil)
+        #expect(second.proReply == nil)   // missing key decodes as nil (backward-compatible)
         #expect(second.mediaTiles.isEmpty)
     }
 
