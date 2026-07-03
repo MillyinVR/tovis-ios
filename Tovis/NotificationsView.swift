@@ -304,6 +304,14 @@ private struct NotificationStyle {
             return .init(symbol: "star.bubble", tint: BrandColor.gold)
         case "LOOK_FOLLOWER_NEW", "CLIENT_FOLLOW":
             return .init(symbol: "person.badge.plus", tint: BrandColor.iris)
+        case "LOOK_COMMENTED", "LOOK_COMMENT_REPLIED":
+            return .init(symbol: "bubble.left", tint: BrandColor.accent)
+        case "LOOK_LIKED":
+            return .init(symbol: "heart.fill", tint: BrandColor.ember)
+        case "LOOK_SAVED":
+            return .init(symbol: "bookmark.fill", tint: BrandColor.gold)
+        case "LOOK_NEW_FROM_FOLLOWED_PRO":
+            return .init(symbol: "sparkles", tint: BrandColor.iris)
         case "REFERRAL_TAP_RECEIVED", "REFERRAL_CONFIRMED", "REFERRAL_CONVERTED":
             return .init(symbol: "gift", tint: BrandColor.accent)
         default:
