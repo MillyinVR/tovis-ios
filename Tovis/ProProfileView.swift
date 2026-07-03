@@ -42,6 +42,12 @@ struct ProProfileView: View {
     @State private var isFavorited = false
     @State private var favoriteWorking = false
 
+    // Follow (the hero pill) — hydrated via GET /pros/{id}/follow after the
+    // profile loads; guests / pro viewers just keep the stats count.
+    @State private var isFollowing = false
+    @State private var followWorking = false
+    @State private var followerCount: Int?
+
     // Per-service "Save" state, seeded from the offerings' isFavorited flags.
     @State private var savedServiceIds: Set<String> = []
     @State private var savingServiceIds: Set<String> = []
@@ -260,6 +266,8 @@ struct ProProfileView: View {
 
             subtextRow(header, stats: stats)
 
+            followRow
+
             socialChips(header)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -323,6 +331,37 @@ struct ProProfileView: View {
             .font(BrandFont.body(12))
             .foregroundStyle(BrandColor.textSecondary)
             .lineLimit(2)
+    }
+
+    /// Follow pill + follower count — web ProfileHero parity (A3). Reuses the
+    /// same /pros/{id}/follow endpoint as the feed's FOLLOW pill.
+    private var followRow: some View {
+        HStack(spacing: 8) {
+            Button {
+                Task { await toggleFollow() }
+            } label: {
+                Text(isFollowing ? "FOLLOWING" : "FOLLOW")
+                    .font(BrandFont.mono(10))
+                    .tracking(1)
+                    .foregroundStyle(isFollowing ? .white.opacity(0.7) : .white)
+                    .padding(.vertical, 5).padding(.horizontal, 12)
+                    .background(
+                        isFollowing ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(BrandColor.accent.opacity(0.25)),
+                        in: Capsule()
+                    )
+                    .overlay(Capsule().stroke(isFollowing ? .white.opacity(0.35) : BrandColor.accent.opacity(0.6), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .disabled(followWorking)
+            .accessibilityLabel(isFollowing ? "Unfollow" : "Follow")
+
+            if let count = followerCount, count > 0 {
+                Text(count == 1 ? "1 follower" : "\(count) followers")
+                    .font(BrandFont.mono(11))
+                    .foregroundStyle(.white.opacity(0.75))
+            }
+        }
+        .padding(.top, 2)
     }
 
     private var favoriteButton: some View {
@@ -745,6 +784,7 @@ struct ProProfileView: View {
         do {
             let profile = try await session.client.profiles.professional(id: professionalId)
             isFavorited = profile.isFavoritedByMe
+            followerCount = profile.stats.followerCount
             savedServiceIds = Set(profile.offerings.filter { $0.isFavorited }.map { $0.serviceId })
             helpfulByReview = Dictionary(
                 profile.reviews.map { ($0.id, $0.viewerHelpful) },
@@ -755,10 +795,39 @@ struct ProProfileView: View {
                 uniquingKeysWith: { first, _ in first }
             )
             phase = .loaded(profile)
+
+            // Best-effort follow-state hydrate: clients get their real state; a
+            // guest or pro viewer errors (401/403) and keeps the defaults.
+            if let state = try? await session.client.looks.followState(professionalId: professionalId) {
+                isFollowing = state.following
+                followerCount = state.followerCount
+            }
         } catch let error as APIError {
             phase = .failed(error.userMessage)
         } catch {
             phase = .failed("Something went wrong. Please try again.")
+        }
+    }
+
+    private func toggleFollow() async {
+        guard !followWorking else { return }
+        followWorking = true
+        defer { followWorking = false }
+
+        let next = !isFollowing
+        let base = followerCount
+        isFollowing = next
+        if let base { followerCount = max(0, base + (next ? 1 : -1)) }
+
+        do {
+            let state = try await session.client.looks.setFollow(
+                professionalId: professionalId, following: next
+            )
+            isFollowing = state.following
+            followerCount = state.followerCount
+        } catch {
+            isFollowing = !next
+            followerCount = base
         }
     }
 

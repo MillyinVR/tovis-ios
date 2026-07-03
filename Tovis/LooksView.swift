@@ -46,6 +46,7 @@ struct LooksView: View {
     @State private var likeCounts: [String: Int] = [:]          // by look id
     @State private var commentCounts: [String: Int] = [:]       // by look id
     @State private var followOverrides: [String: Bool] = [:]    // by professional id
+    @State private var savedOverrides: [String: Bool] = [:]      // by look id
 
     @State private var commentsFor: LooksFeedItem?
     @State private var saveFor: LooksFeedItem?
@@ -105,9 +106,11 @@ struct LooksView: View {
             }
         }
         .sheet(item: $saveFor) { item in
-            SaveToBoardSheet(lookId: item.id)
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
+            SaveToBoardSheet(lookId: item.id) { state in
+                savedOverrides[item.id] = state.isSaved
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
     }
 
@@ -166,11 +169,13 @@ struct LooksView: View {
                         likeCount: likeCount(item),
                         commentCount: commentCount(item),
                         following: following(item),
+                        saved: saved(item),
                         shareURL: shareURL(item),
                         onLike: { Task { await toggleLike(item) } },
                         onComment: { commentsFor = item },
                         onSave: { saveFor = item },
                         onFollow: { Task { await toggleFollow(item) } },
+                        onShared: { Task { await recordShare(item) } },
                         onToggleMute: { muted.toggle() }
                     )
                     .containerRelativeFrame([.horizontal, .vertical])
@@ -232,6 +237,7 @@ struct LooksView: View {
     private func load() async {
         phase = .loading
         likeOverrides = [:]; likeCounts = [:]; commentCounts = [:]; followOverrides = [:]
+        savedOverrides = [:]
         let p = params()
         do {
             let page = try await session.client.looks.feed(
@@ -282,6 +288,13 @@ struct LooksView: View {
         guard let proId = i.professional?.id else { return false }
         return followOverrides[proId] ?? i.viewerFollows
     }
+    private func saved(_ i: LooksFeedItem) -> Bool { savedOverrides[i.id] ?? i.viewerSaved }
+
+    /// Fire-and-forget share ping (S1.4): count the share server-side; never
+    /// surface an error over it.
+    private func recordShare(_ item: LooksFeedItem) async {
+        _ = try? await session.client.looks.recordShare(lookId: item.id)
+    }
     private func shareURL(_ i: LooksFeedItem) -> URL? {
         URL(string: "https://www.tovis.app/looks/\(i.id)")
     }
@@ -325,11 +338,13 @@ private struct LookSlide: View {
     let likeCount: Int
     let commentCount: Int
     let following: Bool
+    let saved: Bool
     let shareURL: URL?
     let onLike: () -> Void
     let onComment: () -> Void
     let onSave: () -> Void
     let onFollow: () -> Void
+    let onShared: () -> Void
     let onToggleMute: () -> Void
 
     var body: some View {
@@ -440,13 +455,26 @@ private struct LookSlide: View {
                     .shadow(color: .black.opacity(0.6), radius: 5, y: 1)
             }
 
-            if let service = item.serviceName ?? item.category {
-                Text(service.uppercased())
-                    .font(BrandFont.mono(11))
-                    .tracking(1.2)
-                    .foregroundStyle(.white.opacity(0.92))
-                    .padding(.vertical, 5).padding(.horizontal, 11)
-                    .background(.ultraThinMaterial, in: Capsule())
+            HStack(spacing: 6) {
+                if let service = item.serviceName ?? item.category {
+                    Text(service.uppercased())
+                        .font(BrandFont.mono(11))
+                        .tracking(1.2)
+                        .foregroundStyle(.white.opacity(0.92))
+                        .padding(.vertical, 5).padding(.horizontal, 11)
+                        .background(.ultraThinMaterial, in: Capsule())
+                }
+
+                // "FROM $X" — the attainable half of the daydream (web parity).
+                if let price = item.priceLabel {
+                    Text("FROM \(price)")
+                        .font(BrandFont.mono(11))
+                        .tracking(1.2)
+                        .foregroundStyle(.white.opacity(0.92))
+                        .padding(.vertical, 5).padding(.horizontal, 11)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .overlay(Capsule().stroke(BrandColor.accent.opacity(0.5), lineWidth: 1))
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -500,13 +528,17 @@ private struct LookSlide: View {
             railButton(icon: liked ? "heart.fill" : "heart", tint: liked ? BrandColor.ember : .white,
                        count: likeCount, action: onLike)
             railButton(icon: "bubble.right", tint: .white, count: commentCount, action: onComment)
-            railButton(icon: "bookmark", tint: .white, count: nil, action: onSave)
+            railButton(icon: saved ? "bookmark.fill" : "bookmark",
+                       tint: saved ? BrandColor.iris : .white, count: nil, action: onSave)
 
             if let shareURL {
+                // Counts share-sheet opens (ShareLink has no completion hook) —
+                // same "idempotent-enough" bar as the web ping.
                 ShareLink(item: shareURL) {
                     railIcon("square.and.arrow.up", tint: .white)
                 }
                 .buttonStyle(.plain)
+                .simultaneousGesture(TapGesture().onEnded { onShared() })
             }
         }
     }

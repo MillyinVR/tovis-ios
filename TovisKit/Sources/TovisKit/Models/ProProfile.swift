@@ -68,6 +68,8 @@ public struct ProProfileStats: Decodable, Sendable {
     public let favoritesLabel: String
     public let reviewCountLabel: String
     public let averageRatingLabel: String?
+    /// Raw ProFollow count. Optional so older API deploys still decode.
+    public let followerCount: Int?
 }
 
 public struct ProOffering: Decodable, Sendable, Identifiable {

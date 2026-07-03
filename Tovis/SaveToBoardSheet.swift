@@ -10,6 +10,9 @@ struct SaveToBoardSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     let lookId: String
+    /// Reports every authoritative save-state change back to the presenting
+    /// surface (the feed rail keeps its bookmark tint in sync).
+    var onStateChange: ((LooksSaveState) -> Void)? = nil
 
     @State private var state: LooksSaveState?
     @State private var loading = true
@@ -93,6 +96,7 @@ struct SaveToBoardSheet: View {
         defer { loading = false }
         do {
             state = try await session.client.looks.saveState(lookId: lookId)
+            if let state { onStateChange?(state) }
         } catch let error as APIError {
             loadError = error.userMessage
         } catch {
@@ -106,6 +110,7 @@ struct SaveToBoardSheet: View {
         defer { working.remove(board.id) }
         do {
             state = try await session.client.looks.setSaved(lookId: lookId, boardId: board.id, saved: !saved)
+            if let state { onStateChange?(state) }
         } catch {
             // leave state as-is; the row reflects the last known truth
         }

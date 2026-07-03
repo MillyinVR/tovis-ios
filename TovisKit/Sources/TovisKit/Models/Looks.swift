@@ -151,6 +151,13 @@ public struct LooksLikeResponse: Decodable, Sendable {
     public let likeCount: Int
 }
 
+// MARK: - Share ping (POST /api/v1/looks/{id}/share)
+
+public struct LooksShareResponse: Decodable, Sendable {
+    public let lookPostId: String
+    public let shareCount: Int
+}
+
 // MARK: - Comments (GET/POST /api/v1/looks/{id}/comments)
 
 struct LooksCommentsListResponse: Decodable, Sendable {

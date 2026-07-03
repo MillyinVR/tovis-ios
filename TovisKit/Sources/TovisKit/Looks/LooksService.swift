@@ -55,6 +55,11 @@ public final class LooksService: Sendable {
         )
     }
 
+    /// GET /api/v1/pros/{id}/follow — hydrate the viewer's follow state.
+    public func followState(professionalId: String) async throws -> FollowState {
+        try await api.request("/pros/\(professionalId)/follow")
+    }
+
     // MARK: - Save to board
 
     /// GET /api/v1/looks/{id}/save — current save state + the viewer's boards.
@@ -69,6 +74,19 @@ public final class LooksService: Sendable {
             "/looks/\(lookId)/save",
             method: saved ? .post : .delete,
             body: payload
+        )
+    }
+
+    // MARK: - Share ping
+
+    /// POST /api/v1/looks/{id}/share — fire-and-forget share counter (the share
+    /// sheet itself is native; this just records that it happened).
+    @discardableResult
+    public func recordShare(lookId: String) async throws -> LooksShareResponse {
+        try await api.request(
+            "/looks/\(lookId)/share",
+            method: .post,
+            body: Data("{}".utf8)
         )
     }
 
