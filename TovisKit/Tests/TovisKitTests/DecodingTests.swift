@@ -114,6 +114,16 @@ func fixture(_ name: String) throws -> Data {
         #expect(me.activityUnreadCount == 2)
     }
 
+    // GET /api/v1/client/referrals/invite-link — Fixtures/clientInviteLink.json
+    // (schema-validated). Flat envelope: the DTO fields sit beside `ok`.
+    @Test func decodesClientInviteLink() throws {
+        let link = try JSONDecoder().decode(ClientInviteLink.self, from: fixture("clientInviteLink"))
+        #expect(link.cardId == "card_ref_1")
+        #expect(link.shortCode == "7Q4KX2M9")
+        #expect(link.shortCodeDisplay == "TOV-7Q4K-X2M9")
+        #expect(link.path == "/c/7Q4KX2M9")
+    }
+
     // GET /api/v1/messages/threads — Fixtures/messagesThreads.json (schema-validated).
     @Test func decodesMessageThreads() throws {
         let res = try JSONDecoder().decode(MessageThreadsResponse.self, from: fixture("messagesThreads"))

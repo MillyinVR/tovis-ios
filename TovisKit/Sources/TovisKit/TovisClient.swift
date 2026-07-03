@@ -25,6 +25,8 @@ public final class TovisClient: Sendable {
     public let checkout: CheckoutService
     public let looks: LooksService
     public let notifications: NotificationsService
+    /// Client referrals — the shareable digital invite link (/c/{code}).
+    public let referrals: ReferralsService
     /// PRO workspace — the live-session footer state machine. Only meaningful for
     /// a PRO acting role; CLIENT tokens 403 these endpoints.
     public let proSession: ProSessionService
@@ -94,6 +96,7 @@ public final class TovisClient: Sendable {
         self.checkout = CheckoutService(api: api)
         self.looks = LooksService(api: api)
         self.notifications = NotificationsService(api: api)
+        self.referrals = ReferralsService(api: api)
         self.proSession = ProSessionService(api: api)
         self.proCalendar = ProCalendarService(api: api)
         self.proBookings = ProBookingService(api: api)

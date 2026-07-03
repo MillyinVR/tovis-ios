@@ -23,6 +23,10 @@ struct MeView: View {
 
     @State private var phase: Phase = .loading
     @State private var tab: MeTab = .boards
+    /// The client's shareable invite link. Loaded best-effort: until the
+    /// backend ships GET /client/referrals/invite-link this 404s and the
+    /// invite card simply stays hidden.
+    @State private var inviteLink: ClientInviteLink?
 
     var body: some View {
         NavigationStack {
@@ -62,6 +66,10 @@ struct MeView: View {
 
         if let upcoming = me.upcomingNotificationBooking {
             upcomingCard(upcoming).padding(.top, 24)
+        }
+
+        if let invite = inviteLink {
+            inviteCard(invite).padding(.top, 24)
         }
 
         if !me.myLooks.isEmpty {
@@ -194,6 +202,64 @@ struct MeView: View {
                 .foregroundStyle(BrandColor.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: - Invite a friend
+
+    /// The web /client/referrals InviteLinkCard, condensed: the TOV-XXXX-XXXX
+    /// code + a system share sheet for the absolutized /c/{code} URL.
+    private func inviteCard(_ invite: ClientInviteLink) -> some View {
+        BrandSurface(tint: BrandColor.bgSecondary) {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("INVITE A FRIEND", systemImage: "gift")
+                    .font(BrandFont.mono(10))
+                    .tracking(1.6)
+                    .foregroundStyle(BrandColor.textSecondary)
+                    .labelStyle(.titleAndIcon)
+
+                Text("Share your personal link. When a friend signs up and books, the referral is credited to you — same as a tap on your physical card.")
+                    .font(BrandFont.body(13))
+                    .foregroundStyle(BrandColor.textSecondary)
+
+                HStack(spacing: 10) {
+                    Text(invite.shortCodeDisplay)
+                        .font(BrandFont.mono(13))
+                        .tracking(0.8)
+                        .foregroundStyle(BrandColor.textPrimary)
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 12)
+                        .background(BrandColor.bgPrimary.opacity(0.45))
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(BrandColor.textMuted.opacity(0.18), lineWidth: 1))
+
+                    Spacer()
+
+                    if let url = inviteShareURL(invite) {
+                        ShareLink(
+                            item: url,
+                            subject: Text("Invite a friend"),
+                            message: Text("Book with my link:")
+                        ) {
+                            Label("Share", systemImage: "square.and.arrow.up")
+                                .font(BrandFont.body(13, .semibold))
+                                .foregroundStyle(BrandColor.onAccent)
+                                .padding(.vertical, 9)
+                                .padding(.horizontal, 14)
+                                .background(BrandColor.accent)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Absolutized share URL for the root-relative invite path. Mirrors the
+    /// app's other ShareLink origins (hardcoded canonical web host).
+    private func inviteShareURL(_ invite: ClientInviteLink) -> URL? {
+        URL(string: "https://www.tovis.app\(invite.path)")
     }
 
     // MARK: - Upcoming
@@ -513,6 +579,8 @@ struct MeView: View {
         } catch {
             phase = .failed("Something went wrong. Please try again.")
         }
+        // Best-effort: the invite card hides until the endpoint exists/answers.
+        inviteLink = try? await session.client.referrals.inviteLink()
     }
 }
 
