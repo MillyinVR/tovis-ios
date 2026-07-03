@@ -19,7 +19,9 @@ public final class DiscoverService: Sendable {
     }
 
     /// GET /api/v1/search/pros — pros near (lat,lng) within `radiusMiles`,
-    /// optionally filtered by free text, category, mobile-capability, and sorted.
+    /// optionally filtered by free text, category, mobile-capability, open-now,
+    /// minimum rating, maximum starting price, and sorted. Params mirror the web
+    /// SearchMapClient (`lib/search/pros.ts parseSearchProsParams`).
     public func searchPros(
         q: String? = nil,
         lat: Double? = nil,
@@ -28,6 +30,9 @@ public final class DiscoverService: Sendable {
         categoryId: String? = nil,
         sort: Sort = .distance,
         mobileOnly: Bool = false,
+        openNowOnly: Bool = false,
+        minRating: Double? = nil,
+        maxPrice: Int? = nil,
         cursor: String? = nil,
         limit: Int = 50
     ) async throws -> ProsPage {
@@ -42,6 +47,9 @@ public final class DiscoverService: Sendable {
         if let lng { query.append(URLQueryItem(name: "lng", value: String(lng))) }
         if let categoryId { query.append(URLQueryItem(name: "categoryId", value: categoryId)) }
         if mobileOnly { query.append(URLQueryItem(name: "mobile", value: "1")) }
+        if openNowOnly { query.append(URLQueryItem(name: "openNow", value: "1")) }
+        if let minRating { query.append(URLQueryItem(name: "minRating", value: String(minRating))) }
+        if let maxPrice { query.append(URLQueryItem(name: "maxPrice", value: String(maxPrice))) }
         if let cursor { query.append(URLQueryItem(name: "cursor", value: cursor)) }
 
         let response: SearchProsResponse = try await api.request("/search/pros", query: query)

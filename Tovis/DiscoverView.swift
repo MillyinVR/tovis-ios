@@ -34,6 +34,9 @@ struct DiscoverView: View {
     @State private var radiusMiles = 25
     @State private var sort: DiscoverService.Sort = .distance
     @State private var mobileOnly = false
+    @State private var openNowOnly = false
+    @State private var minRating: Double?
+    @State private var maxPrice: Int?
     @State private var showFilters = false
 
     // Place autocomplete — "jump the map to a place" suggestions for the search bar.
@@ -52,6 +55,7 @@ struct DiscoverView: View {
     /// True when any filter differs from the defaults (drives the filter-button dot).
     private var filtersActive: Bool {
         radiusMiles != 25 || sort != .distance || mobileOnly
+            || openNowOnly || minRating != nil || maxPrice != nil
     }
 
     var body: some View {
@@ -335,9 +339,10 @@ struct DiscoverView: View {
         .sheet(isPresented: $showFilters) {
             DiscoverFilterSheet(
                 radiusMiles: $radiusMiles, sort: $sort, mobileOnly: $mobileOnly,
+                openNowOnly: $openNowOnly, minRating: $minRating, maxPrice: $maxPrice,
                 onApply: { Task { await runSearch() } }
             )
-            .presentationDetents([.height(420), .medium])
+            .presentationDetents([.medium, .large])
         }
     }
 
@@ -429,7 +434,10 @@ struct DiscoverView: View {
                 radiusMiles: radiusMiles,
                 categoryId: selectedCategory?.id,
                 sort: sort,
-                mobileOnly: mobileOnly
+                mobileOnly: mobileOnly,
+                openNowOnly: openNowOnly,
+                minRating: minRating,
+                maxPrice: maxPrice
             )
             pros = page.items
             if let active = activeProId, !pros.contains(where: { $0.id == active }) {

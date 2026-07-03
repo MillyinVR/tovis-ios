@@ -1,6 +1,8 @@
-// Discover filters — radius, sort, and mobile-only. All three are already honored
-// server-side by GET /api/v1/search/pros (and plumbed through DiscoverService), so
-// this is pure UI: it mutates the bindings and asks Discover to re-search on apply.
+// Discover filters — radius, sort, rating, price, open-now, and comes-to-you.
+// All are honored server-side by GET /api/v1/search/pros (and plumbed through
+// DiscoverService), so this is pure UI: it mutates the bindings and asks
+// Discover to re-search on apply. Option values mirror the web SearchMapClient
+// (rating 4.0+/4.5+; price under $50/$100/$200).
 import SwiftUI
 import TovisKit
 
@@ -10,6 +12,9 @@ struct DiscoverFilterSheet: View {
     @Binding var radiusMiles: Int
     @Binding var sort: DiscoverService.Sort
     @Binding var mobileOnly: Bool
+    @Binding var openNowOnly: Bool
+    @Binding var minRating: Double?
+    @Binding var maxPrice: Int?
     let onApply: () -> Void
 
     private let radiusOptions = [5, 10, 15, 25, 50]
@@ -18,6 +23,17 @@ struct DiscoverFilterSheet: View {
         (.rating, "Top rated"),
         (.price, "Price"),
         (.name, "Name"),
+    ]
+    private let ratingOptions: [(Double?, String)] = [
+        (nil, "Any"),
+        (4.0, "4.0+"),
+        (4.5, "4.5+"),
+    ]
+    private let priceOptions: [(Int?, String)] = [
+        (nil, "Any"),
+        (50, "<$50"),
+        (100, "<$100"),
+        (200, "<$200"),
     ]
 
     var body: some View {
@@ -40,16 +56,44 @@ struct DiscoverFilterSheet: View {
                         }
                     }
 
-                    BrandSection(title: "Options") {
-                        Toggle(isOn: $mobileOnly) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Mobile pros only")
-                                    .font(BrandFont.body(15, .medium)).foregroundStyle(BrandColor.textPrimary)
-                                Text("Pros who travel to you")
-                                    .font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
+                    BrandSection(title: "Rating") {
+                        HStack(spacing: 8) {
+                            ForEach(ratingOptions, id: \.1) { option in
+                                chip(option.1, selected: minRating == option.0) { minRating = option.0 }
                             }
                         }
-                        .tint(BrandColor.accent)
+                    }
+
+                    BrandSection(title: "Starting price") {
+                        HStack(spacing: 8) {
+                            ForEach(priceOptions, id: \.1) { option in
+                                chip(option.1, selected: maxPrice == option.0) { maxPrice = option.0 }
+                            }
+                        }
+                    }
+
+                    BrandSection(title: "Options") {
+                        VStack(spacing: 10) {
+                            Toggle(isOn: $openNowOnly) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Open now")
+                                        .font(BrandFont.body(15, .medium)).foregroundStyle(BrandColor.textPrimary)
+                                    Text("Pros with hours open at this moment")
+                                        .font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
+                                }
+                            }
+                            .tint(BrandColor.accent)
+
+                            Toggle(isOn: $mobileOnly) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Comes to you")
+                                        .font(BrandFont.body(15, .medium)).foregroundStyle(BrandColor.textPrimary)
+                                    Text("Pros who travel to you")
+                                        .font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
+                                }
+                            }
+                            .tint(BrandColor.accent)
+                        }
                     }
 
                     Button {
@@ -72,6 +116,7 @@ struct DiscoverFilterSheet: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Reset") {
                         radiusMiles = 25; sort = .distance; mobileOnly = false
+                        openNowOnly = false; minRating = nil; maxPrice = nil
                     }
                     .tint(BrandColor.textSecondary)
                 }
