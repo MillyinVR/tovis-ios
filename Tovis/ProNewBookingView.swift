@@ -147,12 +147,17 @@ struct ProNewBookingView: View {
                     if let errorText {
                         Text(errorText).font(BrandFont.body(13)).foregroundStyle(BrandColor.ember)
                     }
-                    createButton
                 }
                 .padding(.horizontal, 20).padding(.vertical, 12)
             }
         }
         .background(BrandColor.bgPrimary.ignoresSafeArea())
+        // Pin the primary action in a bottom bar so it always clears the home
+        // indicator (a scrolling CTA got tucked under the safe area) and is
+        // reachable without scrolling to the end of a long form.
+        .safeAreaInset(edge: .bottom) {
+            if !loading && loadError == nil { createBar }
+        }
         .navigationTitle("New booking")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
@@ -463,6 +468,48 @@ struct ProNewBookingView: View {
         }
     }
 
+    /// The single next thing the pro must do before the form can submit, so a
+    /// disabled "Create booking" reads as intentional (not a broken button).
+    /// nil when the form is ready.
+    private var missingRequirement: String? {
+        if !hasClient {
+            return clientMode == .existing
+                ? "Choose a client to continue"
+                : "Add the new client's name and email"
+        }
+        if offeringId.isEmpty { return "Choose a service to continue" }
+        if locationId.isEmpty {
+            return bookingMode == .mobile ? "Choose a mobile base" : "Choose a location"
+        }
+        if !mobileAddressReady { return "Add the service address" }
+        if !hasTime { return "Pick a time to continue" }
+        return nil
+    }
+
+    /// Bottom-pinned action bar (via `.safeAreaInset`): an optional "what's left"
+    /// hint above the button, on a hairline-topped surface matching the tab bars.
+    private var createBar: some View {
+        VStack(spacing: 8) {
+            if let missingRequirement, !creating {
+                Text(missingRequirement)
+                    .font(BrandFont.body(12))
+                    .foregroundStyle(BrandColor.textMuted)
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
+            createButton
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 10)
+        .padding(.bottom, 6)
+        .background(
+            BrandColor.bgPrimary
+                .overlay(alignment: .top) {
+                    Rectangle().fill(BrandColor.textMuted.opacity(0.12)).frame(height: 1)
+                }
+                .ignoresSafeArea(.container, edges: .bottom)
+        )
+    }
+
     private var createButton: some View {
         Button { Task { await create() } } label: {
             HStack {
@@ -474,7 +521,10 @@ struct ProNewBookingView: View {
             .foregroundStyle(canCreate ? BrandColor.onAccent : BrandColor.textMuted)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
-        .disabled(!canCreate)
+        // Stays tappable while the form is incomplete (greyed, not disabled) so a
+        // tap explains what's missing instead of feeling dead. Only a submit
+        // in flight disables it, to block a double-submit.
+        .disabled(creating)
     }
 
     // MARK: - Helpers
@@ -624,7 +674,12 @@ struct ProNewBookingView: View {
     /// Start a fresh create attempt: mint one idempotency key (stable across an
     /// override retry) and clear any override flags carried from a prior attempt.
     private func create() async {
-        guard canCreate, selectedLocation != nil else { return }
+        guard !creating else { return }
+        // Incomplete form: don't dead-end — tell the pro exactly what's left.
+        guard canCreate, selectedLocation != nil else {
+            errorText = missingRequirement ?? "Choose a location to continue"
+            return
+        }
         appliedOverrides = []
         overrideReason = ""
         attemptKey = UUID().uuidString
