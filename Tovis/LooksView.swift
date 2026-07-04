@@ -64,6 +64,11 @@ struct LooksView: View {
     @State private var activeId: String?
     @State private var muted = true
 
+    /// Session dedupe for view impressions (B2) — each look pings at most once
+    /// so a scroll-up/scroll-down doesn't double-count. Web parity: web batches
+    /// the flush; iOS pings per newly-seen slide (each look still once/session).
+    @State private var viewedLookIds: Set<String> = []
+
     private var commentsOpen: Bool { commentsFor != nil }
     // Roughly the visible fraction above the 0.7-height comments sheet — scales
     // the look to fit in that top gap. Tune alongside the sheet's .fraction(0.7).
@@ -208,6 +213,8 @@ struct LooksView: View {
         }
         .scrollPosition(id: $activeId, anchor: .center)
         .scrollTargetBehavior(.paging)
+        // Record a sampled view impression for whichever slide snaps active (B2).
+        .onChange(of: activeId) { _, id in Task { await recordView(id) } }
         // Start the first slide playing before any scroll happens.
         .onAppear { if activeId == nil { activeId = items.first?.id } }
         .onChange(of: items.first?.id) { _, first in if activeId == nil { activeId = first } }
@@ -311,6 +318,14 @@ struct LooksView: View {
     /// surface an error over it.
     private func recordShare(_ item: LooksFeedItem) async {
         _ = try? await session.client.looks.recordShare(lookId: item.id)
+    }
+
+    /// Fire-and-forget view impression (B2): count each look at most once per
+    /// session; never surface an error over it.
+    private func recordView(_ id: String?) async {
+        guard let id, !id.isEmpty, !viewedLookIds.contains(id) else { return }
+        viewedLookIds.insert(id)
+        try? await session.client.looks.recordViews(lookIds: [id])
     }
     private func shareURL(_ i: LooksFeedItem) -> URL? {
         URL(string: "https://www.tovis.app/looks/\(i.id)")

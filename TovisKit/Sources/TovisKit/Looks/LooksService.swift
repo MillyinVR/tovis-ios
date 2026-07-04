@@ -90,6 +90,26 @@ public final class LooksService: Sendable {
         )
     }
 
+    // MARK: - View tracking
+
+    /// POST /api/v1/looks/views — sampled view impressions (B2). Guest-allowed
+    /// and fire-and-forget: the server dedupes/caps the ids and enqueues a job
+    /// that denormalizes viewCount. No auth needed (impressions count for
+    /// signed-out viewers too).
+    public func recordViews(lookIds: [String]) async throws {
+        let ids = lookIds.filter { !$0.isEmpty }
+        guard !ids.isEmpty else { return }
+
+        let payload = try JSONEncoder().encode(LooksViewsRequest(lookPostIds: ids))
+        try await api.requestVoid(
+            "/looks/views",
+            method: .post,
+            body: payload,
+            authenticated: false,
+            retryOn401: false
+        )
+    }
+
     // MARK: - Like a look
 
     /// POST/DELETE /api/v1/looks/{id}/like.

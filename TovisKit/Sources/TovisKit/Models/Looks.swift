@@ -143,6 +143,14 @@ struct LooksSaveMutationRequest: Encodable, Sendable {
     let boardId: String
 }
 
+// MARK: - View tracking (POST /api/v1/looks/views)
+
+/// Batched, sampled view impressions (social-first plan B2). The server dedupes
+/// + caps, then enqueues a job that increments each look's viewCount.
+struct LooksViewsRequest: Encodable, Sendable {
+    let lookPostIds: [String]
+}
+
 // MARK: - Like (POST/DELETE /api/v1/looks/{id}/like)
 
 public struct LooksLikeResponse: Decodable, Sendable {
