@@ -449,7 +449,20 @@ private struct LookSlide: View {
     /// first frame, tap toggles mute); image slides keep the AsyncImage.
     @ViewBuilder
     private var media: some View {
-        if item.isVideo, let url = URL(string: item.url) {
+        if let pair = item.beforeAfterPair {
+            // Before/after pairing → the reveal slider is the money-shot. It only
+            // claims horizontal drags (passVerticalScroll) so the feed's vertical
+            // pager keeps scrolling under a swipe.
+            BeforeAfterCompareView(
+                beforeURL: pair.before,
+                afterURL: pair.after,
+                cornerRadius: 0,
+                fillContainer: true,
+                passVerticalScroll: true
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
+        } else if item.isVideo, let url = URL(string: item.url) {
             ZStack {
                 posterImage // shows instantly; the video layer covers it when ready
                 LookVideoView(url: url, isActive: isActive, isMuted: muted)

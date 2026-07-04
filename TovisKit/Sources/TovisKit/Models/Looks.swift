@@ -33,15 +33,28 @@ public struct LooksFeedItem: Decodable, Sendable, Identifiable {
     public let category: String?
     public let priceStartingAt: Double?
 
+    /// Opt-in before/after pairing on the primary image → the reveal slider.
+    public let before: LooksPairedBefore?
+
     private enum CodingKeys: String, CodingKey {
         case id, url, thumbUrl, mediaType, caption, createdAt
         case professional, clientAuthor
         case count = "_count"
         case viewerLiked, viewerSaved, viewerFollows
         case serviceId, serviceName, category, priceStartingAt
+        case before
     }
 
     public var isVideo: Bool { mediaType.uppercased() == "VIDEO" }
+
+    /// The before/after pair to render, when the primary is a paired image.
+    /// Nil for videos or unpaired looks (fall back to the single-image slide).
+    public var beforeAfterPair: (before: URL, after: URL)? {
+        guard !isVideo,
+              let before = before?.bestURL,
+              let after = URL(string: url) else { return nil }
+        return (before, after)
+    }
 
     /// "$120" etc. — the "from" price for booking this look's service.
     public var priceLabel: String? {
@@ -101,6 +114,21 @@ public struct LooksClientAuthor: Decodable, Sendable {
 public struct LooksCounts: Decodable, Sendable {
     public let likes: Int
     public let comments: Int
+}
+
+/// The chosen "before" of an opt-in before/after pair on the primary (image)
+/// asset. Present → render the reveal slider; absent → a single image. Mirrors
+/// `PairedBeforeDto` (id + thumb/full URLs). The tile's own `url` is the "after".
+public struct LooksPairedBefore: Decodable, Sendable {
+    public let id: String
+    public let thumbUrl: String?
+    public let fullUrl: String?
+
+    /// Full-res when available, else the thumb — the "before" layer of the wipe.
+    public var bestURL: URL? {
+        let raw = fullUrl ?? thumbUrl
+        return raw.flatMap(URL.init(string:))
+    }
 }
 
 // MARK: - Categories (GET /api/v1/looks/categories)

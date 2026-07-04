@@ -11,6 +11,15 @@ struct BeforeAfterCompareView: View {
     /// Corner radius of the clipped frame. Defaults to 16 (the standalone card
     /// look); pass 0 to sit flush in a sharp-cornered grid cell.
     var cornerRadius: CGFloat = 16
+    /// Fill the parent instead of the fixed `height` — used by the full-screen
+    /// Looks feed slide (which owns its own sizing).
+    var fillContainer: Bool = false
+    /// Only claim *horizontal* drags, letting vertical gestures fall through to
+    /// a scrolling ancestor (the Looks feed's vertical pager). When false (the
+    /// default, for grid/detail tiles that don't scroll under the slider) the
+    /// wipe owns every drag the instant a finger lands — parity with web's
+    /// `passVerticalScroll` prop on BeforeAfterReveal.
+    var passVerticalScroll: Bool = false
 
     /// How much of the "before" is revealed from the left, 0…1.
     @State private var fraction: CGFloat = 0.5
@@ -35,13 +44,27 @@ struct BeforeAfterCompareView: View {
                 divider.position(x: max(0, min(w, w * fraction)), y: geo.size.height / 2)
             }
             .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in fraction = min(1, max(0, value.location.x / w)) }
-            )
+            .gesture(dragGesture(width: w))
         }
-        .frame(height: height)
+        .frame(height: fillContainer ? nil : height)
+        .frame(maxWidth: fillContainer ? .infinity : nil,
+               maxHeight: fillContainer ? .infinity : nil)
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+    }
+
+    /// In passVerticalScroll mode the drag needs a small minimum distance and
+    /// only tracks once the movement is horizontal-dominant — so a vertical
+    /// swipe stays with the pager instead of dragging the divider.
+    private func dragGesture(width w: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: passVerticalScroll ? 10 : 0)
+            .onChanged { value in
+                if passVerticalScroll,
+                   abs(value.translation.height) > abs(value.translation.width) {
+                    return
+                }
+                guard w > 0 else { return }
+                fraction = min(1, max(0, value.location.x / w))
+            }
     }
 
     private func fullImage(_ url: URL, size: CGSize) -> some View {
