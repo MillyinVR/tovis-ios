@@ -52,6 +52,12 @@ public final class TovisClient: Sendable {
     public let proCamera: ProCameraService
     /// PRO workspace — the Finance & Tax tab (income/expenses/tax + expense CRUD).
     public let proFinance: ProFinanceService
+    /// PRO workspace — membership status (plan tier + entitlements; display only).
+    public let proMembership: ProMembershipService
+    /// PRO workspace — "Your Looks performance" creator analytics.
+    public let proLooks: ProLooksService
+    /// PRO workspace — referral activity credited to this pro.
+    public let proReferrals: ProReferralsService
     public let tokenStore: TokenStore
 
     /// Stable per-install id. Persisted in the Keychain-backed store's UserDefaults
@@ -113,6 +119,9 @@ public final class TovisClient: Sendable {
         self.proOverview = ProOverviewService(api: api)
         self.proCamera = ProCameraService(api: api)
         self.proFinance = ProFinanceService(api: api)
+        self.proMembership = ProMembershipService(api: api)
+        self.proLooks = ProLooksService(api: api)
+        self.proReferrals = ProReferralsService(api: api)
     }
 
     /// The signed-in user's id, decoded from the stored JWT. Works on a cold

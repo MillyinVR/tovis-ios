@@ -475,6 +475,14 @@ struct ProProfileTabView: View {
                 }
             }
 
+            BrandSection(title: "Growth") {
+                VStack(spacing: 10) {
+                    businessLink(icon: "chart.line.uptrend.xyaxis", title: "Your Looks performance") { ProLooksPerformanceView() }
+                    businessLink(icon: "gift", title: "Referral activity") { ProReferralActivityView() }
+                    businessLink(icon: "star.circle", title: "Membership") { ProMembershipView() }
+                }
+            }
+
             BrandSection(title: "Appearance") {
                 BrandSurface {
                     Picker("Theme", selection: Binding(

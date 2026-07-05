@@ -124,6 +124,71 @@ func fixture(_ name: String) throws -> Data {
         #expect(link.path == "/c/7Q4KX2M9")
     }
 
+    @Test func decodesProMembership() throws {
+        let json = """
+        {
+          "ok": true,
+          "membership": {
+            "planKey": "pro", "rawPlanKey": "pro", "status": "active",
+            "compPlanKey": null, "compUntil": null,
+            "entitlements": ["custom_handle", "tax_export"],
+            "currentPeriodEnd": "2026-08-01T00:00:00.000Z",
+            "cancelAtPeriodEnd": false, "trialEndsAt": null, "hasBillingAccount": true
+          }
+        }
+        """.data(using: .utf8)!
+        let m = try JSONDecoder().decode(ProMembershipResponse.self, from: json).membership
+        #expect(m.planKey == "pro")
+        #expect(m.entitlements.contains("tax_export"))
+        #expect(m.cancelAtPeriodEnd == false)
+        #expect(m.hasBillingAccount == true)
+    }
+
+    @Test func decodesProLooksAnalytics() throws {
+        let json = """
+        {
+          "ok": true,
+          "analytics": {
+            "publishedCount": 2,
+            "totals": {"views": 120, "likes": 40, "comments": 8, "saves": 15, "shares": 4, "bookings": 2},
+            "followers": {"total": 50, "new30d": 6, "weekly": [{"weeksAgo": 1, "count": 3}]},
+            "topLooks": [
+              {"lookPostId": "lp1", "caption": "Balayage", "thumbUrl": "https://cdn/x.jpg",
+               "publishedAt": "2026-07-01T00:00:00.000Z", "views": 90, "likes": 30, "comments": 5,
+               "saves": 10, "shares": 3, "bookings": 2, "engagementScore": 42.5}
+            ]
+          }
+        }
+        """.data(using: .utf8)!
+        let a = try JSONDecoder().decode(ProLooksAnalyticsResponse.self, from: json).analytics
+        #expect(a.publishedCount == 2)
+        #expect(a.totals.views == 120)
+        #expect(a.followers.new30d == 6)
+        #expect(a.topLooks.first?.engagementScore == 42.5)
+    }
+
+    @Test func decodesProReferralActivity() throws {
+        let json = """
+        {
+          "ok": true,
+          "summary": {"total": 2, "rewarded": 1, "creditDollarsApplied": 20},
+          "rows": [
+            {"id": "r1", "status": "REWARDED", "createdAt": "2026-06-01T12:00:00.000Z",
+             "convertedAt": "2026-06-10T09:30:00.000Z", "rewardTier": "CREDIT", "rewardValue": 20,
+             "rewardApplied": true, "referrerName": "Ada", "referredName": "Grace", "cardShortCode": "ABCD1234"},
+            {"id": "r2", "status": "CONVERTED", "createdAt": "2026-06-05T00:00:00.000Z",
+             "convertedAt": null, "rewardTier": null, "rewardValue": null, "rewardApplied": false,
+             "referrerName": "Bo", "referredName": "Cleo", "cardShortCode": null}
+          ]
+        }
+        """.data(using: .utf8)!
+        let activity = try JSONDecoder().decode(ProReferralActivity.self, from: json)
+        #expect(activity.summary.total == 2)
+        #expect(activity.rows.count == 2)
+        #expect(activity.rows[0].referrerName == "Ada")
+        #expect(activity.rows[1].convertedAt == nil)
+    }
+
     // GET /api/v1/messages/threads — Fixtures/messagesThreads.json (schema-validated).
     @Test func decodesMessageThreads() throws {
         let res = try JSONDecoder().decode(MessageThreadsResponse.self, from: fixture("messagesThreads"))
