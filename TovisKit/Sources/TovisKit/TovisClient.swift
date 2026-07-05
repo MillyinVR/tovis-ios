@@ -58,6 +58,8 @@ public final class TovisClient: Sendable {
     public let proLooks: ProLooksService
     /// PRO workspace — referral activity credited to this pro.
     public let proReferrals: ProReferralsService
+    /// PRO workspace — account policy settings (reminder cadence, no-show fees).
+    public let proSettings: ProSettingsService
     public let tokenStore: TokenStore
 
     /// Stable per-install id. Persisted in the Keychain-backed store's UserDefaults
@@ -122,6 +124,7 @@ public final class TovisClient: Sendable {
         self.proMembership = ProMembershipService(api: api)
         self.proLooks = ProLooksService(api: api)
         self.proReferrals = ProReferralsService(api: api)
+        self.proSettings = ProSettingsService(api: api)
     }
 
     /// The signed-in user's id, decoded from the stored JWT. Works on a cold

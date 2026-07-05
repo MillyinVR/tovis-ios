@@ -472,6 +472,8 @@ struct ProProfileTabView: View {
                 VStack(spacing: 10) {
                     businessLink(icon: "person.2.fill", title: "Clients") { ProClientsView() }
                     businessLink(icon: "clock", title: "Working hours") { ProWorkingHoursView() }
+                    businessLink(icon: "bell.badge", title: "Appointment reminders") { ProReminderSettingsView() }
+                    businessLink(icon: "clock.badge.exclamationmark", title: "No-show fees") { ProNoShowSettingsView() }
                 }
             }
 

@@ -189,6 +189,34 @@ func fixture(_ name: String) throws -> Data {
         #expect(activity.rows[1].convertedAt == nil)
     }
 
+    @Test func decodesProReminderSettings() throws {
+        let json = """
+        {"ok": true,
+         "settings": {"enabled": true, "offsetDays": [7, 1]},
+         "options": [{"days": 7, "label": "1 week before"}, {"days": 1, "label": "1 day before"}]}
+        """.data(using: .utf8)!
+        let res = try JSONDecoder().decode(ProReminderSettingsResponse.self, from: json)
+        #expect(res.settings.enabled)
+        #expect(res.settings.offsetDays == [7, 1])
+        #expect(res.options.count == 2)
+        #expect(res.options.first?.label == "1 week before")
+    }
+
+    @Test func decodesProNoShowSettings() throws {
+        let json = """
+        {"ok": true,
+         "settings": {"enabled": true, "feeType": "FLAT", "feeFlatAmount": "25.00",
+                      "feePercent": null, "cancelWindowHours": 24,
+                      "chargeNoShow": true, "chargeLateCancel": false}}
+        """.data(using: .utf8)!
+        let s = try JSONDecoder().decode(ProNoShowSettingsResponse.self, from: json).settings
+        #expect(s.feeType == "FLAT")
+        #expect(s.feeFlatAmount == "25.00")
+        #expect(s.feePercent == nil)
+        #expect(s.cancelWindowHours == 24)
+        #expect(s.chargeLateCancel == false)
+    }
+
     // GET /api/v1/messages/threads — Fixtures/messagesThreads.json (schema-validated).
     @Test func decodesMessageThreads() throws {
         let res = try JSONDecoder().decode(MessageThreadsResponse.self, from: fixture("messagesThreads"))
