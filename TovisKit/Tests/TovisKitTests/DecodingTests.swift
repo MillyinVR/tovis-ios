@@ -832,6 +832,19 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.offerings.first?.serviceId == "svc_balayage")
     }
 
+    // GET /api/v1/pro/camera/usage — Fixtures/proCameraUsage.json. The pro's
+    // monthly AI-camera image allowance behind the membership quota panel.
+    @Test func decodesProCameraUsage() throws {
+        let res = try JSONDecoder().decode(ProCameraUsageResponse.self, from: fixture("proCameraUsage"))
+        #expect(res.usage.used == 4)
+        #expect(res.usage.baseQuota == 30)
+        #expect(res.usage.bonus == 10)
+        #expect(res.usage.quota == 40)
+        #expect(res.usage.remaining == 36)
+        #expect(res.usage.enforced)
+        #expect(abs(res.usage.usedFraction - 0.1) < 0.0001)
+    }
+
     // GET /api/v1/pro/offerings/{id}/add-ons — Fixtures/proAddOns.json.
     @Test func decodesProAddOns() throws {
         let res = try JSONDecoder().decode(ProAddOns.self, from: fixture("proAddOns"))

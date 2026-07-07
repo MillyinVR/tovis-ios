@@ -10,6 +10,9 @@ struct ProMembershipView: View {
 
     private enum Phase { case loading, loaded(ProMembership), failed(String) }
     @State private var phase: Phase = .loading
+    /// Loaded independently of the plan so a 404 (endpoint not yet deployed) or
+    /// any error simply hides the camera-quota panel instead of failing the page.
+    @State private var cameraUsage: ProCameraUsage?
     private let brandName = "Tovis"
 
     var body: some View {
@@ -23,6 +26,7 @@ struct ProMembershipView: View {
                 case let .loaded(m):
                     planHero(m)
                     if let note = statusNote(m) { infoRow(note) }
+                    if let usage = cameraUsage { cameraUsageSection(usage) }
                     entitlements(m)
                     manageNote
                 }
@@ -83,6 +87,53 @@ struct ProMembershipView: View {
                                 .foregroundStyle(BrandColor.textPrimary)
                             Spacer()
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    /// AI-camera monthly image allowance (the "X of Y images left" panel). When
+    /// metering is off (`enforced == false`) live usage isn't meaningful yet, so
+    /// we show the plan allowance only.
+    private func cameraUsageSection(_ u: ProCameraUsage) -> some View {
+        BrandSection(title: "AI photographer images") {
+            VStack(alignment: .leading, spacing: 12) {
+                if u.enforced {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("\(u.remaining)")
+                            .font(BrandFont.display(28, .semibold))
+                            .foregroundStyle(BrandColor.textPrimary)
+                        Text("of \(u.quota) left this month")
+                            .font(BrandFont.body(14)).foregroundStyle(BrandColor.textMuted)
+                    }
+
+                    // Usage bar (share of the monthly allowance consumed).
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(BrandColor.bgSecondary)
+                            Capsule()
+                                .fill(u.remaining == 0 ? BrandColor.gold : BrandColor.accent)
+                                .frame(width: max(4, geo.size.width * u.usedFraction))
+                        }
+                    }
+                    .frame(height: 8)
+
+                    Text("\(u.used) of \(u.quota) used")
+                        .font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
+                } else {
+                    Text("Your plan includes \(u.baseQuota) AI photographer images each month.")
+                        .font(BrandFont.body(14)).foregroundStyle(BrandColor.textPrimary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                if u.bonus > 0 {
+                    HStack(spacing: 8) {
+                        Image(systemName: "gift.fill")
+                            .font(.system(size: 13)).foregroundStyle(BrandColor.emerald)
+                        Text("+\(u.bonus) bonus image\(u.bonus == 1 ? "" : "s") added this month")
+                            .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
+                        Spacer()
                     }
                 }
             }
@@ -190,5 +241,7 @@ struct ProMembershipView: View {
         } catch {
             phase = .failed("Couldn’t load your membership.")
         }
+        // Best-effort — hides the panel if the endpoint isn't deployed yet.
+        cameraUsage = try? await session.client.proCamera.usage()
     }
 }

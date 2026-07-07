@@ -1,0 +1,10 @@
+{
+  "usage": {
+    "used": 4,
+    "baseQuota": 30,
+    "bonus": 10,
+    "quota": 40,
+    "remaining": 36,
+    "enforced": true
+  }
+}

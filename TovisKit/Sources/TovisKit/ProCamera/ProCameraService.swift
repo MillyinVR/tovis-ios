@@ -17,6 +17,15 @@ public final class ProCameraService: Sendable {
         try await api.request("/pro/camera/shot-packs")
     }
 
+    /// GET /api/v1/pro/camera/usage → this month's AI-camera image allowance
+    /// (used / plan quota / bonus / remaining / whether metering is active).
+    /// Backs the membership "X of Y images left" readout. Fails safe server-side
+    /// (Redis missing → 0 used, plan quota still reported).
+    public func usage() async throws -> ProCameraUsage {
+        let response: ProCameraUsageResponse = try await api.request("/pro/camera/usage")
+        return response.usage
+    }
+
     /// POST /api/v1/pro/camera/look-brief → Claude-vision enhance of a
     /// "Match a look" reference photo: extra pose rules (same vocabulary as
     /// packs) + spoken direction lines for what geometry can't measure.

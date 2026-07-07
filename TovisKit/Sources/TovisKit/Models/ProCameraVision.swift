@@ -107,3 +107,35 @@ public struct ProSetCritiquePhotoNote: Decodable, Sendable, Identifiable {
     /// Concrete fix, present only when verdict is "retake".
     public let retakeTip: String?
 }
+
+// MARK: - Monthly image usage (GET /api/v1/pro/camera/usage)
+
+/// The authed pro's current-month AI-camera image allowance for a readout
+/// ("X of Y images left this month"). Mirrors `ProCameraUsage`
+/// (lib/pro/cameraQuota.ts). Metering is a calendar-month counter; images are
+/// analyzed in-flight and never stored, so there's no DB row to count.
+public struct ProCameraUsage: Decodable, Sendable {
+    /// Images analyzed this month (0 while metering is off — nothing counted).
+    public let used: Int
+    /// The plan-tier allowance (CAMERA_IMAGES_PER_MONTH).
+    public let baseQuota: Int
+    /// Admin-granted bonus images for this month.
+    public let bonus: Int
+    /// Effective allowance = baseQuota + bonus.
+    public let quota: Int
+    /// max(0, quota - used).
+    public let remaining: Int
+    /// Whether metering is active (ENABLE_MEMBERSHIP_ENFORCEMENT). When false,
+    /// `used`/`remaining` aren't yet meaningful — show the plan allowance only.
+    public let enforced: Bool
+
+    /// Fraction of the monthly allowance consumed (0…1), for a progress bar.
+    public var usedFraction: Double {
+        guard quota > 0 else { return 0 }
+        return min(1, Double(used) / Double(quota))
+    }
+}
+
+struct ProCameraUsageResponse: Decodable, Sendable {
+    let usage: ProCameraUsage
+}
