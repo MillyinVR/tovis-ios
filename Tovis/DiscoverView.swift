@@ -13,15 +13,41 @@ struct DiscoverView: View {
 
     private enum ViewMode { case map, list }
 
+    /// Discover's primary axis (web D2): a looks-first inspiration grid ("Tap any
+    /// look to book the pro who made it") vs. the geo pro-finder. Opens on looks.
+    private enum DiscoverMode { case looks, pros }
+
+    @State private var discoverMode: DiscoverMode = .looks
+
     @State private var query = ""
     @State private var categories: [DiscoverCategory] = []
     @State private var selectedCategory: DiscoverCategory?
     @State private var pros: [SearchProItem] = []
     @State private var activeProId: String?
-    @State private var viewMode: ViewMode = .list   // open on the grid; toggle to the map
+    @State private var viewMode: ViewMode = .list   // pro-mode inner toggle (grid ↔ map)
     @State private var loading = false
     @State private var errorMessage: String?
     @State private var searchToken = 0
+    /// Defer the pro search + geolocation until the pro-finder is first opened
+    /// (web parity — looks mode never geolocates).
+    @State private var didLoadPros = false
+
+    // Looks-first grid (D2). Ranked + category-filtered, cursor-paginated, with
+    // 1-tap Book (resolve the look's offering → BookingFlowView) and tag chips
+    // that open the web tag page in Safari — same conventions as the Looks feed.
+    @State private var looks: [LooksFeedItem] = []
+    @State private var looksCursor: String?
+    @State private var looksLoading = false
+    @State private var looksLoadingMore = false
+    @State private var didLoadLooks = false
+    @State private var trendingTags: [TrendingTag] = []
+    @State private var bookLaunch: DiscoverBookLaunch?
+    @State private var resolvingBookId: String?
+    @State private var tagWebFor: DiscoverTagLink?
+    /// Programmatic nav for the Book fallback (look has no bookable service) and
+    /// look/pro card taps.
+    @State private var navPath: [String] = []
+    @State private var looksToken = 0
 
     // Map state
     @State private var camera: MapCameraPosition = .region(Self.fallbackRegion)
@@ -59,19 +85,23 @@ struct DiscoverView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navPath) {
             ZStack(alignment: .top) {
                 BrandColor.bgPrimary.ignoresSafeArea()
 
-                Group {
-                    if viewMode == .map { mapLayer } else { listLayer }
-                }
+                if discoverMode == .looks {
+                    looksLayer
+                } else {
+                    Group {
+                        if viewMode == .map { mapLayer } else { listLayer }
+                    }
 
-                topControls
+                    topControls
 
-                if viewMode == .map, let pro = activePro {
-                    activeCard(pro)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                    if viewMode == .map, let pro = activePro {
+                        activeCard(pro)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
                 }
             }
             .navigationDestination(for: String.self) { proId in
@@ -84,10 +114,32 @@ struct DiscoverView: View {
             if categories.isEmpty {
                 categories = (try? await session.client.discover.categories()) ?? []
             }
-            location.request()
-            if pros.isEmpty { await runSearch() }
+            if !didLoadLooks { await loadLooks() }
+            if trendingTags.isEmpty {
+                trendingTags = (try? await session.client.discover.trendingTags()) ?? []
+            }
         }
+        .onChange(of: discoverMode) { enterMode() }
         .onChange(of: location.coordinate?.latitude) { recenterOnUser() }
+        .sheet(item: $bookLaunch) { launch in
+            BookingFlowView(
+                professionalId: launch.pro.id,
+                proName: launch.pro.displayName,
+                offering: launch.offering
+            )
+        }
+        .sheet(item: $tagWebFor) { link in
+            SafariView(url: link.url)
+        }
+    }
+
+    /// Lazily kick off the pro search + geolocation the first time the pro-finder
+    /// is opened (web parity — looks mode never geolocates).
+    private func enterMode() {
+        guard discoverMode == .pros, !didLoadPros else { return }
+        didLoadPros = true
+        location.request()
+        Task { await runSearch() }
     }
 
     // MARK: - Map
@@ -265,6 +317,10 @@ struct DiscoverView: View {
 
     private var topControls: some View {
         VStack(spacing: 10) {
+            HStack {
+                modeToggle
+                Spacer()
+            }
             HStack(spacing: 10) {
                 searchField
                 filterButton
@@ -276,6 +332,217 @@ struct DiscoverView: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
+    }
+
+    // MARK: - Mode toggle (Looks ↔ Find a pro) — web DiscoverModeToggle
+
+    private var modeToggle: some View {
+        HStack(spacing: 4) {
+            modeButton(.looks, label: "Looks", icon: "sparkles")
+            modeButton(.pros, label: "Find a pro", icon: "mappin.and.ellipse")
+        }
+        .padding(4)
+        .background(BrandColor.bgPrimary.opacity(0.55), in: Capsule())
+        .overlay(Capsule().stroke(.white.opacity(0.12), lineWidth: 1))
+    }
+
+    private func modeButton(_ mode: DiscoverMode, label: String, icon: String) -> some View {
+        let active = discoverMode == mode
+        return Button {
+            withAnimation(.easeInOut(duration: 0.18)) { discoverMode = mode }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: icon).font(.system(size: 11, weight: .bold))
+                Text(label.uppercased())
+                    .font(BrandFont.mono(11)).tracking(0.8)
+            }
+            .foregroundStyle(active ? BrandColor.bgPrimary : BrandColor.textSecondary)
+            .padding(.vertical, 6).padding(.horizontal, 11)
+            .background(active ? AnyShapeStyle(BrandColor.textPrimary) : AnyShapeStyle(.clear), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(active ? [.isSelected] : [])
+    }
+
+    // MARK: - Looks-first mode (web D2 LooksBookableGrid + TrendingTagsRail)
+
+    private var looksLayer: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .center) {
+                    Text("Discover")
+                        .font(BrandFont.display(26, .semibold)).italic()
+                        .foregroundStyle(BrandColor.textPrimary)
+                    Spacer()
+                    modeToggle
+                }
+
+                Text("Tap any look to book the pro who made it.")
+                    .font(BrandFont.body(13, .semibold))
+                    .foregroundStyle(BrandColor.textSecondary)
+
+                if !categories.isEmpty { categoryRail }
+                trendingRail
+
+                looksGrid
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 24)
+        }
+    }
+
+    private var trendingRail: some View {
+        Group {
+            if !trendingTags.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    gridSectionHeader("Trending tags")
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(trendingTags) { tag in
+                                Button { openTag(tag) } label: {
+                                    Text("#\(tag.display)")
+                                        .font(BrandFont.mono(11))
+                                        .foregroundStyle(BrandColor.textPrimary)
+                                        .padding(.vertical, 7).padding(.horizontal, 13)
+                                        .background(BrandColor.bgPrimary.opacity(0.3), in: Capsule())
+                                        .overlay(Capsule().stroke(BrandColor.accent.opacity(0.4), lineWidth: 1))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.horizontal, 2)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var looksGrid: some View {
+        if looksLoading && looks.isEmpty {
+            ProgressView().tint(BrandColor.accent)
+                .frame(maxWidth: .infinity).padding(.top, 60)
+        } else if looks.isEmpty {
+            VStack(spacing: 6) {
+                Text("No looks to book yet")
+                    .font(BrandFont.body(15, .semibold)).foregroundStyle(BrandColor.textPrimary)
+                Text("Try a different category, or switch to Find a pro to browse by location.")
+                    .font(BrandFont.body(13)).foregroundStyle(BrandColor.textMuted)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity).padding(.top, 60).padding(.horizontal, 20)
+        } else {
+            LazyVGrid(
+                columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
+                spacing: 10
+            ) {
+                ForEach(looks) { look in
+                    DiscoverLookCard(look: look, resolving: resolvingBookId == look.id) {
+                        Task { await startBooking(look) }
+                    }
+                }
+            }
+
+            if looksCursor != nil {
+                Button { Task { await loadMoreLooks() } } label: {
+                    Text(looksLoadingMore ? "Loading…" : "Load more")
+                        .font(BrandFont.mono(11)).tracking(0.8)
+                        .foregroundStyle(BrandColor.textPrimary)
+                        .frame(maxWidth: .infinity).frame(height: 44)
+                        .background(BrandColor.bgPrimary.opacity(0.25), in: Capsule())
+                        .overlay(Capsule().stroke(.white.opacity(0.15), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .disabled(looksLoadingMore)
+                .padding(.top, 8)
+            }
+        }
+    }
+
+    /// The active discover category as a slug for the looks feed (nil = all).
+    private var activeCategorySlug: String? {
+        guard let cat = selectedCategory, !cat.isAll else { return nil }
+        return cat.slug
+    }
+
+    private func selectCategory(_ cat: DiscoverCategory) {
+        selectedCategory = cat.isAll ? nil : cat
+        if discoverMode == .looks {
+            Task { await loadLooks() }
+        } else {
+            Task { await runSearch() }
+        }
+    }
+
+    /// The web tag page for a chip tap (mirrors the Looks feed's `tagURL`).
+    private func openTag(_ tag: TrendingTag) {
+        guard let slug = tag.slug.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let url = URL(string: "https://www.tovis.app/looks/tags/\(slug)") else { return }
+        tagWebFor = DiscoverTagLink(url: url)
+    }
+
+    private func loadLooks() async {
+        looksToken += 1
+        let token = looksToken
+        looksLoading = true
+        didLoadLooks = true
+        do {
+            let page = try await session.client.looks.feed(
+                category: activeCategorySlug, sort: "ranked", limit: 24
+            )
+            guard token == looksToken else { return }
+            looks = page.items
+            looksCursor = page.nextCursor
+        } catch {
+            guard token == looksToken else { return }
+            looks = []
+            looksCursor = nil
+        }
+        if token == looksToken { looksLoading = false }
+    }
+
+    private func loadMoreLooks() async {
+        guard let cursor = looksCursor, !looksLoadingMore else { return }
+        looksLoadingMore = true
+        defer { looksLoadingMore = false }
+        do {
+            let page = try await session.client.looks.feed(
+                category: activeCategorySlug, sort: "ranked", cursor: cursor, limit: 24
+            )
+            let seen = Set(looks.map(\.id))
+            looks.append(contentsOf: page.items.filter { !seen.contains($0.id) })
+            looksCursor = page.nextCursor
+        } catch {
+            // Best-effort — leave the current page intact on failure.
+        }
+    }
+
+    /// 1-tap Book from the grid — resolve the look's offering and open the
+    /// booking sheet preselected (web parity on the conversion). Falls back to the
+    /// pro profile when the look carries no service or the fetch fails.
+    private func startBooking(_ look: LooksFeedItem) async {
+        guard let pro = look.professional else { return }
+        guard resolvingBookId == nil else { return }
+        resolvingBookId = look.id
+        defer { resolvingBookId = nil }
+
+        func fallbackToProfile() {
+            if navPath.last != pro.id { navPath.append(pro.id) }
+        }
+
+        guard let serviceId = look.serviceId else { fallbackToProfile(); return }
+        do {
+            let profile = try await session.client.profiles.professional(id: pro.id)
+            guard let offering = profile.offerings.first(where: { $0.serviceId == serviceId }) else {
+                fallbackToProfile()
+                return
+            }
+            bookLaunch = DiscoverBookLaunch(pro: pro, offering: offering)
+        } catch {
+            fallbackToProfile()
+        }
     }
 
     private var searchField: some View {
@@ -353,8 +620,7 @@ struct DiscoverView: View {
                     let active = selectedCategory?.identity == cat.identity
                         || (selectedCategory == nil && cat.isAll)
                     Button {
-                        selectedCategory = cat.isAll ? nil : cat
-                        Task { await runSearch() }
+                        selectCategory(cat)
                     } label: {
                         Text(cat.isAll ? "All" : cat.label)
                             .font(BrandFont.body(13, active ? .semibold : .regular))
@@ -764,5 +1030,113 @@ private struct ProGridCard: View {
         if pro.supportsMobile { parts.append("Mobile") }
         if let d = pro.distanceMiles { parts.append("\(String(format: "%.1f", d)) mi") }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+}
+
+// MARK: - Looks-first mode plumbing (web D2 LooksBookableGrid)
+
+/// Carries the resolved offering for the booking sheet. Identified by the pro so
+/// `.sheet(item:)` re-presents cleanly per tap.
+private struct DiscoverBookLaunch: Identifiable {
+    let pro: LooksProfessional
+    let offering: ProOffering
+    var id: String { pro.id }
+}
+
+/// A tapped trending-tag chip's web destination, wrapped for `.sheet(item:)`.
+private struct DiscoverTagLink: Identifiable {
+    let url: URL
+    var id: String { url.absoluteString }
+}
+
+/// A bookable look tile — image, tag + price badges, pro name/service, and a
+/// tap-anywhere-to-book gesture ("Tap any look to book the pro who made it").
+/// Mirrors web LooksBookableGrid's card.
+private struct DiscoverLookCard: View {
+    let look: LooksFeedItem
+    let resolving: Bool
+    let onBook: () -> Void
+
+    private var proName: String { look.professional?.displayName ?? "Pro" }
+    private var tag: String? { look.category ?? look.serviceName }
+    private var serviceLabel: String? { look.serviceName ?? look.caption }
+
+    var body: some View {
+        Button(action: onBook) {
+            VStack(alignment: .leading, spacing: 0) {
+                ZStack(alignment: .topLeading) {
+                    Group {
+                        if let url = (look.thumbUrl ?? look.url).flatMap(URL.init(string:)) {
+                            AsyncImage(url: url) { img in
+                                img.resizable().scaledToFill()
+                            } placeholder: { CardSheen() }
+                        } else {
+                            CardSheen()
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .aspectRatio(3.0 / 4.0, contentMode: .fill)
+                    .clipped()
+
+                    LinearGradient(colors: [.clear, BrandColor.bgPrimary.opacity(0.6)],
+                                   startPoint: .center, endPoint: .bottom)
+                        .allowsHitTesting(false)
+
+                    if let tag {
+                        Text(tag.uppercased())
+                            .font(BrandFont.mono(9)).tracking(1)
+                            .foregroundStyle(BrandColor.textPrimary)
+                            .padding(.vertical, 4).padding(.horizontal, 7)
+                            .background(BrandColor.bgPrimary.opacity(0.7),
+                                        in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            .padding(6)
+                    }
+
+                    VStack {
+                        HStack {
+                            Spacer()
+                            if let price = look.priceLabel {
+                                Text("FROM \(price)")
+                                    .font(BrandFont.mono(9)).tracking(0.6)
+                                    .foregroundStyle(BrandColor.textPrimary)
+                                    .padding(.vertical, 4).padding(.horizontal, 7)
+                                    .background(BrandColor.bgPrimary.opacity(0.7), in: Capsule())
+                            }
+                        }
+                        Spacer()
+                        HStack {
+                            Spacer()
+                            HStack(spacing: 5) {
+                                if resolving {
+                                    ProgressView().controlSize(.mini).tint(BrandColor.onAccent)
+                                }
+                                Text("Book")
+                                    .font(BrandFont.mono(10)).tracking(0.6)
+                                    .foregroundStyle(BrandColor.onAccent)
+                            }
+                            .padding(.vertical, 6).padding(.horizontal, 12)
+                            .background(BrandColor.accent, in: Capsule())
+                        }
+                    }
+                    .padding(6)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(proName)
+                        .font(BrandFont.body(12, .black)).foregroundStyle(BrandColor.textPrimary).lineLimit(1)
+                    if let serviceLabel {
+                        Text(serviceLabel)
+                            .font(BrandFont.body(11, .semibold)).foregroundStyle(BrandColor.textMuted).lineLimit(1)
+                    }
+                }
+                .padding(10)
+            }
+            .background(BrandColor.bgSecondary)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.white.opacity(0.1), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Book \(serviceLabel ?? "this look") with \(proName)")
     }
 }

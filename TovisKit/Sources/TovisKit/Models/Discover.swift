@@ -73,3 +73,20 @@ public struct DiscoverCategory: Decodable, Sendable, Hashable {
     public var identity: String { id ?? "all" }
     public var isAll: Bool { kind == "ALL" }
 }
+
+// MARK: - GET /api/v1/discover/trending-tags
+
+struct TrendingTagsResponse: Decodable, Sendable {
+    let tags: [TrendingTag]
+}
+
+/// A windowed most-used look tag for the Discover surface (social-first D2).
+/// `slug` is the URL key for the web tag page (/looks/tags/{slug}); `display` is
+/// the label; `lookCount` is feed-visible looks carrying it in the window.
+/// Mirrors `TrendingTagDto` (lib/discovery/trendingTags.ts).
+public struct TrendingTag: Decodable, Sendable, Identifiable, Hashable {
+    public let slug: String
+    public let display: String
+    public let lookCount: Int
+    public var id: String { slug }
+}

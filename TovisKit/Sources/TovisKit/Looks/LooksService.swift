@@ -19,12 +19,14 @@ public final class LooksService: Sendable {
 
     /// GET /api/v1/looks. Mirrors the web tabs: the default "Looks" feed (no
     /// args), Following (`following`), Spotlight (`filter: "spotlight"`), or a
-    /// service category (`category` slug). `cursor` is the prior page's
-    /// `nextCursor`.
+    /// service category (`category` slug). `sort` selects the ordering
+    /// (`"ranked"` for the Discover bookable grid, default recency). `cursor` is
+    /// the prior page's `nextCursor`.
     public func feed(
         filter: String? = nil,
         category: String? = nil,
         following: Bool = false,
+        sort: String? = nil,
         cursor: String? = nil,
         limit: Int = 12
     ) async throws -> FeedPage {
@@ -32,6 +34,7 @@ public final class LooksService: Sendable {
         if following { query.append(URLQueryItem(name: "following", value: "true")) }
         if let filter { query.append(URLQueryItem(name: "filter", value: filter)) }
         if let category { query.append(URLQueryItem(name: "category", value: category)) }
+        if let sort { query.append(URLQueryItem(name: "sort", value: sort)) }
         if let cursor { query.append(URLQueryItem(name: "cursor", value: cursor)) }
 
         let response: LooksFeedResponse = try await api.request("/looks", query: query)

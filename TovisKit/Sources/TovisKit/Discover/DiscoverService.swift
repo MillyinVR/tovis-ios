@@ -61,4 +61,12 @@ public final class DiscoverService: Sendable {
         let response: DiscoverCategoriesResponse = try await api.request("/discover/categories")
         return response.categories
     }
+
+    /// GET /api/v1/discover/trending-tags — windowed most-used look tags
+    /// (social-first D2). Chips link to the web tag page (/looks/tags/{slug}),
+    /// the same destination the feed's tag chips use. Public endpoint.
+    public func trendingTags() async throws -> [TrendingTag] {
+        let response: TrendingTagsResponse = try await api.request("/discover/trending-tags")
+        return response.tags
+    }
 }

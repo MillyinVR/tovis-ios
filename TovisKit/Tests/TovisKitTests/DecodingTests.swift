@@ -971,6 +971,18 @@ func fixture(_ name: String) throws -> Data {
         #expect(client.viewerSaved == true)
     }
 
+    // GET /api/v1/discover/trending-tags — Fixtures/discoverTrendingTags.json.
+    // The Discover looks-first trending-tags rail (social-first D2).
+    @Test func decodesDiscoverTrendingTags() throws {
+        let res = try JSONDecoder().decode(TrendingTagsResponse.self, from: fixture("discoverTrendingTags"))
+        #expect(res.tags.count == 3)
+        let top = try #require(res.tags.first)
+        #expect(top.slug == "balayage")
+        #expect(top.display == "balayage")
+        #expect(top.lookCount == 42)
+        #expect(res.tags[1].display == "curtainBangs")
+    }
+
     // GET /api/v1/search/pros — Fixtures/searchPros.json (schema-validated).
     @Test func decodesSearchPros() throws {
         let res = try JSONDecoder().decode(SearchProsResponse.self, from: fixture("searchPros"))
