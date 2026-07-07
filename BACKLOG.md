@@ -23,6 +23,7 @@ Start the stack (`docker start tovis-dev-postgres` → `cd ~/Dev/tovis-app && pn
 ## 2. Launch train (outshine step-9)
 - [ ] **(Tori/Xcode)** Archive → Validate → Upload (+ version/build bump).
 - [ ] Optional: D3 board viewer on iOS.
+- [ ] Board-creation context parity (web PR tovis-app#511, personalization spec §7–8): board type chips + event date + skippable chip questions in the board create/save-to-board flow, and the "N days until …" countdown on a board. API is additive (`type`/`eventDate`/`answers` on POST/PATCH `/api/v1/boards*`; question sets in `tovis-app/lib/boards/context.ts` are the SSOT) — iOS keeps working untouched, boards it creates default to GENERAL, so parity is deferred, not blocking.
 
 ## 3. Pro-side build work
 - [ ] **Workstream 2 — multiple co-equal BASE services per booking**: core backend invariant change; investigate every `baseCount===1` assumption and get sign-off before implementing.
