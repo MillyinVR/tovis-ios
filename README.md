@@ -1,91 +1,99 @@
 # Tovis iOS
 
-Native SwiftUI client for the Tovis backend (the `tovis-app` Next.js API). Talks
-to the backend purely over its versioned HTTP API (`/api/v1`). No shared code
-with the backend repo — the contract is the wire schema
-(`schema/api/tovis-api.schema.json` in `tovis-app`).
+Native SwiftUI app for the Tovis backend (the `tovis-app` Next.js API). Talks to
+the backend purely over its versioned HTTP API (`/api/v1`) — no shared code; the
+contract is the wire schema (`tovis-app/schema/api/tovis-api.schema.json`). The app
+is one shell for both roles: the signed-in JWT's **acting role** (`CLIENT | PRO |
+ADMIN`) picks the client vs pro tab bar. Client app is feature-complete + on
+TestFlight; the pro side + AI camera are the active track (see `BACKLOG.md`).
+
+## Two repos
+
+| Repo | Path | Role |
+|------|------|------|
+| Backend | `~/Dev/tovis-app` | Next.js 16 API — the `/api/v1` surface. |
+| iOS app | `~/Dev/tovis-ios` | This repo. SwiftUI app + `TovisKit` package. HTTP only. |
 
 ## Layout
 
 ```
 tovis-ios/
-├── TovisKit/          ← reusable, UI-free core (a local Swift Package)
+├── TovisKit/                 ← UI-free core (local Swift Package). `swift build`/`swift test` pass.
 │   └── Sources/TovisKit/
-│       ├── Config/        TovisConfig (base URL / environments)
-│       ├── Networking/    APIClient, APIError
-│       ├── Auth/          TokenStore (Keychain), AuthService, token refresh
-│       ├── Devices/       DeviceService (push token registration)
-│       ├── Models/        Codable models mirroring /api/v1 DTOs
-│       └── TovisClient    the wired-up entry point
-├── AppFiles/          ← SwiftUI files to drop INTO the Xcode app target
-└── Tovis.xcodeproj    ← YOU create this in Xcode (step 1 below)
+│       ├── Config/           TovisConfig — baseURL (.local=localhost / .production=www.tovis.app) + supabase creds
+│       ├── Networking/       APIClient (bearer auth, 401→refresh→retry, query+headers), APIError
+│       ├── Auth/             TokenStore (Keychain), AuthService (login/apple/phoneLogin/refresh/logout/switchWorkspace), SessionToken (decodes userId + acting-role from the JWT)
+│       ├── Live/             SupabaseRealtime (dependency-free Phoenix ws → live-sync)
+│       ├── Models/           Codable wire models mirroring /api/v1 DTOs
+│       ├── Tests/            DecodingTests + Fixtures/*.json (shared with the contract test)
+│       └── TovisClient.swift wires it all + a stable per-install deviceId
+├── Tovis/                    ← Xcode app target (synchronized folder — files dropped here auto-add)
+├── scripts/contract/         Node+ajv: validate Fixtures/*.json vs tovis-app's generated schema (see its README)
+└── tovis-ios.xcodeproj       ⚠️ IPHONEOS_DEPLOYMENT_TARGET pinned to 17.0 (matches TovisKit .iOS(.v17))
 ```
 
-`TovisKit` already builds and its tests pass (`cd TovisKit && swift test`).
+**TovisKit services** (one per surface, all on `TovisClient`): `auth · devices · home ·
+bookings · profiles · me · messages · search · booking · checkout · looks · discover ·
+notifications · addresses · places` + pro services (`proSession · proCalendar`), plus
+`client.currentUserId()` (decodes the JWT). Add a screen → add a service + `Models/*` +
+a fixture + decode test + a contract entry. Reuse `BrandColor/BrandFont/Theme`, `LooksMark`,
+the footer `NavItemLabel/BadgeDot`, `APIClient`, `Formatters`, upload helpers — **no
+duplicated logic** (CLAUDE.md house rule), **web parity 1:1**.
 
-## Setup
+## Backend env / DB (so the app actually loads)
 
-### 1. Create the Xcode app project (you do this in Xcode)
+- **API base URL is build-type driven** (`Tovis/ContentView.swift`): **Debug → `.local`
+  (localhost:3000)**, **Release → `.production` (`https://www.tovis.app/api/v1`)**. Use
+  `www.` — the apex 307-redirects and a cross-host redirect can drop the `Authorization` header.
+- **Local dev DB:** `cd ~/Dev/tovis-app && pnpm dev` runs in development mode → loads
+  `.env.development.local` → `DATABASE_URL=postgresql://postgres:postgres@localhost:5434/tovis_dev`
+  (Docker `tovis-dev-postgres`). The iOS sim (Debug) + local web share this **local** DB; prod
+  web uses prod Supabase. Start it with `docker start tovis-dev-postgres` (or `pnpm db:dev:up`).
+- **If signed-in endpoints 500 with "table … does not exist"** the local schema is stale:
+  `cd ~/Dev/tovis-app && DATABASE_URL=…5434…/tovis_dev DIRECT_URL=…5434…/tovis_dev npx prisma db push --skip-generate --accept-data-loss`.
+- **Seed login:** `client@tovis.app` / `password123` (CLIENT, local only — not in prod, so
+  Release/TestFlight needs a real prod account via web signup, Apple, or phone-OTP). Native
+  email/password **sign-UP** is web-only (captcha/TOS/SMS-consent/ZIP gates); Apple + phone-OTP
+  are the native account-creation paths.
 
-Xcode can't be scaffolded cleanly from the CLI, so create the app shell yourself:
+## Build / verify
 
-1. **Xcode → File → New → Project… → iOS → App.**
-2. Product Name: **Tovis**  ·  Interface: **SwiftUI**  ·  Language: **Swift**.
-3. Organization Identifier: your reverse-domain (e.g. `me.tovis`) → Bundle ID
-   becomes `me.tovis.Tovis`. **Write this Bundle ID down** — it's the
-   `APNS_BUNDLE_ID` the backend push config needs later.
-4. **Save it INTO this folder** (`~/Dev/tovis-ios`). Xcode creates
-   `Tovis.xcodeproj` and a `Tovis/` source folder next to `TovisKit/`.
+```bash
+# iOS unit + contract
+cd ~/Dev/tovis-ios/TovisKit   && swift test
+cd ~/Dev/tovis-ios/scripts/contract && npm install && npm run validate   # fixtures vs backend schema
 
-### 2. Add TovisKit as a local package
-
-In Xcode: **File → Add Package Dependencies… → Add Local… →** select the
-`TovisKit` folder → add the **TovisKit** library to the **Tovis** target.
-
-### 3. Add the app files
-
-Move the four files from `AppFiles/` into your `Tovis/` app-target folder:
-
-- `SessionModel.swift`, `LoginView.swift`, `RootView.swift` — add as-is.
-- `TovisApp.swift.example` — use it to **replace** the `TovisApp.swift` Xcode
-  generated (it just creates the `SessionModel` and injects it). Delete the
-  template `ContentView.swift`.
-
-(With Xcode 16+ synchronized folders, files you drop into `Tovis/` on disk
-appear in the project automatically.)
-
-### 4. Allow localhost during development (ATS)
-
-To hit `http://localhost:3000` from the simulator, add an App Transport Security
-exception. In the target's **Info** tab add:
-
-```
-App Transport Security Settings (Dictionary)
-  └─ Allow Local Networking (Boolean) = YES
+# iOS app build (real toolchain, unsigned)
+cd ~/Dev/tovis-ios && xcodebuild build -scheme Tovis -project tovis-ios.xcodeproj \
+  -destination 'generic/platform=iOS Simulator' -configuration Debug CODE_SIGNING_ALLOWED=NO
 ```
 
-Then run the backend (`cd ../tovis-app && npm run dev`), build & run the app in
-the simulator, and sign in with a real account. `TovisConfig.local` points at
-`http://localhost:3000/api/v1`. Switch `SessionModel(config:)` to `.production`
-(set the real URL in `TovisConfig.swift`) for device/release builds.
+CLI type-check of the app target against the simulator SDK (catches SwiftUI/type errors
+without a full build): emit a TovisKit simulator module, then `-typecheck` the app sources
+against it (`arm64-apple-ios17.0-simulator`).
 
-## What works now (matches the audited backend)
+## Gotchas / lessons
 
-- **Sign in** → `POST /api/v1/auth/login`, JWT persisted in the Keychain.
-- **Bearer auth** on every request; **401 → auto token refresh → retry** via
-  `POST /api/v1/auth/refresh`.
-- **Per-device id** generated and sent on login (for per-device revocation).
-- **Push registration** scaffolded (`DeviceService` → `POST /api/v1/devices`) —
-  wire it to APNs once you add the Push Notifications capability.
+- **Deployment target:** the project once shipped `IPHONEOS_DEPLOYMENT_TARGET = 27.0` (> the
+  installed SDK's max) → a plain simulator build reports "Supported platforms … is empty" and
+  silently produces nothing. Kept at `17.0`; watch for that message if a future Xcode bumps it.
+- **Native MUST be cookieless.** The login response sets a `tovis_token` cookie for web;
+  `URLSession.shared`'s shared jar would store + resend it, and the backend's CSRF gate only
+  exempts native requests that carry **no cookie** → a stale cookie → `403 INVALID_ORIGIN` on the
+  next login. `TovisClient` runs on a cookieless `URLSession` — don't reintroduce `.shared`.
+- **Wire-contract test = the DTO-drift guard.** `scripts/contract` (ajv) validates the shared
+  fixtures against tovis-app's generated schema; the same fixtures are decoded by `swift test`.
+  A backend DTO change fails loudly in one of the two. ⚠️ A DTO **JSDoc-comment edit** changes the
+  generated schema — the backend must re-run `npm run gen:api-schema` after any DTO edit.
+- **Xcode synchronized folder:** new files in `Tovis/` join `xcodebuild` immediately, but open the
+  project once so Xcode itself registers them.
+- **Push/APNs** is app-wired + backend-built but needs the Xcode Push capability + operator APNs
+  creds to actually fire — see `tovis-app/docs/mobile/push-go-live-runbook.md` (`APNS_ENV=production`
+  for TestFlight/App Store, `sandbox` for a dev build from Xcode).
 
-## Next steps (see the backend handoff: `tovis-app/docs/mobile/native-readiness-handoff.md`)
+## Key references
 
-1. Add typed services + models for the screens you build first (availability,
-   holds, bookings, search) — the DTOs are in the wire schema; mirror them in
-   `TovisKit/Models/`.
-2. Push: add the **Push Notifications** capability, register for APNs, call
-   `DeviceService.register(apnsToken:deviceId:)`. Operator sets APNs creds in
-   Vercel (backend runbook: `docs/mobile/push-go-live-runbook.md`).
-3. Payments: open Stripe Checkout URLs in `ASWebAuthenticationSession`; set up
-   **Universal Links** to catch the return (backend Tier 3.2).
-4. Replace the browser Turnstile signup defense with **App Attest** (backend Tier 4.1).
+- Open work: `BACKLOG.md` · pro API contracts: `docs/PRO-BACKEND-CONTRACTS.md`
+- Backend native-readiness + push runbook: `tovis-app/docs/mobile/`
+- Brand source of truth: `tovis-app/lib/brand/brands/tovis.ts`, `lib/brand/eyeSvg.ts`
+- Wire contract: `tovis-app/schema/api/tovis-api.schema.json` (+ `lib/dto/`)
