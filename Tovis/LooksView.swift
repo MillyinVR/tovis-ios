@@ -50,6 +50,8 @@ struct LooksView: View {
 
     @State private var commentsFor: LooksFeedItem?
     @State private var saveFor: LooksFeedItem?
+    /// A tapped tag chip → opens its web tag page (/looks/tags/{slug}) in Safari.
+    @State private var tagWebFor: TagWebLink?
 
     /// Programmatic navigation to a pro profile (avatar tap + the BOOK fallback
     /// when a look has no bookable service to preselect).
@@ -132,6 +134,17 @@ struct LooksView: View {
                 offering: launch.offering
             )
         }
+        .sheet(item: $tagWebFor) { link in
+            SafariView(url: link.url)
+        }
+    }
+
+    /// The web tag page for a chip tap. Mirrors `shareURL`'s origin convention.
+    private func tagURL(_ tag: LooksTag) -> URL? {
+        guard let slug = tag.slug.addingPercentEncoding(
+            withAllowedCharacters: .urlPathAllowed
+        ) else { return nil }
+        return URL(string: "https://www.tovis.app/looks/tags/\(slug)")
     }
 
     // MARK: - Header (Looks serif title + tab strip)
@@ -198,7 +211,10 @@ struct LooksView: View {
                         onFollow: { Task { await toggleFollow(item) } },
                         onShared: { Task { await recordShare(item) } },
                         onBook: { Task { await startBooking(item) } },
-                        onToggleMute: { muted.toggle() }
+                        onToggleMute: { muted.toggle() },
+                        onOpenTag: { tag in
+                            if let url = tagURL(tag) { tagWebFor = TagWebLink(url: url) }
+                        }
                     )
                     .containerRelativeFrame([.horizontal, .vertical])
                     .onAppear { Task { await loadMoreIfNeeded(at: index, total: items.count) } }
@@ -399,6 +415,12 @@ private struct BookLaunch: Identifiable {
     var id: String { pro.id }
 }
 
+/// A tapped tag chip's web destination, wrapped so `.sheet(item:)` can present it.
+private struct TagWebLink: Identifiable {
+    let url: URL
+    var id: String { url.absoluteString }
+}
+
 // MARK: - One full-screen slide
 
 private struct LookSlide: View {
@@ -422,6 +444,8 @@ private struct LookSlide: View {
     let onShared: () -> Void
     let onBook: () -> Void
     let onToggleMute: () -> Void
+    /// A tag chip tap → open its web tag page (social-first D1).
+    let onOpenTag: (LooksTag) -> Void
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -563,6 +587,25 @@ private struct LookSlide: View {
                         .padding(.vertical, 5).padding(.horizontal, 11)
                         .background(.ultraThinMaterial, in: Capsule())
                         .overlay(Capsule().stroke(BrandColor.accent.opacity(0.5), lineWidth: 1))
+                }
+            }
+
+            // Tappable hashtag/style tags (social-first D1) → the web tag page.
+            // Capped so the overlay stays legible; the full set lives on the web.
+            if !item.tags.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(item.tags.prefix(3)) { tag in
+                        Button { onOpenTag(tag) } label: {
+                            Text("#\(tag.display)")
+                                .font(BrandFont.mono(11))
+                                .tracking(0.6)
+                                .foregroundStyle(.white.opacity(0.92))
+                                .padding(.vertical, 5).padding(.horizontal, 11)
+                                .background(.ultraThinMaterial, in: Capsule())
+                                .overlay(Capsule().stroke(BrandColor.accent.opacity(0.35), lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             }
         }

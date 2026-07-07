@@ -36,6 +36,13 @@ public struct LooksFeedItem: Decodable, Sendable, Identifiable {
     /// Opt-in before/after pairing on the primary image → the reveal slider.
     public let before: LooksPairedBefore?
 
+    /// Non-banned hashtag / style tags (social-first D1). Decoded optionally so an
+    /// older cached payload without the key still decodes; read `tags` to render.
+    private let tagsRaw: [LooksTag]?
+
+    /// Tappable hashtag/style tags for this look (never nil for the caller).
+    public var tags: [LooksTag] { tagsRaw ?? [] }
+
     private enum CodingKeys: String, CodingKey {
         case id, url, thumbUrl, mediaType, caption, createdAt
         case professional, clientAuthor
@@ -43,6 +50,7 @@ public struct LooksFeedItem: Decodable, Sendable, Identifiable {
         case viewerLiked, viewerSaved, viewerFollows
         case serviceId, serviceName, category, priceStartingAt
         case before
+        case tagsRaw = "tags"
     }
 
     public var isVideo: Bool { mediaType.uppercased() == "VIDEO" }
@@ -129,6 +137,15 @@ public struct LooksPairedBefore: Decodable, Sendable {
         let raw = fullUrl ?? thumbUrl
         return raw.flatMap(URL.init(string:))
     }
+}
+
+/// A user-facing hashtag / style tag on a look (social-first D1). `slug` is the
+/// URL key for the web tag page (/looks/tags/{slug}); `display` is the label.
+/// Mirrors `LooksTagDto`.
+public struct LooksTag: Decodable, Sendable, Identifiable, Hashable {
+    public let slug: String
+    public let display: String
+    public var id: String { slug }
 }
 
 // MARK: - Categories (GET /api/v1/looks/categories)
