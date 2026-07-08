@@ -170,38 +170,17 @@ public final class ProMediaService: Sendable {
         _ data: Data, bucket: String, path: String, token: String,
         contentType: String, upsert: Bool
     ) async throws {
-        guard let supabaseURL, let supabaseKey else {
-            throw APIError.transport("Storage configuration missing.")
-        }
-        var components = URLComponents(
-            url: supabaseURL.appendingPathComponent(
-                "storage/v1/object/upload/sign/\(bucket)/\(path)"
-            ),
-            resolvingAgainstBaseURL: false
+        try await SupabaseSignedUpload.put(
+            session: uploadSession,
+            supabaseURL: supabaseURL,
+            supabaseKey: supabaseKey,
+            data: data,
+            bucket: bucket,
+            path: path,
+            token: token,
+            contentType: contentType,
+            upsert: upsert
         )
-        components?.queryItems = [URLQueryItem(name: "token", value: token)]
-        guard let url = components?.url else {
-            throw APIError.transport("Bad upload URL.")
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "PUT"
-        request.setValue(supabaseKey, forHTTPHeaderField: "apikey")
-        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
-        request.setValue(upsert ? "true" : "false", forHTTPHeaderField: "x-upsert")
-        request.httpBody = data
-
-        let (respData, response): (Data, URLResponse)
-        do {
-            (respData, response) = try await uploadSession.data(for: request)
-        } catch {
-            throw APIError.transport(String(describing: error))
-        }
-        guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
-        guard (200..<300).contains(http.statusCode) else {
-            let message = String(data: respData, encoding: .utf8)
-            throw APIError.server(status: http.statusCode, message: message, code: nil)
-        }
     }
 
     /// Step 3 — record the MediaAsset against the booking + phase. Idempotent on

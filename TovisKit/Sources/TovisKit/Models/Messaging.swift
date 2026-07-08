@@ -170,6 +170,15 @@ public struct MessageAttachment: Decodable, Sendable, Identifiable {
 
 struct SendMessageRequest: Encodable, Sendable {
     let body: String
+    /// media-private storage paths (from POST .../uploads) to attach. `nil` when
+    /// there are none, so the encoded body stays byte-identical for text-only
+    /// sends (synthesized `encodeIfPresent` omits the key).
+    let attachments: [String]?
+
+    init(body: String, attachments: [String]? = nil) {
+        self.body = body
+        self.attachments = attachments
+    }
 }
 
 struct CreateMessageResponse: Decodable, Sendable {
@@ -181,6 +190,26 @@ public struct CreatedMessage: Decodable, Sendable, Identifiable {
     public let body: String?
     public let createdAt: String
     public let senderUserId: String
+    /// The message's attachments, with freshly-signed render URLs — so an image
+    /// message renders immediately without waiting for the next poll. Optional so
+    /// pre-field fixtures still decode; the live API always sends it.
+    public let attachments: [MessageAttachment]?
+}
+
+// MARK: - Attachment upload
+
+/// POST /api/v1/messages/threads/{id}/uploads response — a presigned,
+/// thread-scoped, media-private upload target for a message image attachment.
+public struct MessageUploadInit: Decodable, Sendable {
+    public let bucket: String
+    public let path: String
+    public let token: String
+    public let signedUrl: String?
+}
+
+struct MessageUploadInitRequest: Encodable, Sendable {
+    let contentType: String
+    let size: Int
 }
 
 // MARK: - Unread count
