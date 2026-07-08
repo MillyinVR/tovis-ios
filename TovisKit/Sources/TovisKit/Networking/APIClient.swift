@@ -150,6 +150,10 @@ public final class APIClient: Sendable {
         var request = URLRequest(url: url)
         request.httpMethod = method.rawValue
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        // Marks the request as coming from the native app. The backend uses this
+        // to route signup through the App Attest gate instead of Turnstile (which
+        // native can't render) — see lib/auth/appAttest.ts.
+        request.setValue("ios", forHTTPHeaderField: "x-tovis-native")
 
         if let body {
             request.httpBody = body
