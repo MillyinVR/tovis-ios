@@ -60,6 +60,8 @@ public final class TovisClient: Sendable {
     public let proReferrals: ProReferralsService
     /// PRO workspace — account policy settings (reminder cadence, no-show fees).
     public let proSettings: ProSettingsService
+    /// PRO workspace — onboarding readiness ("am I bookable yet?" + blockers).
+    public let proReadiness: ProReadinessService
     public let tokenStore: TokenStore
 
     /// Stable per-install id. Persisted in the Keychain-backed store's UserDefaults
@@ -125,6 +127,7 @@ public final class TovisClient: Sendable {
         self.proLooks = ProLooksService(api: api)
         self.proReferrals = ProReferralsService(api: api)
         self.proSettings = ProSettingsService(api: api)
+        self.proReadiness = ProReadinessService(api: api)
     }
 
     /// The signed-in user's id, decoded from the stored JWT. Works on a cold
