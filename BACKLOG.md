@@ -128,10 +128,11 @@ because the thread list DTO omitted participant user ids. Web + backend counterp
   (thread detail); iOS decodes `isViewerPro` → `MessageThread.counterpartyName/AvatarUrl`
   (rows + thread title + neutral empty-state); read receipts ("Read"), Today/Yesterday/date
   separators, optimistic send + "Failed · Retry". Web extracted a shared counterparty helper.
-- [ ] **M2 — realtime on the messages screens**: iOS should subscribe to its own
-  `user:{id}` Supabase channel (topic `messages`) and refetch, keeping the subscription
-  live IN the inbox + thread (web's `LiveRefresh` isn't even mounted on `/messages*` — a
-  gap to close on web too). Cuts the 15s/30s poll latency.
+- [x] **M2 — realtime on the messages screens** — ALREADY DONE on iOS (no PR needed). The
+  app-global `user:{id}` Realtime subscriber (commit `5033dc0`, `ContentView.startRealtime`)
+  bumps `refreshTick` on any `changed` broadcast, and both `InboxView` and `ThreadView` observe
+  it — so realtime already reaches the messages screens. The 30s inbox / 15s thread polls remain
+  as a fail-open safety net. The real M2 gap was on web (shipped `tovis-app #533`).
 - [ ] **M3 — inbox filters + context eyebrows**: mirror web's 4 filter tabs
   (All/Bookings/Waitlists/Pros) + per-row context eyebrow (booking time / waitlist status /
   service name). (Folds in the A6 inbox-filter item.)
