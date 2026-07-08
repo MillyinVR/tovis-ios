@@ -15,11 +15,15 @@ public final class MessagesService: Sendable {
         return response.threads
     }
 
-    /// GET /api/v1/messages/threads/{id} → the latest page of messages (ascending).
+    /// GET /api/v1/messages/threads/{id} → the latest page of messages (ascending)
+    /// plus the counterparty's last-read stamp for the sender's read receipt.
     /// (v1 loads the most recent page; cursor paging can come later.)
-    public func messages(threadId: String) async throws -> [Message] {
+    public func messages(threadId: String) async throws -> MessageThreadPage {
         let response: MessageThreadPageResponse = try await api.request("/messages/threads/\(threadId)")
-        return response.messages
+        return MessageThreadPage(
+            messages: response.messages,
+            counterpartyLastReadAt: response.thread?.counterpartyLastReadAt
+        )
     }
 
     /// POST /api/v1/messages/threads/{id} → send a text message.

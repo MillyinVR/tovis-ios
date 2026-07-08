@@ -14,6 +14,7 @@
       "client": { "id": "cli_1", "firstName": "Amara", "lastName": "Reyes", "avatarUrl": null },
       "professional": { "id": "pro_1", "businessName": "Plume Studio", "avatarUrl": null },
       "participants": [ { "lastReadAt": "2026-06-27T18:00:00.000Z" } ],
+      "isViewerPro": true,
       "_count": { "messages": 6 }
     }
   ]

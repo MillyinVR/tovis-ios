@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "thread": { "id": "thr_1" },
+  "thread": { "id": "thr_1", "isViewerPro": true, "counterpartyLastReadAt": "2026-06-27T18:35:00.000Z" },
   "messages": [
     {
       "id": "msg_1",

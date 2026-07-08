@@ -22,6 +22,11 @@ public struct MessageThread: Decodable, Sendable, Identifiable {
     public let professional: MessageProPreview
     /// Scoped to the current user by the backend, so `first` is *my* read state.
     public let participants: [MessageParticipantRead]
+    /// Whether the viewer is this thread's professional — derived server-side from
+    /// the viewer's user id (dual-role/admin safe), NOT the app's acting tab. The
+    /// counterparty is the client when true, the pro when false. This is the only
+    /// signal the list payload carries for picking whose name/avatar to show.
+    public let isViewerPro: Bool
 
     /// Unread for me when the last message is newer than my last-read stamp.
     /// Both are backend `toISOString()` values, so lexical compare == chronological.
@@ -30,6 +35,16 @@ public struct MessageThread: Decodable, Sendable, Identifiable {
         guard let mine = participants.first?.lastReadAt else { return true }
         return last > mine
     }
+
+    /// The other party's display name — client to a pro, pro to a client.
+    public var counterpartyName: String {
+        isViewerPro ? client.displayName : professional.displayName
+    }
+
+    /// The other party's avatar url — client to a pro, pro to a client.
+    public var counterpartyAvatarUrl: String? {
+        isViewerPro ? client.avatarUrl : professional.avatarUrl
+    }
 }
 
 public struct MessageClientPreview: Decodable, Sendable, Identifiable {
@@ -37,6 +52,16 @@ public struct MessageClientPreview: Decodable, Sendable, Identifiable {
     public let firstName: String?
     public let lastName: String?
     public let avatarUrl: String?
+
+    /// First + last, trimmed; falls back to "Client" (matches web `formatPersonName`
+    /// with the 'Client' fallback in resolveThreadCounterparty).
+    public var displayName: String {
+        let name = [firstName, lastName]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        return name.isEmpty ? "Client" : name
+    }
 }
 
 public struct MessageProPreview: Decodable, Sendable, Identifiable {
@@ -57,10 +82,29 @@ public struct MessageParticipantRead: Decodable, Sendable {
 // MARK: - Thread messages
 
 struct MessageThreadPageResponse: Decodable, Sendable {
+    /// Optional so pre-field fixtures still decode; the live API always sends it.
+    let thread: MessageThreadPageThread?
     let messages: [Message]
     let nextCursor: String?
     let hasMore: Bool
     let take: Int
+}
+
+/// The thread envelope on GET /messages/threads/{id} — carries the viewer role
+/// and the counterparty's read stamp (for the sender's read receipt).
+public struct MessageThreadPageThread: Decodable, Sendable {
+    public let id: String
+    public let isViewerPro: Bool
+    /// The other party's last-read timestamp (ISO-8601), or nil if unread. An
+    /// outgoing message is "Read" once this is >= its createdAt.
+    public let counterpartyLastReadAt: String?
+}
+
+/// Service-facing result of fetching a thread's messages: the page plus the
+/// counterparty read stamp that drives the sender's read receipt.
+public struct MessageThreadPage: Sendable {
+    public let messages: [Message]
+    public let counterpartyLastReadAt: String?
 }
 
 public struct Message: Decodable, Sendable, Identifiable {

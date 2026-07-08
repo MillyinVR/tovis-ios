@@ -58,7 +58,7 @@ struct InboxView: View {
                         ThreadRow(thread: thread)
                     }
                     .buttonStyle(.plain)
-                    Divider().overlay(BrandColor.textPrimary.opacity(0.08)).padding(.leading, 78)
+                    Divider().overlay(BrandColor.textPrimary.opacity(0.08)).padding(.leading, 84)
                 }
             }
         }
@@ -70,7 +70,7 @@ struct InboxView: View {
                 .font(.system(size: 32)).foregroundStyle(BrandColor.textMuted)
             Text("No messages yet")
                 .font(BrandFont.display(20, .semibold)).foregroundStyle(BrandColor.textPrimary)
-            Text("When you message a pro, your conversations show up here.")
+            Text("When you start a conversation, it shows up here.")
                 .font(BrandFont.body(14)).foregroundStyle(BrandColor.textMuted)
                 .multilineTextAlignment(.center)
         }
@@ -110,11 +110,11 @@ private struct ThreadRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            BrandAvatar(name: thread.professional.displayName,
-                        avatarUrl: thread.professional.avatarUrl, size: 50)
+            BrandAvatar(name: thread.counterpartyName,
+                        avatarUrl: thread.counterpartyAvatarUrl, size: 50)
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
-                    Text(thread.professional.displayName)
+                    Text(thread.counterpartyName)
                         .font(BrandFont.body(15, thread.isUnread ? .bold : .semibold))
                         .foregroundStyle(BrandColor.textPrimary)
                         .lineLimit(1)
