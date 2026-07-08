@@ -9,9 +9,12 @@ public final class MessagesService: Sendable {
         self.api = api
     }
 
-    /// GET /api/v1/messages/threads → the inbox list (newest first).
-    public func threads() async throws -> [MessageThread] {
-        let response: MessageThreadsResponse = try await api.request("/messages/threads")
+    /// GET /api/v1/messages/threads → the inbox list (newest first), optionally
+    /// scoped to a filter tab. `.all` sends no query param (backend defaults to
+    /// all), so the byte shape is unchanged for existing callers.
+    public func threads(filter: InboxFilter = .all) async throws -> [MessageThread] {
+        let query = filter == .all ? nil : [URLQueryItem(name: "filter", value: filter.rawValue)]
+        let response: MessageThreadsResponse = try await api.request("/messages/threads", query: query)
         return response.threads
     }
 

@@ -8,6 +8,7 @@
       "bookingId": "bk_1",
       "serviceId": null,
       "offeringId": null,
+      "waitlistEntryId": null,
       "lastMessageAt": "2026-06-27T18:30:00.000Z",
       "lastMessagePreview": "See you at 2!",
       "updatedAt": "2026-06-27T18:30:00.000Z",
@@ -15,6 +16,8 @@
       "professional": { "id": "pro_1", "businessName": "Plume Studio", "avatarUrl": null },
       "participants": [ { "lastReadAt": "2026-06-27T18:00:00.000Z" } ],
       "isViewerPro": true,
+      "eyebrow": "BOOKING CONFIRMED — Balayage — Sat 2:30 PM",
+      "isAccentContext": true,
       "_count": { "messages": 6 }
     }
   ]

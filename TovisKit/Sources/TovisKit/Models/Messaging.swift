@@ -7,6 +7,25 @@ import Foundation
 
 // MARK: - Thread list
 
+/// Inbox filter tab — mirrors the web inbox's tabs and the `?filter=` query the
+/// backend accepts on GET /api/v1/messages/threads. Server-side filtering keeps
+/// the native app and the web page returning the same set.
+public enum InboxFilter: String, Sendable, CaseIterable, Identifiable {
+    case all, bookings, waitlists, pros
+
+    public var id: String { rawValue }
+
+    /// Tab label shown in the inbox filter bar.
+    public var label: String {
+        switch self {
+        case .all: return "All"
+        case .bookings: return "Bookings"
+        case .waitlists: return "Waitlists"
+        case .pros: return "Pros"
+        }
+    }
+}
+
 struct MessageThreadsResponse: Decodable, Sendable {
     let threads: [MessageThread]
 }
@@ -27,6 +46,14 @@ public struct MessageThread: Decodable, Sendable, Identifiable {
     /// counterparty is the client when true, the pro when false. This is the only
     /// signal the list payload carries for picking whose name/avatar to show.
     public let isViewerPro: Bool
+    /// Server-computed context label for the row (booking time / waitlist status /
+    /// service name), e.g. "BOOKING CONFIRMED — Balayage — Fri 2:00 PM". Rendered
+    /// verbatim so a new backend context type never fails to display. Optional so
+    /// pre-field fixtures/cached responses still decode; the live API always sends it.
+    public let eyebrow: String?
+    /// Whether `eyebrow` renders in the accent tone (actionable context — booking /
+    /// offering / waitlist). Optional for the same back-compat reason.
+    public let isAccentContext: Bool?
 
     /// Unread for me when the last message is newer than my last-read stamp.
     /// Both are backend `toISOString()` values, so lexical compare == chronological.
