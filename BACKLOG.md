@@ -55,7 +55,9 @@ superset (adds auth + the full client surface). One screen/PR per session.
 wrap-up AI photographer-review (iOS-only, correct); membership purchase stays
 web-only (Apple IAP — iOS display-only is right); NFC card/short-code + claim
 ACCEPTANCE stay web (iOS generates claim links, web accepts); public SEO
-`/p` `/u` + public-board pages stay web (iOS renders the native profile instead).
+`/p` pro-vanity mirror stays web (iOS renders the native pro profile instead).
+NOT accepted divergences (they're A2 build items): the public *client* profile
+`/u/[handle]` + public boards are social surfaces (looks/stats/follow), not SEO.
 
 - [ ] **A1 — native auth** (biggest structural gap; App-Store hygiene — an app
   with sign-in should offer native sign-up). Build: signup role chooser → client
@@ -69,14 +71,18 @@ ACCEPTANCE stay web (iOS generates claim links, web accepts); public SEO
   location, saved addresses, payment methods, notif prefs) · Activity feed ·
   Aftercare inbox · Priority Offers (claim) · standalone Openings feed · Referrals
   activity list · Boards detail + create + share/event-countdown (iOS shows
-  read-only preview tiles today) · Share-your-look publish flow.
+  read-only preview tiles today) · **public client profile `/u/[handle]` viewer**
+  (looks / stats / follow; guest + client viewer modes — no native equivalent
+  exists today) · Share-your-look publish flow.
 - [ ] **A3 — client booking detail** rebuild `BookingDetailView` to web's tabbed IA
   (Overview / Consultation / Aftercare) + add the missing pieces: before/after
   compare, aftercare care-notes, product-recommendations checkout, review section
   (leave rating/photos), recommended-window rebook CTA, add-to-calendar.
 - [ ] **A4 — full pro parity** (build all): Last Minute EDITOR (iOS is read-only —
-  create openings + settings/tiers) · Waitlist outreach workspace · client-chart
-  per-tab write forms + technical-record decryption · calendar reschedule/
+  create openings + settings/tiers) · Waitlist outreach workspace · pro's private
+  client view — `ProClientChartView` per-tab write forms + technical-record
+  decryption + a **`view=public` toggle** (chart ↔ that client's public profile;
+  web has it, iOS doesn't) · calendar reschedule/
   edit-service-items + "offer a time" modals · booking-detail money-trail
   inspector · manual reminders creator/list (distinct from cadence settings) ·
   referral-REWARD config (iOS has activity-only) · data-migration wizard (5
