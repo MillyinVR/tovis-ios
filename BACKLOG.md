@@ -44,6 +44,62 @@ Source: `docs/PRO-WEB-PARITY.md` (all 5 pages parity-complete; these are the tai
 - [ ] Calendar parity: working-hours shading, drag/resize + tap-to-create, `ManagementModal` (full pending/waitlist list), booking-override retry dialog, side-by-side overlap columns.
 - [ ] Client card-on-file (needs the Stripe iOS SDK).
 
+## 5. Web↔iOS parity epic (audit 2026-07-08)
+Comprehensive screen-by-screen audit of both apps (findings + Tori's layout
+decisions in tovis-app memory `HANDOFF-web-ios-parity`; master roadmap +
+web-side workstreams in `tovis-app/docs/BACKLOG.md §9`). Goal: every page matches
+across web + iOS (camera / IAP / NFC / SEO excepted); parity = level **up**.
+§4 above (the old PRO-WEB-PARITY tail) folds into A4/A5 below — this §5 is the
+superset (adds auth + the full client surface). One screen/PR per session.
+
+**Accepted divergences (leave as-is):** camera / best-shots / frame-scrubber +
+wrap-up AI photographer-review (iOS-only, correct); membership purchase stays
+web-only (Apple IAP — iOS display-only is right); NFC card/short-code + claim
+ACCEPTANCE stay web (iOS generates claim links, web accepts); public SEO
+`/p` pro-vanity mirror stays web (iOS renders the native pro profile instead).
+NOT accepted divergences (they're A2 build items): the public *client* profile
+`/u/[handle]` + public boards are social surfaces (looks/stats/follow), not SEO.
+
+- [ ] **A1 — native auth** (biggest structural gap; App-Store hygiene — an app
+  with sign-in should offer native sign-up). Build: signup role chooser → client
+  signup (name/ZIP-geocode/phone/SMS-consent/email/password/TOS + Turnstile) →
+  pro 3-step signup (work → about → account) → phone verify (already exists) +
+  email-verify half → forgot/reset password → pro onboarding readiness checklist
+  → pro license/document verification. Endpoints exist on web
+  (`/api/v1/auth/register`, `/password-reset/*`, `/email/verify`, verification-docs).
+- [ ] **A2 — first-class client screens** (today folded into Me/Home/Notifications
+  or absent): **Settings hub** (biggest — profile edit, public handle, discovery
+  location, saved addresses, payment methods, notif prefs) · Activity feed ·
+  Aftercare inbox · Priority Offers (claim) · standalone Openings feed · Referrals
+  activity list · Boards detail + create + share/event-countdown (iOS shows
+  read-only preview tiles today) · **public client profile `/u/[handle]` viewer**
+  (looks / stats / follow; guest + client viewer modes — no native equivalent
+  exists today) · Share-your-look publish flow.
+- [ ] **A3 — client booking detail** rebuild `BookingDetailView` to web's tabbed IA
+  (Overview / Consultation / Aftercare) + add the missing pieces: before/after
+  compare, aftercare care-notes, product-recommendations checkout, review section
+  (leave rating/photos), recommended-window rebook CTA, add-to-calendar.
+- [ ] **A4 — full pro parity** (build all): Last Minute EDITOR (iOS is read-only —
+  create openings + settings/tiers) · Waitlist outreach workspace · pro's private
+  client view — `ProClientChartView` per-tab write forms + technical-record
+  decryption + a **`view=public` toggle** (chart ↔ that client's public profile;
+  web has it, iOS doesn't) · calendar reschedule/
+  edit-service-items + "offer a time" modals · booking-detail money-trail
+  inspector · manual reminders creator/list (distinct from cadence settings) ·
+  referral-REWARD config (iOS has activity-only) · data-migration wizard (5
+  screens) · consolidated media manager + fuller owner-menu edit · review
+  "feature media in portfolio" toggle.
+- [ ] **A5 — pro home → Calendar**: land on Calendar like web (iOS lands on the
+  Overview home today); delete the never-instantiated `Tovis/ProOverviewView.swift`.
+- [ ] **A6 — minor drift**: **Inbox role-awareness FIX** — `InboxView` always shows
+  `thread.professional.displayName`, so a pro sees the wrong party's name; make it
+  role-aware + add web's filter tabs (All/Bookings/Waitlists/Pros) + context
+  eyebrows · Home `InviteFriendCard` + two-column · Notifications day-grouping +
+  filter chips (All/Unread/Bookings/Payments/Social).
+- Stale-code cleanup surfaced: `ProNewBookingView` header says "SALON only" but
+  handles mobile; `AppFiles/{LoginView,SessionModel}.swift` are stubs (live auth
+  is in `ContentView.swift`).
+
 ---
 
 ### Note on superseded docs
