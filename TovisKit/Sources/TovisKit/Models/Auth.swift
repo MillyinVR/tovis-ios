@@ -63,13 +63,19 @@ public struct ClientSignupLocation: Sendable, Equatable {
     }
 }
 
-/// POST /api/v1/auth/register — request body for a CLIENT signup. Mirrors the web
-/// client signup (SignupClientClient): name + geocoded ZIP + phone + email +
-/// password with the TOS and transactional-SMS consents. `deviceId` is the stable
-/// per-install id so the session is revocable per-device. Native can't render
-/// Turnstile, so instead of a `turnstileToken` it sends `appAttest` — an Apple
-/// App Attest attestation the backend verifies (lib/auth/appAttest.ts). Pro signup
-/// (role "PRO" + a PRO_SALON/PRO_MOBILE location) is a later PR.
+/// POST /api/v1/auth/register — request body. Mirrors the web signup forms
+/// (SignupClientClient / SignupProClient): name + geocoded location + phone +
+/// email + password with the TOS and transactional-SMS consents. `deviceId` is the
+/// stable per-install id so the session is revocable per-device. Native can't
+/// render Turnstile, so instead of a `turnstileToken` it sends `appAttest` — an
+/// Apple App Attest attestation the backend verifies (lib/auth/appAttest.ts).
+///
+/// The `role`-conditional pro fields (`professionType`, `licenseState`,
+/// `businessName`, `handle`, `mobileRadiusMiles`, `licenseNumber`, `licenseExpiry`)
+/// are all optional: on a CLIENT signup they're nil and the synthesized encoder
+/// omits the keys entirely (`encodeIfPresent`), so the wire body is byte-identical
+/// to before. A PRO signup fills the ones its `signupLocation.kind`
+/// (PRO_SALON / PRO_MOBILE) requires.
 struct RegisterRequest: Encodable, Sendable {
     let email: String
     let password: String
@@ -84,6 +90,15 @@ struct RegisterRequest: Encodable, Sendable {
     /// Omitted (nil → key absent) when App Attest is unavailable, e.g. the
     /// Simulator; the backend then relies on its local dev fail-open.
     let appAttest: AppAttestPayload?
+
+    // MARK: Pro-only fields (nil → key omitted on a CLIENT signup)
+    var professionType: String? = nil
+    var licenseState: String? = nil
+    var businessName: String? = nil
+    var handle: String? = nil
+    var mobileRadiusMiles: Int? = nil
+    var licenseNumber: String? = nil
+    var licenseExpiry: String? = nil
 }
 
 /// The `appAttest` wire object. `attestation` is the base64 CBOR attestation and
@@ -95,16 +110,25 @@ struct AppAttestPayload: Encodable, Sendable {
     let timestamp: Int64
 }
 
-/// The `signupLocation` wire object. Only the `CLIENT_ZIP` variant is sent today.
+/// The `signupLocation` wire object, one shape for all three `kind`s the backend
+/// accepts (`CLIENT_ZIP`, `PRO_MOBILE`, `PRO_SALON`). The salon-only fields
+/// (`placeId` / `formattedAddress` / `name`) are nil for the ZIP kinds and the
+/// encoder drops them; `postalCode` is likewise optional because a picked salon
+/// address may not resolve one. See `SignupLocation` in
+/// app/api/v1/auth/register/route.ts.
 struct SignupLocationPayload: Encodable, Sendable {
     let kind: String
-    let postalCode: String
+    let postalCode: String?
     let city: String?
     let state: String?
     let countryCode: String?
     let lat: Double
     let lng: Double
     let timeZoneId: String
+    // PRO_SALON only (nil → key omitted).
+    var placeId: String? = nil
+    var formattedAddress: String? = nil
+    var name: String? = nil
 }
 
 /// POST /api/v1/auth/register — response (`AuthRegisterResponseDTO`). The `token`

@@ -101,10 +101,35 @@ public final class PlacesService: Sendable {
         return response.place
     }
 
+    /// Resolve a picked salon/suite address to the coordinates + IANA timezone the
+    /// PRO signup's `PRO_SALON` payload needs. Place details (from the autocomplete
+    /// prediction the pro tapped) → timezone, mirroring the web pro form's
+    /// pick-address step. Reuse the autocomplete `sessionToken` to close the Google
+    /// billing session. Unauthenticated: this runs before an account exists.
+    public func resolveProSalon(
+        placeId: String,
+        sessionToken: String
+    ) async throws -> ProSalonLocation {
+        let details = try await self.details(placeId: placeId, sessionToken: sessionToken)
+        let timeZoneId = try await resolveTimeZoneId(lat: details.lat, lng: details.lng)
+
+        return ProSalonLocation(
+            placeId: details.placeId,
+            formattedAddress: details.formattedAddress,
+            city: details.city,
+            state: details.state,
+            postalCode: details.postalCode,
+            countryCode: details.countryCode,
+            lat: details.lat,
+            lng: details.lng,
+            timeZoneId: timeZoneId
+        )
+    }
+
     /// Resolve a US ZIP to the coordinates + IANA timezone the client signup's
-    /// `CLIENT_ZIP` payload needs. Two proxied Google calls (geocode → timezone),
-    /// mirroring the web client signup's confirm-ZIP step. Unauthenticated: this
-    /// runs before an account (and token) exists.
+    /// `CLIENT_ZIP` payload needs (also the PRO_MOBILE base ZIP). Two proxied Google
+    /// calls (geocode → timezone), mirroring the web client signup's confirm-ZIP
+    /// step. Unauthenticated: this runs before an account (and token) exists.
     public func resolveClientZip(postalCode: String) async throws -> ClientSignupLocation {
         let geoResponse: GeocodeResponse = try await api.request(
             "/google/geocode",
@@ -127,22 +152,7 @@ public final class PlacesService: Sendable {
             )
         }
 
-        let tzResponse: TimezoneResponse = try await api.request(
-            "/google/timezone",
-            query: [
-                URLQueryItem(name: "lat", value: String(lat)),
-                URLQueryItem(name: "lng", value: String(lng)),
-            ],
-            authenticated: false
-        )
-
-        guard let timeZoneId = tzResponse.timeZoneId, !timeZoneId.isEmpty else {
-            throw APIError.server(
-                status: 422,
-                message: "We couldn't determine your timezone. Please try again.",
-                code: "TIMEZONE_UNRESOLVED"
-            )
-        }
+        let timeZoneId = try await resolveTimeZoneId(lat: lat, lng: lng)
 
         return ClientSignupLocation(
             postalCode: resolvedPostal,
@@ -153,5 +163,26 @@ public final class PlacesService: Sendable {
             lng: lng,
             timeZoneId: timeZoneId
         )
+    }
+
+    /// GET /api/v1/google/timezone — the IANA zone for a coordinate. Unauthenticated
+    /// (runs during signup, before a token exists).
+    private func resolveTimeZoneId(lat: Double, lng: Double) async throws -> String {
+        let tzResponse: TimezoneResponse = try await api.request(
+            "/google/timezone",
+            query: [
+                URLQueryItem(name: "lat", value: String(lat)),
+                URLQueryItem(name: "lng", value: String(lng)),
+            ],
+            authenticated: false
+        )
+        guard let timeZoneId = tzResponse.timeZoneId, !timeZoneId.isEmpty else {
+            throw APIError.server(
+                status: 422,
+                message: "We couldn't determine the timezone. Please try again.",
+                code: "TIMEZONE_UNRESOLVED"
+            )
+        }
+        return timeZoneId
     }
 }

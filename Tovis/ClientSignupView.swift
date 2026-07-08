@@ -164,24 +164,13 @@ struct ClientSignupView: View {
     }
 
     private var submitButton: some View {
-        Button {
+        SignupPrimaryButton(
+            title: "Create client account",
+            isLoading: session.isWorking || zipConfirming,
+            isDisabled: session.isWorking || zipConfirming
+        ) {
             Task { await handleSubmit() }
-        } label: {
-            Group {
-                if session.isWorking || zipConfirming {
-                    ProgressView().tint(BrandColor.onAccent)
-                } else {
-                    Text("Create client account").font(BrandFont.body(17, .semibold))
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
-            .background(BrandColor.accent)
-            .foregroundStyle(BrandColor.onAccent)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
-        .disabled(session.isWorking || zipConfirming)
-        .padding(.top, 4)
     }
 
     private var tosLabel: Text {
@@ -203,9 +192,7 @@ struct ClientSignupView: View {
     // MARK: - Building blocks
 
     private func fieldLabel(_ text: String) -> some View {
-        Text(text)
-            .font(BrandFont.body(13, .semibold))
-            .foregroundStyle(BrandColor.textSecondary)
+        SignupFieldLabel(text)
     }
 
     private func field(label: String, text: Binding<String>) -> some View {
@@ -216,31 +203,7 @@ struct ClientSignupView: View {
     }
 
     private func consentRow(isOn: Binding<Bool>, text: Text) -> some View {
-        Button {
-            isOn.wrappedValue.toggle()
-            formError = nil
-        } label: {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: isOn.wrappedValue ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 20, weight: .regular))
-                    .foregroundStyle(isOn.wrappedValue ? BrandColor.accent : BrandColor.textMuted)
-                text
-                    .font(BrandFont.body(13))
-                    .foregroundStyle(BrandColor.textSecondary)
-                    .tint(BrandColor.accent)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-            }
-            .padding(12)
-            .background(BrandColor.bgSurface)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(BrandColor.textMuted.opacity(0.18), lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
+        SignupConsentRow(isOn: isOn, text: text, onToggle: { formError = nil })
     }
 
     // MARK: - Submit
