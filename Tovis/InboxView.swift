@@ -14,19 +14,24 @@ struct InboxView: View {
     }
 
     @State private var phase: Phase = .loading
+    @State private var filter: InboxFilter = .all
 
     var body: some View {
         NavigationStack {
-            Group {
-                switch phase {
-                case .loading:
-                    ProgressView().tint(BrandColor.accent)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                case let .failed(message):
-                    errorState(message)
-                case let .loaded(threads):
-                    if threads.isEmpty { emptyState } else { list(threads) }
+            VStack(spacing: 0) {
+                filterBar
+                Group {
+                    switch phase {
+                    case .loading:
+                        ProgressView().tint(BrandColor.accent)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    case let .failed(message):
+                        errorState(message)
+                    case let .loaded(threads):
+                        if threads.isEmpty { emptyState } else { list(threads) }
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(BrandColor.bgPrimary.ignoresSafeArea())
@@ -36,9 +41,34 @@ struct InboxView: View {
             .refreshable { await load() }
             .task { if case .loading = phase { await load() } }
             .onChange(of: session.refreshTick) { Task { await load() } }
+            .onChange(of: filter) { Task { await load() } }
             .task { await poll() }
         }
         .tint(BrandColor.accent)
+    }
+
+    // The 4 filter tabs (All / Bookings / Waitlists / Pros) — mirrors the web
+    // inbox. Selecting one reloads the list server-side via the `?filter=` query.
+    private var filterBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 20) {
+                ForEach(InboxFilter.allCases) { tab in
+                    Button { filter = tab } label: {
+                        VStack(spacing: 6) {
+                            Text(tab.label)
+                                .font(BrandFont.body(14, filter == tab ? .semibold : .regular))
+                                .foregroundStyle(filter == tab ? BrandColor.textPrimary : BrandColor.textMuted)
+                            Rectangle()
+                                .fill(filter == tab ? BrandColor.accent : Color.clear)
+                                .frame(height: 2)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 4)
+        }
     }
 
     private func poll() async {
@@ -96,7 +126,7 @@ struct InboxView: View {
     private func load() async {
         if case .loaded = phase {} else { phase = .loading }
         do {
-            phase = .loaded(try await session.client.messages.threads())
+            phase = .loaded(try await session.client.messages.threads(filter: filter))
         } catch let error as APIError {
             phase = .failed(error.userMessage)
         } catch {
@@ -122,6 +152,18 @@ private struct ThreadRow: View {
                     if let when = relativeTime(thread.lastMessageAt) {
                         Text(when).font(BrandFont.mono(10)).foregroundStyle(BrandColor.textMuted)
                     }
+                }
+                if let eyebrow = thread.eyebrow?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !eyebrow.isEmpty {
+                    // Server-computed context label (booking time / waitlist status /
+                    // service). Accent tone for actionable contexts, matching web.
+                    Text(eyebrow)
+                        .font(BrandFont.mono(9))
+                        .tracking(0.5)
+                        .textCase(.uppercase)
+                        .foregroundStyle(thread.isAccentContext == true
+                            ? BrandColor.accent : BrandColor.textMuted)
+                        .lineLimit(1)
                 }
                 HStack(spacing: 8) {
                     Text(thread.lastMessagePreview ?? "No messages yet")

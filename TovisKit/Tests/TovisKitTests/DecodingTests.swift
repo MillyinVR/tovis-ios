@@ -258,6 +258,9 @@ func fixture(_ name: String) throws -> Data {
         // Viewer is the pro → counterparty is the CLIENT, not the pro's own name.
         #expect(thread.isViewerPro == true)
         #expect(thread.counterpartyName == "Amara Reyes")
+        // Server-computed context eyebrow (booking time / service), accented.
+        #expect(thread.eyebrow == "BOOKING CONFIRMED — Balayage — Sat 2:30 PM")
+        #expect(thread.isAccentContext == true)
     }
 
     // GET /api/v1/messages/threads/{id} — Fixtures/messageThread.json (schema-validated).
