@@ -51,6 +51,12 @@ enum Wire {
         return f.string(from: date)
     }
 
+    /// The current instant as a backend-style ISO-8601 string (fractional
+    /// seconds), for optimistic rows shown before the server's own timestamp.
+    static func nowISO() -> String {
+        isoWithFraction.string(from: Date())
+    }
+
     /// Format a decimal-string amount (e.g. "120.00") as USD currency: "$120".
     static func money(_ amount: String?) -> String? {
         guard let amount, let value = Decimal(string: amount) else { return nil }

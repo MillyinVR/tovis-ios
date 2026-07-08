@@ -255,6 +255,9 @@ func fixture(_ name: String) throws -> Data {
         #expect(thread.lastMessagePreview == "See you at 2!")
         // lastMessageAt (18:30) is newer than my lastReadAt (18:00) → unread.
         #expect(thread.isUnread == true)
+        // Viewer is the pro → counterparty is the CLIENT, not the pro's own name.
+        #expect(thread.isViewerPro == true)
+        #expect(thread.counterpartyName == "Amara Reyes")
     }
 
     // GET /api/v1/messages/threads/{id} — Fixtures/messageThread.json (schema-validated).
@@ -264,6 +267,9 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.messages.first?.senderUserId == "usr_pro")
         #expect(res.messages.last?.attachments.first?.mediaType == "IMAGE")
         #expect(res.hasMore == false)
+        // Read-receipt driver: the counterparty's last-read stamp rides the thread.
+        #expect(res.thread?.isViewerPro == true)
+        #expect(res.thread?.counterpartyLastReadAt == "2026-06-27T18:35:00.000Z")
     }
 
     // GET /api/v1/search — Fixtures/search.json (schema-validated, both tabs).
