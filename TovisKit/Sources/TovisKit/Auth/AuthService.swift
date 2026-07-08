@@ -296,6 +296,41 @@ public final class AuthService: Sendable {
         return response
     }
 
+    // MARK: - Password reset (email-link based)
+    //
+    // Mirrors the web flow: `request` emails a reset link; `confirm` sets the new
+    // password using the token that link carries. Both are unauthenticated.
+
+    /// POST /api/v1/auth/password-reset/request — email a reset link for `email`.
+    /// The endpoint always returns OK (it never reveals whether an account exists),
+    /// so a non-throwing return just means the request was accepted — it only
+    /// throws on a transport failure or a rate-limit (429).
+    public func requestPasswordReset(email: String) async throws {
+        let payload = try JSONEncoder().encode(PasswordResetRequestBody(email: email))
+        try await api.requestVoid(
+            "/auth/password-reset/request",
+            method: .post,
+            body: payload,
+            authenticated: false
+        )
+    }
+
+    /// POST /api/v1/auth/password-reset/confirm — set a new password using the
+    /// token from the emailed reset link. Throws `APIError.server` carrying the
+    /// backend's user-facing message on rejection (invalid/expired/used link,
+    /// too many attempts, or a password that fails the policy).
+    public func confirmPasswordReset(token: String, password: String) async throws {
+        let payload = try JSONEncoder().encode(
+            PasswordResetConfirmBody(token: token, password: password)
+        )
+        try await api.requestVoid(
+            "/auth/password-reset/confirm",
+            method: .post,
+            body: payload,
+            authenticated: false
+        )
+    }
+
     /// Switch the acting workspace (CLIENT / PRO / ADMIN). The backend re-mints
     /// the JWT with the new acting role and returns it — native must swap to this
     /// token (web uses the cookie). Saves the new token so the next request acts

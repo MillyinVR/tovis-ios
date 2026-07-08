@@ -78,8 +78,7 @@ struct ClientSignupView: View {
 
                     VStack(alignment: .leading, spacing: 6) {
                         fieldLabel("Password")
-                        BrandField(placeholder: "Password", text: $password, isSecure: true)
-                            .textContentType(.newPassword)
+                        PasswordRevealField(placeholder: "Password", text: $password, textContentType: .newPassword)
                         Text("At least \(Self.passwordMinLength) characters.")
                             .font(BrandFont.body(12))
                             .foregroundStyle(BrandColor.textMuted)
