@@ -124,6 +124,12 @@ final class SessionModel {
     /// so the verification screen knows phone is the only step left.
     private(set) var emailVerified = false
 
+    /// The phone captured during native signup. When set, the post-signup
+    /// verification screen opens straight at the code step (the register endpoint
+    /// already texted the code) instead of asking for the number again. nil for
+    /// the Apple path, which has no phone on file yet.
+    private(set) var pendingVerificationPhone: String?
+
     /// Live-sync seam: every screen observes this and refetches when it changes.
     /// Bumped on app foreground (Layer 1) and on a Realtime "changed" broadcast
     /// (Layer 2). Keeping it on the session means one place wires both triggers.
@@ -267,6 +273,9 @@ final class SessionModel {
         currentUser = result.user
         activeRole = result.user.role
         emailVerified = result.isEmailVerified
+        // Login/Apple/phone paths carry no signup phone — clear any stale prefill
+        // so the verification screen (if reached) asks for the number.
+        pendingVerificationPhone = nil
         if result.isFullyVerified {
             state = .signedIn
             await startRealtime()
@@ -332,6 +341,7 @@ final class SessionModel {
         await client.auth.logout()
         currentUser = nil
         emailVerified = false
+        pendingVerificationPhone = nil
         state = .signedOut
     }
 
@@ -350,6 +360,48 @@ final class SessionModel {
             errorMessage = error.userMessage
         } catch {
             errorMessage = "Something went wrong. Please try again."
+        }
+    }
+
+    /// Create a CLIENT account (native email/password signup). On success the
+    /// account is signed in but unverified: the returned VERIFICATION token is
+    /// persisted and we route to phone verification. The register endpoint has
+    /// already texted the code, so `pendingVerificationPhone` lets that screen
+    /// skip straight to code entry. Returns true so the caller can dismiss the
+    /// signup flow.
+    func registerClient(
+        email: String,
+        password: String,
+        firstName: String,
+        lastName: String,
+        phone: String,
+        location: ClientSignupLocation
+    ) async -> Bool {
+        isWorking = true
+        errorMessage = nil
+        defer { isWorking = false }
+        do {
+            let result = try await client.auth.registerClient(
+                email: email,
+                password: password,
+                firstName: firstName,
+                lastName: lastName,
+                phone: phone,
+                location: location,
+                deviceId: client.deviceId
+            )
+            currentUser = result.user
+            activeRole = result.user.role
+            emailVerified = result.isEmailVerified
+            pendingVerificationPhone = phone
+            state = .needsVerification
+            return true
+        } catch let error as APIError {
+            errorMessage = error.userMessage
+            return false
+        } catch {
+            errorMessage = "Couldn’t create your account. Please try again."
+            return false
         }
     }
 
@@ -414,6 +466,7 @@ final class SessionModel {
         await stopPush() // unregister this device's push token server-side
         await client.auth.logout()
         currentUser = nil
+        pendingVerificationPhone = nil
         state = .signedOut
     }
 }
@@ -461,6 +514,7 @@ struct LoginView: View {
     @State private var email = ""
     @State private var password = ""
     @State private var showPhone = false
+    @State private var showSignup = false
 
     var body: some View {
         VStack(spacing: 28) {
@@ -542,12 +596,28 @@ struct LoginView: View {
                     )
             }
 
+            HStack(spacing: 6) {
+                Text("New here?")
+                    .font(BrandFont.body(14))
+                    .foregroundStyle(BrandColor.textMuted)
+                Button("Create an account") {
+                    session.errorMessage = nil
+                    showSignup = true
+                }
+                .font(BrandFont.body(14, .semibold))
+                .foregroundStyle(BrandColor.accent)
+            }
+            .padding(.top, 2)
+
             Spacer()
             Spacer()
         }
         .padding(.horizontal, 28)
         .sheet(isPresented: $showPhone) {
             PhoneLoginView()
+        }
+        .fullScreenCover(isPresented: $showSignup) {
+            SignupRoleChooserView()
         }
     }
 

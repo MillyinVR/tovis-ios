@@ -30,6 +30,53 @@ public final class AuthService: Sendable {
         return response
     }
 
+    /// POST /api/v1/auth/register — create a CLIENT account. Persists the returned
+    /// VERIFICATION-kind token (the account isn't fully verified yet), so the
+    /// caller drops into phone verification next. `location` is the ZIP resolved
+    /// via `PlacesService.resolveClientZip`. Mirrors the web client signup.
+    @discardableResult
+    public func registerClient(
+        email: String,
+        password: String,
+        firstName: String,
+        lastName: String,
+        phone: String,
+        location: ClientSignupLocation,
+        deviceId: String?
+    ) async throws -> RegisterResponse {
+        let payload = try JSONEncoder().encode(
+            RegisterRequest(
+                email: email,
+                password: password,
+                role: Role.client.rawValue,
+                firstName: firstName,
+                lastName: lastName,
+                phone: phone,
+                tosAccepted: true,
+                transactionalSmsConsent: true,
+                signupLocation: SignupLocationPayload(
+                    kind: "CLIENT_ZIP",
+                    postalCode: location.postalCode,
+                    city: location.city,
+                    state: location.state,
+                    countryCode: location.countryCode,
+                    lat: location.lat,
+                    lng: location.lng,
+                    timeZoneId: location.timeZoneId
+                ),
+                deviceId: deviceId
+            )
+        )
+        let response: RegisterResponse = try await api.request(
+            "/auth/register",
+            method: .post,
+            body: payload,
+            authenticated: false
+        )
+        await tokenStore.save(response.token)
+        return response
+    }
+
     /// POST /api/v1/auth/apple. Send Apple's identity token (+ name on first
     /// auth). Persists the returned session token on success.
     @discardableResult
