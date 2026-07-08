@@ -162,6 +162,14 @@ public struct ProSessionStateCheckout: Decodable, Sendable {
         let s = status?.uppercased()
         return s == "PAID" || s == "WAIVED"
     }
+
+    /// The client marked an off-platform payment (Venmo / Zelle / Cash / Apple
+    /// Cash / PayPal) as sent; it's authorized on their word and the pro must
+    /// confirm receipt to close it out (web `AWAITING_CONFIRMATION`). While in this
+    /// state the pro confirms rather than re-recording the payment.
+    public var isAwaitingConfirmation: Bool {
+        status?.uppercased() == "AWAITING_CONFIRMATION"
+    }
 }
 
 public struct ProSessionStateAftercare: Decodable, Sendable {
