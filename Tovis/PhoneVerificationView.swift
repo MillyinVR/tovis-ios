@@ -1,7 +1,10 @@
 // Post-signup phone verification. Shown as a root state (SessionModel.state ==
-// .needsVerification) for a signed-in-but-not-fully-verified account — the common
-// case being Sign in with Apple, which verifies the email but leaves the phone
-// unverified. Enter phone → set it + receive an SMS code → verify → into the app.
+// .needsVerification) for a signed-in-but-not-fully-verified account. Two entries:
+//  • Sign in with Apple — verifies the email but leaves the phone unverified, so
+//    we start at the phone step: enter phone → set it + receive a code → verify.
+//  • Native email/password signup — the register endpoint already set the phone
+//    and texted a code, so `session.pendingVerificationPhone` is set and we open
+//    straight at the code step ("Change number" falls back to the phone step).
 //
 // Uses the authenticated /auth/phone/{correct,send,verify} endpoints (distinct
 // from the passwordless phone-LOGIN flow in PhoneLoginView).
@@ -14,6 +17,8 @@ struct PhoneVerificationView: View {
     @State private var step: Step = .phone
     @State private var phone = ""
     @State private var code = ""
+    /// One-time guard so re-renders don't re-run the post-signup prefill.
+    @State private var didPrefill = false
 
     var body: some View {
         ZStack {
@@ -81,6 +86,16 @@ struct PhoneVerificationView: View {
                 .foregroundStyle(BrandColor.textMuted)
             }
             .padding(28)
+        }
+        .onAppear {
+            // Native signup already set the phone + texted a code — jump to the
+            // code step with the number shown, rather than asking for it again.
+            guard !didPrefill else { return }
+            didPrefill = true
+            if let signupPhone = session.pendingVerificationPhone, !signupPhone.isEmpty {
+                phone = signupPhone
+                step = .code
+            }
         }
         .onDisappear { session.errorMessage = nil }
     }

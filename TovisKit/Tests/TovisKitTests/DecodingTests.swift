@@ -47,6 +47,36 @@ func fixture(_ name: String) throws -> Data {
         #expect(user.role == .unknown)
     }
 
+    @Test func decodesRegisterResponse() throws {
+        // Mirrors AuthRegisterResponseDTO (lib/dto/auth.ts). The pro-only license
+        // flags are present on the wire but intentionally absent from the Swift
+        // model — decoding must skip them without error.
+        let json = """
+        {
+          "user": { "id": "usr_9", "email": "new@b.com", "role": "CLIENT" },
+          "token": "verification.jwt.token",
+          "nextUrl": null,
+          "requiresPhoneVerification": true,
+          "phoneVerificationSent": "pending",
+          "phoneVerificationErrorCode": null,
+          "requiresEmailVerification": true,
+          "isPhoneVerified": false,
+          "isEmailVerified": false,
+          "isFullyVerified": false,
+          "emailVerificationSent": "pending",
+          "needsManualLicenseUpload": false,
+          "manualLicensePendingReview": false
+        }
+        """.data(using: .utf8)!
+
+        let res = try JSONDecoder().decode(RegisterResponse.self, from: json)
+        #expect(res.token == "verification.jwt.token")
+        #expect(res.user.role == .client)
+        #expect(res.requiresPhoneVerification == true)
+        #expect(res.isFullyVerified == false)
+        #expect(res.nextUrl == nil)
+    }
+
     @Test func decodesRefreshResponse() throws {
         let json = #"{ "token": "new.jwt" }"#.data(using: .utf8)!
         let res = try JSONDecoder().decode(RefreshResponse.self, from: json)
