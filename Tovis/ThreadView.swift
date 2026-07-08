@@ -2,8 +2,10 @@
 // POST .../read to clear unread. Native rebuild of the web thread view: chat
 // bubbles (mine right/accent, theirs left/surface) with a pinned composer, day
 // separators, read receipts, and optimistic send with retry.
+import PhotosUI
 import SwiftUI
 import TovisKit
+import UIKit
 
 /// A message as rendered in the thread: a server message, or a locally-created
 /// (optimistic) one the server hasn't acked yet. `clientId` correlates an
@@ -17,6 +19,12 @@ private struct ThreadMessage: Identifiable {
     let createdAt: String
     let senderUserId: String
     let attachments: [MessageAttachment]
+    /// Local image for an optimistic attachment send, shown until the server
+    /// message (with a signed URL) swaps in. nil for server rows.
+    let localImage: UIImage?
+    /// Uploaded media-private path(s) for an optimistic attachment send, so a
+    /// retry re-POSTs without re-uploading the bytes.
+    var retryAttachmentPaths: [String]
     var status: Status
 
     init(server: Message) {
@@ -26,6 +34,8 @@ private struct ThreadMessage: Identifiable {
         createdAt = server.createdAt
         senderUserId = server.senderUserId
         attachments = server.attachments
+        localImage = nil
+        retryAttachmentPaths = []
         status = .sent
     }
 
@@ -35,17 +45,27 @@ private struct ThreadMessage: Identifiable {
         body = created.body
         createdAt = created.createdAt
         senderUserId = created.senderUserId
-        attachments = []
+        attachments = created.attachments ?? []
+        localImage = nil
+        retryAttachmentPaths = []
         status = .sent
     }
 
-    init(optimistic clientId: String, body: String, senderUserId: String, createdAt: String) {
+    init(
+        optimistic clientId: String,
+        body: String,
+        senderUserId: String,
+        createdAt: String,
+        localImage: UIImage? = nil
+    ) {
         id = clientId
         self.clientId = clientId
         self.body = body
         self.createdAt = createdAt
         self.senderUserId = senderUserId
         attachments = []
+        self.localImage = localImage
+        retryAttachmentPaths = []
         status = .sending
     }
 }
@@ -61,6 +81,11 @@ struct ThreadView: View {
     @State private var loaded = false
     @State private var sending = false
     @State private var errorMessage: String?
+
+    // A single image staged in the composer, previewed until it's uploaded + sent.
+    @State private var pickerItem: PhotosPickerItem?
+    @State private var pendingImage: UIImage?
+    @State private var pendingImageData: Data?
 
     // "Load earlier" cursor paging. `olderCursor` is the oldest loaded message's
     // id; the 15s poll never touches it (it only refetches the newest page).
@@ -129,7 +154,37 @@ struct ThreadView: View {
                 Text(errorMessage).font(BrandFont.body(11.5)).foregroundStyle(BrandColor.ember)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            if let pendingImage {
+                HStack {
+                    ZStack(alignment: .topTrailing) {
+                        Image(uiImage: pendingImage)
+                            .resizable().scaledToFill()
+                            .frame(width: 60, height: 60)
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        Button { clearPendingImage() } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 18))
+                                .foregroundStyle(BrandColor.textSecondary)
+                                .background(Circle().fill(BrandColor.bgPrimary))
+                        }
+                        .buttonStyle(.plain)
+                        .offset(x: 6, y: -6)
+                    }
+                    Spacer()
+                }
+            }
             HStack(alignment: .bottom, spacing: 10) {
+                PhotosPicker(selection: $pickerItem, matching: .images) {
+                    Image(systemName: "photo")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(BrandColor.textSecondary)
+                        .frame(width: 38, height: 38)
+                        .background(BrandColor.bgSurface)
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(BrandColor.textMuted.opacity(0.18), lineWidth: 1))
+                }
+                .disabled(sending)
+
                 TextField("Message…", text: $draft, axis: .vertical)
                     .font(BrandFont.body(15))
                     .foregroundStyle(BrandColor.textPrimary)
@@ -153,10 +208,39 @@ struct ThreadView: View {
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
         .background(BrandColor.bgPrimary)
+        .onChange(of: pickerItem) { Task { await loadPickedImage() } }
     }
 
     private var canSend: Bool {
-        !sending && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard !sending else { return false }
+        let hasText = !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return hasText || pendingImageData != nil
+    }
+
+    /// Load the picked photo, normalizing to JPEG so it renders everywhere
+    /// (including the web thread) and stays a reasonable size.
+    private func loadPickedImage() async {
+        guard let item = pickerItem else { return }
+        do {
+            guard let data = try await item.loadTransferable(type: Data.self),
+                  let uiImage = UIImage(data: data) else {
+                errorMessage = "Couldn’t load that image."
+                pickerItem = nil
+                return
+            }
+            pendingImage = uiImage
+            pendingImageData = uiImage.jpegData(compressionQuality: 0.85) ?? data
+            errorMessage = nil
+        } catch {
+            errorMessage = "Couldn’t load that image."
+        }
+        pickerItem = nil
+    }
+
+    private func clearPendingImage() {
+        pendingImage = nil
+        pendingImageData = nil
+        pickerItem = nil
     }
 
     /// The last of my sent messages the counterparty has read — the only one that
@@ -256,31 +340,64 @@ struct ThreadView: View {
 
     private func send() async {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !sending, let mine = myUserId else { return }
+        let imageData = pendingImageData
+        let image = pendingImage
+        guard (!text.isEmpty || imageData != nil), !sending, let mine = myUserId else { return }
 
         let clientId = UUID().uuidString
         messages.append(ThreadMessage(
-            optimistic: clientId, body: text, senderUserId: mine, createdAt: Wire.nowISO()
+            optimistic: clientId, body: text, senderUserId: mine,
+            createdAt: Wire.nowISO(), localImage: image
         ))
         draft = ""
+        clearPendingImage()
         errorMessage = nil
         sending = true
-        await post(text, clientId: clientId)
-        sending = false
+        defer { sending = false }
+
+        var attachmentPaths: [String] = []
+        if let imageData {
+            do {
+                let path = try await session.client.messages.uploadAttachment(
+                    threadId: thread.id, imageData: imageData
+                )
+                attachmentPaths = [path]
+                setRetryPaths(clientId: clientId, paths: attachmentPaths)
+            } catch {
+                // Upload failed before the message was created — drop the
+                // optimistic row and restore the composer for a full retry.
+                messages.removeAll { $0.clientId == clientId }
+                draft = text
+                pendingImage = image
+                pendingImageData = imageData
+                errorMessage = "Couldn’t upload that image."
+                return
+            }
+        }
+
+        await post(text, attachmentPaths: attachmentPaths, clientId: clientId)
     }
 
     private func retry(_ message: ThreadMessage) async {
-        guard let clientId = message.clientId, let body = message.body else { return }
+        guard let clientId = message.clientId else { return }
+        let hasBody = !(message.body ?? "").isEmpty
+        guard hasBody || !message.retryAttachmentPaths.isEmpty else { return }
         setStatus(clientId: clientId, to: .sending)
         errorMessage = nil
-        await post(body, clientId: clientId)
+        await post(
+            message.body ?? "",
+            attachmentPaths: message.retryAttachmentPaths,
+            clientId: clientId
+        )
     }
 
-    /// Send one body; swap the optimistic row for the server message on success,
-    /// mark it failed on error.
-    private func post(_ text: String, clientId: String) async {
+    /// Send a message (text and/or already-uploaded attachment paths); swap the
+    /// optimistic row for the server message on success, mark it failed on error.
+    private func post(_ text: String, attachmentPaths: [String] = [], clientId: String) async {
         do {
-            let created = try await session.client.messages.send(threadId: thread.id, body: text)
+            let created = try await session.client.messages.send(
+                threadId: thread.id, body: text, attachmentPaths: attachmentPaths
+            )
             messages = messages
                 .filter { $0.clientId != clientId && $0.id != created.id }
                 + [ThreadMessage(created: created)]
@@ -299,6 +416,15 @@ struct ThreadView: View {
             guard $0.clientId == clientId else { return $0 }
             var next = $0
             next.status = status
+            return next
+        }
+    }
+
+    private func setRetryPaths(clientId: String, paths: [String]) {
+        messages = messages.map {
+            guard $0.clientId == clientId else { return $0 }
+            var next = $0
+            next.retryAttachmentPaths = paths
             return next
         }
     }
@@ -350,6 +476,13 @@ private struct MessageBubble: View {
         HStack {
             if isMine { Spacer(minLength: 40) }
             VStack(alignment: isMine ? .trailing : .leading, spacing: 6) {
+                if let localImage = message.localImage {
+                    Image(uiImage: localImage)
+                        .resizable().scaledToFill()
+                        .frame(maxWidth: 220, maxHeight: 220)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .opacity(message.status == .sending ? 0.6 : 1)
+                }
                 ForEach(message.attachments) { att in
                     if let url = URL(string: att.url) {
                         let isVideo = att.mediaType?.uppercased() == "VIDEO"

@@ -100,7 +100,11 @@ public final class TovisClient: Sendable {
         self.bookings = BookingsService(api: api)
         self.profiles = ProfileService(api: api)
         self.me = MeService(api: api)
-        self.messages = MessagesService(api: api)
+        self.messages = MessagesService(
+            api: api,
+            supabaseURL: config.supabaseURL,
+            supabaseKey: config.supabaseAnonKey
+        )
         self.search = SearchService(api: api)
         self.discover = DiscoverService(api: api)
         self.booking = BookingService(api: api)

@@ -4,9 +4,18 @@ import Foundation
 /// (`/api/v1/messages/*`). Authenticated (bearer token).
 public final class MessagesService: Sendable {
     private let api: APIClient
+    /// Supabase project URL + publishable key — the same public creds the signed
+    /// storage PUT uses (nil disables attachment uploads).
+    private let supabaseURL: URL?
+    private let supabaseKey: String?
+    /// Ephemeral (no cookie jar) so the storage PUT stays clean.
+    private let uploadSession: URLSession
 
-    public init(api: APIClient) {
+    public init(api: APIClient, supabaseURL: URL? = nil, supabaseKey: String? = nil) {
         self.api = api
+        self.supabaseURL = supabaseURL
+        self.supabaseKey = supabaseKey
+        self.uploadSession = URLSession(configuration: .ephemeral)
     }
 
     /// GET /api/v1/messages/threads → the inbox list (newest first), optionally
@@ -36,13 +45,64 @@ public final class MessagesService: Sendable {
         )
     }
 
-    /// POST /api/v1/messages/threads/{id} → send a text message.
-    public func send(threadId: String, body: String) async throws -> CreatedMessage {
-        let payload = try JSONEncoder().encode(SendMessageRequest(body: body))
+    /// POST /api/v1/messages/threads/{id} → send a message. `attachmentPaths` are
+    /// media-private storage paths already uploaded via `uploadAttachment`; the
+    /// message needs text or at least one attachment.
+    public func send(
+        threadId: String,
+        body: String,
+        attachmentPaths: [String] = []
+    ) async throws -> CreatedMessage {
+        let payload = try JSONEncoder().encode(
+            SendMessageRequest(
+                body: body,
+                attachments: attachmentPaths.isEmpty ? nil : attachmentPaths
+            )
+        )
         let response: CreateMessageResponse = try await api.request(
             "/messages/threads/\(threadId)", method: .post, body: payload
         )
         return response.message
+    }
+
+    /// Presign → signed PUT an image to media-private for this thread, returning
+    /// the storage path to hand to `send(threadId:body:attachmentPaths:)`. Reuses
+    /// the shared RLS-critical signed PUT (`SupabaseSignedUpload`).
+    public func uploadAttachment(
+        threadId: String,
+        imageData: Data,
+        contentType: String = "image/jpeg"
+    ) async throws -> String {
+        let initData = try await presignAttachment(
+            threadId: threadId, contentType: contentType, size: imageData.count
+        )
+        try await SupabaseSignedUpload.put(
+            session: uploadSession,
+            supabaseURL: supabaseURL,
+            supabaseKey: supabaseKey,
+            data: imageData,
+            bucket: initData.bucket,
+            path: initData.path,
+            token: initData.token,
+            contentType: contentType,
+            upsert: false
+        )
+        return initData.path
+    }
+
+    /// POST /api/v1/messages/threads/{id}/uploads → a presigned media-private
+    /// upload target scoped to this thread.
+    public func presignAttachment(
+        threadId: String,
+        contentType: String,
+        size: Int
+    ) async throws -> MessageUploadInit {
+        let payload = try JSONEncoder().encode(
+            MessageUploadInitRequest(contentType: contentType, size: size)
+        )
+        return try await api.request(
+            "/messages/threads/\(threadId)/uploads", method: .post, body: payload
+        )
     }
 
     /// POST /api/v1/messages/threads/{id}/read → mark the thread read for me.
