@@ -102,6 +102,108 @@ public final class AuthService: Sendable {
         return response
     }
 
+    /// POST /api/v1/auth/register — create a PRO account. Same App Attest binding
+    /// and VERIFICATION-token handling as `registerClient`, plus the pro fields the
+    /// backend's PRO branch requires (profession, licensed/operating state, and a
+    /// PRO_SALON / PRO_MOBILE `signupLocation`). `businessName` / `handle` /
+    /// `licenseNumber` / `licenseExpiry` are optional (nil → omitted). Mirrors the
+    /// web pro signup (SignupProClient).
+    @discardableResult
+    public func registerPro(
+        email: String,
+        password: String,
+        firstName: String,
+        lastName: String,
+        phone: String,
+        professionType: ProfessionType,
+        licenseState: String,
+        businessName: String?,
+        handle: String?,
+        licenseNumber: String?,
+        licenseExpiry: String?,
+        location: ProSignupLocation,
+        deviceId: String?
+    ) async throws -> RegisterResponse {
+        // Bind the attestation to this identity exactly as registerClient does.
+        let timestampMs = Int64(Date().timeIntervalSince1970 * 1000)
+        let clientDataHash = AppAttestClientData.hash(
+            email: email,
+            phone: phone,
+            timestampMs: timestampMs
+        )
+        let attestation = await appAttest.attest(clientDataHash: clientDataHash)
+        let appAttestPayload = attestation.map {
+            AppAttestPayload(
+                keyId: $0.keyId,
+                attestation: $0.attestationBase64,
+                timestamp: timestampMs
+            )
+        }
+
+        // Map the location variant to the wire `signupLocation` + mobile radius.
+        let signupLocation: SignupLocationPayload
+        let mobileRadiusMiles: Int?
+        switch location {
+        case let .salon(salon):
+            signupLocation = SignupLocationPayload(
+                kind: "PRO_SALON",
+                postalCode: salon.postalCode,
+                city: salon.city,
+                state: salon.state,
+                countryCode: salon.countryCode,
+                lat: salon.lat,
+                lng: salon.lng,
+                timeZoneId: salon.timeZoneId,
+                placeId: salon.placeId,
+                formattedAddress: salon.formattedAddress
+            )
+            mobileRadiusMiles = nil
+        case let .mobile(zip, radiusMiles):
+            signupLocation = SignupLocationPayload(
+                kind: "PRO_MOBILE",
+                postalCode: zip.postalCode,
+                city: zip.city,
+                state: zip.state,
+                countryCode: zip.countryCode,
+                lat: zip.lat,
+                lng: zip.lng,
+                timeZoneId: zip.timeZoneId
+            )
+            mobileRadiusMiles = radiusMiles
+        }
+
+        let payload = try JSONEncoder().encode(
+            RegisterRequest(
+                email: email,
+                password: password,
+                role: Role.pro.rawValue,
+                firstName: firstName,
+                lastName: lastName,
+                phone: phone,
+                tosAccepted: true,
+                transactionalSmsConsent: true,
+                signupLocation: signupLocation,
+                deviceId: deviceId,
+                appAttest: appAttestPayload,
+                professionType: professionType.rawValue,
+                licenseState: licenseState,
+                businessName: businessName,
+                handle: handle,
+                mobileRadiusMiles: mobileRadiusMiles,
+                licenseNumber: licenseNumber,
+                licenseExpiry: licenseExpiry
+            )
+        )
+        let response: RegisterResponse = try await api.request(
+            "/auth/register",
+            method: .post,
+            body: payload,
+            authenticated: false
+        )
+        await tokenStore.save(response.token)
+        return response
+    }
+
     /// POST /api/v1/auth/apple. Send Apple's identity token (+ name on first
     /// auth). Persists the returned session token on success.
     @discardableResult

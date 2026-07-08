@@ -405,6 +405,59 @@ final class SessionModel {
         }
     }
 
+    /// Create a PRO account (native pro signup). Same post-signup path as
+    /// `registerClient`: the returned VERIFICATION token is persisted and we route
+    /// to phone verification (the register endpoint already texted the code, so
+    /// `pendingVerificationPhone` skips straight to code entry). Returns true so the
+    /// caller can dismiss the signup flow.
+    func registerPro(
+        email: String,
+        password: String,
+        firstName: String,
+        lastName: String,
+        phone: String,
+        professionType: ProfessionType,
+        licenseState: String,
+        businessName: String?,
+        handle: String?,
+        licenseNumber: String?,
+        licenseExpiry: String?,
+        location: ProSignupLocation
+    ) async -> Bool {
+        isWorking = true
+        errorMessage = nil
+        defer { isWorking = false }
+        do {
+            let result = try await client.auth.registerPro(
+                email: email,
+                password: password,
+                firstName: firstName,
+                lastName: lastName,
+                phone: phone,
+                professionType: professionType,
+                licenseState: licenseState,
+                businessName: businessName,
+                handle: handle,
+                licenseNumber: licenseNumber,
+                licenseExpiry: licenseExpiry,
+                location: location,
+                deviceId: client.deviceId
+            )
+            currentUser = result.user
+            activeRole = result.user.role
+            emailVerified = result.isEmailVerified
+            pendingVerificationPhone = phone
+            state = .needsVerification
+            return true
+        } catch let error as APIError {
+            errorMessage = error.userMessage
+            return false
+        } catch {
+            errorMessage = "Couldn’t create your pro account. Please try again."
+            return false
+        }
+    }
+
     func appleLogin(identityToken: String, firstName: String?, lastName: String?) async {
         isWorking = true
         errorMessage = nil

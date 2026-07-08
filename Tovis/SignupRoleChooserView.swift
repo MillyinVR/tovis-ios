@@ -1,10 +1,9 @@
 // The native signup entry point: choose Client or Pro. Mirrors the web signup
-// role split (/signup). Client → the native ClientSignupView (wired to
-// POST /api/v1/auth/register). Pro signup isn't native yet — that's a later PR —
-// so the pro card explains it and points to the web for now.
+// role split (/signup). Client → ClientSignupView, Pro → ProSignupView, both wired
+// to POST /api/v1/auth/register.
 //
-// Presented as a full-screen cover from LoginView. On a successful client signup
-// the session flips to `.needsVerification`, so RootView swaps to the phone
+// Presented as a full-screen cover from LoginView. On a successful signup the
+// session flips to `.needsVerification`, so RootView swaps to the phone
 // verification screen and this cover is dismissed.
 import SwiftUI
 
@@ -62,7 +61,7 @@ struct SignupRoleChooserView: View {
             .navigationDestination(for: Route.self) { route in
                 switch route {
                 case .client: ClientSignupView()
-                case .pro: ProSignupUnavailableView()
+                case .pro: ProSignupView()
                 }
             }
         }
@@ -105,55 +104,5 @@ struct SignupRoleChooserView: View {
             }
         }
         .buttonStyle(.plain)
-    }
-}
-
-/// Pro signup isn't native yet — point pros to the web signup for now. Removed
-/// once the native pro signup flow lands (A1, later PR).
-private struct ProSignupUnavailableView: View {
-    private let proSignupURL = URL(string: "https://www.tovis.app/signup")
-
-    var body: some View {
-        ZStack {
-            BrandColor.bgPrimary.ignoresSafeArea()
-
-            VStack(spacing: 18) {
-                Spacer()
-
-                Image(systemName: "hammer.fill")
-                    .font(.system(size: 30, weight: .semibold))
-                    .foregroundStyle(BrandColor.accent)
-
-                Text("Pro signup is coming to the app")
-                    .font(BrandFont.display(24, .semibold))
-                    .foregroundStyle(BrandColor.textPrimary)
-                    .multilineTextAlignment(.center)
-
-                Text("We're building the professional signup natively. In the meantime you can create your pro account on the web — then sign in here.")
-                    .font(BrandFont.body(15))
-                    .foregroundStyle(BrandColor.textMuted)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 8)
-
-                if let proSignupURL {
-                    Link(destination: proSignupURL) {
-                        Text("Sign up on the web")
-                            .font(BrandFont.body(16, .semibold))
-                            .foregroundStyle(BrandColor.onAccent)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 15)
-                            .background(BrandColor.accent)
-                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    }
-                    .padding(.top, 6)
-                }
-
-                Spacer()
-                Spacer()
-            }
-            .padding(.horizontal, 28)
-        }
-        .navigationTitle("Professional")
-        .navigationBarTitleDisplayMode(.inline)
     }
 }
