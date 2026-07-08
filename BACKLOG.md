@@ -91,14 +91,57 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
   "feature media in portfolio" toggle.
 - [ ] **A5 — pro home → Calendar**: land on Calendar like web (iOS lands on the
   Overview home today); delete the never-instantiated `Tovis/ProOverviewView.swift`.
-- [ ] **A6 — minor drift**: **Inbox role-awareness FIX** — `InboxView` always shows
-  `thread.professional.displayName`, so a pro sees the wrong party's name; make it
-  role-aware + add web's filter tabs (All/Bookings/Waitlists/Pros) + context
-  eyebrows · Home `InviteFriendCard` + two-column · Notifications day-grouping +
-  filter chips (All/Unread/Bookings/Payments/Social).
+- [ ] **A6 — minor drift**: ✅ **Inbox role-awareness FIX shipped** (PR #11, see §7) — rows
+  + thread title now show the correct counterparty via the new `isViewerPro`. Still open:
+  web's inbox filter tabs (All/Bookings/Waitlists/Pros) + context eyebrows (→ §7 increment 4) ·
+  Home `InviteFriendCard` + two-column · Notifications day-grouping + filter chips
+  (All/Unread/Bookings/Payments/Social).
 - Stale-code cleanup surfaced: `ProNewBookingView` header says "SALON only" but
   handles mobile; `AppFiles/{LoginView,SessionModel}.swift` are stubs (live auth
   is in `ContentView.swift`).
+
+## 6. Post-appointment payment confirmation + aftercare rebooking (audit 2026-07-08)
+Backend + web build tracked in `tovis-app/docs/BACKLOG.md §10` (locked decisions there).
+For off-platform / unverifiable payment methods (Venmo / Zelle / Cash / Apple Cash /
+PayPal) the current appointment's checkout enters a new `AWAITING_CONFIRMATION` state
+(client attests, pro confirms receipt to close it out); the client can still book the next
+appointment immediately, and for **aftercare-sourced** next appointments approval is
+**coupled to payment confirmation** (stays `PENDING` until the pro approves the payment,
+which auto-`ACCEPTED`s it). Backend is additive — iOS keeps working until this ships.
+- [x] **PF4 — iOS parity** — SHIPPED (PR #10, merged 2026-07-08). Client checkout shows the
+  "Payment sent — waiting on your pro" banner (AWAITING_CONFIRMATION); pro session wrap-up
+  gains "Confirm payment received" → `POST /pro/bookings/{id}/checkout/confirm-payment`
+  (auto-approves the coupled next booking); PAYMENT_CONFIRMATION_REQUIRED notif labelled.
+  Followed the repo's stringly-typed checkout-status/event-key convention (no new enum).
+  **Deferred (needs a backend follow-up — read endpoints don't expose the fields):** the
+  confirm button in the pro booking-DETAIL Payment section, the coupled card on the next
+  booking's detail page, and the client coupled "Pending confirmation" label — all need
+  `checkoutStatus` + `rebookOfBookingId` on `GET /pro/bookings/[id]` + the client booking read.
+
+## 7. Messaging refinement epic (2026-07-08)
+Refine the Inbox/messaging surface for BOTH roles, web + iOS in parity. Root cause of the
+"feels off" was a real bug: iOS showed the wrong counterparty (a pro saw their own name)
+because the thread list DTO omitted participant user ids. Web + backend counterpart:
+`tovis-app/docs/BACKLOG.md` messaging epic. 5 planned increments, one PR-pair each:
+- [x] **M1 — role-aware counterparty + thread polish** — SHIPPED (web `tovis-app #531` +
+  iOS PR #11). Backend added `isViewerPro` (thread list) + `counterpartyLastReadAt`
+  (thread detail); iOS decodes `isViewerPro` → `MessageThread.counterpartyName/AvatarUrl`
+  (rows + thread title + neutral empty-state); read receipts ("Read"), Today/Yesterday/date
+  separators, optimistic send + "Failed · Retry". Web extracted a shared counterparty helper.
+- [ ] **M2 — realtime on the messages screens**: iOS should subscribe to its own
+  `user:{id}` Supabase channel (topic `messages`) and refetch, keeping the subscription
+  live IN the inbox + thread (web's `LiveRefresh` isn't even mounted on `/messages*` — a
+  gap to close on web too). Cuts the 15s/30s poll latency.
+- [ ] **M3 — inbox filters + context eyebrows**: mirror web's 4 filter tabs
+  (All/Bookings/Waitlists/Pros) + per-row context eyebrow (booking time / waitlist status /
+  service name). (Folds in the A6 inbox-filter item.)
+- [ ] **M4 — pro→client entry points**: iOS has NO way to start a conversation with a
+  client from a booking / `ProClientChartView` / `ProBookingDetailView` (web does, via
+  `/messages/start`). Add a "Message" action + wire `resolveThread(clientId:)`.
+- [ ] **M5 — attachment composer + history paging**: send media (both platforms only
+  RENDER attachments today — no compose UI) + "load older" using the server cursor
+  (`nextCursor`/`hasMore`) that both UIs currently ignore. Also a message deep-link target
+  so a notification can open the thread.
 
 ---
 
