@@ -24,6 +24,10 @@ struct ProOverviewHomeView: View {
                 ProTopBar(title: selection.title, hasUnread: hasUnread) {
                     showNotifications = true
                 }
+                // Not-bookable nudge → opens the onboarding readiness checklist.
+                // Renders nothing once the pro is fully set up (parity with web's
+                // ProReadinessBanner across the pro shell).
+                ProReadinessBanner()
                 ProHeaderTabsBar(selection: $selection)
                 tabBody
             }
