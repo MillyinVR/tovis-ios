@@ -33,6 +33,7 @@ struct ProSessionHubView: View {
     @State private var paymentMethods: [ProManualPaymentMethod] = []
     @State private var selectedMethod: String = ""
     @State private var markPaidError: String?
+    @State private var confirmPaymentError: String?
     /// Phase D: the wrap-up "photographer's review" of the before/after set
     /// (Claude vision via POST /pro/camera/set-critique; consent-gated).
     @State private var critique: ProSetCritique?
@@ -333,9 +334,15 @@ struct ProSessionHubView: View {
                     ForEach(checklist.items) { item in
                         VStack(alignment: .leading, spacing: 8) {
                             checklistRow(item)
-                            // Record an in-person payment when nothing's collected yet.
+                            // Record an in-person payment when nothing's collected yet —
+                            // unless the client already attested an off-platform payment
+                            // (AWAITING_CONFIRMATION), in which case the pro confirms receipt.
                             if item.key == .payment && !item.done {
-                                markPaidControl()
+                                if state.checkout?.isAwaitingConfirmation == true {
+                                    confirmPaymentControl()
+                                } else {
+                                    markPaidControl()
+                                }
                             }
                         }
                     }
@@ -635,6 +642,34 @@ struct ProSessionHubView: View {
         }
     }
 
+    /// Confirm receipt of an off-platform payment the client already marked as sent
+    /// (web `ConfirmPaymentReceivedButton`). Confirming closes out this booking AND
+    /// auto-approves any aftercare next appointment coupled to the payment.
+    @ViewBuilder
+    private func confirmPaymentControl() -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("The client marked this payment as sent. Confirm once you’ve received it to close out the booking.")
+                .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button { Task { await confirmPayment() } } label: {
+                Text(working ? "Confirming…" : "Confirm payment received")
+                    .font(BrandFont.body(13, .semibold)).foregroundStyle(BrandColor.onAccent)
+                    .frame(maxWidth: .infinity).padding(.vertical, 11)
+                    .background(BrandColor.emerald)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            .disabled(working)
+
+            Text("This also approves the next booking the client requested.")
+                .font(BrandFont.body(11)).foregroundStyle(BrandColor.textMuted)
+
+            if let confirmPaymentError {
+                Text(confirmPaymentError).font(BrandFont.body(11)).foregroundStyle(BrandColor.ember)
+            }
+        }
+    }
+
     // MARK: - Done / Terminal
 
     @ViewBuilder
@@ -908,6 +943,22 @@ struct ProSessionHubView: View {
             markPaidError = error.userMessage
         } catch {
             markPaidError = "Could not record payment. Check your connection and try again."
+        }
+    }
+
+    private func confirmPayment() async {
+        guard !working else { return }
+        confirmPaymentError = nil
+        working = true
+        defer { working = false }
+        do {
+            try await session.client.proBookings.confirmPayment(bookingId: bookingId)
+            session.signalRefresh()
+            await load()
+        } catch let error as APIError {
+            confirmPaymentError = error.userMessage
+        } catch {
+            confirmPaymentError = "Could not confirm payment. Check your connection and try again."
         }
     }
 

@@ -260,6 +260,7 @@ struct ProNotificationsView: View {
     private static func category(of eventKey: String) -> String {
         let k = eventKey.uppercased()
         if k == "BOOKING_REQUEST_CREATED" { return "REQUESTS" }
+        if k == "PAYMENT_CONFIRMATION_REQUIRED" { return "REQUESTS" }
         if k.contains("CANCELLED") { return "CANCELLED" }
         if k == "REVIEW_RECEIVED" { return "REVIEWS" }
         if k.hasPrefix("LOOK_") || k.contains("FOLLOWER") { return "SOCIAL" }
@@ -270,6 +271,7 @@ struct ProNotificationsView: View {
     private static func eventLabel(_ eventKey: String) -> String {
         let k = eventKey.uppercased()
         if k == "BOOKING_REQUEST_CREATED" { return "Booking request" }
+        if k == "PAYMENT_CONFIRMATION_REQUIRED" { return "Confirm payment" }
         if k.contains("CANCELLED") { return "Booking cancelled" }
         if k == "REVIEW_RECEIVED" { return "Review" }
         return "Booking update"

@@ -185,6 +185,29 @@ public final class ProBookingService: Sendable {
         )
     }
 
+    /// POST /api/v1/pro/bookings/{id}/checkout/confirm-payment — confirm receipt of
+    /// an off-platform payment the client already marked as sent (checkout state
+    /// AWAITING_CONFIRMATION → PAID). Distinct from `markPaid`: the method was
+    /// recorded at client checkout, so there is **no body**. Confirming also
+    /// auto-approves any aftercare next appointment coupled to this payment — the
+    /// approved ids come back in `meta.approvedNextAppointmentBookingIds`. The
+    /// route rejects a missing idempotency-key header, so one is always minted.
+    @discardableResult
+    public func confirmPayment(
+        bookingId: String,
+        idempotencyKey: String? = nil
+    ) async throws -> ProConfirmPaymentResponse {
+        // No body ⇒ no nonce; the scope+entity+action key is stable across a 60s
+        // double-tap so the server replays instead of re-running the side effect.
+        let key = idempotencyKey ?? buildClientIdempotencyKey(
+            scope: "pro-booking", entityId: bookingId, action: "confirm-payment")
+        return try await api.request(
+            "/pro/bookings/\(bookingId)/checkout/confirm-payment",
+            method: .post,
+            headers: ["idempotency-key": key]
+        )
+    }
+
     /// POST /api/v1/pro/bookings — create a booking. Pass `clientId` for an
     /// existing client, OR `client` to create a new (unclaimed) one inline — the
     /// backend resolves either. The `idempotencyKey` must follow "same key ⇒ same

@@ -77,6 +77,17 @@ struct BookingDetailView: View {
             (booking.checkout.checkoutStatus ?? "").uppercased() == "PAID"
     }
 
+    /// The client already marked an off-platform payment (cash / Venmo / Zelle /
+    /// Apple Cash / PayPal) as sent; it's authorized on their word and closes out
+    /// only once the pro confirms receipt (web `AWAITING_CONFIRMATION`). There's
+    /// nothing left for the client to do here — freeze the pay controls and show a
+    /// waiting banner. Mirrors web `ClientCheckoutCard`.
+    private var awaitingConfirmation: Bool {
+        !paidLocally &&
+            booking.checkout.paymentCollectedAt == nil &&
+            (booking.checkout.checkoutStatus ?? "").uppercased() == "AWAITING_CONFIRMATION"
+    }
+
     /// A discovery deposit is owed exactly while its status is PENDING (the same
     /// gate the backend's deposit/stripe-session route enforces). `depositPaidLocally`
     /// flips it off optimistically once the deposit return lands.
@@ -232,6 +243,22 @@ struct BookingDetailView: View {
                         .font(BrandFont.body(15, .semibold))
                         .foregroundStyle(BrandColor.textPrimary)
                     Spacer()
+                }
+            }
+        } else if awaitingConfirmation {
+            BrandSurface(tint: BrandColor.gold.opacity(0.12)) {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "clock.badge.checkmark")
+                        .foregroundStyle(BrandColor.gold)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Payment sent — waiting on your pro")
+                            .font(BrandFont.body(15, .semibold))
+                            .foregroundStyle(BrandColor.textPrimary)
+                        Text("Once your pro confirms they received payment, your booking will close out. There’s nothing else you need to do.")
+                            .font(BrandFont.body(13))
+                            .foregroundStyle(BrandColor.textSecondary)
+                    }
+                    Spacer(minLength: 0)
                 }
             }
         } else if paymentDue {
