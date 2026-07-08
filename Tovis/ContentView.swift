@@ -95,6 +95,29 @@ struct PushDeepLink: Equatable {
     }
 }
 
+// MARK: - Password-reset Universal Link
+
+/// A parsed `https://<host>/reset-password/<token>` Universal Link — the link
+/// `lib/auth/passwordReset` emails. With the app installed, iOS hands the tap to
+/// `.onOpenURL` (the AASA scopes it to `/reset-password/*`); we pull the token and
+/// route to the native set-new-password screen instead of the web page. The host
+/// is re-checked defensively — never trust an arbitrary https URL from onOpenURL.
+struct PasswordResetLink: Equatable {
+    let token: String
+
+    init?(url: URL) {
+        guard url.scheme?.lowercased() == "https" else { return nil }
+        let host = url.host?.lowercased()
+        guard host == "tovis.app" || host == "www.tovis.app" else { return nil }
+        // Path segments minus the leading "/": ["reset-password", "<token>"].
+        let parts = url.pathComponents.filter { $0 != "/" }
+        guard parts.count >= 2, parts[0] == "reset-password" else { return nil }
+        let token = parts[1]
+        guard !token.isEmpty else { return nil }
+        self.token = token
+    }
+}
+
 // MARK: - Auth state (owns the TovisClient)
 
 @MainActor
@@ -144,9 +167,19 @@ final class SessionModel {
     /// is just to surface the result without a manual reload.
     private(set) var checkoutReturn: CheckoutReturn?
 
-    /// Handle a `tovis://checkout/return?status=…&kind=…&bookingId=…` deep link.
-    /// Ignores anything that isn't our checkout return so other links are safe.
+    /// The token from a tapped password-reset Universal Link. RootView presents the
+    /// native set-new-password screen over whatever is showing when this is set
+    /// (works from a cold launch too — the cover survives the bootstrap swap).
+    private(set) var pendingPasswordResetToken: String?
+
+    /// Handle an incoming deep link / Universal Link. Password-reset links route to
+    /// the native reset screen; the `tovis://checkout/return?…` scheme feeds the
+    /// active booking screen. Anything else is ignored so stray links are safe.
     func handleDeepLink(_ url: URL) {
+        if let reset = PasswordResetLink(url: url) {
+            pendingPasswordResetToken = reset.token
+            return
+        }
         guard let parsed = CheckoutReturn(url: url) else { return }
         checkoutReturn = parsed
         signalRefresh()
@@ -154,6 +187,9 @@ final class SessionModel {
 
     /// Acknowledge a return once the active screen has consumed it.
     func clearCheckoutReturn() { checkoutReturn = nil }
+
+    /// Dismiss the native set-new-password screen (done or cancelled).
+    func clearPasswordResetToken() { pendingPasswordResetToken = nil }
 
     /// The destination a tapped push asked to open. The signed-in shell observes
     /// this and routes (e.g. presents the booking detail), then clears it. Set
@@ -363,6 +399,46 @@ final class SessionModel {
         }
     }
 
+    // MARK: - Password reset
+
+    /// Request a password-reset email. Enumeration-safe: the backend always
+    /// accepts, so `true` only means "we sent the request" (the email arrives only
+    /// if the account exists). Returns false on a transport / rate-limit failure.
+    func requestPasswordReset(email: String) async -> Bool {
+        isWorking = true
+        errorMessage = nil
+        defer { isWorking = false }
+        do {
+            try await client.auth.requestPasswordReset(email: email)
+            return true
+        } catch let error as APIError {
+            errorMessage = error.userMessage
+            return false
+        } catch {
+            errorMessage = "Couldn’t send the reset email. Please try again."
+            return false
+        }
+    }
+
+    /// Set a new password from a reset-link token. Returns true on success (the
+    /// caller dismisses back to sign-in). Surfaces the backend message on failure
+    /// (expired / used link, or a password that fails the policy).
+    func confirmPasswordReset(token: String, password: String) async -> Bool {
+        isWorking = true
+        errorMessage = nil
+        defer { isWorking = false }
+        do {
+            try await client.auth.confirmPasswordReset(token: token, password: password)
+            return true
+        } catch let error as APIError {
+            errorMessage = error.userMessage
+            return false
+        } catch {
+            errorMessage = "Couldn’t update your password. Please try again."
+            return false
+        }
+    }
+
     /// Create a CLIENT account (native email/password signup). On success the
     /// account is signed in but unverified: the returned VERIFICATION token is
     /// persisted and we route to phone verification. The register endpoint has
@@ -555,8 +631,20 @@ struct RootView: View {
         }
         // Stripe Checkout hands back through the `tovis://checkout/return` scheme
         // (via the backend bounce page). Route it into the session so the active
-        // booking screen can dismiss the browser and refetch.
+        // booking screen can dismiss the browser and refetch. A tapped
+        // password-reset Universal Link routes through the same handler.
         .onOpenURL { session.handleDeepLink($0) }
+        // A tapped password-reset link opens the native set-new-password screen
+        // over whatever is showing (even mid-launch — the token survives the
+        // bootstrap state swap), mirroring the web /reset-password/<token> page.
+        .fullScreenCover(isPresented: Binding(
+            get: { session.pendingPasswordResetToken != nil },
+            set: { if !$0 { session.clearPasswordResetToken() } }
+        )) {
+            if let token = session.pendingPasswordResetToken {
+                ResetPasswordView(token: token)
+            }
+        }
     }
 }
 
@@ -568,6 +656,7 @@ struct LoginView: View {
     @State private var password = ""
     @State private var showPhone = false
     @State private var showSignup = false
+    @State private var showForgot = false
 
     var body: some View {
         VStack(spacing: 28) {
@@ -590,8 +679,7 @@ struct LoginView: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
 
-                BrandField(placeholder: "Password", text: $password, isSecure: true)
-                    .textContentType(.password)
+                PasswordRevealField(placeholder: "Password", text: $password, textContentType: .password)
 
                 if let message = session.errorMessage {
                     Text(message)
@@ -599,6 +687,14 @@ struct LoginView: View {
                         .foregroundStyle(BrandColor.ember)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
+
+                Button("Forgot password?") {
+                    session.errorMessage = nil
+                    showForgot = true
+                }
+                .font(BrandFont.body(14, .semibold))
+                .foregroundStyle(BrandColor.accent)
+                .frame(maxWidth: .infinity, alignment: .trailing)
             }
 
             Button {
@@ -668,6 +764,9 @@ struct LoginView: View {
         .padding(.horizontal, 28)
         .sheet(isPresented: $showPhone) {
             PhoneLoginView()
+        }
+        .sheet(isPresented: $showForgot) {
+            ForgotPasswordView()
         }
         .fullScreenCover(isPresented: $showSignup) {
             SignupRoleChooserView()

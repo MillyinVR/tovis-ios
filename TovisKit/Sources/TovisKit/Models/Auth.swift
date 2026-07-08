@@ -205,6 +205,26 @@ public struct PhoneVerifyResponse: Decodable, Sendable {
     public let token: String?
 }
 
+// MARK: - Password reset (email-link based)
+//
+// Mirrors the web flow (app/api/v1/auth/password-reset/*): request emails a link
+// carrying a `<tokenId>.<secret>` token, and confirm sets the new password with
+// that token. Both bodies are unauthenticated.
+
+/// POST /api/v1/auth/password-reset/request — request body. The endpoint always
+/// returns `{ ok: true }` (enumeration-safe), so there's no meaningful response.
+struct PasswordResetRequestBody: Encodable, Sendable {
+    let email: String
+}
+
+/// POST /api/v1/auth/password-reset/confirm — request body. `token` is the
+/// `<tokenId>.<secret>` from the emailed reset link (delivered to the app via the
+/// `/reset-password/<token>` Universal Link); `password` is the new one.
+struct PasswordResetConfirmBody: Encodable, Sendable {
+    let token: String
+    let password: String
+}
+
 /// Push platform — matches the backend `DevicePlatform` enum.
 public enum DevicePlatform: String, Codable, Sendable {
     case ios = "IOS"

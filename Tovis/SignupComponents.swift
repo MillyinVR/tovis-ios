@@ -2,6 +2,7 @@
 // ProSignupView), so the two flows render identical field labels, consent rows,
 // and primary buttons instead of each re-declaring them.
 import SwiftUI
+import UIKit
 
 /// The small secondary label shown above a signup input.
 struct SignupFieldLabel: View {
@@ -126,6 +127,60 @@ struct SignupStepIndicator: View {
                 }
             }
         }
+    }
+}
+
+/// A password field with a show/hide (eye) toggle, styled to match `BrandField`.
+/// Used everywhere the user types a password (sign in, signup, password reset) so
+/// they can reveal what they typed and catch typos. The content type is applied to
+/// the inner field — `.password` for sign in (autofill), `.newPassword` for signup
+/// / reset (Passwords app strong-password suggestion + save).
+struct PasswordRevealField: View {
+    let placeholder: String
+    @Binding var text: String
+    var textContentType: UITextContentType? = .password
+
+    @State private var isRevealed = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Group {
+                if isRevealed {
+                    TextField("", text: $text, prompt: prompt)
+                } else {
+                    SecureField("", text: $text, prompt: prompt)
+                }
+            }
+            .font(BrandFont.body(16))
+            .foregroundStyle(BrandColor.textPrimary)
+            .textContentType(textContentType)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+
+            Button {
+                isRevealed.toggle()
+            } label: {
+                Image(systemName: isRevealed ? "eye.slash" : "eye")
+                    .font(.system(size: 16, weight: .regular))
+                    .foregroundStyle(BrandColor.textMuted)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isRevealed ? "Hide password" : "Show password")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 15)
+        .background(BrandColor.bgSurface)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(BrandColor.textMuted.opacity(0.18), lineWidth: 1)
+        )
+    }
+
+    private var prompt: Text {
+        Text(placeholder).foregroundStyle(BrandColor.textMuted)
     }
 }
 
