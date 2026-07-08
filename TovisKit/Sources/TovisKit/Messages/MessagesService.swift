@@ -18,14 +18,21 @@ public final class MessagesService: Sendable {
         return response.threads
     }
 
-    /// GET /api/v1/messages/threads/{id} → the latest page of messages (ascending)
-    /// plus the counterparty's last-read stamp for the sender's read receipt.
-    /// (v1 loads the most recent page; cursor paging can come later.)
-    public func messages(threadId: String) async throws -> MessageThreadPage {
-        let response: MessageThreadPageResponse = try await api.request("/messages/threads/\(threadId)")
+    /// GET /api/v1/messages/threads/{id} → a page of messages (ascending) plus the
+    /// counterparty's last-read stamp for the sender's read receipt. With no
+    /// `cursor` this is the most recent page; pass a page's `nextCursor` to load
+    /// the messages older than it ("load earlier"). The returned `nextCursor` /
+    /// `hasMore` describe whether there's still older history to page through.
+    public func messages(threadId: String, cursor: String? = nil) async throws -> MessageThreadPage {
+        let query = cursor.map { [URLQueryItem(name: "cursor", value: $0)] }
+        let response: MessageThreadPageResponse = try await api.request(
+            "/messages/threads/\(threadId)", query: query
+        )
         return MessageThreadPage(
             messages: response.messages,
-            counterpartyLastReadAt: response.thread?.counterpartyLastReadAt
+            counterpartyLastReadAt: response.thread?.counterpartyLastReadAt,
+            nextCursor: response.nextCursor,
+            hasMore: response.hasMore
         )
     }
 

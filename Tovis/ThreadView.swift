@@ -62,10 +62,32 @@ struct ThreadView: View {
     @State private var sending = false
     @State private var errorMessage: String?
 
+    // "Load earlier" cursor paging. `olderCursor` is the oldest loaded message's
+    // id; the 15s poll never touches it (it only refetches the newest page).
+    @State private var olderCursor: String?
+    @State private var hasMoreOlder = false
+    @State private var loadingOlder = false
+
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 10) {
+                    if hasMoreOlder {
+                        Button { Task { await loadOlder(proxy) } } label: {
+                            if loadingOlder {
+                                ProgressView().tint(BrandColor.textMuted)
+                            } else {
+                                Text("Load earlier messages")
+                                    .font(BrandFont.mono(10)).tracking(0.7)
+                                    .foregroundStyle(BrandColor.textSecondary)
+                                    .padding(.horizontal, 14).padding(.vertical, 6)
+                                    .overlay(Capsule().stroke(BrandColor.textMuted.opacity(0.2), lineWidth: 1))
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(loadingOlder)
+                        .padding(.bottom, 2)
+                    }
                     ForEach(Array(messages.enumerated()), id: \.element.id) { index, message in
                         if showDaySeparator(at: index) {
                             DaySeparator(label: dayLabel(message.createdAt))
@@ -84,7 +106,9 @@ struct ThreadView: View {
                 .padding(.vertical, 16)
             }
             .background(BrandColor.bgPrimary.ignoresSafeArea())
-            .onChange(of: messages.count) { scrollToBottom(proxy) }
+            // Scroll to bottom only when the NEWEST message changes (send / new
+            // incoming) — not when "load earlier" prepends older ones.
+            .onChange(of: messages.last?.id) { scrollToBottom(proxy) }
             .task {
                 myUserId = await session.client.currentUserId()
                 if !loaded { await load(scroll: proxy) }
@@ -168,8 +192,16 @@ struct ThreadView: View {
 
     private func load(scroll proxy: ScrollViewProxy? = nil) async {
         do {
+            let wasFirstLoad = !loaded
             let page = try await session.client.messages.messages(threadId: thread.id)
             applyServer(page)
+            // Seed the "load earlier" cursor from the first page only — later
+            // polls refetch the newest page, whose cursor would walk forward and
+            // clobber the oldest-loaded boundary we've paged back to.
+            if wasFirstLoad {
+                olderCursor = page.nextCursor
+                hasMoreOlder = page.hasMore
+            }
             loaded = true
             try? await session.client.messages.markRead(threadId: thread.id)
             if let proxy { scrollToBottom(proxy) }
@@ -180,12 +212,46 @@ struct ThreadView: View {
         }
     }
 
-    /// Merge a fresh server page over local state, preserving any optimistic
-    /// (sending/failed) rows the server doesn't know about yet.
+    /// Fetch the messages older than the current cursor and prepend them,
+    /// keeping the previously-topmost message in view so the list doesn't jump.
+    private func loadOlder(_ proxy: ScrollViewProxy) async {
+        guard hasMoreOlder, !loadingOlder, let cursor = olderCursor else { return }
+        loadingOlder = true
+        defer { loadingOlder = false }
+
+        let anchorId = messages.first?.id
+        do {
+            let page = try await session.client.messages.messages(threadId: thread.id, cursor: cursor)
+            let existingIds = Set(messages.map(\.id))
+            let older = page.messages
+                .map(ThreadMessage.init(server:))
+                .filter { !existingIds.contains($0.id) }
+            if !older.isEmpty {
+                messages = older + messages
+                if let anchorId { proxy.scrollTo(anchorId, anchor: .top) }
+            }
+            olderCursor = page.nextCursor
+            hasMoreOlder = page.hasMore
+        } catch {
+            // Transient — leave the button so the user can retry.
+        }
+    }
+
+    /// Merge a fresh server page over local state, preserving any older pages the
+    /// user loaded via "load earlier" AND any optimistic (sending/failed) rows the
+    /// server doesn't know about yet.
     private func applyServer(_ page: MessageThreadPage) {
         counterpartyLastReadAt = page.counterpartyLastReadAt
         let pending = messages.filter { $0.status != .sent }
-        messages = page.messages.map(ThreadMessage.init(server:)) + pending
+
+        var byId: [String: ThreadMessage] = [:]
+        for message in messages where message.status == .sent { byId[message.id] = message }
+        for message in page.messages { byId[message.id] = ThreadMessage(server: message) }
+
+        let merged = byId.values.sorted { lhs, rhs in
+            lhs.createdAt == rhs.createdAt ? lhs.id < rhs.id : lhs.createdAt < rhs.createdAt
+        }
+        messages = merged + pending
     }
 
     private func send() async {

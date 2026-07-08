@@ -127,11 +127,29 @@ public struct MessageThreadPageThread: Decodable, Sendable {
     public let counterpartyLastReadAt: String?
 }
 
-/// Service-facing result of fetching a thread's messages: the page plus the
-/// counterparty read stamp that drives the sender's read receipt.
+/// Service-facing result of fetching a thread's messages: the page, the
+/// counterparty read stamp that drives the sender's read receipt, and the
+/// cursor for the next-older page (`nextCursor`/`hasMore`) used by "load earlier".
 public struct MessageThreadPage: Sendable {
     public let messages: [Message]
     public let counterpartyLastReadAt: String?
+    /// Cursor for the next-older page (oldest message id in this page), or nil at
+    /// the start of history. Pass it back as `cursor:` to page backwards.
+    public let nextCursor: String?
+    /// Whether there are older messages to load.
+    public let hasMore: Bool
+
+    public init(
+        messages: [Message],
+        counterpartyLastReadAt: String?,
+        nextCursor: String? = nil,
+        hasMore: Bool = false
+    ) {
+        self.messages = messages
+        self.counterpartyLastReadAt = counterpartyLastReadAt
+        self.nextCursor = nextCursor
+        self.hasMore = hasMore
+    }
 }
 
 public struct Message: Decodable, Sendable, Identifiable {
