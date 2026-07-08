@@ -4,21 +4,21 @@
 // pro isn't bookable yet, lists each blocker with the same copy as web's
 // PRO_BLOCKER_COPY — each linking straight to the native page that fixes it.
 //
-// Blockers whose fix lives on a screen that doesn't exist natively yet
-// (verification / license) render as informational rows: the native verification
-// screen is the next A1 increment, and this list will link to it once it lands.
+// Verification / license blockers link to the native verification screen
+// (ProVerificationView); `.unknown` still renders as a non-navigating info row.
 import SwiftUI
 import TovisKit
 
 // MARK: - Blocker → copy + native fix-it destination
 
-/// The native page a blocker links to. `nil` (verification / license / unknown)
-/// renders as a non-navigating info row until its screen exists natively.
+/// The native page a blocker links to. `nil` (unknown blocker) renders as a
+/// non-navigating info row.
 private enum ProReadinessFix {
     case services
     case locations
     case workingHours
     case payment
+    case verification
 }
 
 /// One row in the checklist: web-parity label + an SF Symbol + optional native
@@ -55,11 +55,11 @@ private func checklistItem(for blocker: ProReadinessBlocker) -> ProReadinessChec
     case .stripeNotReady:
         return .init(id: blocker.rawValue, label: "Finish Stripe payout setup in your payment settings.", icon: "creditcard", fix: .payment)
     case .verificationNotApproved:
-        return .init(id: blocker.rawValue, label: "Finish professional verification.", icon: "checkmark.seal", fix: nil)
+        return .init(id: blocker.rawValue, label: "Finish professional verification.", icon: "checkmark.seal", fix: .verification)
     case .verificationNotBroadlyDiscoverable:
-        return .init(id: blocker.rawValue, label: "Finish verification so clients can discover you.", icon: "checkmark.seal", fix: nil)
+        return .init(id: blocker.rawValue, label: "Finish verification so clients can discover you.", icon: "checkmark.seal", fix: .verification)
     case .licenseExpired:
-        return .init(id: blocker.rawValue, label: "Your license has expired — renew it and update your license info.", icon: "checkmark.seal", fix: nil)
+        return .init(id: blocker.rawValue, label: "Your license has expired — renew it and update your license info.", icon: "checkmark.seal", fix: .verification)
     case .unknown:
         return .init(id: blocker.rawValue, label: "Finish an outstanding setup step.", icon: "exclamationmark.circle", fix: nil)
     }
@@ -207,6 +207,7 @@ struct ProOnboardingChecklistView: View {
         case .locations: ProLocationsView()
         case .workingHours: ProWorkingHoursView()
         case .payment: ProPaymentSettingsView()
+        case .verification: ProVerificationView()
         }
     }
 
