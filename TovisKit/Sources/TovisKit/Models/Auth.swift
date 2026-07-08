@@ -66,8 +66,9 @@ public struct ClientSignupLocation: Sendable, Equatable {
 /// POST /api/v1/auth/register — request body for a CLIENT signup. Mirrors the web
 /// client signup (SignupClientClient): name + geocoded ZIP + phone + email +
 /// password with the TOS and transactional-SMS consents. `deviceId` is the stable
-/// per-install id so the session is revocable per-device. Native sends no
-/// `turnstileToken`; the backend's captcha check fails open for it. Pro signup
+/// per-install id so the session is revocable per-device. Native can't render
+/// Turnstile, so instead of a `turnstileToken` it sends `appAttest` — an Apple
+/// App Attest attestation the backend verifies (lib/auth/appAttest.ts). Pro signup
 /// (role "PRO" + a PRO_SALON/PRO_MOBILE location) is a later PR.
 struct RegisterRequest: Encodable, Sendable {
     let email: String
@@ -80,6 +81,18 @@ struct RegisterRequest: Encodable, Sendable {
     let transactionalSmsConsent: Bool
     let signupLocation: SignupLocationPayload
     let deviceId: String?
+    /// Omitted (nil → key absent) when App Attest is unavailable, e.g. the
+    /// Simulator; the backend then relies on its local dev fail-open.
+    let appAttest: AppAttestPayload?
+}
+
+/// The `appAttest` wire object. `attestation` is the base64 CBOR attestation and
+/// `timestamp` is the epoch-millis the client bound into the attested client data
+/// (the backend recomputes the same hash to verify the binding + freshness).
+struct AppAttestPayload: Encodable, Sendable {
+    let keyId: String
+    let attestation: String
+    let timestamp: Int64
 }
 
 /// The `signupLocation` wire object. Only the `CLIENT_ZIP` variant is sent today.

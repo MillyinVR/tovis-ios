@@ -7,10 +7,16 @@ import Foundation
 public final class AuthService: Sendable {
     private let api: APIClient
     private let tokenStore: TokenStore
+    private let appAttest: AppAttestProviding
 
-    public init(api: APIClient, tokenStore: TokenStore) {
+    public init(
+        api: APIClient,
+        tokenStore: TokenStore,
+        appAttest: AppAttestProviding = DeviceCheckAppAttestProvider()
+    ) {
         self.api = api
         self.tokenStore = tokenStore
+        self.appAttest = appAttest
     }
 
     /// POST /api/v1/auth/login. Persists the returned token on success.
@@ -44,6 +50,24 @@ public final class AuthService: Sendable {
         location: ClientSignupLocation,
         deviceId: String?
     ) async throws -> RegisterResponse {
+        // Bind an App Attest attestation to this exact identity: attest over
+        // SHA256("email\nphone\ntimestamp"), then send the same timestamp so the
+        // backend recomputes and verifies the binding. Absent on the Simulator.
+        let timestampMs = Int64(Date().timeIntervalSince1970 * 1000)
+        let clientDataHash = AppAttestClientData.hash(
+            email: email,
+            phone: phone,
+            timestampMs: timestampMs
+        )
+        let attestation = await appAttest.attest(clientDataHash: clientDataHash)
+        let appAttestPayload = attestation.map {
+            AppAttestPayload(
+                keyId: $0.keyId,
+                attestation: $0.attestationBase64,
+                timestamp: timestampMs
+            )
+        }
+
         let payload = try JSONEncoder().encode(
             RegisterRequest(
                 email: email,
@@ -64,7 +88,8 @@ public final class AuthService: Sendable {
                     lng: location.lng,
                     timeZoneId: location.timeZoneId
                 ),
-                deviceId: deviceId
+                deviceId: deviceId,
+                appAttest: appAttestPayload
             )
         )
         let response: RegisterResponse = try await api.request(
