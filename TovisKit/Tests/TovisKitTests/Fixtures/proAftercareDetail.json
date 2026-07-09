@@ -43,6 +43,12 @@
           }
         }
       ]
+    },
+    "media": {
+      "beforeUrl": "https://cdn.example.com/bk_1-before-thumb.jpg",
+      "afterUrl": "https://cdn.example.com/bk_1-after-thumb.jpg",
+      "beforeFullUrl": "https://cdn.example.com/bk_1-before-full.jpg",
+      "afterFullUrl": "https://cdn.example.com/bk_1-after-full.jpg"
     }
   }
 }

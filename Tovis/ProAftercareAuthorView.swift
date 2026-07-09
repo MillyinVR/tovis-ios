@@ -31,6 +31,7 @@ struct ProAftercareAuthorView: View {
     @State private var hasWindowEnd = false
     @State private var version: Int?
     @State private var timeZone: String?
+    @State private var media: ProAftercareBooking.Media?
     @State private var isFinalized = false
     @State private var saving = false
     @State private var errorText: String?
@@ -65,6 +66,7 @@ struct ProAftercareAuthorView: View {
                 HStack { Spacer(); ProgressView().tint(BrandColor.accent); Spacer() }.padding(.top, 80)
             } else {
                 VStack(alignment: .leading, spacing: 18) {
+                    photosSection
                     notesSection
                     rebookSection
                     productsSection
@@ -89,6 +91,24 @@ struct ProAftercareAuthorView: View {
     }
 
     // MARK: - Sections
+
+    // The visual record — before/after from this session — mirroring the web
+    // aftercare page's "Photos" card at the top of the left column. Hidden when
+    // the session has no before/after photo.
+    @ViewBuilder
+    private var photosSection: some View {
+        if let media, media.beforeUrl != nil || media.afterUrl != nil {
+            BrandSection(title: "Photos") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Before & after from this session. Visible to you and the client.")
+                        .font(BrandFont.body(12))
+                        .foregroundStyle(BrandColor.textMuted)
+                    AftercareBeforeAfterPair(
+                        beforeUrl: media.beforeUrl, afterUrl: media.afterUrl)
+                }
+            }
+        }
+    }
 
     private var notesSection: some View {
         BrandSection(title: "Aftercare notes") {
@@ -356,6 +376,10 @@ struct ProAftercareAuthorView: View {
                 rebookLocationType = detail.locationType.uppercased() == "SALON" ? "SALON" : "MOBILE"
                 rebookDurationMinutes = detail.totalDurationMinutes > 0 ? detail.totalDurationMinutes : 60
             }
+
+            // Photos exist independently of any aftercare draft (captured during
+            // the session), so set them before the summary guard returns early.
+            media = booking.media
 
             guard let summary = booking.aftercareSummary else { return }
             notes = summary.notes ?? ""

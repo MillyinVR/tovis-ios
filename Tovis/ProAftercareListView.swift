@@ -41,7 +41,6 @@ struct ProAftercareListView: View {
     @State private var tab: Tab = .all
     @State private var query = ""
     @State private var actionState: [String: NudgeState] = [:]
-    @State private var viewingMedia: FullscreenMedia?
 
     var body: some View {
         ScrollView {
@@ -64,7 +63,6 @@ struct ProAftercareListView: View {
         .refreshable { await load() }
         .task { if case .loading = phase { await load() } }
         .onChange(of: session.refreshTick) { Task { await load() } }
-        .mediaFullscreenCover($viewingMedia)
     }
 
     // MARK: - Content
@@ -186,7 +184,8 @@ struct ProAftercareListView: View {
     private func cardBody(_ item: ProAftercareCardItem) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             if let media = item.media {
-                beforeAfterMedia(media)
+                AftercareBeforeAfterPair(
+                    beforeUrl: media.beforeUrl, afterUrl: media.afterUrl)
             }
 
             HStack(spacing: 8) {
@@ -264,57 +263,6 @@ struct ProAftercareListView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // Both halves present → the interactive comparison slider, matching the pro
-    // session hub (BeforeAfterCompareView) and the web BeforeAfterReveal. Only
-    // one half → fall back to the side-by-side labelled thumbnails.
-    @ViewBuilder
-    private func beforeAfterMedia(_ media: ProAftercareCardItem.Media) -> some View {
-        if let beforeStr = media.beforeUrl, let afterStr = media.afterUrl,
-           let beforeURL = URL(string: beforeStr), let afterURL = URL(string: afterStr) {
-            BeforeAfterCompareView(beforeURL: beforeURL, afterURL: afterURL, height: 220)
-        } else if media.beforeUrl != nil || media.afterUrl != nil {
-            HStack(spacing: 8) {
-                thumb(media.beforeUrl, label: "BEFORE")
-                thumb(media.afterUrl, label: "AFTER")
-            }
-        }
-    }
-
-    private func thumb(_ urlString: String?, label: String) -> some View {
-        Button {
-            viewingMedia = FullscreenMedia.remote(id: urlString ?? label, urlString: urlString, isVideo: false)
-        } label: {
-            ZStack(alignment: .bottomLeading) {
-                RoundedRectangle(cornerRadius: 10, style: .continuous).fill(BrandColor.bgPrimary)
-                if let urlString, let url = URL(string: urlString) {
-                    AsyncImage(url: url) { image in
-                        image.resizable().scaledToFill()
-                    } placeholder: {
-                        ProgressView().tint(BrandColor.accent)
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                } else {
-                    Image(systemName: "photo")
-                        .foregroundStyle(BrandColor.textMuted)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-                Text(label)
-                    .font(BrandFont.mono(8))
-                    .tracking(1.0)
-                    .foregroundStyle(BrandColor.textPrimary)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(BrandColor.bgPrimary.opacity(0.7))
-                    .clipShape(Capsule())
-                    .padding(6)
-            }
-            .frame(height: 96)
-            .frame(maxWidth: .infinity)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .disabled(urlString == nil)
-    }
 
     // MARK: - Helpers
 

@@ -77,7 +77,10 @@ Start the stack (`docker start tovis-dev-postgres` → `cd ~/Dev/tovis-app && pn
 
 ## 4. Deferred web-parity polish
 Source: `docs/PRO-WEB-PARITY.md` (all 5 pages parity-complete; these are the tail).
-- [ ] Pro aftercare-detail screen.
+- [x] **A-AC1** Pro aftercare-detail screen — renders the before/after visual
+  record (new shared `AftercareBeforeAfterPair`, also adopted by the aftercare
+  list). Fed by the `media` pass-through on `GET .../aftercare` (tovis-app #554);
+  screen stays text-only until that deploys. **SHIPPED (PR #27)**
 - [ ] In-app Message deep-link from the clients list.
 - [ ] Per-tab chart write forms + technical-record decryption.
 - [ ] Looks/followers profile stat tiles.
