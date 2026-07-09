@@ -22,8 +22,9 @@ struct ProMainTabView: View {
     /// A pro booking surfaced by a `/pro/bookings/{id}` push, presented over the
     /// shell (id-based self-fetch). nil when nothing is being deep-linked.
     @State private var deepLinkProBooking: DeepLinkBookingRef?
-    /// The pro reviews list surfaced by a `/pro/reviews/{id}` push (review-received).
-    @State private var showReviews = false
+    /// The pro reviews list surfaced by a `/pro/reviews[#review-{id}]` push
+    /// (review-received); carries the review id to scroll to. nil = not presented.
+    @State private var reviewsLink: ReviewsDeepLink?
     /// The membership screen surfaced by a `/pro/membership` push (handle-expiry).
     @State private var showMembership = false
 
@@ -93,10 +94,10 @@ struct ProMainTabView: View {
             }
             .tint(BrandColor.accent)
         }
-        // A tapped `/pro/bookings/{id}` push → that booking's detail.
+        // A tapped `/pro/bookings/{id}[/aftercare]` push → that booking's detail.
         .sheet(item: $deepLinkProBooking) { ref in
             NavigationStack {
-                ProBookingDetailView(bookingId: ref.id)
+                ProBookingDetailView(bookingId: ref.id, focusStep: ref.step)
                     .toolbar {
                         ToolbarItem(placement: .topBarLeading) {
                             Button("Done") { deepLinkProBooking = nil }
@@ -107,13 +108,14 @@ struct ProMainTabView: View {
             .tint(BrandColor.accent)
             .onDisappear { Task { await proSession.load(silent: true) } }
         }
-        // A tapped `/pro/reviews/{id}` push (review-received) → the reviews list.
-        .sheet(isPresented: $showReviews) {
+        // A tapped `/pro/reviews[#review-{id}]` push (review-received) → the list,
+        // scrolled to that review when the id is present.
+        .sheet(item: $reviewsLink) { link in
             NavigationStack {
-                ProReviewsListView()
+                ProReviewsListView(focusReviewId: link.focusReviewId)
                     .toolbar {
                         ToolbarItem(placement: .topBarLeading) {
-                            Button("Done") { showReviews = false }
+                            Button("Done") { reviewsLink = nil }
                                 .tint(BrandColor.textSecondary)
                         }
                     }
@@ -179,14 +181,14 @@ struct ProMainTabView: View {
         case .look:
             // No native single-look detail yet — land on the Looks feed.
             tab = .looks
-        case let .proBooking(id, _):
-            // `step` (session/aftercare/…) is carried for a future step-jump; the
-            // booking detail opens for now (it links onward to the session hub).
-            deepLinkProBooking = DeepLinkBookingRef(id: id)
-        case .proReviews:
-            // The list has no id-anchor yet; the review id is carried for a future
-            // scroll-to-review.
-            showReviews = true
+        case let .proBooking(id, step):
+            // Carry the `step` so the detail scrolls to that section (aftercare);
+            // the booking detail also links onward to the session hub.
+            deepLinkProBooking = DeepLinkBookingRef(id: id, step: step)
+        case let .proReviews(id):
+            // Carry the review id (lifted from the `#review-{id}` fragment) so the
+            // list scrolls to that review; nil opens the list at the top.
+            reviewsLink = ReviewsDeepLink(focusReviewId: id)
         case .membership:
             showMembership = true
         case .proProfile:
@@ -220,8 +222,15 @@ struct ProMainTabView: View {
 }
 
 /// Identifiable wrapper so a deep-linked pro booking id can drive a `.sheet(item:)`
-/// (a bare `String` isn't `Identifiable`).
-private struct DeepLinkBookingRef: Identifiable { let id: String }
+/// (a bare `String` isn't `Identifiable`). `step` is the optional deep-link section.
+private struct DeepLinkBookingRef: Identifiable { let id: String; let step: String? }
+
+/// Identifiable wrapper for a `/pro/reviews` deep link so it can drive a
+/// `.sheet(item:)` even when no specific review is targeted (`focusReviewId == nil`).
+private struct ReviewsDeepLink: Identifiable {
+    let id = UUID()
+    let focusReviewId: String?
+}
 
 /// The eligible-booking picker (web's picker sheet in `ProSessionFooter`).
 private struct ProSessionPickerSheet: View {

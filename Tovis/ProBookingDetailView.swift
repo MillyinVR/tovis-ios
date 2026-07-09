@@ -13,6 +13,9 @@ struct ProBookingDetailView: View {
     @Environment(SessionModel.self) private var session
     @Environment(\.dismiss) private var dismiss
     let bookingId: String
+    /// The `step` carried on a tapped `/pro/bookings/{id}/…` push (e.g. `aftercare`);
+    /// the detail scrolls to that section once loaded. nil = open at the top.
+    var focusStep: String? = nil
 
     private enum Phase {
         case loading
@@ -20,7 +23,13 @@ struct ProBookingDetailView: View {
         case failed(String)
     }
 
+    /// Scroll anchors for a deep-linked step. Only sections that a push can target
+    /// live here; everything else opens at the top.
+    private enum Anchor: Hashable { case aftercare }
+
     @State private var phase: Phase = .loading
+    /// One-shot guard so the deep-link scroll fires only on the first load.
+    @State private var didFocus = false
     @State private var working = false
     @State private var actionError: String?
     @State private var pendingVerb: String?
@@ -41,27 +50,29 @@ struct ProBookingDetailView: View {
     @State private var messageWorking = false
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                switch phase {
-                case .loading:
-                    HStack { Spacer(); ProgressView().tint(BrandColor.accent); Spacer() }
-                        .padding(.top, 80)
-                case let .failed(message):
-                    errorState(message)
-                case let .loaded(booking):
-                    content(booking)
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    switch phase {
+                    case .loading:
+                        HStack { Spacer(); ProgressView().tint(BrandColor.accent); Spacer() }
+                            .padding(.top, 80)
+                    case let .failed(message):
+                        errorState(message)
+                    case let .loaded(booking):
+                        content(booking)
+                    }
                 }
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+                .padding(.bottom, 48)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 8)
-            .padding(.bottom, 48)
+            .task { if case .loading = phase { await load(scroll: proxy) } }
         }
         .background(BrandColor.bgPrimary.ignoresSafeArea())
         .navigationTitle("Booking")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
-        .task { if case .loading = phase { await load() } }
         .onChange(of: session.refreshTick) { Task { await load() } }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -111,6 +122,7 @@ struct ProBookingDetailView: View {
         timingCard(booking)
         paymentCard(booking)
         aftercareCard(booking)
+            .id(Anchor.aftercare)   // scroll anchor for a `…/aftercare` deep link
     }
 
     private func statusRow(_ booking: ProBookingDetail) -> some View {
@@ -562,15 +574,33 @@ struct ProBookingDetailView: View {
 
     // MARK: - Actions
 
-    private func load() async {
+    private func load(scroll proxy: ScrollViewProxy? = nil) async {
         do {
             let detail = try await session.client.proBookings.detail(bookingId: bookingId)
             phase = .loaded(detail)
+            await focus(proxy)
         } catch let error as APIError {
             phase = .failed(error.userMessage)
         } catch {
             phase = .failed("Failed to load booking.")
         }
+    }
+
+    /// The step this push targeted, resolved to a scroll anchor (nil = top).
+    private var focusAnchor: Anchor? {
+        switch focusStep?.lowercased() {
+        case "aftercare": return .aftercare
+        default: return nil   // session / overview / nil → the booking opens at the top
+        }
+    }
+
+    /// Scroll to the deep-linked section once, after the detail has rendered. The
+    /// brief delay lets the sheet-present animation settle and the cards lay out.
+    private func focus(_ proxy: ScrollViewProxy?) async {
+        guard !didFocus, let proxy, let anchor = focusAnchor else { return }
+        didFocus = true
+        try? await Task.sleep(for: .milliseconds(300))
+        withAnimation { proxy.scrollTo(anchor, anchor: .top) }
     }
 
     private func accept() async {
