@@ -72,33 +72,107 @@ struct CheckoutReturn: Equatable {
 // MARK: - Push deep link
 
 /// A tapped push's `href` resolved to an in-app destination. The backend sends a
-/// single internal path (e.g. "/client/bookings/bk_1?step=aftercare"); we map the
-/// surfaces the client app can open. Unrecognized paths yield `nil` (no-op tap).
+/// single internal path (e.g. "/client/bookings/bk_1?step=aftercare"); we map it
+/// to the native surface the app can open. Unrecognized paths yield `nil` (no-op
+/// tap — the app just foregrounds). The path prefix (`client`/`pro`) also tells us
+/// which shell owns the target, so a tap can switch workspaces first (see `role`).
 struct PushDeepLink: Equatable {
     enum Target: Equatable {
-        case booking(id: String)
-        case thread(id: String)
+        // Shared — either shell resolves these in place (no workspace switch).
+        case thread(id: String)              // /messages/thread/{id}
+        case look(id: String)                // /looks/{id}
+
+        // Client-shell targets.
+        case booking(id: String, step: String?)  // /client/bookings/{id}?step=… (#review → "review")
+        case offers                          // /client/offers
+        case referrals                       // /client/referrals
+        case activity                        // /client/activity
+        case clientHome                      // any other /client/*
+
+        // Pro-shell targets.
+        case proBooking(id: String, step: String?)  // /pro/bookings/{id}[/session|/aftercare|…]
+        case proReviews(id: String?)         // /pro/reviews[/{id}]
+        case membership                      // /pro/membership
+        case proProfile                      // /pro/profile/public-profile
+        case proCalendar                     // /pro/calendar
+        case proHome                         // any other /pro/*
     }
 
     let target: Target
 
-    init?(href: String) {
-        // Drop any query/fragment, then split the path into segments.
-        let pathOnly = href.split(whereSeparator: { $0 == "?" || $0 == "#" }).first.map(String.init) ?? href
-        let parts = pathOnly.split(separator: "/").map(String.init)
+    /// The role whose shell owns this target, or `nil` when either shell can open
+    /// it (thread, look). When it differs from the acting role, the shell asks the
+    /// session to `switchWorkspace(to:)` and leaves the link buffered so the newly
+    /// mounted shell consumes it.
+    var role: Role? {
+        switch target {
+        case .thread, .look:
+            return nil
+        case .booking, .offers, .referrals, .activity, .clientHome:
+            return .client
+        case .proBooking, .proReviews, .membership, .proProfile, .proCalendar, .proHome:
+            return .pro
+        }
+    }
 
-        // /client/bookings/{id} → the booking detail.
-        if parts.count >= 3, parts[0] == "client", parts[1] == "bookings" {
-            target = .booking(id: parts[2])
+    init?(href: String) {
+        // Mirror `CheckoutReturn`: parse with URLComponents so the query (`?step=`)
+        // and fragment (`#review`) survive instead of being dropped. `.path` is
+        // percent-decoded, which is what the native id-based fetches expect. Some
+        // emitted hrefs have surrounding whitespace — trim before parsing.
+        let trimmed = href.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let comps = URLComponents(string: trimmed) else { return nil }
+        let parts = comps.path.split(separator: "/").map(String.init)
+        let step = comps.queryItems?.first(where: { $0.name == "step" })?.value
+        let fragment = comps.fragment
+
+        guard let first = parts.first else { return nil }
+        switch first {
+        // /messages/thread/{id} → the conversation. Both roles use this path; the
+        // active shell resolves the thread.
+        case "messages":
+            if parts.count >= 3, parts[1] == "thread" { target = .thread(id: parts[2]); return }
+            return nil
+
+        // /looks/{id} → the look. No native single-look detail yet, so the shell
+        // falls back to the Looks feed; the id is carried for a future detail view.
+        case "looks":
+            if parts.count >= 2 { target = .look(id: parts[1]); return }
+            return nil
+
+        case "client":
+            guard parts.count >= 2 else { target = .clientHome; return }
+            switch parts[1] {
+            case "bookings" where parts.count >= 3:
+                // A `#review` fragment is folded into `step` so the target is
+                // distinct and a future scroll-to-section can use it.
+                target = .booking(id: parts[2], step: step ?? (fragment == "review" ? "review" : nil))
+            case "offers":    target = .offers
+            case "referrals": target = .referrals
+            case "activity":  target = .activity
+            default:          target = .clientHome
+            }
             return
-        }
-        // /messages/thread/{id} → the conversation (the MESSAGE_RECEIVED push
-        // href). Both roles use this path; the active shell resolves the thread.
-        if parts.count >= 3, parts[0] == "messages", parts[1] == "thread" {
-            target = .thread(id: parts[2])
+
+        case "pro":
+            guard parts.count >= 2 else { target = .proHome; return }
+            switch parts[1] {
+            case "bookings" where parts.count >= 3:
+                // The 4th segment (session|aftercare|before-photos|…) is the step;
+                // `nil` = the plain booking detail. Carried for a future step-jump.
+                target = .proBooking(id: parts[2], step: parts.count >= 4 ? parts[3] : nil)
+            case "reviews":    target = .proReviews(id: parts.count >= 3 ? parts[2] : nil)
+            case "membership": target = .membership
+            case "profile":    target = .proProfile   // /pro/profile/public-profile
+            case "calendar":   target = .proCalendar
+            default:           target = .proHome
+            }
             return
+
+        // /terms, /u/{handle}, external links, /admin/*, etc. → no native surface.
+        default:
+            return nil
         }
-        return nil
     }
 }
 
