@@ -77,6 +77,7 @@ struct CheckoutReturn: Equatable {
 struct PushDeepLink: Equatable {
     enum Target: Equatable {
         case booking(id: String)
+        case thread(id: String)
     }
 
     let target: Target
@@ -89,6 +90,12 @@ struct PushDeepLink: Equatable {
         // /client/bookings/{id} → the booking detail.
         if parts.count >= 3, parts[0] == "client", parts[1] == "bookings" {
             target = .booking(id: parts[2])
+            return
+        }
+        // /messages/thread/{id} → the conversation (the MESSAGE_RECEIVED push
+        // href). Both roles use this path; the active shell resolves the thread.
+        if parts.count >= 3, parts[0] == "messages", parts[1] == "thread" {
+            target = .thread(id: parts[2])
             return
         }
         return nil
