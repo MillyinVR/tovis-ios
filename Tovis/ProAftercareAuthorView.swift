@@ -25,8 +25,11 @@ struct ProAftercareAuthorView: View {
     @State private var notes = ""
     @State private var products: [EditableProduct] = []
     @State private var rebookMode: RebookMode = .none
-    @State private var windowStart = Date()
-    @State private var windowEnd = Date()
+    // Default to a valid, non-degenerate window (tomorrow → tomorrow + span) so
+    // a fresh "Booking window" isn't an inverted/zero-width range. Prefill from a
+    // backend suggestion or a saved summary overrides these on load.
+    @State private var windowStart = ProAftercareAuthorView.defaultWindowStart()
+    @State private var windowEnd = ProAftercareAuthorView.defaultWindowEnd()
     @State private var hasWindowStart = false
     @State private var hasWindowEnd = false
     @State private var version: Int?
@@ -138,8 +141,14 @@ struct ProAftercareAuthorView: View {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Recommend a date range the client should book within.")
                                 .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
-                            dateRow("Window start", date: $windowStart, has: $hasWindowStart)
-                            dateRow("Window end", date: $windowEnd, has: $hasWindowEnd)
+                            dateRow(
+                                "Window start", date: $windowStart, has: $hasWindowStart,
+                                onDateChange: bumpWindowEndAfterStart,
+                            )
+                            dateRow(
+                                "Window end", date: $windowEnd, has: $hasWindowEnd,
+                                in: windowEndLowerBound...,
+                            )
                         }
                     }
                 }
@@ -185,14 +194,54 @@ struct ProAftercareAuthorView: View {
         .disabled(saving)
     }
 
-    private func dateRow(_ label: String, date: Binding<Date>, has: Binding<Bool>) -> some View {
+    private func dateRow(
+        _ label: String,
+        date: Binding<Date>,
+        has: Binding<Bool>,
+        in range: PartialRangeFrom<Date>? = nil,
+        onDateChange: (() -> Void)? = nil,
+    ) -> some View {
         HStack {
             Text(label).font(BrandFont.body(13)).foregroundStyle(BrandColor.textSecondary)
             Spacer()
-            DatePicker("", selection: date, displayedComponents: .date)
-                .labelsHidden().tint(BrandColor.accent)
-                .onChange(of: date.wrappedValue) { has.wrappedValue = true }
+            Group {
+                if let range {
+                    DatePicker("", selection: date, in: range, displayedComponents: .date)
+                } else {
+                    DatePicker("", selection: date, displayedComponents: .date)
+                }
+            }
+            .labelsHidden().tint(BrandColor.accent)
+            .onChange(of: date.wrappedValue) {
+                has.wrappedValue = true
+                onDateChange?()
+            }
         }
+    }
+
+    /// The window end can never be picked earlier than the day after the start —
+    /// mirrors web's end `<input min={start + 1 day}>` and reuses the same
+    /// `in: start...`-style bound already used in `ProBlockTimeSheet`.
+    private var windowEndLowerBound: Date {
+        let cal = Calendar.current
+        return cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: windowStart))
+            ?? windowStart
+    }
+
+    /// Keep the window end a full suggested span past the start whenever moving
+    /// the start would collapse the range to/before the end — mirrors web
+    /// `AftercareForm.applyWindowStart`. Bumps to the 7-day suggested span (not
+    /// just +1 day) so an auto-advanced window matches the fresh suggested width
+    /// (decided w/ Tori 2026-07-09). The floor stays "end after start"; only this
+    /// automatic advance lands on the span.
+    private func bumpWindowEndAfterStart() {
+        let cal = Calendar.current
+        guard cal.startOfDay(for: windowEnd) <= cal.startOfDay(for: windowStart) else { return }
+        windowEnd = cal.date(
+            byAdding: .day, value: Self.suggestedWindowSpanDays,
+            to: cal.startOfDay(for: windowStart),
+        ) ?? windowStart
+        hasWindowEnd = true
     }
 
     private var productsSection: some View {
@@ -564,5 +613,20 @@ struct ProAftercareAuthorView: View {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter.string(from: date)
+    }
+
+    // Width of a fresh/auto-advanced recommended booking window, in days —
+    // mirrors web `SUGGESTED_REBOOK_WINDOW_SPAN_DAYS` (aftercareDates.ts).
+    private static let suggestedWindowSpanDays = 7
+
+    private static func defaultWindowStart() -> Date {
+        let cal = Calendar.current
+        return cal.startOfDay(for: cal.date(byAdding: .day, value: 1, to: Date()) ?? Date())
+    }
+
+    private static func defaultWindowEnd() -> Date {
+        let cal = Calendar.current
+        return cal.date(byAdding: .day, value: suggestedWindowSpanDays, to: defaultWindowStart())
+            ?? defaultWindowStart()
     }
 }
