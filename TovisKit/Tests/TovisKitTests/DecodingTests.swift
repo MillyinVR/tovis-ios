@@ -564,6 +564,13 @@ func fixture(_ name: String) throws -> Data {
         #expect(booking.id == "bk_1")
         #expect(booking.locationTimeZone == "America/Los_Angeles")
 
+        // Before/after media pass-through for the authoring screen (tovis-app AC5).
+        let media = try #require(booking.media)
+        #expect(media.beforeUrl == "https://cdn.example.com/bk_1-before-thumb.jpg")
+        #expect(media.afterUrl == "https://cdn.example.com/bk_1-after-thumb.jpg")
+        #expect(media.beforeFullUrl == "https://cdn.example.com/bk_1-before-full.jpg")
+        #expect(media.afterFullUrl == "https://cdn.example.com/bk_1-after-full.jpg")
+
         let summary = try #require(booking.aftercareSummary)
         #expect(summary.rebookMode == "RECOMMENDED_WINDOW")
         #expect(summary.version == 2)

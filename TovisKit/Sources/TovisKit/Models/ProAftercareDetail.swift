@@ -18,6 +18,17 @@ public struct ProAftercareBooking: Decodable, Sendable {
     public let finishedAt: String?
     public let locationTimeZone: String?
     public let aftercareSummary: ProAftercareSummaryDetail?
+    /// Primary before/after photo pair for the visual record. Optional so older
+    /// backends (before the media pass-through) still decode; `nil` URL fields
+    /// mean no photo for that phase.
+    public let media: Media?
+
+    public struct Media: Decodable, Sendable {
+        public let beforeUrl: String?
+        public let afterUrl: String?
+        public let beforeFullUrl: String?
+        public let afterFullUrl: String?
+    }
 }
 
 public struct ProAftercareSummaryDetail: Decodable, Sendable {
