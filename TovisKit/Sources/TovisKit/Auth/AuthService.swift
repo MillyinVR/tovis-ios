@@ -296,6 +296,38 @@ public final class AuthService: Sendable {
         return response
     }
 
+    // MARK: - Account email verification (post-signup)
+    //
+    // The email/password path needs BOTH phone AND email verified. Phone is done
+    // in-app (above); the email link is clicked out-of-band (mail app / browser),
+    // which verifies the email server-side but can't hand this device a new token.
+    // So the app polls `verificationStatus`: once both factors are verified the
+    // backend heals the stale VERIFICATION session into ACTIVE and returns the new
+    // token in the body, which we persist here. Both run on the authenticated
+    // (verification) session.
+
+    /// GET /api/v1/auth/verification/status — the current verification snapshot.
+    /// Persists the healed ACTIVE token when the backend returns one (i.e. once
+    /// the account became fully verified), so the next request carries it.
+    @discardableResult
+    public func verificationStatus() async throws -> VerificationStatusResponse {
+        let response: VerificationStatusResponse = try await api.request(
+            "/auth/verification/status", method: .get
+        )
+        if let token = response.token { await tokenStore.save(token) }
+        return response
+    }
+
+    /// POST /api/v1/auth/email/send — (re)send the email-verification link to the
+    /// account's email. No body is required; the destination is the session's own
+    /// account. Throttled server-side (429 → `APIError.server`).
+    @discardableResult
+    public func sendEmailVerification() async throws -> EmailVerificationSendResponse {
+        try await api.request(
+            "/auth/email/send", method: .post, body: Data("{}".utf8)
+        )
+    }
+
     // MARK: - Password reset (email-link based)
     //
     // Mirrors the web flow: `request` emails a reset link; `confirm` sets the new

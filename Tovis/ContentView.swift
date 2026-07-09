@@ -154,6 +154,17 @@ final class SessionModel {
     /// so the verification screen knows phone is the only step left.
     private(set) var emailVerified = false
 
+    /// Whether the partial session's PHONE is already verified. During the
+    /// post-signup verification phase this decides which step the verify screen
+    /// shows: phone not done → the code step; phone done but email still pending
+    /// (the email/password path) → the email step. Set from the phone-verify
+    /// result and the status poll.
+    private(set) var phoneVerified = false
+
+    /// The account email the verification link was sent to — shown on the email
+    /// step so the user knows where to look. Populated by the status poll.
+    private(set) var verificationEmail: String?
+
     /// The phone captured during native signup. When set, the post-signup
     /// verification screen opens straight at the code step (the register endpoint
     /// already texted the code) instead of asking for the number again. nil for
@@ -316,6 +327,8 @@ final class SessionModel {
         currentUser = result.user
         activeRole = result.user.role
         emailVerified = result.isEmailVerified
+        phoneVerified = result.isPhoneVerified
+        verificationEmail = result.user.email
         // Login/Apple/phone paths carry no signup phone — clear any stale prefill
         // so the verification screen (if reached) asks for the number.
         pendingVerificationPhone = nil
@@ -355,27 +368,85 @@ final class SessionModel {
     }
 
     /// Step 2: verify the code. On full verification the new ACTIVE token is
-    /// persisted and we drop into the app.
+    /// persisted and we drop into the app. When phone is done but email is still
+    /// pending (the email/password path), there's no dead-end: the verify screen
+    /// advances to its email step, driven by `phoneVerified && !emailVerified`.
     func verifyPhoneCode(_ code: String) async {
         isWorking = true
         errorMessage = nil
         defer { isWorking = false }
         do {
             let result = try await client.auth.verifyAccountPhone(code: code)
+            phoneVerified = result.isPhoneVerified
+            emailVerified = result.isEmailVerified
             if result.isFullyVerified {
                 state = .signedIn
                 await startRealtime()
                 await startPush()
-            } else {
-                // Phone done but email still pending (not expected for Apple, whose
-                // email is pre-verified). Surface it rather than silently looping.
-                emailVerified = result.isEmailVerified
-                errorMessage = "Your phone is verified. Check your email to finish."
             }
+            // else: phone verified, email still required — the screen moves to the
+            // email step; the status poll finishes the flow once the link is tapped.
         } catch let error as APIError {
             errorMessage = error.userMessage
         } catch {
             errorMessage = "That code didn’t work. Please try again."
+        }
+    }
+
+    // MARK: - In-app verification (email)
+
+    /// Poll the post-signup verification status. AuthService persists the healed
+    /// ACTIVE token when the backend returns one, so once the account is fully
+    /// verified with an ACTIVE session we drop into the app. Advancing is gated on
+    /// `sessionKind == "ACTIVE"` (not `isFullyVerified` alone): the stored token
+    /// must be the ACTIVE one or every authenticated app request would 403.
+    /// Returns true if it advanced to `.signedIn`. Also syncs the UI flags.
+    @discardableResult
+    func refreshVerificationStatus() async -> Bool {
+        isWorking = true
+        errorMessage = nil
+        defer { isWorking = false }
+        do {
+            let status = try await client.auth.verificationStatus()
+            phoneVerified = status.isPhoneVerified
+            emailVerified = status.isEmailVerified
+            verificationEmail = status.user.email
+            if status.isFullyVerified, status.sessionKind == "ACTIVE" {
+                state = .signedIn
+                await startRealtime()
+                await startPush()
+                return true
+            }
+            return false
+        } catch let error as APIError {
+            errorMessage = error.userMessage
+            return false
+        } catch {
+            errorMessage = "Couldn’t check your verification. Please try again."
+            return false
+        }
+    }
+
+    /// (Re)send the email-verification link to the account email. If the email is
+    /// already verified, re-poll so we advance without another tap. Returns true
+    /// when the request was accepted (false surfaces the backend message).
+    @discardableResult
+    func resendVerificationEmail() async -> Bool {
+        isWorking = true
+        errorMessage = nil
+        defer { isWorking = false }
+        do {
+            let result = try await client.auth.sendEmailVerification()
+            if result.isEmailVerified {
+                _ = await refreshVerificationStatus()
+            }
+            return true
+        } catch let error as APIError {
+            errorMessage = error.userMessage
+            return false
+        } catch {
+            errorMessage = "Couldn’t resend the email. Please try again."
+            return false
         }
     }
 
@@ -384,6 +455,8 @@ final class SessionModel {
         await client.auth.logout()
         currentUser = nil
         emailVerified = false
+        phoneVerified = false
+        verificationEmail = nil
         pendingVerificationPhone = nil
         state = .signedOut
     }
@@ -476,6 +549,8 @@ final class SessionModel {
             currentUser = result.user
             activeRole = result.user.role
             emailVerified = result.isEmailVerified
+            phoneVerified = result.isPhoneVerified
+            verificationEmail = result.user.email
             pendingVerificationPhone = phone
             state = .needsVerification
             return true
@@ -529,6 +604,8 @@ final class SessionModel {
             currentUser = result.user
             activeRole = result.user.role
             emailVerified = result.isEmailVerified
+            phoneVerified = result.isPhoneVerified
+            verificationEmail = result.user.email
             pendingVerificationPhone = phone
             state = .needsVerification
             return true
@@ -602,6 +679,9 @@ final class SessionModel {
         await stopPush() // unregister this device's push token server-side
         await client.auth.logout()
         currentUser = nil
+        emailVerified = false
+        phoneVerified = false
+        verificationEmail = nil
         pendingVerificationPhone = nil
         state = .signedOut
     }

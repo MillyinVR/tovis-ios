@@ -1,24 +1,36 @@
-// Post-signup phone verification. Shown as a root state (SessionModel.state ==
-// .needsVerification) for a signed-in-but-not-fully-verified account. Two entries:
+// Post-signup verification. Shown as a root state (SessionModel.state ==
+// .needsVerification) for a signed-in-but-not-fully-verified account. Entries:
 //  • Sign in with Apple — verifies the email but leaves the phone unverified, so
 //    we start at the phone step: enter phone → set it + receive a code → verify.
+//    Apple's email is pre-verified, so verifying the phone completes the account.
 //  • Native email/password signup — the register endpoint already set the phone
 //    and texted a code, so `session.pendingVerificationPhone` is set and we open
 //    straight at the code step ("Change number" falls back to the phone step).
+//    This path needs BOTH factors, so once the phone verifies we advance to the
+//    email step (rather than dead-ending): the link is tapped out-of-band in the
+//    mail app, and a GET /auth/verification/status poll — on the "I've verified"
+//    tap and on app-foreground — finishes the flow, persisting the healed ACTIVE
+//    token the backend returns and dropping into the app. Mirrors the web
+//    verify-phone page (app/(auth)/verify-phone).
 //
-// Uses the authenticated /auth/phone/{correct,send,verify} endpoints (distinct
-// from the passwordless phone-LOGIN flow in PhoneLoginView).
+// Uses the authenticated /auth/phone/{correct,send,verify}, /auth/email/send and
+// /auth/verification/status endpoints (distinct from the passwordless phone-LOGIN
+// flow in PhoneLoginView).
 import SwiftUI
 
 struct PhoneVerificationView: View {
     @Environment(SessionModel.self) private var session
+    @Environment(\.scenePhase) private var scenePhase
 
-    private enum Step { case phone, code }
-    @State private var step: Step = .phone
+    private enum Step { case loading, phone, code, email }
+    @State private var step: Step = .loading
     @State private var phone = ""
     @State private var code = ""
-    /// One-time guard so re-renders don't re-run the post-signup prefill.
-    @State private var didPrefill = false
+    /// One-time guard so re-renders don't re-run the initial step decision.
+    @State private var didInitialize = false
+    /// Gentle feedback on the email step when an explicit "continue" poll finds
+    /// the email still unverified (the poll itself succeeded, so there's no error).
+    @State private var emailHint: String?
 
     var body: some View {
         ZStack {
@@ -29,6 +41,12 @@ struct PhoneVerificationView: View {
                 TovisEye(size: 60)
 
                 switch step {
+                case .loading:
+                    ProgressView()
+                        .tint(BrandColor.accent)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 24)
+
                 case .phone:
                     title("Verify your phone")
                     subtitle("One quick step to finish setting up your account. We’ll text you a 6-digit code.")
@@ -58,7 +76,17 @@ struct PhoneVerificationView: View {
                     errorText
 
                     primaryButton(title: "Verify") {
-                        Task { await session.verifyPhoneCode(code) }
+                        Task {
+                            await session.verifyPhoneCode(code)
+                            // Phone verified but email still required (the
+                            // email/password path) → advance to the email step
+                            // instead of dead-ending. Full verification instead
+                            // flips session.state → RootView swaps to the app.
+                            if session.state == .needsVerification,
+                               session.phoneVerified, !session.emailVerified {
+                                step = .email
+                            }
+                        }
                     }
                     .disabled(code.count < 6 || session.isWorking)
                     .opacity(code.count < 6 ? 0.5 : 1)
@@ -75,6 +103,45 @@ struct PhoneVerificationView: View {
                     .font(BrandFont.body(14))
                     .foregroundStyle(BrandColor.accent)
                     .padding(.top, 2)
+
+                case .email:
+                    title("Verify your email")
+                    subtitle(emailSubtitle)
+
+                    errorText
+
+                    if let hint = emailHint {
+                        Text(hint)
+                            .font(BrandFont.body(13))
+                            .foregroundStyle(BrandColor.textMuted)
+                            .multilineTextAlignment(.center)
+                    }
+
+                    primaryButton(title: "I’ve verified — continue") {
+                        Task {
+                            emailHint = nil
+                            let advanced = await session.refreshVerificationStatus()
+                            // Poll succeeded but email still pending → nudge, don't
+                            // dead-end. A thrown error surfaces via errorText instead.
+                            if !advanced, session.errorMessage == nil {
+                                emailHint = "Not verified yet — open the link in the email we sent (check spam), then tap again."
+                            }
+                        }
+                    }
+                    .disabled(session.isWorking)
+
+                    Button("Resend email") {
+                        Task {
+                            emailHint = nil
+                            if await session.resendVerificationEmail(), session.errorMessage == nil {
+                                emailHint = "Sent — check your inbox and spam."
+                            }
+                        }
+                    }
+                    .font(BrandFont.body(14))
+                    .foregroundStyle(BrandColor.accent)
+                    .padding(.top, 2)
+                    .disabled(session.isWorking)
                 }
 
                 Spacer()
@@ -87,17 +154,43 @@ struct PhoneVerificationView: View {
             }
             .padding(28)
         }
-        .onAppear {
-            // Native signup already set the phone + texted a code — jump to the
-            // code step with the number shown, rather than asking for it again.
-            guard !didPrefill else { return }
-            didPrefill = true
-            if let signupPhone = session.pendingVerificationPhone, !signupPhone.isEmpty {
-                phone = signupPhone
-                step = .code
+        .task {
+            guard !didInitialize else { return }
+            didInitialize = true
+            await initializeStep()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // Returning from the mail app after tapping the verification link:
+            // re-poll so the screen advances the instant email is confirmed.
+            if phase == .active, step == .email {
+                Task { _ = await session.refreshVerificationStatus() }
             }
         }
         .onDisappear { session.errorMessage = nil }
+    }
+
+    /// Decide (and sync) which step to show on entry. Fresh native signup on this
+    /// same session jumps straight to the code step (register already texted the
+    /// code and emailed the link). Otherwise — a cold launch mid-verification, or
+    /// the Apple path — poll the server, which also drops us straight into the app
+    /// if verification already completed elsewhere.
+    private func initializeStep() async {
+        if let signupPhone = session.pendingVerificationPhone, !signupPhone.isEmpty {
+            phone = signupPhone
+            step = session.phoneVerified ? .email : .code
+            return
+        }
+        let advanced = await session.refreshVerificationStatus()
+        if advanced { return } // fully verified → RootView swaps to the app
+        step = (session.phoneVerified && !session.emailVerified) ? .email : .phone
+    }
+
+    /// Email-step subtitle — names the destination address when we know it.
+    private var emailSubtitle: String {
+        if let email = session.verificationEmail {
+            return "Tap the verification link we emailed to \(email), then come back here to finish."
+        }
+        return "Tap the verification link we emailed you, then come back here to finish."
     }
 
     private func title(_ text: String) -> some View {

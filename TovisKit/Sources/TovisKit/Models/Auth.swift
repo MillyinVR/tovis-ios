@@ -205,6 +205,45 @@ public struct PhoneVerifyResponse: Decodable, Sendable {
     public let token: String?
 }
 
+/// GET /api/v1/auth/verification/status — response (`AuthVerificationStatusResponseDTO`).
+/// The post-signup verification snapshot the verify screen polls. `token` is
+/// non-nil ONLY when this call heals a stale VERIFICATION session into ACTIVE
+/// (both factors verified) — native swaps its stored bearer for it, exactly as
+/// the phone/verify + email/verify paths do. Null while still pending or already
+/// ACTIVE. `sessionKind` is "ACTIVE" once healed; gate the "drop into the app"
+/// transition on it so we never advance while the stored token is still a
+/// VERIFICATION one (the app's authenticated routes would 403).
+public struct VerificationStatusResponse: Decodable, Sendable {
+    public struct User: Decodable, Sendable {
+        public let id: String
+        public let email: String
+        public let phone: String?
+    }
+
+    public let user: User
+    public let sessionKind: String
+    public let isPhoneVerified: Bool
+    public let isEmailVerified: Bool
+    public let isFullyVerified: Bool
+    public let requiresPhoneVerification: Bool
+    public let requiresEmailVerification: Bool
+    public let nextUrl: String?
+    public let token: String?
+}
+
+/// POST /api/v1/auth/email/send — response. The endpoint answers with either
+/// `{ sent: true, … }` (a fresh link was mailed) or `{ alreadyVerified: true, … }`
+/// (the email was verified elsewhere first); both carry the current verification
+/// flags. We only need to know whether email is already verified so the caller
+/// can re-poll status and advance.
+public struct EmailVerificationSendResponse: Decodable, Sendable {
+    public let sent: Bool?
+    public let alreadyVerified: Bool?
+    public let isPhoneVerified: Bool
+    public let isEmailVerified: Bool
+    public let isFullyVerified: Bool
+}
+
 // MARK: - Password reset (email-link based)
 //
 // Mirrors the web flow (app/api/v1/auth/password-reset/*): request emails a link
