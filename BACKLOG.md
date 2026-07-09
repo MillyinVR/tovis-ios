@@ -17,7 +17,8 @@
 Tori 2026-07-08).** We work that tier order, not section number. Where the iOS items land:
 - **Tier 1:** **A7** — email-verification completion (blocks email/password signup;
   detail in `tovis-app §15`).
-- **Tier 3:** §7 messaging **M3–M5** · §6 post-payment read-endpoint follow-up.
+- **Tier 3:** ~~§7 messaging **M3–M5**~~ ✅ DONE (#14–#17) · ~~§6 post-payment read-endpoint
+  follow-up~~ ✅ DONE (#24). Tier 3 is clear on iOS.
 - **Tier 4:** §5 **A1** residual (pro onboarding checklist + license/doc verification —
   the rest of A1 is SHIPPED, see the ⚠️ note on A1 below) · **A8** Google Sign-In
   (`tovis-app §15`) · §5 **A2** client screens · **A3** booking detail · **A4/A5** pro parity.
@@ -25,6 +26,14 @@ Tori 2026-07-08).** We work that tier order, not section number. Where the iOS i
   deferred pro polish · camera polish (`tovis-app §17`) · **A9** TikTok (parked, `tovis-app §15`).
 
 ### ✅ Recently shipped (iOS, through 2026-07-09)
+- **§6 PF5 — booking-detail payment-confirm surfaces (#24)** — consumes the new
+  `checkoutStatus` + `rebookOfBookingId` read fields (web #550): pro `ProBookingDetailView`
+  Payment card gains "Confirm payment received" (AWAITING_CONFIRMATION → confirm-payment route,
+  auto-approves the coupled next booking); client `BookingDetailView` shows a "Pending — your pro
+  will confirm" notice on a coupled aftercare PENDING rebook. Clears all §6 deferred niceties.
+- **§7 messaging M3–M5 — inbox/thread refinement (#14–#17)** — filter tabs + context eyebrows
+  (#14), "load earlier" paging (#15), image attachment composer (#16), thread deep-link +
+  pro→client entry points (#17). The §7 epic is complete on iOS.
 - **A7 — in-app email-verification completion screen (#18)** — resend + status re-check
   advancing to `.signedIn` (pairs web #546). Clears the Tier-1 email/password dead-end.
 - **§12 NC4 — in-app notification-string parity (#19)** — server-fed strings mirror web copy;
@@ -152,10 +161,13 @@ which auto-`ACCEPTED`s it). Backend is additive — iOS keeps working until this
   gains "Confirm payment received" → `POST /pro/bookings/{id}/checkout/confirm-payment`
   (auto-approves the coupled next booking); PAYMENT_CONFIRMATION_REQUIRED notif labelled.
   Followed the repo's stringly-typed checkout-status/event-key convention (no new enum).
-  **Deferred (needs a backend follow-up — read endpoints don't expose the fields):** the
-  confirm button in the pro booking-DETAIL Payment section, the coupled card on the next
-  booking's detail page, and the client coupled "Pending confirmation" label — all need
-  `checkoutStatus` + `rebookOfBookingId` on `GET /pro/bookings/[id]` + the client booking read.
+- [x] **PF5 — booking-detail surfaces (read-endpoint follow-up)** — SHIPPED (PR #24, pairs web
+  #550). The web PR exposed `checkoutStatus` + `rebookOfBookingId` on `GET /pro/bookings/[id]` +
+  the client bookings read; iOS now consumes them: the pro booking-DETAIL Payment card shows
+  "Confirm payment received" when AWAITING_CONFIRMATION (same confirm-payment route as the wrap-up,
+  auto-approves the coupled next booking), and a coupled aftercare PENDING next appointment shows a
+  "Pending — your pro will confirm" notice on `BookingDetailView`. Both fields decode optionally
+  (dark until the web prod deploy of #550 lands — held for Tori). Clears all §6 deferred niceties.
 
 ## 7. Messaging refinement epic (2026-07-08)
 Refine the Inbox/messaging surface for BOTH roles, web + iOS in parity. Root cause of the
@@ -172,16 +184,18 @@ because the thread list DTO omitted participant user ids. Web + backend counterp
   bumps `refreshTick` on any `changed` broadcast, and both `InboxView` and `ThreadView` observe
   it — so realtime already reaches the messages screens. The 30s inbox / 15s thread polls remain
   as a fail-open safety net. The real M2 gap was on web (shipped `tovis-app #533`).
-- [ ] **M3 — inbox filters + context eyebrows**: mirror web's 4 filter tabs
-  (All/Bookings/Waitlists/Pros) + per-row context eyebrow (booking time / waitlist status /
-  service name). (Folds in the A6 inbox-filter item.)
-- [ ] **M4 — pro→client entry points**: iOS has NO way to start a conversation with a
-  client from a booking / `ProClientChartView` / `ProBookingDetailView` (web does, via
-  `/messages/start`). Add a "Message" action + wire `resolveThread(clientId:)`.
-- [ ] **M5 — attachment composer + history paging**: send media (both platforms only
-  RENDER attachments today — no compose UI) + "load older" using the server cursor
-  (`nextCursor`/`hasMore`) that both UIs currently ignore. Also a message deep-link target
-  so a notification can open the thread.
+- [x] **M3 — inbox filters + context eyebrows** — SHIPPED (PR #14). The 4 filter tabs
+  (All/Bookings/Waitlists/Pros, server `?filter=`) + per-row context eyebrow (server-computed
+  `eyebrow`/`isAccentContext`). Cleared the A6 inbox-filter item.
+- [x] **M4a — "load earlier" history paging** — SHIPPED (PR #15). `ThreadView` pages backward
+  via the server cursor (`nextCursor`/`hasMore`), preserving scroll position.
+- [x] **M4b — image attachment composer** — SHIPPED (PR #16). `PhotosPicker` stage → upload →
+  send; optimistic row + retry.
+- [x] **M4c/M4d — thread deep-link + pro→client entry points** — SHIPPED (PR #17). A tapped
+  new-message push opens the specific thread (`/messages/thread/{id}` → sheet in both shells);
+  "Message" action wired via `resolveThread(clientId:)` from `ProBookingDetailView` /
+  `ProClientChartView`. (Together #14–#17 cover the originally-scoped M3/M4/M5 items; the §7
+  epic is complete on iOS.)
 
 ---
 
