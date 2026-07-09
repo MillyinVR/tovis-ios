@@ -32,9 +32,13 @@ Tori 2026-07-08).** We work that tier order, not section number. Where the iOS i
 - **§12 NC5 — push deep-link routing + cross-shell switch (#20)** — `URLComponents` parse
   (`?step=`/`#review` survive), full Target→href map, role-aware client↔pro workspace switch;
   both `MainTabView` + `ProMainTabView` route symmetrically. **Tap path still device-verify only**
-  (no APNs on sim — see §1 device checklist). Deferred residual: per-screen step-jump (consume
-  the `step`/look/review ids that the targets now carry — `BookingDetailView` /
-  `ProBookingDetailView` / `ProReviewsListView` open at the top today).
+  (no APNs on sim — see §1 device checklist).
+- **§12 NC5 residual — per-screen step-jump (#22)** — destinations now open scrolled to the
+  deep-linked section instead of at the top: `ProReviewsListView` → the tapped review (parser
+  now lifts the id from the `/pro/reviews#review-{id}` fragment, which was being dropped),
+  `BookingDetailView` → consult / aftercare (Photos & sharing), `ProBookingDetailView` →
+  aftercare. Reuses the `ThreadView` proxy-into-loader scroll pattern; one-shot per load. Tap
+  path stays device-verify only.
 - **A1 residual — native license/document verification screen (#9)** — shrinks A1 to the pro
   onboarding-readiness checklist (see the A1 note below).
 
