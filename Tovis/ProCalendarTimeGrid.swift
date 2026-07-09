@@ -5,6 +5,7 @@
 // minutes-since-midnight window (`ProCalendarGrid.eventDayMinutes`). Tapping a
 // tile opens the booking detail or the block editor. Read-only: block creation
 // is the FAB, booking edits live in the detail screen (web drag/resize omitted).
+import Combine
 import SwiftUI
 import TovisKit
 
@@ -70,6 +71,16 @@ struct ProCalendarTimeGrid: View {
                             }
                         }
                         .frame(height: totalHeight)
+                        // Now-line spans the day columns (inset past the gutter) so in
+                        // week view it reads across all seven days, like web. Shown
+                        // whenever today is in the visible range; labeled + live-ticking.
+                        .overlay(alignment: .topLeading) {
+                            if days.contains(where: { $0.isToday }) {
+                                ProCalendarNowLine(timeZone: timeZone, pxPerMinute: pxPerMinute)
+                                    .padding(.leading, gutterWidth)
+                                    .allowsHitTesting(false)
+                            }
+                        }
                     }
                     // Trailing room so a midday hour can sit at the very top.
                     Color.clear.frame(height: 640)
@@ -213,16 +224,13 @@ struct ProCalendarTimeGrid: View {
             }
             .allowsHitTesting(false)
 
-            // Event tiles.
+            // Event tiles. (The now-line is drawn once across the whole grid as an
+            // overlay on the day-columns HStack — see `body` — so in week view it
+            // reads as a single line spanning all seven days, matching web.)
             ForEach(layouts, id: \.event.id) { item in
                 eventTile(item.event,
                           topPx: CGFloat(item.start) * pxPerMinute,
                           heightPx: CGFloat(item.end - item.start) * pxPerMinute)
-            }
-
-            // Now-line (today only).
-            if day.isToday {
-                nowLine.allowsHitTesting(false)
             }
         }
         .background(day.isToday ? BrandColor.accent.opacity(0.04) : Color.clear)
@@ -240,17 +248,6 @@ struct ProCalendarTimeGrid: View {
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = timeZone
         return cal.date(byAdding: .minute, value: snapped, to: day.startOfDay)
-    }
-
-    private var nowLine: some View {
-        let minutes = ProCalendarGrid.minutesSinceMidnight(Date(), timeZone)
-        return Rectangle()
-            .fill(BrandColor.ember)
-            .frame(height: 2)
-            .overlay(alignment: .leading) {
-                Circle().fill(BrandColor.ember).frame(width: 7, height: 7).offset(x: -1)
-            }
-            .offset(y: CGFloat(minutes) * pxPerMinute)
     }
 
     private func eventTile(_ event: ProCalendarEvent, topPx: CGFloat, heightPx: CGFloat) -> some View {
@@ -305,5 +302,62 @@ struct ProCalendarTimeGrid: View {
     private func timeLabel(_ iso: String) -> String {
         Wire.dateTime(iso, timeZone: timeZone.identifier)
             .components(separatedBy: " · ").last ?? ""
+    }
+}
+
+// MARK: - Now-line
+
+/// The live "current time" indicator — the native counterpart of the web
+/// `NowLineOverlay`: an accent-colored rule with a leading dot, a soft glow, and a
+/// `NOW · h:mm` pill at the trailing edge. Rendered once as an overlay spanning the
+/// day columns, so in week view it reads as a single line across all seven days.
+/// It owns its own clock tick so it advances without a calendar reload, and
+/// re-renders in isolation (only this subview, not the whole grid).
+private struct ProCalendarNowLine: View {
+    let timeZone: TimeZone
+    let pxPerMinute: CGFloat
+
+    @State private var now = Date()
+    // Match web's `NOW_REFRESH_INTERVAL_MS` (30s) so both platforms tick alike.
+    private let tick = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        let minutes = ProCalendarGrid.minutesSinceMidnight(now, timeZone)
+        return ZStack(alignment: .topLeading) {
+            Rectangle()
+                .fill(BrandColor.accent)
+                .frame(height: 2)
+                .shadow(color: BrandColor.accent.opacity(0.55), radius: 5)
+                .overlay(alignment: .leading) {
+                    Circle()
+                        .fill(BrandColor.accent)
+                        .frame(width: 7, height: 7)
+                        .shadow(color: BrandColor.accent.opacity(0.7), radius: 4)
+                        .offset(x: -1)
+                }
+
+            Text("NOW · \(nowLabel(minutes))")
+                .font(BrandFont.mono(9))
+                .tracking(0.8)
+                .foregroundStyle(BrandColor.onAccent)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 1)
+                .background(BrandColor.accent)
+                .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                .fixedSize()
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.trailing, 4)
+                .offset(y: -16)
+        }
+        .offset(y: CGFloat(minutes) * pxPerMinute)
+        .onReceive(tick) { now = $0 }
+    }
+
+    /// 12-hour `h:mmam/pm` (mirrors the web `formatNowLabel`).
+    private func nowLabel(_ totalMinutes: Int) -> String {
+        let h24 = (totalMinutes / 60) % 24
+        let m = totalMinutes % 60
+        let h12 = h24 % 12 == 0 ? 12 : h24 % 12
+        return "\(h12):\(String(format: "%02d", m))\(h24 < 12 ? "am" : "pm")"
     }
 }
