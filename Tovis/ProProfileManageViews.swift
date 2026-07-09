@@ -932,6 +932,7 @@ struct ProEditOfferingSheet: View {
     @State private var mobileOn: Bool
     @State private var mobilePrice: String
     @State private var mobileMinutes: String
+    @State private var rebookInterval: String
     @State private var saving = false
     @State private var error: String?
 
@@ -944,6 +945,7 @@ struct ProEditOfferingSheet: View {
         _mobileOn = State(initialValue: offering.offersMobile)
         _mobilePrice = State(initialValue: offering.mobilePriceStartingAt ?? "")
         _mobileMinutes = State(initialValue: offering.mobileDurationMinutes.map(String.init) ?? "")
+        _rebookInterval = State(initialValue: offering.rebookIntervalDays.map(String.init) ?? "")
     }
 
     var body: some View {
@@ -956,6 +958,8 @@ struct ProEditOfferingSheet: View {
 
                     locationBlock(title: "In salon", on: $salonOn, price: $salonPrice, minutes: $salonMinutes, icon: "building.2")
                     locationBlock(title: "Mobile", on: $mobileOn, price: $mobilePrice, minutes: $mobileMinutes, icon: "car")
+
+                    rebookIntervalBlock
 
                     if let minPrice = Wire.money(offering.minPrice) {
                         Text("Minimum price for this service is \(minPrice).")
@@ -980,6 +984,21 @@ struct ProEditOfferingSheet: View {
                 }
             }
             .tint(BrandColor.accent)
+        }
+    }
+
+    private var rebookIntervalBlock: some View {
+        BrandSurface {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Rebook interval", systemImage: "calendar.badge.clock")
+                    .font(BrandFont.body(15, .semibold))
+                    .foregroundStyle(BrandColor.textPrimary)
+
+                labeledField("Days", text: $rebookInterval, placeholder: "e.g. 42", keyboard: .numberPad)
+
+                Text("Auto-suggests a rebook window at session wrap-up (service date + this many days). Leave blank to keep it off.")
+                    .font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
+            }
         }
     }
 
@@ -1033,7 +1052,8 @@ struct ProEditOfferingSheet: View {
                 salonPriceStartingAt: .some(salonOn ? emptyToNil(salonPrice) : nil),
                 salonDurationMinutes: .some(salonOn ? Int(salonMinutes) : nil),
                 mobilePriceStartingAt: .some(mobileOn ? emptyToNil(mobilePrice) : nil),
-                mobileDurationMinutes: .some(mobileOn ? Int(mobileMinutes) : nil)
+                mobileDurationMinutes: .some(mobileOn ? Int(mobileMinutes) : nil),
+                rebookIntervalDays: .some(emptyToNil(rebookInterval).flatMap(Int.init))
             )
             onSaved()
             session.signalRefresh()
