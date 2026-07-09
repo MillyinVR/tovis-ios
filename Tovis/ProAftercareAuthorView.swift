@@ -381,7 +381,22 @@ struct ProAftercareAuthorView: View {
             // the session), so set them before the summary guard returns early.
             media = booking.media
 
-            guard let summary = booking.aftercareSummary else { return }
+            guard let summary = booking.aftercareSummary else {
+                // Fresh wrap-up: pre-select the recommended window from the
+                // backend suggestion (service date + the offering's rebook
+                // interval) so the recommendation defaults to a real date
+                // instead of "None". Matches web AftercareForm; the pro can
+                // still change or clear it. The backend sends this only when no
+                // aftercare is saved yet, so a saved choice is never touched.
+                if let suggestion = booking.rebookSuggestion,
+                   let start = Wire.date(suggestion.windowStart),
+                   let end = Wire.date(suggestion.windowEnd) {
+                    rebookMode = .window
+                    windowStart = start; hasWindowStart = true
+                    windowEnd = end; hasWindowEnd = true
+                }
+                return
+            }
             notes = summary.notes ?? ""
             version = summary.version
             isFinalized = summary.isFinalized

@@ -18,10 +18,20 @@ public struct ProAftercareBooking: Decodable, Sendable {
     public let finishedAt: String?
     public let locationTimeZone: String?
     public let aftercareSummary: ProAftercareSummaryDetail?
+    /// Auto-suggested recommended-window rebook dates for a fresh wrap-up
+    /// (service date + the offering's typical rebook interval). The backend
+    /// sends this only when no aftercare is saved yet; `nil` when the offering
+    /// has no interval set. Optional so older backends still decode.
+    public let rebookSuggestion: RebookSuggestion?
     /// Primary before/after photo pair for the visual record. Optional so older
     /// backends (before the media pass-through) still decode; `nil` URL fields
     /// mean no photo for that phase.
     public let media: Media?
+
+    public struct RebookSuggestion: Decodable, Sendable {
+        public let windowStart: String
+        public let windowEnd: String
+    }
 
     public struct Media: Decodable, Sendable {
         public let beforeUrl: String?

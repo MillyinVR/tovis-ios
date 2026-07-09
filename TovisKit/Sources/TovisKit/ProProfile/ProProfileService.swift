@@ -93,7 +93,8 @@ public final class ProProfileService: Sendable {
         salonPriceStartingAt: String?? = nil,
         salonDurationMinutes: Int?? = nil,
         mobilePriceStartingAt: String?? = nil,
-        mobileDurationMinutes: Int?? = nil
+        mobileDurationMinutes: Int?? = nil,
+        rebookIntervalDays: Int?? = nil
     ) async throws -> ProOfferingAdmin {
         var fields: [String: JSONValue] = [:]
         if let isActive { fields["isActive"] = .bool(isActive) }
@@ -104,6 +105,7 @@ public final class ProProfileService: Sendable {
         if let salonDurationMinutes { fields["salonDurationMinutes"] = .intOrNull(salonDurationMinutes) }
         if let mobilePriceStartingAt { fields["mobilePriceStartingAt"] = .stringOrNull(mobilePriceStartingAt) }
         if let mobileDurationMinutes { fields["mobileDurationMinutes"] = .intOrNull(mobileDurationMinutes) }
+        if let rebookIntervalDays { fields["rebookIntervalDays"] = .intOrNull(rebookIntervalDays) }
 
         let payload = try JSONEncoder().encode(fields)
         let response: ProOfferingResponse = try await api.request(

@@ -70,6 +70,9 @@ public struct ProOfferingAdmin: Decodable, Sendable, Identifiable {
     public let salonDurationMinutes: Int?
     public let mobilePriceStartingAt: String?
     public let mobileDurationMinutes: Int?
+    /// Typical rebook interval in days; drives the wrap-up rebook-window
+    /// suggestion. Optional so older backends decode (`nil` = no suggestion).
+    public let rebookIntervalDays: Int?
     public let isActive: Bool
     public let serviceName: String
     public let categoryName: String?
