@@ -140,6 +140,12 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
   referral-REWARD config (iOS has activity-only) · data-migration wizard (5
   screens) · consolidated media manager + fuller owner-menu edit · review
   "feature media in portfolio" toggle.
+  - ↪ **Predecessor for mid-session service change** (`tovis-app §22`, MS-iOS): A4's
+    **edit-service-items** modal is the first place iOS gains a TovisKit method to change
+    services on an existing booking (today only `sendConsultationProposal` exists — no
+    PATCH-with-serviceItems). Build A4 before/with §22-iOS so the client method isn't
+    written twice. `ProConsultationFormView`'s single-BASE constraint (can't swap the base
+    service) also needs a decision there — web is looser; keep both consistent.
 - [ ] **A5 — pro home → Calendar**: land on Calendar like web (iOS lands on the
   Overview home today); delete the never-instantiated `Tovis/ProOverviewView.swift`.
 - [ ] **A6 — minor drift**: ✅ **Inbox role-awareness FIX shipped** (PR #11, see §7) — rows
