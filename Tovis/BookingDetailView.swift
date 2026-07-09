@@ -12,6 +12,15 @@ struct BookingDetailView: View {
     let booking: ClientBooking
     /// Called after a successful decision so the list behind can refresh.
     var onDecision: () async -> Void = {}
+    /// The `step` carried on a tapped `/client/bookings/{id}?step=…` push; the detail
+    /// scrolls to that section once shown. nil / `overview` / `review` open at the top.
+    var focusStep: String? = nil
+
+    /// Scroll anchors for a deep-linked step. Only sections a push can target live
+    /// here; everything else opens at the top.
+    private enum Anchor: Hashable { case consult, aftercare }
+    /// One-shot guard so the deep-link scroll fires only on first appearance.
+    @State private var didFocus = false
 
     @State private var working = false
     @State private var actionError: String?
@@ -126,6 +135,7 @@ struct BookingDetailView: View {
     }
 
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 headerCard
@@ -136,6 +146,7 @@ struct BookingDetailView: View {
                         subtitle: "Your pro proposed a plan — review and approve it.",
                         icon: "checklist", tint: BrandColor.gold
                     )
+                    .id(Anchor.consult)   // scroll anchor for a `?step=consult` deep link
                     consultationActions
                 }
 
@@ -174,6 +185,7 @@ struct BookingDetailView: View {
                 payCard
 
                 mediaConsentCard
+                    .id(Anchor.aftercare)   // scroll anchor for a `?step=aftercare` deep link
 
                 manageCard
             }
@@ -181,6 +193,7 @@ struct BookingDetailView: View {
             .padding(.top, 8)
             .padding(.bottom, 40)
         }
+        .task { await focus(proxy) }
         .background(BrandColor.bgPrimary.ignoresSafeArea())
         .navigationTitle("Appointment")
         .navigationBarTitleDisplayMode(.inline)
@@ -228,6 +241,26 @@ struct BookingDetailView: View {
             session.clearCheckoutReturn()
             Task { await onDecision() }
         }
+        }
+    }
+
+    /// The step this push targeted, resolved to a scroll anchor (nil = top).
+    private var focusAnchor: Anchor? {
+        switch focusStep?.lowercased() {
+        case "consult": return .consult
+        case "aftercare": return .aftercare
+        default: return nil   // overview / review / nil → the detail opens at the top
+        }
+    }
+
+    /// Scroll to the deep-linked section once, after the detail has rendered. The
+    /// brief delay lets the sheet-present animation settle and the cards lay out so
+    /// the anchor resolves. A no-op when the target section isn't on screen.
+    private func focus(_ proxy: ScrollViewProxy) async {
+        guard !didFocus, let anchor = focusAnchor else { return }
+        didFocus = true
+        try? await Task.sleep(for: .milliseconds(300))
+        withAnimation { proxy.scrollTo(anchor, anchor: .top) }
     }
 
     // MARK: - Pay

@@ -91,7 +91,7 @@ struct PushDeepLink: Equatable {
 
         // Pro-shell targets.
         case proBooking(id: String, step: String?)  // /pro/bookings/{id}[/session|/aftercare|…]
-        case proReviews(id: String?)         // /pro/reviews[/{id}]
+        case proReviews(id: String?)         // /pro/reviews[/{id}] or #review-{id}
         case membership                      // /pro/membership
         case proProfile                      // /pro/profile/public-profile
         case proCalendar                     // /pro/calendar
@@ -161,7 +161,19 @@ struct PushDeepLink: Equatable {
                 // The 4th segment (session|aftercare|before-photos|…) is the step;
                 // `nil` = the plain booking detail. Carried for a future step-jump.
                 target = .proBooking(id: parts[2], step: parts.count >= 4 ? parts[3] : nil)
-            case "reviews":    target = .proReviews(id: parts.count >= 3 ? parts[2] : nil)
+            case "reviews":
+                // /pro/reviews/{id} (path) or /pro/reviews#review-{id} — the
+                // review-received push mirrors the web `review-<id>` anchor in the
+                // fragment. Prefer an explicit path segment; else lift the id out of
+                // the `review-<id>` fragment so the list can scroll to that review.
+                let reviewId = parts.count >= 3
+                    ? parts[2]
+                    : fragment.flatMap { (frag: String) -> String? in
+                        guard frag.hasPrefix("review-") else { return nil }
+                        let id = String(frag.dropFirst("review-".count))
+                        return id.isEmpty ? nil : id
+                    }
+                target = .proReviews(id: reviewId)
             case "membership": target = .membership
             case "profile":    target = .proProfile   // /pro/profile/public-profile
             case "calendar":   target = .proCalendar

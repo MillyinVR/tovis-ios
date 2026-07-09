@@ -22,6 +22,9 @@ struct MainTabView: View {
     /// A booking surfaced by a tapped push (`tovis://`-style `href` deep link),
     /// presented over the shell. nil when nothing is being deep-linked.
     @State private var deepLinkBooking: ClientBooking?
+    /// The `step` carried on that booking deep link (`?step=consult|aftercare|…`),
+    /// so the detail can scroll to the right section. nil = open at the top.
+    @State private var deepLinkBookingStep: String?
     /// A conversation surfaced by a tapped message push (`/messages/thread/{id}`),
     /// presented over the shell. nil when nothing is being deep-linked.
     @State private var deepLinkThread: MessageThread?
@@ -63,7 +66,7 @@ struct MainTabView: View {
         }
         .sheet(item: $deepLinkBooking) { booking in
             NavigationStack {
-                BookingDetailView(booking: booking, onDecision: { session.signalRefresh() })
+                BookingDetailView(booking: booking, onDecision: { session.signalRefresh() }, focusStep: deepLinkBookingStep)
                     .toolbar {
                         ToolbarItem(placement: .topBarLeading) {
                             Button("Done") { deepLinkBooking = nil }
@@ -106,11 +109,12 @@ struct MainTabView: View {
             return
         }
         switch link.target {
-        case let .booking(id, _):
-            // `step` is carried on the target for a future scroll-to-section; the
-            // detail opens at the top for now.
+        case let .booking(id, step):
+            // Carry the `step` so the detail scrolls to that section (consult /
+            // aftercare); unknown steps just open at the top.
             if let buckets = try? await session.client.bookings.fetch() {
                 let all = buckets.upcoming + buckets.pending + buckets.prebooked + buckets.past
+                deepLinkBookingStep = step
                 deepLinkBooking = all.first { $0.id == id }
             }
         case let .thread(id):

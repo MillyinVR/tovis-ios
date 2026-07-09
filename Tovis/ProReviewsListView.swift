@@ -11,6 +11,9 @@ import TovisKit
 
 struct ProReviewsListView: View {
     @Environment(SessionModel.self) private var session
+    /// A review id from a tapped `review-received` push (`/pro/reviews#review-{id}`);
+    /// the list scrolls to that review once loaded. nil = open at the top.
+    var focusReviewId: String? = nil
 
     private enum Phase {
         case loading
@@ -22,38 +25,43 @@ struct ProReviewsListView: View {
     @State private var viewingMedia: FullscreenMedia?
     @State private var composingReplyFor: ProReviewItem?
     @State private var removingReplyFor: ProReviewItem?
+    /// One-shot guard so the deep-link scroll fires only on the first load.
+    @State private var didFocus = false
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                switch phase {
-                case .loading:
-                    HStack { Spacer(); ProgressView().tint(BrandColor.accent); Spacer() }
-                        .padding(.top, 50)
-                case let .failed(message):
-                    errorState(message)
-                case let .loaded(items):
-                    if items.isEmpty {
-                        Text("No reviews yet.")
-                            .font(BrandFont.body(13))
-                            .foregroundStyle(BrandColor.textMuted)
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 30)
-                    } else {
-                        ForEach(items) { review in
-                            reviewCard(review)
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    switch phase {
+                    case .loading:
+                        HStack { Spacer(); ProgressView().tint(BrandColor.accent); Spacer() }
+                            .padding(.top, 50)
+                    case let .failed(message):
+                        errorState(message)
+                    case let .loaded(items):
+                        if items.isEmpty {
+                            Text("No reviews yet.")
+                                .font(BrandFont.body(13))
+                                .foregroundStyle(BrandColor.textMuted)
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, 30)
+                        } else {
+                            ForEach(items) { review in
+                                reviewCard(review)
+                                    .id(review.id)   // scroll anchor for the review deep link
+                            }
                         }
                     }
                 }
+                .padding(.horizontal, 20)
+                .padding(.top, 14)
+                .padding(.bottom, 120)   // clear the raised footer
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 14)
-            .padding(.bottom, 120)   // clear the raised footer
+            .background(BrandColor.bgPrimary.ignoresSafeArea())
+            .refreshable { await load() }
+            .task { if case .loading = phase { await load(scroll: proxy) } }
+            .onChange(of: session.refreshTick) { Task { await load() } }
         }
-        .background(BrandColor.bgPrimary.ignoresSafeArea())
-        .refreshable { await load() }
-        .task { if case .loading = phase { await load() } }
-        .onChange(of: session.refreshTick) { Task { await load() } }
         .mediaFullscreenCover($viewingMedia)
         .sheet(item: $composingReplyFor) { review in
             ProReviewReplySheet(review: review) { Task { await load() } }
@@ -268,15 +276,27 @@ struct ProReviewsListView: View {
         .padding(.top, 50)
     }
 
-    private func load() async {
+    private func load(scroll proxy: ScrollViewProxy? = nil) async {
         do {
             let items = try await session.client.proProfile.reviews()
             phase = .loaded(items)
+            await focus(items, proxy)
         } catch let error as APIError {
             phase = .failed(error.userMessage)
         } catch {
             phase = .failed("Couldn’t load your reviews.")
         }
+    }
+
+    /// Scroll to the deep-linked review once, after the list has rendered. The brief
+    /// delay lets the sheet-present animation settle and the cards lay out so the
+    /// anchor id resolves.
+    private func focus(_ items: [ProReviewItem], _ proxy: ScrollViewProxy?) async {
+        guard !didFocus, let proxy, let focusReviewId,
+              items.contains(where: { $0.id == focusReviewId }) else { return }
+        didFocus = true
+        try? await Task.sleep(for: .milliseconds(300))
+        withAnimation { proxy.scrollTo(focusReviewId, anchor: .top) }
     }
 
     private func removeReply(_ review: ProReviewItem) async {
