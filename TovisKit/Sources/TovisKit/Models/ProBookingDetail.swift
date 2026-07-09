@@ -46,6 +46,14 @@ public struct ProBookingDetail: Decodable, Sendable, Identifiable {
     public let stripePaymentStatus: String?
     public let stripeAmountTotal: Int?
     public let stripeCurrency: String?
+    /// Checkout lifecycle (tovis-app §10 follow-up). AWAITING_CONFIRMATION means
+    /// the client attested an off-platform payment and the pro must confirm
+    /// receipt — drives the booking-detail "Confirm payment received" action.
+    /// Optional so older fixtures / pre-deploy responses still decode.
+    public let checkoutStatus: String?
+    /// When this booking is a rebook, the id of the appointment it was booked off
+    /// of (the RebookChain source). Optional; present on the client + pro reads.
+    public let rebookOfBookingId: String?
     /// Aftercare snapshot card (null until a summary exists).
     public let aftercareSummary: ProAftercareSnapshot?
 
@@ -59,6 +67,13 @@ public struct ProBookingDetail: Decodable, Sendable, Identifiable {
 
     /// Refund is offered while a captured Stripe payment exists (web canRefund).
     public var canRefund: Bool { stripePaymentStatus?.uppercased() == "SUCCEEDED" }
+
+    /// The client attested an off-platform payment; the pro must confirm receipt to
+    /// close it out (AWAITING_CONFIRMATION → PAID). Drives the booking-detail
+    /// "Confirm payment received" action, mirroring the session wrap-up control.
+    public var isAwaitingPaymentConfirmation: Bool {
+        checkoutStatus?.uppercased() == "AWAITING_CONFIRMATION"
+    }
 
     /// Base service item (the one whose name titles the booking), else the first.
     public var baseItem: ProBookingServiceItem? {

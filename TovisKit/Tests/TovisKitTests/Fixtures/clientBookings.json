@@ -6,6 +6,7 @@
         "id": "bk_1",
         "status": "ACCEPTED",
         "source": "CLIENT",
+        "rebookOfBookingId": null,
         "sessionStep": "SCHEDULED",
         "scheduledFor": "2026-07-01T17:00:00.000Z",
         "totalDurationMinutes": 90,
@@ -54,7 +55,58 @@
       }
     ],
     "pending": [],
-    "prebooked": [],
+    "prebooked": [
+      {
+        "id": "bk_next",
+        "status": "PENDING",
+        "source": "AFTERCARE",
+        "rebookOfBookingId": "bk_1",
+        "sessionStep": "SCHEDULED",
+        "scheduledFor": "2026-08-01T17:00:00.000Z",
+        "totalDurationMinutes": 75,
+        "bufferMinutes": 0,
+        "subtotalSnapshot": "100.00",
+        "checkout": {
+          "subtotalSnapshot": "100.00",
+          "serviceSubtotalSnapshot": "100.00",
+          "productSubtotalSnapshot": null,
+          "tipAmount": null,
+          "taxAmount": null,
+          "discountAmount": null,
+          "totalAmount": "100.00",
+          "checkoutStatus": null,
+          "selectedPaymentMethod": null,
+          "paymentAuthorizedAt": null,
+          "paymentCollectedAt": null,
+          "depositStatus": null,
+          "depositAmount": null
+        },
+        "locationType": "SALON",
+        "locationId": "loc_1",
+        "timeZone": "America/Los_Angeles",
+        "timeZoneSource": "LOCATION",
+        "locationLabel": "1 Main St, Los Angeles",
+        "professional": {
+          "id": "pro_1", "businessName": null, "firstName": "Dana", "lastName": "Lee",
+          "handle": "dana", "nameDisplay": "REAL_NAME", "location": "LA", "timeZone": "America/Los_Angeles"
+        },
+        "bookedLocation": {
+          "id": "loc_1", "name": "Plume", "formattedAddress": "1 Main St",
+          "city": "Los Angeles", "state": "CA", "timeZone": "America/Los_Angeles"
+        },
+        "display": { "title": "Balayage", "baseName": "Balayage", "addOnNames": [], "addOnCount": 0 },
+        "items": [
+          { "id": "it_3", "type": "BASE", "serviceId": "svc_1", "name": "Balayage", "price": "100.00", "durationMinutes": 75, "parentItemId": null, "sortOrder": 0 }
+        ],
+        "productSales": [],
+        "hasUnreadAftercare": false,
+        "hasPendingConsultationApproval": false,
+        "hasPendingRebookConfirmation": false,
+        "rebookProposedFor": null,
+        "mediaUseConsent": false,
+        "consultation": null
+      }
+    ],
     "past": [],
     "waitlist": [
       {

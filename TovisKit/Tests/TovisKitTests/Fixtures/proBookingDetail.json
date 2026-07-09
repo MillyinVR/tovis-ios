@@ -34,6 +34,8 @@
     "stripePaymentStatus": null,
     "stripeAmountTotal": null,
     "stripeCurrency": null,
+    "checkoutStatus": "AWAITING_CONFIRMATION",
+    "rebookOfBookingId": null,
     "aftercareSummary": {
       "notes": "Use sulfate-free shampoo; gloss refresh in 6 weeks.",
       "sentToClientAt": "2026-07-15T20:00:00.000Z",

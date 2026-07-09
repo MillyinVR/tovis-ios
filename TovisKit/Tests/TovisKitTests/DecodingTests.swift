@@ -418,6 +418,11 @@ func fixture(_ name: String) throws -> Data {
         #expect(b.discountAmount == nil)
         #expect(!b.isPaid)               // no paymentCollectedAt + no Stripe SUCCEEDED
         #expect(!b.canRefund)
+        // §10 off-platform payment: client attested, pro must confirm receipt →
+        // drives the booking-detail "Confirm payment received" action.
+        #expect(b.checkoutStatus == "AWAITING_CONFIRMATION")
+        #expect(b.isAwaitingPaymentConfirmation)
+        #expect(b.rebookOfBookingId == nil)
         #expect(b.sessionStep == "NONE")
         #expect(b.aftercareSummary?.isSent == true)
         #expect(b.aftercareSummary?.version == 2)
@@ -964,6 +969,14 @@ func fixture(_ name: String) throws -> Data {
         #expect(booking.hasPendingRebookConfirmation == false)
         #expect(booking.rebookProposedFor == nil)
         #expect(booking.mediaUseConsent == false)
+        // A standalone booking is not a coupled aftercare rebook.
+        #expect(booking.rebookOfBookingId == nil)
+        #expect(!booking.isCoupledRebookAwaitingPaymentConfirmation)
+        // The prebooked aftercare rebook is PENDING + coupled to bk_1's payment —
+        // drives the "pending — your pro will confirm" label (§10).
+        let next = try #require(b.prebooked.first)
+        #expect(next.rebookOfBookingId == "bk_1")
+        #expect(next.isCoupledRebookAwaitingPaymentConfirmation)
         // REAL_NAME mode → first + last name.
         #expect(booking.professional?.displayName == "Dana Lee")
         #expect(b.waitlist.first?.professional?.displayName == "Snip")

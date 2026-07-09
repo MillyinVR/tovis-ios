@@ -81,6 +81,9 @@ public struct ClientBooking: Decodable, Sendable, Identifiable {
     public let id: String
     public let status: String?
     public let source: String?
+    /// When this booking is a rebook, the id of the appointment it was booked off
+    /// of (the RebookChain source). Optional so pre-field responses still decode.
+    public let rebookOfBookingId: String?
     public let sessionStep: String?
 
     public let scheduledFor: String
@@ -109,6 +112,16 @@ public struct ClientBooking: Decodable, Sendable, Identifiable {
     /// Whether the client has allowed the pro to feature this session's photos/video
     /// publicly (portfolio/Looks). Toggle via POST /client/bookings/{id}/media-consent.
     public let mediaUseConsent: Bool
+
+    /// True when this is an aftercare-sourced next appointment still PENDING because
+    /// its approval is coupled to the previous appointment's off-platform payment —
+    /// the pro approves it by confirming that payment (§10). Drives the "pending —
+    /// your pro will confirm after payment" label on the booking detail.
+    public var isCoupledRebookAwaitingPaymentConfirmation: Bool {
+        status?.uppercased() == "PENDING"
+            && source?.uppercased() == "AFTERCARE"
+            && rebookOfBookingId != nil
+    }
 }
 
 public struct BookingLocation: Decodable, Sendable, Identifiable {
