@@ -102,7 +102,12 @@ struct NotificationPreferencesView: View {
                 HStack(spacing: 8) {
                     preferenceChip(id: "EMAIL", label: "Email", hint: "Your inbox", active: active == "EMAIL", disabled: false)
                     preferenceChip(id: "SMS", label: "Text", hint: "By SMS", active: active == "SMS", disabled: false)
-                    preferenceChip(id: "PUSH", label: "Push", hint: "Coming soon", active: false, disabled: true)
+                    // §12 NC4: push registration ships (PushManager registers this
+                    // device), so drop the stale "Coming soon". Push isn't an
+                    // email/SMS routing alternative in this picker — it's device-
+                    // managed (system Settings) and always delivers alongside in-app
+                    // once enabled — so it stays informational, not selectable.
+                    preferenceChip(id: "PUSH", label: "Push", hint: "On this device", active: false, disabled: true)
                 }
 
                 if active == nil {
