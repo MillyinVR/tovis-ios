@@ -16,6 +16,9 @@ struct ProMainTabView: View {
     @State private var tab: ProTab.ID = .overview   // pros land on the Overview home (hosts the top-header tabs)
     @State private var messagesBadge: String?
     @State private var proSession: ProSessionModel?
+    /// A conversation surfaced by a tapped message push (`/messages/thread/{id}`),
+    /// presented over the pro shell. nil when nothing is being deep-linked.
+    @State private var deepLinkThread: MessageThread?
 
     var body: some View {
         Group {
@@ -63,6 +66,26 @@ struct ProMainTabView: View {
             Task { await refreshBadge() }
         }
         .task { await poll(proSession) }
+        // Message push deep-link routing (a tapped MESSAGE_RECEIVED push). `.task`
+        // catches a cold-launch tap set before this mounted; `.onChange` catches
+        // taps while running. Only one shell is mounted per active role, so the
+        // client shell handles booking links and this one handles thread links.
+        .task { await routeDeepLink(session.pushDeepLink) }
+        .onChange(of: session.pushDeepLink) { _, link in
+            Task { await routeDeepLink(link) }
+        }
+        .sheet(item: $deepLinkThread) { thread in
+            NavigationStack {
+                ThreadView(thread: thread)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Done") { deepLinkThread = nil }
+                                .tint(BrandColor.textSecondary)
+                        }
+                    }
+            }
+            .tint(BrandColor.accent)
+        }
         // The booking picker (UPCOMING_PICKER with >1 eligible session).
         .sheet(isPresented: Binding(get: { proSession.pickerOpen }, set: { proSession.pickerOpen = $0 })) {
             ProSessionPickerSheet(session: proSession)
@@ -87,6 +110,17 @@ struct ProMainTabView: View {
                 .onDisappear { Task { await proSession.load(silent: true) } }
             }
         }
+    }
+
+    /// Resolve a tapped push deep link to its destination and present it, then
+    /// clear it. Only thread links are actionable in the pro shell; anything else
+    /// is cleared so a stray link never sticks.
+    private func routeDeepLink(_ link: PushDeepLink?) async {
+        guard let link else { return }
+        if case let .thread(id) = link.target {
+            deepLinkThread = try? await session.client.messages.thread(id: id)
+        }
+        session.clearPushDeepLink()
     }
 
     private func poll(_ proSession: ProSessionModel) async {

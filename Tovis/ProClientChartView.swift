@@ -30,6 +30,12 @@ struct ProClientChartView: View {
     @State private var showAddNote = false
     @State private var viewingMedia: FullscreenMedia?
 
+    // Message-the-client entry point (the pro chart has no web counterpart button;
+    // web reaches messaging from the booking, but the native chart is a natural
+    // place for a general pro→client conversation).
+    @State private var messageNav: MessageThreadNav?
+    @State private var messageWorking = false
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -49,8 +55,44 @@ struct ProClientChartView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
         .task { if case .loading = phase { await load() } }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    Task { await openMessageThread() }
+                } label: {
+                    if messageWorking {
+                        ProgressView().tint(BrandColor.accent)
+                    } else {
+                        Image(systemName: "bubble.left.and.bubble.right")
+                    }
+                }
+                .tint(BrandColor.accent)
+                .disabled(messageWorking)
+                .accessibilityLabel("Message client")
+            }
+        }
+        .navigationDestination(item: $messageNav) { nav in
+            ThreadView(thread: nav.thread)
+        }
         .sheet(isPresented: $showAddNote) { ProAddNoteSheet(clientId: clientId) }
         .tint(BrandColor.accent)
+    }
+
+    /// Resolve-or-create the general pro↔client thread and push the conversation.
+    /// Needs the pro's OWN professionalId (the PRO_PROFILE resolve requires
+    /// contextId == the viewer's profile id), fetched via myProfile(). Best-effort:
+    /// on failure the pro stays on the chart.
+    private func openMessageThread() async {
+        guard !messageWorking else { return }
+        messageWorking = true
+        defer { messageWorking = false }
+        guard let myId = try? await session.client.proProfile.myProfile().id else { return }
+        if let thread = try? await session.client.messages.openClientThread(
+            professionalId: myId,
+            clientId: clientId
+        ) {
+            messageNav = MessageThreadNav(thread: thread)
+        }
     }
 
     @ViewBuilder

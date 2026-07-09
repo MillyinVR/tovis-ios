@@ -22,6 +22,9 @@ struct MainTabView: View {
     /// A booking surfaced by a tapped push (`tovis://`-style `href` deep link),
     /// presented over the shell. nil when nothing is being deep-linked.
     @State private var deepLinkBooking: ClientBooking?
+    /// A conversation surfaced by a tapped message push (`/messages/thread/{id}`),
+    /// presented over the shell. nil when nothing is being deep-linked.
+    @State private var deepLinkThread: MessageThread?
 
     var body: some View {
         TabView(selection: $tab) {
@@ -67,6 +70,18 @@ struct MainTabView: View {
             }
             .tint(BrandColor.accent)
         }
+        .sheet(item: $deepLinkThread) { thread in
+            NavigationStack {
+                ThreadView(thread: thread)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Done") { deepLinkThread = nil }
+                                .tint(BrandColor.textSecondary)
+                        }
+                    }
+            }
+            .tint(BrandColor.accent)
+        }
     }
 
     /// Resolve a push deep link to a concrete destination and present it, then
@@ -81,6 +96,8 @@ struct MainTabView: View {
                 let all = buckets.upcoming + buckets.pending + buckets.prebooked + buckets.past
                 deepLinkBooking = all.first { $0.id == id }
             }
+        case let .thread(id):
+            deepLinkThread = try? await session.client.messages.thread(id: id)
         }
         session.clearPushDeepLink()
     }

@@ -36,6 +36,10 @@ struct ProBookingDetailView: View {
     @State private var refundDone = false
     @State private var showRefundConfirm = false
 
+    // Message-the-client entry point (mirrors web /pro/bookings/[id]).
+    @State private var messageNav: MessageThreadNav?
+    @State private var messageWorking = false
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
@@ -59,11 +63,43 @@ struct ProBookingDetailView: View {
         .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
         .task { if case .loading = phase { await load() } }
         .onChange(of: session.refreshTick) { Task { await load() } }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    Task { await openMessageThread() }
+                } label: {
+                    if messageWorking {
+                        ProgressView().tint(BrandColor.accent)
+                    } else {
+                        Image(systemName: "bubble.left.and.bubble.right")
+                    }
+                }
+                .tint(BrandColor.accent)
+                .disabled(messageWorking)
+                .accessibilityLabel("Message client")
+            }
+        }
+        .navigationDestination(item: $messageNav) { nav in
+            ThreadView(thread: nav.thread)
+        }
         .confirmationDialog("Cancel this booking? This will notify the client.", isPresented: $showCancelConfirm, titleVisibility: .visible) {
             Button("Cancel booking", role: .destructive) { Task { await cancel() } }
             Button("Keep it", role: .cancel) {}
         }
         .tint(BrandColor.accent)
+    }
+
+    /// Resolve-or-create this booking's thread and push the conversation.
+    /// Best-effort: on failure the pro stays on the booking detail.
+    private func openMessageThread() async {
+        guard !messageWorking else { return }
+        messageWorking = true
+        defer { messageWorking = false }
+        if let thread = try? await session.client.messages.openBookingThread(
+            bookingId: bookingId
+        ) {
+            messageNav = MessageThreadNav(thread: thread)
+        }
     }
 
     // MARK: - Content

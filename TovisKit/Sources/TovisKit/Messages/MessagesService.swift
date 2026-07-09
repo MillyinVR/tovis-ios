@@ -141,9 +141,20 @@ public final class MessagesService: Sendable {
         return response.thread?.id
     }
 
+    /// Look up a thread the viewer participates in by id, from the inbox list.
+    /// A deep-linked / just-resolved thread is always in the viewer's inbox (they
+    /// participate) and bubbles to the top by `lastMessageAt`, so the first page
+    /// finds it — the same "find in the list" approach `openProfileThread` uses
+    /// (there's no standalone GET thread-metadata endpoint).
+    public func thread(id: String) async throws -> MessageThread? {
+        let all = try await threads()
+        return all.first(where: { $0.id == id })
+    }
+
     /// Resolve-or-create the thread for a pro's profile and return the full
     /// `MessageThread` (found in the inbox list) so it can be pushed into
-    /// `ThreadView`. Returns nil when no thread could be resolved.
+    /// `ThreadView`. Returns nil when no thread could be resolved. This is the
+    /// CLIENT→pro direction (the client views a pro's profile).
     public func openProfileThread(professionalId: String) async throws -> MessageThread? {
         guard let threadId = try await resolveThread(
             contextType: "PRO_PROFILE",
@@ -152,8 +163,40 @@ public final class MessagesService: Sendable {
             createIfMissing: true
         ) else { return nil }
 
-        let all = try await threads()
-        return all.first(where: { $0.id == threadId })
+        return try await thread(id: threadId)
+    }
+
+    /// Resolve-or-create the BOOKING-context thread and return the full
+    /// `MessageThread`. Either party may open it (the backend authorizes the
+    /// booking's client or pro); the pro booking-detail "Message" action uses it.
+    public func openBookingThread(bookingId: String) async throws -> MessageThread? {
+        guard let threadId = try await resolveThread(
+            contextType: "BOOKING",
+            contextId: bookingId,
+            createIfMissing: true
+        ) else { return nil }
+
+        return try await thread(id: threadId)
+    }
+
+    /// Resolve-or-create the general pro↔client thread (PRO_PROFILE context, from
+    /// the PRO side) and return the full `MessageThread`. This mirrors
+    /// `openProfileThread` for the opposite direction: `professionalId` is the
+    /// pro's OWN profile id (the backend requires `contextId == viewer's
+    /// professionalId`) and `clientId` names the client to converse with. Used by
+    /// the pro client-chart "Message" action, which has no booking to anchor to.
+    public func openClientThread(
+        professionalId: String,
+        clientId: String
+    ) async throws -> MessageThread? {
+        guard let threadId = try await resolveThread(
+            contextType: "PRO_PROFILE",
+            contextId: professionalId,
+            clientId: clientId,
+            createIfMissing: true
+        ) else { return nil }
+
+        return try await thread(id: threadId)
     }
 }
 

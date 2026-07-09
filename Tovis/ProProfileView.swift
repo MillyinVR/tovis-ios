@@ -64,15 +64,6 @@ struct ProProfileView: View {
     @State private var messageWorking = false
     @State private var fullscreenMedia: FullscreenMedia?
 
-    /// Identifiable + Hashable wrapper so a resolved `MessageThread` can drive a
-    /// `navigationDestination(item:)` push (MessageThread itself isn't Hashable).
-    private struct MessageThreadNav: Identifiable, Hashable {
-        let thread: MessageThread
-        var id: String { thread.id }
-        static func == (lhs: MessageThreadNav, rhs: MessageThreadNav) -> Bool { lhs.id == rhs.id }
-        func hash(into hasher: inout Hasher) { hasher.combine(id) }
-    }
-
     private var shareURL: URL? {
         URL(string: "https://www.tovis.app/professionals/\(professionalId)")
     }
