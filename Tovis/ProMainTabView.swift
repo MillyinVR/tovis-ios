@@ -19,6 +19,13 @@ struct ProMainTabView: View {
     /// A conversation surfaced by a tapped message push (`/messages/thread/{id}`),
     /// presented over the pro shell. nil when nothing is being deep-linked.
     @State private var deepLinkThread: MessageThread?
+    /// A pro booking surfaced by a `/pro/bookings/{id}` push, presented over the
+    /// shell (id-based self-fetch). nil when nothing is being deep-linked.
+    @State private var deepLinkProBooking: DeepLinkBookingRef?
+    /// The pro reviews list surfaced by a `/pro/reviews/{id}` push (review-received).
+    @State private var showReviews = false
+    /// The membership screen surfaced by a `/pro/membership` push (handle-expiry).
+    @State private var showMembership = false
 
     var body: some View {
         Group {
@@ -86,6 +93,46 @@ struct ProMainTabView: View {
             }
             .tint(BrandColor.accent)
         }
+        // A tapped `/pro/bookings/{id}` push → that booking's detail.
+        .sheet(item: $deepLinkProBooking) { ref in
+            NavigationStack {
+                ProBookingDetailView(bookingId: ref.id)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Done") { deepLinkProBooking = nil }
+                                .tint(BrandColor.textSecondary)
+                        }
+                    }
+            }
+            .tint(BrandColor.accent)
+            .onDisappear { Task { await proSession.load(silent: true) } }
+        }
+        // A tapped `/pro/reviews/{id}` push (review-received) → the reviews list.
+        .sheet(isPresented: $showReviews) {
+            NavigationStack {
+                ProReviewsListView()
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Done") { showReviews = false }
+                                .tint(BrandColor.textSecondary)
+                        }
+                    }
+            }
+            .tint(BrandColor.accent)
+        }
+        // A tapped `/pro/membership` push (handle-reservation expiry) → membership.
+        .sheet(isPresented: $showMembership) {
+            NavigationStack {
+                ProMembershipView()
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Done") { showMembership = false }
+                                .tint(BrandColor.textSecondary)
+                        }
+                    }
+            }
+            .tint(BrandColor.accent)
+        }
         // The booking picker (UPCOMING_PICKER with >1 eligible session).
         .sheet(isPresented: Binding(get: { proSession.pickerOpen }, set: { proSession.pickerOpen = $0 })) {
             ProSessionPickerSheet(session: proSession)
@@ -112,13 +159,46 @@ struct ProMainTabView: View {
         }
     }
 
-    /// Resolve a tapped push deep link to its destination and present it, then
-    /// clear it. Only thread links are actionable in the pro shell; anything else
-    /// is cleared so a stray link never sticks.
+    /// Resolve a tapped push deep link to its pro-shell destination and present it,
+    /// then clear it. A client-shell target triggers a workspace switch (leaving the
+    /// link buffered for the client shell); anything unresolved is cleared so a
+    /// stray link never sticks.
     private func routeDeepLink(_ link: PushDeepLink?) async {
         guard let link else { return }
-        if case let .thread(id) = link.target {
+        // A client-shell target arrived while acting as pro. Switch workspaces and
+        // leave the link buffered — the client shell's `.task` consumes it once
+        // RootView swaps it in. If the switch doesn't take, clear it.
+        if let role = link.role, role != session.activeRole {
+            await session.switchWorkspace(to: role)
+            if session.activeRole != role { session.clearPushDeepLink() }
+            return
+        }
+        switch link.target {
+        case let .thread(id):
             deepLinkThread = try? await session.client.messages.thread(id: id)
+        case .look:
+            // No native single-look detail yet — land on the Looks feed.
+            tab = .looks
+        case let .proBooking(id, _):
+            // `step` (session/aftercare/…) is carried for a future step-jump; the
+            // booking detail opens for now (it links onward to the session hub).
+            deepLinkProBooking = DeepLinkBookingRef(id: id)
+        case .proReviews:
+            // The list has no id-anchor yet; the review id is carried for a future
+            // scroll-to-review.
+            showReviews = true
+        case .membership:
+            showMembership = true
+        case .proProfile:
+            tab = .profile
+        case .proCalendar:
+            tab = .calendar
+        case .proHome:
+            tab = .overview
+        // Client-shell targets are handled by the workspace switch above;
+        // unreachable here, but the switch must stay exhaustive.
+        case .booking, .offers, .referrals, .activity, .clientHome:
+            break
         }
         session.clearPushDeepLink()
     }
@@ -138,6 +218,10 @@ struct ProMainTabView: View {
         messagesBadge = count <= 0 ? nil : (count > 9 ? "9+" : "\(count)")
     }
 }
+
+/// Identifiable wrapper so a deep-linked pro booking id can drive a `.sheet(item:)`
+/// (a bare `String` isn't `Identifiable`).
+private struct DeepLinkBookingRef: Identifiable { let id: String }
 
 /// The eligible-booking picker (web's picker sheet in `ProSessionFooter`).
 private struct ProSessionPickerSheet: View {
