@@ -11,6 +11,35 @@
 
 ---
 
+## ⭐ Work order — priority sequence
+
+**Master cross-repo sequence lives in `tovis-app/docs/BACKLOG.md` (⭐ Work order,
+Tori 2026-07-08).** We work that tier order, not section number. Where the iOS items land:
+- **Tier 1:** **A7** — email-verification completion (blocks email/password signup;
+  detail in `tovis-app §15`).
+- **Tier 3:** §7 messaging **M3–M5** · §6 post-payment read-endpoint follow-up.
+- **Tier 4:** §5 **A1** residual (pro onboarding checklist + license/doc verification —
+  the rest of A1 is SHIPPED, see the ⚠️ note on A1 below) · **A8** Google Sign-In
+  (`tovis-app §15`) · §5 **A2** client screens · **A3** booking detail · **A4/A5** pro parity.
+- **Tier 7/8:** §1 live-verification · §2 launch train (**App Store upload**) · §3–§4
+  deferred pro polish · camera polish (`tovis-app §17`) · **A9** TikTok (parked, `tovis-app §15`).
+
+### ✅ Recently shipped (iOS, through 2026-07-09)
+- **A7 — in-app email-verification completion screen (#18)** — resend + status re-check
+  advancing to `.signedIn` (pairs web #546). Clears the Tier-1 email/password dead-end.
+- **§12 NC4 — in-app notification-string parity (#19)** — server-fed strings mirror web copy;
+  fixed the stale "Push — Coming soon" preferences label.
+- **§12 NC5 — push deep-link routing + cross-shell switch (#20)** — `URLComponents` parse
+  (`?step=`/`#review` survive), full Target→href map, role-aware client↔pro workspace switch;
+  both `MainTabView` + `ProMainTabView` route symmetrically. **Tap path still device-verify only**
+  (no APNs on sim — see §1 device checklist). Deferred residual: per-screen step-jump (consume
+  the `step`/look/review ids that the targets now carry — `BookingDetailView` /
+  `ProBookingDetailView` / `ProReviewsListView` open at the top today).
+- **A1 residual — native license/document verification screen (#9)** — shrinks A1 to the pro
+  onboarding-readiness checklist (see the A1 note below).
+
+---
+
 ## 1. Live-verification pass (nothing below is a build — it exercises shipped code)
 Start the stack (`docker start tovis-dev-postgres` → `cd ~/Dev/tovis-app && pnpm dev`), Xcode ⌘R (Debug → localhost), sign in `client@tovis.app`/`password123`.
 - [ ] Client polish #1–#6 live-verify: add-ons total-duration + finalize · mobile booking + Places autocomplete · deposit-pay CTA (`tovis://` return) · rebook-confirm card · Looks video autoplay/loop/mute · Discover filter sheet + place-jump + pin cluster tap-to-zoom.
@@ -60,8 +89,14 @@ ACCEPTANCE stay web (iOS generates claim links, web accepts); public SEO
 NOT accepted divergences (they're A2 build items): the public *client* profile
 `/u/[handle]` + public boards are social surfaces (looks/stats/follow), not SEO.
 
-- [ ] **A1 — native auth** (biggest structural gap; App-Store hygiene — an app
-  with sign-in should offer native sign-up). Build: signup role chooser → client
+- [ ] **A1 — native auth.** ⚠️ **"Biggest structural gap" framing is STALE —
+  reconciled by `tovis-app §15` (2026-07-08 audit):** native signup/login is largely
+  SHIPPED (role chooser · client + pro 3-step signup on real `POST /auth/register` ·
+  phone OTP · Sign in with Apple · forgot/reset · **App Attest landed** in lieu of
+  Turnstile). **Remaining A1 = pro onboarding readiness checklist + pro license/document
+  verification only.** The two real auth gaps are separate items: **A7** (email-verify
+  completion — Tier 1) + **A8** (Google Sign-In — `tovis-app §15`). Original pre-build
+  scope kept for reference: signup role chooser → client
   signup (name/ZIP-geocode/phone/SMS-consent/email/password/TOS + Turnstile) →
   pro 3-step signup (work → about → account) → phone verify (already exists) +
   email-verify half → forgot/reset password → pro onboarding readiness checklist
