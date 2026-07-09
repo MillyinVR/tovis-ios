@@ -140,6 +140,17 @@ struct BookingDetailView: View {
             VStack(alignment: .leading, spacing: 18) {
                 headerCard
 
+                // Aftercare-sourced next appointment whose approval is coupled to
+                // the previous visit's off-platform payment — it stays PENDING until
+                // the pro confirms that payment (§10). Nothing for the client to do.
+                if booking.isCoupledRebookAwaitingPaymentConfirmation {
+                    noticeCard(
+                        title: "Pending — your pro will confirm",
+                        subtitle: "This appointment is booked. Your pro confirms it once they’ve received payment for your last visit.",
+                        icon: "hourglass", tint: BrandColor.gold
+                    )
+                }
+
                 if isConsultationPending {
                     noticeCard(
                         title: "Consultation needs your review",

@@ -33,6 +33,9 @@ struct ProBookingDetailView: View {
     @State private var working = false
     @State private var actionError: String?
     @State private var pendingVerb: String?
+    /// Error surfaced inline under the Payment card's "Confirm payment received"
+    /// control (§10 off-platform payment confirmation).
+    @State private var confirmPaymentError: String?
 
     @State private var showCancelConfirm = false
 
@@ -403,6 +406,14 @@ struct ProBookingDetailView: View {
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke((booking.isPaid ? BrandColor.accent : BrandColor.gold).opacity(0.3), lineWidth: 1))
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
+                // Off-platform payment the client attested to (AWAITING_CONFIRMATION):
+                // the pro confirms receipt right here on the detail, mirroring the
+                // session wrap-up control. Confirming also auto-approves any coupled
+                // aftercare next appointment.
+                if booking.isAwaitingPaymentConfirmation {
+                    confirmPaymentControl()
+                }
+
                 VStack(spacing: 6) {
                     if let services = booking.serviceSubtotalSnapshot ?? booking.subtotalSnapshot {
                         moneyRow("Services", value: Wire.money(services) ?? "—")
@@ -418,6 +429,35 @@ struct ProBookingDetailView: View {
                 .padding(.top, 4)
             }
         }
+    }
+
+    /// "Confirm payment received" control for an off-platform payment the client
+    /// attested to (checkout AWAITING_CONFIRMATION → PAID). Mirrors the session
+    /// wrap-up control; confirming auto-approves any coupled aftercare next booking.
+    @ViewBuilder
+    private func confirmPaymentControl() -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("The client marked this payment as sent. Confirm once you’ve received it to close out the booking.")
+                .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button { Task { await confirmPayment() } } label: {
+                Text(pendingVerb == "CONFIRM_PAYMENT" ? "Confirming…" : "Confirm payment received")
+                    .font(BrandFont.body(13, .semibold)).foregroundStyle(BrandColor.onAccent)
+                    .frame(maxWidth: .infinity).padding(.vertical, 11)
+                    .background(BrandColor.emerald)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            .disabled(pendingVerb != nil)
+
+            Text("This also approves the next booking the client requested.")
+                .font(BrandFont.body(11)).foregroundStyle(BrandColor.textMuted)
+
+            if let confirmPaymentError {
+                Text(confirmPaymentError).font(BrandFont.body(11)).foregroundStyle(BrandColor.ember)
+            }
+        }
+        .padding(.top, 2)
     }
 
     private func moneyRow(_ label: String, value: String, strong: Bool = false) -> some View {
@@ -634,6 +674,17 @@ struct ProBookingDetailView: View {
             session.signalRefresh(); dismiss()
         } catch let error as APIError { actionError = error.userMessage }
         catch { actionError = "Couldn’t cancel the booking. Try again." }
+    }
+
+    private func confirmPayment() async {
+        guard pendingVerb == nil else { return }
+        pendingVerb = "CONFIRM_PAYMENT"; confirmPaymentError = nil
+        defer { pendingVerb = nil }
+        do {
+            try await session.client.proBookings.confirmPayment(bookingId: bookingId)
+            session.signalRefresh(); await load()
+        } catch let error as APIError { confirmPaymentError = error.userMessage }
+        catch { confirmPaymentError = "Could not confirm payment. Check your connection and try again." }
     }
 
     private func startRefund() {
