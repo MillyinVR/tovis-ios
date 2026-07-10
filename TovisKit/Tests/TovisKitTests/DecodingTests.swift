@@ -1173,4 +1173,60 @@ func fixture(_ name: String) throws -> Data {
         #expect(json.contains("\"locationId\""))
         #expect(!json.contains("note"))
     }
+
+    // GET /api/v1/client/bookings/{id}/aftercare — care notes + featured pair (§24 AF3b).
+    @Test func decodesClientAftercareDetail() throws {
+        let json = """
+        {
+          "ok": true,
+          "canShowAftercare": true,
+          "aftercare": {
+            "id": "ac_1",
+            "notes": "Rinse with cool water for 48h.",
+            "sentToClientAt": "2026-07-02T15:00:00.000Z"
+          },
+          "beforeAfter": {
+            "beforeUrl": "https://cdn/thumb-before.jpg",
+            "afterUrl": "https://cdn/thumb-after.jpg",
+            "beforeFullUrl": "https://cdn/full-before.jpg",
+            "afterFullUrl": "https://cdn/full-after.jpg"
+          }
+        }
+        """.data(using: .utf8)!
+
+        let res = try JSONDecoder().decode(ClientAftercareDetail.self, from: json)
+        #expect(res.canShowAftercare == true)
+        #expect(res.hasContent == true)
+        #expect(res.aftercare?.notes == "Rinse with cool water for 48h.")
+        #expect(res.beforeAfter.hasAny == true)
+        // Full-size URL is preferred for the hero compare / tap-to-open.
+        #expect(res.beforeAfter.beforePreferred == "https://cdn/full-before.jpg")
+        #expect(res.beforeAfter.afterPreferred == "https://cdn/full-after.jpg")
+    }
+
+    // A COMPLETED booking with no summary + no photos: visible gate, but nothing
+    // to render (the native section stays hidden on `hasContent == false`).
+    @Test func decodesEmptyClientAftercareDetail() throws {
+        let json = """
+        {
+          "ok": true,
+          "canShowAftercare": true,
+          "aftercare": null,
+          "beforeAfter": {
+            "beforeUrl": null,
+            "afterUrl": null,
+            "beforeFullUrl": null,
+            "afterFullUrl": null
+          }
+        }
+        """.data(using: .utf8)!
+
+        let res = try JSONDecoder().decode(ClientAftercareDetail.self, from: json)
+        #expect(res.canShowAftercare == true)
+        #expect(res.aftercare == nil)
+        #expect(res.beforeAfter.hasAny == false)
+        #expect(res.hasContent == false)
+        // Falls back cleanly when a phase is absent.
+        #expect(res.beforeAfter.beforePreferred == nil)
+    }
 }

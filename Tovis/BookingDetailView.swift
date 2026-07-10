@@ -46,6 +46,12 @@ struct BookingDetailView: View {
     @State private var consentWorking = false
     @State private var consentError: String?
 
+    // Aftercare (care notes + featured before/after) — loaded lazily for a
+    // past/completed booking (or one with unread aftercare); supplementary, so
+    // a load failure just hides the section (§24 AF3b).
+    @State private var aftercare: ClientAftercareDetail?
+    @State private var loadingAftercare = false
+
     // Manage leg (reschedule / cancel)
     @State private var rescheduleSheet: RescheduleContext?
     @State private var loadingReschedule = false
@@ -195,8 +201,10 @@ struct BookingDetailView: View {
 
                 payCard
 
-                mediaConsentCard
+                aftercareCard
                     .id(Anchor.aftercare)   // scroll anchor for a `?step=aftercare` deep link
+
+                mediaConsentCard
 
                 manageCard
             }
@@ -204,7 +212,12 @@ struct BookingDetailView: View {
             .padding(.top, 8)
             .padding(.bottom, 40)
         }
-        .task { await focus(proxy) }
+        .task {
+            // Load aftercare before resolving a deep-linked scroll so the
+            // aftercare anchor exists when a `?step=aftercare` push scrolls to it.
+            await loadAftercare()
+            await focus(proxy)
+        }
         .background(BrandColor.bgPrimary.ignoresSafeArea())
         .navigationTitle("Appointment")
         .navigationBarTitleDisplayMode(.inline)
@@ -434,6 +447,74 @@ struct BookingDetailView: View {
             depositError = error.userMessage
         } catch {
             depositError = "Couldn’t start the deposit. Please try again."
+        }
+    }
+
+    // MARK: - Aftercare (care notes + featured before/after) — §24 AF3b
+
+    /// Fetch aftercare once the session has happened (past/completed) or there's
+    /// unread aftercare — the same window the web shows the aftercare tab in.
+    private var shouldLoadAftercare: Bool {
+        showsMediaConsent || booking.hasUnreadAftercare
+    }
+
+    private func loadAftercare() async {
+        guard shouldLoadAftercare, aftercare == nil, !loadingAftercare else { return }
+        loadingAftercare = true
+        defer { loadingAftercare = false }
+        // Best-effort: aftercare is supplementary to the appointment detail, so
+        // a failure simply leaves the section hidden.
+        aftercare = try? await session.client.bookings.aftercare(bookingId: booking.id)
+    }
+
+    @ViewBuilder
+    private var aftercareCard: some View {
+        if let detail = aftercare, detail.canShowAftercare, detail.hasContent {
+            BrandSection(title: "Aftercare") {
+                VStack(alignment: .leading, spacing: 14) {
+                    if detail.beforeAfter.hasAny {
+                        AftercareBeforeAfterPair(
+                            beforeUrl: detail.beforeAfter.beforePreferred,
+                            afterUrl: detail.beforeAfter.afterPreferred,
+                            compareHeight: 300
+                        )
+                        aftercarePrivacyNote
+                    }
+
+                    if let notes = detail.aftercare?.notes,
+                       !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        careNotesCard(notes)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Parity with web's `AftercarePrivacyNote` — reassure the client the
+    /// session photos stay private unless they add them to a review.
+    private var aftercarePrivacyNote: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "lock.fill")
+                .font(.system(size: 11))
+                .foregroundStyle(BrandColor.textMuted)
+            Text("These photos are private — only you and your pro can see them, unless you add them to a review.")
+                .font(BrandFont.body(12))
+                .foregroundStyle(BrandColor.textSecondary)
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func careNotesCard(_ notes: String) -> some View {
+        BrandSurface {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Care instructions")
+                    .font(BrandFont.body(13, .semibold))
+                    .foregroundStyle(BrandColor.textPrimary)
+                Text(notes)
+                    .font(BrandFont.body(14))
+                    .foregroundStyle(BrandColor.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
 

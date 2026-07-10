@@ -16,6 +16,14 @@ public final class BookingsService: Sendable {
         return response.buckets
     }
 
+    /// GET /api/v1/client/bookings/{id}/aftercare — the client's read of their
+    /// own aftercare: care notes (once the pro has SENT the summary) + the pro's
+    /// featured before/after pair. CLIENT-only, ownership-gated. Returns
+    /// `canShowAftercare == false` when the surface shouldn't show yet.
+    public func aftercare(bookingId: String) async throws -> ClientAftercareDetail {
+        try await api.request("/client/bookings/\(bookingId)/aftercare")
+    }
+
     /// POST /api/v1/client/bookings/{id}/consultation — approve or reject the
     /// pro's proposed consultation plan. The server is idempotent and a decision
     /// on an already-decided proposal still returns 200.
