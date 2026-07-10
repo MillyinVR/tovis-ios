@@ -71,4 +71,71 @@ public final class ProClientsService: Sendable {
             "/pro/clients/\(clientId)/notes", method: .post, body: payload
         )
     }
+
+    // MARK: - Chart write forms (per-tab edits)
+
+    /// POST /api/v1/pro/clients/{id}/allergies — record an allergy/sensitivity on
+    /// the safety strip. `severity` ∈ LOW | MODERATE | HIGH | CRITICAL. The label
+    /// and description are encrypted server-side.
+    public func addAllergy(
+        clientId: String,
+        label: String,
+        description: String?,
+        severity: String
+    ) async throws {
+        let payload = try JSONEncoder.canonical.encode(
+            ProClientAllergyRequest(label: label, description: description, severity: severity)
+        )
+        try await api.requestVoid(
+            "/pro/clients/\(clientId)/allergies", method: .post, body: payload
+        )
+    }
+
+    /// PATCH /api/v1/pro/clients/{id}/alert — set the pinned safety alert banner.
+    /// An empty string clears it.
+    public func updateAlertBanner(clientId: String, alertBanner: String) async throws {
+        let payload = try JSONEncoder.canonical.encode(
+            ProClientAlertRequest(alertBanner: alertBanner)
+        )
+        try await api.requestVoid(
+            "/pro/clients/\(clientId)/alert", method: .patch, body: payload
+        )
+    }
+
+    /// PUT /api/v1/pro/clients/{id}/do-not-rebook — flag the client do-not-rebook
+    /// (author-scoped; never shown to other pros or the client). `reason` may be
+    /// empty.
+    public func setDoNotRebook(clientId: String, reason: String) async throws {
+        let payload = try JSONEncoder.canonical.encode(
+            ProClientDoNotRebookRequest(reason: reason)
+        )
+        try await api.requestVoid(
+            "/pro/clients/\(clientId)/do-not-rebook", method: .put, body: payload
+        )
+    }
+
+    /// DELETE /api/v1/pro/clients/{id}/do-not-rebook — clear the flag.
+    public func clearDoNotRebook(clientId: String) async throws {
+        try await api.requestVoid(
+            "/pro/clients/\(clientId)/do-not-rebook", method: .delete
+        )
+    }
+
+    /// PATCH /api/v1/pro/clients/{id}/profile-context — pro-captured occupation +
+    /// social handle (occupation is encrypted server-side; the handle is normalized).
+    /// An empty string clears the corresponding field.
+    public func updateProfileContext(
+        clientId: String,
+        occupation: String,
+        socialHandle: String
+    ) async throws {
+        let payload = try JSONEncoder.canonical.encode(
+            ProClientProfileContextRequest(
+                occupation: occupation, proCapturedSocialHandle: socialHandle
+            )
+        )
+        try await api.requestVoid(
+            "/pro/clients/\(clientId)/profile-context", method: .patch, body: payload
+        )
+    }
 }
