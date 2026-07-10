@@ -365,6 +365,33 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
     `xcodebuild build` clean. The **refund/waive money-trail write increment** remains the last named
     money slice; other A4 slices below still open. **A4 calendar bundle (offer-a-time + reschedule +
     edit-service-items) COMPLETE.**
+  - [x] **A4-reminders manual reminders (creator / list / mark-done)** — ✅ shipped 2026-07-10
+    (**web + iOS** — the web `/api/v1/pro/reminders` list/create/complete routes already exist; the
+    one paired web change is required, see below; no migration). Native port of the web
+    `/pro/reminders` page — the pro's own follow-up / rebook / product-check-in **to-dos** ("Check in
+    on color fade", "DM bridal party count"), **distinct from the appointment-reminder CADENCE**
+    (`ProReminderSettings`, the "Appointment reminders" business link). New TovisKit `ProReminder.swift`
+    (display-subset decode: `ProReminder` + nested `ProReminderClient`/`…Booking`/`…BookingService`;
+    `ProRemindersResponse`) + `ProRemindersService` (`list()` GET · `create(...)` **form-encoded** POST
+    — the route parses `req.formData()`, so it sends `application/x-www-form-urlencoded`, not JSON;
+    optional `body`/`clientId` dropped when empty; `type` stays `GENERAL` like the web form · `complete(id:)`
+    POST). New `ProRemindersView.swift`: intro + **Add a reminder** button → `ProReminderCreateSheet`
+    (title · notes · **DatePicker** → a real ISO instant via `ProCalendarGrid.iso`, unlike web's naive
+    `datetime-local` · optional linked-client menu filtered to `canViewClient` from `proClients.directory()`),
+    an **Upcoming & open** list (title · due · client · "Booking: <service> on <when>" · notes · type
+    pill · **Mark done**), and a **Recently completed** list (newest-first, cap 20). Reached from a new
+    **Reminders** entry in the pro profile's Business section. **⚠️ Required paired web change** — the
+    complete route (`/pro/reminders/{id}/complete`) *always* did `NextResponse.redirect('/pro/reminders')`,
+    which **defaults to 307** → the follow-up re-POSTs to the page route → **405** (broke the native call,
+    and the browser "Mark done" too). Fixed by mirroring the sibling **create** route's Accept branch:
+    JSON `{ id }` for API callers, explicit **303** (POST→GET) for `text/html` browsers. +5 web vitest
+    (`complete/route.test.ts`: auth · 404 not-owned/missing · JSON-200-id · 303-for-html) — web
+    typecheck+lint+static-guards green. +4 iOS write/decode tests (`ProRemindersTests`: list decode ·
+    form-encoded create body + id · empty-optional omission · complete path); the cross-repo form-encode
+    seam verified against the real `req.formData()`. swift test 236; `xcodebuild build` clean. **⚠️ web
+    change (`complete` route JSON branch) is no-migration but PENDING a prod deploy — held for Tori.**
+    Rest of A4 (referral-reward config, data-migration wizard, media manager, portfolio-feature toggle)
+    still open.
   - ↪ **Predecessor for mid-session service change** (`tovis-app §22`, MS-iOS): A4's
     **edit-service-items** modal is the first place iOS gains a TovisKit method to change
     services on an existing booking (today only `sendConsultationProposal` exists — no
