@@ -235,6 +235,27 @@ public final class ProBookingService: Sendable {
         return response.trail
     }
 
+    /// POST /api/v1/bookings/{id}/no-show-fee/waive — forgive a no-show / late-cancel
+    /// fee that was assessed but never collected (only a FAILED fee is waivable; a
+    /// WAIVED fee is a no-op; a CHARGED fee must be refunded instead — the server
+    /// enforces that). No money moves; this just stops the fee reading as outstanding
+    /// in the money trail. The body carries nothing, so the idempotency key is stable
+    /// (a double-tap dedupes, matching the fee's no-op-on-repeat semantics). Like
+    /// `refund` / `moneyTrail`, this is the shared `/bookings` route, not a `/pro` one.
+    public func waiveNoShowFee(
+        bookingId: String,
+        idempotencyKey: String? = nil
+    ) async throws {
+        let key = idempotencyKey ?? buildClientIdempotencyKey(
+            scope: "booking", entityId: bookingId, action: "no-show-waive")
+        try await api.requestVoid(
+            "/bookings/\(bookingId)/no-show-fee/waive",
+            method: .post,
+            body: Data("{}".utf8),
+            headers: ["idempotency-key": key]
+        )
+    }
+
     /// POST /api/v1/pro/bookings/{id}/rebook — propose the client's next
     /// appointment. `BOOK` schedules it (needs `scheduledFor`); `RECOMMEND_WINDOW`
     /// suggests a date range; `CLEAR` removes a prior proposal. Idempotent.
