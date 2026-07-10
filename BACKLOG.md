@@ -196,9 +196,9 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
     base-swappable picker = web's looser calendar editor, **not** the consultation single-BASE
     lock) off a new **Services card** in `ProBookingDetailView` (Edit shown while non-terminal,
     incl. IN_PROGRESS → the mid-session entry point). Since shipped: Last Minute
-    editor ✅, pro private client-view (writes + `view=public`) ✅, waitlist-outreach ✅. Rest of
-    A4 (calendar reschedule / "offer a time", money-trail, manual reminders, referral-reward,
-    data-migration wizard, media manager, portfolio-feature toggle) still open.
+    editor ✅, pro private client-view (writes + `view=public`) ✅, waitlist-outreach ✅,
+    waitlist "offer a time" ✅. Rest of A4 (calendar RESCHEDULE, money-trail, manual reminders,
+    referral-reward, data-migration wizard, media manager, portfolio-feature toggle) still open.
   - [x] **A4-chart-writes pro private-client-view, increment 1 (non-technical write forms)** —
     ✅ shipped 2026-07-10 (iOS #46 `982c028`, iOS-only — the web `/pro/clients/{id}/{alert,
     allergies,do-not-rebook,profile-context}` routes already existed; free text is encrypted
@@ -277,6 +277,28 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
     from the pro profile's **Business** section ("Waitlist"), mirroring web's account-menu
     entry. New reusable `Wire.monthDay` edge-resolved "joined Mon D" label. +3 tests (read-path
     decode incl. empty feed; `WAITLIST` resolve body). swift test 221; `xcodebuild build` clean.
+  - [x] **A4-waitlist-offer "offer a time"** — ✅ shipped 2026-07-10 (iOS #56 `25bca55`,
+    **iOS-only** — the web `POST /api/v1/pro/waitlist/{entryId}/offer` route already exists,
+    plus the availability + sellable-services routes it leans on; no backend change, no
+    migration). Closes the loop on the waitlist-outreach workspace: each waitlist row now
+    **offers a waiting client a concrete in-salon slot** (client gets a PENDING offer to
+    Confirm/Decline — it does NOT book), alongside Message. Ports the web `WaitlistOfferModal`.
+    New TovisKit `ProWaitlistOfferRequest`/`ProWaitlistOfferResponse`/`ProWaitlistOffer` +
+    `ProScheduleService.offerWaitlistSlot(waitlistEntryId:scheduledFor:endsAt:locationId:
+    durationMinutes:)` — the route derives client + service from the entry, so only the slot
+    + in-salon location travel; idempotency **mirrors web exactly** (`scope "pro-waitlist-offer"`,
+    entity = entry, action = the ISO start, no nonce → same slot dedupes, different slot mints a
+    fresh key). New `ProWaitlistOfferSheet.swift`: resolves the pro's own context itself (unlike
+    the web modal the calendar hands it) — `professionalId` (myProfile), bookable **SALON/SUITE**
+    location primary-first (mirrors web `offerSalonLocation`), `offeringId`+duration from
+    `sellableServices("SALON")` matched on the group's serviceId (absent ⇒ "no in-salon offering"
+    blocked state = web's null-offering empty state); reuses `ProOpenSlotPicker` for live
+    availability, `endsAt = start + offering duration`. `ProWaitlistView` rows grew an **Offer a
+    time** primary action + a brief "Offer sent to …" confirmation banner (the entry stays ACTIVE
+    until the client confirms). +1 offer write-path test (path · POST · body · idempotency-key
+    reconstruction · decode). swift test 222; `xcodebuild build` clean. **A4 calendar "offer a
+    time" slice COMPLETE** (the calendar *reschedule* half — `BookingService.reschedule` already
+    exists in TovisKit — remains: it needs a native reschedule sheet).
   - ↪ **Predecessor for mid-session service change** (`tovis-app §22`, MS-iOS): A4's
     **edit-service-items** modal is the first place iOS gains a TovisKit method to change
     services on an existing booking (today only `sendConsultationProposal` exists — no
