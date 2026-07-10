@@ -195,8 +195,9 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
     (`GET /pro/services`) + `ProSellableService`. `ProEditServiceItemsView` sheet (flat
     base-swappable picker = web's looser calendar editor, **not** the consultation single-BASE
     lock) off a new **Services card** in `ProBookingDetailView` (Edit shown while non-terminal,
-    incl. IN_PROGRESS → the mid-session entry point). Rest of A4 (Last Minute editor, waitlist,
-    private client-view writes + `view=public`, money-trail, manual reminders, referral-reward,
+    incl. IN_PROGRESS → the mid-session entry point). Since shipped: Last Minute
+    editor ✅, pro private client-view (writes + `view=public`) ✅, waitlist-outreach ✅. Rest of
+    A4 (calendar reschedule / "offer a time", money-trail, manual reminders, referral-reward,
     data-migration wizard, media manager, portfolio-feature toggle) still open.
   - [x] **A4-chart-writes pro private-client-view, increment 1 (non-technical write forms)** —
     ✅ shipped 2026-07-10 (iOS #46 `982c028`, iOS-only — the web `/pro/clients/{id}/{alert,
@@ -259,6 +260,23 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
     shared `describeOpeningTierPlan`), and per-opening **Cancel** (confirm → DELETE). Shared
     `EditField`/`editFieldBox` promoted to module-internal (no copy). swift test 218 (+5
     openings-path tests); `xcodebuild build` clean. **A4 Last Minute EDITOR slice COMPLETE.**
+  - [x] **A4-waitlist waitlist-outreach workspace** — ✅ shipped 2026-07-10 (**iOS-only** —
+    the web `GET /api/v1/pro/waitlist` route + the `WAITLIST` message-resolve context both
+    already exist; no backend change, no migration). Ports the web `/pro/waitlist` outreach
+    feed: the clients waiting for this pro's services, grouped by service and FIFO-ranked
+    (whoever waited longest is rank #1), with a per-client **Message** action to fill a spot —
+    read-only otherwise (the "offer a concrete time" flow is the separate calendar slice). New
+    TovisKit `ProWaitlist.swift` (`ProWaitlistOutreach` services+total, `isEmpty` on total==0 /
+    `ProWaitlistServiceGroup` / `ProWaitlistEntry` — display decode of the grouped feed);
+    `ProScheduleService.waitlistOutreach()` (grouped with last-minute + openings, the other
+    fill-a-spot surfaces); `MessagesService.openWaitlistThread(waitlistEntryId:)` (resolves the
+    `WAITLIST` thread — backend derives client & pro from the entry, so only the entry id is
+    sent — and returns the full thread to push into `ThreadView`). New `ProWaitlistView.swift`
+    (grouped service cards · per-client rows: rank badge · `BrandAvatar` · name ·
+    `preference · joined Mon D` · Message → `ThreadView`; loading/error/empty states) reached
+    from the pro profile's **Business** section ("Waitlist"), mirroring web's account-menu
+    entry. New reusable `Wire.monthDay` edge-resolved "joined Mon D" label. +3 tests (read-path
+    decode incl. empty feed; `WAITLIST` resolve body). swift test 221; `xcodebuild build` clean.
   - ↪ **Predecessor for mid-session service change** (`tovis-app §22`, MS-iOS): A4's
     **edit-service-items** modal is the first place iOS gains a TovisKit method to change
     services on an existing booking (today only `sendConsultationProposal` exists — no
