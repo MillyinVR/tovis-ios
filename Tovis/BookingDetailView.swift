@@ -4,6 +4,7 @@
 // (approve consultation, pay, reschedule) come in a later pass.
 import SwiftUI
 import UIKit
+import PhotosUI
 import TovisKit
 
 struct BookingDetailView: View {
@@ -94,6 +95,18 @@ struct BookingDetailView: View {
     @State private var deletingReview = false
     @State private var reviewError: String?
     @State private var reviewSuccess: String?
+
+    // Aftercare review PHOTOS (§5 A3-rev 4b). Session photos the client can attach
+    // to a NEW review (`reviewMediaOptions`, create-path only — attaching is the
+    // publish-consent action), fresh uploads staged upload-on-pick
+    // (`reviewStagedPhotos`), plus in-flight attach/remove state.
+    @State private var reviewMediaOptions: [ReviewMediaOption] = []
+    @State private var didLoadReviewMediaOptions = false
+    @State private var reviewSelectedSessionIds: Set<String> = []
+    @State private var reviewPhotoPicks: [PhotosPickerItem] = []
+    @State private var reviewStagedPhotos: [StagedReviewPhoto] = []
+    @State private var attachingReviewPhotos = false
+    @State private var removingReviewMediaId: String?
 
     // Manage leg (reschedule / cancel)
     @State private var rescheduleSheet: RescheduleContext?
@@ -1494,6 +1507,8 @@ struct BookingDetailView: View {
                             }
                         }
 
+                    reviewPhotosSection(detail, editing: editing)
+
                     reviewActionRow(detail, editing: editing)
 
                     if let reviewError {
@@ -1576,6 +1591,13 @@ struct BookingDetailView: View {
 
     private func saveReview(_ detail: ClientAftercareDetail) async {
         guard detail.reviewEligible, reviewRating >= 1, !savingReview, !deletingReview else { return }
+        let editing = detail.existingReview != nil
+        // On create the review carries any picked photos, so a still-uploading photo
+        // would be dropped — make the client wait. (Edit attaches photos separately.)
+        if !editing, reviewStagedPhotos.contains(where: { $0.status == .uploading }) {
+            reviewError = "Hang on — your photos are still uploading."
+            return
+        }
         reviewError = nil
         reviewSuccess = nil
         savingReview = true
@@ -1590,11 +1612,24 @@ struct BookingDetailView: View {
                     body: reviewBody)
                 message = "Updated your review."
             } else {
+                // Create carries the selected session photos + freshly-uploaded ones
+                // (session photos can only attach at create time).
+                let uploaded = reviewStagedPhotos
+                    .filter { $0.status == .uploaded }
+                    .compactMap(\.uploadSessionId)
                 _ = try await session.client.reviews.submitReview(
                     bookingId: booking.id,
                     rating: reviewRating,
                     headline: reviewHeadline,
-                    body: reviewBody)
+                    body: reviewBody,
+                    attachedMediaIds: Array(reviewSelectedSessionIds),
+                    uploadSessionIds: uploaded)
+                // The create consumed the staged/selected photos — reset that state so
+                // the now-editing block starts clean.
+                reviewStagedPhotos.removeAll()
+                reviewSelectedSessionIds.removeAll()
+                reviewMediaOptions.removeAll()
+                didLoadReviewMediaOptions = false
                 message = "Thanks for your review!"
             }
             // Re-pull so `existingReview` reflects the server (id for later edits).
@@ -1637,6 +1672,363 @@ struct BookingDetailView: View {
         didSeedReview = false
         aftercare = try? await session.client.bookings.aftercare(bookingId: booking.id)
         seedReview()
+    }
+
+    // MARK: - Aftercare review PHOTOS (§5 A3-rev 4b)
+
+    private static let reviewPhotoMaxImages = 6
+
+    /// A fresh review photo the client picked — compressed + uploaded immediately
+    /// (upload-on-pick) so submit/attach only references the returned session id.
+    private struct StagedReviewPhoto: Identifiable {
+        let id = UUID()
+        let image: UIImage
+        let data: Data
+        var uploadSessionId: String?
+        var status: Status
+        enum Status: Equatable { case uploading, uploaded, failed }
+    }
+
+    /// The inline photo manager under the review text. Create path: pick session
+    /// photos + upload new ones, both attached when the review is posted. Edit
+    /// path: the attached grid (removable) + upload-and-attach more.
+    @ViewBuilder
+    private func reviewPhotosSection(_ detail: ClientAftercareDetail, editing: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Rectangle()
+                .fill(BrandColor.textMuted.opacity(0.18))
+                .frame(height: 1)
+                .padding(.vertical, 2)
+
+            Text("Photos")
+                .font(BrandFont.body(13, .semibold))
+                .foregroundStyle(BrandColor.textPrimary)
+
+            // Edit path: photos already on the review, each removable.
+            if editing, let existing = detail.existingReview, !existing.mediaAssets.isEmpty {
+                reviewMediaThumbGrid {
+                    ForEach(existing.mediaAssets) { asset in
+                        reviewTile(
+                            thumbUrl: asset.displayThumbUrl,
+                            isVideo: asset.isVideo,
+                            topTrailing: {
+                                reviewRemoveButton(
+                                    busy: removingReviewMediaId == asset.id,
+                                    action: {
+                                        Task { await removeReviewMedia(reviewId: existing.id, mediaId: asset.id) }
+                                    })
+                            })
+                    }
+                }
+            }
+
+            // Create path: attach existing session photos (publish-consent).
+            if !editing, !reviewMediaOptions.isEmpty {
+                Text("Add from this appointment")
+                    .font(BrandFont.body(12, .semibold))
+                    .foregroundStyle(BrandColor.textSecondary)
+                reviewMediaThumbGrid {
+                    ForEach(reviewMediaOptions) { option in
+                        let selected = reviewSelectedSessionIds.contains(option.id)
+                        Button { toggleSessionOption(option.id) } label: {
+                            reviewTile(
+                                thumbUrl: option.displayThumbUrl,
+                                isVideo: option.isVideo,
+                                selected: selected,
+                                topTrailing: {
+                                    Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                                        .font(.system(size: 20))
+                                        .symbolRenderingMode(.palette)
+                                        .foregroundStyle(
+                                            selected ? BrandColor.onAccent : .white,
+                                            selected ? BrandColor.accent : .black.opacity(0.35))
+                                        .padding(5)
+                                })
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            // Freshly-picked uploads (both paths), with per-photo upload status.
+            if !reviewStagedPhotos.isEmpty {
+                reviewMediaThumbGrid {
+                    ForEach(reviewStagedPhotos) { staged in
+                        reviewStagedTile(staged)
+                    }
+                }
+            }
+
+            reviewPhotoPickerRow(editing: editing, reviewId: detail.existingReview?.id)
+        }
+        .task {
+            if !editing { await loadReviewMediaOptionsIfNeeded() }
+        }
+    }
+
+    /// A 3-column square grid shared by the attached / session / staged tiles.
+    private func reviewMediaThumbGrid<Content: View>(
+        @ViewBuilder _ content: () -> Content
+    ) -> some View {
+        LazyVGrid(
+            columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3),
+            spacing: 8
+        ) {
+            content()
+        }
+    }
+
+    /// One square remote tile (photo or video badge) with an optional top-trailing
+    /// overlay (a remove button or a selection check) and optional selection ring.
+    private func reviewTile<Overlay: View>(
+        thumbUrl: String?,
+        isVideo: Bool,
+        selected: Bool = false,
+        @ViewBuilder topTrailing: () -> Overlay
+    ) -> some View {
+        ZStack(alignment: .topTrailing) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(BrandColor.bgSecondary)
+                if let thumbUrl, let url = URL(string: thumbUrl) {
+                    AsyncImage(url: url) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        ProgressView().tint(BrandColor.textMuted)
+                    }
+                }
+                if isVideo {
+                    Image(systemName: "play.circle.fill")
+                        .font(.system(size: 24))
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+            }
+            .aspectRatio(1, contentMode: .fill)
+            .frame(maxWidth: .infinity)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(selected ? BrandColor.accent : .clear, lineWidth: 2)
+            }
+
+            topTrailing()
+        }
+    }
+
+    /// A staged (freshly-picked) photo tile — local preview + upload status + discard.
+    private func reviewStagedTile(_ staged: StagedReviewPhoto) -> some View {
+        ZStack(alignment: .topTrailing) {
+            Image(uiImage: staged.image)
+                .resizable()
+                .scaledToFill()
+                .aspectRatio(1, contentMode: .fill)
+                .frame(maxWidth: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay { reviewStagedStatusOverlay(staged.status) }
+
+            reviewRemoveButton(busy: false) { discardStaged(staged.id) }
+        }
+    }
+
+    @ViewBuilder
+    private func reviewStagedStatusOverlay(_ status: StagedReviewPhoto.Status) -> some View {
+        switch status {
+        case .uploading:
+            ZStack {
+                Color.black.opacity(0.35)
+                ProgressView().tint(.white)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        case .failed:
+            ZStack {
+                Color.black.opacity(0.45)
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(BrandColor.ember)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        case .uploaded:
+            EmptyView()
+        }
+    }
+
+    private func reviewRemoveButton(busy: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            ZStack {
+                if busy {
+                    ProgressView().tint(.white)
+                } else {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 20))
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(.white, .black.opacity(0.55))
+                }
+            }
+            .padding(5)
+        }
+        .buttonStyle(.plain)
+        .disabled(busy || attachingReviewPhotos)
+    }
+
+    /// The picker + (edit path) the explicit "add these to your review" button.
+    @ViewBuilder
+    private func reviewPhotoPickerRow(editing: Bool, reviewId: String?) -> some View {
+        let slots = reviewRemainingPhotoSlots(editing: editing)
+        VStack(alignment: .leading, spacing: 8) {
+            PhotosPicker(
+                selection: $reviewPhotoPicks,
+                maxSelectionCount: max(1, slots),
+                matching: .images
+            ) {
+                Label("Add photos", systemImage: "photo.badge.plus")
+                    .font(BrandFont.body(13, .semibold))
+                    .foregroundStyle(slots <= 0 ? BrandColor.textMuted : BrandColor.accent)
+            }
+            .disabled(slots <= 0 || attachingReviewPhotos)
+            .onChange(of: reviewPhotoPicks) {
+                Task { await stageAndUploadPicks() }
+            }
+
+            Text(editing
+                 ? "Up to 6 photos. Added photos appear on your public review."
+                 : "Up to 6 photos. Anything you add here becomes part of your public review.")
+                .font(BrandFont.body(11))
+                .foregroundStyle(BrandColor.textMuted)
+
+            // Edit path: create attaches on Post; an existing review attaches here.
+            if editing, let reviewId,
+               reviewStagedPhotos.contains(where: { $0.status == .uploaded }) {
+                Button { Task { await attachStagedToExistingReview(reviewId: reviewId) } } label: {
+                    Group {
+                        if attachingReviewPhotos {
+                            ProgressView().tint(BrandColor.onAccent)
+                        } else {
+                            Text("Add \(reviewStagedPhotos.filter { $0.status == .uploaded }.count) to review")
+                                .font(BrandFont.body(13, .semibold))
+                        }
+                    }
+                    .foregroundStyle(BrandColor.onAccent)
+                    .padding(.horizontal, 16).padding(.vertical, 9)
+                    .background(BrandColor.accent)
+                    .clipShape(Capsule())
+                }
+                .disabled(attachingReviewPhotos)
+            }
+        }
+    }
+
+    /// How many more fresh photos may be added before hitting the 6-image cap
+    /// (approximate — the server enforces the exact 6-image + 1-video split).
+    private func reviewRemainingPhotoSlots(editing: Bool) -> Int {
+        let existingImages = aftercare?.existingReview?.mediaAssets.filter { !$0.isVideo }.count ?? 0
+        let sessionSelected = editing ? 0 : reviewSelectedSessionIds.count
+        let used = existingImages + reviewStagedPhotos.count + sessionSelected
+        return max(0, Self.reviewPhotoMaxImages - used)
+    }
+
+    private func toggleSessionOption(_ id: String) {
+        reviewError = nil
+        reviewSuccess = nil
+        if reviewSelectedSessionIds.contains(id) {
+            reviewSelectedSessionIds.remove(id)
+        } else if reviewSelectedSessionIds.count + (aftercare?.existingReview?.mediaAssets.count ?? 0) < Self.reviewPhotoMaxImages + 1 {
+            reviewSelectedSessionIds.insert(id)
+        } else {
+            reviewError = "You can add up to \(Self.reviewPhotoMaxImages + 1) photos/videos."
+        }
+    }
+
+    private func discardStaged(_ id: UUID) {
+        reviewStagedPhotos.removeAll { $0.id == id }
+    }
+
+    /// Load the pro's session photos the client can attach — once, create path only.
+    private func loadReviewMediaOptionsIfNeeded() async {
+        guard !didLoadReviewMediaOptions else { return }
+        didLoadReviewMediaOptions = true
+        reviewMediaOptions =
+            (try? await session.client.reviews.reviewMediaOptions(bookingId: booking.id)) ?? []
+    }
+
+    /// Compress each pick and upload it immediately, tracking per-photo status.
+    private func stageAndUploadPicks() async {
+        let picks = reviewPhotoPicks
+        reviewPhotoPicks = []
+        guard !picks.isEmpty else { return }
+        reviewError = nil
+        reviewSuccess = nil
+
+        for pick in picks {
+            guard reviewStagedPhotos.count < Self.reviewPhotoMaxImages else {
+                reviewError = "You can add up to \(Self.reviewPhotoMaxImages) photos."
+                break
+            }
+            guard
+                let data = try? await pick.loadTransferable(type: Data.self),
+                let image = UIImage(data: data)
+            else { continue }
+
+            let jpeg = image.jpegData(compressionQuality: 0.85) ?? data
+            let staged = StagedReviewPhoto(
+                image: image, data: jpeg, uploadSessionId: nil, status: .uploading)
+            reviewStagedPhotos.append(staged)
+
+            do {
+                let sessionId = try await session.client.reviews.uploadReviewPhoto(imageData: jpeg)
+                updateStaged(staged.id) {
+                    $0.uploadSessionId = sessionId
+                    $0.status = .uploaded
+                }
+            } catch {
+                updateStaged(staged.id) { $0.status = .failed }
+            }
+        }
+    }
+
+    private func updateStaged(_ id: UUID, _ mutate: (inout StagedReviewPhoto) -> Void) {
+        guard let idx = reviewStagedPhotos.firstIndex(where: { $0.id == id }) else { return }
+        mutate(&reviewStagedPhotos[idx])
+    }
+
+    /// Attach the uploaded staged photos to an EXISTING review, then re-pull.
+    private func attachStagedToExistingReview(reviewId: String) async {
+        let ids = reviewStagedPhotos.filter { $0.status == .uploaded }.compactMap(\.uploadSessionId)
+        guard !ids.isEmpty, !attachingReviewPhotos else { return }
+        reviewError = nil
+        reviewSuccess = nil
+        attachingReviewPhotos = true
+        defer { attachingReviewPhotos = false }
+        do {
+            try await session.client.reviews.attachReviewMedia(
+                reviewId: reviewId, uploadSessionIds: ids)
+            reviewStagedPhotos.removeAll()
+            await reloadAftercareAfterReviewChange()
+            reviewSuccess = "Added your photos."
+            await onDecision()
+        } catch let error as APIError {
+            reviewError = error.userMessage
+        } catch {
+            reviewError = "Couldn’t add your photos. Please try again."
+        }
+    }
+
+    /// Remove one photo from an existing review (409s if it's portfolio/Looks-featured).
+    private func removeReviewMedia(reviewId: String, mediaId: String) async {
+        guard removingReviewMediaId == nil, !attachingReviewPhotos else { return }
+        reviewError = nil
+        reviewSuccess = nil
+        removingReviewMediaId = mediaId
+        defer { removingReviewMediaId = nil }
+        do {
+            try await session.client.reviews.removeReviewMedia(
+                reviewId: reviewId, mediaId: mediaId)
+            await reloadAftercareAfterReviewChange()
+            reviewSuccess = "Removed a photo."
+            await onDecision()
+        } catch let error as APIError {
+            reviewError = error.userMessage
+        } catch {
+            reviewError = "Couldn’t remove that photo. Please try again."
+        }
     }
 
     /// Parity with web's `AftercarePrivacyNote` — reassure the client the

@@ -55,7 +55,23 @@
     "id": "rev_1",
     "rating": 5,
     "headline": "Best color of my life",
-    "body": "Amara nailed the balayage — booking again."
+    "body": "Amara nailed the balayage — booking again.",
+    "mediaAssets": [
+      {
+        "id": "rm_1",
+        "mediaType": "IMAGE",
+        "url": "https://cdn.example.com/rev-1.jpg",
+        "thumbUrl": "https://cdn.example.com/rev-1-thumb.jpg",
+        "createdAt": "2026-07-03T10:00:00.000Z"
+      },
+      {
+        "id": "rm_2",
+        "mediaType": "VIDEO",
+        "url": "https://cdn.example.com/rev-2.mp4",
+        "thumbUrl": null,
+        "createdAt": "2026-07-03T09:00:00.000Z"
+      }
+    ]
   },
   "reviewEligible": true,
   "checkoutProductsEditable": true

@@ -116,7 +116,11 @@ public final class TovisClient: Sendable {
         self.checkout = CheckoutService(api: api)
         self.looks = LooksService(api: api)
         self.notifications = NotificationsService(api: api)
-        self.reviews = ReviewsService(api: api)
+        self.reviews = ReviewsService(
+            api: api,
+            supabaseURL: config.supabaseURL,
+            supabaseKey: config.supabaseAnonKey
+        )
         self.referrals = ReferralsService(api: api)
         self.proSession = ProSessionService(api: api)
         self.proCalendar = ProCalendarService(api: api)
