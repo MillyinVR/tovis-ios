@@ -431,6 +431,35 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
     toggle (e.g. the consent gate 403) surfaces via an alert. +3 write-path tests (`PortfolioFeatureTests`:
     feature POSTs no body · un-feature DELETEs · server error surfaces). swift test 244; `xcodebuild build`
     clean. **Rest of A4 (data-migration wizard, media manager) still open.**
+  - [x] **A4-media-manager media manager, increment 1 (list / edit / delete)** — ✅ shipped 2026-07-10
+    (iOS #67 `ade610b` + **REQUIRED paired web #576** `8e88ad12` — the web manager is RSC-only, so it
+    needed a native read API). Ports the web `/pro/media` grid + `app/_components/media/OwnerMediaMenu.tsx`
+    editor onto a native `ProMediaManagerView`, reached from the Profile tab's Business section
+    ("My media"). ⚠️ **The scoping seam of this slice:** the web media manager has **no JSON list/detail
+    route** — `app/pro/media/page.tsx` + `[id]/page.tsx` are React Server Components querying Prisma
+    directly. So this needed a **paired web read API** (like #573/#574): new
+    `GET /api/v1/pro/media` (PRO-only, owner-scoped) returning the pro's 60 most-recent media across all
+    visibilities **plus** the taggable service options (the active `Service` taxonomy the PATCH validates
+    `serviceIds` against) in one envelope; URLs via `renderMediaUrlsBatch`. New `ProManagedMediaItemDTO`/
+    `ProManagedMediaListResponseDTO` in `lib/dto/mediaAttach.ts` (reuse `ProMediaServiceTagDTO`) + barrel
+    export + `gen:api-schema`. The existing `PATCH`/`DELETE /api/v1/pro/media/{id}` routes are reused
+    unchanged. TovisKit: new `ProManagedMedia.swift` (`ProManagedMediaItem` · `ProMediaServiceTag` ·
+    list response · `ProMediaUpdateRequest`) + `ProMediaService.listManagedMedia()`/`updateMedia(...)`/
+    `deleteMedia(...)`. App: `ProMediaManagerView` grid (plain thumbnails + ★-portfolio/Looks/video
+    badges — matches web `MediaTile`; the before/after slider lives only on the public portfolio/reviews
+    views) → tap opens `ProMediaEditSheet` (caption ≤300 · derived **Public / Client + you** segmented ·
+    Looks + portfolio toggles · searchable service-tag multi-select · Delete w/ confirm). **Wire contract
+    (matches OwnerMediaMenu):** visibility is **derived** from the two flags, never sent (server
+    recomputes it); the PATCH sends the **full field set**, a nil caption is **omitted → the server clears
+    it**; `serviceIds` is the full replacement set (Save gated on ≥1); **no idempotency key** (replacing
+    state is naturally idempotent, matching the portfolio toggle); a core edit **omits `beforeAssetId`** so
+    it never clobbers server auto-pairing. A 403 consent gate (unpromoted private photo → public) surfaces
+    via alert. +4 web route tests + +5 iOS tests (`MediaManagerTests`: list decodes items + options · PATCH
+    full body · caption omitted when nil · DELETE · server error surfaces). swift test 249; `xcodebuild
+    build` clean; web typecheck+lint+static-guards+vitest green. **⚠️ Increment 2 = before/after PAIRING
+    picker** (reuses the existing `GET /api/v1/pro/media/{id}/before-options` route + `BeforeAfterCompareView`;
+    the `pairingTouched`/omit-when-untouched semantics make it safely separable). **After that, A4 media
+    manager is COMPLETE; only data-migration wizard remains.**
   - ↪ **Predecessor for mid-session service change** (`tovis-app §22`, MS-iOS): A4's
     **edit-service-items** modal is the first place iOS gains a TovisKit method to change
     services on an existing booking (today only `sendConsultationProposal` exists — no
