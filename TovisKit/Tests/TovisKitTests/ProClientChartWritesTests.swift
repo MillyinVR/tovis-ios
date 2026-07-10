@@ -1,0 +1,168 @@
+import Foundation
+import Testing
+@testable import TovisKit
+
+// Proves the per-tab write forms on the pro client chart hit the right routes with
+// the right verbs + bodies:
+//   • addAllergy          → POST   /pro/clients/{id}/allergies  {label,description,severity}
+//   • updateAlertBanner   → PATCH  /pro/clients/{id}/alert      {alertBanner}
+//   • setDoNotRebook      → PUT    /pro/clients/{id}/do-not-rebook {reason}
+//   • clearDoNotRebook    → DELETE /pro/clients/{id}/do-not-rebook
+//   • updateProfileContext→ PATCH  /pro/clients/{id}/profile-context {occupation,proCapturedSocialHandle}
+// Every write is an authenticated native request; the routes encrypt free text
+// server-side, so the client only sends plaintext.
+
+/// Records the outgoing request and serves a canned envelope.
+final class ProClientChartWritesURLProtocol: URLProtocol {
+    nonisolated(unsafe) static var capturedPath: String?
+    nonisolated(unsafe) static var capturedMethod: String?
+    nonisolated(unsafe) static var capturedAuthHeader: String?
+    nonisolated(unsafe) static var capturedNativeHeader: String?
+    nonisolated(unsafe) static var capturedBody: Data?
+    nonisolated(unsafe) static var status = 200
+    nonisolated(unsafe) static var responseBody = Data("{\"ok\":true}".utf8)
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        Self.capturedPath = request.url?.path
+        Self.capturedMethod = request.httpMethod
+        Self.capturedAuthHeader = request.value(forHTTPHeaderField: "Authorization")
+        Self.capturedNativeHeader = request.value(forHTTPHeaderField: "x-tovis-native")
+        Self.capturedBody = request.httpBody ?? request.chartWritesBodyStreamData()
+
+        let response = HTTPURLResponse(
+            url: request.url!, statusCode: Self.status, httpVersion: nil,
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Self.responseBody)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
+private extension URLRequest {
+    func chartWritesBodyStreamData() -> Data? {
+        guard let stream = httpBodyStream else { return nil }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        let size = 4096
+        var buffer = [UInt8](repeating: 0, count: size)
+        while stream.hasBytesAvailable {
+            let read = stream.read(&buffer, maxLength: size)
+            if read <= 0 { break }
+            data.append(buffer, count: read)
+        }
+        return data
+    }
+}
+
+@Suite(.serialized) struct ProClientChartWritesTests {
+    private func makeService() async -> ProClientsService {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ProClientChartWritesURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let tokenStore = TokenStore(service: "me.tovis.app.session.chartwrites.tests")
+        await tokenStore.save("session.token.value")
+        let api = APIClient(
+            config: TovisConfig(baseURL: URL(string: "https://test.local/api/v1")!),
+            session: session,
+            tokenStore: tokenStore
+        )
+        return ProClientsService(api: api)
+    }
+
+    private func reset() {
+        ProClientChartWritesURLProtocol.capturedPath = nil
+        ProClientChartWritesURLProtocol.capturedMethod = nil
+        ProClientChartWritesURLProtocol.capturedAuthHeader = nil
+        ProClientChartWritesURLProtocol.capturedNativeHeader = nil
+        ProClientChartWritesURLProtocol.capturedBody = nil
+        ProClientChartWritesURLProtocol.status = 200
+        ProClientChartWritesURLProtocol.responseBody = Data("{\"ok\":true}".utf8)
+    }
+
+    private func bodyJSON() throws -> [String: Any] {
+        let body = try #require(ProClientChartWritesURLProtocol.capturedBody)
+        return try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+    }
+
+    @Test func addAllergyPostsPlaintextFields() async throws {
+        reset()
+        try await makeService().addAllergy(
+            clientId: "cl_1", label: "PPD", description: "scalp redness", severity: "HIGH"
+        )
+
+        #expect(ProClientChartWritesURLProtocol.capturedPath == "/api/v1/pro/clients/cl_1/allergies")
+        #expect(ProClientChartWritesURLProtocol.capturedMethod == "POST")
+        #expect(ProClientChartWritesURLProtocol.capturedAuthHeader == "Bearer session.token.value")
+        #expect(ProClientChartWritesURLProtocol.capturedNativeHeader == "ios")
+
+        let json = try bodyJSON()
+        #expect(json["label"] as? String == "PPD")
+        #expect(json["description"] as? String == "scalp redness")
+        #expect(json["severity"] as? String == "HIGH")
+    }
+
+    @Test func addAllergyOmitsNilDescription() async throws {
+        reset()
+        try await makeService().addAllergy(
+            clientId: "cl_1", label: "Latex", description: nil, severity: "MODERATE"
+        )
+        let json = try bodyJSON()
+        #expect(json["label"] as? String == "Latex")
+        #expect(json["description"] == nil)
+    }
+
+    @Test func updateAlertBannerPatchesBanner() async throws {
+        reset()
+        try await makeService().updateAlertBanner(clientId: "cl_2", alertBanner: "Sensitive scalp")
+
+        #expect(ProClientChartWritesURLProtocol.capturedPath == "/api/v1/pro/clients/cl_2/alert")
+        #expect(ProClientChartWritesURLProtocol.capturedMethod == "PATCH")
+        let json = try bodyJSON()
+        #expect(json["alertBanner"] as? String == "Sensitive scalp")
+    }
+
+    @Test func updateAlertBannerClearsWithEmptyString() async throws {
+        reset()
+        try await makeService().updateAlertBanner(clientId: "cl_2", alertBanner: "")
+        let json = try bodyJSON()
+        #expect(json["alertBanner"] as? String == "")
+    }
+
+    @Test func setDoNotRebookPutsReason() async throws {
+        reset()
+        try await makeService().setDoNotRebook(clientId: "cl_3", reason: "No-showed twice")
+
+        #expect(ProClientChartWritesURLProtocol.capturedPath == "/api/v1/pro/clients/cl_3/do-not-rebook")
+        #expect(ProClientChartWritesURLProtocol.capturedMethod == "PUT")
+        let json = try bodyJSON()
+        #expect(json["reason"] as? String == "No-showed twice")
+    }
+
+    @Test func clearDoNotRebookDeletes() async throws {
+        reset()
+        try await makeService().clearDoNotRebook(clientId: "cl_3")
+
+        #expect(ProClientChartWritesURLProtocol.capturedPath == "/api/v1/pro/clients/cl_3/do-not-rebook")
+        #expect(ProClientChartWritesURLProtocol.capturedMethod == "DELETE")
+    }
+
+    @Test func updateProfileContextPatchesBothFields() async throws {
+        reset()
+        try await makeService().updateProfileContext(
+            clientId: "cl_4", occupation: "Nurse (rotating shifts)", socialHandle: "theirhandle"
+        )
+
+        #expect(ProClientChartWritesURLProtocol.capturedPath == "/api/v1/pro/clients/cl_4/profile-context")
+        #expect(ProClientChartWritesURLProtocol.capturedMethod == "PATCH")
+        let json = try bodyJSON()
+        #expect(json["occupation"] as? String == "Nurse (rotating shifts)")
+        #expect(json["proCapturedSocialHandle"] as? String == "theirhandle")
+    }
+}

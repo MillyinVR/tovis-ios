@@ -36,6 +36,22 @@ struct ProClientChartView: View {
     @State private var messageNav: MessageThreadNav?
     @State private var messageWorking = false
 
+    // Per-tab chart edits (increment 1 of the pro private-client-view parity):
+    // alert banner, do-not-rebook flag, profile context (occupation + social
+    // handle), and add-allergy — each a native port of a web sibling form.
+    enum EditSheet: String, Identifiable {
+        case alert, doNotRebook, profileContext, addAllergy
+        var id: String { rawValue }
+    }
+    @State private var editSheet: EditSheet?
+
+    private var loadedChart: ProClientChart? {
+        if case let .loaded(chart) = phase { return chart }
+        return nil
+    }
+
+    private func reloadChart() { Task { await load() } }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -74,7 +90,33 @@ struct ProClientChartView: View {
         .navigationDestination(item: $messageNav) { nav in
             ThreadView(thread: nav.thread)
         }
-        .sheet(isPresented: $showAddNote) { ProAddNoteSheet(clientId: clientId) }
+        .sheet(isPresented: $showAddNote) {
+            ProAddNoteSheet(clientId: clientId, onSaved: reloadChart)
+        }
+        .sheet(item: $editSheet) { sheet in
+            switch sheet {
+            case .alert:
+                ProEditAlertBannerSheet(
+                    clientId: clientId, current: loadedChart?.alertBanner, onSaved: reloadChart
+                )
+            case .doNotRebook:
+                ProDoNotRebookSheet(
+                    clientId: clientId,
+                    active: loadedChart?.doNotRebook != nil,
+                    currentReason: loadedChart?.doNotRebook?.reason,
+                    onSaved: reloadChart
+                )
+            case .profileContext:
+                ProEditProfileContextSheet(
+                    clientId: clientId,
+                    occupation: loadedChart?.header.occupation ?? "",
+                    socialHandle: loadedChart?.header.socialHandle ?? "",
+                    onSaved: reloadChart
+                )
+            case .addAllergy:
+                ProAddAllergySheet(clientId: clientId, onSaved: reloadChart)
+            }
+        }
         .tint(BrandColor.accent)
     }
 
@@ -99,7 +141,7 @@ struct ProClientChartView: View {
     private func content(_ chart: ProClientChart) -> some View {
         headerCard(chart.header)
         safetyStrip(chart)
-        if let dnr = chart.doNotRebook { doNotRebookBanner(dnr) }
+        doNotRebookSection(chart)
         tabBar(technicalEnabled: chart.technicalEnabled)
         tabContent(chart)
     }
@@ -127,6 +169,14 @@ struct ProClientChartView: View {
                     statTile("\(h.reviewCount)", "Reviews")
                     if let pref = h.preferredContactMethod { statTile(pref.capitalized, "Prefers") }
                 }
+                Button { editSheet = .profileContext } label: {
+                    Label(
+                        (h.occupation?.isEmpty == false || h.socialHandle?.isEmpty == false)
+                            ? "Edit context" : "Add context",
+                        systemImage: "pencil"
+                    )
+                    .font(BrandFont.body(12, .semibold)).foregroundStyle(BrandColor.accent)
+                }
             }
         }
     }
@@ -147,30 +197,47 @@ struct ProClientChartView: View {
         let hasAllergies = !chart.allergies.isEmpty
         return BrandSurface(tint: (hasAlert || hasAllergies) ? BrandColor.ember.opacity(0.10) : BrandColor.bgSurface) {
             VStack(alignment: .leading, spacing: 8) {
-                if let alert = chart.alertBanner, !alert.isEmpty {
-                    HStack(spacing: 8) {
-                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(BrandColor.ember)
-                        Text(alert).font(BrandFont.body(13, .semibold)).foregroundStyle(BrandColor.textPrimary)
+                HStack(alignment: .top, spacing: 8) {
+                    if let alert = chart.alertBanner, !alert.isEmpty {
+                        HStack(spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(BrandColor.ember)
+                            Text(alert).font(BrandFont.body(13, .semibold)).foregroundStyle(BrandColor.textPrimary)
+                        }
+                    } else {
+                        Text("No alert banner set.").font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
+                    }
+                    Spacer(minLength: 8)
+                    Button { editSheet = .alert } label: {
+                        Text(hasAlert ? "Edit" : "Add").font(BrandFont.body(12, .semibold)).foregroundStyle(BrandColor.accent)
                     }
                 }
                 if hasAllergies {
                     FlexChips(chart.allergies.map { "\($0.label) · \($0.severity)" }, tone: BrandColor.ember)
                 } else {
-                    Text(hasAlert ? "No allergies on file." : "No allergies or alerts on file.")
+                    Text("No allergies on file.")
                         .font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
                 }
             }
         }
     }
 
-    private func doNotRebookBanner(_ dnr: ProChartDoNotRebook) -> some View {
-        BrandSurface(tint: BrandColor.ember.opacity(0.14)) {
-            VStack(alignment: .leading, spacing: 4) {
+    @ViewBuilder
+    private func doNotRebookSection(_ chart: ProClientChart) -> some View {
+        let dnr = chart.doNotRebook
+        BrandSurface(tint: dnr != nil ? BrandColor.ember.opacity(0.14) : BrandColor.bgSurface) {
+            VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
-                    Image(systemName: "hand.raised.fill").foregroundStyle(BrandColor.ember)
-                    Text("Do not rebook").font(BrandFont.body(13, .semibold)).foregroundStyle(BrandColor.textPrimary)
+                    if dnr != nil {
+                        Image(systemName: "hand.raised.fill").foregroundStyle(BrandColor.ember)
+                        Text("Do not rebook").font(BrandFont.body(13, .semibold)).foregroundStyle(BrandColor.textPrimary)
+                    }
+                    Spacer(minLength: 8)
+                    Button { editSheet = .doNotRebook } label: {
+                        Text(dnr != nil ? "Edit" : "Flag do not rebook")
+                            .font(BrandFont.body(12, .semibold)).foregroundStyle(BrandColor.accent)
+                    }
                 }
-                if let reason = dnr.reason, !reason.isEmpty {
+                if let reason = dnr?.reason, !reason.isEmpty {
                     Text(reason).font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
                 }
             }
@@ -243,7 +310,11 @@ struct ProClientChartView: View {
     }
 
     private func allergiesTab(_ chart: ProClientChart) -> some View {
-        VStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 10) {
+            Button { editSheet = .addAllergy } label: {
+                Label("Add allergy", systemImage: "plus.circle")
+                    .font(BrandFont.body(14, .semibold)).foregroundStyle(BrandColor.accent)
+            }
             if chart.allergies.isEmpty {
                 emptyTab("No allergies recorded yet.")
             } else {

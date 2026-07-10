@@ -284,6 +284,9 @@ struct ProAddNoteSheet: View {
     @Environment(SessionModel.self) private var session
     @Environment(\.dismiss) private var dismiss
     let clientId: String
+    /// Optional — the chart passes a reload closure so a new note appears without
+    /// leaving the screen; the plain clients-detail caller leaves it nil.
+    var onSaved: (() -> Void)? = nil
 
     @State private var noteText = ""
     @State private var kind = "GENERAL"
@@ -344,6 +347,7 @@ struct ProAddNoteSheet: View {
         defer { saving = false }
         do {
             try await session.client.proClients.addNote(clientId: clientId, body: noteText, kind: kind)
+            onSaved?()
             dismiss()
         } catch let e as APIError {
             error = e.userMessage
