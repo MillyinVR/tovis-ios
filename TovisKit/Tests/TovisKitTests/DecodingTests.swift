@@ -1439,6 +1439,10 @@ func fixture(_ name: String) throws -> Data {
         #expect(rebook.confirmedNextBooking == nil)
         #expect(rebook.isNextBookingPendingApproval == false)
         #expect(rebook.isRecommendedWindow == true)
+        #expect(rebook.hasRenderableRebook == true)
+        // PF6: a rebook-only summary (no notes / photos / products) still has
+        // content, so the native aftercare card — and its rebook CTA — mounts.
+        #expect(res.hasContent == true)
     }
 
     // A COMPLETED booking with no summary + no photos: visible gate, but nothing

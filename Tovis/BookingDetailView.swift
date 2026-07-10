@@ -169,6 +169,14 @@ struct BookingDetailView: View {
             (booking.checkout.checkoutStatus ?? "").uppercased() == "AWAITING_CONFIRMATION"
     }
 
+    /// The pro also sent a rebook affordance (a recommended window, or an active
+    /// coupled next booking). Flips the "waiting on your pro" banner from "nothing
+    /// else to do" to rebook-guiding copy, so it never contradicts the rebook card
+    /// rendered just below it (PF6). Mirrors web's `rebookOptionAvailable`.
+    private var hasRebookOption: Bool {
+        aftercare?.rebook?.hasRenderableRebook ?? false
+    }
+
     /// A discovery deposit is owed exactly while its status is PENDING (the same
     /// gate the backend's deposit/stripe-session route enforces). `depositPaidLocally`
     /// flips it off optimistically once the deposit return lands.
@@ -413,7 +421,9 @@ struct BookingDetailView: View {
                         Text("Payment sent — waiting on your pro")
                             .font(BrandFont.body(15, .semibold))
                             .foregroundStyle(BrandColor.textPrimary)
-                        Text("Once your pro confirms they received payment, your booking will close out. There’s nothing else you need to do.")
+                        Text(hasRebookOption
+                            ? "Once your pro confirms they received payment, your booking will close out. In the meantime, your pro suggested a time to rebook — book your next appointment below."
+                            : "Once your pro confirms they received payment, your booking will close out. There’s nothing else you need to do.")
                             .font(BrandFont.body(13))
                             .foregroundStyle(BrandColor.textSecondary)
                     }
@@ -1032,8 +1042,7 @@ struct BookingDetailView: View {
                         productRecommendationsCard(detail)
                     }
 
-                    if let rebook = detail.rebook,
-                       rebook.confirmedNextBooking != nil || rebook.isRecommendedWindow {
+                    if let rebook = detail.rebook, rebook.hasRenderableRebook {
                         aftercareRebookCard(rebook)
                     }
 
