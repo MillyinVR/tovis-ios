@@ -51,5 +51,12 @@
     "declinedAt": null,
     "nextBooking": null
   },
+  "existingReview": {
+    "id": "rev_1",
+    "rating": 5,
+    "headline": "Best color of my life",
+    "body": "Amara nailed the balayage — booking again."
+  },
+  "reviewEligible": true,
   "checkoutProductsEditable": true
 }

@@ -82,6 +82,19 @@ struct BookingDetailView: View {
     @State private var productsError: String?
     @State private var productsSuccess: String?
 
+    // Aftercare review authoring (§5 A3-rev 4a) — the client's text review
+    // (rating + headline + body), shown inline in the aftercare card when
+    // `reviewEligible`. Seeded once from `existingReview` for editing; media
+    // attachments are a later pass (4b).
+    @State private var reviewRating = 0
+    @State private var reviewHeadline = ""
+    @State private var reviewBody = ""
+    @State private var didSeedReview = false
+    @State private var savingReview = false
+    @State private var deletingReview = false
+    @State private var reviewError: String?
+    @State private var reviewSuccess: String?
+
     // Manage leg (reschedule / cancel)
     @State private var rescheduleSheet: RescheduleContext?
     @State private var loadingReschedule = false
@@ -965,6 +978,7 @@ struct BookingDetailView: View {
         // a failure simply leaves the section hidden.
         aftercare = try? await session.client.bookings.aftercare(bookingId: booking.id)
         seedProductQuantities()
+        seedReview()
     }
 
     /// Seed the qty steppers once from the booking's current checkout selection.
@@ -980,7 +994,11 @@ struct BookingDetailView: View {
 
     @ViewBuilder
     private var aftercareCard: some View {
-        if let detail = aftercare, detail.canShowAftercare, detail.hasContent {
+        // Render when there's aftercare content OR the client can leave a review —
+        // an otherwise-empty (but closeout-complete) booking still surfaces the
+        // review block inline (§5 A3-rev 4a; single-scroll, no tabs).
+        if let detail = aftercare, detail.canShowAftercare,
+           detail.hasContent || detail.reviewEligible {
             BrandSection(title: "Aftercare") {
                 VStack(alignment: .leading, spacing: 14) {
                     if detail.beforeAfter.hasAny {
@@ -1005,6 +1023,8 @@ struct BookingDetailView: View {
                        rebook.confirmedNextBooking != nil || rebook.isRecommendedWindow {
                         aftercareRebookCard(rebook)
                     }
+
+                    reviewCard(detail)
                 }
             }
         }
@@ -1415,6 +1435,208 @@ struct BookingDetailView: View {
         } catch {
             productsError = "Couldn’t update booking checkout. Please try again."
         }
+    }
+
+    // MARK: - Aftercare review authoring (§5 A3-rev 4a)
+
+    private static let reviewHeadlineMax = 120
+    private static let reviewBodyMax = 4000
+
+    /// The inline review block — star rating + optional headline + optional body.
+    /// Shown only when the client is eligible to leave a review (closeout
+    /// complete); prefilled for editing when they've already left one. Media
+    /// attachments are a later pass (4b). Parity with the web review form.
+    @ViewBuilder
+    private func reviewCard(_ detail: ClientAftercareDetail) -> some View {
+        if detail.reviewEligible {
+            let editing = detail.existingReview != nil
+            BrandSurface {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(editing ? "Your review" : "Leave a review")
+                        .font(BrandFont.body(14, .semibold))
+                        .foregroundStyle(BrandColor.textPrimary)
+
+                    Text(editing
+                         ? "Update your rating and notes — your pro (and anyone viewing them) sees this."
+                         : "How was your appointment? Your review is public on your pro’s profile.")
+                        .font(BrandFont.body(12))
+                        .foregroundStyle(BrandColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    reviewStarPicker
+
+                    TextField("Headline (optional)", text: $reviewHeadline, axis: .vertical)
+                        .font(BrandFont.body(15))
+                        .foregroundStyle(BrandColor.textPrimary)
+                        .padding(10)
+                        .background(BrandColor.bgSecondary)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .onChange(of: reviewHeadline) {
+                            reviewError = nil
+                            reviewSuccess = nil
+                            if reviewHeadline.count > Self.reviewHeadlineMax {
+                                reviewHeadline = String(reviewHeadline.prefix(Self.reviewHeadlineMax))
+                            }
+                        }
+
+                    TextField("Share the details (optional)", text: $reviewBody, axis: .vertical)
+                        .font(BrandFont.body(15))
+                        .foregroundStyle(BrandColor.textPrimary)
+                        .frame(minHeight: 96, alignment: .topLeading)
+                        .padding(10)
+                        .background(BrandColor.bgSecondary)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .onChange(of: reviewBody) {
+                            reviewError = nil
+                            reviewSuccess = nil
+                            if reviewBody.count > Self.reviewBodyMax {
+                                reviewBody = String(reviewBody.prefix(Self.reviewBodyMax))
+                            }
+                        }
+
+                    reviewActionRow(detail, editing: editing)
+
+                    if let reviewError {
+                        Text(reviewError).font(BrandFont.body(12))
+                            .foregroundStyle(BrandColor.ember)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    if let reviewSuccess {
+                        Text(reviewSuccess).font(BrandFont.body(12))
+                            .foregroundStyle(BrandColor.textPrimary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Tappable 1–5 star rating.
+    private var reviewStarPicker: some View {
+        HStack(spacing: 8) {
+            ForEach(1...5, id: \.self) { star in
+                Button {
+                    reviewError = nil
+                    reviewSuccess = nil
+                    reviewRating = star
+                } label: {
+                    Image(systemName: star <= reviewRating ? "star.fill" : "star")
+                        .font(.system(size: 26))
+                        .foregroundStyle(star <= reviewRating ? BrandColor.gold : BrandColor.textMuted)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(star) star\(star == 1 ? "" : "s")")
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func reviewActionRow(_ detail: ClientAftercareDetail, editing: Bool) -> some View {
+        HStack(spacing: 10) {
+            Button { Task { await saveReview(detail) } } label: {
+                Group {
+                    if savingReview { ProgressView().tint(BrandColor.onAccent) }
+                    else { Text(editing ? "Update review" : "Post review")
+                        .font(BrandFont.body(14, .semibold)) }
+                }
+                .foregroundStyle(BrandColor.onAccent)
+                .padding(.horizontal, 18).padding(.vertical, 11)
+                .background(BrandColor.accent)
+                .clipShape(Capsule())
+            }
+            .disabled(reviewRating < 1 || savingReview || deletingReview)
+            .opacity(reviewRating < 1 ? 0.5 : 1)
+
+            if editing, let existing = detail.existingReview {
+                Button { Task { await deleteReview(existing) } } label: {
+                    Group {
+                        if deletingReview { ProgressView().tint(BrandColor.ember) }
+                        else { Text("Delete").font(BrandFont.body(14, .semibold)) }
+                    }
+                    .foregroundStyle(BrandColor.ember)
+                    .padding(.horizontal, 18).padding(.vertical, 11)
+                    .overlay(Capsule().stroke(BrandColor.ember.opacity(0.4), lineWidth: 1))
+                }
+                .disabled(savingReview || deletingReview)
+            }
+
+            Spacer(minLength: 0)
+        }
+    }
+
+    /// Seed the review form once from the loaded aftercare's existing review.
+    private func seedReview() {
+        guard !didSeedReview, let detail = aftercare else { return }
+        didSeedReview = true
+        guard let existing = detail.existingReview else { return }
+        reviewRating = existing.rating ?? 0
+        reviewHeadline = existing.headline ?? ""
+        reviewBody = existing.body ?? ""
+    }
+
+    private func saveReview(_ detail: ClientAftercareDetail) async {
+        guard detail.reviewEligible, reviewRating >= 1, !savingReview, !deletingReview else { return }
+        reviewError = nil
+        reviewSuccess = nil
+        savingReview = true
+        defer { savingReview = false }
+        do {
+            let message: String
+            if let existing = detail.existingReview {
+                _ = try await session.client.reviews.updateReview(
+                    reviewId: existing.id,
+                    rating: reviewRating,
+                    headline: reviewHeadline,
+                    body: reviewBody)
+                message = "Updated your review."
+            } else {
+                _ = try await session.client.reviews.submitReview(
+                    bookingId: booking.id,
+                    rating: reviewRating,
+                    headline: reviewHeadline,
+                    body: reviewBody)
+                message = "Thanks for your review!"
+            }
+            // Re-pull so `existingReview` reflects the server (id for later edits).
+            // Re-seeding the form can fire the text fields' onChange (which clears
+            // status), so set the success message *after* the reload.
+            await reloadAftercareAfterReviewChange()
+            reviewSuccess = message
+            await onDecision()
+        } catch let error as APIError {
+            reviewError = error.userMessage
+        } catch {
+            reviewError = "Couldn’t save your review. Please try again."
+        }
+    }
+
+    private func deleteReview(_ existing: ClientAftercareExistingReview) async {
+        guard !deletingReview, !savingReview else { return }
+        reviewError = nil
+        reviewSuccess = nil
+        deletingReview = true
+        defer { deletingReview = false }
+        do {
+            try await session.client.reviews.deleteReview(reviewId: existing.id)
+            reviewRating = 0
+            reviewHeadline = ""
+            reviewBody = ""
+            await reloadAftercareAfterReviewChange()
+            reviewSuccess = "Removed your review."
+            await onDecision()
+        } catch let error as APIError {
+            reviewError = error.userMessage
+        } catch {
+            reviewError = "Couldn’t remove your review. Please try again."
+        }
+    }
+
+    /// Re-pull aftercare + re-seed the review form after a create/edit/delete so
+    /// the block reflects the server's canonical review state.
+    private func reloadAftercareAfterReviewChange() async {
+        didSeedReview = false
+        aftercare = try? await session.client.bookings.aftercare(bookingId: booking.id)
+        seedReview()
     }
 
     /// Parity with web's `AftercarePrivacyNote` — reassure the client the
