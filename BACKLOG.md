@@ -152,6 +152,12 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
   - [x] **A3-cal add-to-calendar** — native `.ics` via `BookingCalendar` (TovisKit)
     + `ShareSheet`; upcoming, non-terminal bookings only. No backend. **iOS PR
     (this session).**
+    - [x] **A3-cal-tz timezone-correct `.ics`** — follow-up to web PR #569.
+      `BookingCalendar.icsDocument` now takes `timeZone: String?` and, for a valid
+      IANA zone, emits a self-contained `VTIMEZONE` (DST-aware `TZOFFSET*` at the
+      booked instant) + `DTSTART;TZID=<zone>:<localWallClock>` (no trailing `Z`);
+      nil/invalid keeps the bare-UTC `…Z` fallback. Caller passes `booking.timeZone`.
+      Mirrors web `lib/calendar/bookingInvite.ts`. No backend. **iOS PR (this session).**
   - [ ] **A3-prod product-recommendations checkout** — web: extend aftercare DTO
     with `recommendedProducts` (+ selected `checkoutProducts` + editable gate);
     iOS: new `CheckoutService.saveCheckoutProducts` (POST
