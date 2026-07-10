@@ -179,6 +179,18 @@ public final class ProBookingService: Sendable {
         )
     }
 
+    /// GET /api/v1/bookings/{id}/money-trail — the read-only "money trail" for a
+    /// booking: every charge, fee, and refund plus the capability flags gating the
+    /// refund / waive actions. PRO sees their OWN bookings only (a foreign booking
+    /// 404s, indistinguishable from a missing one). Like `refund`, this is the
+    /// shared `/bookings` route, not a `/pro` route.
+    public func moneyTrail(bookingId: String) async throws -> ProBookingMoneyTrail {
+        let response: ProBookingMoneyTrailResponse = try await api.request(
+            "/bookings/\(bookingId)/money-trail"
+        )
+        return response.trail
+    }
+
     /// POST /api/v1/pro/bookings/{id}/rebook — propose the client's next
     /// appointment. `BOOK` schedules it (needs `scheduledFor`); `RECOMMEND_WINDOW`
     /// suggests a date range; `CLEAR` removes a prior proposal. Idempotent.

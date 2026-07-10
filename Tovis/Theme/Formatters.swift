@@ -81,6 +81,21 @@ enum Wire {
         return f.string(from: value as NSDecimalNumber)
     }
 
+    /// Format an integer-cents amount (e.g. 12000 → "$120", 4550 → "$45.50") as
+    /// currency, honoring the wire `currency` code. Mirrors the web
+    /// `formatCents(cents, { currency, style: 'symbol' })`. Returns nil for nil.
+    static func moneyCents(_ cents: Int?, currency: String = "usd") -> String? {
+        guard let cents else { return nil }
+        let value = Decimal(cents) / 100
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.currencyCode = currency.uppercased()
+        f.locale = Locale(identifier: "en_US")
+        // Drop ".00" but keep real cents (e.g. $45 / $45.50).
+        f.minimumFractionDigits = value == value.rounded(0) ? 0 : 2
+        return f.string(from: value as NSDecimalNumber)
+    }
+
     private static let isoWithFraction: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
