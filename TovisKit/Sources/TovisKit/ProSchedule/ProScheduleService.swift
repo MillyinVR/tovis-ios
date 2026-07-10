@@ -17,6 +17,49 @@ public final class ProScheduleService: Sendable {
         return try await api.request("/pro/last-minute/workspace")
     }
 
+    /// PATCH /api/v1/pro/last-minute/settings — persist the "Last-minute defaults"
+    /// (master toggle, default visibility, floor, tier anchors, priority offer,
+    /// per-day disables). The route applies each present key; we send the whole
+    /// form. Callers reload `lastMinuteWorkspace()` to reflect the saved state.
+    public func updateLastMinuteSettings(_ request: ProLastMinuteSettingsPatchRequest) async throws {
+        let body = try JSONEncoder.canonical.encode(request)
+        try await api.requestVoid("/pro/last-minute/settings", method: .patch, body: body)
+    }
+
+    /// PATCH /api/v1/pro/last-minute/rules — upsert one per-service eligibility
+    /// rule. `minCollectedSubtotal` nil inherits the global floor.
+    public func updateLastMinuteServiceRule(
+        serviceId: String,
+        enabled: Bool,
+        minCollectedSubtotal: String?
+    ) async throws {
+        let body = try JSONEncoder.canonical.encode(
+            ProLastMinuteServiceRulePatchRequest(
+                serviceId: serviceId, enabled: enabled, minCollectedSubtotal: minCollectedSubtotal
+            )
+        )
+        try await api.requestVoid("/pro/last-minute/rules", method: .patch, body: body)
+    }
+
+    /// POST /api/v1/pro/last-minute/blocks — block a time range from ever being
+    /// offered as a last-minute opening. Instants are ISO-8601 UTC; the server
+    /// rejects a window that overlaps an existing block (409, surfaced inline).
+    public func addLastMinuteBlock(startAt: String, endAt: String, reason: String?) async throws {
+        let body = try JSONEncoder.canonical.encode(
+            ProLastMinuteBlockCreateRequest(startAt: startAt, endAt: endAt, reason: reason)
+        )
+        try await api.requestVoid("/pro/last-minute/blocks", method: .post, body: body)
+    }
+
+    /// DELETE /api/v1/pro/last-minute/blocks?id= — remove a blocked range.
+    public func deleteLastMinuteBlock(id: String) async throws {
+        try await api.requestVoid(
+            "/pro/last-minute/blocks",
+            method: .delete,
+            query: [URLQueryItem(name: "id", value: id)]
+        )
+    }
+
     /// GET /api/v1/pro/working-hours — the saved (or default) week for a location
     /// type. `locationType` is "SALON" or "MOBILE".
     public func workingHours(
