@@ -198,6 +198,22 @@ public final class MessagesService: Sendable {
 
         return try await thread(id: threadId)
     }
+
+    /// Resolve-or-create the WAITLIST-context thread for a waitlist entry and
+    /// return the full `MessageThread` (found in the inbox list) so it can be
+    /// pushed into `ThreadView`. The backend derives the client & pro from the
+    /// entry (viewer must be its pro or client), so only the entry id is needed —
+    /// mirrors web's `/messages/start?contextType=WAITLIST&contextId=…`. Used by
+    /// the pro waitlist-outreach "Message" action.
+    public func openWaitlistThread(waitlistEntryId: String) async throws -> MessageThread? {
+        guard let threadId = try await resolveThread(
+            contextType: "WAITLIST",
+            contextId: waitlistEntryId,
+            createIfMissing: true
+        ) else { return nil }
+
+        return try await thread(id: threadId)
+    }
 }
 
 private struct ResolveThreadResponse: Decodable, Sendable {

@@ -105,6 +105,18 @@ final class MessagesResolveURLProtocol: URLProtocol {
         #expect(thread?.id == "thr_1")
     }
 
+    @Test func openWaitlistThreadResolvesWaitlistContextThenFindsThread() async throws {
+        reset()
+        let thread = try await makeService().openWaitlistThread(waitlistEntryId: "wle_7")
+
+        #expect(MessagesResolveURLProtocol.capturedResolveBody["contextType"] == "WAITLIST")
+        #expect(MessagesResolveURLProtocol.capturedResolveBody["contextId"] == "wle_7")
+        // The backend derives client & pro from the entry — no extra ids sent.
+        #expect(MessagesResolveURLProtocol.capturedResolveBody["professionalId"] == nil)
+        #expect(MessagesResolveURLProtocol.capturedResolveBody["clientId"] == nil)
+        #expect(thread?.id == "thr_1")
+    }
+
     @Test func threadByIdFindsItInTheList() async throws {
         reset()
         let thread = try await makeService().thread(id: "thr_1")
