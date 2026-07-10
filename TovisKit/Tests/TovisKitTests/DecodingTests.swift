@@ -1234,6 +1234,8 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.recommendedProducts.isEmpty)
         #expect(res.checkoutProducts.isEmpty)
         #expect(res.checkoutProductsEditable == false)
+        // The rebook slice is additive too — an omitting payload decodes to nil.
+        #expect(res.rebook == nil)
     }
 
     // GET .../aftercare with the §5 A3-prod product-checkout fields —
@@ -1269,6 +1271,89 @@ func fixture(_ name: String) throws -> Data {
         #expect(selected.productId == "prod_9")
         #expect(selected.quantity == 2)
         #expect(selected.unitPrice == "28.00")
+
+        // §5 A3-rebook: the pro recommended a window (no coupled next booking yet),
+        // so the card shows the window + a "Rebook now" CTA.
+        let rebook = try #require(res.rebook)
+        #expect(rebook.isRecommendedWindow == true)
+        #expect(rebook.isBookedNextAppointment == false)
+        #expect(rebook.windowStart == "2026-08-01T00:00:00.000Z")
+        #expect(rebook.windowEnd == "2026-08-15T00:00:00.000Z")
+        #expect(rebook.isDeclined == false)
+        #expect(rebook.confirmedNextBooking == nil)
+    }
+
+    // GET .../aftercare with a confirmed BOOKED_NEXT_APPOINTMENT rebook — the
+    // coupled next booking (still PENDING the pro's approval) drives the card's
+    // "pending your pro's approval" state (§5 A3-rebook).
+    @Test func decodesClientAftercareRebookCoupledNextBooking() throws {
+        let json = """
+        {
+          "ok": true,
+          "canShowAftercare": true,
+          "aftercare": { "id": "ac_1", "notes": null, "sentToClientAt": "2026-07-02T15:00:00.000Z" },
+          "beforeAfter": { "beforeUrl": null, "afterUrl": null, "beforeFullUrl": null, "afterFullUrl": null },
+          "recommendedProducts": [],
+          "checkoutProducts": [],
+          "rebook": {
+            "mode": "BOOKED_NEXT_APPOINTMENT",
+            "rebookedFor": "2026-08-05T17:00:00.000Z",
+            "windowStart": null,
+            "windowEnd": null,
+            "declinedAt": null,
+            "nextBooking": {
+              "id": "booking_next",
+              "status": "PENDING",
+              "scheduledFor": "2026-08-05T17:00:00.000Z"
+            }
+          },
+          "checkoutProductsEditable": false
+        }
+        """.data(using: .utf8)!
+
+        let res = try JSONDecoder().decode(ClientAftercareDetail.self, from: json)
+        let rebook = try #require(res.rebook)
+        #expect(rebook.isBookedNextAppointment == true)
+        #expect(rebook.isRecommendedWindow == false)
+        let next = try #require(rebook.confirmedNextBooking)
+        #expect(next.id == "booking_next")
+        #expect(next.scheduledFor == "2026-08-05T17:00:00.000Z")
+        // PENDING coupled rebook ⇒ "pending your pro's approval" state.
+        #expect(rebook.isNextBookingPendingApproval == true)
+    }
+
+    // A cancelled coupled next booking is treated as "no active next" so the card
+    // can re-offer a rebook rather than showing a stale confirmed state.
+    @Test func decodesClientAftercareRebookIgnoresCancelledNext() throws {
+        let json = """
+        {
+          "ok": true,
+          "canShowAftercare": true,
+          "aftercare": { "id": "ac_1", "notes": null, "sentToClientAt": "2026-07-02T15:00:00.000Z" },
+          "beforeAfter": { "beforeUrl": null, "afterUrl": null, "beforeFullUrl": null, "afterFullUrl": null },
+          "recommendedProducts": [],
+          "checkoutProducts": [],
+          "rebook": {
+            "mode": "RECOMMENDED_WINDOW",
+            "rebookedFor": null,
+            "windowStart": "2026-08-01T00:00:00.000Z",
+            "windowEnd": "2026-08-15T00:00:00.000Z",
+            "declinedAt": null,
+            "nextBooking": {
+              "id": "booking_cancelled",
+              "status": "CANCELLED",
+              "scheduledFor": "2026-08-05T17:00:00.000Z"
+            }
+          },
+          "checkoutProductsEditable": false
+        }
+        """.data(using: .utf8)!
+
+        let res = try JSONDecoder().decode(ClientAftercareDetail.self, from: json)
+        let rebook = try #require(res.rebook)
+        #expect(rebook.confirmedNextBooking == nil)
+        #expect(rebook.isNextBookingPendingApproval == false)
+        #expect(rebook.isRecommendedWindow == true)
     }
 
     // A COMPLETED booking with no summary + no photos: visible gate, but nothing
