@@ -74,6 +74,11 @@ const CHECKS = [
     def: 'ProFinancePageData',
     pick: (d) => [d],
   },
+  {
+    file: 'clientAftercareDetail.json',
+    def: 'ClientAftercareDetailDTO',
+    pick: (d) => [d],
+  },
 ]
 
 function fail(msg) {

@@ -66,6 +66,15 @@ struct BookingDetailView: View {
     @State private var aftercare: ClientAftercareDetail?
     @State private var loadingAftercare = false
 
+    // Aftercare product checkout (§5 A3-prod) — the client's qty selection over
+    // the pro's internal recommendations, keyed by recommendationId. Seeded once
+    // from the loaded aftercare's current selection.
+    @State private var productQuantities: [String: Int] = [:]
+    @State private var didSeedProducts = false
+    @State private var savingProducts = false
+    @State private var productsError: String?
+    @State private var productsSuccess: String?
+
     // Manage leg (reschedule / cancel)
     @State private var rescheduleSheet: RescheduleContext?
     @State private var loadingReschedule = false
@@ -936,6 +945,18 @@ struct BookingDetailView: View {
         // Best-effort: aftercare is supplementary to the appointment detail, so
         // a failure simply leaves the section hidden.
         aftercare = try? await session.client.bookings.aftercare(bookingId: booking.id)
+        seedProductQuantities()
+    }
+
+    /// Seed the qty steppers once from the booking's current checkout selection.
+    private func seedProductQuantities() {
+        guard !didSeedProducts, let detail = aftercare else { return }
+        didSeedProducts = true
+        var seeded: [String: Int] = [:]
+        for line in detail.checkoutProducts where line.quantity > 0 {
+            seeded[line.recommendationId] = max(1, line.quantity)
+        }
+        productQuantities = seeded
     }
 
     @ViewBuilder
@@ -956,8 +977,312 @@ struct BookingDetailView: View {
                        !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         careNotesCard(notes)
                     }
+
+                    if !detail.recommendedProducts.isEmpty {
+                        productRecommendationsCard(detail)
+                    }
                 }
             }
+        }
+    }
+
+    // MARK: - Aftercare product recommendations (§5 A3-prod)
+
+    /// Total already-purchased quantity per product id (from the recorded product
+    /// sales) — powers the "Already purchased: N" badge, mirroring web.
+    private var purchasedByProductId: [String: Int] {
+        var map: [String: Int] = [:]
+        for sale in booking.productSales {
+            guard let pid = sale.productId, !pid.isEmpty else { continue }
+            map[pid, default: 0] += max(0, sale.quantity)
+        }
+        return map
+    }
+
+    /// The selected lines to persist (internal recs with qty ≥ 1). Mirrors the
+    /// web `selectedLines`.
+    private func selectedLines(_ detail: ClientAftercareDetail) -> [CheckoutProductLineInput] {
+        detail.internalRecommendations.compactMap { rec in
+            guard let productId = rec.productId else { return nil }
+            let qty = clampQuantity(productQuantities[rec.id] ?? 0)
+            guard qty > 0 else { return nil }
+            return CheckoutProductLineInput(
+                recommendationId: rec.id, productId: productId, quantity: qty)
+        }
+    }
+
+    private func clampQuantity(_ value: Int) -> Int {
+        if value <= 0 { return 0 }
+        return min(value, 99)
+    }
+
+    @ViewBuilder
+    private func productRecommendationsCard(_ detail: ClientAftercareDetail) -> some View {
+        let locked = !detail.checkoutProductsEditable
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Recommended products")
+                .font(BrandFont.body(14, .semibold))
+                .foregroundStyle(BrandColor.textPrimary)
+
+            ForEach(detail.internalRecommendations) { rec in
+                internalRecommendationRow(rec, locked: locked)
+            }
+
+            ForEach(detail.externalRecommendations) { rec in
+                externalRecommendationRow(rec)
+            }
+
+            if !detail.internalRecommendations.isEmpty {
+                productCheckoutFooter(detail, locked: locked)
+            }
+        }
+    }
+
+    private func internalRecommendationRow(_ rec: RecommendedProduct, locked: Bool) -> some View {
+        let qty = productQuantities[rec.id] ?? 0
+        let unit = rec.product.map { CheckoutMoney.amount($0.retailPrice) } ?? 0
+        let purchased = rec.productId.flatMap { purchasedByProductId[$0] } ?? 0
+        return BrandSurface {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(rec.product?.name ?? "Recommended product")
+                            .font(BrandFont.body(14, .semibold))
+                            .foregroundStyle(BrandColor.textPrimary)
+                        HStack(spacing: 6) {
+                            BrandPill(text: "Booking checkout", tint: BrandColor.accent)
+                            if purchased > 0 {
+                                BrandPill(text: "Already purchased: \(purchased)")
+                            }
+                        }
+                        if let brand = rec.product?.brand, !brand.isEmpty {
+                            Text(brand).font(BrandFont.body(12))
+                                .foregroundStyle(BrandColor.textSecondary)
+                        }
+                        if let note = rec.note, !note.isEmpty {
+                            Text(note).font(BrandFont.body(12))
+                                .foregroundStyle(BrandColor.textPrimary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(Wire.money(rec.product?.retailPrice) ?? "Price unavailable")
+                            .font(BrandFont.body(13, .semibold))
+                            .foregroundStyle(BrandColor.textPrimary)
+                        if qty > 0, unit > 0 {
+                            Text("\(Wire.money(CheckoutMoney.fixed2(unit * Decimal(qty))) ?? "$0") total")
+                                .font(BrandFont.body(11))
+                                .foregroundStyle(BrandColor.textSecondary)
+                        }
+                    }
+                }
+
+                quantityStepper(rec, qty: qty, locked: locked)
+            }
+        }
+    }
+
+    private func quantityStepper(_ rec: RecommendedProduct, qty: Int, locked: Bool) -> some View {
+        HStack(spacing: 8) {
+            stepperButton("−", disabled: locked || savingProducts || qty <= 0) {
+                setQuantity(rec.id, qty - 1)
+            }
+            .accessibilityLabel("Decrease quantity")
+
+            TextField("0", text: Binding(
+                get: { qty > 0 ? String(qty) : "" },
+                set: { onQuantityInput(rec.id, $0) }
+            ))
+            .keyboardType(.numberPad)
+            .multilineTextAlignment(.center)
+            .font(BrandFont.body(14, .semibold))
+            .foregroundStyle(BrandColor.textPrimary)
+            .frame(width: 56, height: 36)
+            .background(BrandColor.bgSecondary)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .disabled(locked || savingProducts)
+
+            stepperButton("+", disabled: locked || savingProducts) {
+                setQuantity(rec.id, qty + 1)
+            }
+            .accessibilityLabel("Increase quantity")
+
+            Button {
+                setQuantity(rec.id, qty > 0 ? 0 : 1)
+            } label: {
+                Text(qty > 0 ? "Remove" : "Add to checkout")
+                    .font(BrandFont.body(12, .semibold))
+                    .foregroundStyle(BrandColor.textPrimary)
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(BrandColor.bgSecondary)
+                    .clipShape(Capsule())
+            }
+            .disabled(locked || savingProducts)
+
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func stepperButton(_ glyph: String, disabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(glyph)
+                .font(BrandFont.body(18, .semibold))
+                .foregroundStyle(BrandColor.textPrimary)
+                .frame(width: 36, height: 36)
+                .background(BrandColor.bgSecondary)
+                .clipShape(Circle())
+        }
+        .disabled(disabled)
+        .opacity(disabled ? 0.5 : 1)
+    }
+
+    private func externalRecommendationRow(_ rec: RecommendedProduct) -> some View {
+        let href = rec.externalUrl.flatMap { URL(string: $0.trimmingCharacters(in: .whitespaces)) }
+        return BrandSurface {
+            HStack(alignment: .top, spacing: 10) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(rec.externalName ?? "Recommended product")
+                        .font(BrandFont.body(14, .semibold))
+                        .foregroundStyle(BrandColor.textPrimary)
+                    BrandPill(text: "External link")
+                    if let note = rec.note, !note.isEmpty {
+                        Text(note).font(BrandFont.body(12))
+                            .foregroundStyle(BrandColor.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Spacer(minLength: 0)
+                if let href {
+                    Link(destination: href) {
+                        Text("View").font(BrandFont.body(12, .semibold))
+                            .foregroundStyle(BrandColor.accent)
+                    }
+                }
+            }
+        }
+    }
+
+    private func productCheckoutFooter(_ detail: ClientAftercareDetail, locked: Bool) -> some View {
+        let lines = selectedLines(detail)
+        let count = lines.reduce(0) { $0 + $1.quantity }
+        let subtotal = productSelectionSubtotal(detail)
+        return BrandSurface {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Booking-linked product checkout")
+                    .font(BrandFont.body(13, .semibold))
+                    .foregroundStyle(BrandColor.textPrimary)
+
+                Text(productSummaryLine(count: count, subtotal: subtotal))
+                    .font(BrandFont.body(12))
+                    .foregroundStyle(BrandColor.textSecondary)
+
+                Text(locked
+                     ? "Checkout is locked because payment is already in progress or complete for this booking."
+                     : "Internal recommendations are added to this booking’s checkout, not a separate store.")
+                    .font(BrandFont.body(12))
+                    .foregroundStyle(BrandColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 10) {
+                    Button { clearProductSelection() } label: {
+                        Text("Clear").font(BrandFont.body(13, .semibold))
+                            .foregroundStyle(BrandColor.textPrimary)
+                            .padding(.horizontal, 16).padding(.vertical, 10)
+                            .overlay(Capsule().stroke(BrandColor.textMuted.opacity(0.3), lineWidth: 1))
+                    }
+                    .disabled(locked || savingProducts)
+
+                    Button { Task { await saveProductSelection() } } label: {
+                        Group {
+                            if savingProducts { ProgressView().tint(BrandColor.onAccent) }
+                            else { Text("Save selection").font(BrandFont.body(13, .semibold)) }
+                        }
+                        .foregroundStyle(BrandColor.onAccent)
+                        .padding(.horizontal, 16).padding(.vertical, 10)
+                        .background(BrandColor.accent)
+                        .clipShape(Capsule())
+                    }
+                    .disabled(locked || savingProducts)
+
+                    Spacer(minLength: 0)
+                }
+
+                if let productsError {
+                    Text(productsError).font(BrandFont.body(12))
+                        .foregroundStyle(BrandColor.ember)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if let productsSuccess {
+                    Text(productsSuccess).font(BrandFont.body(12))
+                        .foregroundStyle(BrandColor.textPrimary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+    }
+
+    private func productSummaryLine(count: Int, subtotal: Decimal) -> String {
+        let base = "Selected items: \(count)"
+        guard subtotal > 0 else { return base }
+        return "\(base) · \(Wire.money(CheckoutMoney.fixed2(subtotal)) ?? "$0")"
+    }
+
+    private func productSelectionSubtotal(_ detail: ClientAftercareDetail) -> Decimal {
+        detail.internalRecommendations.reduce(Decimal(0)) { sum, rec in
+            let qty = clampQuantity(productQuantities[rec.id] ?? 0)
+            guard qty > 0, let unit = rec.product.map({ CheckoutMoney.amount($0.retailPrice) }) else {
+                return sum
+            }
+            return sum + unit * Decimal(qty)
+        }
+    }
+
+    private func setQuantity(_ recommendationId: String, _ next: Int) {
+        productsError = nil
+        productsSuccess = nil
+        let normalized = clampQuantity(next)
+        if normalized <= 0 { productQuantities.removeValue(forKey: recommendationId) }
+        else { productQuantities[recommendationId] = normalized }
+    }
+
+    private func onQuantityInput(_ recommendationId: String, _ raw: String) {
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty { setQuantity(recommendationId, 0); return }
+        // Keep only digits, so paste/IME junk can't wedge the field.
+        let digits = trimmed.filter(\.isNumber)
+        guard let value = Int(digits) else { return }
+        setQuantity(recommendationId, value)
+    }
+
+    private func clearProductSelection() {
+        productsError = nil
+        productsSuccess = nil
+        productQuantities = [:]
+    }
+
+    private func saveProductSelection() async {
+        guard let detail = aftercare, detail.checkoutProductsEditable, !savingProducts else { return }
+        productsError = nil
+        productsSuccess = nil
+        savingProducts = true
+        defer { savingProducts = false }
+
+        let lines = selectedLines(detail)
+        do {
+            _ = try await session.client.checkout.saveCheckoutProducts(
+                bookingId: booking.id, items: lines)
+            productsSuccess = lines.isEmpty
+                ? "Cleared booking checkout products."
+                : "Updated booking checkout products."
+            // Re-pull so totals / editable state / selection reflect the server.
+            didSeedProducts = false
+            aftercare = try? await session.client.bookings.aftercare(bookingId: booking.id)
+            seedProductQuantities()
+        } catch let error as APIError {
+            productsError = error.userMessage
+        } catch {
+            productsError = "Couldn’t update booking checkout. Please try again."
         }
     }
 
