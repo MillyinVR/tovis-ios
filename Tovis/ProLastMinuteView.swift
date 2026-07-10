@@ -1,11 +1,12 @@
 // Pro Last Minute — the native counterpart of the web `/pro/last-minute`, backed
-// by GET /api/v1/pro/last-minute/workspace (tovis-app PR #439). A read summary of
-// the last-minute configuration: master state, priority offer, discount tiers,
-// per-day availability, per-service rules and blocked dates. Lives on the
+// by GET /api/v1/pro/last-minute/workspace (tovis-app PR #439). Shows the
+// last-minute configuration — master state, priority offer, discount tiers,
+// per-day availability, per-service rules and blocked dates — and lets the pro
+// EDIT it: the status/tiers/days open the "Last-minute defaults" sheet
+// (PATCH settings), each service opens its eligibility rule (PATCH rules), and
+// blocked dates can be added/removed (POST/DELETE blocks). The write endpoints
+// already exist server-side, so this is an iOS-only editor. Lives on the
 // Overview home's Last Minute tab.
-//
-// Read-focused v1: the web editor (toggles + tier/price/rule/block PATCH) is a
-// follow-up — the settings/rules/blocks write endpoints already exist.
 import SwiftUI
 import TovisKit
 
@@ -18,7 +19,25 @@ struct ProLastMinuteView: View {
         case failed(String)
     }
 
+    /// Which editor sheet (if any) is presented.
+    private enum EditSheet: Identifiable {
+        case settings(ProLastMinuteWorkspace.Settings)
+        case rule(offering: ProLastMinuteWorkspace.Offering, rule: ProLastMinuteWorkspace.ServiceRule?)
+        case addBlock(timeZone: String?)
+
+        var id: String {
+            switch self {
+            case .settings: return "settings"
+            case let .rule(offering, _): return "rule-\(offering.id)"
+            case .addBlock: return "addBlock"
+            }
+        }
+    }
+
     @State private var phase: Phase = .loading
+    @State private var activeSheet: EditSheet?
+    @State private var blockPendingDelete: ProLastMinuteWorkspace.Block?
+    @State private var deleting = false
 
     private static let dayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
@@ -43,6 +62,30 @@ struct ProLastMinuteView: View {
         .refreshable { await load() }
         .task { if case .loading = phase { await load() } }
         .onChange(of: session.refreshTick) { Task { await load() } }
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case let .settings(settings):
+                ProLastMinuteSettingsSheet(settings: settings) { Task { await load() } }
+            case let .rule(offering, rule):
+                ProLastMinuteServiceRuleSheet(offering: offering, rule: rule) { Task { await load() } }
+            case let .addBlock(timeZone):
+                ProLastMinuteAddBlockSheet(
+                    timeZone: TimeZone(identifier: timeZone ?? "") ?? .current,
+                    defaultStart: Date()
+                ) { Task { await load() } }
+            }
+        }
+        .confirmationDialog(
+            "Remove this blocked range?",
+            isPresented: Binding(
+                get: { blockPendingDelete != nil },
+                set: { if !$0 { blockPendingDelete = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Remove block", role: .destructive) { performBlockDelete() }
+            Button("Cancel", role: .cancel) { blockPendingDelete = nil }
+        }
     }
 
     @ViewBuilder
@@ -51,19 +94,25 @@ struct ProLastMinuteView: View {
 
         statusCard(s)
 
-        BrandSection(title: "Discount tiers") {
-            BrandSurface(tint: BrandColor.bgSecondary) {
-                VStack(alignment: .leading, spacing: 8) {
-                    row("Priority offer", s.priorityOfferEnabled ? "On · \(s.priorityOfferMinutes) min" : "Off")
-                    row("Night-before window", "\(s.tier2NightBeforeMinutes) min")
-                    row("Day-of window", "\(s.tier3DayOfMinutes) min")
-                    if let min = Wire.money(s.minCollectedSubtotal) {
-                        row("Min collected subtotal", min)
+        Button {
+            activeSheet = .settings(s)
+        } label: {
+            BrandSection(title: "Discount tiers") {
+                BrandSurface(tint: BrandColor.bgSecondary) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        row("Priority offer", s.priorityOfferEnabled ? "On · \(s.priorityOfferMinutes) min" : "Off")
+                        row("Night-before send", LastMinuteAnchor.label(s.tier2NightBeforeMinutes))
+                        row("Day-of send", LastMinuteAnchor.label(s.tier3DayOfMinutes))
+                        if let min = Wire.money(s.minCollectedSubtotal) {
+                            row("Min collected subtotal", min)
+                        }
+                        row("Visibility", LastMinuteVisibility.from(s.defaultVisibilityMode).label)
+                        editHint
                     }
-                    row("Visibility", s.defaultVisibilityMode.replacingOccurrences(of: "_", with: " ").capitalized)
                 }
             }
         }
+        .buttonStyle(.plain)
 
         BrandSection(title: "Available days") {
             availabilityRow(s)
@@ -73,32 +122,16 @@ struct ProLastMinuteView: View {
             BrandSection(title: "Service rules") {
                 VStack(spacing: 10) {
                     ForEach(workspace.offerings) { offering in
-                        serviceRuleCard(offering, rule: workspace.settings.serviceRules.first { $0.serviceId == offering.serviceId })
+                        serviceRuleCard(
+                            offering,
+                            rule: s.serviceRules.first { $0.serviceId == offering.serviceId }
+                        )
                     }
                 }
             }
         }
 
-        if !s.blocks.isEmpty {
-            BrandSection(title: "Blocked dates") {
-                VStack(spacing: 10) {
-                    ForEach(s.blocks) { block in
-                        BrandSurface(tint: BrandColor.bgSecondary) {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text("\(Wire.dateTime(block.startAt, timeZone: workspace.timeZone)) → \(Wire.dateTime(block.endAt, timeZone: workspace.timeZone))")
-                                    .font(BrandFont.body(13, .semibold))
-                                    .foregroundStyle(BrandColor.textPrimary)
-                                if let reason = block.reason, !reason.isEmpty {
-                                    Text(reason)
-                                        .font(BrandFont.body(12))
-                                        .foregroundStyle(BrandColor.textMuted)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        blocksSection(workspace)
     }
 
     private func statusCard(_ s: ProLastMinuteWorkspace.Settings) -> some View {
@@ -116,7 +149,9 @@ struct ProLastMinuteView: View {
                         .foregroundStyle(BrandColor.textSecondary)
                 }
                 Spacer()
-                BrandPill(text: s.enabled ? "ON" : "OFF", tint: s.enabled ? BrandColor.emerald : BrandColor.textMuted)
+                Button("Edit") { activeSheet = .settings(s) }
+                    .font(BrandFont.body(13, .semibold))
+                    .foregroundStyle(BrandColor.accent)
             }
         }
     }
@@ -139,26 +174,104 @@ struct ProLastMinuteView: View {
 
     private func serviceRuleCard(_ offering: ProLastMinuteWorkspace.Offering, rule: ProLastMinuteWorkspace.ServiceRule?) -> some View {
         let enabled = rule?.enabled ?? false
-        return BrandSurface(tint: BrandColor.bgSecondary) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(offering.name)
-                        .font(BrandFont.body(14, .bold))
-                        .foregroundStyle(BrandColor.textPrimary)
-                    if let min = Wire.money(rule?.minCollectedSubtotal) {
-                        Text("Min subtotal \(min)")
-                            .font(BrandFont.body(12))
-                            .foregroundStyle(BrandColor.textMuted)
-                    } else if let base = Wire.money(offering.basePrice) {
-                        Text("Base \(base)")
-                            .font(BrandFont.body(12))
-                            .foregroundStyle(BrandColor.textMuted)
+        return Button {
+            activeSheet = .rule(offering: offering, rule: rule)
+        } label: {
+            BrandSurface(tint: BrandColor.bgSecondary) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(offering.name)
+                            .font(BrandFont.body(14, .bold))
+                            .foregroundStyle(BrandColor.textPrimary)
+                        if let min = Wire.money(rule?.minCollectedSubtotal) {
+                            Text("Min subtotal \(min)")
+                                .font(BrandFont.body(12))
+                                .foregroundStyle(BrandColor.textMuted)
+                        } else if let base = Wire.money(offering.basePrice) {
+                            Text("Base \(base)")
+                                .font(BrandFont.body(12))
+                                .foregroundStyle(BrandColor.textMuted)
+                        }
                     }
+                    Spacer()
+                    BrandPill(text: enabled ? "Eligible" : "Off", tint: enabled ? BrandColor.emerald : BrandColor.textMuted)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(BrandColor.textMuted)
                 }
-                Spacer()
-                BrandPill(text: enabled ? "Eligible" : "Off", tint: enabled ? BrandColor.emerald : BrandColor.textMuted)
             }
         }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func blocksSection(_ workspace: ProLastMinuteWorkspace) -> some View {
+        let blocks = workspace.settings.blocks
+        BrandSection(title: "Blocked dates", trailing: blocks.isEmpty ? nil : "\(blocks.count)") {
+            VStack(spacing: 10) {
+                if blocks.isEmpty {
+                    BrandSurface(tint: BrandColor.bgSecondary) {
+                        Text("No blocks yet.")
+                            .font(BrandFont.body(13))
+                            .foregroundStyle(BrandColor.textMuted)
+                    }
+                } else {
+                    ForEach(blocks) { block in
+                        BrandSurface(tint: BrandColor.bgSecondary) {
+                            HStack(alignment: .top, spacing: 10) {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("\(Wire.dateTime(block.startAt, timeZone: workspace.timeZone)) → \(Wire.dateTime(block.endAt, timeZone: workspace.timeZone))")
+                                        .font(BrandFont.body(13, .semibold))
+                                        .foregroundStyle(BrandColor.textPrimary)
+                                    if let reason = block.reason, !reason.isEmpty {
+                                        Text(reason)
+                                            .font(BrandFont.body(12))
+                                            .foregroundStyle(BrandColor.textMuted)
+                                    }
+                                }
+                                Spacer()
+                                Button {
+                                    blockPendingDelete = block
+                                } label: {
+                                    Text("Remove")
+                                        .font(BrandFont.body(13, .semibold))
+                                        .foregroundStyle(BrandColor.ember)
+                                }
+                                .disabled(deleting)
+                            }
+                        }
+                    }
+                }
+
+                Button {
+                    activeSheet = .addBlock(timeZone: workspace.timeZone)
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "plus.circle.fill")
+                        Text("Add block")
+                    }
+                    .font(BrandFont.body(14, .semibold))
+                    .foregroundStyle(BrandColor.accent)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(BrandColor.accent.opacity(0.10))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var editHint: some View {
+        HStack(spacing: 4) {
+            Text("Edit defaults")
+                .font(BrandFont.body(12, .semibold))
+                .foregroundStyle(BrandColor.accent)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(BrandColor.accent)
+        }
+        .padding(.top, 2)
     }
 
     private func row(_ label: String, _ value: String) -> some View {
@@ -201,6 +314,22 @@ struct ProLastMinuteView: View {
             phase = .failed(error.userMessage)
         } catch {
             phase = .failed("Couldn’t load your last-minute settings.")
+        }
+    }
+
+    private func performBlockDelete() {
+        guard let block = blockPendingDelete else { return }
+        blockPendingDelete = nil
+        deleting = true
+        Task {
+            defer { deleting = false }
+            do {
+                try await session.client.proSchedule.deleteLastMinuteBlock(id: block.id)
+                await load()
+            } catch {
+                // Reload to resync; a stale row simply reappears.
+                await load()
+            }
         }
     }
 }
