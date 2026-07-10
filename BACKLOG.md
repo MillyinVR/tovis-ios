@@ -187,6 +187,17 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
   referral-REWARD config (iOS has activity-only) · data-migration wizard (5
   screens) · consolidated media manager + fuller owner-menu edit · review
   "feature media in portfolio" toggle.
+  - [x] **A4-svc edit-service-items** — ✅ shipped 2026-07-10 (iOS #44 `ff06c47`,
+    iOS-only — the web `PATCH /pro/bookings/{id}{serviceItems}` route + recompute +
+    calendar `BookingModal` editor already existed). New `ProBookingService.editServiceItems`
+    (minimal `serviceId+offeringId+sortOrder`; server re-derives price/dur/itemType; no
+    `durationMinutes` → avoids `DURATION_MISMATCH`; idempotent) + `sellableServices(locationType:)`
+    (`GET /pro/services`) + `ProSellableService`. `ProEditServiceItemsView` sheet (flat
+    base-swappable picker = web's looser calendar editor, **not** the consultation single-BASE
+    lock) off a new **Services card** in `ProBookingDetailView` (Edit shown while non-terminal,
+    incl. IN_PROGRESS → the mid-session entry point). Rest of A4 (Last Minute editor, waitlist,
+    private client-view writes + `view=public`, money-trail, manual reminders, referral-reward,
+    data-migration wizard, media manager, portfolio-feature toggle) still open.
   - ↪ **Predecessor for mid-session service change** (`tovis-app §22`, MS-iOS): A4's
     **edit-service-items** modal is the first place iOS gains a TovisKit method to change
     services on an existing booking (today only `sendConsultationProposal` exists — no
