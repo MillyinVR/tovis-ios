@@ -392,6 +392,28 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
     change (`complete` route JSON branch) is no-migration but PENDING a prod deploy — held for Tori.**
     Rest of A4 (referral-reward config, data-migration wizard, media manager, portfolio-feature toggle)
     still open.
+  - [x] **A4-referral-reward referral-REWARD config** — ✅ shipped 2026-07-10 (**iOS-only** — the web
+    `GET`/`PATCH /api/v1/pro/settings/referral-rewards` routes already exist; no backend change, no
+    migration). Ports the web `ReferralRewardsClient` editor onto the existing read-only
+    `ProReferralActivityView`, so that screen is now the whole web `/pro/referral-rewards` page (config
+    on top of the activity feed). New TovisKit `ProReferralRewardSettings.swift`: `ProReferralRewardSettings`
+    (decode `enabled`/`tier`/`discountPercent`/`creditAmount`) + `ProReferralRewardSettingsResponse`
+    `{ settings }` wrapper + `ProReferralRewardSettingsPatch` (partial encodable). `ProReferralsService`
+    gained `rewardSettings()` (GET) + `updateRewardSettings(_:)` (PATCH → canonical settings). **⚠️
+    Cross-repo wire asymmetry** (the notable seam of this slice): the route persists `referralCreditAmount`
+    as a Prisma `Decimal`, which serializes to a JSON **string** (`"12.5"`) on the way OUT but the PATCH
+    validator requires a JSON **number** on the way IN — so the DTO decodes a string (lenient: also accepts
+    a number) and the patch encodes a number. The patch is **partial**: only the master switch + tier +
+    the active tier's value are sent (nil optionals dropped), so switching tiers never wipes the other's
+    stored value — matching web's per-field save. New `ProReferralRewardSettingsSheet` (Save-applies, the
+    native idiom, not web's per-field auto-save): enable toggle · 3 tier radio cards (Recognition only /
+    Percentage discount / Dollar credit, web copy verbatim) · conditional discount **Stepper** (1–100) ·
+    conditional credit `$` field, clamped/validated like web (discount int 1–100, credit > 0). A **Reward
+    settings** summary card + Edit affordance sit above the activity feed; the Growth link renamed
+    "Referral activity" → "Referral rewards". +5 iOS tests (`ProReferralRewardSettingsTests`: decode credit
+    Decimal-string / RECOGNITION nulls · PATCH sends credit as a NUMBER not string · discount as an integer ·
+    nil optionals dropped). swift test 241; `xcodebuild build` clean. **Rest of A4 (data-migration wizard,
+    media manager, portfolio-feature toggle) still open.**
   - ↪ **Predecessor for mid-session service change** (`tovis-app §22`, MS-iOS): A4's
     **edit-service-items** modal is the first place iOS gains a TovisKit method to change
     services on an existing booking (today only `sendConsultationProposal` exists — no
