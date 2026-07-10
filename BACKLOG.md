@@ -198,6 +198,23 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
     incl. IN_PROGRESS → the mid-session entry point). Rest of A4 (Last Minute editor, waitlist,
     private client-view writes + `view=public`, money-trail, manual reminders, referral-reward,
     data-migration wizard, media manager, portfolio-feature toggle) still open.
+  - [x] **A4-chart-writes pro private-client-view, increment 1 (non-technical write forms)** —
+    ✅ shipped 2026-07-10 (iOS #46 `982c028`, iOS-only — the web `/pro/clients/{id}/{alert,
+    allergies,do-not-rebook,profile-context}` routes already existed; free text is encrypted
+    server-side so the client sends plaintext). `ProClientsService` gained `addAllergy` (POST
+    …/allergies), `updateAlertBanner` (PATCH …/alert, blank clears), `setDoNotRebook`/
+    `clearDoNotRebook` (PUT/DELETE …/do-not-rebook), `updateProfileContext` (PATCH
+    …/profile-context). New `ProClientChartEditSheets.swift` (edit-alert · do-not-rebook w/
+    factual-reason copy · edit-context occupation+social pre-filled from the chart header ·
+    add-allergy label/description/severity) reached from contextual affordances on
+    `ProClientChartView` (header Edit-context, safety-strip Edit-alert, always-present
+    do-not-rebook flag/edit, allergies-tab Add-allergy); each write reloads the chart on save
+    (`ProAddNoteSheet` got the same `onSaved` reload → fixes stale-after-add-note). +7 tests
+    (swift test 198). **Increment 2 = technical record** (formula/consent decrypt+write,
+    founder-gated — needs a PAIRED WEB change to carry decrypted entries; the native chart
+    aggregate exposes only `technicalEnabled` today). **Increment 3 = `view=public` toggle**
+    (chart ↔ that client's public profile — needs a native public client-profile view, overlaps
+    A2's `/u/[handle]` viewer + a native GET over `loadPublicClientProfileByClientId`).
   - ↪ **Predecessor for mid-session service change** (`tovis-app §22`, MS-iOS): A4's
     **edit-service-items** modal is the first place iOS gains a TovisKit method to change
     services on an existing booking (today only `sendConsultationProposal` exists — no
