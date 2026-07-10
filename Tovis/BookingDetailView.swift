@@ -31,6 +31,13 @@ struct BookingDetailView: View {
     @State private var rebookDecidedLocally = false
     @State private var rebookError: String?
 
+    // Aftercare recommended-window rebook CTA (§5 A3-rebook) — opens the booking
+    // flow as a new appointment when the pro suggested a window rather than a
+    // specific time. Separate from the confirm/decline flow above.
+    @State private var rebookSheet: RescheduleContext?
+    @State private var loadingRebook = false
+    @State private var rebookCTAError: String?
+
     // Pay leg (hosted Stripe Checkout)
     @State private var checkoutSheet: CheckoutSheet?
     @State private var creatingCheckout = false
@@ -293,6 +300,18 @@ struct BookingDetailView: View {
                 proName: ctx.proName,
                 offering: ctx.offering,
                 rescheduleBookingId: booking.id,
+                locationType: ctx.locationType
+            )
+            .onDisappear { Task { await onDecision() } }
+        }
+        .sheet(item: $rebookSheet) { ctx in
+            // Aftercare rebook opens the booking flow as a NEW appointment (no
+            // rescheduleBookingId) so the client picks a fresh slot in the pro's
+            // suggested window.
+            BookingFlowView(
+                professionalId: ctx.professionalId,
+                proName: ctx.proName,
+                offering: ctx.offering,
                 locationType: ctx.locationType
             )
             .onDisappear { Task { await onDecision() } }
@@ -981,8 +1000,120 @@ struct BookingDetailView: View {
                     if !detail.recommendedProducts.isEmpty {
                         productRecommendationsCard(detail)
                     }
+
+                    if let rebook = detail.rebook,
+                       rebook.confirmedNextBooking != nil || rebook.isRecommendedWindow {
+                        aftercareRebookCard(rebook)
+                    }
                 }
             }
+        }
+    }
+
+    // MARK: - Aftercare rebook (§5 A3-rebook)
+
+    /// The pro's rebook recommendation, rendered inline in the aftercare section.
+    /// A confirmed/pending coupled next booking wins (show its state); otherwise a
+    /// RECOMMENDED_WINDOW shows the suggested window + a "Rebook now" CTA. The
+    /// BOOKED_NEXT_APPOINTMENT confirm/decline prompt is handled by the top-level
+    /// `rebookCard` (isRebookPending), so it isn't repeated here.
+    @ViewBuilder
+    private func aftercareRebookCard(_ rebook: ClientAftercareRebook) -> some View {
+        if let next = rebook.confirmedNextBooking {
+            rebookConfirmedCard(next, pendingApproval: rebook.isNextBookingPendingApproval)
+        } else if rebook.isRecommendedWindow {
+            rebookWindowCard(rebook)
+        }
+    }
+
+    private func rebookWindowCard(_ rebook: ClientAftercareRebook) -> some View {
+        BrandSurface(tint: BrandColor.accent.opacity(0.10)) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    Image(systemName: "calendar.badge.clock").foregroundStyle(BrandColor.accent)
+                    Text("Time to rebook")
+                        .font(BrandFont.body(15, .semibold)).foregroundStyle(BrandColor.textPrimary)
+                }
+                Text(rebookWindowLabel(rebook).map { "Your pro suggests booking again \($0)." }
+                    ?? "Your pro suggests booking your next appointment.")
+                    .font(BrandFont.body(14)).foregroundStyle(BrandColor.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Button { Task { await beginRebook() } } label: {
+                    Group {
+                        if loadingRebook { ProgressView().tint(BrandColor.onAccent) }
+                        else { Text("Rebook now").font(BrandFont.body(16, .semibold)) }
+                    }
+                    .frame(maxWidth: .infinity).padding(.vertical, 14)
+                    .foregroundStyle(BrandColor.onAccent)
+                    .background(BrandColor.accent)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .disabled(loadingRebook)
+
+                if let rebookCTAError {
+                    Text(rebookCTAError)
+                        .font(BrandFont.body(13)).foregroundStyle(BrandColor.ember)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+    }
+
+    private func rebookConfirmedCard(
+        _ next: ClientAftercareRebook.NextBooking, pendingApproval: Bool
+    ) -> some View {
+        BrandSurface(tint: (pendingApproval ? BrandColor.gold : BrandColor.emerald).opacity(0.14)) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 10) {
+                    Image(systemName: pendingApproval ? "hourglass" : "checkmark.seal.fill")
+                        .foregroundStyle(pendingApproval ? BrandColor.gold : BrandColor.emerald)
+                    Text(pendingApproval
+                         ? "Next appointment — pending your pro’s approval"
+                         : "Next appointment confirmed")
+                        .font(BrandFont.body(15, .semibold)).foregroundStyle(BrandColor.textPrimary)
+                }
+                if let when = next.scheduledFor, !when.isEmpty {
+                    Text(Wire.dateTime(when, timeZone: booking.timeZone))
+                        .font(BrandFont.body(14)).foregroundStyle(BrandColor.textSecondary)
+                }
+                if pendingApproval {
+                    Text("Your pro confirms it once they’ve received payment for your last visit.")
+                        .font(BrandFont.body(13)).foregroundStyle(BrandColor.textMuted)
+                }
+            }
+        }
+    }
+
+    /// Human phrase for the recommended window, e.g. "between Aug 1 and Aug 15" or
+    /// "around Aug 1" — resolved in the booking's timezone. Nil when no window is set.
+    private func rebookWindowLabel(_ rebook: ClientAftercareRebook) -> String? {
+        guard let start = rebook.windowStart, !start.isEmpty else { return nil }
+        let startLabel = Wire.dateOnly(start, timeZone: booking.timeZone)
+        guard !startLabel.isEmpty else { return nil }
+        if let end = rebook.windowEnd, !end.isEmpty {
+            let endLabel = Wire.dateOnly(end, timeZone: booking.timeZone)
+            if !endLabel.isEmpty { return "between \(startLabel) and \(endLabel)" }
+        }
+        return "around \(startLabel)"
+    }
+
+    /// Resolve the base offering + present the booking flow as a new appointment.
+    private func beginRebook() async {
+        guard !loadingRebook, booking.professional != nil else { return }
+        loadingRebook = true
+        rebookCTAError = nil
+        defer { loadingRebook = false }
+        do {
+            guard let ctx = try await resolveBookingOffering() else {
+                rebookCTAError = "This service isn’t open for self-booking. Message your pro to rebook."
+                return
+            }
+            rebookSheet = ctx
+        } catch let error as APIError {
+            rebookCTAError = error.userMessage
+        } catch {
+            rebookCTAError = "Couldn’t load times to rebook. Try again."
         }
     }
 
@@ -1443,34 +1574,44 @@ struct BookingDetailView: View {
         }
     }
 
-    /// Resolve the booking's offering from the pro's profile (matching the base
-    /// service) so the booking flow can re-pick a slot, then present it.
-    private func beginReschedule() async {
-        guard !loadingReschedule, let pro = booking.professional else { return }
-        loadingReschedule = true
-        manageError = nil
-        defer { loadingReschedule = false }
+    /// Resolve the booking's offering from the pro's live profile (matching the
+    /// base service) so the booking flow can re-pick a slot. Shared by reschedule
+    /// + aftercare rebook; returns nil when the service is no longer bookable (the
+    /// caller messages the user). Throws on a profile-load failure.
+    private func resolveBookingOffering() async throws -> RescheduleContext? {
+        guard let pro = booking.professional else { return nil }
 
         let baseServiceId = booking.items.first(where: { !$0.isAddOn })?.serviceId
             ?? booking.items.first?.serviceId
 
-        do {
-            let profile = try await session.client.profiles.professional(id: pro.id)
-            let offering = profile.offerings.first(where: { $0.serviceId == baseServiceId })
-                ?? profile.offerings.first(where: { $0.name == booking.display.baseName })
+        let profile = try await session.client.profiles.professional(id: pro.id)
+        let offering = profile.offerings.first(where: { $0.serviceId == baseServiceId })
+            ?? profile.offerings.first(where: { $0.name == booking.display.baseName })
 
-            guard let offering else {
+        guard let offering else { return nil }
+
+        return RescheduleContext(
+            offering: offering,
+            professionalId: pro.id,
+            proName: pro.displayName,
+            locationType: (booking.locationType ?? "SALON").uppercased() == "MOBILE"
+                ? "MOBILE" : "SALON"
+        )
+    }
+
+    /// Resolve the booking's offering, then present the booking flow to reschedule.
+    private func beginReschedule() async {
+        guard !loadingReschedule, booking.professional != nil else { return }
+        loadingReschedule = true
+        manageError = nil
+        defer { loadingReschedule = false }
+
+        do {
+            guard let ctx = try await resolveBookingOffering() else {
                 manageError = "This service isn’t open for self-rescheduling. Message your pro to change the time."
                 return
             }
-
-            rescheduleSheet = RescheduleContext(
-                offering: offering,
-                professionalId: pro.id,
-                proName: pro.displayName,
-                locationType: (booking.locationType ?? "SALON").uppercased() == "MOBILE"
-                    ? "MOBILE" : "SALON"
-            )
+            rescheduleSheet = ctx
         } catch let error as APIError {
             manageError = error.userMessage
         } catch {

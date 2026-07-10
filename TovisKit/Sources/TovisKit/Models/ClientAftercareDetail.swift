@@ -24,6 +24,9 @@ public struct ClientAftercareDetail: Decodable, Sendable {
     public let recommendedProducts: [RecommendedProduct]
     /// The client's current booking-checkout product selection (empty if none).
     public let checkoutProducts: [SelectedCheckoutProduct]
+    /// The pro's rebook recommendation (recommended window / proposed next
+    /// appointment) + the coupled next booking, or nil when no summary is sent.
+    public let rebook: ClientAftercareRebook?
     /// Whether the client may still edit their checkout-product selection —
     /// mirrors the write path's `assertClientCanEditBookingCheckoutProducts` gate
     /// (finalized aftercare, not yet in/through payment, not completed/cancelled).
@@ -32,7 +35,7 @@ public struct ClientAftercareDetail: Decodable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case canShowAftercare, aftercare, beforeAfter
-        case recommendedProducts, checkoutProducts, checkoutProductsEditable
+        case recommendedProducts, checkoutProducts, rebook, checkoutProductsEditable
     }
 
     public init(from decoder: Decoder) throws {
@@ -45,6 +48,9 @@ public struct ClientAftercareDetail: Decodable, Sendable {
         // aftercare section still renders its notes + before/after either way.
         recommendedProducts = try c.decodeIfPresent([RecommendedProduct].self, forKey: .recommendedProducts) ?? []
         checkoutProducts = try c.decodeIfPresent([SelectedCheckoutProduct].self, forKey: .checkoutProducts) ?? []
+        // The rebook slice is additive (§5 A3-rebook) — nil against a backend that
+        // predates it, so the section still renders notes + photos + products.
+        rebook = try c.decodeIfPresent(ClientAftercareRebook.self, forKey: .rebook)
         checkoutProductsEditable = try c.decodeIfPresent(Bool.self, forKey: .checkoutProductsEditable) ?? false
     }
 
@@ -74,6 +80,66 @@ public struct ClientAftercareSummary: Decodable, Sendable, Identifiable {
     public let notes: String?
     /// ISO instant the pro sent this aftercare to the client.
     public let sentToClientAt: String?
+}
+
+/// The pro's rebook recommendation from the sent aftercare summary + the coupled
+/// next booking (if the client has already rebooked). Mirrors
+/// `ClientAftercareRebookDTO` — powers the native rebook-window card. All fields
+/// are defensively optional so a payload that predates the contract still decodes.
+public struct ClientAftercareRebook: Decodable, Sendable {
+    /// Rebook mode: "NONE" (no recommendation), "RECOMMENDED_WINDOW" (a date
+    /// range the client picks within), or "BOOKED_NEXT_APPOINTMENT" (a specific
+    /// time the pro proposed). Raw string — unknown values are treated as "NONE".
+    public let mode: String?
+    /// Pro-proposed next-appointment instant (ISO) for BOOKED_NEXT_APPOINTMENT, else nil.
+    public let rebookedFor: String?
+    /// Recommended-window start (ISO) for RECOMMENDED_WINDOW, else nil.
+    public let windowStart: String?
+    /// Recommended-window end (ISO) for RECOMMENDED_WINDOW, else nil.
+    public let windowEnd: String?
+    /// ISO instant the client declined the pro's proposed appointment, else nil.
+    public let declinedAt: String?
+    /// The coupled AFTERCARE-sourced next booking, when the client has rebooked.
+    public let nextBooking: NextBooking?
+
+    /// A summary of the coupled next appointment. Mirrors `ClientAftercareNextBookingDTO`.
+    public struct NextBooking: Decodable, Sendable, Identifiable {
+        public let id: String
+        /// Lifecycle status (PENDING until the pro approves, etc.).
+        public let status: String
+        /// Scheduled instant (ISO), or nil when unset.
+        public let scheduledFor: String?
+    }
+
+    /// The pro recommended a window for the client to pick a slot within.
+    public var isRecommendedWindow: Bool {
+        mode?.uppercased() == "RECOMMENDED_WINDOW"
+    }
+
+    /// The pro proposed a specific next-appointment time to confirm/decline.
+    public var isBookedNextAppointment: Bool {
+        mode?.uppercased() == "BOOKED_NEXT_APPOINTMENT"
+    }
+
+    /// The client declined the pro's proposed appointment.
+    public var isDeclined: Bool {
+        (declinedAt?.isEmpty == false)
+    }
+
+    /// The coupled next booking when it exists and isn't cancelled — the client
+    /// has an active next appointment, so show a confirmed/pending state rather
+    /// than re-offering a rebook.
+    public var confirmedNextBooking: NextBooking? {
+        guard let next = nextBooking, next.status.uppercased() != "CANCELLED" else { return nil }
+        return next
+    }
+
+    /// The confirmed next booking is still PENDING — an aftercare-coupled rebook
+    /// awaiting the pro's approval (they approve by confirming the last payment).
+    /// Mirrors web's `pendingPaymentConfirmation` on the next-appointment card.
+    public var isNextBookingPendingApproval: Bool {
+        confirmedNextBooking?.status.uppercased() == "PENDING"
+    }
 }
 
 /// One product the pro recommended in the aftercare summary. Internal
