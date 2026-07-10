@@ -59,16 +59,67 @@ public struct ProManagedMediaListResponse: Decodable, Sendable {
     public let serviceOptions: [ProMediaServiceTag]
 }
 
-/// `PATCH /api/v1/pro/media/{id}` request body. All four fields are always sent
-/// (the web editor sends the full set). A nil `caption` is omitted, which the
-/// server coerces to null (= clear the caption), so no explicit-null encoding is
-/// needed. `serviceIds` is the full replacement set (must be non-empty — the
-/// editor gates Save on it). `beforeAssetId` is intentionally NOT modeled here:
-/// omitting it leaves the server's before/after pairing untouched, so a core edit
-/// never clobbers auto-pairing (the pairing picker is a separate increment).
+/// A candidate "before" photo the pro can pair with a featured "after" — the
+/// other IMAGE assets from the after's booking, render-safe. From
+/// `GET /api/v1/pro/media/{id}/before-options`; mirrors the web `OwnerMediaMenu`
+/// pairing picker's `BeforeOption`. The list is empty for a video, an after with
+/// no booking, or a booking with no other photos.
+public struct ProMediaBeforeOption: Decodable, Sendable, Identifiable {
+    public let id: String
+    public let thumbUrl: String
+    public let phase: MediaPhase
+}
+
+/// `GET /api/v1/pro/media/{id}/before-options` → the candidate befores.
+public struct ProMediaBeforeOptionsResponse: Decodable, Sendable {
+    public let options: [ProMediaBeforeOption]
+}
+
+/// Three-state before/after pairing intent for a media edit — mirrors the web
+/// `OwnerMediaMenu`'s `pairingTouched` gate. `.untouched` (the default) omits
+/// `beforeAssetId` from the PATCH entirely, so the server leaves its before/after
+/// auto-pairing alone — the correct behavior for any edit that isn't about the
+/// pairing. `.set(id)` pairs with that before; `.set(nil)` sends an explicit null
+/// to unpair. Only escalate to `.set(...)` once the pro actually touches the
+/// picker, never on an unrelated save.
+public enum ProMediaPairingEdit: Sendable, Equatable {
+    case untouched
+    case set(String?)
+}
+
+/// `PATCH /api/v1/pro/media/{id}` request body (matches the web `OwnerMediaMenu`
+/// editor). The caption / flags / `serviceIds` are always sent: a nil `caption`
+/// is omitted, which the server coerces to null (= clear); `serviceIds` is the
+/// full replacement set (must be non-empty — the editor gates Save on it).
+/// `beforeAssetId` is driven by `pairing` and follows the server's 3-state
+/// contract (`parseBeforeAssetField`): omitted → leave pairing untouched (never
+/// clobber auto-pairing); explicit null → unpair; a value → pair. Custom
+/// `encode(to:)` because `Encodable` can't express "omit vs explicit-null" from
+/// a single optional.
 struct ProMediaUpdateRequest: Encodable, Sendable {
     let caption: String?
     let isEligibleForLooks: Bool
     let isFeaturedInPortfolio: Bool
     let serviceIds: [String]
+    var pairing: ProMediaPairingEdit = .untouched
+
+    private enum CodingKeys: String, CodingKey {
+        case caption, isEligibleForLooks, isFeaturedInPortfolio, serviceIds, beforeAssetId
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        // A nil caption is omitted → the server coerces an absent caption to null.
+        try c.encodeIfPresent(caption, forKey: .caption)
+        try c.encode(isEligibleForLooks, forKey: .isEligibleForLooks)
+        try c.encode(isFeaturedInPortfolio, forKey: .isFeaturedInPortfolio)
+        try c.encode(serviceIds, forKey: .serviceIds)
+        switch pairing {
+        case .untouched:
+            break // omit beforeAssetId entirely → server leaves auto-pairing alone
+        case let .set(id):
+            if let id { try c.encode(id, forKey: .beforeAssetId) }
+            else { try c.encodeNil(forKey: .beforeAssetId) } // explicit null = unpair
+        }
+    }
 }

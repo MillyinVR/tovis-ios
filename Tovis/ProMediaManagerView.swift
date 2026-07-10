@@ -11,8 +11,9 @@
 //     comparison slider lives only on the public-facing portfolio/reviews views.
 //   - Visibility is DERIVED from the two flags (Looks / portfolio), never stored
 //     independently — the server recomputes it and ignores any sent value.
-//   - The before/after pairing picker is a separate increment; a core edit omits
-//     `beforeAssetId`, so it never clobbers the server's auto-pairing.
+//   - The editor's before/after pairing picker only sends `beforeAssetId` once the
+//     pro touches it (`pairingTouched`); an untouched save omits it, so it never
+//     clobbers the server's auto-pairing.
 import SwiftUI
 import TovisKit
 
@@ -194,6 +195,14 @@ struct ProMediaEditSheet: View {
     @State private var confirmingDelete = false
     @State private var viewingMedia: FullscreenMedia?
 
+    // Before/after pairing. `beforeAssetId` is the chosen "before" (nil = unpaired);
+    // `pairingTouched` gates whether we send it at all, so a normal save never
+    // clobbers the server's default-on auto-pairing (mirrors web `OwnerMediaMenu`).
+    @State private var beforeAssetId: String?
+    @State private var pairingTouched = false
+    @State private var beforeOptions: [ProMediaBeforeOption] = []
+    @State private var beforeOptionsLoaded = false
+
     private let captionMax = 300
 
     init(item: ProManagedMediaItem, serviceOptions: [ProMediaServiceTag], onSaved: @escaping () -> Void) {
@@ -204,6 +213,7 @@ struct ProMediaEditSheet: View {
         _isEligibleForLooks = State(initialValue: item.isEligibleForLooks)
         _isFeaturedInPortfolio = State(initialValue: item.isFeaturedInPortfolio)
         _selectedServiceIds = State(initialValue: Set(item.serviceIds))
+        _beforeAssetId = State(initialValue: item.beforeAssetId)
     }
 
     /// Public when either surface is on — matches the server's
@@ -233,6 +243,7 @@ struct ProMediaEditSheet: View {
                     preview
                     captionField
                     visibilitySection
+                    if !item.isVideo { pairingSection }
                     servicesSection
 
                     if let error {
@@ -243,6 +254,7 @@ struct ProMediaEditSheet: View {
                 }
                 .padding(20)
             }
+            .task { await loadBeforeOptions() }
             .background(BrandColor.bgPrimary.ignoresSafeArea())
             .navigationTitle("Edit media")
             .navigationBarTitleDisplayMode(.inline)
@@ -395,6 +407,126 @@ struct ProMediaEditSheet: View {
         }
     }
 
+    // MARK: Before / after pairing (images only)
+
+    /// Pair a "before" photo with this "after" so the public portfolio shows a
+    /// comparison slider. Mirrors the web `OwnerMediaMenu` picker: a "None" chip +
+    /// the booking's candidate befores, lazily loaded. Only a touch flips
+    /// `pairingTouched`, so leaving it alone preserves server auto-pairing.
+    @ViewBuilder
+    private var pairingSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            fieldLabel("Before / after")
+            Text("Pair a “before” photo to show a comparison slider on your public portfolio.")
+                .font(BrandFont.body(11))
+                .foregroundStyle(BrandColor.textMuted)
+
+            if !beforeOptionsLoaded {
+                HStack { Spacer(); ProgressView().tint(BrandColor.accent); Spacer() }
+                    .frame(height: 72)
+            } else if beforeOptions.isEmpty && beforeAssetId == nil {
+                Text("No before photos from this booking to pair.")
+                    .font(BrandFont.body(12))
+                    .foregroundStyle(BrandColor.textMuted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 16)
+            } else {
+                // Live payoff: when a before is chosen and resolvable, preview the
+                // resulting comparison slider right in the editor.
+                if let before = selectedBeforeOption,
+                   let afterStr = item.displayUrl,
+                   let beforeURL = URL(string: before.thumbUrl),
+                   let afterURL = URL(string: afterStr) {
+                    BeforeAfterCompareView(beforeURL: beforeURL, afterURL: afterURL, height: 200, cornerRadius: 12)
+                }
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        noneChip
+                        ForEach(beforeOptions) { beforeChip($0) }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+        }
+    }
+
+    private var noneChip: some View {
+        let selected = beforeAssetId == nil
+        return Button {
+            beforeAssetId = nil
+            pairingTouched = true
+        } label: {
+            Text("None")
+                .font(BrandFont.body(12, .semibold))
+                .foregroundStyle(selected ? BrandColor.onAccent : BrandColor.textSecondary)
+                .frame(width: 64, height: 64)
+                .background(selected ? BrandColor.accent : BrandColor.bgSecondary)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(selected ? BrandColor.accent : BrandColor.textMuted.opacity(0.2),
+                                lineWidth: selected ? 2 : 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .disabled(saving)
+        .accessibilityLabel("No before/after pairing")
+    }
+
+    private func beforeChip(_ option: ProMediaBeforeOption) -> some View {
+        let selected = beforeAssetId == option.id
+        return Button {
+            beforeAssetId = option.id
+            pairingTouched = true
+        } label: {
+            ZStack(alignment: .bottomTrailing) {
+                RoundedRectangle(cornerRadius: 12, style: .continuous).fill(BrandColor.bgSecondary)
+                if let url = URL(string: option.thumbUrl) {
+                    AsyncImage(url: url) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        ProgressView().tint(BrandColor.accent)
+                    }
+                }
+                if selected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 15))
+                        .foregroundStyle(BrandColor.accent)
+                        .padding(3)
+                        .background(Circle().fill(BrandColor.bgPrimary.opacity(0.85)))
+                        .padding(3)
+                }
+            }
+            .frame(width: 64, height: 64)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(selected ? BrandColor.accent : BrandColor.textMuted.opacity(0.2),
+                            lineWidth: selected ? 2 : 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(saving)
+        .accessibilityLabel(option.phase == .before ? "Before photo" : "Photo from this booking")
+    }
+
+    private var selectedBeforeOption: ProMediaBeforeOption? {
+        guard let id = beforeAssetId else { return nil }
+        return beforeOptions.first { $0.id == id }
+    }
+
+    private func loadBeforeOptions() async {
+        guard !item.isVideo, !beforeOptionsLoaded else { return }
+        do {
+            beforeOptions = try await session.client.proMedia.beforeOptions(mediaId: item.id)
+        } catch {
+            // Non-fatal: a failed pairing lookup shouldn't block the rest of the
+            // edit. Fall through to the "no befores" empty state.
+        }
+        beforeOptionsLoaded = true
+    }
+
     private func optionRow(_ option: ProMediaServiceTag) -> some View {
         let selected = selectedServiceIds.contains(option.serviceId)
         return Button {
@@ -474,7 +606,10 @@ struct ProMediaEditSheet: View {
                 caption: trimmed.isEmpty ? nil : trimmed,
                 isEligibleForLooks: isEligibleForLooks,
                 isFeaturedInPortfolio: isFeaturedInPortfolio,
-                serviceIds: Array(selectedServiceIds)
+                serviceIds: Array(selectedServiceIds),
+                // Only send the pairing when the pro actually touched the picker,
+                // so a normal save never clobbers server auto-pairing.
+                pairing: pairingTouched ? .set(beforeAssetId) : .untouched
             )
             onSaved()
             dismiss()

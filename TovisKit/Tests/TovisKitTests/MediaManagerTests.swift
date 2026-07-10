@@ -8,9 +8,11 @@ import Testing
 //   • listManagedMedia()  → GET    /pro/media           (decodes items + options)
 //   • updateMedia(...)     → PATCH  /pro/media/{id}       (full-set body; caption
 //                                                          omitted when nil → clear)
+//   • beforeOptions(_)     → GET    /pro/media/{id}/before-options (pairing picker)
 //   • deleteMedia(_)       → DELETE /pro/media/{id}
-// `beforeAssetId` and `visibility` are intentionally NOT sent (the server derives
-// visibility from the flags; omitting beforeAssetId preserves auto-pairing).
+// `visibility` is never sent (the server derives it from the flags). `beforeAssetId`
+// follows a 3-state pairing contract: omitted when untouched (preserves auto-pairing),
+// a value when paired, an explicit null when unpaired.
 
 /// Records the outgoing request and serves a canned envelope.
 final class MediaManagerURLProtocol: URLProtocol {
@@ -181,6 +183,63 @@ private extension URLRequest {
         #expect(body["caption"] == nil)
         #expect(body["isFeaturedInPortfolio"] as? Bool == true)
         #expect(body["serviceIds"] as? [String] == ["s1"])
+    }
+
+    @Test func beforeOptionsGetsRouteAndDecodesCandidates() async throws {
+        reset()
+        MediaManagerURLProtocol.responseBody = Data("""
+        {
+          "ok": true,
+          "options": [
+            { "id": "before_1", "thumbUrl": "https://signed.example/b1.jpg", "phase": "BEFORE" },
+            { "id": "other_2", "thumbUrl": "https://signed.example/o2.jpg", "phase": "OTHER" }
+          ]
+        }
+        """.utf8)
+
+        let options = try await makeService().beforeOptions(mediaId: "media_1")
+
+        #expect(MediaManagerURLProtocol.capturedPath == "/api/v1/pro/media/media_1/before-options")
+        #expect(MediaManagerURLProtocol.capturedMethod == "GET")
+        #expect(MediaManagerURLProtocol.capturedAuthHeader == "Bearer session.token.value")
+        #expect(options.map(\.id) == ["before_1", "other_2"])
+        #expect(options.first?.phase == .before)
+        #expect(options.first?.thumbUrl == "https://signed.example/b1.jpg")
+    }
+
+    @Test func updateSendsBeforeAssetIdWhenPairingSet() async throws {
+        reset()
+        try await makeService().updateMedia(
+            mediaId: "media_1",
+            caption: "Fresh set",
+            isEligibleForLooks: false,
+            isFeaturedInPortfolio: true,
+            serviceIds: ["s1"],
+            pairing: .set("before_1")
+        )
+
+        let body = try bodyJSON()
+        // A touched picker with a chosen before sends the id (server pairs it).
+        #expect(body["beforeAssetId"] as? String == "before_1")
+        #expect(body["isFeaturedInPortfolio"] as? Bool == true)
+    }
+
+    @Test func updateSendsExplicitNullWhenPairingCleared() async throws {
+        reset()
+        try await makeService().updateMedia(
+            mediaId: "media_1",
+            caption: "Fresh set",
+            isEligibleForLooks: false,
+            isFeaturedInPortfolio: true,
+            serviceIds: ["s1"],
+            pairing: .set(nil)
+        )
+
+        let body = try bodyJSON()
+        // A touched picker set to "None" sends an explicit JSON null (server unpairs);
+        // the key must be PRESENT (null), not omitted.
+        #expect(body.keys.contains("beforeAssetId"))
+        #expect(body["beforeAssetId"] is NSNull)
     }
 
     @Test func deleteHitsMediaRoute() async throws {

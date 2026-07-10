@@ -104,29 +104,44 @@ public final class ProMediaService: Sendable {
     }
 
     /// PATCH /api/v1/pro/media/{id} — edit a library asset's caption, its Looks /
-    /// portfolio flags, and its service tags (full-replacement set). Mirrors the
-    /// web `OwnerMediaMenu` editor's PATCH: visibility is recomputed server-side
-    /// from the two flags (never sent), and `beforeAssetId` is left untouched so a
-    /// core edit never clobbers the server's before/after auto-pairing. No
-    /// idempotency key — replacing state is naturally idempotent (matches web + the
-    /// portfolio toggle). Throws `APIError.server(...)` on the consent gate (403,
-    /// unpromoted private media going public) or an invalid/empty `serviceIds`.
+    /// portfolio flags, its service tags (full-replacement set), and (optionally)
+    /// its before/after pairing. Mirrors the web `OwnerMediaMenu` editor's PATCH:
+    /// visibility is recomputed server-side from the two flags (never sent), and
+    /// `pairing` defaults to `.untouched` so a core edit never clobbers the
+    /// server's before/after auto-pairing; pass `.set(id)` / `.set(nil)` only once
+    /// the pro touches the pairing picker. No idempotency key — replacing state is
+    /// naturally idempotent (matches web + the portfolio toggle). Throws
+    /// `APIError.server(...)` on the consent gate (403, unpromoted private media
+    /// going public) or an invalid/empty `serviceIds`.
     public func updateMedia(
         mediaId: String,
         caption: String?,
         isEligibleForLooks: Bool,
         isFeaturedInPortfolio: Bool,
-        serviceIds: [String]
+        serviceIds: [String],
+        pairing: ProMediaPairingEdit = .untouched
     ) async throws {
         let payload = try JSONEncoder.canonical.encode(
             ProMediaUpdateRequest(
                 caption: caption,
                 isEligibleForLooks: isEligibleForLooks,
                 isFeaturedInPortfolio: isFeaturedInPortfolio,
-                serviceIds: serviceIds
+                serviceIds: serviceIds,
+                pairing: pairing
             )
         )
         try await api.requestVoid("/pro/media/\(mediaId)", method: .patch, body: payload)
+    }
+
+    /// GET /api/v1/pro/media/{id}/before-options — the candidate "before" photos a
+    /// pro can pair with this featured "after" (the other images from the after's
+    /// booking, phase-ranked). Empty for a video, an after with no booking, or a
+    /// booking with no other photos. Feeds the edit sheet's pairing picker.
+    public func beforeOptions(mediaId: String) async throws -> [ProMediaBeforeOption] {
+        let response: ProMediaBeforeOptionsResponse = try await api.request(
+            "/pro/media/\(mediaId)/before-options"
+        )
+        return response.options
     }
 
     /// DELETE /api/v1/pro/media/{id} — hard-delete a library asset (owner-only, no
