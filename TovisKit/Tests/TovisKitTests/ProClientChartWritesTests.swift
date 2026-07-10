@@ -226,4 +226,39 @@ private extension URLRequest {
         let json = try bodyJSON()
         #expect(json["status"] as? String == "GRANTED")
     }
+
+    // MARK: - Public profile (view=public toggle)
+
+    @Test func publicProfileGetsAndUnwrapsEnvelope() async throws {
+        reset()
+        ProClientChartWritesURLProtocol.responseBody = Data("""
+        {"ok":true,"profile":{"handle":"ava","displayName":"@ava","avatarUrl":null,
+        "bio":"Balayage lover","counts":{"followers":12,"following":3,"looks":1},
+        "looks":[{"id":"lk_1","name":"Sunlit","imageUrl":"https://cdn/1.jpg","saveCount":8,"href":"/looks/lk_1"}],
+        "viewer":{"isOwn":false,"following":false}}}
+        """.utf8)
+
+        let profile = try await makeService().publicProfile(clientId: "cl_8")
+
+        #expect(ProClientChartWritesURLProtocol.capturedPath == "/api/v1/pro/clients/cl_8/public-profile")
+        #expect(ProClientChartWritesURLProtocol.capturedMethod == "GET")
+        #expect(profile?.handle == "ava")
+        #expect(profile?.displayName == "@ava")
+        #expect(profile?.counts.followers == 12)
+        #expect(profile?.looks.first?.saveCount == 8)
+        #expect(profile?.viewer.isOwn == false)
+    }
+
+    @Test func publicProfileReturnsNilWhenClientHasNoProfile() async throws {
+        reset()
+        // The route answers 200 with `profile: null` when the client hasn't opted
+        // into a public profile — the service surfaces that as nil (empty state),
+        // NOT a thrown error.
+        ProClientChartWritesURLProtocol.responseBody = Data("{\"ok\":true,\"profile\":null}".utf8)
+
+        let profile = try await makeService().publicProfile(clientId: "cl_9")
+
+        #expect(ProClientChartWritesURLProtocol.capturedPath == "/api/v1/pro/clients/cl_9/public-profile")
+        #expect(profile == nil)
+    }
 }

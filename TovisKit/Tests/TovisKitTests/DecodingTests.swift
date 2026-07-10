@@ -95,6 +95,54 @@ func fixture(_ name: String) throws -> Data {
         #expect(safety.byName == "Glow Studio")
     }
 
+    @Test func decodesPublicClientProfile() throws {
+        // GET /pro/clients/{id}/public-profile — the client's public creator
+        // profile the pro sees behind the `view=public` toggle.
+        let json = """
+        {
+          "handle": "ava",
+          "displayName": "@ava",
+          "avatarUrl": "https://cdn/a.jpg",
+          "bio": "Balayage lover",
+          "counts": { "followers": 12, "following": 3, "looks": 2 },
+          "looks": [
+            { "id": "lk_1", "name": "Sunlit balayage", "imageUrl": "https://cdn/1.jpg", "saveCount": 8, "href": "/looks/lk_1" },
+            { "id": "lk_2", "name": "Copper melt", "imageUrl": null, "saveCount": 0, "href": "/looks/lk_2" }
+          ],
+          "viewer": { "isOwn": false, "following": false }
+        }
+        """.data(using: .utf8)!
+
+        let profile = try JSONDecoder().decode(ProClientPublicProfile.self, from: json)
+        #expect(profile.handle == "ava")
+        #expect(profile.displayName == "@ava")
+        #expect(profile.bio == "Balayage lover")
+        #expect(profile.counts.followers == 12)
+        #expect(profile.counts.looks == 2)
+        #expect(profile.looks.count == 2)
+        #expect(profile.looks[0].saveCount == 8)
+        #expect(profile.looks[1].imageUrl == nil)
+        #expect(profile.viewer.isOwn == false)
+    }
+
+    @Test func publicClientProfileToleratesMissingFields() throws {
+        // Forward-compat: an older/not-yet-deployed backend that omits optional
+        // keys still decodes (displayName defaults to "@handle", collections empty).
+        let json = """
+        { "handle": "sky", "counts": { "followers": 4 } }
+        """.data(using: .utf8)!
+
+        let profile = try JSONDecoder().decode(ProClientPublicProfile.self, from: json)
+        #expect(profile.handle == "sky")
+        #expect(profile.displayName == "@sky")
+        #expect(profile.bio == nil)
+        #expect(profile.avatarUrl == nil)
+        #expect(profile.counts.followers == 4)
+        #expect(profile.counts.following == 0)
+        #expect(profile.looks.isEmpty)
+        #expect(profile.viewer.isOwn == false)
+    }
+
     @Test func unknownRoleFallsBack() throws {
         let json = #"{ "id": "x", "email": "e", "role": "WIZARD" }"#.data(using: .utf8)!
         let user = try JSONDecoder().decode(AuthUser.self, from: json)
