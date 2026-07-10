@@ -27,6 +27,15 @@ public struct ClientAftercareDetail: Decodable, Sendable {
     /// The pro's rebook recommendation (recommended window / proposed next
     /// appointment) + the coupled next booking, or nil when no summary is sent.
     public let rebook: ClientAftercareRebook?
+    /// The client's existing review of this booking (text only — media is A3-rev
+    /// 4b), or nil when they haven't left one / no summary is sent. Prefills the
+    /// native review block for editing.
+    public let existingReview: ClientAftercareExistingReview?
+    /// Whether the client may leave or edit a review right now — mirrors the web
+    /// `canBookingAcceptClientReview` closeout gate (completed + finished booking,
+    /// finalized aftercare, collected payment). False until a summary is sent;
+    /// when false the native review block stays hidden.
+    public let reviewEligible: Bool
     /// Whether the client may still edit their checkout-product selection —
     /// mirrors the write path's `assertClientCanEditBookingCheckoutProducts` gate
     /// (finalized aftercare, not yet in/through payment, not completed/cancelled).
@@ -35,7 +44,8 @@ public struct ClientAftercareDetail: Decodable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case canShowAftercare, aftercare, beforeAfter
-        case recommendedProducts, checkoutProducts, rebook, checkoutProductsEditable
+        case recommendedProducts, checkoutProducts, rebook
+        case existingReview, reviewEligible, checkoutProductsEditable
     }
 
     public init(from decoder: Decoder) throws {
@@ -51,6 +61,10 @@ public struct ClientAftercareDetail: Decodable, Sendable {
         // The rebook slice is additive (§5 A3-rebook) — nil against a backend that
         // predates it, so the section still renders notes + photos + products.
         rebook = try c.decodeIfPresent(ClientAftercareRebook.self, forKey: .rebook)
+        // The review fields are additive (§5 A3-rev) — default them so a payload
+        // that predates the contract still decodes (review block simply hides).
+        existingReview = try c.decodeIfPresent(ClientAftercareExistingReview.self, forKey: .existingReview)
+        reviewEligible = try c.decodeIfPresent(Bool.self, forKey: .reviewEligible) ?? false
         checkoutProductsEditable = try c.decodeIfPresent(Bool.self, forKey: .checkoutProductsEditable) ?? false
     }
 
@@ -80,6 +94,46 @@ public struct ClientAftercareSummary: Decodable, Sendable, Identifiable {
     public let notes: String?
     /// ISO instant the pro sent this aftercare to the client.
     public let sentToClientAt: String?
+}
+
+/// The client's own review of this booking (text slice only — media is A3-rev
+/// 4b). Mirrors `ClientAftercareExistingReviewDTO`; prefills the native review
+/// editor. `rating` is defensively optional so a malformed payload can't wedge
+/// the whole aftercare decode.
+public struct ClientAftercareExistingReview: Decodable, Sendable, Identifiable {
+    public let id: String
+    /// The 1–5 star rating the client gave, clamped on decode. Defaults to nil
+    /// when the payload omits/garbles it (the editor then starts unrated).
+    public let rating: Int?
+    /// Optional review headline, or nil.
+    public let headline: String?
+    /// Optional free-text review body, or nil.
+    public let body: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, rating, headline, body
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        // Defensive: clamp to 1…5, and treat an out-of-range/absent rating as nil
+        // rather than failing the parent aftercare decode.
+        if let raw = try c.decodeIfPresent(Int.self, forKey: .rating), (1...5).contains(raw) {
+            rating = raw
+        } else {
+            rating = nil
+        }
+        headline = try c.decodeIfPresent(String.self, forKey: .headline)
+        body = try c.decodeIfPresent(String.self, forKey: .body)
+    }
+
+    public init(id: String, rating: Int?, headline: String?, body: String?) {
+        self.id = id
+        self.rating = rating
+        self.headline = headline
+        self.body = body
+    }
 }
 
 /// The pro's rebook recommendation from the sent aftercare summary + the coupled

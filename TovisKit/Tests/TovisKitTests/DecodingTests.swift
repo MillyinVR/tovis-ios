@@ -1236,6 +1236,10 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.checkoutProductsEditable == false)
         // The rebook slice is additive too — an omitting payload decodes to nil.
         #expect(res.rebook == nil)
+        // The review fields are additive (§5 A3-rev) — an omitting payload
+        // decodes to a hidden review block (no review, not eligible).
+        #expect(res.existingReview == nil)
+        #expect(res.reviewEligible == false)
     }
 
     // GET .../aftercare with the §5 A3-prod product-checkout fields —
@@ -1281,6 +1285,36 @@ func fixture(_ name: String) throws -> Data {
         #expect(rebook.windowEnd == "2026-08-15T00:00:00.000Z")
         #expect(rebook.isDeclined == false)
         #expect(rebook.confirmedNextBooking == nil)
+
+        // §5 A3-rev 4a: the fixture carries an existing review + review-eligible.
+        #expect(res.reviewEligible == true)
+        let review = try #require(res.existingReview)
+        #expect(review.id == "rev_1")
+        #expect(review.rating == 5)
+        #expect(review.headline == "Best color of my life")
+        #expect(review.body == "Amara nailed the balayage — booking again.")
+    }
+
+    // §5 A3-rev 4a: a garbled / out-of-range rating defensively decodes to nil
+    // rather than failing the whole aftercare decode (the editor starts unrated).
+    @Test func decodesClientAftercareExistingReviewClampsBadRating() throws {
+        let json = """
+        {
+          "ok": true,
+          "canShowAftercare": true,
+          "aftercare": { "id": "ac_1", "notes": null, "sentToClientAt": "2026-07-02T15:00:00.000Z" },
+          "beforeAfter": { "beforeUrl": null, "afterUrl": null, "beforeFullUrl": null, "afterFullUrl": null },
+          "reviewEligible": true,
+          "existingReview": { "id": "rev_2", "rating": 9, "headline": null, "body": null }
+        }
+        """.data(using: .utf8)!
+
+        let res = try JSONDecoder().decode(ClientAftercareDetail.self, from: json)
+        #expect(res.reviewEligible == true)
+        let review = try #require(res.existingReview)
+        #expect(review.id == "rev_2")
+        // 9 is out of 1…5 ⇒ clamped to nil.
+        #expect(review.rating == nil)
     }
 
     // GET .../aftercare with a confirmed BOOKED_NEXT_APPOINTMENT rebook — the

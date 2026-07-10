@@ -25,6 +25,9 @@ public final class TovisClient: Sendable {
     public let checkout: CheckoutService
     public let looks: LooksService
     public let notifications: NotificationsService
+    /// Client reviews — create / edit / delete a completed appointment's text
+    /// review (rating + headline + body). Media attachments are a later pass.
+    public let reviews: ReviewsService
     /// Client referrals — the shareable digital invite link (/c/{code}).
     public let referrals: ReferralsService
     /// PRO workspace — the live-session footer state machine. Only meaningful for
@@ -113,6 +116,7 @@ public final class TovisClient: Sendable {
         self.checkout = CheckoutService(api: api)
         self.looks = LooksService(api: api)
         self.notifications = NotificationsService(api: api)
+        self.reviews = ReviewsService(api: api)
         self.referrals = ReferralsService(api: api)
         self.proSession = ProSessionService(api: api)
         self.proCalendar = ProCalendarService(api: api)
