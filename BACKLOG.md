@@ -460,6 +460,28 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
     picker** (reuses the existing `GET /api/v1/pro/media/{id}/before-options` route + `BeforeAfterCompareView`;
     the `pairingTouched`/omit-when-untouched semantics make it safely separable). **After that, A4 media
     manager is COMPLETE; only data-migration wizard remains.**
+  - [x] **A4-media-manager media manager, increment 2 (before/after PAIRING picker)** — ✅ shipped
+    2026-07-10 (iOS #69, **iOS-only** — the `GET /api/v1/pro/media/{id}/before-options` route + the PATCH's
+    3-state `beforeAssetId` contract already existed, so no web/DTO/schema change). Adds the before/after
+    pairing affordance to `ProMediaEditSheet` (images only; hidden for video), completing the media-manager
+    slice. New `ProMediaService.beforeOptions(mediaId:)` (GET → `[ProMediaBeforeOption]` = `{ id, thumbUrl,
+    phase }` candidate befores from the after's booking, phase-ranked). New `ProMediaBeforeOption` /
+    `ProMediaBeforeOptionsResponse` models + a 3-state `ProMediaPairingEdit` enum (`.untouched` / `.set(id?)`);
+    `ProMediaUpdateRequest` grew a custom `encode(to:)` because plain `Encodable` can't express "omit vs
+    explicit-null" — `.untouched` **omits** `beforeAssetId` (server leaves auto-pairing alone), `.set(id)`
+    encodes the id (pair), `.set(nil)` encodes an **explicit JSON null** (unpair). `updateMedia(...)` gained a
+    `pairing:` param defaulting to `.untouched` (source-compatible; the increment-1 call sites + tests are
+    unchanged). **Editor UX mirrors web `OwnerMediaMenu`:** lazy-load the options on first appear (`.task`,
+    images only), a **None** chip + candidate thumbnails, selection flips `pairingTouched`, and Save sends
+    `pairing: pairingTouched ? .set(beforeAssetId) : .untouched` — so a normal save never clobbers server
+    auto-pairing. Loading + "No before photos from this booking to pair" empty states match web. **iOS
+    enhancement over web** (which shows no live slider in its editor): when a before is chosen and resolvable,
+    the section previews the result with the existing `BeforeAfterCompareView` slider — the transformation
+    payoff, in-editor. +3 iOS tests (`MediaManagerTests`: before-options GET decodes candidates + phase ·
+    PATCH sends `beforeAssetId` when `.set(id)` · PATCH sends **explicit null** when `.set(nil)`); the
+    increment-1 "omits beforeAssetId" test still covers the `.untouched` default. swift test 252; `xcodebuild
+    build` clean. **NOT simulator-driven** (needs a live authed pro with a booking's before/after photos).
+    **✅ A4 media manager COMPLETE; only the data-migration wizard remains in A4.**
   - ↪ **Predecessor for mid-session service change** (`tovis-app §22`, MS-iOS): A4's
     **edit-service-items** modal is the first place iOS gains a TovisKit method to change
     services on an existing booking (today only `sendConsultationProposal` exists — no
