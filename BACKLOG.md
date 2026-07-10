@@ -241,9 +241,24 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
     **add-block sheet** (start/end pickers + reason). `ProLastMinuteView` gains the Edit
     affordances (status-card Edit + tappable tiers/service cards) + per-block Remove
     (confirm → DELETE); every write reloads the workspace. swift test 213 (+7 write-path
-    tests). **Increment 2 = openings CREATE + list + cancel** (the heavier `OpeningsClient.tsx`
-    surface: `GET`/`POST`/`DELETE /api/v1/pro/openings` — offering multi-select, tier plans,
-    visibility/location, scheduling; also iOS-only, routes already exist).
+    tests).
+  - [x] **A4-lastminute-editor, increment 2 (openings CREATE / list / cancel)** —
+    ✅ shipped 2026-07-10 (**iOS-only** — the `/api/v1/pro/openings` routes already exist:
+    `GET` list, `POST` create, `DELETE ?id=` cancel; no backend change, no migration).
+    Ports the heavier web `OpeningsClient.tsx` surface. New `ProOpening.swift` in TovisKit:
+    `ProOpeningDto` (a display-subset decode of `mapOpeningDto`) + `ProOpeningCreateRequest`
+    / `ProOpeningTierPlanRequest` (a discriminated union — only the field for the chosen
+    offer type is emitted, nils drop out). `ProScheduleService` gained `listOpenings(hours:take:)`,
+    `createOpening(_:)` → the created opening, and `cancelOpening(id:)`. New
+    `ProOpeningCreateSheet.swift`: offering multi-select · location segmented · visibility menu ·
+    start/end pickers (workspace zone, `ProCalendarGrid.iso`) · note · three tier-plan cards
+    (offer-type menu + conditional percent/amount/free-add-on fields, client-validated like
+    web `buildTierPlanRequest`). `ProLastMinuteView` grew an **Upcoming openings** section
+    (loaded independently of the workspace) — Create button → sheet, per-opening cards
+    (service summary · when · location · status pill · recipient count · tier-plan rows via
+    shared `describeOpeningTierPlan`), and per-opening **Cancel** (confirm → DELETE). Shared
+    `EditField`/`editFieldBox` promoted to module-internal (no copy). swift test 218 (+5
+    openings-path tests); `xcodebuild build` clean. **A4 Last Minute EDITOR slice COMPLETE.**
   - ↪ **Predecessor for mid-session service change** (`tovis-app §22`, MS-iOS): A4's
     **edit-service-items** modal is the first place iOS gains a TovisKit method to change
     services on an existing booking (today only `sendConsultationProposal` exists — no
