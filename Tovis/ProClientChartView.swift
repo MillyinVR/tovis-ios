@@ -25,6 +25,16 @@ struct ProClientChartView: View {
         var id: String { rawValue }
     }
 
+    // Chart ↔ public-profile toggle (increment 3 of the pro private-client-view
+    // parity): mirrors the web `/pro/clients/[id]?view=public` branch, which flips
+    // the chart to that client's PUBLIC creator profile.
+    enum ViewMode: String, CaseIterable, Identifiable {
+        case chart = "Chart"
+        case publicProfile = "Public profile"
+        var id: String { rawValue }
+    }
+    @State private var viewMode: ViewMode = .chart
+
     private enum Phase { case loading, loaded(ProClientChart), failed(String) }
     @State private var phase: Phase = .loading
     @State private var tab: Tab = .notes
@@ -56,13 +66,19 @@ struct ProClientChartView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                switch phase {
-                case .loading:
-                    HStack { Spacer(); ProgressView().tint(BrandColor.accent); Spacer() }.padding(.top, 70)
-                case let .failed(message):
-                    errorState(message)
-                case let .loaded(chart):
-                    content(chart)
+                viewToggle
+                switch viewMode {
+                case .chart:
+                    switch phase {
+                    case .loading:
+                        HStack { Spacer(); ProgressView().tint(BrandColor.accent); Spacer() }.padding(.top, 70)
+                    case let .failed(message):
+                        errorState(message)
+                    case let .loaded(chart):
+                        content(chart)
+                    }
+                case .publicProfile:
+                    ProClientPublicProfileView(clientId: clientId)
                 }
             }
             .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 40)
@@ -136,6 +152,13 @@ struct ProClientChartView: View {
         ) {
             messageNav = MessageThreadNav(thread: thread)
         }
+    }
+
+    private var viewToggle: some View {
+        Picker("View", selection: $viewMode) {
+            ForEach(ViewMode.allCases) { Text($0.rawValue).tag($0) }
+        }
+        .pickerStyle(.segmented)
     }
 
     @ViewBuilder

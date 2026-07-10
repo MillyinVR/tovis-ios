@@ -212,9 +212,18 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
     (`ProAddNoteSheet` got the same `onSaved` reload → fixes stale-after-add-note). +7 tests
     (swift test 198). **Increment 2 = technical record** (formula/consent decrypt+write,
     founder-gated — needs a PAIRED WEB change to carry decrypted entries; the native chart
-    aggregate exposes only `technicalEnabled` today). **Increment 3 = `view=public` toggle**
-    (chart ↔ that client's public profile — needs a native public client-profile view, overlaps
-    A2's `/u/[handle]` viewer + a native GET over `loadPublicClientProfileByClientId`).
+    aggregate exposes only `technicalEnabled` today). ✅ **Increment 3 = `view=public` toggle
+    SHIPPED** (iOS #49 + web #574) — a segmented Chart ↔ Public-profile control on
+    `ProClientChartView` flips to the new `ProClientPublicProfileView` (avatar · @handle · bio ·
+    follower/following/looks counts · 3-col looks grid, tap→fullscreen; read-only, no follow —
+    web passes `followMode="hidden"`), loaded lazily from a paired native
+    **`GET /pro/clients/{id}/public-profile`** over `loadPublicClientProfileByClientId` (neutral
+    viewer, no viewer opts). `profile: null` (200) = "no public profile yet" empty state; a 404
+    (route not deployed) falls back to a web pointer. New `ProClientPublicProfile` decode models
+    (forward-compat `decodeIfPresent ?? default`). This shared view also seeds **A2's
+    `/u/[handle]` public-client viewer** (add a handle-based entry point + guest/client follow
+    modes later to finish A2). swift test 206 (+4). **➡️ The pro private-client-view slice is now
+    COMPLETE (all 3 increments).**
   - ↪ **Predecessor for mid-session service change** (`tovis-app §22`, MS-iOS): A4's
     **edit-service-items** modal is the first place iOS gains a TovisKit method to change
     services on an existing booking (today only `sendConsultationProposal` exists — no

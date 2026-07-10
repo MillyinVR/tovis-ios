@@ -150,6 +150,18 @@ public final class ProClientsService: Sendable {
         try await api.request("/pro/clients/\(clientId)/technical")
     }
 
+    /// GET /api/v1/pro/clients/{id}/public-profile → the client's PUBLIC creator
+    /// profile (handle · avatar · bio · follower/following/looks counts · looks
+    /// grid), keyed by clientId. Mirrors the web `?view=public` toggle; the pro is
+    /// a neutral read-only viewer (`viewer.isOwn`/`following` always false). Returns
+    /// `nil` when the client has no public profile — distinct from a thrown 404
+    /// (route not deployed → the view falls back to a web pointer).
+    public func publicProfile(clientId: String) async throws -> ProClientPublicProfile? {
+        let response: ProClientPublicProfileResponse =
+            try await api.request("/pro/clients/\(clientId)/public-profile")
+        return response.profile
+    }
+
     /// POST /api/v1/pro/clients/{id}/formula — add a formula entry (author-only,
     /// never public). At least one detail is required; `resultNotes` is encrypted
     /// server-side. Optionally tie it to one of this client's bookings.
