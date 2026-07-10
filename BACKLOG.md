@@ -137,13 +137,46 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
   read-only preview tiles today) · **public client profile `/u/[handle]` viewer**
   (looks / stats / follow; guest + client viewer modes — no native equivalent
   exists today) · Share-your-look publish flow.
-- [ ] **A3 — client booking detail** rebuild `BookingDetailView` to web's tabbed IA
-  (Overview / Consultation / Aftercare) + add the missing pieces: before/after
-  compare (the featured pair is already API-carried by `GET .../aftercare` +
-  natively pickable pro-side — **A-AC2 #31** / tovis-app §24 AF3a — so this just
-  renders it, reusing `AftercareBeforeAfterPair`), aftercare care-notes,
-  product-recommendations checkout, review section (leave rating/photos),
-  recommended-window rebook CTA, add-to-calendar.
+- **A3 — client booking detail** — add web's aftercare pieces to `BookingDetailView`.
+  Scoped 2026-07-09 (audit of web `app/client/(gated)/bookings/[id]/page.tsx` +
+  `_data/loadClientBookingPage.ts` + each named component). **IA decision (Tori
+  2026-07-09): keep the native single-scroll, state-gated layout — do NOT rebuild
+  to web's top tabs** (native idiom; the view already surfaces consultation/
+  aftercare/payment by state). Add the new pieces inline in the existing
+  `aftercareCard` region. Increments (each backend-carrying one is a paired
+  web+iOS PR — the `GET .../aftercare` `ClientAftercareDetailDTO` is iOS-only, so
+  extending it is low-risk and touches no web render):
+  - [x] **before/after compare** — already shipped (§24 AF3b / iOS #32,
+    `AftercareBeforeAfterPair`).
+  - [x] **aftercare care-notes** — already shipped (§24 AF3b, `careNotesCard`).
+  - [x] **A3-cal add-to-calendar** — native `.ics` via `BookingCalendar` (TovisKit)
+    + `ShareSheet`; upcoming, non-terminal bookings only. No backend. **iOS PR
+    (this session).**
+  - [ ] **A3-prod product-recommendations checkout** — web: extend aftercare DTO
+    with `recommendedProducts` (+ selected `checkoutProducts` + editable gate);
+    iOS: new `CheckoutService.saveCheckoutProducts` (POST
+    `/client/bookings/{id}/checkout/products` `{items:[{recommendationId,productId,
+    quantity}]}` + idempotency key — route already exists) + qty-stepper UI
+    (internal recs) + external-link rows + locked state. Paired.
+  - [ ] **A3-rebook recommended-window rebook CTA** — web: extend DTO with
+    `rebook{mode,windowStart,windowEnd,rebookedFor,declinedAt,nextBooking}`
+    (route adds the `rebookedNextBooking` query, mirror `loadClientBookingPage`);
+    iOS: RECOMMENDED_WINDOW/DATE → open `BookingFlowView` anchored at the window
+    start with `source=AFTERCARE`; BOOKED_NEXT_APPOINTMENT confirmed/declined
+    display states (the PENDING confirm/decline already exists via
+    `decideRebook`/`rebookCard`). Paired.
+  - [ ] **A3-rev review section (leave rating/photos)** — split **4a** (rating +
+    headline/body: web extends DTO with `existingReview` + `reviewEligible`; iOS
+    new `ReviewsService` — create `POST /bookings/{id}/review` (+idem) / edit
+    `PATCH /reviews/{id}` / delete `DELETE /reviews/{id}`; stars/text UI) and
+    **4b** (photos: `GET /bookings/{id}/review-media-options` picker for existing
+    pro session media via `attachedMediaIds`; new client uploads via sign
+    `POST /client/uploads {kind:REVIEW_PUBLIC}` → reuse `SupabaseSignedUpload.put`
+    → attach `POST /reviews/{id}/media {media:[{uploadSessionId}]}`; remove
+    `DELETE /reviews/{id}/media/{mediaId}`). Media routes already exist; 4a is web-paired,
+    4b is iOS-mostly. **Gotcha:** review create/media caps = 6 images + 1 video;
+    reviews with media can't be deleted (409); portfolio/Looks-featured media can't
+    be removed (409).
 - [ ] **A4 — full pro parity** (build all): Last Minute EDITOR (iOS is read-only —
   create openings + settings/tiers) · Waitlist outreach workspace · pro's private
   client view — `ProClientChartView` per-tab write forms + technical-record
