@@ -197,9 +197,9 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
     lock) off a new **Services card** in `ProBookingDetailView` (Edit shown while non-terminal,
     incl. IN_PROGRESS → the mid-session entry point). Since shipped: Last Minute
     editor ✅, pro private client-view (writes + `view=public`) ✅, waitlist-outreach ✅,
-    waitlist "offer a time" ✅, money-trail inspector ✅. Rest of A4 (calendar RESCHEDULE,
-    manual reminders, referral-reward, data-migration wizard, media manager,
-    portfolio-feature toggle) still open.
+    waitlist "offer a time" ✅, money-trail inspector ✅, calendar RESCHEDULE ✅. Rest of A4
+    (manual reminders, referral-reward, data-migration wizard, media manager,
+    portfolio-feature toggle + the money-trail refund/waive WRITE increment) still open.
   - [x] **A4-chart-writes pro private-client-view, increment 1 (non-technical write forms)** —
     ✅ shipped 2026-07-10 (iOS #46 `982c028`, iOS-only — the web `/pro/clients/{id}/{alert,
     allergies,do-not-rebook,profile-context}` routes already existed; free text is encrypted
@@ -298,8 +298,9 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
     time** primary action + a brief "Offer sent to …" confirmation banner (the entry stays ACTIVE
     until the client confirms). +1 offer write-path test (path · POST · body · idempotency-key
     reconstruction · decode). swift test 222; `xcodebuild build` clean. **A4 calendar "offer a
-    time" slice COMPLETE** (the calendar *reschedule* half — `BookingService.reschedule` already
-    exists in TovisKit — remains: it needs a native reschedule sheet).
+    time" slice COMPLETE** (the calendar *reschedule* half shipped after this — iOS #60 — but via
+    the pro `PATCH /pro/bookings/{id}` route, **not** `BookingService.reschedule`, which is the
+    client-only hold flow; see the A4-reschedule entry below).
   - [x] **A4-money-trail booking money-trail inspector** — ✅ shipped 2026-07-10 (iOS #58
     `d2b5825`, **iOS-only** — the web `GET /api/v1/bookings/{id}/money-trail` route + the
     `BookingMoneyTrail` DTO (`lib/booking/moneyTrail.ts`) already exist; no backend change, no
@@ -319,6 +320,28 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
     web inspector also offers are a **later increment** — the `capabilities` flags are decoded
     already, so wiring them is additive. +2 write-path/decode tests (full trail + minimal
     all-null); swift test 224; `xcodebuild build` clean.
+  - [x] **A4-reschedule calendar reschedule** — ✅ shipped 2026-07-10 (iOS #60 `51bb9df`,
+    **iOS-only** — the web `PATCH /api/v1/pro/bookings/{id}` route already handles reschedule; no
+    backend change, no migration). Native port of the web calendar's **pro reschedule** (the
+    `/pro/calendar` BookingModal / drag-to-move), reached from a **Reschedule** action on
+    `ProBookingDetailView` while a booking is PENDING/ACCEPTED. **⚠️ Corrected the handoff's premise:**
+    the pro reschedule is NOT the client hold-based `POST /bookings/{id}/reschedule`
+    (`BookingService.reschedule` — that route is `requireClient` and a pro can't use it on their own
+    booking). It's a **direct time move** — `PATCH /pro/bookings/{id}` with a new `scheduledFor` —
+    that keeps the existing services + location and creates **no hold** (like `accept`/`editServiceItems`).
+    New `ProBookingService.reschedule(bookingId:scheduledFor:notifyClient:allow*:overrideReason:
+    idempotencyKey:)` + `ProBookingRescheduleRequest` DTO, mirroring `createBooking`'s override-flag
+    shape + body-derived idempotency key (an override retry that adds an `allow*` flag re-mints the key,
+    no 409). New `ProRescheduleView.swift`: a trimmed `ProNewBookingView` — no client/service pickers
+    (the booking already has those); pick a real open slot via `ProOpenSlotPicker` (sized to
+    `totalDurationMinutes` so add-ons fit) or a **custom time seeded to the current start**;
+    `notifyClient` toggle (default on) + collapsible scheduling overrides; off-grid times trip the same
+    override "save it anyway?" retry as new-booking (intent `.edit`, copy already in
+    `BookingOverridePrompt`). On success `signalRefresh` + dismiss (detail auto-reloads). +3 write-path
+    tests (headers/body/no-serviceItems-leak · override flags+reason · key-tracks-body); swift test 227;
+    `xcodebuild build` clean. The **refund/waive money-trail write increment** remains the last named
+    money slice; other A4 slices below still open. **A4 calendar bundle (offer-a-time + reschedule +
+    edit-service-items) COMPLETE.**
   - ↪ **Predecessor for mid-session service change** (`tovis-app §22`, MS-iOS): A4's
     **edit-service-items** modal is the first place iOS gains a TovisKit method to change
     services on an existing booking (today only `sendConsultationProposal` exists — no
