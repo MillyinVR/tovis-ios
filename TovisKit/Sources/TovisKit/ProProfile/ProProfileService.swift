@@ -28,7 +28,7 @@ public final class ProProfileService: Sendable {
     /// review (1–1000 chars; tovis-app PR #475). Returns the saved reply.
     @discardableResult
     public func upsertReviewReply(reviewId: String, body: String) async throws -> ProReviewItem.ProReviewReply {
-        let payload = try JSONEncoder().encode(["body": body])
+        let payload = try JSONEncoder.canonical.encode(["body": body])
         let response: ProReviewReplyResponse = try await api.request(
             "/pro/reviews/\(reviewId)/reply", method: .put, body: payload
         )
@@ -68,7 +68,7 @@ public final class ProProfileService: Sendable {
         if let tiktokHandle { fields["tiktokHandle"] = .stringOrNull(tiktokHandle) }
         if let websiteUrl { fields["websiteUrl"] = .stringOrNull(websiteUrl) }
 
-        let payload = try JSONEncoder().encode(fields)
+        let payload = try JSONEncoder.canonical.encode(fields)
         let response: ProMyProfileResponse = try await api.request(
             "/pro/profile", method: .patch, body: payload
         )
@@ -107,7 +107,7 @@ public final class ProProfileService: Sendable {
         if let mobileDurationMinutes { fields["mobileDurationMinutes"] = .intOrNull(mobileDurationMinutes) }
         if let rebookIntervalDays { fields["rebookIntervalDays"] = .intOrNull(rebookIntervalDays) }
 
-        let payload = try JSONEncoder().encode(fields)
+        let payload = try JSONEncoder.canonical.encode(fields)
         let response: ProOfferingResponse = try await api.request(
             "/pro/offerings/\(id)", method: .patch, body: payload
         )
@@ -151,7 +151,7 @@ public final class ProProfileService: Sendable {
             "mobileDurationMinutes": .intOrNull(mobileDurationMinutes),
         ]
         fields["title"] = .null
-        let payload = try JSONEncoder().encode(fields)
+        let payload = try JSONEncoder.canonical.encode(fields)
         let response: ProOfferingResponse = try await api.request(
             "/pro/offerings", method: .post, body: payload
         )
@@ -162,7 +162,7 @@ public final class ProProfileService: Sendable {
     /// SERVICE_IMAGE_PUBLIC upload). Returns the updated offering.
     @discardableResult
     public func setOfferingImage(id: String, customImageUrl: String?) async throws -> ProOfferingAdmin {
-        let payload = try JSONEncoder().encode(["customImageUrl": JSONValue.stringOrNull(customImageUrl)])
+        let payload = try JSONEncoder.canonical.encode(["customImageUrl": JSONValue.stringOrNull(customImageUrl)])
         let response: ProOfferingResponse = try await api.request(
             "/pro/offerings/\(id)", method: .patch, body: payload
         )
@@ -176,7 +176,7 @@ public final class ProProfileService: Sendable {
 
     /// PUT /api/v1/pro/offerings/{id}/add-ons — replace the whole attached set.
     public func saveAddOns(offeringId: String, items: [ProAddOnInput]) async throws {
-        let payload = try JSONEncoder().encode(["items": items])
+        let payload = try JSONEncoder.canonical.encode(["items": items])
         try await api.requestVoid("/pro/offerings/\(offeringId)/add-ons", method: .put, body: payload)
     }
 
@@ -221,7 +221,7 @@ public final class ProProfileService: Sendable {
         ]
         if let handle { fields["handle"] = .string(handle) }
 
-        let payload = try JSONEncoder().encode(fields)
+        let payload = try JSONEncoder.canonical.encode(fields)
         let response: ProMyProfileResponse = try await api.request(
             "/pro/profile", method: .patch, body: payload
         )
@@ -243,7 +243,7 @@ public final class ProProfileService: Sendable {
     public func updatePaymentSettings(
         _ update: ProPaymentSettingsUpdate
     ) async throws -> ProPaymentSettings? {
-        let payload = try JSONEncoder().encode(update)
+        let payload = try JSONEncoder.canonical.encode(update)
         let response: ProPaymentSettingsResponse = try await api.request(
             "/pro/payment-settings", method: .patch, body: payload
         )

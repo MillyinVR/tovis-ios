@@ -53,7 +53,7 @@ public final class MessagesService: Sendable {
         body: String,
         attachmentPaths: [String] = []
     ) async throws -> CreatedMessage {
-        let payload = try JSONEncoder().encode(
+        let payload = try JSONEncoder.canonical.encode(
             SendMessageRequest(
                 body: body,
                 attachments: attachmentPaths.isEmpty ? nil : attachmentPaths
@@ -97,7 +97,7 @@ public final class MessagesService: Sendable {
         contentType: String,
         size: Int
     ) async throws -> MessageUploadInit {
-        let payload = try JSONEncoder().encode(
+        let payload = try JSONEncoder.canonical.encode(
             MessageUploadInitRequest(contentType: contentType, size: size)
         )
         return try await api.request(
@@ -134,7 +134,7 @@ public final class MessagesService: Sendable {
         if let professionalId { fields["professionalId"] = .string(professionalId) }
         if let clientId { fields["clientId"] = .string(clientId) }
 
-        let payload = try JSONEncoder().encode(fields)
+        let payload = try JSONEncoder.canonical.encode(fields)
         let response: ResolveThreadResponse = try await api.request(
             "/messages/resolve", method: .post, body: payload
         )

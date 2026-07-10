@@ -23,7 +23,7 @@ public final class AuthService: Sendable {
     /// Pass the stable per-install `deviceId` so the session is revocable per-device.
     @discardableResult
     public func login(email: String, password: String, deviceId: String?) async throws -> LoginResponse {
-        let payload = try JSONEncoder().encode(
+        let payload = try JSONEncoder.canonical.encode(
             LoginRequest(email: email, password: password, deviceId: deviceId)
         )
         let response: LoginResponse = try await api.request(
@@ -68,7 +68,7 @@ public final class AuthService: Sendable {
             )
         }
 
-        let payload = try JSONEncoder().encode(
+        let payload = try JSONEncoder.canonical.encode(
             RegisterRequest(
                 email: email,
                 password: password,
@@ -172,7 +172,7 @@ public final class AuthService: Sendable {
             mobileRadiusMiles = radiusMiles
         }
 
-        let payload = try JSONEncoder().encode(
+        let payload = try JSONEncoder.canonical.encode(
             RegisterRequest(
                 email: email,
                 password: password,
@@ -213,7 +213,7 @@ public final class AuthService: Sendable {
         lastName: String?,
         deviceId: String?
     ) async throws -> LoginResponse {
-        let payload = try JSONEncoder().encode(
+        let payload = try JSONEncoder.canonical.encode(
             AppleLoginRequest(
                 identityToken: identityToken,
                 deviceId: deviceId,
@@ -235,7 +235,7 @@ public final class AuthService: Sendable {
     /// intentionally generic (it never reveals whether the number has an account).
     @discardableResult
     public func phoneLoginSend(phone: String) async throws -> PhoneLoginSendResponse {
-        let payload = try JSONEncoder().encode(PhoneLoginSendRequest(phone: phone))
+        let payload = try JSONEncoder.canonical.encode(PhoneLoginSendRequest(phone: phone))
         return try await api.request(
             "/auth/phone-login/send",
             method: .post,
@@ -252,7 +252,7 @@ public final class AuthService: Sendable {
         code: String,
         deviceId: String?
     ) async throws -> LoginResponse {
-        let payload = try JSONEncoder().encode(
+        let payload = try JSONEncoder.canonical.encode(
             PhoneLoginVerifyRequest(phone: phone, code: code, deviceId: deviceId)
         )
         let response: LoginResponse = try await api.request(
@@ -274,7 +274,7 @@ public final class AuthService: Sendable {
     /// POST /api/v1/auth/phone/correct — set the account's phone number AND send
     /// an SMS code to it. Use this to (re)set the phone before verifying.
     public func setAccountPhoneAndSendCode(phone: String) async throws {
-        let payload = try JSONEncoder().encode(PhoneCorrectRequest(phone: phone))
+        let payload = try JSONEncoder.canonical.encode(PhoneCorrectRequest(phone: phone))
         try await api.requestVoid("/auth/phone/correct", method: .post, body: payload)
     }
 
@@ -288,7 +288,7 @@ public final class AuthService: Sendable {
     /// carries the verified session.
     @discardableResult
     public func verifyAccountPhone(code: String) async throws -> PhoneVerifyResponse {
-        let payload = try JSONEncoder().encode(PhoneVerifyCodeRequest(code: code))
+        let payload = try JSONEncoder.canonical.encode(PhoneVerifyCodeRequest(code: code))
         let response: PhoneVerifyResponse = try await api.request(
             "/auth/phone/verify", method: .post, body: payload
         )
@@ -338,7 +338,7 @@ public final class AuthService: Sendable {
     /// so a non-throwing return just means the request was accepted — it only
     /// throws on a transport failure or a rate-limit (429).
     public func requestPasswordReset(email: String) async throws {
-        let payload = try JSONEncoder().encode(PasswordResetRequestBody(email: email))
+        let payload = try JSONEncoder.canonical.encode(PasswordResetRequestBody(email: email))
         try await api.requestVoid(
             "/auth/password-reset/request",
             method: .post,
@@ -352,7 +352,7 @@ public final class AuthService: Sendable {
     /// backend's user-facing message on rejection (invalid/expired/used link,
     /// too many attempts, or a password that fails the policy).
     public func confirmPasswordReset(token: String, password: String) async throws {
-        let payload = try JSONEncoder().encode(
+        let payload = try JSONEncoder.canonical.encode(
             PasswordResetConfirmBody(token: token, password: password)
         )
         try await api.requestVoid(
@@ -371,7 +371,7 @@ public final class AuthService: Sendable {
     /// 403 means the user can't act there. Mirrors lib/auth/workspaces.ts.
     @discardableResult
     public func switchWorkspace(to role: Role) async throws -> WorkspaceSwitchResponse {
-        let payload = try JSONEncoder().encode(WorkspaceSwitchRequest(workspace: role.rawValue))
+        let payload = try JSONEncoder.canonical.encode(WorkspaceSwitchRequest(workspace: role.rawValue))
         let response: WorkspaceSwitchResponse = try await api.request(
             "/workspace/switch", method: .post, body: payload
         )

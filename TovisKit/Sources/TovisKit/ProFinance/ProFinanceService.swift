@@ -19,7 +19,7 @@ public final class ProFinanceService: Sendable {
 
     /// POST /api/v1/pro/finance/expenses — add a tracked expense.
     public func createExpense(_ request: ProExpenseWriteRequest) async throws {
-        let body = try JSONEncoder().encode(request)
+        let body = try JSONEncoder.canonical.encode(request)
         _ = try await api.requestVoid(
             "/pro/finance/expenses",
             method: .post,
@@ -32,7 +32,7 @@ public final class ProFinanceService: Sendable {
         id: String,
         _ request: ProExpenseWriteRequest
     ) async throws {
-        let body = try JSONEncoder().encode(request)
+        let body = try JSONEncoder.canonical.encode(request)
         _ = try await api.requestVoid(
             "/pro/finance/expenses/\(id)",
             method: .patch,
@@ -67,7 +67,7 @@ public final class ProFinanceService: Sendable {
         id: String,
         _ request: ProExpenseWriteRequest
     ) async throws {
-        let body = try JSONEncoder().encode(request)
+        let body = try JSONEncoder.canonical.encode(request)
         _ = try await api.requestVoid(
             "/pro/finance/receipts/\(id)",
             method: .post,

@@ -36,7 +36,7 @@ public final class ProClientsService: Sendable {
         email: String,
         phone: String?
     ) async throws -> ProClientCreated {
-        let payload = try JSONEncoder().encode(
+        let payload = try JSONEncoder.canonical.encode(
             ProClientCreateRequest(firstName: firstName, lastName: lastName, email: email, phone: phone)
         )
         return try await api.request("/pro/clients", method: .post, body: payload)
@@ -64,7 +64,7 @@ public final class ProClientsService: Sendable {
         title: String? = nil,
         kind: String = "GENERAL"
     ) async throws {
-        let payload = try JSONEncoder().encode(
+        let payload = try JSONEncoder.canonical.encode(
             ProClientNoteRequest(title: title, body: body, kind: kind)
         )
         try await api.requestVoid(

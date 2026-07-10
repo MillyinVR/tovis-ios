@@ -33,7 +33,7 @@ public final class ProCameraService: Sendable {
     /// leaves the device; the server analyzes in-flight and stores nothing.
     /// Free with a daily cap (429 when exhausted).
     public func lookBrief(_ request: ProLookBriefRequest) async throws -> ProLookBrief {
-        let body = try JSONEncoder().encode(request)
+        let body = try JSONEncoder.canonical.encode(request)
         let response: ProLookBriefResponse = try await api.request(
             "/pro/camera/look-brief", method: .post, body: body)
         return response.brief
@@ -44,7 +44,7 @@ public final class ProCameraService: Sendable {
     /// strengths, an overall read). Same consent + storage story as
     /// `lookBrief`; free with a daily cap (429 when exhausted).
     public func setCritique(_ request: ProSetCritiqueRequest) async throws -> ProSetCritique {
-        let body = try JSONEncoder().encode(request)
+        let body = try JSONEncoder.canonical.encode(request)
         let response: ProSetCritiqueResponse = try await api.request(
             "/pro/camera/set-critique", method: .post, body: body)
         return response.critique

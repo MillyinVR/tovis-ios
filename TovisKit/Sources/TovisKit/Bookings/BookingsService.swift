@@ -31,7 +31,7 @@ public final class BookingsService: Sendable {
         bookingId: String,
         _ decision: ConsultationDecision
     ) async throws {
-        let payload = try JSONEncoder().encode(
+        let payload = try JSONEncoder.canonical.encode(
             ConsultationDecisionRequest(action: decision.wire)
         )
         try await api.requestVoid(
@@ -46,7 +46,7 @@ public final class BookingsService: Sendable {
     /// Returns the resulting consent state. Idempotent.
     @discardableResult
     public func setMediaConsent(bookingId: String, granted: Bool) async throws -> Bool {
-        let payload = try JSONEncoder().encode(MediaConsentRequest(granted: granted))
+        let payload = try JSONEncoder.canonical.encode(MediaConsentRequest(granted: granted))
         let response: MediaConsentResponse = try await api.request(
             "/client/bookings/\(bookingId)/media-consent",
             method: .post,
@@ -64,7 +64,7 @@ public final class BookingsService: Sendable {
         confirm: Bool,
         idempotencyKey: String? = nil
     ) async throws -> RebookedBooking? {
-        let payload = try JSONEncoder().encode(
+        let payload = try JSONEncoder.canonical.encode(
             RebookDecisionRequest(action: confirm ? "CONFIRM" : "DECLINE")
         )
         let key = idempotencyKey ?? buildClientIdempotencyKey(

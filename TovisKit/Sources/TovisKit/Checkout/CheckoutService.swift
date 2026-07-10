@@ -26,7 +26,7 @@ public final class CheckoutService: Sendable {
         tipAmount: String? = nil,
         idempotencyKey: String? = nil
     ) async throws -> StripeCheckoutSession {
-        let payload = try JSONEncoder().encode(
+        let payload = try JSONEncoder.canonical.encode(
             CheckoutStripeSessionRequest(tipAmount: tipAmount)
         )
         let key = idempotencyKey ?? buildClientIdempotencyKey(
@@ -62,7 +62,7 @@ public final class CheckoutService: Sendable {
         confirmPayment: Bool,
         idempotencyKey: String? = nil
     ) async throws -> ClientCheckoutConfirmResponse {
-        let payload = try JSONEncoder().encode(
+        let payload = try JSONEncoder.canonical.encode(
             ClientCheckoutConfirmRequest(
                 tipAmount: tipAmount,
                 selectedPaymentMethod: selectedPaymentMethod,
@@ -100,19 +100,17 @@ public final class CheckoutService: Sendable {
         items: [CheckoutProductLineInput],
         idempotencyKey: String? = nil
     ) async throws -> ClientCheckoutProductsResponse {
-        let payload = try JSONEncoder().encode(CheckoutProductsRequest(items: items))
-        // Derive the nonce from the lines with SORTED keys so an identical
-        // selection hashes identically — a plain JSONEncoder does not guarantee
-        // stable struct key order, which would defeat the dedup (a re-tap would
-        // mint a new key). We never share this key with web, so key order is free.
-        let nonceEncoder = JSONEncoder()
-        nonceEncoder.outputFormatting = [.sortedKeys]
-        let itemsData = try nonceEncoder.encode(items)
+        // The body encodes through `JSONEncoder.canonical` (sorted keys), so the
+        // same serialized bytes drive both the wire body and the nonce — an
+        // identical selection hashes identically across taps, while a changed
+        // selection shifts the nonce. (A bare encoder's unstable key order would
+        // mint a fresh key on a re-tap and defeat the dedup.)
+        let payload = try JSONEncoder.canonical.encode(CheckoutProductsRequest(items: items))
         let key = idempotencyKey ?? buildClientIdempotencyKey(
             scope: "client-checkout-products",
             entityId: bookingId,
             action: "save-selection",
-            nonce: idempotencyNonce(itemsData)
+            nonce: idempotencyNonce(payload)
         )
         return try await api.request(
             "/client/bookings/\(bookingId)/checkout/products",

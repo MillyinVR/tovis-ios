@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import TovisKit
 
@@ -55,5 +56,53 @@ import Testing
         let a = buildClientIdempotencyKey(scope: "", entityId: "bk_1", action: "cancel")
         let b = buildClientIdempotencyKey(scope: "", entityId: "bk_1", action: "cancel")
         #expect(a != b)
+    }
+
+    // A multi-field `Encodable` whose properties are declared OUT of alphabetical
+    // order — the exact shape a bare `JSONEncoder` can serialize with unstable key
+    // order. Single-field bodies never regressed (nothing to reorder), so the
+    // regression must exercise a body with 2+ keys.
+    private struct MultiFieldBody: Encodable {
+        let zeta: String
+        let alpha: Int
+        let mid: Bool
+    }
+
+    @Test func canonicalEncoderSortsKeysDeterministically() {
+        // The fix's core guarantee: `.sortedKeys` emits keys alphabetically
+        // regardless of declaration order, so the bytes are stable by construction.
+        let json = String(
+            decoding: try! JSONEncoder.canonical.encode(
+                MultiFieldBody(zeta: "z", alpha: 1, mid: true)),
+            as: UTF8.self)
+        let iAlpha = json.range(of: "alpha")!.lowerBound
+        let iMid = json.range(of: "mid")!.lowerBound
+        let iZeta = json.range(of: "zeta")!.lowerBound
+        #expect(iAlpha < iMid)
+        #expect(iMid < iZeta)
+    }
+
+    @Test func multiFieldBodyYieldsStableNonceAndKeyAcrossEncodes() throws {
+        // A legit double-tap re-encodes the SAME body: canonical encoding must
+        // produce identical bytes → identical nonce → identical key, so the server
+        // replays instead of double-submitting. Encode twice to prove stability.
+        let body = MultiFieldBody(zeta: "z", alpha: 1, mid: true)
+        let first = idempotencyNonce(try JSONEncoder.canonical.encode(body))
+        let second = idempotencyNonce(try JSONEncoder.canonical.encode(body))
+        #expect(first == second)
+
+        let keyA = buildClientIdempotencyKey(
+            scope: "client-checkout-products", entityId: "bk_1",
+            action: "save-selection", bucketMs: bucketMs, nonce: first)
+        let keyB = buildClientIdempotencyKey(
+            scope: "client-checkout-products", entityId: "bk_1",
+            action: "save-selection", bucketMs: bucketMs, nonce: second)
+        #expect(keyA == keyB)
+
+        // A changed field must still shift the nonce (dedup only replays true
+        // duplicates, never a genuinely different submission).
+        let changed = idempotencyNonce(
+            try JSONEncoder.canonical.encode(MultiFieldBody(zeta: "z", alpha: 2, mid: true)))
+        #expect(changed != first)
     }
 }

@@ -52,7 +52,7 @@ public final class ProCalendarService: Sendable {
         note: String?,
         locationId: String
     ) async throws -> ProCalendarBlock {
-        let body = try JSONEncoder().encode(CreateBlockRequest(
+        let body = try JSONEncoder.canonical.encode(CreateBlockRequest(
             startsAt: startsAt, endsAt: endsAt, note: note, locationId: locationId))
         let res: ProCalendarBlockResponse = try await api.request(
             "/pro/calendar/blocked", method: .post, body: body)
@@ -67,7 +67,7 @@ public final class ProCalendarService: Sendable {
         endsAt: String,
         note: String?
     ) async throws -> ProCalendarBlock {
-        let body = try JSONEncoder().encode(UpdateBlockRequest(
+        let body = try JSONEncoder.canonical.encode(UpdateBlockRequest(
             startsAt: startsAt, endsAt: endsAt, note: note))
         let res: ProCalendarBlockResponse = try await api.request(
             "/pro/calendar/blocked/\(id)", method: .patch, body: body)
@@ -83,7 +83,7 @@ public final class ProCalendarService: Sendable {
     /// bookings auto-accept (web calendar auto-accept bar). Returns the saved value.
     @discardableResult
     public func setAutoAccept(_ enabled: Bool) async throws -> Bool {
-        let body = try JSONEncoder().encode(ProSettingsUpdateRequest(autoAcceptBookings: enabled))
+        let body = try JSONEncoder.canonical.encode(ProSettingsUpdateRequest(autoAcceptBookings: enabled))
         let res: ProSettingsResponse = try await api.request(
             "/pro/settings", method: .patch, body: body)
         return res.professionalProfile.autoAcceptBookings

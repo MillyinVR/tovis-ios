@@ -49,9 +49,12 @@ public func buildClientIdempotencyKey(
 }
 
 /// A stable nonce from an already-encoded request body — pass the same `Data`
-/// you send as the POST body. `JSONEncoder` is deterministic for a given
-/// `Encodable`, so identical submissions hash identically while any field change
-/// shifts the nonce.
+/// you send as the POST body, encoded through `JSONEncoder.canonical`. That
+/// encoder's `.sortedKeys` gives byte-stable output for a given `Encodable`, so
+/// identical submissions hash identically while any field change shifts the
+/// nonce. A bare `JSONEncoder()` does **not** guarantee stable key order, so a
+/// nonce derived from its bytes could differ between two identical taps and
+/// defeat dedup — always encode the body with `JSONEncoder.canonical`.
 public func idempotencyNonce(_ body: Data) -> String {
     String(decoding: body, as: UTF8.self)
 }

@@ -42,7 +42,7 @@ public final class ProBookingService: Sendable {
         notifyClient: Bool = true,
         idempotencyKey: String? = nil
     ) async throws {
-        let payload = try JSONEncoder().encode(
+        let payload = try JSONEncoder.canonical.encode(
             ProBookingStatusRequest(status: "ACCEPTED", notifyClient: notifyClient)
         )
         let key = idempotencyKey ?? buildClientIdempotencyKey(
@@ -64,7 +64,7 @@ public final class ProBookingService: Sendable {
         notifyClient: Bool = true,
         idempotencyKey: String? = nil
     ) async throws {
-        let payload = try JSONEncoder().encode(
+        let payload = try JSONEncoder.canonical.encode(
             ProBookingStatusRequest(status: "CANCELLED", notifyClient: notifyClient)
         )
         let key = idempotencyKey ?? buildClientIdempotencyKey(
@@ -85,7 +85,7 @@ public final class ProBookingService: Sendable {
         reason: String? = nil,
         idempotencyKey: String? = nil
     ) async throws {
-        let payload = try JSONEncoder().encode(ProBookingCancelRequest(reason: reason))
+        let payload = try JSONEncoder.canonical.encode(ProBookingCancelRequest(reason: reason))
         let key = idempotencyKey ?? buildClientIdempotencyKey(
             scope: "pro-booking", entityId: bookingId, action: "cancel",
             nonce: idempotencyNonce(payload))
@@ -103,7 +103,7 @@ public final class ProBookingService: Sendable {
         bookingId: String,
         idempotencyKey: String? = nil
     ) async throws {
-        let payload = try JSONEncoder().encode(["explicitSelection": true])
+        let payload = try JSONEncoder.canonical.encode(["explicitSelection": true])
         let key = idempotencyKey ?? buildClientIdempotencyKey(
             scope: "pro-booking", entityId: bookingId, action: "session-start")
         try await api.requestVoid(
@@ -123,7 +123,7 @@ public final class ProBookingService: Sendable {
         reason: String? = nil,
         idempotencyKey: String? = nil
     ) async throws {
-        let payload = try JSONEncoder().encode(ProRefundRequest(amountCents: amountCents, reason: reason))
+        let payload = try JSONEncoder.canonical.encode(ProRefundRequest(amountCents: amountCents, reason: reason))
         let key = idempotencyKey ?? buildClientIdempotencyKey(
             scope: "booking", entityId: bookingId, action: "refund",
             nonce: idempotencyNonce(payload))
@@ -146,7 +146,7 @@ public final class ProBookingService: Sendable {
         windowEnd: String? = nil,
         idempotencyKey: String? = nil
     ) async throws {
-        let payload = try JSONEncoder().encode(
+        let payload = try JSONEncoder.canonical.encode(
             ProRebookRequest(
                 mode: mode.rawValue,
                 scheduledFor: scheduledFor,
@@ -173,7 +173,7 @@ public final class ProBookingService: Sendable {
         selectedPaymentMethod: String,
         idempotencyKey: String? = nil
     ) async throws {
-        let payload = try JSONEncoder().encode(["selectedPaymentMethod": selectedPaymentMethod])
+        let payload = try JSONEncoder.canonical.encode(["selectedPaymentMethod": selectedPaymentMethod])
         let key = idempotencyKey ?? buildClientIdempotencyKey(
             scope: "pro-booking", entityId: bookingId, action: "mark-paid",
             nonce: idempotencyNonce(payload))
@@ -239,7 +239,7 @@ public final class ProBookingService: Sendable {
         overrideReason: String? = nil,
         idempotencyKey: String? = nil
     ) async throws -> ProBookingCreateResult {
-        let payload = try JSONEncoder().encode(
+        let payload = try JSONEncoder.canonical.encode(
             ProBookingCreateRequest(
                 clientId: clientId,
                 client: client,
@@ -292,7 +292,7 @@ public final class ProBookingService: Sendable {
         request: ProAftercareSaveRequest,
         idempotencyKey: String? = nil
     ) async throws {
-        let payload = try JSONEncoder().encode(request)
+        let payload = try JSONEncoder.canonical.encode(request)
         let key = idempotencyKey ?? buildClientIdempotencyKey(
             scope: "pro-booking", entityId: bookingId, action: "aftercare-save",
             nonce: idempotencyNonce(payload))
@@ -336,7 +336,7 @@ public final class ProBookingService: Sendable {
         reason: String? = nil,
         idempotencyKey: String? = nil
     ) async throws {
-        let payload = try JSONEncoder().encode(["reason": reason])
+        let payload = try JSONEncoder.canonical.encode(["reason": reason])
         let key = idempotencyKey ?? buildClientIdempotencyKey(
             scope: "pro-booking", entityId: bookingId, action: "waive-checkout",
             nonce: idempotencyNonce(payload))

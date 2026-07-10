@@ -39,7 +39,7 @@ public final class ProScheduleService: Sendable {
         var query: [URLQueryItem] = []
         if let locationType { query.append(URLQueryItem(name: "locationType", value: locationType)) }
         if let locationId { query.append(URLQueryItem(name: "locationId", value: locationId)) }
-        let body = try JSONEncoder().encode(ProWorkingHoursUpdateRequest(workingHours: week))
+        let body = try JSONEncoder.canonical.encode(ProWorkingHoursUpdateRequest(workingHours: week))
         return try await api.request(
             "/pro/working-hours",
             method: .post,

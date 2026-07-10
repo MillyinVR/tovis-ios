@@ -64,7 +64,7 @@ public final class ProNotificationsService: Sendable {
         events: [String: NotificationChannelPreference],
         quietHours: NotificationQuietHours
     ) async throws -> NotificationPreferences {
-        let body = try JSONEncoder().encode(
+        let body = try JSONEncoder.canonical.encode(
             NotificationPreferencesUpdateRequest(events: events, quietHours: quietHours)
         )
         return try await api.request(

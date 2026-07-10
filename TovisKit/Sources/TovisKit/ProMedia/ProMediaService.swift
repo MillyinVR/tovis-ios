@@ -103,7 +103,7 @@ public final class ProMediaService: Sendable {
         contentType: String = "image/jpeg",
         serviceId: String? = nil
     ) async throws -> String {
-        let payload = try JSONEncoder().encode(
+        let payload = try JSONEncoder.canonical.encode(
             PublicUploadInitRequest(
                 kind: kind, contentType: contentType, size: imageData.count, serviceId: serviceId
             )
@@ -141,7 +141,7 @@ public final class ProMediaService: Sendable {
         contentType: String,
         size: Int
     ) async throws -> MediaUploadInit {
-        let payload = try JSONEncoder().encode(
+        let payload = try JSONEncoder.canonical.encode(
             MediaUploadInitRequest(
                 kind: "CONSULT_PRIVATE",   // booking-scoped → bookings/<id>/<phase>/…
                 bookingId: bookingId,
@@ -194,7 +194,7 @@ public final class ProMediaService: Sendable {
         caption: String? = nil,
         idempotencyKey: String? = nil
     ) async throws -> ProBookingMediaItem {
-        let payload = try JSONEncoder().encode(
+        let payload = try JSONEncoder.canonical.encode(
             MediaConfirmRequest(
                 uploadSessionId: uploadSessionId,
                 phase: phase.rawValue,

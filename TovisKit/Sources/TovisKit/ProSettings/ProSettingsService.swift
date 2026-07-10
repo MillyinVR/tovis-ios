@@ -20,7 +20,7 @@ public final class ProSettingsService: Sendable {
     /// PUT /api/v1/pro/reminder-settings → save the cadence.
     @discardableResult
     public func updateReminderSettings(enabled: Bool, offsetDays: [Int]) async throws -> ProReminderSettingsResponse {
-        let body = try JSONEncoder().encode(ProReminderSettingsUpdate(enabled: enabled, offsetDays: offsetDays))
+        let body = try JSONEncoder.canonical.encode(ProReminderSettingsUpdate(enabled: enabled, offsetDays: offsetDays))
         return try await api.request("/pro/reminder-settings", method: .put, body: body)
     }
 
@@ -36,7 +36,7 @@ public final class ProSettingsService: Sendable {
     /// PUT /api/v1/pro/no-show-settings → save the fee policy.
     @discardableResult
     public func updateNoShowSettings(_ update: ProNoShowSettingsUpdate) async throws -> ProNoShowSettings {
-        let body = try JSONEncoder().encode(update)
+        let body = try JSONEncoder.canonical.encode(update)
         let response: ProNoShowSettingsResponse = try await api.request(
             "/pro/no-show-settings", method: .put, body: body
         )
