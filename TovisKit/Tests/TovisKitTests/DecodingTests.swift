@@ -578,6 +578,10 @@ func fixture(_ name: String) throws -> Data {
         #expect(summary.rebookWindowStart == "2026-07-20T07:00:00.000Z")
         #expect(summary.recommendedProducts.count == 2)
 
+        // Pro-chosen featured before/after pair (seeds the native picker).
+        #expect(summary.featuredBeforeAssetId == "media_1")
+        #expect(summary.featuredAfterAssetId == "media_2")
+
         // External product (name + url) vs catalog product (nested `product`).
         #expect(summary.recommendedProducts[0].displayName == "Olaplex No.7")
         #expect(summary.recommendedProducts[0].externalUrl == "https://example.com/olaplex-7")
