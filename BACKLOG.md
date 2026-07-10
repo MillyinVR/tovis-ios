@@ -197,8 +197,9 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
     lock) off a new **Services card** in `ProBookingDetailView` (Edit shown while non-terminal,
     incl. IN_PROGRESS → the mid-session entry point). Since shipped: Last Minute
     editor ✅, pro private client-view (writes + `view=public`) ✅, waitlist-outreach ✅,
-    waitlist "offer a time" ✅. Rest of A4 (calendar RESCHEDULE, money-trail, manual reminders,
-    referral-reward, data-migration wizard, media manager, portfolio-feature toggle) still open.
+    waitlist "offer a time" ✅, money-trail inspector ✅. Rest of A4 (calendar RESCHEDULE,
+    manual reminders, referral-reward, data-migration wizard, media manager,
+    portfolio-feature toggle) still open.
   - [x] **A4-chart-writes pro private-client-view, increment 1 (non-technical write forms)** —
     ✅ shipped 2026-07-10 (iOS #46 `982c028`, iOS-only — the web `/pro/clients/{id}/{alert,
     allergies,do-not-rebook,profile-context}` routes already existed; free text is encrypted
@@ -299,6 +300,25 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
     reconstruction · decode). swift test 222; `xcodebuild build` clean. **A4 calendar "offer a
     time" slice COMPLETE** (the calendar *reschedule* half — `BookingService.reschedule` already
     exists in TovisKit — remains: it needs a native reschedule sheet).
+  - [x] **A4-money-trail booking money-trail inspector** — ✅ shipped 2026-07-10 (iOS #58
+    `d2b5825`, **iOS-only** — the web `GET /api/v1/bookings/{id}/money-trail` route + the
+    `BookingMoneyTrail` DTO (`lib/booking/moneyTrail.ts`) already exist; no backend change, no
+    migration). Read-only native port of the web `MoneyTrailInspector`
+    (`app/_components/booking/MoneyTrailInspector.tsx`), reached from a **View money trail**
+    button on the Payment card of `ProBookingDetailView` (→ sheet). One trustworthy view of a
+    booking's money: the **Captured / Refunded / Net to pro** summary chips + a flattened
+    timeline of the deposit → final-bill charge → platform discovery fee → no-show / late-cancel
+    fee → every refund row (renders the server's numbers verbatim — never re-derives money rules).
+    New TovisKit `ProBookingMoneyTrail`/`ProBookingMoneyTrailResponse` (1:1 with the web DTO —
+    cents as `Int`, instants as ISO `String?`, server enums kept raw `String` + compared
+    case-insensitively in the view, the `ProBookingDetail` idiom) + `ProBookingService.moneyTrail(
+    bookingId:)` (GETs the shared `/bookings/{id}/money-trail` route like `refund`, not a `/pro`
+    route; PRO sees own bookings only, a foreign booking 404s). New `ProMoneyTrailView.swift`
+    (`buildEntries` ported 1:1) + reusable `Wire.moneyCents` (integer cents → currency, mirrors
+    web `formatCents`, honors the trail's currency code). The **refund / waive WRITE actions** the
+    web inspector also offers are a **later increment** — the `capabilities` flags are decoded
+    already, so wiring them is additive. +2 write-path/decode tests (full trail + minimal
+    all-null); swift test 224; `xcodebuild build` clean.
   - ↪ **Predecessor for mid-session service change** (`tovis-app §22`, MS-iOS): A4's
     **edit-service-items** modal is the first place iOS gains a TovisKit method to change
     services on an existing booking (today only `sendConsultationProposal` exists — no
