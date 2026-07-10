@@ -40,6 +40,25 @@ public final class ProProfileService: Sendable {
         try await api.requestVoid("/pro/reviews/\(reviewId)/reply", method: .delete)
     }
 
+    /// POST / DELETE /api/v1/pro/media/{id}/portfolio — feature (POST) or
+    /// un-feature (DELETE) one of a review's media assets in the pro's public
+    /// portfolio. Mirrors the web `MediaPortfolioToggle` on `/pro/reviews`, which
+    /// sends **no body** on either verb: an empty POST lets the route auto-pair the
+    /// featured "after" with the booking's "before" for the comparison slider (an
+    /// explicit `beforeAssetId` could override, but the reviews toggle never does).
+    ///
+    /// Review media is already publish-consented — the client attached it to their
+    /// review (`reviewId` is set) — so the server's public-share consent gate
+    /// passes. Featuring flips `visibility` to PUBLIC server-side. Setting a boolean
+    /// is naturally idempotent (a repeat POST/DELETE lands on the same state), so no
+    /// idempotency key, matching web.
+    public func setMediaFeaturedInPortfolio(mediaId: String, featured: Bool) async throws {
+        try await api.requestVoid(
+            "/pro/media/\(mediaId)/portfolio",
+            method: featured ? .post : .delete
+        )
+    }
+
     /// PATCH /api/v1/pro/profile — sparse update; only the provided fields change.
     /// Pass an explicit value to set; omit to leave untouched. Returns the saved
     /// profile. Throws `APIError.server(409,…)` if the handle is taken.
