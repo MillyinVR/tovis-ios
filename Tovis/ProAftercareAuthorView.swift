@@ -34,7 +34,13 @@ struct ProAftercareAuthorView: View {
     @State private var hasWindowEnd = false
     @State private var version: Int?
     @State private var timeZone: String?
-    @State private var media: ProAftercareBooking.Media?
+    // Before/after image candidates for the featured-pair picker (loaded from
+    // GET .../media) + the pro's current selection. A `nil` selection means the
+    // client sees the earliest of each phase (the server's default primary).
+    @State private var mediaItems: [ProBookingMediaItem] = []
+    @State private var featuredBeforeId: String?
+    @State private var featuredAfterId: String?
+    @State private var viewingMedia: FullscreenMedia?
     @State private var isFinalized = false
     @State private var saving = false
     @State private var errorText: String?
@@ -91,25 +97,124 @@ struct ProAftercareAuthorView: View {
         .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
         .tint(BrandColor.accent)
         .task { await load() }
+        .mediaFullscreenCover($viewingMedia)
+    }
+
+    // Before/after IMAGE candidates offered by the featured-pair picker, each
+    // phase earliest-first (shared partition logic with the web picker).
+    private var featuredCandidates:
+        (before: [ProBookingMediaItem], after: [ProBookingMediaItem])
+    {
+        AftercareFeaturedPair.candidates(mediaItems)
     }
 
     // MARK: - Sections
 
-    // The visual record — before/after from this session — mirroring the web
-    // aftercare page's "Photos" card at the top of the left column. Hidden when
-    // the session has no before/after photo.
+    // The visual record + the featured-pair picker — mirroring the web aftercare
+    // page's "Photos" card. The pro taps "Feature" on a before and an after photo
+    // to set the pair the client sees first (every other photo shows as a
+    // thumbnail); leaving both unset features the earliest of each. Hidden when
+    // the session has no before/after image to feature.
     @ViewBuilder
     private var photosSection: some View {
-        if let media, media.beforeUrl != nil || media.afterUrl != nil {
+        let candidates = featuredCandidates
+        if !candidates.before.isEmpty || !candidates.after.isEmpty {
             BrandSection(title: "Photos") {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Before & after from this session. Visible to you and the client.")
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Visible to you + the client. Tap “Feature” on a before and an after photo to set the pair the client sees first — the rest show as thumbnails. Leave both unset to feature the earliest of each.")
                         .font(BrandFont.body(12))
                         .foregroundStyle(BrandColor.textMuted)
-                    AftercareBeforeAfterPair(
-                        beforeUrl: media.beforeUrl, afterUrl: media.afterUrl)
+                    phaseGrid(
+                        heading: "Before", items: candidates.before,
+                        selectedId: featuredBeforeId, onToggle: toggleFeaturedBefore)
+                    phaseGrid(
+                        heading: "After", items: candidates.after,
+                        selectedId: featuredAfterId, onToggle: toggleFeaturedAfter)
                 }
             }
+        }
+    }
+
+    private func toggleFeaturedBefore(_ id: String) {
+        featuredBeforeId = (featuredBeforeId == id) ? nil : id
+    }
+
+    private func toggleFeaturedAfter(_ id: String) {
+        featuredAfterId = (featuredAfterId == id) ? nil : id
+    }
+
+    private var featureGridColumns: [GridItem] {
+        Array(repeating: GridItem(.flexible(), spacing: 8), count: 3)
+    }
+
+    @ViewBuilder
+    private func phaseGrid(
+        heading: String, items: [ProBookingMediaItem],
+        selectedId: String?, onToggle: @escaping (String) -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(heading).font(BrandFont.body(13, .semibold)).foregroundStyle(BrandColor.textPrimary)
+            if items.isEmpty {
+                Text("None yet.").font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
+            } else {
+                LazyVGrid(columns: featureGridColumns, spacing: 8) {
+                    ForEach(items) { item in
+                        featureTile(item, isFeatured: selectedId == item.id, onToggle: onToggle)
+                    }
+                }
+            }
+        }
+    }
+
+    private func featureTile(
+        _ item: ProBookingMediaItem, isFeatured: Bool,
+        onToggle: @escaping (String) -> Void
+    ) -> some View {
+        let isProClient = item.visibility == "PRO_CLIENT"
+        return ZStack(alignment: .topTrailing) {
+            Button {
+                viewingMedia = FullscreenMedia.remote(
+                    id: item.id, urlString: item.displayUrl, isVideo: false)
+            } label: {
+                ZStack(alignment: .bottomLeading) {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous).fill(BrandColor.bgPrimary)
+                    if let thumb = item.displayThumbUrl, let url = URL(string: thumb) {
+                        AsyncImage(url: url) { image in
+                            image.resizable().scaledToFill()
+                        } placeholder: {
+                            ProgressView().tint(BrandColor.accent)
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
+                    Text(isProClient ? "PRO + CLIENT" : "PUBLIC")
+                        .font(BrandFont.mono(7)).tracking(0.8)
+                        .foregroundStyle(BrandColor.textPrimary)
+                        .padding(.horizontal, 5).padding(.vertical, 2)
+                        .background(BrandColor.bgPrimary.opacity(0.7)).clipShape(Capsule())
+                        .padding(5)
+                }
+                .frame(maxWidth: .infinity)
+                .aspectRatio(1, contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(isFeatured ? BrandColor.accent : BrandColor.textMuted.opacity(0.25),
+                                lineWidth: isFeatured ? 2 : 1)
+                )
+            }
+            .buttonStyle(.plain)
+
+            Button { onToggle(item.id) } label: {
+                Text(isFeatured ? "★ Featured" : "Feature")
+                    .font(BrandFont.body(10, .semibold))
+                    .foregroundStyle(isFeatured ? BrandColor.onAccent : BrandColor.textPrimary)
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(isFeatured ? BrandColor.accent : BrandColor.bgSecondary)
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(saving)
+            .padding(4)
         }
     }
 
@@ -413,6 +518,10 @@ struct ProAftercareAuthorView: View {
             async let bookingTask = session.client.proBookings.aftercareDetail(bookingId: bookingId)
             async let detailTask = try? session.client.proBookings.detail(bookingId: bookingId)
             async let profileTask = try? session.client.proProfile.myProfile()
+            // Full before/after media list for the featured-pair picker (the
+            // aftercare GET returns only the single resolved pair, not every
+            // candidate). Best-effort: a failure just leaves the picker empty.
+            async let mediaTask = try? session.client.proMedia.list(bookingId: bookingId)
             let booking = try await bookingTask
             let detail = await detailTask
             professionalId = await profileTask?.id ?? ""
@@ -426,9 +535,9 @@ struct ProAftercareAuthorView: View {
                 rebookDurationMinutes = detail.totalDurationMinutes > 0 ? detail.totalDurationMinutes : 60
             }
 
-            // Photos exist independently of any aftercare draft (captured during
-            // the session), so set them before the summary guard returns early.
-            media = booking.media
+            // Media exists independently of any aftercare draft (captured during
+            // the session), so set it before the summary guard returns early.
+            mediaItems = await mediaTask ?? []
 
             guard let summary = booking.aftercareSummary else {
                 // Fresh wrap-up: pre-select the recommended window from the
@@ -449,6 +558,10 @@ struct ProAftercareAuthorView: View {
             notes = summary.notes ?? ""
             version = summary.version
             isFinalized = summary.isFinalized
+            // Seed the featured-pair picker from the saved selection (nil = the
+            // client sees the earliest of each phase).
+            featuredBeforeId = summary.featuredBeforeAssetId
+            featuredAfterId = summary.featuredAfterAssetId
             products = summary.recommendedProducts.compactMap { product in
                 // Only the external name+link products are editable here.
                 guard product.productId == nil else { return nil }
@@ -502,6 +615,15 @@ struct ProAftercareAuthorView: View {
             )
         }()
 
+        // Only send a featured id that still maps to a current before/after image
+        // (mirrors web's `validFeatured*` guard) — a stale/deleted id would trip
+        // the server's ownership/phase validation and fail the whole save.
+        let candidates = featuredCandidates
+        let validFeaturedBefore = AftercareFeaturedPair.resolveValidFeaturedId(
+            featuredBeforeId, in: candidates.before)
+        let validFeaturedAfter = AftercareFeaturedPair.resolveValidFeaturedId(
+            featuredAfterId, in: candidates.after)
+
         let request = ProAftercareSaveRequest(
             notes: String(notes.trimmingCharacters(in: .whitespacesAndNewlines).prefix(2000)),
             recommendedProducts: payloadProducts,
@@ -515,6 +637,8 @@ struct ProAftercareAuthorView: View {
             rebookReminderDaysBefore: rebookReminderDaysBefore,
             createProductReminder: createProductReminder,
             productReminderDaysAfter: productReminderDaysAfter,
+            featuredBeforeAssetId: validFeaturedBefore,
+            featuredAfterAssetId: validFeaturedAfter,
             sendToClient: sendToClient,
             timeZone: timeZone,
             version: version,

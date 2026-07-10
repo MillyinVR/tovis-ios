@@ -81,6 +81,17 @@ Source: `docs/PRO-WEB-PARITY.md` (all 5 pages parity-complete; these are the tai
   record (new shared `AftercareBeforeAfterPair`, also adopted by the aftercare
   list). Fed by the `media` pass-through on `GET .../aftercare` (tovis-app #554);
   screen stays text-only until that deploys. **SHIPPED (PR #27)**
+- [x] **A-AC2** Aftercare featured-pair PICKER on the pro authoring screen —
+  parity with web #561/#562 (tovis-app §24 AF3a). `ProAftercareAuthorView` loads
+  the before/after candidates (existing `GET .../media`), shows Before/After grids
+  with a "Feature" pill (image-only, one per phase, re-tap to clear), seeds from
+  the saved pair, and sends the validated ids on save. New DTO fields
+  (`featuredBefore/AfterAssetId` on the summary + save request) + pure
+  `AftercareFeaturedPair` helper (partition + `resolveValidFeaturedId`, unit-
+  tested). **Also fixes a cross-platform regression:** iOS previously omitted the
+  featured ids, so any native aftercare save wiped a web-set pair (the server
+  always writes them, coercing an absent field → null). No web/server change, no
+  migration. **SHIPPED (PR #31)**
 - [ ] In-app Message deep-link from the clients list.
 - [ ] Per-tab chart write forms + technical-record decryption.
 - [ ] Looks/followers profile stat tiles.
@@ -128,8 +139,11 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
   exists today) · Share-your-look publish flow.
 - [ ] **A3 — client booking detail** rebuild `BookingDetailView` to web's tabbed IA
   (Overview / Consultation / Aftercare) + add the missing pieces: before/after
-  compare, aftercare care-notes, product-recommendations checkout, review section
-  (leave rating/photos), recommended-window rebook CTA, add-to-calendar.
+  compare (the featured pair is already API-carried by `GET .../aftercare` +
+  natively pickable pro-side — **A-AC2 #31** / tovis-app §24 AF3a — so this just
+  renders it, reusing `AftercareBeforeAfterPair`), aftercare care-notes,
+  product-recommendations checkout, review section (leave rating/photos),
+  recommended-window rebook CTA, add-to-calendar.
 - [ ] **A4 — full pro parity** (build all): Last Minute EDITOR (iOS is read-only —
   create openings + settings/tiers) · Waitlist outreach workspace · pro's private
   client view — `ProClientChartView` per-tab write forms + technical-record

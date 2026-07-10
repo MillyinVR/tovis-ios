@@ -50,6 +50,12 @@ public struct ProAftercareSummaryDetail: Decodable, Sendable {
     public let rebookWindowEnd: String?
     public let rebookDeclinedAt: String?
     public let rebookSlot: ProAftercareRebookSlot?
+    /// Pro-chosen "featured pair" — the before/after asset ids the client sees as
+    /// the primary comparison (every other before/after shows as a flat
+    /// thumbnail). `nil` falls back to the earliest of each phase. Optional so
+    /// older backends (before the featured-pair pass) still decode.
+    public let featuredBeforeAssetId: String?
+    public let featuredAfterAssetId: String?
     public let draftSavedAt: String?
     public let sentToClientAt: String?
     public let lastEditedAt: String?
@@ -104,6 +110,12 @@ public struct ProAftercareSaveRequest: Encodable, Sendable {
     public let rebookReminderDaysBefore: Int
     public let createProductReminder: Bool
     public let productReminderDaysAfter: Int
+    /// Pro-chosen featured before/after pair. Sent on every save so an existing
+    /// selection is preserved (an omitted field is coerced to null server-side,
+    /// which would CLEAR the pair); `nil` here explicitly clears it. Validated
+    /// against this booking's media in the server write boundary.
+    public let featuredBeforeAssetId: String?
+    public let featuredAfterAssetId: String?
     public let sendToClient: Bool
     public let timeZone: String?
     public let version: Int?
@@ -151,6 +163,8 @@ public struct ProAftercareSaveRequest: Encodable, Sendable {
         rebookReminderDaysBefore: Int,
         createProductReminder: Bool,
         productReminderDaysAfter: Int,
+        featuredBeforeAssetId: String?,
+        featuredAfterAssetId: String?,
         sendToClient: Bool,
         timeZone: String?,
         version: Int?
@@ -166,6 +180,8 @@ public struct ProAftercareSaveRequest: Encodable, Sendable {
         self.rebookReminderDaysBefore = rebookReminderDaysBefore
         self.createProductReminder = createProductReminder
         self.productReminderDaysAfter = productReminderDaysAfter
+        self.featuredBeforeAssetId = featuredBeforeAssetId
+        self.featuredAfterAssetId = featuredAfterAssetId
         self.sendToClient = sendToClient
         self.timeZone = timeZone
         self.version = version
