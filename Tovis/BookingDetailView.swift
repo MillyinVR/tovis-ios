@@ -74,6 +74,9 @@ struct BookingDetailView: View {
     @State private var cancelledLocally = false
     @State private var manageError: String?
 
+    // Add-to-calendar (native share sheet of a generated .ics; no backend).
+    @State private var calendarFile: CalendarFile?
+
     /// A presented hosted Stripe Checkout page.
     private struct CheckoutSheet: Identifiable {
         let id = UUID()
@@ -87,6 +90,12 @@ struct BookingDetailView: View {
         let professionalId: String
         let proName: String
         let locationType: String
+    }
+
+    /// A generated `.ics` file on disk, handed to the share sheet.
+    private struct CalendarFile: Identifiable {
+        let id = UUID()
+        let url: URL
     }
 
     /// Payment is collectable once the pro has finalized the bill (READY /
@@ -152,6 +161,20 @@ struct BookingDetailView: View {
             break
         }
         guard let when = Wire.date(booking.scheduledFor) else { return true }
+        return when > Date()
+    }
+
+    /// Offer "Add to Calendar" only for an upcoming, non-terminal appointment —
+    /// the same window as reschedule/cancel; a past or cancelled booking has
+    /// nothing useful to add. Mirrors web's overview add-to-calendar link.
+    private var canAddToCalendar: Bool {
+        guard let when = Wire.date(booking.scheduledFor) else { return false }
+        switch (booking.status ?? "").uppercased() {
+        case "CANCELLED", "COMPLETED", "NO_SHOW", "DECLINED", "EXPIRED":
+            return false
+        default:
+            break
+        }
         return when > Date()
     }
 
@@ -223,6 +246,8 @@ struct BookingDetailView: View {
 
                 mediaConsentCard
 
+                addToCalendarCard
+
                 manageCard
             }
             .padding(.horizontal, 20)
@@ -249,6 +274,9 @@ struct BookingDetailView: View {
                 Task { await onDecision() }
             }
             .ignoresSafeArea()
+        }
+        .sheet(item: $calendarFile) { file in
+            ShareSheet(items: [file.url])
         }
         .sheet(item: $rescheduleSheet) { ctx in
             BookingFlowView(
@@ -1142,6 +1170,54 @@ struct BookingDetailView: View {
             manageError = error.userMessage
         } catch {
             manageError = "Couldn’t cancel the appointment. Try again."
+        }
+    }
+
+    // MARK: - Add to calendar
+
+    @ViewBuilder
+    private var addToCalendarCard: some View {
+        if canAddToCalendar {
+            Button { presentAddToCalendar() } label: {
+                Label("Add to Calendar", systemImage: "calendar.badge.plus")
+                    .font(BrandFont.body(16, .semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 15)
+                    .foregroundStyle(BrandColor.textPrimary)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(BrandColor.textMuted.opacity(0.3), lineWidth: 1)
+                    )
+            }
+        }
+    }
+
+    /// Generate the booking's `.ics`, drop it in a temp file, and present the
+    /// share sheet so the client can add it to any calendar app. Best-effort: a
+    /// write failure simply no-ops (the button just doesn't open a sheet).
+    private func presentAddToCalendar() {
+        guard let start = Wire.date(booking.scheduledFor) else { return }
+
+        let proName = booking.professional?.displayName
+        let title = proName.map { "\(booking.display.title) with \($0)" } ?? booking.display.title
+
+        let ics = BookingCalendar.icsDocument(
+            uid: "\(booking.id)@tovis",
+            title: title,
+            start: start,
+            durationMinutes: booking.totalDurationMinutes,
+            location: booking.locationLabel,
+            notes: proName.map { "Appointment with \($0)." }
+        )
+
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("appointment-\(booking.id).ics")
+        do {
+            try Data(ics.utf8).write(to: url, options: .atomic)
+            calendarFile = CalendarFile(url: url)
+        } catch {
+            // Best-effort convenience; nothing actionable for the client.
         }
     }
 
