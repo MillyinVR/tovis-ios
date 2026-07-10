@@ -4,7 +4,8 @@ import Foundation
 // clients waiting for this pro's services, grouped by service and FIFO-ranked (the
 // client who joined first is rank #1 within their service). Backed by a route that
 // already exists, so this is an iOS-only port — no backend change:
-//   • GET /api/v1/pro/waitlist   → { services: [group], total }
+//   • GET  /api/v1/pro/waitlist                 → { services: [group], total }
+//   • POST /api/v1/pro/waitlist/{entryId}/offer → { ok, offer }  (offer a time)
 // The pro works the list top-down to fill a spot, messaging whoever they like. The
 // human preference label ("Any time", "Morning", "Jul 5", "9:00 AM–12:00 PM") is
 // server-formatted (`lib/waitlist/preferenceLabel`) so native renders it verbatim;
@@ -68,5 +69,52 @@ public struct ProWaitlistEntry: Decodable, Sendable, Identifiable {
         self.avatarUrl = avatarUrl
         self.preferenceLabel = preferenceLabel
         self.joinedAt = joinedAt
+    }
+}
+
+// MARK: - Offer a time (POST /api/v1/pro/waitlist/{entryId}/offer)
+
+/// The request body for offering a waitlisted client a concrete appointment time
+/// (web `WaitlistOfferModal`). The route derives the client + service from the
+/// waitlist entry, so neither travels here — only the chosen slot + in-salon
+/// location. `locationType` is always `SALON` (in-salon offers only, v1). Times
+/// are ISO-8601 instants; `durationMinutes` is sent alongside `endsAt` so the
+/// server doesn't have to re-derive it (it falls back to `endsAt - scheduledFor`).
+struct ProWaitlistOfferRequest: Encodable {
+    let scheduledFor: String
+    let endsAt: String
+    let locationId: String
+    let locationType: String
+    let durationMinutes: Int
+}
+
+/// `POST /api/v1/pro/waitlist/{entryId}/offer` → `{ ok, offer }`.
+struct ProWaitlistOfferResponse: Decodable {
+    let offer: ProWaitlistOffer
+}
+
+/// The PENDING offer created by proposing a time to a waitlisted client. It does
+/// NOT book anything — the client Confirms/Declines before it becomes a booking —
+/// so `status` starts `PENDING`. Times are ISO-8601 UTC instants echoed back from
+/// the server for the caller's confirmation.
+public struct ProWaitlistOffer: Decodable, Sendable, Identifiable {
+    public let id: String
+    public let status: String
+    public let startsAt: String
+    public let endsAt: String
+    public let locationType: String
+
+    public init(
+        id: String,
+        status: String,
+        startsAt: String,
+        endsAt: String,
+        locationType: String
+    ) {
+        self.id = id
+        self.status = status
+        self.startsAt = startsAt
+        self.endsAt = endsAt
+        self.locationType = locationType
     }
 }

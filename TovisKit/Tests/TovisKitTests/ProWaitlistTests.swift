@@ -2,16 +2,22 @@ import Foundation
 import Testing
 @testable import TovisKit
 
-// Proves the pro waitlist-outreach read method hits the right route and decodes
-// the grouped feed (an existing web route — an iOS-only port):
-//   • waitlistOutreach → GET /api/v1/pro/waitlist → decodes services + entries + total
-// The nested entries carry the FIFO rank, server-formatted preference label, and
-// join instant; a missing avatar decodes to nil.
+// Proves the pro waitlist-outreach methods hit the right routes with the right
+// verbs, bodies, and idempotency (all existing web routes — an iOS-only port):
+//   • waitlistOutreach → GET  /api/v1/pro/waitlist → decodes services + entries + total
+//   • offerWaitlistSlot → POST /api/v1/pro/waitlist/{entryId}/offer {slot + location}
+//     + idempotency-key header → decodes the created PENDING offer
+// The read feed's nested entries carry the FIFO rank, server-formatted preference
+// label, and join instant; a missing avatar decodes to nil. The offer body sends
+// only the chosen slot + in-salon location (the route derives client + service
+// from the entry), always locationType SALON.
 
 /// Records the outgoing request and serves a canned envelope.
 final class ProWaitlistURLProtocol: URLProtocol {
     nonisolated(unsafe) static var capturedPath: String?
     nonisolated(unsafe) static var capturedMethod: String?
+    nonisolated(unsafe) static var capturedBody: Data?
+    nonisolated(unsafe) static var capturedIdempotencyKey: String?
     nonisolated(unsafe) static var responseBody = Data("{\"ok\":true}".utf8)
 
     override class func canInit(with request: URLRequest) -> Bool { true }
@@ -20,6 +26,8 @@ final class ProWaitlistURLProtocol: URLProtocol {
     override func startLoading() {
         Self.capturedPath = request.url?.path
         Self.capturedMethod = request.httpMethod
+        Self.capturedBody = request.httpBody ?? request.waitlistBodyStreamData()
+        Self.capturedIdempotencyKey = request.value(forHTTPHeaderField: "idempotency-key")
 
         let response = HTTPURLResponse(
             url: request.url!, statusCode: 200, httpVersion: nil,
@@ -31,6 +39,24 @@ final class ProWaitlistURLProtocol: URLProtocol {
     }
 
     override func stopLoading() {}
+}
+
+private extension URLRequest {
+    /// URLSession moves a POST body onto `httpBodyStream`; drain it for assertions.
+    func waitlistBodyStreamData() -> Data? {
+        guard let stream = httpBodyStream else { return nil }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        let size = 4096
+        var buffer = [UInt8](repeating: 0, count: size)
+        while stream.hasBytesAvailable {
+            let read = stream.read(&buffer, maxLength: size)
+            if read <= 0 { break }
+            data.append(buffer, count: read)
+        }
+        return data
+    }
 }
 
 @Suite(.serialized) struct ProWaitlistTests {
@@ -81,7 +107,14 @@ final class ProWaitlistURLProtocol: URLProtocol {
     private func reset(response: String) {
         ProWaitlistURLProtocol.capturedPath = nil
         ProWaitlistURLProtocol.capturedMethod = nil
+        ProWaitlistURLProtocol.capturedBody = nil
+        ProWaitlistURLProtocol.capturedIdempotencyKey = nil
         ProWaitlistURLProtocol.responseBody = Data(response.utf8)
+    }
+
+    private func bodyJSON() throws -> [String: Any] {
+        let body = try #require(ProWaitlistURLProtocol.capturedBody)
+        return try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
     }
 
     @Test func waitlistOutreachGetsAndDecodesGroups() async throws {
@@ -120,5 +153,52 @@ final class ProWaitlistURLProtocol: URLProtocol {
         #expect(outreach.total == 0)
         #expect(outreach.isEmpty)
         #expect(outreach.services.isEmpty)
+    }
+
+    @Test func offerWaitlistSlotPostsSlotAndDecodesOffer() async throws {
+        reset(response: """
+        {"ok":true,"offer":{"id":"wof_1","status":"PENDING",
+         "startsAt":"2026-07-15T17:00:00.000Z","endsAt":"2026-07-15T18:00:00.000Z",
+         "locationType":"SALON"}}
+        """)
+
+        let offer = try await makeService().offerWaitlistSlot(
+            waitlistEntryId: "wle_1",
+            scheduledFor: "2026-07-15T17:00:00.000Z",
+            endsAt: "2026-07-15T18:00:00.000Z",
+            locationId: "loc_1",
+            durationMinutes: 60
+        )
+
+        #expect(ProWaitlistURLProtocol.capturedPath == "/api/v1/pro/waitlist/wle_1/offer")
+        #expect(ProWaitlistURLProtocol.capturedMethod == "POST")
+
+        // The route rejects a missing idempotency-key header, so one is always sent,
+        // and it mirrors web exactly: scope + entry + the ISO start as the action
+        // (no nonce) — so the same entry+slot dedupes while a different slot mints a
+        // fresh key. Reconstruct it (same ~60s bucket) to pin that wiring.
+        let key = try #require(ProWaitlistURLProtocol.capturedIdempotencyKey)
+        #expect(key.split(separator: ":").count == 5)
+        #expect(key == buildClientIdempotencyKey(
+            scope: "pro-waitlist-offer",
+            entityId: "wle_1",
+            action: "2026-07-15T17:00:00.000Z"))
+
+        // Body carries only the slot + in-salon location; always SALON.
+        let json = try bodyJSON()
+        #expect(json["scheduledFor"] as? String == "2026-07-15T17:00:00.000Z")
+        #expect(json["endsAt"] as? String == "2026-07-15T18:00:00.000Z")
+        #expect(json["locationId"] as? String == "loc_1")
+        #expect(json["locationType"] as? String == "SALON")
+        #expect(json["durationMinutes"] as? Int == 60)
+        // Neither the client nor the service is sent — the route derives both.
+        #expect(json["clientId"] == nil)
+        #expect(json["serviceId"] == nil)
+
+        #expect(offer.id == "wof_1")
+        #expect(offer.status == "PENDING")
+        #expect(offer.startsAt == "2026-07-15T17:00:00.000Z")
+        #expect(offer.endsAt == "2026-07-15T18:00:00.000Z")
+        #expect(offer.locationType == "SALON")
     }
 }

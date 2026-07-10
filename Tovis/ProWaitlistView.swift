@@ -1,10 +1,12 @@
 // Pro Waitlist — the native counterpart of the web `/pro/waitlist` outreach
 // workspace, backed by GET /api/v1/pro/waitlist (route already exists, so this is
 // an iOS-only port — no backend change). Shows the clients waiting for this pro's
-// services, grouped by service and FIFO-ranked (who has waited longest is rank #1),
-// and lets the pro message whoever they like to fill a spot — top of the list
-// first. Read-only otherwise: the "offer a concrete time" flow is a separate
-// calendar surface. Reached from the pro profile's Business section.
+// services, grouped by service and FIFO-ranked (who has waited longest is rank #1).
+// Two ways to fill a spot from each row — work the list top-down:
+//   • Message   → resolve-or-create the WAITLIST thread and push ThreadView.
+//   • Offer a time → propose a concrete in-salon slot (ProWaitlistOfferSheet →
+//     POST /pro/waitlist/{entryId}/offer); the client confirms before it books.
+// Reached from the pro profile's Business section.
 import SwiftUI
 import TovisKit
 
@@ -24,6 +26,20 @@ struct ProWaitlistView: View {
     // (drives the per-row spinner + disable), shared across the whole list.
     @State private var messageNav: MessageThreadNav?
     @State private var messageWorkingId: String?
+
+    // Offer-a-time entry point: present ProWaitlistOfferSheet for one entry (carries
+    // the group's service so the sheet can resolve the offering). `confirmation` is a
+    // brief "Offer sent to …" banner shown after a successful offer.
+    @State private var offerTarget: OfferTarget?
+    @State private var confirmation: String?
+
+    /// One waitlist entry queued for the offer sheet, plus its service context.
+    private struct OfferTarget: Identifiable {
+        let entry: ProWaitlistEntry
+        let serviceId: String
+        let serviceName: String
+        var id: String { entry.waitlistEntryId }
+    }
 
     var body: some View {
         ScrollView {
@@ -52,6 +68,45 @@ struct ProWaitlistView: View {
         .navigationDestination(item: $messageNav) { nav in
             ThreadView(thread: nav.thread)
         }
+        .sheet(item: $offerTarget) { target in
+            ProWaitlistOfferSheet(
+                entry: target.entry,
+                serviceId: target.serviceId,
+                serviceName: target.serviceName
+            ) { clientName in
+                showConfirmation(clientName)
+            }
+        }
+        .safeAreaInset(edge: .top) { confirmationBanner }
+    }
+
+    /// A brief "Offer sent to …" banner shown after a successful offer. The offer
+    /// leaves the entry ACTIVE (the client hasn't confirmed yet), so nothing in the
+    /// list visibly changes — this is the pro's only feedback that it went through.
+    @ViewBuilder
+    private var confirmationBanner: some View {
+        if let confirmation {
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(BrandColor.accent)
+                Text(confirmation)
+                    .font(BrandFont.body(13, .semibold))
+                    .foregroundStyle(BrandColor.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(BrandColor.bgSurface)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(BrandColor.accent.opacity(0.3), lineWidth: 1)
+            )
+            .padding(.horizontal, 20)
+            .padding(.top, 8)
+            .transition(.move(edge: .top).combined(with: .opacity))
+        }
     }
 
     @ViewBuilder
@@ -59,7 +114,7 @@ struct ProWaitlistView: View {
         if outreach.isEmpty {
             emptyState
         } else {
-            Text("Clients waiting for your services, in the order they joined. Reach out to fill a spot — message whoever you like, top of the list first.")
+            Text("Clients waiting for your services, in the order they joined. Fill a spot from the top — offer a time or send a message.")
                 .font(BrandFont.body(13))
                 .foregroundStyle(BrandColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -78,7 +133,7 @@ struct ProWaitlistView: View {
             BrandSurface {
                 VStack(spacing: 0) {
                     ForEach(Array(group.entries.enumerated()), id: \.element.id) { index, entry in
-                        entryRow(entry)
+                        entryRow(entry, in: group)
                         if index < group.entries.count - 1 {
                             Divider().overlay(BrandColor.textMuted.opacity(0.12))
                         }
@@ -88,7 +143,7 @@ struct ProWaitlistView: View {
         }
     }
 
-    private func entryRow(_ entry: ProWaitlistEntry) -> some View {
+    private func entryRow(_ entry: ProWaitlistEntry, in group: ProWaitlistServiceGroup) -> some View {
         HStack(spacing: 12) {
             Text("\(entry.rank)")
                 .font(BrandFont.mono(11))
@@ -111,6 +166,32 @@ struct ProWaitlistView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
+            rowActions(entry, in: group)
+        }
+        .padding(.vertical, 10)
+    }
+
+    /// The two ways to fill a spot from a row: offer a concrete time (primary) or
+    /// open a message thread (secondary). Stacked so both stay legible on a phone.
+    private func rowActions(_ entry: ProWaitlistEntry, in group: ProWaitlistServiceGroup) -> some View {
+        VStack(alignment: .trailing, spacing: 6) {
+            Button {
+                offerTarget = OfferTarget(
+                    entry: entry,
+                    serviceId: group.serviceId,
+                    serviceName: group.serviceName
+                )
+            } label: {
+                Text("Offer a time")
+                    .font(BrandFont.body(12, .semibold))
+                    .foregroundStyle(BrandColor.onAccent)
+                    .padding(.vertical, 7)
+                    .padding(.horizontal, 14)
+                    .background(BrandColor.accent)
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+
             Button {
                 Task { await openThread(for: entry) }
             } label: {
@@ -132,7 +213,6 @@ struct ProWaitlistView: View {
             .buttonStyle(.plain)
             .disabled(messageWorkingId != nil)
         }
-        .padding(.vertical, 10)
     }
 
     /// "<preference> · joined <Mon D>" — the join date is resolved to the device
@@ -185,6 +265,16 @@ struct ProWaitlistView: View {
             phase = .failed(error.userMessage)
         } catch {
             phase = .failed("Couldn't load your waitlist just now. Please try again.")
+        }
+    }
+
+    /// Show a brief "Offer sent to …" banner, auto-clearing after a few seconds.
+    private func showConfirmation(_ clientName: String) {
+        let name = clientName.isEmpty ? "the client" : clientName
+        withAnimation { confirmation = "Offer sent to \(name). They’ll confirm before it books." }
+        Task {
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            withAnimation { confirmation = nil }
         }
     }
 

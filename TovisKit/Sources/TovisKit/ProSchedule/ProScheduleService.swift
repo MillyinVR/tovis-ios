@@ -65,10 +65,51 @@ public final class ProScheduleService: Sendable {
     /// GET /api/v1/pro/waitlist — the clients waiting for this pro's services,
     /// grouped by service and FIFO-ranked (web `/pro/waitlist` outreach feed). The
     /// pro works the list top-down to fill a spot; each entry carries a
-    /// server-formatted preference label and join instant. Read-only here — the
-    /// "offer a concrete time" flow is a separate calendar surface.
+    /// server-formatted preference label and join instant. Pair with
+    /// `offerWaitlistSlot(...)` (offer a time) or `MessagesService.openWaitlistThread`.
     public func waitlistOutreach() async throws -> ProWaitlistOutreach {
         return try await api.request("/pro/waitlist")
+    }
+
+    /// POST /api/v1/pro/waitlist/{entryId}/offer — propose a concrete in-salon
+    /// appointment time to a waitlisted client (web `WaitlistOfferModal`). Creates a
+    /// PENDING `WaitlistOffer` and notifies the client to Confirm/Decline; it does
+    /// NOT book anything (the client's confirm does). SALON-only for v1. The route
+    /// derives the client + service from the entry, so only the chosen slot + the
+    /// in-salon `locationId` travel in the body — pick the slot from the pro's live
+    /// availability (`BookingService.day`). Idempotent, mirroring web
+    /// (`buildClientIdempotencyKey`): the key is scoped to the entry + the ISO start
+    /// instant (no nonce — the start already distinguishes one offer from another),
+    /// so a double-tap of the same slot replays instead of double-offering, while a
+    /// different slot mints a fresh key. The route rejects a missing idempotency-key
+    /// header, so one is always sent.
+    @discardableResult
+    public func offerWaitlistSlot(
+        waitlistEntryId: String,
+        scheduledFor: String,
+        endsAt: String,
+        locationId: String,
+        durationMinutes: Int,
+        idempotencyKey: String? = nil
+    ) async throws -> ProWaitlistOffer {
+        let payload = try JSONEncoder.canonical.encode(
+            ProWaitlistOfferRequest(
+                scheduledFor: scheduledFor,
+                endsAt: endsAt,
+                locationId: locationId,
+                locationType: "SALON",
+                durationMinutes: durationMinutes
+            )
+        )
+        let key = idempotencyKey ?? buildClientIdempotencyKey(
+            scope: "pro-waitlist-offer", entityId: waitlistEntryId, action: scheduledFor)
+        let response: ProWaitlistOfferResponse = try await api.request(
+            "/pro/waitlist/\(waitlistEntryId)/offer",
+            method: .post,
+            body: payload,
+            headers: ["idempotency-key": key]
+        )
+        return response.offer
     }
 
     // MARK: - Last-minute openings (create / list / cancel)
