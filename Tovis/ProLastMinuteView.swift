@@ -24,12 +24,14 @@ struct ProLastMinuteView: View {
         case settings(ProLastMinuteWorkspace.Settings)
         case rule(offering: ProLastMinuteWorkspace.Offering, rule: ProLastMinuteWorkspace.ServiceRule?)
         case addBlock(timeZone: String?)
+        case createOpening(offerings: [ProLastMinuteWorkspace.Offering], timeZone: String?)
 
         var id: String {
             switch self {
             case .settings: return "settings"
             case let .rule(offering, _): return "rule-\(offering.id)"
             case .addBlock: return "addBlock"
+            case .createOpening: return "createOpening"
             }
         }
     }
@@ -38,6 +40,14 @@ struct ProLastMinuteView: View {
     @State private var activeSheet: EditSheet?
     @State private var blockPendingDelete: ProLastMinuteWorkspace.Block?
     @State private var deleting = false
+
+    // Openings load their own list (GET /pro/openings), kept separate from the
+    // workspace so neither error hides the other.
+    @State private var openings: [ProOpeningDto] = []
+    @State private var openingsLoading = true
+    @State private var openingsError: String?
+    @State private var openingPendingCancel: ProOpeningDto?
+    @State private var cancelingOpening = false
 
     private static let dayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
@@ -59,9 +69,12 @@ struct ProLastMinuteView: View {
             .padding(.bottom, 120)   // clear the raised footer
         }
         .background(BrandColor.bgPrimary.ignoresSafeArea())
-        .refreshable { await load() }
-        .task { if case .loading = phase { await load() } }
-        .onChange(of: session.refreshTick) { Task { await load() } }
+        .refreshable { await reloadAll() }
+        .task {
+            if case .loading = phase { await load() }
+            if openingsLoading { await loadOpenings() }
+        }
+        .onChange(of: session.refreshTick) { Task { await reloadAll() } }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case let .settings(settings):
@@ -73,6 +86,11 @@ struct ProLastMinuteView: View {
                     timeZone: TimeZone(identifier: timeZone ?? "") ?? .current,
                     defaultStart: Date()
                 ) { Task { await load() } }
+            case let .createOpening(offerings, timeZone):
+                ProOpeningCreateSheet(
+                    offerings: offerings,
+                    timeZone: TimeZone(identifier: timeZone ?? "") ?? .current
+                ) { Task { await loadOpenings() } }
             }
         }
         .confirmationDialog(
@@ -86,11 +104,24 @@ struct ProLastMinuteView: View {
             Button("Remove block", role: .destructive) { performBlockDelete() }
             Button("Cancel", role: .cancel) { blockPendingDelete = nil }
         }
+        .confirmationDialog(
+            "Cancel this opening?",
+            isPresented: Binding(
+                get: { openingPendingCancel != nil },
+                set: { if !$0 { openingPendingCancel = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Cancel opening", role: .destructive) { performOpeningCancel() }
+            Button("Keep it", role: .cancel) { openingPendingCancel = nil }
+        }
     }
 
     @ViewBuilder
     private func content(_ workspace: ProLastMinuteWorkspace) -> some View {
         let s = workspace.settings
+
+        openingsSection(workspace)
 
         statusCard(s)
 
@@ -132,6 +163,183 @@ struct ProLastMinuteView: View {
         }
 
         blocksSection(workspace)
+    }
+
+    // MARK: - Openings (create / list / cancel)
+
+    @ViewBuilder
+    private func openingsSection(_ workspace: ProLastMinuteWorkspace) -> some View {
+        BrandSection(
+            title: "Upcoming openings",
+            trailing: openings.isEmpty ? nil : "\(openings.count)"
+        ) {
+            VStack(spacing: 10) {
+                Button {
+                    activeSheet = .createOpening(
+                        offerings: workspace.offerings,
+                        timeZone: workspace.timeZone
+                    )
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "plus.circle.fill")
+                        Text("Create opening")
+                    }
+                    .font(BrandFont.body(14, .semibold))
+                    .foregroundStyle(BrandColor.onAccent)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(BrandColor.accent)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(workspace.offerings.isEmpty)
+
+                if workspace.offerings.isEmpty {
+                    Text("Add an active offering before opening a last-minute slot.")
+                        .font(BrandFont.body(12))
+                        .foregroundStyle(BrandColor.textMuted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                openingsList
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var openingsList: some View {
+        if openingsLoading {
+            HStack { Spacer(); ProgressView().tint(BrandColor.accent); Spacer() }
+                .padding(.vertical, 16)
+        } else if let openingsError {
+            BrandSurface(tint: BrandColor.bgSecondary) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(openingsError)
+                        .font(BrandFont.body(13))
+                        .foregroundStyle(BrandColor.textSecondary)
+                    Button("Try again") { Task { await loadOpenings() } }
+                        .font(BrandFont.body(13, .semibold))
+                        .foregroundStyle(BrandColor.accent)
+                }
+            }
+        } else if openings.isEmpty {
+            BrandSurface(tint: BrandColor.bgSecondary) {
+                Text("No openings in the next 48 hours. Open a slot and your waitlist gets notified first.")
+                    .font(BrandFont.body(13))
+                    .foregroundStyle(BrandColor.textMuted)
+            }
+        } else {
+            ForEach(openings) { opening in
+                openingCard(opening)
+            }
+        }
+    }
+
+    private func openingCard(_ opening: ProOpeningDto) -> some View {
+        let status = opening.status.uppercased()
+        let isActive = status == "ACTIVE"
+        return BrandSurface(tint: BrandColor.bgSecondary) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(serviceSummary(opening))
+                            .font(BrandFont.body(15, .bold))
+                            .foregroundStyle(BrandColor.textPrimary)
+                        Text(Wire.dateTime(opening.startAt, timeZone: opening.timeZone))
+                            .font(BrandFont.body(12))
+                            .foregroundStyle(BrandColor.textSecondary)
+                        Text("\(opening.locationType.capitalized) · \(LastMinuteVisibility.from(opening.visibilityMode).label) · \(locationSummary(opening))")
+                            .font(BrandFont.body(12))
+                            .foregroundStyle(BrandColor.textMuted)
+                    }
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 4) {
+                        BrandPill(text: status, tint: isActive ? BrandColor.emerald : BrandColor.textMuted)
+                        Text("\(opening.recipientCount) recipient\(opening.recipientCount == 1 ? "" : "s")")
+                            .font(BrandFont.body(11))
+                            .foregroundStyle(BrandColor.textMuted)
+                    }
+                }
+
+                if let note = opening.note, !note.isEmpty {
+                    Text(note)
+                        .font(BrandFont.body(12))
+                        .foregroundStyle(BrandColor.textSecondary)
+                }
+
+                if !opening.tierPlans.isEmpty {
+                    VStack(spacing: 6) {
+                        ForEach(opening.tierPlans) { plan in
+                            tierPlanRow(plan, timeZone: opening.timeZone)
+                        }
+                    }
+                }
+
+                if isActive {
+                    Button {
+                        openingPendingCancel = opening
+                    } label: {
+                        Text("Cancel opening")
+                            .font(BrandFont.body(13, .semibold))
+                            .foregroundStyle(BrandColor.ember)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(cancelingOpening)
+                }
+            }
+        }
+    }
+
+    private func tierPlanRow(_ plan: ProOpeningDto.TierPlan, timeZone: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(LastMinuteTierKind.label(plan.tier))
+                    .font(BrandFont.body(12, .semibold))
+                    .foregroundStyle(BrandColor.textPrimary)
+                Text(Wire.dateTime(plan.scheduledFor, timeZone: timeZone))
+                    .font(BrandFont.body(11))
+                    .foregroundStyle(BrandColor.textMuted)
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 1) {
+                Text(describeOpeningTierPlan(plan))
+                    .font(BrandFont.body(12))
+                    .foregroundStyle(BrandColor.textSecondary)
+                if plan.processedAt != nil {
+                    Text("Processed").font(BrandFont.body(10)).foregroundStyle(BrandColor.textMuted)
+                } else if plan.cancelledAt != nil {
+                    Text("Cancelled").font(BrandFont.body(10)).foregroundStyle(BrandColor.textMuted)
+                }
+                if let lastError = plan.lastError, !lastError.isEmpty {
+                    Text(lastError).font(BrandFont.body(10)).foregroundStyle(BrandColor.ember)
+                }
+            }
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(BrandColor.bgSurface)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    /// Unique service names joined, else a generic label (web `serviceSummary`).
+    private func serviceSummary(_ opening: ProOpeningDto) -> String {
+        var seen = Set<String>()
+        var names: [String] = []
+        for row in opening.services {
+            let name = row.service.name.trimmingCharacters(in: .whitespaces)
+            guard !name.isEmpty, !seen.contains(name) else { continue }
+            seen.insert(name)
+            names.append(name)
+        }
+        return names.isEmpty ? "Services" : names.joined(separator: ", ")
+    }
+
+    /// Location name / address / falling back to the location type (web `locationSummary`).
+    private func locationSummary(_ opening: ProOpeningDto) -> String {
+        if let name = opening.location?.name, !name.isEmpty { return name }
+        if let address = opening.location?.formattedAddress, !address.isEmpty { return address }
+        return opening.locationType.capitalized
     }
 
     private func statusCard(_ s: ProLastMinuteWorkspace.Settings) -> some View {
@@ -306,6 +514,11 @@ struct ProLastMinuteView: View {
         .padding(.top, 50)
     }
 
+    private func reloadAll() async {
+        await load()
+        await loadOpenings()
+    }
+
     private func load() async {
         do {
             let workspace = try await session.client.proSchedule.lastMinuteWorkspace()
@@ -314,6 +527,36 @@ struct ProLastMinuteView: View {
             phase = .failed(error.userMessage)
         } catch {
             phase = .failed("Couldn’t load your last-minute settings.")
+        }
+    }
+
+    private func loadOpenings() async {
+        openingsLoading = true
+        openingsError = nil
+        defer { openingsLoading = false }
+        do {
+            openings = try await session.client.proSchedule.listOpenings()
+        } catch let error as APIError {
+            openingsError = error.userMessage
+            openings = []
+        } catch {
+            openingsError = "Couldn’t load your openings."
+            openings = []
+        }
+    }
+
+    private func performOpeningCancel() {
+        guard let opening = openingPendingCancel else { return }
+        openingPendingCancel = nil
+        cancelingOpening = true
+        Task {
+            defer { cancelingOpening = false }
+            do {
+                try await session.client.proSchedule.cancelOpening(id: opening.id)
+            } catch {
+                // Fall through to reload; a still-active opening simply reappears.
+            }
+            await loadOpenings()
         }
     }
 
