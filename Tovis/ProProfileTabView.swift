@@ -470,6 +470,7 @@ struct ProProfileTabView: View {
 
             BrandSection(title: "Business") {
                 VStack(spacing: 10) {
+                    businessLink(icon: "photo.on.rectangle", title: "My media") { ProMediaManagerView() }
                     businessLink(icon: "person.2.fill", title: "Clients") { ProClientsView() }
                     businessLink(icon: "person.crop.circle.badge.clock", title: "Waitlist") { ProWaitlistView() }
                     businessLink(icon: "checklist", title: "Reminders") { ProRemindersView() }
