@@ -10,7 +10,9 @@
         "id": "user_2",
         "displayName": "Noelle",
         "avatarUrl": "https://example.supabase.co/storage/v1/object/public/media-public/avatars/user_2.jpg",
-        "profileHref": "/u/noellestyles"
+        "profileHref": "/u/noellestyles",
+        "isLookAuthor": false,
+        "isPro": false
       },
       "parentCommentId": null,
       "likeCount": 12,
@@ -26,7 +28,9 @@
         "id": "user_1",
         "displayName": "Amara",
         "avatarUrl": null,
-        "profileHref": "/professionals/pro_1"
+        "profileHref": "/professionals/pro_1",
+        "isLookAuthor": true,
+        "isPro": true
       },
       "parentCommentId": "cmt_1",
       "likeCount": 2,

@@ -38,6 +38,11 @@ public struct ProFinanceResponse: Decodable, Sendable {
         public let receiptInbox: [ReceiptInboxItem]
         /// The pro's forwarding address (<handle>@tovis.me) — premium only, else nil.
         public let receiptInboxAddress: String?
+        /// False when membership enforcement is on and the pro's plan lacks
+        /// tax_export. Decoded optionally so an older payload without the key
+        /// still decodes; a nil value means the gate wasn't sent (treat as
+        /// allowed at the call site).
+        public let canExportTaxDocs: Bool?
     }
 
     public struct ReceiptInboxItem: Decodable, Sendable, Identifiable {

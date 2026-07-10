@@ -131,6 +131,7 @@
         "receiptMediaId": null
       }
     ],
-    "receiptInboxAddress": "jadehair@tovis.me"
+    "receiptInboxAddress": "jadehair@tovis.me",
+    "canExportTaxDocs": true
   }
 }

@@ -27,7 +27,8 @@
       "completedBookingsLabel": "120 booked",
       "favoritesLabel": "45 saves",
       "reviewCountLabel": "30 reviews",
-      "averageRatingLabel": "4.9"
+      "averageRatingLabel": "4.9",
+      "followerCount": 45
     },
     "offerings": [
       {
