@@ -138,4 +138,79 @@ public final class ProClientsService: Sendable {
             "/pro/clients/\(clientId)/profile-context", method: .patch, body: payload
         )
     }
+
+    // MARK: - Technical record (founder-gated: formula · consent · photo-release)
+
+    /// GET /api/v1/pro/clients/{id}/technical → the technical record: the authoring
+    /// pro's formula history, scope-redacted consent/patch-test records, and the
+    /// client's photo-release status. 404s when the founder technical-record flag is
+    /// off. Loaded lazily by the technical tab so decrypted free text stays off the
+    /// chart aggregate.
+    public func technicalRecord(clientId: String) async throws -> ProClientTechnicalRecord {
+        try await api.request("/pro/clients/\(clientId)/technical")
+    }
+
+    /// POST /api/v1/pro/clients/{id}/formula — add a formula entry (author-only,
+    /// never public). At least one detail is required; `resultNotes` is encrypted
+    /// server-side. Optionally tie it to one of this client's bookings.
+    public func addFormula(
+        clientId: String,
+        brand: String?,
+        developer: String?,
+        ratio: String?,
+        processingTimeMinutes: Int?,
+        resultNotes: String?,
+        bookingId: String? = nil
+    ) async throws {
+        let payload = try JSONEncoder.canonical.encode(
+            ProClientFormulaRequest(
+                brand: brand, developer: developer, ratio: ratio,
+                processingTimeMinutes: processingTimeMinutes,
+                resultNotes: resultNotes, bookingId: bookingId
+            )
+        )
+        try await api.requestVoid(
+            "/pro/clients/\(clientId)/formula", method: .post, body: payload
+        )
+    }
+
+    /// POST /api/v1/pro/clients/{id}/consent — add a consent / waiver / patch-test
+    /// record. `kind` ∈ GENERAL_CONSENT | SERVICE_WAIVER | PATCH_TEST; the patch-test
+    /// result + validity apply only to PATCH_TEST. `notes` is encrypted server-side.
+    public func addConsent(
+        clientId: String,
+        kind: String,
+        serviceScope: String?,
+        proofMethod: String?,
+        proofRef: String?,
+        signedAt: String?,
+        notes: String?,
+        patchTestResult: String?,
+        validUntil: String?,
+        bookingId: String? = nil
+    ) async throws {
+        let payload = try JSONEncoder.canonical.encode(
+            ProClientConsentRequest(
+                kind: kind, serviceScope: serviceScope, proofMethod: proofMethod,
+                proofRef: proofRef, signedAt: signedAt, notes: notes,
+                patchTestResult: patchTestResult, validUntil: validUntil,
+                bookingId: bookingId
+            )
+        )
+        try await api.requestVoid(
+            "/pro/clients/\(clientId)/consent", method: .post, body: payload
+        )
+    }
+
+    /// PATCH /api/v1/pro/clients/{id}/photo-release — set the client's standing
+    /// photo-release decision. `status` ∈ NOT_SET | GRANTED | DECLINED (NOT_SET
+    /// clears it). This does NOT change the public-sharing path.
+    public func updatePhotoRelease(clientId: String, status: String) async throws {
+        let payload = try JSONEncoder.canonical.encode(
+            ProClientPhotoReleaseRequest(status: status)
+        )
+        try await api.requestVoid(
+            "/pro/clients/\(clientId)/photo-release", method: .patch, body: payload
+        )
+    }
 }

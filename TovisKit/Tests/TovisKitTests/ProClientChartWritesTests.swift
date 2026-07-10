@@ -9,6 +9,9 @@ import Testing
 //   • setDoNotRebook      → PUT    /pro/clients/{id}/do-not-rebook {reason}
 //   • clearDoNotRebook    → DELETE /pro/clients/{id}/do-not-rebook
 //   • updateProfileContext→ PATCH  /pro/clients/{id}/profile-context {occupation,proCapturedSocialHandle}
+//   • addFormula          → POST   /pro/clients/{id}/formula        {brand,developer,ratio,processingTimeMinutes,resultNotes}
+//   • addConsent          → POST   /pro/clients/{id}/consent        {kind,serviceScope,proofMethod,signedAt,notes,patchTestResult,validUntil}
+//   • updatePhotoRelease  → PATCH  /pro/clients/{id}/photo-release  {status}
 // Every write is an authenticated native request; the routes encrypt free text
 // server-side, so the client only sends plaintext.
 
@@ -164,5 +167,63 @@ private extension URLRequest {
         let json = try bodyJSON()
         #expect(json["occupation"] as? String == "Nurse (rotating shifts)")
         #expect(json["proCapturedSocialHandle"] as? String == "theirhandle")
+    }
+
+    // MARK: - Technical record writes (formula · consent · photo-release)
+
+    @Test func addFormulaPostsDetails() async throws {
+        reset()
+        try await makeService().addFormula(
+            clientId: "cl_5", brand: "Wella", developer: "20 vol", ratio: "1:1",
+            processingTimeMinutes: 35, resultNotes: "Lifted to level 8"
+        )
+
+        #expect(ProClientChartWritesURLProtocol.capturedPath == "/api/v1/pro/clients/cl_5/formula")
+        #expect(ProClientChartWritesURLProtocol.capturedMethod == "POST")
+        #expect(ProClientChartWritesURLProtocol.capturedAuthHeader == "Bearer session.token.value")
+        #expect(ProClientChartWritesURLProtocol.capturedNativeHeader == "ios")
+
+        let json = try bodyJSON()
+        #expect(json["brand"] as? String == "Wella")
+        #expect(json["developer"] as? String == "20 vol")
+        #expect(json["ratio"] as? String == "1:1")
+        #expect(json["processingTimeMinutes"] as? Int == 35)
+        #expect(json["resultNotes"] as? String == "Lifted to level 8")
+        // Nil optionals are omitted (no booking tie).
+        #expect(json["bookingId"] == nil)
+    }
+
+    @Test func addConsentPostsPatchTest() async throws {
+        reset()
+        try await makeService().addConsent(
+            clientId: "cl_6", kind: "PATCH_TEST", serviceScope: "color",
+            proofMethod: "IN_PERSON", proofRef: nil, signedAt: "2026-06-01",
+            notes: "ok", patchTestResult: "PASS", validUntil: "2026-12-01"
+        )
+
+        #expect(ProClientChartWritesURLProtocol.capturedPath == "/api/v1/pro/clients/cl_6/consent")
+        #expect(ProClientChartWritesURLProtocol.capturedMethod == "POST")
+
+        let json = try bodyJSON()
+        #expect(json["kind"] as? String == "PATCH_TEST")
+        #expect(json["serviceScope"] as? String == "color")
+        #expect(json["proofMethod"] as? String == "IN_PERSON")
+        #expect(json["signedAt"] as? String == "2026-06-01")
+        #expect(json["notes"] as? String == "ok")
+        #expect(json["patchTestResult"] as? String == "PASS")
+        #expect(json["validUntil"] as? String == "2026-12-01")
+        // proofRef is nil → omitted from the body.
+        #expect(json["proofRef"] == nil)
+    }
+
+    @Test func updatePhotoReleasePatchesStatus() async throws {
+        reset()
+        try await makeService().updatePhotoRelease(clientId: "cl_7", status: "GRANTED")
+
+        #expect(ProClientChartWritesURLProtocol.capturedPath == "/api/v1/pro/clients/cl_7/photo-release")
+        #expect(ProClientChartWritesURLProtocol.capturedMethod == "PATCH")
+
+        let json = try bodyJSON()
+        #expect(json["status"] as? String == "GRANTED")
     }
 }

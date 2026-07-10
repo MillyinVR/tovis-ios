@@ -41,6 +41,60 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.nextUrl == "/client")
     }
 
+    @Test func decodesTechnicalRecord() throws {
+        // GET /pro/clients/{id}/technical — a formula, a full-scope consent (notes
+        // travel), a safety-scope patch test (notes redacted, byName present), and
+        // the photo-release status.
+        let json = """
+        {
+          "formula": [
+            {
+              "id": "fm_1", "when": "2026-07-01T17:00:00.000Z",
+              "timeZone": "America/Los_Angeles", "serviceName": "Balayage",
+              "brand": "Wella", "developer": "20 vol", "ratio": "1:1",
+              "processingTimeMinutes": 35, "resultNotes": "Lifted to level 8"
+            }
+          ],
+          "consents": [
+            {
+              "id": "cn_full", "scope": "full", "kind": "SERVICE_WAIVER",
+              "when": "2026-06-01T00:00:00.000Z", "timeZone": null,
+              "serviceScope": "Color", "signedAt": "2026-06-01T00:00:00.000Z",
+              "proofMethod": "IN_PERSON", "proofRef": "paper-12",
+              "patchTestResult": null, "validUntil": null,
+              "notes": "Signed on paper", "byName": null
+            },
+            {
+              "id": "cn_safety", "scope": "safety", "kind": "PATCH_TEST",
+              "when": "2026-06-10T00:00:00.000Z", "timeZone": null,
+              "serviceScope": null, "signedAt": null, "proofMethod": null,
+              "proofRef": null, "patchTestResult": "PASS",
+              "validUntil": "2026-12-10T00:00:00.000Z", "notes": null,
+              "byName": "Glow Studio"
+            }
+          ],
+          "photoReleaseStatus": "GRANTED"
+        }
+        """.data(using: .utf8)!
+
+        let rec = try JSONDecoder().decode(ProClientTechnicalRecord.self, from: json)
+        #expect(rec.photoReleaseStatus == "GRANTED")
+        #expect(rec.formula.count == 1)
+        #expect(rec.formula[0].resultNotes == "Lifted to level 8")
+        #expect(rec.formula[0].processingTimeMinutes == 35)
+
+        let full = try #require(rec.consents.first { $0.id == "cn_full" })
+        #expect(full.scope == "full")
+        #expect(full.notes == "Signed on paper")
+        #expect(full.proofRef == "paper-12")
+
+        let safety = try #require(rec.consents.first { $0.id == "cn_safety" })
+        #expect(safety.scope == "safety")
+        #expect(safety.notes == nil)
+        #expect(safety.patchTestResult == "PASS")
+        #expect(safety.byName == "Glow Studio")
+    }
+
     @Test func unknownRoleFallsBack() throws {
         let json = #"{ "id": "x", "email": "e", "role": "WIZARD" }"#.data(using: .utf8)!
         let user = try JSONDecoder().decode(AuthUser.self, from: json)
