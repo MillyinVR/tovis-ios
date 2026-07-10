@@ -20,7 +20,7 @@ public final class MeService: Sendable {
     /// (shown on the public profile) and Private (saved only). Mirrors the web
     /// "Your Looks" toggle. `lookId` is `ClientMeLook.id`.
     public func setLookVisibility(lookId: String, isPublic: Bool) async throws {
-        let payload = try JSONEncoder().encode(ClientLookVisibilityRequest(isPublic: isPublic))
+        let payload = try JSONEncoder.canonical.encode(ClientLookVisibilityRequest(isPublic: isPublic))
         try await api.requestVoid(
             "/client/looks/\(lookId)",
             method: .patch,

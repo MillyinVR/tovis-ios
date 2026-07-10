@@ -71,7 +71,7 @@ public final class ProSessionService: Sendable {
         to step: String,
         idempotencyKey: String? = nil
     ) async throws {
-        let payload = try JSONEncoder().encode(["step": step])
+        let payload = try JSONEncoder.canonical.encode(["step": step])
         let key = idempotencyKey ?? buildClientIdempotencyKey(
             scope: "pro-session", entityId: bookingId, action: "step",
             nonce: idempotencyNonce(payload))
@@ -105,7 +105,7 @@ public final class ProSessionService: Sendable {
         items: [ProConsultationProposalItem],
         idempotencyKey: String? = nil
     ) async throws -> ProConsultationProposalResult {
-        let body = try JSONEncoder().encode(
+        let body = try JSONEncoder.canonical.encode(
             ConsultationProposalBody(
                 notes: notes,
                 proposedTotal: proposedTotal,
@@ -135,7 +135,7 @@ public final class ProSessionService: Sendable {
         approve: Bool,
         idempotencyKey: String? = nil
     ) async throws {
-        let body = try JSONEncoder().encode(["action": approve ? "APPROVED" : "REJECTED"])
+        let body = try JSONEncoder.canonical.encode(["action": approve ? "APPROVED" : "REJECTED"])
         let key = idempotencyKey ?? buildClientIdempotencyKey(
             scope: "pro-session", entityId: bookingId, action: "in-person-decision",
             nonce: idempotencyNonce(body))

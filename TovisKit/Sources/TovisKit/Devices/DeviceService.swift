@@ -15,7 +15,7 @@ public final class DeviceService: Sendable {
 
     /// POST /api/v1/devices — register/refresh this device's APNs token.
     public func register(apnsToken: String, deviceId: String) async throws {
-        let payload = try JSONEncoder().encode(
+        let payload = try JSONEncoder.canonical.encode(
             DeviceRegisterRequest(platform: .ios, token: apnsToken, deviceId: deviceId)
         )
         try await api.requestVoid("/devices", method: .post, body: payload)
@@ -23,7 +23,7 @@ public final class DeviceService: Sendable {
 
     /// DELETE /api/v1/devices — stop pushes to this device (call on logout).
     public func unregister(apnsToken: String, deviceId: String) async throws {
-        let payload = try JSONEncoder().encode(
+        let payload = try JSONEncoder.canonical.encode(
             DeviceRegisterRequest(platform: .ios, token: apnsToken, deviceId: deviceId)
         )
         try await api.requestVoid("/devices", method: .delete, body: payload)

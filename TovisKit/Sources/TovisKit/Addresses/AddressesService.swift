@@ -80,7 +80,7 @@ public final class AddressesService: Sendable {
     }
 
     private func create(_ request: CreateClientAddressRequest) async throws -> ClientAddress {
-        let payload = try JSONEncoder().encode(request)
+        let payload = try JSONEncoder.canonical.encode(request)
         let response: ClientAddressResponse = try await api.request(
             "/client/addresses", method: .post, body: payload
         )

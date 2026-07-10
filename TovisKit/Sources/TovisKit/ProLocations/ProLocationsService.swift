@@ -39,7 +39,7 @@ public final class ProLocationsService: Sendable {
             "makePrimary": .bool(makePrimary),
         ]
         fields["locationName"] = .stringOrNull(name)
-        let body = try JSONEncoder().encode(fields)
+        let body = try JSONEncoder.canonical.encode(fields)
         try await api.requestVoid("/pro/onboarding/location", method: .post, body: body)
     }
 
@@ -60,7 +60,7 @@ public final class ProLocationsService: Sendable {
             "makePrimary": .bool(makePrimary),
         ]
         fields["locationName"] = .stringOrNull(name)
-        let body = try JSONEncoder().encode(fields)
+        let body = try JSONEncoder.canonical.encode(fields)
         try await api.requestVoid("/pro/onboarding/location", method: .post, body: body)
     }
 
@@ -79,7 +79,7 @@ public final class ProLocationsService: Sendable {
         if let isPrimary { fields["isPrimary"] = .bool(isPrimary) }
         if let advanceNoticeMinutes { fields["advanceNoticeMinutes"] = .int(advanceNoticeMinutes) }
 
-        let body = try JSONEncoder().encode(fields)
+        let body = try JSONEncoder.canonical.encode(fields)
         try await api.requestVoid("/pro/locations/\(id)", method: .patch, body: body)
     }
 
@@ -95,7 +95,7 @@ public final class ProLocationsService: Sendable {
         if let postalCode { fields["postalCode"] = .string(postalCode) }
         if let radiusMiles { fields["radiusMiles"] = .int(radiusMiles) }
 
-        let body = try JSONEncoder().encode(fields)
+        let body = try JSONEncoder.canonical.encode(fields)
         try await api.requestVoid("/pro/locations/\(id)/mobile-base", method: .patch, body: body)
     }
 

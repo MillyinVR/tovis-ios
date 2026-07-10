@@ -72,7 +72,7 @@ public final class LooksService: Sendable {
 
     /// POST/DELETE /api/v1/looks/{id}/save — add/remove from a board.
     public func setSaved(lookId: String, boardId: String, saved: Bool) async throws -> LooksSaveState {
-        let payload = try JSONEncoder().encode(LooksSaveMutationRequest(boardId: boardId))
+        let payload = try JSONEncoder.canonical.encode(LooksSaveMutationRequest(boardId: boardId))
         return try await api.request(
             "/looks/\(lookId)/save",
             method: saved ? .post : .delete,
@@ -103,7 +103,7 @@ public final class LooksService: Sendable {
         let ids = lookIds.filter { !$0.isEmpty }
         guard !ids.isEmpty else { return }
 
-        let payload = try JSONEncoder().encode(LooksViewsRequest(lookPostIds: ids))
+        let payload = try JSONEncoder.canonical.encode(LooksViewsRequest(lookPostIds: ids))
         try await api.requestVoid(
             "/looks/views",
             method: .post,
@@ -151,7 +151,7 @@ public final class LooksService: Sendable {
         body: String,
         parentCommentId: String? = nil
     ) async throws -> LooksComment {
-        let payload = try JSONEncoder().encode(
+        let payload = try JSONEncoder.canonical.encode(
             LooksCommentCreateRequest(body: body, parentCommentId: parentCommentId)
         )
         let response: LooksCommentCreateResponse = try await api.request(

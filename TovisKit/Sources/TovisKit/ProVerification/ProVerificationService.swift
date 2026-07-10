@@ -30,7 +30,7 @@ public final class ProVerificationService: Sendable {
     /// Sends the profile back for admin re-review; it does NOT change verification
     /// status or cut access. `expiry` is "YYYY-MM-DD" (or "" to clear).
     public func saveLicense(state: String, number: String, expiry: String) async throws {
-        let payload = try JSONEncoder().encode(
+        let payload = try JSONEncoder.canonical.encode(
             VerificationLicenseSaveRequest(
                 licenseState: state,
                 licenseNumber: number,
@@ -51,7 +51,7 @@ public final class ProVerificationService: Sendable {
         contentType: String = "image/jpeg"
     ) async throws {
         // 1) presign — VERIFY_PRIVATE lands in media-private with no UploadSession.
-        let presignBody = try JSONEncoder().encode(
+        let presignBody = try JSONEncoder.canonical.encode(
             VerificationUploadInitRequest(
                 kind: "VERIFY_PRIVATE",
                 contentType: contentType,
@@ -74,7 +74,7 @@ public final class ProVerificationService: Sendable {
         )
 
         // 3) record the VerificationDocument row (the pointer the presign returned).
-        let createBody = try JSONEncoder().encode(
+        let createBody = try JSONEncoder.canonical.encode(
             VerificationDocCreateRequest(
                 type: type,
                 label: "\(title) (pro upload)",

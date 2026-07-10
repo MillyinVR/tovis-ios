@@ -80,7 +80,7 @@ public final class BookingService: Sendable {
         clientAddressId: String? = nil,
         source: String = "REQUESTED"
     ) async throws -> BookingHold {
-        let payload = try JSONEncoder().encode(CreateHoldRequest(
+        let payload = try JSONEncoder.canonical.encode(CreateHoldRequest(
             offeringId: offeringId, locationType: locationType,
             locationId: locationId, scheduledFor: scheduledFor, source: source,
             clientAddressId: clientAddressId
@@ -103,7 +103,7 @@ public final class BookingService: Sendable {
         source: String = "REQUESTED",
         idempotencyKey: String? = nil
     ) async throws -> FinalizedBooking {
-        let payload = try JSONEncoder().encode(FinalizeBookingRequest(
+        let payload = try JSONEncoder.canonical.encode(FinalizeBookingRequest(
             holdId: holdId, offeringId: offeringId,
             locationType: locationType, addOnIds: addOnIds, source: source
         ))
@@ -129,7 +129,7 @@ public final class BookingService: Sendable {
         locationType: String = "SALON",
         idempotencyKey: String? = nil
     ) async throws -> RescheduledBooking {
-        let payload = try JSONEncoder().encode(
+        let payload = try JSONEncoder.canonical.encode(
             RescheduleBookingRequest(holdId: holdId, locationType: locationType)
         )
         let key = idempotencyKey ?? buildClientIdempotencyKey(
