@@ -34,7 +34,16 @@
       "reviewId": null,
       "reviewHelpfulCount": null,
       "reviewRating": null,
-      "reviewHeadline": null
+      "reviewHeadline": null,
+      "before": {
+        "id": "asset_before_1",
+        "thumbUrl": "https://example.supabase.co/storage/v1/object/public/media-public/looks/look_1_before_thumb.jpg",
+        "fullUrl": "https://example.supabase.co/storage/v1/object/public/media-public/looks/look_1_before.jpg"
+      },
+      "tags": [
+        { "slug": "balayage", "display": "balayage" },
+        { "slug": "money-piece", "display": "moneyPiece" }
+      ]
     },
     {
       "id": "look_2",
@@ -62,7 +71,9 @@
       "reviewId": null,
       "reviewHelpfulCount": null,
       "reviewRating": null,
-      "reviewHeadline": null
+      "reviewHeadline": null,
+      "before": null,
+      "tags": []
     }
   ],
   "nextCursor": "eyJrIjoiTE9PSyIsImlkIjoibG9va18yIn0=",

@@ -722,6 +722,8 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.finance.receiptInbox[0].source == "COSMOPROF")
         #expect(res.finance.receiptInbox[0].parsedAmountCents == 24219)
         #expect(res.finance.receiptInboxAddress == "jadehair@tovis.me")
+        // Membership gate for tax-doc export (nil → treat as allowed).
+        #expect(res.finance.canExportTaxDocs == true)
     }
 
     // GET /api/v1/pro/reviews — Fixtures/proReviewsList.json. The pro reviews
@@ -1027,6 +1029,7 @@ func fixture(_ name: String) throws -> Data {
         #expect(p.portfolioTiles.first?.displayUrl == "https://x/1t.jpg")
         #expect(p.reviews.first?.rating == 5)
         #expect(p.stats.averageRatingLabel == "4.9")
+        #expect(p.stats.followerCount == 45)
         #expect(p.acceptedPayments == ["Cash", "Venmo"])
     }
 
@@ -1049,12 +1052,18 @@ func fixture(_ name: String) throws -> Data {
         #expect(pro.count.likes == 342)
         #expect(pro.priceLabel == "$220")
         #expect(pro.viewerLiked == false)
+        // Opt-in before/after pair + style tags on the pro look.
+        #expect(pro.before?.id == "asset_before_1")
+        #expect(pro.tags.map(\.slug) == ["balayage", "money-piece"])
 
         let client = res.items[1]
         #expect(client.professional == nil)
         #expect(client.clientAuthor?.handleLabel == "@noellestyles")
         #expect(client.thumbUrl == nil)
         #expect(client.viewerSaved == true)
+        // Single-tile look: no pair, no tags.
+        #expect(client.before == nil)
+        #expect(client.tags.isEmpty)
     }
 
     // GET /api/v1/discover/trending-tags — Fixtures/discoverTrendingTags.json.
@@ -1136,10 +1145,18 @@ func fixture(_ name: String) throws -> Data {
         #expect(top.isReply == false)
         #expect(top.replyCount == 1)
         #expect(top.viewerCanDelete == false)
+        // Client commenter: no Creator/Pro badge.
+        #expect(top.user.isLookAuthor == false)
+        #expect(top.user.isPro == false)
+        #expect(top.user.badgeLabel == nil)
         let reply = res.comments[1]
         #expect(reply.isReply == true)
         #expect(reply.parentCommentId == "cmt_1")
         #expect(reply.viewerCanDelete == true)
+        // The look author (also a pro) — Creator badge wins.
+        #expect(reply.user.isLookAuthor == true)
+        #expect(reply.user.isPro == true)
+        #expect(reply.user.badgeLabel == "Creator")
     }
 
     // POST/PATCH/GET /api/v1/pro/calendar/blocked[/id] — Fixtures/proCalendarBlock.json.
