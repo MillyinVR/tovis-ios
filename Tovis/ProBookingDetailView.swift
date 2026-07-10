@@ -45,6 +45,9 @@ struct ProBookingDetailView: View {
     // Money-trail inspector sheet (read-only port of the web MoneyTrailInspector).
     @State private var showMoneyTrail = false
 
+    // Reschedule sheet (move the booking to a new time — web calendar reschedule).
+    @State private var showReschedule = false
+
     // Refund
     @State private var showRefund = false
     @State private var refundAmount = ""
@@ -253,6 +256,28 @@ struct ProBookingDetailView: View {
 
             // The lifecycle action row (status-driven).
             lifecycleRow(booking)
+
+            // Reschedule — move a not-yet-started booking to a new time (web
+            // calendar reschedule). Offered while it's still PENDING/ACCEPTED.
+            if booking.isPending || booking.isAccepted {
+                Button { showReschedule = true } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "calendar.badge.clock").font(.system(size: 13))
+                        Text("Reschedule").font(BrandFont.body(13, .semibold))
+                    }
+                    .frame(maxWidth: .infinity).padding(.vertical, 12)
+                    .foregroundStyle(BrandColor.textPrimary).background(BrandColor.bgPrimary)
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(BrandColor.textMuted.opacity(0.2), lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(pendingVerb != nil)
+            }
+        }
+        .sheet(isPresented: $showReschedule) {
+            NavigationStack {
+                ProRescheduleView(booking: booking)
+            }
         }
     }
 

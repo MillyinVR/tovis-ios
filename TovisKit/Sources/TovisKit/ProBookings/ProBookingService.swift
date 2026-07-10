@@ -79,6 +79,50 @@ public final class ProBookingService: Sendable {
         )
     }
 
+    /// PATCH /api/v1/pro/bookings/{id} { scheduledFor, notifyClient, allow* } —
+    /// move a non-terminal booking to a new start time (the web calendar
+    /// BookingModal / drag reschedule). PRO-only; keeps the booking's services and
+    /// location — only the time changes, so no hold is created (that's the CLIENT
+    /// `POST /bookings/{id}/reschedule` flow, which pros can't use). Set
+    /// `notifyClient` to text/email the client about the new time (the web default).
+    /// The `allow*` overrides force the new time past the scheduling guards
+    /// (outside working hours / advance-notice / booking-window), paired with an
+    /// optional `overrideReason` for the audit log — mirroring `createBooking` and
+    /// the `.edit`-intent `bookingOverridePrompt`. Idempotent via the
+    /// idempotency-key header: the body-derived nonce mints a fresh key whenever
+    /// the body changes (e.g. an override retry that adds an `allow*` flag), so a
+    /// pure network re-send replays instead of double-moving.
+    public func reschedule(
+        bookingId: String,
+        scheduledFor: String,
+        notifyClient: Bool = true,
+        allowOutsideWorkingHours: Bool = false,
+        allowShortNotice: Bool = false,
+        allowFarFuture: Bool = false,
+        overrideReason: String? = nil,
+        idempotencyKey: String? = nil
+    ) async throws {
+        let payload = try JSONEncoder.canonical.encode(
+            ProBookingRescheduleRequest(
+                scheduledFor: scheduledFor,
+                notifyClient: notifyClient,
+                allowOutsideWorkingHours: allowOutsideWorkingHours,
+                allowShortNotice: allowShortNotice,
+                allowFarFuture: allowFarFuture,
+                overrideReason: overrideReason
+            )
+        )
+        let key = idempotencyKey ?? buildClientIdempotencyKey(
+            scope: "pro-booking", entityId: bookingId, action: "reschedule",
+            nonce: idempotencyNonce(payload))
+        try await api.requestVoid(
+            "/pro/bookings/\(bookingId)",
+            method: .patch,
+            body: payload,
+            headers: ["idempotency-key": key]
+        )
+    }
+
     /// PATCH /api/v1/pro/bookings/{id} {status:"ACCEPTED"} — accept a pending
     /// request (notifies the client). Idempotent via the idempotency-key header.
     public func accept(
@@ -426,6 +470,19 @@ struct ProBookingCancelRequest: Encodable {
 struct ProBookingEditServiceItemsRequest: Encodable {
     let serviceItems: [ProBookingServiceItemInput]
     let notifyClient: Bool
+}
+
+/// PATCH /pro/bookings/{id} body for a reschedule (move to a new start time).
+/// Only `scheduledFor` changes the appointment — the server keeps the existing
+/// services + location. The `allow*` flags force past the scheduling guards; a
+/// nil `overrideReason` is dropped from the JSON (synthesized `encodeIfPresent`).
+struct ProBookingRescheduleRequest: Encodable {
+    let scheduledFor: String
+    let notifyClient: Bool
+    let allowOutsideWorkingHours: Bool
+    let allowShortNotice: Bool
+    let allowFarFuture: Bool
+    let overrideReason: String?
 }
 
 /// One requested service item for a `PATCH /pro/bookings/{id}` service-items edit.
