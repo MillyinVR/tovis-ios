@@ -54,6 +54,63 @@ public struct ClientCheckoutConfirmResponse: Decodable, Sendable {
     public let booking: Booking
 }
 
+// MARK: - POST /client/bookings/{id}/checkout/products (product selection)
+
+/// One recommendation line to persist to the booking checkout. Mirrors the web
+/// submit body's `items[]`. The server validates the `recommendationId` +
+/// `productId` belong to this booking's SENT aftercare and re-prices from the
+/// catalog, so the client only sends the identity + quantity.
+public struct CheckoutProductLineInput: Encodable, Sendable, Equatable {
+    public let recommendationId: String
+    public let productId: String
+    public let quantity: Int
+
+    public init(recommendationId: String, productId: String, quantity: Int) {
+        self.recommendationId = recommendationId
+        self.productId = productId
+        self.quantity = quantity
+    }
+}
+
+/// Request body for the product-selection save: `{ items: [...] }`. An empty
+/// `items` clears the booking's checkout-product selection.
+struct CheckoutProductsRequest: Encodable, Sendable {
+    let items: [CheckoutProductLineInput]
+}
+
+/// The echoed booking + priced selection after saving checkout products. Mirrors
+/// the web route's `buildCheckoutProductsResponseBody`; only the fields the app
+/// reflects are modeled (unknown keys, incl. `meta`, are ignored).
+public struct ClientCheckoutProductsResponse: Decodable, Sendable {
+    public struct Booking: Decodable, Sendable {
+        public let id: String
+        public let checkoutStatus: String?
+        public let serviceSubtotalSnapshot: String?
+        public let productSubtotalSnapshot: String?
+        public let subtotalSnapshot: String?
+        public let tipAmount: String?
+        public let taxAmount: String?
+        public let discountAmount: String?
+        public let totalAmount: String?
+        public let paymentAuthorizedAt: String?
+        public let paymentCollectedAt: String?
+    }
+
+    /// One priced line the server persisted (unit price + line total snapshot).
+    public struct SelectedProduct: Decodable, Sendable, Identifiable {
+        public let recommendationId: String
+        public let productId: String
+        public let quantity: Int
+        public let unitPrice: String
+        public let lineTotal: String
+
+        public var id: String { recommendationId }
+    }
+
+    public let booking: Booking
+    public let selectedProducts: [SelectedProduct]
+}
+
 // MARK: - POST /client/bookings/{id}/deposit/stripe-session
 
 /// Up-front discovery deposit + one-time platform fee breakdown (minor units).

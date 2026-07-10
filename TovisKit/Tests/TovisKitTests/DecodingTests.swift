@@ -1212,6 +1212,46 @@ func fixture(_ name: String) throws -> Data {
         // Full-size URL is preferred for the hero compare / tap-to-open.
         #expect(res.beforeAfter.beforePreferred == "https://cdn/full-before.jpg")
         #expect(res.beforeAfter.afterPreferred == "https://cdn/full-after.jpg")
+        // Product fields are additive — a payload without them decodes to empty
+        // (this JSON omits them) so the section still renders notes + photos.
+        #expect(res.recommendedProducts.isEmpty)
+        #expect(res.checkoutProducts.isEmpty)
+        #expect(res.checkoutProductsEditable == false)
+    }
+
+    // GET .../aftercare with the §5 A3-prod product-checkout fields —
+    // Fixtures/clientAftercareDetail.json (also schema-validated). Splits internal
+    // (addable) vs external (link-out) recs + carries the current selection.
+    @Test func decodesClientAftercareDetailWithProducts() throws {
+        let res = try JSONDecoder().decode(
+            ClientAftercareDetail.self, from: fixture("clientAftercareDetail"))
+
+        #expect(res.canShowAftercare == true)
+        #expect(res.checkoutProductsEditable == true)
+        #expect(res.recommendedProducts.count == 2)
+
+        // rp_1 is external (link-out only); rp_2 is an in-app product.
+        #expect(res.externalRecommendations.map(\.id) == ["rp_1"])
+        #expect(res.internalRecommendations.map(\.id) == ["rp_2"])
+
+        let external = try #require(res.externalRecommendations.first)
+        #expect(external.isInternal == false)
+        #expect(external.externalName == "Olaplex No.7 Bonding Oil")
+        #expect(external.externalUrl == "https://example.com/olaplex-7")
+        #expect(external.product == nil)
+
+        let internalRec = try #require(res.internalRecommendations.first)
+        #expect(internalRec.isInternal == true)
+        #expect(internalRec.product?.name == "Purple Toning Shampoo")
+        #expect(internalRec.product?.retailPrice == "28.00")
+
+        // The current selection seeds the qty stepper (rp_2 × 2).
+        let selected = try #require(res.checkoutProducts.first)
+        #expect(selected.id == "rp_2")
+        #expect(selected.recommendationId == "rp_2")
+        #expect(selected.productId == "prod_9")
+        #expect(selected.quantity == 2)
+        #expect(selected.unitPrice == "28.00")
     }
 
     // A COMPLETED booking with no summary + no photos: visible gate, but nothing

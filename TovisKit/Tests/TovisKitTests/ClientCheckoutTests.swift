@@ -290,3 +290,126 @@ private extension URLRequest {
         #expect(options.collectPaymentAt == "AFTER_SERVICE")
     }
 }
+
+// MARK: - Save checkout products (§5 A3-prod)
+
+/// A dedicated capturing URLProtocol for the products suite. It has its OWN
+/// static storage so it never races the `ClientCheckoutURLProtocol` the confirm
+/// suite uses — different @Suites run in parallel and would otherwise clobber a
+/// shared mock's response body.
+final class CheckoutProductsURLProtocol: URLProtocol {
+    nonisolated(unsafe) static var capturedPath: String?
+    nonisolated(unsafe) static var capturedMethod: String?
+    nonisolated(unsafe) static var capturedIdempotencyKey: String?
+    nonisolated(unsafe) static var capturedBody: Data?
+    nonisolated(unsafe) static var responseBody = Data("{\"ok\":true}".utf8)
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        Self.capturedPath = request.url?.path
+        Self.capturedMethod = request.httpMethod
+        Self.capturedIdempotencyKey = request.value(forHTTPHeaderField: "idempotency-key")
+        Self.capturedBody = request.httpBody ?? request.bodyStreamData()
+
+        let response = HTTPURLResponse(
+            url: request.url!, statusCode: 200, httpVersion: nil,
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Self.responseBody)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
+@Suite(.serialized) struct ClientCheckoutProductsTests {
+    private func makeService() async -> CheckoutService {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [CheckoutProductsURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let tokenStore = TokenStore(service: "me.tovis.app.session.checkoutproducts.tests")
+        await tokenStore.save("session.token.value")
+        let api = APIClient(
+            config: TovisConfig(baseURL: URL(string: "https://test.local/api/v1")!),
+            session: session,
+            tokenStore: tokenStore
+        )
+        return CheckoutService(api: api)
+    }
+
+    private func reset(_ body: String) {
+        CheckoutProductsURLProtocol.capturedPath = nil
+        CheckoutProductsURLProtocol.capturedMethod = nil
+        CheckoutProductsURLProtocol.capturedIdempotencyKey = nil
+        CheckoutProductsURLProtocol.capturedBody = nil
+        CheckoutProductsURLProtocol.responseBody = Data(body.utf8)
+    }
+
+    private static let okResponse = """
+    {"ok":true,"booking":{"id":"bkg_1","checkoutStatus":"READY","serviceSubtotalSnapshot":"100.00","productSubtotalSnapshot":"56.00","subtotalSnapshot":"156.00","tipAmount":"0.00","taxAmount":"0.00","discountAmount":"0.00","totalAmount":"156.00","paymentAuthorizedAt":null,"paymentCollectedAt":null},"selectedProducts":[{"recommendationId":"rp_2","productId":"prod_9","quantity":2,"unitPrice":"28.00","lineTotal":"56.00"}],"meta":{"mutated":true,"noOp":false}}
+    """
+
+    @Test func postsSelectionItemsWithIdempotencyKeyAndDecodesResponse() async throws {
+        reset(Self.okResponse)
+
+        let result = try await makeService().saveCheckoutProducts(
+            bookingId: "bkg_1",
+            items: [CheckoutProductLineInput(
+                recommendationId: "rp_2", productId: "prod_9", quantity: 2)]
+        )
+
+        #expect(CheckoutProductsURLProtocol.capturedPath == "/api/v1/client/bookings/bkg_1/checkout/products")
+        #expect(CheckoutProductsURLProtocol.capturedMethod == "POST")
+        #expect((CheckoutProductsURLProtocol.capturedIdempotencyKey ?? "").isEmpty == false)
+
+        let body = try #require(CheckoutProductsURLProtocol.capturedBody)
+        let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let items = try #require(json["items"] as? [[String: Any]])
+        #expect(items.count == 1)
+        #expect(items[0]["recommendationId"] as? String == "rp_2")
+        #expect(items[0]["productId"] as? String == "prod_9")
+        #expect(items[0]["quantity"] as? Int == 2)
+
+        #expect(result.booking.productSubtotalSnapshot == "56.00")
+        #expect(result.selectedProducts.first?.lineTotal == "56.00")
+    }
+
+    @Test func emptyItemsClearsTheSelection() async throws {
+        reset("""
+        {"ok":true,"booking":{"id":"bkg_1","checkoutStatus":"READY","serviceSubtotalSnapshot":"100.00","productSubtotalSnapshot":"0.00","subtotalSnapshot":"100.00","tipAmount":"0.00","taxAmount":"0.00","discountAmount":"0.00","totalAmount":"100.00","paymentAuthorizedAt":null,"paymentCollectedAt":null},"selectedProducts":[],"meta":{"mutated":true,"noOp":false}}
+        """)
+
+        let result = try await makeService().saveCheckoutProducts(bookingId: "bkg_1", items: [])
+
+        let body = try #require(CheckoutProductsURLProtocol.capturedBody)
+        let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        #expect((json["items"] as? [[String: Any]])?.isEmpty == true)
+        #expect(result.selectedProducts.isEmpty)
+    }
+
+    @Test func idempotencyKeyTracksTheSelection() async throws {
+        // The iterative selection derives the key's nonce from the lines: an
+        // identical selection dedupes (same key in the bucket) while a changed
+        // selection gets a fresh key — mirrors the web nonce contract.
+        let a = [CheckoutProductLineInput(recommendationId: "rp_2", productId: "prod_9", quantity: 2)]
+        let b = [CheckoutProductLineInput(recommendationId: "rp_2", productId: "prod_9", quantity: 3)]
+
+        reset(Self.okResponse)
+        _ = try await makeService().saveCheckoutProducts(bookingId: "bkg_1", items: a)
+        let key1 = CheckoutProductsURLProtocol.capturedIdempotencyKey
+
+        reset(Self.okResponse)
+        _ = try await makeService().saveCheckoutProducts(bookingId: "bkg_1", items: a)
+        let key1Again = CheckoutProductsURLProtocol.capturedIdempotencyKey
+
+        reset(Self.okResponse)
+        _ = try await makeService().saveCheckoutProducts(bookingId: "bkg_1", items: b)
+        let key2 = CheckoutProductsURLProtocol.capturedIdempotencyKey
+
+        #expect(key1 == key1Again)
+        #expect(key1 != key2)
+    }
+}

@@ -1,0 +1,47 @@
+{
+  "ok": true,
+  "canShowAftercare": true,
+  "aftercare": {
+    "id": "ac_1",
+    "notes": "Rinse with cool water for 48h.",
+    "sentToClientAt": "2026-07-02T15:00:00.000Z"
+  },
+  "beforeAfter": {
+    "beforeUrl": "https://cdn.example.com/bk_1-before-thumb.jpg",
+    "afterUrl": "https://cdn.example.com/bk_1-after-thumb.jpg",
+    "beforeFullUrl": "https://cdn.example.com/bk_1-before-full.jpg",
+    "afterFullUrl": "https://cdn.example.com/bk_1-after-full.jpg"
+  },
+  "recommendedProducts": [
+    {
+      "id": "rp_1",
+      "productId": null,
+      "note": "Use in the AM only.",
+      "externalName": "Olaplex No.7 Bonding Oil",
+      "externalUrl": "https://example.com/olaplex-7",
+      "product": null
+    },
+    {
+      "id": "rp_2",
+      "productId": "prod_9",
+      "note": "Twice a week to keep brass down.",
+      "externalName": null,
+      "externalUrl": null,
+      "product": {
+        "id": "prod_9",
+        "name": "Purple Toning Shampoo",
+        "brand": "Tovis",
+        "retailPrice": "28.00"
+      }
+    }
+  ],
+  "checkoutProducts": [
+    {
+      "recommendationId": "rp_2",
+      "productId": "prod_9",
+      "quantity": 2,
+      "unitPrice": "28.00"
+    }
+  ],
+  "checkoutProductsEditable": true
+}

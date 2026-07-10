@@ -86,6 +86,42 @@ public final class CheckoutService: Sendable {
         )
     }
 
+    /// POST /api/v1/client/bookings/{id}/checkout/products — save the client's
+    /// pro-recommended product selection onto the booking checkout (adds internal
+    /// recommendations as line items; an empty `items` clears the selection).
+    /// Returns the re-rolled booking totals + the priced lines the server kept.
+    ///
+    /// The selection is iterative (adjust quantities → save → adjust → save), so
+    /// the idempotency key carries a body-derived nonce over the lines: a changed
+    /// selection gets a fresh key while a true double-tap in the 60s bucket still
+    /// dedupes — mirrors web `buildClientIdempotencyKey({ nonce: JSON(lines) })`.
+    public func saveCheckoutProducts(
+        bookingId: String,
+        items: [CheckoutProductLineInput],
+        idempotencyKey: String? = nil
+    ) async throws -> ClientCheckoutProductsResponse {
+        let payload = try JSONEncoder().encode(CheckoutProductsRequest(items: items))
+        // Derive the nonce from the lines with SORTED keys so an identical
+        // selection hashes identically — a plain JSONEncoder does not guarantee
+        // stable struct key order, which would defeat the dedup (a re-tap would
+        // mint a new key). We never share this key with web, so key order is free.
+        let nonceEncoder = JSONEncoder()
+        nonceEncoder.outputFormatting = [.sortedKeys]
+        let itemsData = try nonceEncoder.encode(items)
+        let key = idempotencyKey ?? buildClientIdempotencyKey(
+            scope: "client-checkout-products",
+            entityId: bookingId,
+            action: "save-selection",
+            nonce: idempotencyNonce(itemsData)
+        )
+        return try await api.request(
+            "/client/bookings/\(bookingId)/checkout/products",
+            method: .post,
+            body: payload,
+            headers: [Self.idempotencyHeader: key]
+        )
+    }
+
     /// POST /api/v1/client/bookings/{id}/deposit/stripe-session — the new-client
     /// discovery deposit + one-time platform fee. Returns the hosted session.
     public func createDepositSession(
