@@ -35,6 +35,50 @@ public final class ProBookingService: Sendable {
         return response.booking
     }
 
+    /// GET /api/v1/pro/services?locationType=SALON|MOBILE → the pro's sellable
+    /// services for that location mode. This is the flat picker source the web
+    /// calendar BookingModal uses to edit a booking's services; each row's `id`
+    /// is the *serviceId*, paired with its `offeringId`. Pass the booking's own
+    /// `locationType` so `selectedMode` resolves to that mode's price + duration.
+    public func sellableServices(locationType: String) async throws -> [ProSellableService] {
+        let response: ProSellableServicesResponse = try await api.request(
+            "/pro/services",
+            query: [URLQueryItem(name: "locationType", value: locationType)]
+        )
+        return response.services
+    }
+
+    /// PATCH /api/v1/pro/bookings/{id} { serviceItems } — replace the services on
+    /// an existing booking (the web calendar BookingModal's service editor; the
+    /// first native "change the services on a booking" write). The server
+    /// re-derives every price + duration + BASE/ADD_ON from the offering and sort
+    /// position, so only `{ serviceId, offeringId, sortOrder }` per item is sent:
+    /// the first item (sortOrder 0) becomes the BASE, the rest ADD_ONs. Never send
+    /// a duration alongside — the route cross-checks it and 400s (`DURATION_MISMATCH`)
+    /// on a conflict. Set `notifyClient` to text/email the client about the change.
+    /// Editable while the booking is non-terminal (the route rejects CANCELLED /
+    /// COMPLETED). Idempotent via the idempotency-key header — the body-derived
+    /// nonce mints a fresh key whenever the item set changes.
+    public func editServiceItems(
+        bookingId: String,
+        items: [ProBookingServiceItemInput],
+        notifyClient: Bool = false,
+        idempotencyKey: String? = nil
+    ) async throws {
+        let payload = try JSONEncoder.canonical.encode(
+            ProBookingEditServiceItemsRequest(serviceItems: items, notifyClient: notifyClient)
+        )
+        let key = idempotencyKey ?? buildClientIdempotencyKey(
+            scope: "pro-booking", entityId: bookingId, action: "edit-service-items",
+            nonce: idempotencyNonce(payload))
+        try await api.requestVoid(
+            "/pro/bookings/\(bookingId)",
+            method: .patch,
+            body: payload,
+            headers: ["idempotency-key": key]
+        )
+    }
+
     /// PATCH /api/v1/pro/bookings/{id} {status:"ACCEPTED"} — accept a pending
     /// request (notifies the client). Idempotent via the idempotency-key header.
     public func accept(
@@ -362,6 +406,29 @@ struct ProBookingStatusRequest: Encodable {
 
 struct ProBookingCancelRequest: Encodable {
     let reason: String?
+}
+
+/// PATCH /pro/bookings/{id} body for a service-items edit. Carries only the
+/// minimal per-item pair the route reads — the server re-derives name, price,
+/// duration, and BASE/ADD_ON from the offering + sort position.
+struct ProBookingEditServiceItemsRequest: Encodable {
+    let serviceItems: [ProBookingServiceItemInput]
+    let notifyClient: Bool
+}
+
+/// One requested service item for a `PATCH /pro/bookings/{id}` service-items edit.
+/// `sortOrder` 0 is the BASE; the rest are ADD_ONs. No price/duration/name — those
+/// are re-derived server-side from the offering.
+public struct ProBookingServiceItemInput: Encodable, Sendable {
+    public let serviceId: String
+    public let offeringId: String
+    public let sortOrder: Int
+
+    public init(serviceId: String, offeringId: String, sortOrder: Int) {
+        self.serviceId = serviceId
+        self.offeringId = offeringId
+        self.sortOrder = sortOrder
+    }
 }
 
 struct ProRebookRequest: Encodable {

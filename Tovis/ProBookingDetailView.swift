@@ -39,6 +39,9 @@ struct ProBookingDetailView: View {
 
     @State private var showCancelConfirm = false
 
+    // Edit-services sheet (mirrors the web calendar BookingModal service editor).
+    @State private var showEditServices = false
+
     // Refund
     @State private var showRefund = false
     @State private var refundAmount = ""
@@ -122,6 +125,7 @@ struct ProBookingDetailView: View {
     private func content(_ booking: ProBookingDetail) -> some View {
         statusRow(booking)
         headerCard(booking)
+        servicesCard(booking)
         timingCard(booking)
         paymentCard(booking)
         aftercareCard(booking)
@@ -345,6 +349,81 @@ struct ProBookingDetailView: View {
             Button("Refund", role: .destructive) { Task { await refund(booking) } }
             Button("Cancel", role: .cancel) {}
         }
+    }
+
+    // MARK: - Services
+
+    /// The booked services (base + add-ons), with an Edit affordance that opens the
+    /// service editor while the booking is non-terminal (the server rejects editing
+    /// a CANCELLED / COMPLETED booking). First native surface to change the services
+    /// on an existing booking.
+    private func servicesCard(_ booking: ProBookingDetail) -> some View {
+        BrandSurface {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Services").font(BrandFont.body(14, .semibold)).foregroundStyle(BrandColor.textPrimary)
+                        Text("What’s booked for this appointment.").font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
+                    }
+                    Spacer()
+                    if !booking.isTerminal {
+                        Button { showEditServices = true } label: {
+                            Text("Edit").font(BrandFont.body(12, .semibold))
+                                .padding(.vertical, 6).padding(.horizontal, 14)
+                                .foregroundStyle(BrandColor.accent)
+                                .overlay(Capsule().stroke(BrandColor.accent.opacity(0.4), lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                if booking.serviceItems.isEmpty {
+                    Text("No services on this booking.")
+                        .font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    ForEach(sortedServiceItems(booking.serviceItems)) { item in
+                        serviceItemRow(item)
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showEditServices) {
+            NavigationStack {
+                ProEditServiceItemsView(
+                    bookingId: booking.id,
+                    locationType: booking.locationType,
+                    initialItems: booking.serviceItems,
+                    onSaved: { session.signalRefresh() }
+                )
+            }
+        }
+    }
+
+    /// Base item(s) first, then add-ons — each by sortOrder (matches the editor).
+    private func sortedServiceItems(_ items: [ProBookingServiceItem]) -> [ProBookingServiceItem] {
+        items.sorted { a, b in
+            if a.isAddOn != b.isAddOn { return !a.isAddOn }
+            return a.sortOrder < b.sortOrder
+        }
+    }
+
+    private func serviceItemRow(_ item: ProBookingServiceItem) -> some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(item.serviceName).font(BrandFont.body(13, .semibold)).foregroundStyle(BrandColor.textPrimary)
+                    if item.isAddOn { BrandPill(text: "ADD-ON", tint: BrandColor.textMuted) }
+                }
+                if item.durationMinutesSnapshot > 0 {
+                    Text("\(item.durationMinutesSnapshot) min").font(BrandFont.body(11)).foregroundStyle(BrandColor.textMuted)
+                }
+            }
+            Spacer()
+            if let price = item.priceSnapshot, let money = Wire.money(price) {
+                Text(money).font(BrandFont.body(13, .semibold)).foregroundStyle(BrandColor.textPrimary)
+            }
+        }
+        .padding(.vertical, 6)
     }
 
     // MARK: - Timing
