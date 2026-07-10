@@ -27,9 +27,9 @@ public struct ClientAftercareDetail: Decodable, Sendable {
     /// The pro's rebook recommendation (recommended window / proposed next
     /// appointment) + the coupled next booking, or nil when no summary is sent.
     public let rebook: ClientAftercareRebook?
-    /// The client's existing review of this booking (text only — media is A3-rev
-    /// 4b), or nil when they haven't left one / no summary is sent. Prefills the
-    /// native review block for editing.
+    /// The client's existing review of this booking (text + attached photos), or
+    /// nil when they haven't left one / no summary is sent. Prefills the native
+    /// review block for editing and renders the review photo grid (§5 A3-rev 4b).
     public let existingReview: ClientAftercareExistingReview?
     /// Whether the client may leave or edit a review right now — mirrors the web
     /// `canBookingAcceptClientReview` closeout gate (completed + finished booking,
@@ -96,10 +96,10 @@ public struct ClientAftercareSummary: Decodable, Sendable, Identifiable {
     public let sentToClientAt: String?
 }
 
-/// The client's own review of this booking (text slice only — media is A3-rev
-/// 4b). Mirrors `ClientAftercareExistingReviewDTO`; prefills the native review
-/// editor. `rating` is defensively optional so a malformed payload can't wedge
-/// the whole aftercare decode.
+/// The client's own review of this booking (text + attached photos). Mirrors
+/// `ClientAftercareExistingReviewDTO`; prefills the native review editor and
+/// renders the photo grid. `rating` is defensively optional so a malformed
+/// payload can't wedge the whole aftercare decode.
 public struct ClientAftercareExistingReview: Decodable, Sendable, Identifiable {
     public let id: String
     /// The 1–5 star rating the client gave, clamped on decode. Defaults to nil
@@ -109,9 +109,13 @@ public struct ClientAftercareExistingReview: Decodable, Sendable, Identifiable {
     public let headline: String?
     /// Optional free-text review body, or nil.
     public let body: String?
+    /// Photos/videos attached to the review (newest first; empty when none). The
+    /// client can add more or remove one (§5 A3-rev 4b). Additive — an older
+    /// backend that omits it decodes to an empty grid.
+    public let mediaAssets: [ClientReviewMedia]
 
     private enum CodingKeys: String, CodingKey {
-        case id, rating, headline, body
+        case id, rating, headline, body, mediaAssets
     }
 
     public init(from decoder: Decoder) throws {
@@ -126,14 +130,67 @@ public struct ClientAftercareExistingReview: Decodable, Sendable, Identifiable {
         }
         headline = try c.decodeIfPresent(String.self, forKey: .headline)
         body = try c.decodeIfPresent(String.self, forKey: .body)
+        // Additive + defensive: a garbled media list (or a backend predating 4b)
+        // decodes to an empty grid rather than failing the parent decode.
+        mediaAssets = (try? c.decodeIfPresent([ClientReviewMedia].self, forKey: .mediaAssets)) ?? []
     }
 
-    public init(id: String, rating: Int?, headline: String?, body: String?) {
+    public init(
+        id: String,
+        rating: Int?,
+        headline: String?,
+        body: String?,
+        mediaAssets: [ClientReviewMedia] = []
+    ) {
         self.id = id
         self.rating = rating
         self.headline = headline
         self.body = body
+        self.mediaAssets = mediaAssets
     }
+}
+
+/// One photo/video attached to the client's review, with render-ready URLs.
+/// Mirrors `ClientAftercareReviewMediaDTO`. `mediaType` decodes leniently
+/// (unknown → image) so a new server value can't wedge the parent decode.
+public struct ClientReviewMedia: Decodable, Sendable, Identifiable {
+    public let id: String
+    /// IMAGE or VIDEO (reuses the shared media-kind enum).
+    public let mediaType: MediaType
+    /// Render-ready full-size URL, or nil when unresolved.
+    public let url: String?
+    /// Render-ready thumbnail URL, or nil.
+    public let thumbUrl: String?
+    /// ISO instant the media was attached.
+    public let createdAt: String
+
+    private enum CodingKeys: String, CodingKey {
+        case id, mediaType, url, thumbUrl, createdAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        mediaType = (try? c.decode(MediaType.self, forKey: .mediaType)) ?? .image
+        url = try c.decodeIfPresent(String.self, forKey: .url)
+        thumbUrl = try c.decodeIfPresent(String.self, forKey: .thumbUrl)
+        createdAt = (try? c.decode(String.self, forKey: .createdAt)) ?? ""
+    }
+
+    public init(id: String, mediaType: MediaType, url: String?, thumbUrl: String?, createdAt: String) {
+        self.id = id
+        self.mediaType = mediaType
+        self.url = url
+        self.thumbUrl = thumbUrl
+        self.createdAt = createdAt
+    }
+
+    /// True for a VIDEO asset (renders a badge tile, not an inline player).
+    public var isVideo: Bool { mediaType == .video }
+    /// Best thumbnail URL for the grid tile.
+    public var displayThumbUrl: String? { thumbUrl ?? url }
+    /// Best full-size URL for tap-to-open.
+    public var displayUrl: String? { url ?? thumbUrl }
 }
 
 /// The pro's rebook recommendation from the sent aftercare summary + the coupled

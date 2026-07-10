@@ -1293,6 +1293,57 @@ func fixture(_ name: String) throws -> Data {
         #expect(review.rating == 5)
         #expect(review.headline == "Best color of my life")
         #expect(review.body == "Amara nailed the balayage — booking again.")
+
+        // §5 A3-rev 4b: the review carries attached photos (image + video) with
+        // render-ready URLs; the video tile renders a badge, not an inline player.
+        #expect(review.mediaAssets.count == 2)
+        let firstMedia = try #require(review.mediaAssets.first)
+        #expect(firstMedia.id == "rm_1")
+        #expect(firstMedia.isVideo == false)
+        #expect(firstMedia.displayThumbUrl == "https://cdn.example.com/rev-1-thumb.jpg")
+        let videoMedia = try #require(review.mediaAssets.last)
+        #expect(videoMedia.isVideo == true)
+        // No thumb → falls back to the full URL for the tile.
+        #expect(videoMedia.displayThumbUrl == "https://cdn.example.com/rev-2.mp4")
+    }
+
+    // §5 A3-rev 4b: review media is additive + defensively decoded — an omitted
+    // list decodes to an empty grid, and a garbled item can't wedge the review.
+    @Test func decodesClientAftercareReviewMediaDefensively() throws {
+        // No mediaAssets key at all → empty grid (older backend / pre-4b payload).
+        let noMedia = """
+        {
+          "ok": true,
+          "canShowAftercare": true,
+          "aftercare": { "id": "ac_1", "notes": null, "sentToClientAt": "2026-07-02T15:00:00.000Z" },
+          "beforeAfter": { "beforeUrl": null, "afterUrl": null, "beforeFullUrl": null, "afterFullUrl": null },
+          "reviewEligible": true,
+          "existingReview": { "id": "rev_3", "rating": 5, "headline": null, "body": null }
+        }
+        """.data(using: .utf8)!
+        let a = try JSONDecoder().decode(ClientAftercareDetail.self, from: noMedia)
+        #expect(a.existingReview?.mediaAssets.isEmpty == true)
+
+        // An unknown mediaType decodes leniently to an image rather than failing.
+        let oddMedia = """
+        {
+          "ok": true,
+          "canShowAftercare": true,
+          "aftercare": { "id": "ac_1", "notes": null, "sentToClientAt": "2026-07-02T15:00:00.000Z" },
+          "beforeAfter": { "beforeUrl": null, "afterUrl": null, "beforeFullUrl": null, "afterFullUrl": null },
+          "reviewEligible": true,
+          "existingReview": {
+            "id": "rev_4", "rating": 4, "headline": null, "body": null,
+            "mediaAssets": [
+              { "id": "rm_9", "mediaType": "GIF", "url": "https://cdn/x.gif", "thumbUrl": null, "createdAt": "2026-07-03T10:00:00.000Z" }
+            ]
+          }
+        }
+        """.data(using: .utf8)!
+        let b = try JSONDecoder().decode(ClientAftercareDetail.self, from: oddMedia)
+        let media = try #require(b.existingReview?.mediaAssets.first)
+        #expect(media.id == "rm_9")
+        #expect(media.mediaType == .image)
     }
 
     // §5 A3-rev 4a: a garbled / out-of-range rating defensively decodes to nil

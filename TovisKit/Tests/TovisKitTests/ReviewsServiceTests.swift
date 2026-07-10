@@ -147,6 +147,115 @@ final class ReviewsURLProtocol: URLProtocol {
         #expect(ReviewsURLProtocol.capturedPath == "/api/v1/client/reviews/rev_1")
         #expect(ReviewsURLProtocol.capturedMethod == "DELETE")
     }
+
+    // MARK: - Photos (§5 A3-rev 4b)
+
+    @Test func submitWithPhotosCarriesAttachmentsAndFreshUploads() async throws {
+        reset(Self.reviewOk)
+
+        _ = try await makeService().submitReview(
+            bookingId: "bkg_1", rating: 5, headline: "Loved it", body: "",
+            attachedMediaIds: ["sess_2", "sess_1"],
+            uploadSessionIds: ["us_9"])
+        let keyWithPhotos = ReviewsURLProtocol.capturedIdempotencyKey
+
+        let body = try #require(ReviewsURLProtocol.capturedBody)
+        let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        #expect(json["attachedMediaIds"] as? [String] == ["sess_2", "sess_1"])
+        let media = try #require(json["media"] as? [[String: Any]])
+        #expect(media.count == 1)
+        #expect(media.first?["uploadSessionId"] as? String == "us_9")
+
+        // A text-only submit of the same rating/text omits the photo keys, so it
+        // mints a DIFFERENT idempotency key (the nonce folds the photos in).
+        reset(Self.reviewOk)
+        _ = try await makeService().submitReview(
+            bookingId: "bkg_1", rating: 5, headline: "Loved it", body: "")
+        let textOnlyBody = try #require(ReviewsURLProtocol.capturedBody)
+        let textJson = try #require(try JSONSerialization.jsonObject(with: textOnlyBody) as? [String: Any])
+        #expect(textJson["attachedMediaIds"] == nil)
+        #expect(textJson["media"] == nil)
+        #expect(keyWithPhotos != ReviewsURLProtocol.capturedIdempotencyKey)
+    }
+
+    @Test func reviewMediaOptionsFetchesAndDecodes() async throws {
+        reset("""
+        {"ok":true,"items":[
+          {"id":"m_1","url":"https://cdn/b.jpg","thumbUrl":"https://cdn/b-t.jpg","mediaType":"IMAGE","createdAt":"2026-07-03T10:00:00.000Z","phase":"BEFORE"},
+          {"id":"m_2","url":"https://cdn/a.mp4","thumbUrl":null,"mediaType":"VIDEO","createdAt":"2026-07-03T09:00:00.000Z","phase":"AFTER"}
+        ]}
+        """)
+
+        let items = try await makeService().reviewMediaOptions(bookingId: "bkg_1")
+
+        #expect(ReviewsURLProtocol.capturedPath == "/api/v1/client/bookings/bkg_1/review-media-options")
+        #expect(ReviewsURLProtocol.capturedMethod == "GET")
+        #expect(items.count == 2)
+        #expect(items.first?.id == "m_1")
+        #expect(items.first?.isVideo == false)
+        #expect(items.first?.phase == .before)
+        // A video option with no thumb falls back to the full URL for the tile.
+        #expect(items.last?.isVideo == true)
+        #expect(items.last?.displayThumbUrl == "https://cdn/a.mp4")
+    }
+
+    @Test func attachReviewMediaPostsUploadSessionIds() async throws {
+        reset("""
+        {"ok":true,"createdCount":1,"created":[],"review":null}
+        """)
+
+        try await makeService().attachReviewMedia(reviewId: "rev_1", uploadSessionIds: ["us_1", "us_2"])
+
+        #expect(ReviewsURLProtocol.capturedPath == "/api/v1/client/reviews/rev_1/media")
+        #expect(ReviewsURLProtocol.capturedMethod == "POST")
+        let body = try #require(ReviewsURLProtocol.capturedBody)
+        let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let media = try #require(json["media"] as? [[String: Any]])
+        #expect(media.map { $0["uploadSessionId"] as? String } == ["us_1", "us_2"])
+    }
+
+    @Test func attachReviewMediaSkipsEmpty() async throws {
+        reset("{\"ok\":true}")
+
+        try await makeService().attachReviewMedia(reviewId: "rev_1", uploadSessionIds: [])
+
+        // No request issued for an empty attach.
+        #expect(ReviewsURLProtocol.capturedPath == nil)
+    }
+
+    @Test func removeReviewMediaSendsDelete() async throws {
+        reset("{\"ok\":true}")
+
+        try await makeService().removeReviewMedia(reviewId: "rev_1", mediaId: "media_9")
+
+        #expect(ReviewsURLProtocol.capturedPath == "/api/v1/client/reviews/rev_1/media/media_9")
+        #expect(ReviewsURLProtocol.capturedMethod == "DELETE")
+    }
+
+    @Test func uploadReviewPhotoPresignsWithReviewPublicKind() async throws {
+        // The presign is captured on the api session; the signed PUT then runs on
+        // the service's internal (unmocked) session and fails on missing creds —
+        // which is enough to assert the presign request shape.
+        reset("""
+        {"ok":true,"bucket":"media-public","path":"p/x.jpg","token":"tok","signedUrl":null,"publicUrl":null,"isPublic":true,"uploadSessionId":"us_new"}
+        """)
+
+        var threw = false
+        do {
+            _ = try await makeService().uploadReviewPhoto(imageData: Data([0x1, 0x2, 0x3]))
+        } catch {
+            threw = true
+        }
+        #expect(threw)
+
+        #expect(ReviewsURLProtocol.capturedPath == "/api/v1/client/uploads")
+        #expect(ReviewsURLProtocol.capturedMethod == "POST")
+        let body = try #require(ReviewsURLProtocol.capturedBody)
+        let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        #expect(json["kind"] as? String == "REVIEW_PUBLIC")
+        #expect(json["contentType"] as? String == "image/jpeg")
+        #expect(json["size"] as? Int == 3)
+    }
 }
 
 private extension URLRequest {
