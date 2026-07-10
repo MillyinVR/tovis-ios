@@ -3,6 +3,7 @@
 // backend has no standalone GET /bookings/[id] read endpoint). Actions
 // (approve consultation, pay, reschedule) come in a later pass.
 import SwiftUI
+import UIKit
 import TovisKit
 
 struct BookingDetailView: View {
@@ -35,6 +36,19 @@ struct BookingDetailView: View {
     @State private var creatingCheckout = false
     @State private var checkoutError: String?
     @State private var paidLocally = false
+
+    // Native client checkout (tip selector + method picker + off-platform confirm).
+    // Ports web ClientCheckoutCard; live tip drives both the total and the deep-link.
+    @State private var selectedMethodKey = ""
+    @State private var tipInput = ""
+    @State private var confirmingCheckout = false
+    @State private var savingTip = false
+    @State private var checkoutSuccess: String?
+    /// Optimistic AWAITING_CONFIRMATION after an off-platform confirm, before the
+    /// list refresh lands — flips the passive waiting banner on immediately.
+    @State private var awaitingLocally = false
+    /// One-shot guard so the tip/method defaults seed only once.
+    @State private var didSeedCheckout = false
 
     // Deposit leg (discovery deposit + one-time platform fee)
     @State private var creatingDeposit = false
@@ -98,7 +112,8 @@ struct BookingDetailView: View {
     /// nothing left for the client to do here — freeze the pay controls and show a
     /// waiting banner. Mirrors web `ClientCheckoutCard`.
     private var awaitingConfirmation: Bool {
-        !paidLocally &&
+        if awaitingLocally { return true }
+        return !paidLocally &&
             booking.checkout.paymentCollectedAt == nil &&
             (booking.checkout.checkoutStatus ?? "").uppercased() == "AWAITING_CONFIRMATION"
     }
@@ -195,7 +210,9 @@ struct BookingDetailView: View {
                     }
                 }
 
-                totalsCard
+                // During the active native checkout the live summary (inside payCard)
+                // owns the totals; elsewhere the static snapshot totals show.
+                if !paymentDue { totalsCard }
 
                 depositCard
 
@@ -213,6 +230,9 @@ struct BookingDetailView: View {
             .padding(.bottom, 40)
         }
         .task {
+            // Seed the tip/method defaults from the booking before the checkout
+            // renders (no-op after the first appearance).
+            seedCheckout()
             // Load aftercare before resolving a deep-linked scroll so the
             // aftercare anchor exists when a `?step=aftercare` push scrolls to it.
             await loadAftercare()
@@ -319,40 +339,462 @@ struct BookingDetailView: View {
                 }
             }
         } else if paymentDue {
-            VStack(spacing: 10) {
-                Button {
-                    Task { await startCheckout() }
-                } label: {
-                    Group {
-                        if creatingCheckout {
-                            ProgressView().tint(BrandColor.onAccent)
-                        } else {
-                            Text(payButtonTitle).font(BrandFont.body(17, .semibold))
+            VStack(spacing: 14) {
+                checkoutSummaryCard
+                tipCard
+                methodCard
+                payActionCard
+            }
+        }
+    }
+
+    // MARK: - Native checkout: derived state
+
+    private var checkoutOptions: ClientBookingPaymentOptions? { booking.paymentOptions }
+
+    /// The pro's accepted methods, or a Cash-only fallback so a client is never
+    /// hard-blocked when the options didn't load (mirrors web buildAcceptedMethods).
+    private var acceptedMethods: [ClientBookingPaymentMethod] {
+        if let methods = checkoutOptions?.methods, !methods.isEmpty { return methods }
+        return [ClientBookingPaymentMethod(key: "cash", label: "Cash", handle: nil)]
+    }
+
+    private var tipsEnabled: Bool { checkoutOptions?.tipsEnabled ?? true }
+    private var allowCustomTip: Bool { checkoutOptions?.allowCustomTip ?? true }
+
+    /// Tip is a percentage of services only (products never affect tip).
+    private var serviceSubtotal: Decimal {
+        CheckoutMoney.amount(
+            booking.checkout.serviceSubtotalSnapshot ?? booking.checkout.subtotalSnapshot
+        )
+    }
+    private var productSubtotal: Decimal { CheckoutMoney.amount(booking.checkout.productSubtotalSnapshot) }
+    private var taxAmount: Decimal { CheckoutMoney.amount(booking.checkout.taxAmount) }
+    private var discountAmount: Decimal { CheckoutMoney.amount(booking.checkout.discountAmount) }
+
+    /// The live tip the client is entering (parsed from the field), never negative.
+    private var tipDecimal: Decimal {
+        let parsed = Decimal(string: tipInput.trimmingCharacters(in: .whitespaces)) ?? 0
+        return parsed < 0 ? 0 : parsed
+    }
+
+    /// The FULL amount owed, recomputed the instant the tip changes — the single
+    /// source of truth for the Total row, the CTA amount, and the deep-link amount
+    /// (CHK-tip-live: no "Save tip" round-trip needed).
+    private var liveTotal: Decimal {
+        CheckoutMoney.liveTotal(
+            serviceSubtotal: serviceSubtotal, productSubtotal: productSubtotal,
+            tip: tipDecimal, tax: taxAmount, discount: discountAmount
+        )
+    }
+
+    private var selectedMethod: ClientBookingPaymentMethod? {
+        acceptedMethods.first(where: { $0.key == selectedMethodKey })
+    }
+    private var selectedMethodIsStripe: Bool { selectedMethodKey == "stripe_card" }
+
+    /// Preset tip chips = configured suggestions (fallback 15/20/25), with 0% first.
+    private var tipPresetPercents: [Int] {
+        guard tipsEnabled, serviceSubtotal > 0 else { return [] }
+        let configured = checkoutOptions?.tipSuggestions ?? []
+        let base = configured.isEmpty ? [15, 20, 25] : configured
+        var seen = Set<Int>()
+        return ([0] + base).filter { seen.insert($0).inserted }
+    }
+
+    /// The one-tap off-platform pay action for the selected method (nil for cash /
+    /// card rails / Stripe or a method with no stored handle). Amount is the live
+    /// total, so it tracks the tip instantly.
+    private var payAction: PaymentDeepLink? {
+        guard let selectedMethod else { return nil }
+        return buildPaymentDeepLink(
+            methodKey: selectedMethod.key, handle: selectedMethod.handle,
+            amountDue: liveTotal, note: deepLinkNote
+        )
+    }
+
+    private var checkoutBusy: Bool { confirmingCheckout || creatingCheckout || savingTip }
+
+    private var confirmDisabled: Bool { checkoutBusy || selectedMethod == nil }
+
+    private var confirmCtaTitle: String {
+        guard selectedMethod != nil else { return "Choose a payment method" }
+        let total = Wire.money(CheckoutMoney.fixed2(liveTotal)) ?? "$0"
+        return selectedMethodIsStripe ? "Pay \(total) with card" : "Confirm payment of \(total)"
+    }
+
+    /// The Venmo memo — the app's own display name (web uses brand.displayName).
+    private var deepLinkNote: String {
+        (Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
+            ?? (Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String)
+            ?? "Tovis"
+    }
+
+    // MARK: - Native checkout: cards
+
+    private var checkoutSummaryCard: some View {
+        BrandSurface {
+            VStack(spacing: 8) {
+                checkoutSummaryRow("Services subtotal", serviceSubtotal)
+                checkoutSummaryRow("Products subtotal", productSubtotal)
+                if discountAmount > 0 { checkoutSummaryRow("Discount", discountAmount, negative: true) }
+                if taxAmount > 0 { checkoutSummaryRow("Tax", taxAmount) }
+                checkoutSummaryRow("Tip", tipDecimal)
+                Divider().overlay(BrandColor.textMuted.opacity(0.15))
+                HStack {
+                    Text(booking.checkout.totalAmount != nil ? "Total" : "Preview total")
+                        .font(BrandFont.body(16, .semibold))
+                        .foregroundStyle(BrandColor.textPrimary)
+                    Spacer()
+                    Text(Wire.money(CheckoutMoney.fixed2(liveTotal)) ?? "$0")
+                        .font(BrandFont.body(16, .semibold))
+                        .foregroundStyle(BrandColor.textPrimary)
+                }
+            }
+        }
+    }
+
+    private func checkoutSummaryRow(_ label: String, _ amount: Decimal, negative: Bool = false) -> some View {
+        HStack {
+            Text(label).font(BrandFont.body(13)).foregroundStyle(BrandColor.textMuted)
+            Spacer()
+            Text((negative ? "−" : "") + (Wire.money(CheckoutMoney.fixed2(amount)) ?? "$0"))
+                .font(BrandFont.body(13)).foregroundStyle(BrandColor.textSecondary)
+        }
+    }
+
+    private var tipCard: some View {
+        BrandSurface {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Tip").font(BrandFont.body(14, .semibold)).foregroundStyle(BrandColor.textPrimary)
+
+                if tipsEnabled {
+                    if !tipPresetPercents.isEmpty {
+                        FlowLayout(spacing: 8, lineSpacing: 8) {
+                            ForEach(tipPresetPercents, id: \.self) { percent in tipChip(percent) }
                         }
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
+
+                    if allowCustomTip {
+                        HStack(spacing: 8) {
+                            Text("$").font(BrandFont.body(15, .semibold)).foregroundStyle(BrandColor.textPrimary)
+                            TextField("0.00", text: Binding(get: { tipInput }, set: { onTipInput($0) }))
+                                .keyboardType(.decimalPad)
+                                .font(BrandFont.body(15, .semibold))
+                                .foregroundStyle(BrandColor.textPrimary)
+                                .padding(.horizontal, 12).padding(.vertical, 8)
+                                .frame(maxWidth: 140, alignment: .leading)
+                                .background(BrandColor.bgSecondary)
+                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                .disabled(checkoutBusy)
+                        }
+                        Text("Tip uses the services subtotal only. Products don’t affect tip.")
+                            .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
+                    } else {
+                        Text("Custom tip entry is turned off for this provider.")
+                            .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
+                    }
+                } else {
+                    Text("Tips are not enabled for this provider.")
+                        .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
+                }
+            }
+        }
+    }
+
+    private func tipChip(_ percent: Int) -> some View {
+        let presetAmount = CheckoutMoney.tip(serviceSubtotal: serviceSubtotal, percent: percent)
+        let active = tipDecimal == presetAmount
+        return Button { selectTipPreset(percent) } label: {
+            Text("\(percent)% · \(Wire.money(CheckoutMoney.fixed2(presetAmount)) ?? "$0")")
+                .font(BrandFont.body(13, .semibold))
+                .foregroundStyle(active ? BrandColor.onAccent : BrandColor.textPrimary)
+                .padding(.horizontal, 14).padding(.vertical, 9)
+                .background(active ? BrandColor.accent : BrandColor.bgSecondary)
+                .clipShape(Capsule())
+        }
+        .disabled(checkoutBusy)
+    }
+
+    private var methodCard: some View {
+        BrandSurface {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Payment method").font(BrandFont.body(14, .semibold)).foregroundStyle(BrandColor.textPrimary)
+                ForEach(acceptedMethods) { method in methodRow(method) }
+            }
+        }
+    }
+
+    private func methodRow(_ method: ClientBookingPaymentMethod) -> some View {
+        let active = method.key == selectedMethodKey
+        return Button {
+            checkoutError = nil
+            checkoutSuccess = nil
+            selectedMethodKey = method.key
+        } label: {
+            HStack(alignment: .top, spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(method.label).font(BrandFont.body(14, .semibold))
+                        .foregroundStyle(active ? BrandColor.onAccent : BrandColor.textPrimary)
+                    if let handle = method.handle, !handle.isEmpty {
+                        Text(handle).font(BrandFont.body(12))
+                            .foregroundStyle(active ? BrandColor.onAccent.opacity(0.85) : BrandColor.textSecondary)
+                    }
+                }
+                Spacer(minLength: 0)
+                Text(active ? "Selected" : "Choose").font(BrandFont.body(11, .semibold))
+                    .foregroundStyle(active ? BrandColor.onAccent : BrandColor.textMuted)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(active ? BrandColor.accent : BrandColor.bgSecondary)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .disabled(checkoutBusy)
+    }
+
+    private var payActionCard: some View {
+        BrandSurface {
+            VStack(alignment: .leading, spacing: 12) {
+                if let selectedMethod {
+                    Text("Paying with \(selectedMethod.label)")
+                        .font(BrandFont.body(13, .semibold)).foregroundStyle(BrandColor.textPrimary)
+                }
+
+                if let payAction { payAffordance(payAction) }
+
+                Button { Task { await confirmCheckout() } } label: {
+                    Group {
+                        if confirmingCheckout || creatingCheckout {
+                            ProgressView().tint(BrandColor.onAccent)
+                        } else {
+                            Text(confirmCtaTitle).font(BrandFont.body(16, .semibold))
+                        }
+                    }
+                    .frame(maxWidth: .infinity).padding(.vertical, 14)
                     .foregroundStyle(BrandColor.onAccent)
                     .background(BrandColor.accent)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
-                .disabled(creatingCheckout)
+                .disabled(confirmDisabled)
 
+                if tipsEnabled {
+                    Button { Task { await saveTip() } } label: {
+                        Group {
+                            if savingTip { ProgressView().tint(BrandColor.accent) }
+                            else { Text("Save tip").font(BrandFont.body(14, .semibold)) }
+                        }
+                        .frame(maxWidth: .infinity).padding(.vertical, 12)
+                        .foregroundStyle(BrandColor.textPrimary)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(BrandColor.textMuted.opacity(0.3), lineWidth: 1))
+                    }
+                    .disabled(checkoutBusy)
+                }
+
+                if let note = checkoutOptions?.paymentNote, !note.isEmpty {
+                    Text(note).font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
+                }
                 if let checkoutError {
-                    Text(checkoutError)
-                        .font(BrandFont.body(13))
-                        .foregroundStyle(BrandColor.ember)
+                    Text(checkoutError).font(BrandFont.body(13)).foregroundStyle(BrandColor.ember)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if let checkoutSuccess {
+                    Text(checkoutSuccess).font(BrandFont.body(13)).foregroundStyle(BrandColor.textPrimary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
         }
     }
 
-    private var payButtonTitle: String {
-        if let total = Wire.money(booking.checkout.totalAmount), total != "$0" {
-            return "Pay \(total)"
+    @ViewBuilder
+    private func payAffordance(_ action: PaymentDeepLink) -> some View {
+        switch action {
+        case let .link(href, label):
+            VStack(alignment: .leading, spacing: 6) {
+                Link(destination: href) {
+                    Text(label)
+                        .font(BrandFont.body(14, .semibold))
+                        .foregroundStyle(BrandColor.accent)
+                        .frame(maxWidth: .infinity).padding(.vertical, 12)
+                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(BrandColor.accent, lineWidth: 1))
+                }
+                Text("Opens \(selectedMethod?.label ?? "the app") with the amount filled in. After you send it, tap the confirm button below to close out.")
+                    .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
+            }
+        case let .copy(handle, amount, instruction):
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    copyChip("Send to \(handle)", value: handle)
+                    copyChip("Amount $\(amount)", value: amount)
+                }
+                Text("\(instruction) Then tap the confirm button below to close out.")
+                    .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
+            }
         }
-        return "Pay now"
+    }
+
+    private func copyChip(_ label: String, value: String) -> some View {
+        Button { UIPasteboard.general.string = value } label: {
+            Text(label).font(BrandFont.body(12, .semibold))
+                .foregroundStyle(BrandColor.textPrimary)
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .background(BrandColor.bgSecondary).clipShape(Capsule())
+        }
+    }
+
+    // MARK: - Native checkout: actions
+
+    /// Seed the tip + method defaults once, from the booking's saved values.
+    private func seedCheckout() {
+        guard !didSeedCheckout else { return }
+        didSeedCheckout = true
+
+        let stored = normalizeMethodKey(booking.checkout.selectedPaymentMethod)
+        if !stored.isEmpty, acceptedMethods.contains(where: { $0.key == stored }) {
+            selectedMethodKey = stored
+        } else {
+            selectedMethodKey = acceptedMethods.first?.key ?? ""
+        }
+        tipInput = CheckoutMoney.fixed2(CheckoutMoney.amount(booking.checkout.tipAmount))
+    }
+
+    /// Sanitize custom-tip input to a money-shaped string (digits + one dot, ≤2
+    /// decimals) — mirrors web onTipInputChange.
+    private func onTipInput(_ raw: String) {
+        checkoutError = nil
+        checkoutSuccess = nil
+        let cleaned = raw.filter { $0.isNumber || $0 == "." }
+        let parts = cleaned.split(separator: ".", omittingEmptySubsequences: false)
+        if parts.count > 2 { return }
+        if parts.count == 2 {
+            tipInput = "\(parts[0]).\(parts[1].prefix(2))"
+        } else {
+            tipInput = String(parts.first ?? "")
+        }
+    }
+
+    private func selectTipPreset(_ percent: Int) {
+        checkoutError = nil
+        checkoutSuccess = nil
+        tipInput = CheckoutMoney.fixed2(CheckoutMoney.tip(serviceSubtotal: serviceSubtotal, percent: percent))
+    }
+
+    /// Map a checkout method key to the Prisma PaymentMethod the confirm route
+    /// accepts. PayPal / Apple Pay have no on-platform confirm (the route excludes
+    /// them) → nil, mirroring web methodKeyToRequestValue.
+    private func methodRequestValue(_ key: String) -> String? {
+        switch key {
+        case "cash": return "CASH"
+        case "card_on_file": return "CARD_ON_FILE"
+        case "tap_to_pay": return "TAP_TO_PAY"
+        case "venmo": return "VENMO"
+        case "zelle": return "ZELLE"
+        case "apple_cash": return "APPLE_CASH"
+        case "stripe_card": return "STRIPE_CARD"
+        default: return nil
+        }
+    }
+
+    private func normalizeMethodKey(_ value: String?) -> String {
+        guard let v = value?.trimmingCharacters(in: .whitespaces), !v.isEmpty else { return "" }
+        switch v.uppercased() {
+        case "CASH": return "cash"
+        case "CARD_ON_FILE": return "card_on_file"
+        case "TAP_TO_PAY": return "tap_to_pay"
+        case "VENMO": return "venmo"
+        case "ZELLE": return "zelle"
+        case "APPLE_CASH": return "apple_cash"
+        case "PAYPAL": return "paypal"
+        case "APPLE_PAY": return "apple_pay"
+        case "STRIPE_CARD": return "stripe_card"
+        default: return v.lowercased()
+        }
+    }
+
+    /// Confirm the payment. Card → hosted Stripe (carries the tip). Off-platform →
+    /// POST /checkout {confirmPayment:true}: unverifiable → AWAITING_CONFIRMATION,
+    /// card-on-file / tap-to-pay → PAID.
+    private func confirmCheckout() async {
+        guard !checkoutBusy, let method = selectedMethod else { return }
+        checkoutError = nil
+        checkoutSuccess = nil
+
+        if !tipsEnabled, tipDecimal > 0 {
+            checkoutError = "Tips are not enabled for this provider."
+            return
+        }
+
+        if selectedMethodIsStripe {
+            await startCheckout()
+            return
+        }
+
+        guard let requestMethod = methodRequestValue(method.key) else {
+            // PayPal / Apple Pay: the client pays via the button above; the pro
+            // confirms receipt out of band (there's no on-platform confirm route).
+            checkoutError = "Pay with the button above — your pro will confirm once they’ve received it."
+            return
+        }
+
+        confirmingCheckout = true
+        defer { confirmingCheckout = false }
+        do {
+            let response = try await session.client.checkout.confirmCheckout(
+                bookingId: booking.id,
+                tipAmount: CheckoutMoney.fixed2(tipDecimal),
+                selectedPaymentMethod: requestMethod,
+                confirmPayment: true
+            )
+            switch (response.booking.checkoutStatus ?? "").uppercased() {
+            case "PAID": paidLocally = true
+            case "AWAITING_CONFIRMATION": awaitingLocally = true
+            default: break
+            }
+            session.signalRefresh()
+            await onDecision()
+        } catch let error as APIError {
+            checkoutError = error.userMessage
+        } catch {
+            checkoutError = "Couldn’t confirm payment. Please try again."
+        }
+    }
+
+    /// Save the tip (+ method) without confirming — POST /checkout {confirmPayment:false}.
+    private func saveTip() async {
+        guard !checkoutBusy else { return }
+        checkoutError = nil
+        checkoutSuccess = nil
+
+        if !tipsEnabled, tipDecimal > 0 {
+            checkoutError = "Tips are not enabled for this provider."
+            return
+        }
+
+        // Only forward a non-Stripe method on save (the confirm route rejects
+        // STRIPE_CARD on this path).
+        let request = selectedMethod.flatMap { methodRequestValue($0.key) }
+        let forwardMethod = request == "STRIPE_CARD" ? nil : request
+
+        savingTip = true
+        defer { savingTip = false }
+        do {
+            _ = try await session.client.checkout.confirmCheckout(
+                bookingId: booking.id,
+                tipAmount: CheckoutMoney.fixed2(tipDecimal),
+                selectedPaymentMethod: forwardMethod,
+                confirmPayment: false
+            )
+            checkoutSuccess = "Tip saved."
+            session.signalRefresh()
+            await onDecision()
+        } catch let error as APIError {
+            checkoutError = error.userMessage
+        } catch {
+            checkoutError = "Couldn’t save your tip. Please try again."
+        }
     }
 
     private func startCheckout() async {
@@ -362,7 +804,8 @@ struct BookingDetailView: View {
         defer { creatingCheckout = false }
         do {
             let sessionResult = try await session.client.checkout.createCheckoutSession(
-                bookingId: booking.id
+                bookingId: booking.id,
+                tipAmount: CheckoutMoney.fixed2(tipDecimal)
             )
             guard let raw = sessionResult.url, let url = URL(string: raw) else {
                 checkoutError = "Couldn’t open checkout. Please try again."

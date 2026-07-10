@@ -24,6 +24,36 @@ struct CheckoutStripeSessionResponse: Decodable, Sendable {
     let stripeCheckout: StripeCheckoutSession
 }
 
+// MARK: - POST /client/bookings/{id}/checkout (non-card confirm / save tip)
+
+/// Request body for the non-card client checkout. Mirrors the web
+/// `ClientCheckoutCard` submit: `confirmPayment: true` confirms a payment
+/// (unverifiable off-platform → AWAITING_CONFIRMATION, card-on-file / tap-to-pay
+/// → PAID); `false` just saves the tip/method. `tipAmount` is a decimal string;
+/// nil optionals are omitted so the server reads them as "unchanged".
+struct ClientCheckoutConfirmRequest: Encodable, Sendable {
+    let tipAmount: String?
+    let selectedPaymentMethod: String?
+    let confirmPayment: Bool
+}
+
+/// The echoed booking after a non-card checkout. Mirrors
+/// `ClientCheckoutConfirmResponseDTO`; only the fields the app reflects are
+/// modeled (unknown keys, incl. `meta`, are ignored).
+public struct ClientCheckoutConfirmResponse: Decodable, Sendable {
+    public struct Booking: Decodable, Sendable {
+        public let id: String
+        public let checkoutStatus: String?
+        public let selectedPaymentMethod: String?
+        public let tipAmount: String?
+        public let totalAmount: String?
+        public let paymentAuthorizedAt: String?
+        public let paymentCollectedAt: String?
+    }
+
+    public let booking: Booking
+}
+
 // MARK: - POST /client/bookings/{id}/deposit/stripe-session
 
 /// Up-front discovery deposit + one-time platform fee breakdown (minor units).

@@ -113,6 +113,11 @@ public struct ClientBooking: Decodable, Sendable, Identifiable {
     /// publicly (portfolio/Looks). Toggle via POST /client/bookings/{id}/media-consent.
     public let mediaUseConsent: Bool
 
+    /// The pro's accepted payment methods (with off-platform handles) + tip config
+    /// + payment note for this booking's native checkout. Optional so pre-field
+    /// responses still decode; nil is treated as "no options loaded" by the checkout.
+    public let paymentOptions: ClientBookingPaymentOptions?
+
     /// True when this is an aftercare-sourced next appointment still PENDING because
     /// its approval is coupled to the previous appointment's off-platform payment —
     /// the pro approves it by confirming that payment (§10). Drives the "pending —
@@ -157,6 +162,58 @@ public struct ClientBookingCheckout: Decodable, Sendable {
     public let depositStatus: String?
     /// Formatted deposit amount (e.g. "$25"), or null when no deposit applies.
     public let depositAmount: String?
+}
+
+// MARK: - Client checkout payment options
+
+/// One accepted payment method for the client checkout. `handle` carries the
+/// pro's off-platform handle (Venmo @, Zelle/Apple Cash contact, PayPal) for the
+/// deep-link/copy affordance; nil for on-platform / handle-free methods. Mirrors
+/// `ClientBookingPaymentMethodDTO`.
+public struct ClientBookingPaymentMethod: Decodable, Sendable, Identifiable {
+    /// Lowercase method key: cash · card_on_file · tap_to_pay · venmo · zelle ·
+    /// apple_cash · paypal · apple_pay · stripe_card.
+    public let key: String
+    public let label: String
+    public let handle: String?
+
+    public var id: String { key }
+
+    public init(key: String, label: String, handle: String?) {
+        self.key = key
+        self.label = label
+        self.handle = handle
+    }
+}
+
+/// The pro's accepted methods + tip config + payment note for a committed
+/// booking's checkout. Mirrors `ClientBookingPaymentOptionsDTO`. Handles are
+/// gated to the client's own booking.
+public struct ClientBookingPaymentOptions: Decodable, Sendable {
+    public let methods: [ClientBookingPaymentMethod]
+    public let tipsEnabled: Bool
+    public let allowCustomTip: Bool
+    /// Whole-percent tip presets on the services subtotal; the client prepends 0%.
+    public let tipSuggestions: [Int]
+    public let paymentNote: String?
+    /// "AT_BOOKING" | "AFTER_SERVICE" (or nil when the pro has no settings row).
+    public let collectPaymentAt: String?
+
+    public init(
+        methods: [ClientBookingPaymentMethod],
+        tipsEnabled: Bool,
+        allowCustomTip: Bool,
+        tipSuggestions: [Int],
+        paymentNote: String?,
+        collectPaymentAt: String?
+    ) {
+        self.methods = methods
+        self.tipsEnabled = tipsEnabled
+        self.allowCustomTip = allowCustomTip
+        self.tipSuggestions = tipSuggestions
+        self.paymentNote = paymentNote
+        self.collectPaymentAt = collectPaymentAt
+    }
 }
 
 public struct ClientBookingItem: Decodable, Sendable, Identifiable {
