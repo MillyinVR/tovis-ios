@@ -79,8 +79,11 @@ enum LastMinuteAnchor {
 }
 
 // MARK: - Field scaffolding (matches ProBlockTimeSheet's treatment)
+//
+// Internal (not private) so the openings create sheet reuses the same field
+// treatment rather than copying it.
 
-private struct EditField<Content: View>: View {
+struct EditField<Content: View>: View {
     let label: String
     @ViewBuilder let content: Content
 
@@ -95,7 +98,7 @@ private struct EditField<Content: View>: View {
     }
 }
 
-private extension View {
+extension View {
     func editFieldBox() -> some View {
         padding(.vertical, 12)
             .padding(.horizontal, 12)

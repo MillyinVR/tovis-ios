@@ -60,6 +60,48 @@ public final class ProScheduleService: Sendable {
         )
     }
 
+    // MARK: - Last-minute openings (create / list / cancel)
+
+    /// GET /api/v1/pro/openings — the pro's upcoming last-minute openings within
+    /// the lookahead window (default next 48h), each with its services, tier
+    /// plans, and recipient count (web `/pro/last-minute` openings list).
+    public func listOpenings(hours: Int = 48, take: Int = 100) async throws -> [ProOpeningDto] {
+        let response: ProOpeningsListResponse = try await api.request(
+            "/pro/openings",
+            query: [
+                URLQueryItem(name: "hours", value: String(hours)),
+                URLQueryItem(name: "take", value: String(take)),
+            ]
+        )
+        return response.openings
+    }
+
+    /// POST /api/v1/pro/openings — create a last-minute opening (slot + tier
+    /// plans). The server validates the window, floors, and tier plans and owns
+    /// the rollout schedule; typed `status/code` errors surface inline. Returns
+    /// the created opening.
+    @discardableResult
+    public func createOpening(_ request: ProOpeningCreateRequest) async throws -> ProOpeningDto {
+        let body = try JSONEncoder.canonical.encode(request)
+        let response: ProOpeningCreateResponse = try await api.request(
+            "/pro/openings",
+            method: .post,
+            body: body
+        )
+        return response.opening
+    }
+
+    /// DELETE /api/v1/pro/openings?id= — cancel an active opening. The server
+    /// refuses to cancel a booked opening (409) and treats an already-cancelled
+    /// one as a no-op.
+    public func cancelOpening(id: String) async throws {
+        try await api.requestVoid(
+            "/pro/openings",
+            method: .delete,
+            query: [URLQueryItem(name: "id", value: id)]
+        )
+    }
+
     /// GET /api/v1/pro/working-hours — the saved (or default) week for a location
     /// type. `locationType` is "SALON" or "MOBILE".
     public func workingHours(
