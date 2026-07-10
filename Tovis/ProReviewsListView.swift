@@ -4,8 +4,10 @@
 // booking taps through to its detail. Lives on the Overview home's Reviews tab.
 //
 // Clients author reviews; the pro may post one public response per review
-// (PUT/DELETE /pro/reviews/{id}/reply, tovis-app PR #475). The web "feature in
-// portfolio" toggle on review media is web-only (omitted here).
+// (PUT/DELETE /pro/reviews/{id}/reply, tovis-app PR #475) and may feature a
+// review's media in their public portfolio via a per-tile toggle (POST/DELETE
+// /pro/media/{id}/portfolio) — the native counterpart of the web
+// `MediaPortfolioToggle` on `/pro/reviews`.
 import SwiftUI
 import TovisKit
 
@@ -25,6 +27,10 @@ struct ProReviewsListView: View {
     @State private var viewingMedia: FullscreenMedia?
     @State private var composingReplyFor: ProReviewItem?
     @State private var removingReplyFor: ProReviewItem?
+    /// The media tile whose portfolio toggle is mid-flight (shows "Saving…").
+    @State private var togglingMediaId: String?
+    /// A failed portfolio toggle's message (e.g. the consent gate), surfaced as an alert.
+    @State private var toggleError: String?
     /// One-shot guard so the deep-link scroll fires only on the first load.
     @State private var didFocus = false
 
@@ -78,6 +84,18 @@ struct ProReviewsListView: View {
             Button("Cancel", role: .cancel) {}
         } message: { _ in
             Text("Your public response will no longer appear under this review.")
+        }
+        .alert(
+            "Couldn’t update portfolio",
+            isPresented: Binding(
+                get: { toggleError != nil },
+                set: { if !$0 { toggleError = nil } }
+            ),
+            presenting: toggleError
+        ) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { message in
+            Text(message)
         }
     }
 
@@ -223,37 +241,72 @@ struct ProReviewsListView: View {
                         }
                         .clipped()
                 } else {
-                    Button {
-                        // `src` is a signed thumbnail/source URL (poster for video),
-                        // so open it as an image — reliable full-size view of the shot.
-                        viewingMedia = FullscreenMedia.remote(id: tile.id, urlString: tile.src, isVideo: false)
-                    } label: {
-                        ZStack(alignment: .topTrailing) {
-                            RoundedRectangle(cornerRadius: 10, style: .continuous).fill(BrandColor.bgPrimary)
-                            if let url = URL(string: tile.src) {
-                                AsyncImage(url: url) { image in
-                                    image.resizable().scaledToFill()
-                                } placeholder: {
-                                    ProgressView().tint(BrandColor.accent)
+                    VStack(spacing: 6) {
+                        Button {
+                            // `src` is a signed thumbnail/source URL (poster for video),
+                            // so open it as an image — reliable full-size view of the shot.
+                            viewingMedia = FullscreenMedia.remote(id: tile.id, urlString: tile.src, isVideo: false)
+                        } label: {
+                            ZStack(alignment: .topTrailing) {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous).fill(BrandColor.bgPrimary)
+                                if let url = URL(string: tile.src) {
+                                    AsyncImage(url: url) { image in
+                                        image.resizable().scaledToFill()
+                                    } placeholder: {
+                                        ProgressView().tint(BrandColor.accent)
+                                    }
+                                }
+                                if tile.isVideo {
+                                    Text("VIDEO")
+                                        .font(BrandFont.mono(8))
+                                        .foregroundStyle(BrandColor.textPrimary)
+                                        .padding(.horizontal, 5).padding(.vertical, 2)
+                                        .background(BrandColor.bgPrimary.opacity(0.72))
+                                        .clipShape(Capsule())
+                                        .padding(6)
                                 }
                             }
-                            if tile.isVideo {
-                                Text("VIDEO")
-                                    .font(BrandFont.mono(8))
-                                    .foregroundStyle(BrandColor.textPrimary)
-                                    .padding(.horizontal, 5).padding(.vertical, 2)
-                                    .background(BrandColor.bgPrimary.opacity(0.72))
-                                    .clipShape(Capsule())
-                                    .padding(6)
-                            }
+                            .aspectRatio(1, contentMode: .fill)
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                         }
-                        .aspectRatio(1, contentMode: .fill)
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .buttonStyle(.plain)
+
+                        portfolioToggle(tile)
                     }
-                    .buttonStyle(.plain)
                 }
             }
         }
+    }
+
+    /// Per-tile "feature this review photo in my portfolio" pill — the native
+    /// counterpart of web's `MediaPortfolioToggle`. Featured = filled accent pill
+    /// ("In Portfolio"); not featured = outline pill ("Add to Portfolio"). Only
+    /// non-paired tiles get it: a featured tile that auto-pairs with a booking
+    /// "before" renders as the comparison slider (above), which carries no toggle —
+    /// matching the web `/pro/reviews` page exactly.
+    private func portfolioToggle(_ tile: ProReviewItem.MediaTile) -> some View {
+        let featured = tile.isFeaturedInPortfolio
+        let busy = togglingMediaId == tile.id
+        return Button {
+            Task { await togglePortfolio(tile) }
+        } label: {
+            Text(busy ? "Saving…" : (featured ? "In Portfolio" : "Add to Portfolio"))
+                .font(BrandFont.body(11, .semibold))
+                .foregroundStyle(featured ? BrandColor.onAccent : BrandColor.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+                .background(featured ? BrandColor.accent : BrandColor.bgSecondary)
+                .clipShape(Capsule())
+                .overlay(
+                    Capsule().stroke(
+                        BrandColor.textMuted.opacity(featured ? 0 : 0.30), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .disabled(busy)
+        .accessibilityLabel(featured ? "Remove from portfolio" : "Add to portfolio")
     }
 
     private func errorState(_ message: String) -> some View {
@@ -305,6 +358,24 @@ struct ProReviewsListView: View {
             await load()
         } catch {
             // Non-fatal; a reload will reflect the true state.
+        }
+    }
+
+    /// Feature / un-feature one review photo in the pro's public portfolio, then
+    /// reload so the list reflects the new flag (and any server-side auto-pairing
+    /// that turns a freshly-featured tile into a before/after slider).
+    private func togglePortfolio(_ tile: ProReviewItem.MediaTile) async {
+        guard togglingMediaId == nil else { return }
+        togglingMediaId = tile.id
+        defer { togglingMediaId = nil }
+        do {
+            try await session.client.proProfile.setMediaFeaturedInPortfolio(
+                mediaId: tile.id, featured: !tile.isFeaturedInPortfolio)
+            await load()
+        } catch let error as APIError {
+            toggleError = error.userMessage
+        } catch {
+            toggleError = "Couldn’t update your portfolio. Try again."
         }
     }
 }

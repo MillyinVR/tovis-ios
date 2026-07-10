@@ -3,8 +3,9 @@ import Foundation
 // Wire models for the PRO reviews list — GET /api/v1/pro/reviews (tovis-app
 // PR #438). Mirrors `ProReviewListItem` from lib/pro/loadProReviewsList.ts: the
 // 100 most recent reviews + render-safe media tiles. Clients author reviews;
-// the pro may post one public reply per review (PR #475) and may only feature
-// media in their portfolio on the web.
+// the pro may post one public reply per review (PR #475) and may feature a
+// review's media in their public portfolio (`isFeaturedInPortfolio` below drives
+// the native toggle → POST/DELETE /pro/media/{id}/portfolio).
 
 /// `GET /api/v1/pro/reviews` → `{ ok, items }` (envelope's `ok` ignored).
 public struct ProReviewsListResponse: Decodable, Sendable {
