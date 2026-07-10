@@ -11,13 +11,16 @@ struct BookingCalendarTests {
 
     private func ics(
         title: String = "Balayage",
+        start: Date? = nil,
         durationMinutes: Int = 90,
         location: String? = "Studio Nine, Portland",
-        notes: String? = nil
+        notes: String? = nil,
+        timeZone: String? = nil
     ) -> String {
         BookingCalendar.icsDocument(
-            uid: "bk_1@tovis", title: title, start: start,
-            durationMinutes: durationMinutes, location: location, notes: notes, now: now
+            uid: "bk_1@tovis", title: title, start: start ?? self.start,
+            durationMinutes: durationMinutes, location: location, notes: notes,
+            timeZone: timeZone, now: now
         )
     }
 
@@ -59,5 +62,55 @@ struct BookingCalendarTests {
 
         let clamped = ics(durationMinutes: -30)
         #expect(clamped.contains("\r\nDTEND:20260702T140000Z\r\n"))
+    }
+
+    // MARK: - Timezone-anchored output (VTIMEZONE + TZID, DST aware)
+
+    @Test func summerDstAnchorsToLocalWallClockWithVTimeZone() {
+        // 2026-07-02T18:00:00Z == 2:00 PM in America/New_York (EDT, UTC−4).
+        let summer = Date(timeIntervalSince1970: 1_783_015_200)
+        let doc = ics(start: summer, timeZone: "America/New_York")
+
+        // Self-contained VTIMEZONE carrying the real DST offset at the instant.
+        #expect(doc.contains("\r\nBEGIN:VTIMEZONE\r\n"))
+        #expect(doc.contains("\r\nTZID:America/New_York\r\n"))
+        #expect(doc.contains("\r\nTZOFFSETFROM:-0400\r\n"))
+        #expect(doc.contains("\r\nTZOFFSETTO:-0400\r\n"))
+        #expect(doc.contains("\r\nEND:VTIMEZONE\r\n"))
+
+        // Floating local wall-clock (no trailing Z): 2:00 PM start, +90 → 3:30 PM.
+        #expect(doc.contains("\r\nDTSTART;TZID=America/New_York:20260702T140000\r\n"))
+        #expect(doc.contains("\r\nDTEND;TZID=America/New_York:20260702T153000\r\n"))
+        // No bare-UTC VEVENT instant when a zone is anchored (the VTIMEZONE's
+        // own `DTSTART:19700101T000000` anchor is expected and left untouched).
+        #expect(!doc.contains("\r\nDTSTART:20260702"))
+        #expect(!doc.contains("20260702T140000Z"))
+    }
+
+    @Test func winterStandardTimeUsesNonDstOffset() {
+        // 2026-01-02T19:00:00Z == 2:00 PM in America/New_York (EST, UTC−5).
+        let winter = Date(timeIntervalSince1970: 1_767_380_400)
+        let doc = ics(start: winter, timeZone: "America/New_York")
+
+        #expect(doc.contains("\r\nTZOFFSETFROM:-0500\r\n"))
+        #expect(doc.contains("\r\nTZOFFSETTO:-0500\r\n"))
+        // Same 2:00 PM local wall-clock as the summer case, one offset lower.
+        #expect(doc.contains("\r\nDTSTART;TZID=America/New_York:20260102T140000\r\n"))
+        #expect(doc.contains("\r\nDTEND;TZID=America/New_York:20260102T153000\r\n"))
+    }
+
+    @Test func nilTimeZoneFallsBackToUtc() {
+        let doc = ics(timeZone: nil)
+        #expect(!doc.contains("BEGIN:VTIMEZONE"))
+        #expect(!doc.contains("TZID="))
+        #expect(doc.contains("\r\nDTSTART:20260702T140000Z\r\n"))
+        #expect(doc.contains("\r\nDTEND:20260702T153000Z\r\n"))
+    }
+
+    @Test func invalidTimeZoneFallsBackToUtc() {
+        let doc = ics(timeZone: "Not/AZone")
+        #expect(!doc.contains("BEGIN:VTIMEZONE"))
+        #expect(!doc.contains("TZID="))
+        #expect(doc.contains("\r\nDTSTART:20260702T140000Z\r\n"))
     }
 }

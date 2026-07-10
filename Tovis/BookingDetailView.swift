@@ -1674,7 +1674,8 @@ struct BookingDetailView: View {
             start: start,
             durationMinutes: booking.totalDurationMinutes,
             location: booking.locationLabel,
-            notes: proName.map { "Appointment with \($0)." }
+            notes: proName.map { "Appointment with \($0)." },
+            timeZone: booking.timeZone
         )
 
         let url = FileManager.default.temporaryDirectory
