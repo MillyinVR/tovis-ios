@@ -42,6 +42,9 @@ struct ProBookingDetailView: View {
     // Edit-services sheet (mirrors the web calendar BookingModal service editor).
     @State private var showEditServices = false
 
+    // Money-trail inspector sheet (read-only port of the web MoneyTrailInspector).
+    @State private var showMoneyTrail = false
+
     // Refund
     @State private var showRefund = false
     @State private var refundAmount = ""
@@ -506,6 +509,27 @@ struct ProBookingDetailView: View {
                     moneyRow("Total", value: total, strong: true)
                 }
                 .padding(.top, 4)
+
+                // Full money trail — every charge, fee, and refund on this booking
+                // (read-only inspector; the refund / waive write actions are a later
+                // increment). Mirrors the web `/pro/bookings/[id]` MoneyTrailInspector.
+                Button { showMoneyTrail = true } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "list.bullet.rectangle").font(.system(size: 12))
+                        Text("View money trail").font(BrandFont.body(13, .semibold))
+                    }
+                    .foregroundStyle(BrandColor.accent)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 11)
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(BrandColor.accent.opacity(0.4), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 4)
+            }
+        }
+        .sheet(isPresented: $showMoneyTrail) {
+            NavigationStack {
+                ProMoneyTrailView(bookingId: booking.id)
             }
         }
     }
