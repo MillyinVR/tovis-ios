@@ -414,6 +414,23 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
     Decimal-string / RECOGNITION nulls · PATCH sends credit as a NUMBER not string · discount as an integer ·
     nil optionals dropped). swift test 241; `xcodebuild build` clean. **Rest of A4 (data-migration wizard,
     media manager, portfolio-feature toggle) still open.**
+  - [x] **A4-portfolio-feature review "feature media in portfolio" toggle** — ✅ shipped 2026-07-10
+    (iOS #65 `6b10828`, **iOS-only** — the shared `POST`/`DELETE /api/v1/pro/media/{id}/portfolio`
+    route already exists; no backend change, no migration). Ports the web `MediaPortfolioToggle` on
+    `/pro/reviews` — the per-tile "feature this review photo in my portfolio" pill — onto the native
+    `ProReviewsListView` media grid. The reviews-list DTO already carried `isFeaturedInPortfolio`
+    (decoded since PR #438), so this is purely the write path + affordance that was web-only. New
+    `ProProfileService.setMediaFeaturedInPortfolio(mediaId:featured:)` → POST (feature) / DELETE
+    (un-feature), sending **no body** — matching web exactly, so the route auto-pairs the featured
+    "after" with the booking's "before" server-side. Review media is already publish-consented (client
+    attached it → `reviewId` set) so the public-share consent gate passes; a boolean set is naturally
+    idempotent → no idempotency key. Per-tile pill under each **non-paired** review photo (filled accent
+    "In Portfolio" when featured / outline "Add to Portfolio" when not / "Saving…" mid-flight — copy
+    verbatim from web); a featured tile that auto-pairs renders as the before/after slider, which — as on
+    web — carries no toggle. On success the list reloads (reflects the flag + auto-pairing); a failed
+    toggle (e.g. the consent gate 403) surfaces via an alert. +3 write-path tests (`PortfolioFeatureTests`:
+    feature POSTs no body · un-feature DELETEs · server error surfaces). swift test 244; `xcodebuild build`
+    clean. **Rest of A4 (data-migration wizard, media manager) still open.**
   - ↪ **Predecessor for mid-session service change** (`tovis-app §22`, MS-iOS): A4's
     **edit-service-items** modal is the first place iOS gains a TovisKit method to change
     services on an existing booking (today only `sendConsultationProposal` exists — no
