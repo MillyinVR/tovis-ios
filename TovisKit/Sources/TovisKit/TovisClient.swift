@@ -47,6 +47,7 @@ public final class TovisClient: Sendable {
     public let proLocations: ProLocationsService
     /// PRO workspace — the clients directory (search + addresses + notes).
     public let proClients: ProClientsService
+    public let proReminders: ProRemindersService
     /// PRO workspace — session media (before/after photo upload + list).
     public let proMedia: ProMediaService
     /// PRO workspace — the Overview / dashboard monthly analytics.
@@ -130,6 +131,7 @@ public final class TovisClient: Sendable {
         self.proSchedule = ProScheduleService(api: api)
         self.proLocations = ProLocationsService(api: api)
         self.proClients = ProClientsService(api: api)
+        self.proReminders = ProRemindersService(api: api)
         self.proMedia = ProMediaService(
             api: api,
             supabaseURL: config.supabaseURL,
