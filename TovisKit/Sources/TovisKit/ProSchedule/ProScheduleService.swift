@@ -60,6 +60,17 @@ public final class ProScheduleService: Sendable {
         )
     }
 
+    // MARK: - Waitlist outreach
+
+    /// GET /api/v1/pro/waitlist — the clients waiting for this pro's services,
+    /// grouped by service and FIFO-ranked (web `/pro/waitlist` outreach feed). The
+    /// pro works the list top-down to fill a spot; each entry carries a
+    /// server-formatted preference label and join instant. Read-only here — the
+    /// "offer a concrete time" flow is a separate calendar surface.
+    public func waitlistOutreach() async throws -> ProWaitlistOutreach {
+        return try await api.request("/pro/waitlist")
+    }
+
     // MARK: - Last-minute openings (create / list / cancel)
 
     /// GET /api/v1/pro/openings — the pro's upcoming last-minute openings within

@@ -31,6 +31,18 @@ enum Wire {
         return f.string(from: date)
     }
 
+    /// e.g. "Jul 1" rendered in `timeZone` (or the device zone). Month + day, no
+    /// year — the compact "joined …" label the waitlist/outreach rows use (mirrors
+    /// web's `month:'short', day:'numeric'`). Returns "" for an unparseable value.
+    static func monthDay(_ iso: String, timeZone: String? = nil) -> String {
+        guard let date = date(iso) else { return "" }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US")
+        f.timeZone = timeZone.flatMap(TimeZone.init(identifier:)) ?? .current
+        f.dateFormat = "MMM d"
+        return f.string(from: date)
+    }
+
     /// Short relative age of a backend ISO instant, e.g. "now", "5m", "3h",
     /// "2d", or a "MMM d" date for older items. Used by notification timestamps.
     static func relativeAgo(_ iso: String, now: Date = Date()) -> String {
