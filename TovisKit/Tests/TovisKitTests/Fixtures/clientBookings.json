@@ -51,7 +51,19 @@
         "hasPendingRebookConfirmation": false,
         "rebookProposedFor": null,
         "mediaUseConsent": false,
-        "consultation": null
+        "consultation": null,
+        "paymentOptions": {
+          "methods": [
+            { "key": "cash", "label": "Cash", "handle": null },
+            { "key": "venmo", "label": "Venmo", "handle": "@amara" },
+            { "key": "zelle", "label": "Zelle", "handle": "amara@example.com" }
+          ],
+          "tipsEnabled": true,
+          "allowCustomTip": true,
+          "tipSuggestions": [18, 20, 25],
+          "paymentNote": "Cash or Venmo preferred, thank you!",
+          "collectPaymentAt": "AFTER_SERVICE"
+        }
       }
     ],
     "pending": [],
@@ -104,7 +116,8 @@
         "hasPendingRebookConfirmation": false,
         "rebookProposedFor": null,
         "mediaUseConsent": false,
-        "consultation": null
+        "consultation": null,
+        "paymentOptions": null
       }
     ],
     "past": [],

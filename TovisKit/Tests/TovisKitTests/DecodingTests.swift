@@ -983,10 +983,20 @@ func fixture(_ name: String) throws -> Data {
         // A standalone booking is not a coupled aftercare rebook.
         #expect(booking.rebookOfBookingId == nil)
         #expect(!booking.isCoupledRebookAwaitingPaymentConfirmation)
+        // Native-checkout payment options (accepted methods + handles + tip config).
+        let options = try #require(booking.paymentOptions)
+        #expect(options.methods.map(\.key) == ["cash", "venmo", "zelle"])
+        #expect(options.methods.first(where: { $0.key == "venmo" })?.handle == "@amara")
+        #expect(options.tipsEnabled)
+        #expect(options.allowCustomTip)
+        #expect(options.tipSuggestions == [18, 20, 25])
+        #expect(options.paymentNote == "Cash or Venmo preferred, thank you!")
+        #expect(options.collectPaymentAt == "AFTER_SERVICE")
         // The prebooked aftercare rebook is PENDING + coupled to bk_1's payment —
         // drives the "pending — your pro will confirm" label (§10).
         let next = try #require(b.prebooked.first)
         #expect(next.rebookOfBookingId == "bk_1")
+        #expect(next.paymentOptions == nil)
         #expect(next.isCoupledRebookAwaitingPaymentConfirmation)
         // REAL_NAME mode → first + last name.
         #expect(booking.professional?.displayName == "Dana Lee")
