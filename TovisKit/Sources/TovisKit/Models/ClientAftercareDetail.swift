@@ -69,11 +69,16 @@ public struct ClientAftercareDetail: Decodable, Sendable {
     }
 
     /// True when there's something to render — care notes, at least one photo,
-    /// or at least one product recommendation. (`canShowAftercare` can be true
-    /// for a COMPLETED booking with none of these yet.)
+    /// at least one product recommendation, or a rebook affordance (recommended
+    /// window / active coupled next booking). (`canShowAftercare` can be true for
+    /// a COMPLETED booking with none of these yet.) Including the rebook keeps a
+    /// rebook-only summary from being suppressed (PF6) — mirrors the render gate.
     public var hasContent: Bool {
         let hasNotes = (aftercare?.notes?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
-        return hasNotes || beforeAfter.hasAny || !recommendedProducts.isEmpty
+        return hasNotes
+            || beforeAfter.hasAny
+            || !recommendedProducts.isEmpty
+            || (rebook?.hasRenderableRebook ?? false)
     }
 
     /// In-app recommendations that can be added to the booking checkout.
@@ -250,6 +255,14 @@ public struct ClientAftercareRebook: Decodable, Sendable {
     /// Mirrors web's `pendingPaymentConfirmation` on the next-appointment card.
     public var isNextBookingPendingApproval: Bool {
         confirmedNextBooking?.status.uppercased() == "PENDING"
+    }
+
+    /// The rebook slice has something to surface — a recommended window, or an
+    /// active (non-cancelled) coupled next booking. Mirrors the aftercare
+    /// rebook-card render gate, and feeds `ClientAftercareDetail.hasContent` so a
+    /// rebook-only summary still shows the card (PF6).
+    public var hasRenderableRebook: Bool {
+        isRecommendedWindow || confirmedNextBooking != nil
     }
 }
 

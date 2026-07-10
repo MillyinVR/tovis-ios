@@ -224,6 +224,16 @@ which auto-`ACCEPTED`s it). Backend is additive — iOS keeps working until this
   auto-approves the coupled next booking), and a coupled aftercare PENDING next appointment shows a
   "Pending — your pro will confirm" notice on `BookingDetailView`. Both fields decode optionally
   (dark until the web prod deploy of #550 lands — held for Tori). Clears all §6 deferred niceties.
+- [x] **PF6 — rebook affordance + truthful copy at AWAITING_CONFIRMATION (iOS)** — SHIPPED
+  (audit 2026-07-10; pairs web §10 PF6). On `BookingDetailView` the "waiting on your pro" banner
+  and the rebook-window card already share one scroll, but the card was suppressed: `hasContent`
+  (`ClientAftercareDetail`) counted only notes/photos/products, so a rebook-only summary
+  (recommended window, no other content) hid the whole aftercare card + its "Rebook now" CTA.
+  Fix: (1) new `ClientAftercareRebook.hasRenderableRebook` (recommended window OR active coupled
+  next booking) folded into `hasContent`, and reused as the rebook-card render gate; (2) the
+  `AWAITING_CONFIRMATION` banner copy is now conditional (`hasRebookOption`) so it points at
+  rebooking instead of claiming "nothing else to do". Decode-only model change; DecodingTests
+  cover the rebook-only `hasContent`.
 
 ## 7. Messaging refinement epic (2026-07-08)
 Refine the Inbox/messaging surface for BOTH roles, web + iOS in parity. Root cause of the
