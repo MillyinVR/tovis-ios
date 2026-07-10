@@ -114,3 +114,44 @@ struct ProClientProfileContextRequest: Encodable {
     let occupation: String
     let proCapturedSocialHandle: String
 }
+
+// MARK: - Technical record write forms (formula · consent · photo-release)
+//
+// Increment 2 of the pro private-client-view parity. The web routes already exist
+// and 404 unless the founder technical-record flag is on. Free text (formula
+// result notes, consent notes) is encrypted server-side — the client sends
+// plaintext. Dates are ISO-8601 strings.
+
+/// POST /api/v1/pro/clients/{id}/formula body. At least one detail is required;
+/// `resultNotes` is encrypted server-side and `processingTimeMinutes` is clamped
+/// 1…1440 by the route. `bookingId` optionally ties the entry to a visit.
+struct ProClientFormulaRequest: Encodable {
+    let brand: String?
+    let developer: String?
+    let ratio: String?
+    let processingTimeMinutes: Int?
+    let resultNotes: String?
+    let bookingId: String?
+}
+
+/// POST /api/v1/pro/clients/{id}/consent body. `kind` ∈ GENERAL_CONSENT |
+/// SERVICE_WAIVER | PATCH_TEST. The patch-test result + validity are only
+/// meaningful for PATCH_TEST (the route nulls them otherwise). `notes` is
+/// encrypted server-side.
+struct ProClientConsentRequest: Encodable {
+    let kind: String
+    let serviceScope: String?
+    let proofMethod: String?
+    let proofRef: String?
+    let signedAt: String?
+    let notes: String?
+    let patchTestResult: String?
+    let validUntil: String?
+    let bookingId: String?
+}
+
+/// PATCH /api/v1/pro/clients/{id}/photo-release body. `status` ∈ NOT_SET | GRANTED
+/// | DECLINED (NOT_SET clears the standing release).
+struct ProClientPhotoReleaseRequest: Encodable {
+    let status: String
+}

@@ -3,7 +3,8 @@
 // countdown + stats), the safety strip (alert banner + allergies, severity-colored),
 // a do-not-rebook banner, and the 8-tab chart: Notes · Allergies · History ·
 // Products · Reviews · Pro feedback · Photos · Technical record (founder-gated). The
-// Notes tab can append a note; other per-tab write forms stay on the web for now.
+// per-tab write forms are native (notes, allergies, alert, do-not-rebook, profile
+// context, and the technical record's formula/consent/photo-release).
 import SwiftUI
 import TovisKit
 
@@ -464,13 +465,10 @@ struct ProClientChartView: View {
     }
 
     private func technicalTab() -> some View {
-        BrandSurface {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Technical record").font(BrandFont.body(14, .semibold)).foregroundStyle(BrandColor.textPrimary)
-                Text("Formulas and consent records contain encrypted notes and are viewable on the web for now.")
-                    .font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
-            }
-        }
+        // Founder-gated formula history + consent/patch-test records + photo-release,
+        // loaded lazily from GET /pro/clients/{id}/technical so the server-decrypted
+        // encrypted free text only travels when this tab is open (mirrors the web).
+        ProClientTechnicalView(clientId: clientId)
     }
 
     // MARK: - Bits
