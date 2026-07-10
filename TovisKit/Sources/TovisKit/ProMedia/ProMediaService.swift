@@ -93,6 +93,48 @@ public final class ProMediaService: Sendable {
         return response.items
     }
 
+    // MARK: - Media manager (web `/pro/media` grid + OwnerMediaMenu editor)
+
+    /// GET /api/v1/pro/media → the pro's own media library (all visibilities) +
+    /// the taggable service options. The native read side of the RSC-only web
+    /// media manager; there is no web JSON list route, so this endpoint exists for
+    /// native. Owner-scoped server-side.
+    public func listManagedMedia() async throws -> ProManagedMediaListResponse {
+        try await api.request("/pro/media")
+    }
+
+    /// PATCH /api/v1/pro/media/{id} — edit a library asset's caption, its Looks /
+    /// portfolio flags, and its service tags (full-replacement set). Mirrors the
+    /// web `OwnerMediaMenu` editor's PATCH: visibility is recomputed server-side
+    /// from the two flags (never sent), and `beforeAssetId` is left untouched so a
+    /// core edit never clobbers the server's before/after auto-pairing. No
+    /// idempotency key — replacing state is naturally idempotent (matches web + the
+    /// portfolio toggle). Throws `APIError.server(...)` on the consent gate (403,
+    /// unpromoted private media going public) or an invalid/empty `serviceIds`.
+    public func updateMedia(
+        mediaId: String,
+        caption: String?,
+        isEligibleForLooks: Bool,
+        isFeaturedInPortfolio: Bool,
+        serviceIds: [String]
+    ) async throws {
+        let payload = try JSONEncoder.canonical.encode(
+            ProMediaUpdateRequest(
+                caption: caption,
+                isEligibleForLooks: isEligibleForLooks,
+                isFeaturedInPortfolio: isFeaturedInPortfolio,
+                serviceIds: serviceIds
+            )
+        )
+        try await api.requestVoid("/pro/media/\(mediaId)", method: .patch, body: payload)
+    }
+
+    /// DELETE /api/v1/pro/media/{id} — hard-delete a library asset (owner-only, no
+    /// soft-delete). Mirrors the web editor's Delete.
+    public func deleteMedia(mediaId: String) async throws {
+        try await api.requestVoid("/pro/media/\(mediaId)", method: .delete)
+    }
+
     /// Upload a new avatar (or service image) to its stable public path and return
     /// the cache-busted public URL to store on the profile/offering. Two steps —
     /// presign (`AVATAR_PUBLIC`/`SERVICE_IMAGE_PUBLIC`) → signed PUT (`upsert:true`);
