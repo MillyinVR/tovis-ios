@@ -1,8 +1,9 @@
 // Pro booking detail — native port of the web `/pro/bookings/[id]` page, 1:1. The
 // calendar agenda is the list; tapping a booking opens this. Reads the authoritative
 // detail (`GET /pro/bookings/[id]`) and renders the header card (Booking · #id ·
-// TOTAL · client · when · tap-for-directions · Open session + Refund + lifecycle
-// actions), a Timing timeline, a Payment breakdown, and an Aftercare snapshot. The
+// TOTAL · client · when · tap-for-directions · Open session + lifecycle actions),
+// a Timing timeline, a Payment breakdown (with the money-trail inspector — the
+// single refund + no-show-waive surface), and an Aftercare snapshot. The
 // lifecycle action set mirrors buildLifecycleActionViewModel (role PRO): PENDING →
 // Accept + Cancel, ACCEPTED → Start booking + Cancel, IN_PROGRESS → Continue
 // session, terminal → status text. (No rebook here — rebook lives on aftercare.)
@@ -47,15 +48,6 @@ struct ProBookingDetailView: View {
 
     // Reschedule sheet (move the booking to a new time — web calendar reschedule).
     @State private var showReschedule = false
-
-    // Refund
-    @State private var showRefund = false
-    @State private var refundAmount = ""
-    @State private var refundReason = ""
-    @State private var refunding = false
-    @State private var refundError: String?
-    @State private var refundDone = false
-    @State private var showRefundConfirm = false
 
     // Message-the-client entry point (mirrors web /pro/bookings/[id]).
     @State private var messageNav: MessageThreadNav?
@@ -236,18 +228,11 @@ struct ProBookingDetailView: View {
     @ViewBuilder
     private func actionButtons(_ booking: ProBookingDetail) -> some View {
         VStack(spacing: 10) {
-            // Header always offers Open session + Refund (when refundable).
-            HStack(spacing: 10) {
-                NavigationLink { ProSessionHubView(bookingId: booking.id) } label: {
-                    primaryLabel("Open session →")
-                }
-                if booking.canRefund {
-                    Button { showRefund.toggle(); refundError = nil } label: { ghostLabel("Refund") }
-                        .disabled(refunding)
-                }
+            // Header opens the session; refund + no-show waive live in the money-trail
+            // inspector (Payment card), matching web where refund lives only there.
+            NavigationLink { ProSessionHubView(bookingId: booking.id) } label: {
+                primaryLabel("Open session →")
             }
-
-            if showRefund && booking.canRefund { refundForm(booking) }
 
             if let actionError {
                 Text(actionError).font(BrandFont.body(12)).foregroundStyle(BrandColor.ember)
@@ -330,53 +315,6 @@ struct ProBookingDetailView: View {
         }
         .buttonStyle(.plain)
         .disabled(pendingVerb != nil)
-    }
-
-    // MARK: - Refund form
-
-    private func refundForm(_ booking: ProBookingDetail) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if refundDone {
-                Text("Refund issued.").font(BrandFont.body(13, .semibold)).foregroundStyle(BrandColor.textSecondary)
-            } else {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("AMOUNT (\((booking.stripeCurrency ?? "usd").uppercased()))")
-                        .font(BrandFont.mono(9)).tracking(0.6).foregroundStyle(BrandColor.textSecondary)
-                    TextField(fullAmountPlaceholder(booking), text: $refundAmount)
-                        .keyboardType(.decimalPad)
-                        .font(BrandFont.body(14)).foregroundStyle(BrandColor.textPrimary)
-                        .padding(10).background(BrandColor.bgSecondary).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                }
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("REASON (OPTIONAL)").font(BrandFont.mono(9)).tracking(0.6).foregroundStyle(BrandColor.textSecondary)
-                    TextField("e.g. client cancelled late", text: $refundReason)
-                        .font(BrandFont.body(14)).foregroundStyle(BrandColor.textPrimary)
-                        .padding(10).background(BrandColor.bgSecondary).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                }
-                if let refundError {
-                    Text(refundError).font(BrandFont.body(11, .semibold)).foregroundStyle(BrandColor.ember)
-                }
-                HStack(spacing: 10) {
-                    Button { startRefund() } label: {
-                        Group { refunding ? Text("Refunding…") : Text("Confirm refund") }
-                            .font(BrandFont.body(13, .semibold))
-                            .padding(.vertical, 10).padding(.horizontal, 16)
-                            .foregroundStyle(BrandColor.onAccent).background(BrandColor.accent)
-                            .clipShape(Capsule())
-                    }
-                    .buttonStyle(.plain).disabled(refunding)
-                    Button { showRefund = false; refundError = nil } label: { ghostLabel("Cancel") }
-                        .disabled(refunding)
-                }
-            }
-        }
-        .padding(12)
-        .background(BrandColor.bgPrimary)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .confirmationDialog(refundConfirmCopy(booking), isPresented: $showRefundConfirm, titleVisibility: .visible) {
-            Button("Refund", role: .destructive) { Task { await refund(booking) } }
-            Button("Cancel", role: .cancel) {}
-        }
     }
 
     // MARK: - Services
@@ -535,9 +473,10 @@ struct ProBookingDetailView: View {
                 }
                 .padding(.top, 4)
 
-                // Full money trail — every charge, fee, and refund on this booking
-                // (read-only inspector; the refund / waive write actions are a later
-                // increment). Mirrors the web `/pro/bookings/[id]` MoneyTrailInspector.
+                // Full money trail — every charge, fee, and refund on this booking,
+                // plus the refund + no-show-fee-waive actions (server-capability-gated).
+                // Mirrors the web `/pro/bookings/[id]` MoneyTrailInspector, the single
+                // place refund lives on both clients.
                 Button { showMoneyTrail = true } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "list.bullet.rectangle").font(.system(size: 12))
@@ -689,42 +628,11 @@ struct ProBookingDetailView: View {
         return URL(string: "http://maps.apple.com/?q=\(q)")
     }
 
-    private func fullAmountPlaceholder(_ booking: ProBookingDetail) -> String {
-        if let cents = booking.stripeAmountTotal {
-            return String(format: "Full: %.2f", Double(cents) / 100)
-        }
-        return "Full amount"
-    }
-
-    private func refundConfirmCopy(_ booking: ProBookingDetail) -> String {
-        let cents = parseRefundCents()
-        if cents == nil {
-            let full = booking.stripeAmountTotal.map { String(format: " (full: %.2f %@)", Double($0) / 100, (booking.stripeCurrency ?? "usd").uppercased()) } ?? ""
-            return "Refund this booking in full\(full)? This cannot be undone."
-        }
-        return "Refund \(refundAmount.trimmingCharacters(in: .whitespaces)) \((booking.stripeCurrency ?? "usd").uppercased()) for this booking? This cannot be undone."
-    }
-
-    private func parseRefundCents() -> Int? {
-        let t = refundAmount.trimmingCharacters(in: .whitespaces)
-        guard !t.isEmpty, let dollars = Double(t), dollars > 0 else { return nil }
-        return Int((dollars * 100).rounded())
-    }
-
     private func primaryLabel(_ title: String) -> some View {
         Text(title)
             .font(BrandFont.body(14, .semibold))
             .frame(maxWidth: .infinity).padding(.vertical, 14)
             .foregroundStyle(BrandColor.onAccent).background(BrandColor.accent)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
-
-    private func ghostLabel(_ title: String) -> some View {
-        Text(title)
-            .font(BrandFont.body(13, .semibold))
-            .padding(.vertical, 12).padding(.horizontal, 18)
-            .foregroundStyle(BrandColor.textPrimary).background(BrandColor.bgPrimary)
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(BrandColor.textMuted.opacity(0.2), lineWidth: 1))
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
@@ -813,33 +721,6 @@ struct ProBookingDetailView: View {
             session.signalRefresh(); await load()
         } catch let error as APIError { confirmPaymentError = error.userMessage }
         catch { confirmPaymentError = "Could not confirm payment. Check your connection and try again." }
-    }
-
-    private func startRefund() {
-        // Validate before the confirm dialog (mirrors the web's positive-amount check).
-        let t = refundAmount.trimmingCharacters(in: .whitespaces)
-        if !t.isEmpty, (Double(t) ?? -1) <= 0 {
-            refundError = "Enter a positive amount, or leave blank to refund in full."
-            return
-        }
-        refundError = nil
-        showRefundConfirm = true
-    }
-
-    private func refund(_ booking: ProBookingDetail) async {
-        guard !refunding else { return }
-        refunding = true; refundError = nil
-        defer { refunding = false }
-        do {
-            try await session.client.proBookings.refund(
-                bookingId: bookingId,
-                amountCents: parseRefundCents(),
-                reason: refundReason.trimmingCharacters(in: .whitespaces).nilIfEmpty
-            )
-            refundDone = true
-            session.signalRefresh(); await load()
-        } catch let error as APIError { refundError = error.userMessage }
-        catch { refundError = "Network error while refunding." }
     }
 }
 

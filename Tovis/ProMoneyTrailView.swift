@@ -1,14 +1,16 @@
 // Money-trail inspector — native port of the web `MoneyTrailInspector`
-// (`app/_components/booking/MoneyTrailInspector.tsx`), read-only increment. One
-// trustworthy view of a booking's money: the Captured / Refunded / Net summary
-// plus a flattened timeline of the deposit, final-bill charge, platform discovery
-// fee, no-show / late-cancel fee, and every refund row. Reads
-// `GET /api/v1/bookings/{id}/money-trail` and renders the server's numbers verbatim
-// — it never re-derives money rules.
+// (`app/_components/booking/MoneyTrailInspector.tsx`), 1:1. One trustworthy view of
+// a booking's money: the Captured / Refunded / Net summary plus a flattened timeline
+// of the deposit, final-bill charge, platform discovery fee, no-show / late-cancel
+// fee, and every refund row. Reads `GET /api/v1/bookings/{id}/money-trail` and renders
+// the server's numbers verbatim — it never re-derives money rules.
 //
-// The refund / waive WRITE actions the web inspector also offers are a later
-// increment; the `capabilities` flags on the trail gate them and are decoded
-// already, so wiring them up is additive.
+// It also carries the two WRITE actions the web inspector offers — a discretionary
+// refund and a no-show-fee waive — each gated by the server's `capabilities` flags
+// (never a client guess). Both POST the shared `/bookings/{id}/...` routes and reload
+// the trail on success; a refund also `signalRefresh`es so the booking detail behind
+// the sheet refreshes. This is the single native refund surface (the detail's old
+// inline refund was removed) — matching web, where refund lives only here.
 import SwiftUI
 import TovisKit
 
@@ -24,6 +26,16 @@ struct ProMoneyTrailView: View {
     }
 
     @State private var phase: Phase = .loading
+
+    // Refund / waive WRITE actions (mirror the web inspector's action block).
+    @State private var refundOpen = false
+    @State private var refundAmount = ""
+    @State private var refundReason = ""
+    @State private var actionPending = false
+    @State private var actionError: String?
+    @State private var flash: String?
+    @State private var showRefundConfirm = false
+    @State private var showWaiveConfirm = false
 
     var body: some View {
         ScrollView {
@@ -65,6 +77,108 @@ struct ProMoneyTrailView: View {
 
         summaryCard(trail)
         timelineCard(trail)
+
+        if let flash {
+            banner(flash, tone: .success)
+        }
+        if let actionError {
+            banner(actionError, tone: .danger)
+        }
+
+        if trail.capabilities.canRefund || trail.capabilities.canWaiveNoShowFee {
+            actionsSection(trail)
+        }
+    }
+
+    // MARK: - Refund / waive actions
+
+    @ViewBuilder
+    private func actionsSection(_ trail: ProBookingMoneyTrail) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if refundOpen {
+                refundForm(trail)
+            } else {
+                HStack(spacing: 10) {
+                    if trail.capabilities.canRefund {
+                        Button { openRefund() } label: { ghostLabel("Refund…") }
+                            .buttonStyle(.plain).disabled(actionPending)
+                    }
+                    if trail.capabilities.canWaiveNoShowFee {
+                        Button { showWaiveConfirm = true } label: {
+                            ghostLabel(actionPending ? "Waiving…" : "Waive no-show fee")
+                        }
+                        .buttonStyle(.plain).disabled(actionPending)
+                    }
+                }
+            }
+        }
+        .confirmationDialog(refundConfirmCopy(trail), isPresented: $showRefundConfirm, titleVisibility: .visible) {
+            Button("Refund", role: .destructive) { Task { await submitRefund() } }
+            Button("Cancel", role: .cancel) {}
+        }
+        .confirmationDialog(
+            "Waive this no-show fee? The client will not be charged.",
+            isPresented: $showWaiveConfirm, titleVisibility: .visible
+        ) {
+            Button("Waive fee") { Task { await waive() } }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    private func refundForm(_ trail: ProBookingMoneyTrail) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("AMOUNT (\(trail.currency.uppercased()))")
+                    .font(BrandFont.mono(9)).tracking(0.6).foregroundStyle(BrandColor.textSecondary)
+                TextField(fullAmountPlaceholder(trail), text: $refundAmount)
+                    .keyboardType(.decimalPad)
+                    .font(BrandFont.body(14)).foregroundStyle(BrandColor.textPrimary)
+                    .padding(10).background(BrandColor.bgSecondary)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            VStack(alignment: .leading, spacing: 5) {
+                Text("REASON (OPTIONAL)")
+                    .font(BrandFont.mono(9)).tracking(0.6).foregroundStyle(BrandColor.textSecondary)
+                TextField("e.g. service issue", text: $refundReason)
+                    .font(BrandFont.body(14)).foregroundStyle(BrandColor.textPrimary)
+                    .padding(10).background(BrandColor.bgSecondary)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            HStack(spacing: 10) {
+                Button { startRefund() } label: {
+                    Group { actionPending ? Text("Refunding…") : Text("Confirm refund") }
+                        .font(BrandFont.body(13, .semibold))
+                        .padding(.vertical, 10).padding(.horizontal, 16)
+                        .foregroundStyle(BrandColor.onAccent).background(BrandColor.accent)
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain).disabled(actionPending)
+                Button { closeRefund() } label: { ghostLabel("Cancel") }
+                    .buttonStyle(.plain).disabled(actionPending)
+            }
+        }
+        .padding(12)
+        .background(BrandColor.bgPrimary)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func ghostLabel(_ title: String) -> some View {
+        Text(title)
+            .font(BrandFont.body(13, .semibold))
+            .padding(.vertical, 10).padding(.horizontal, 16)
+            .foregroundStyle(BrandColor.textPrimary).background(BrandColor.bgSecondary)
+            .overlay(Capsule().stroke(BrandColor.textMuted.opacity(0.25), lineWidth: 1))
+            .clipShape(Capsule())
+    }
+
+    private func banner(_ message: String, tone: Tone) -> some View {
+        Text(message)
+            .font(BrandFont.body(12, .semibold)).foregroundStyle(tone.color)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+            .background(tone.color.opacity(0.10))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(tone.color.opacity(0.3), lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private func summaryCard(_ trail: ProBookingMoneyTrail) -> some View {
@@ -172,6 +286,92 @@ struct ProMoneyTrailView: View {
             phase = .failed(error.userMessage)
         } catch {
             phase = .failed("Failed to load the money trail.")
+        }
+    }
+
+    // MARK: - Refund / waive (mirror web submitRefund / waiveNoShow)
+
+    private func openRefund() {
+        actionError = nil
+        flash = nil
+        refundOpen = true
+    }
+
+    private func closeRefund() {
+        refundOpen = false
+        actionError = nil
+    }
+
+    /// Validate the typed amount (blank = full), then raise the confirm dialog — the
+    /// two-step "type then confirm" the detail's old refund used.
+    private func startRefund() {
+        let t = refundAmount.trimmingCharacters(in: .whitespaces)
+        if !t.isEmpty, (Double(t) ?? -1) <= 0 {
+            actionError = "Enter a positive amount, or leave blank to refund in full."
+            return
+        }
+        actionError = nil
+        showRefundConfirm = true
+    }
+
+    /// Dollars → integer cents; nil for blank (= refund the remaining balance in full).
+    private func parseRefundCents() -> Int? {
+        let t = refundAmount.trimmingCharacters(in: .whitespaces)
+        guard !t.isEmpty, let dollars = Double(t), dollars > 0 else { return nil }
+        return Int((dollars * 100).rounded())
+    }
+
+    private func fullAmountPlaceholder(_ trail: ProBookingMoneyTrail) -> String {
+        String(format: "Full: %.2f", Double(trail.capabilities.refundableRemainingCents) / 100)
+    }
+
+    private func refundConfirmCopy(_ trail: ProBookingMoneyTrail) -> String {
+        if parseRefundCents() == nil {
+            let full = Wire.moneyCents(trail.capabilities.refundableRemainingCents, currency: trail.currency)
+                ?? "the remaining balance"
+            return "Refund the remaining \(full) to the client? This cannot be undone."
+        }
+        let amount = Wire.moneyCents(parseRefundCents(), currency: trail.currency)
+            ?? refundAmount.trimmingCharacters(in: .whitespaces)
+        return "Refund \(amount) to the client? This cannot be undone."
+    }
+
+    private func submitRefund() async {
+        guard !actionPending else { return }
+        actionPending = true; actionError = nil
+        defer { actionPending = false }
+        do {
+            try await session.client.proBookings.refund(
+                bookingId: bookingId,
+                amountCents: parseRefundCents(),
+                reason: refundReason.trimmingCharacters(in: .whitespaces).nilIfBlank
+            )
+            flash = "Refund issued."
+            refundOpen = false
+            refundAmount = ""
+            refundReason = ""
+            session.signalRefresh()
+            await load()
+        } catch let error as APIError {
+            actionError = error.userMessage
+        } catch {
+            actionError = "Network error while issuing the refund."
+        }
+    }
+
+    private func waive() async {
+        guard !actionPending else { return }
+        actionPending = true; actionError = nil
+        defer { actionPending = false }
+        do {
+            try await session.client.proBookings.waiveNoShowFee(bookingId: bookingId)
+            flash = "No-show fee waived."
+            session.signalRefresh()
+            await load()
+        } catch let error as APIError {
+            actionError = error.userMessage
+        } catch {
+            actionError = "Network error while waiving the fee."
         }
     }
 

@@ -197,9 +197,9 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
     lock) off a new **Services card** in `ProBookingDetailView` (Edit shown while non-terminal,
     incl. IN_PROGRESS → the mid-session entry point). Since shipped: Last Minute
     editor ✅, pro private client-view (writes + `view=public`) ✅, waitlist-outreach ✅,
-    waitlist "offer a time" ✅, money-trail inspector ✅, calendar RESCHEDULE ✅. Rest of A4
-    (manual reminders, referral-reward, data-migration wizard, media manager,
-    portfolio-feature toggle + the money-trail refund/waive WRITE increment) still open.
+    waitlist "offer a time" ✅, money-trail inspector ✅, calendar RESCHEDULE ✅, money-trail
+    refund/waive WRITE ✅. Rest of A4 (manual reminders, referral-reward, data-migration
+    wizard, media manager, portfolio-feature toggle) still open.
   - [x] **A4-chart-writes pro private-client-view, increment 1 (non-technical write forms)** —
     ✅ shipped 2026-07-10 (iOS #46 `982c028`, iOS-only — the web `/pro/clients/{id}/{alert,
     allergies,do-not-rebook,profile-context}` routes already existed; free text is encrypted
@@ -320,6 +320,29 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
     web inspector also offers are a **later increment** — the `capabilities` flags are decoded
     already, so wiring them is additive. +2 write-path/decode tests (full trail + minimal
     all-null); swift test 224; `xcodebuild build` clean.
+  - [x] **A4-money-trail refund / waive WRITE increment** — ✅ shipped 2026-07-10 (**iOS-only** —
+    the web `POST /api/v1/bookings/{id}/refund` + `POST /api/v1/bookings/{id}/no-show-fee/waive`
+    routes already exist; no backend change, no migration). Turns the read-only money-trail
+    inspector into the **single native refund + no-show-waive surface**, matching web where
+    `MoneyTrailInspector` (not `BookingActions`) is the only place refund lives. TovisKit gained
+    `ProBookingService.waiveNoShowFee(bookingId:idempotencyKey:)` → POST the shared
+    `/bookings/{id}/no-show-fee/waive` (empty `{}` body; **stable** idempotency key —
+    `scope "booking" · action "no-show-waive"`, no body to vary and the fee is a server-side no-op
+    on repeat, so a double-tap dedupes); the existing `refund(...)` method is now called from the
+    inspector. `ProMoneyTrailView` grew an **actions block** gated on the server's
+    `capabilities.canRefund` / `canWaiveNoShowFee` (never a client guess): a **Refund…** form
+    (amount — blank = full via `refundableRemainingCents` — + optional reason → confirm dialog
+    "…This cannot be undone.") and a **Waive no-show fee** confirm, each POSTing then reloading the
+    trail + a `flash`/`error` banner; a refund also `signalRefresh`es so the booking detail behind
+    the sheet refreshes. **Consolidation:** removed the detail's old inline `refundForm` + header
+    **Refund** button + its state/helpers (`refundForm`/`refundConfirmCopy`/`parseRefundCents`/
+    `fullAmountPlaceholder`/`startRefund`/`refund`/`ghostLabel`) — that was an iOS-only divergence
+    (web has no detail-level refund) whose `booking.canRefund` (client-side `stripePaymentStatus ==
+    SUCCEEDED`) is a weaker gate than the inspector's server `capabilities.canRefund` (it wrongly
+    offered refund on an already-fully-refunded / disputed booking). +5 write-path tests (refund:
+    full bare-body / partial amount+reason / key-tracks-body; waive: empty-body path / stable-key);
+    swift test 232; `xcodebuild build` clean. **A4 money slices COMPLETE** (inspector read + refund
+    + waive).
   - [x] **A4-reschedule calendar reschedule** — ✅ shipped 2026-07-10 (iOS #60 `51bb9df`,
     **iOS-only** — the web `PATCH /api/v1/pro/bookings/{id}` route already handles reschedule; no
     backend change, no migration). Native port of the web calendar's **pro reschedule** (the
