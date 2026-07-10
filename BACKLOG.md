@@ -158,31 +158,25 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
       booked instant) + `DTSTART;TZID=<zone>:<localWallClock>` (no trailing `Z`);
       nil/invalid keeps the bare-UTC `…Z` fallback. Caller passes `booking.timeZone`.
       Mirrors web `lib/calendar/bookingInvite.ts`. No backend. **iOS PR (this session).**
-  - [ ] **A3-prod product-recommendations checkout** — web: extend aftercare DTO
-    with `recommendedProducts` (+ selected `checkoutProducts` + editable gate);
-    iOS: new `CheckoutService.saveCheckoutProducts` (POST
-    `/client/bookings/{id}/checkout/products` `{items:[{recommendationId,productId,
-    quantity}]}` + idempotency key — route already exists) + qty-stepper UI
-    (internal recs) + external-link rows + locked state. Paired.
-  - [ ] **A3-rebook recommended-window rebook CTA** — web: extend DTO with
-    `rebook{mode,windowStart,windowEnd,rebookedFor,declinedAt,nextBooking}`
-    (route adds the `rebookedNextBooking` query, mirror `loadClientBookingPage`);
-    iOS: RECOMMENDED_WINDOW/DATE → open `BookingFlowView` anchored at the window
-    start with `source=AFTERCARE`; BOOKED_NEXT_APPOINTMENT confirmed/declined
-    display states (the PENDING confirm/decline already exists via
-    `decideRebook`/`rebookCard`). Paired.
-  - [ ] **A3-rev review section (leave rating/photos)** — split **4a** (rating +
-    headline/body: web extends DTO with `existingReview` + `reviewEligible`; iOS
-    new `ReviewsService` — create `POST /bookings/{id}/review` (+idem) / edit
-    `PATCH /reviews/{id}` / delete `DELETE /reviews/{id}`; stars/text UI) and
-    **4b** (photos: `GET /bookings/{id}/review-media-options` picker for existing
-    pro session media via `attachedMediaIds`; new client uploads via sign
-    `POST /client/uploads {kind:REVIEW_PUBLIC}` → reuse `SupabaseSignedUpload.put`
-    → attach `POST /reviews/{id}/media {media:[{uploadSessionId}]}`; remove
-    `DELETE /reviews/{id}/media/{mediaId}`). Media routes already exist; 4a is web-paired,
-    4b is iOS-mostly. **Gotcha:** review create/media caps = 6 images + 1 video;
-    reviews with media can't be deleted (409); portfolio/Looks-featured media can't
-    be removed (409).
+  - [x] **A3-prod product-recommendations checkout** — ✅ shipped (web #567 `703bb6de`
+    / iOS #35 `7ebd818`). Aftercare DTO grew `recommendedProducts` + `checkoutProducts`
+    + editable gate; native −/+ picker + external-link rows + locked state.
+  - [x] **A3-rebook recommended-window rebook CTA** — ✅ shipped (web #568 `90d64c10`
+    / iOS #38 `2fcdf1a`). DTO grew `rebook{mode,window*,rebookedFor,declinedAt,nextBooking}`;
+    native RECOMMENDED_WINDOW "Time to rebook" CTA + confirmed/pending next-appointment states.
+  - [x] **A3-rev review section (leave rating/photos)** — ✅ shipped both parts.
+    **4a** (rating + headline/body) — web #570 / iOS #40 `f16b034`: DTO grew
+    `existingReview` text-slice + `reviewEligible`; native `ReviewsService`
+    (create/edit/delete) + stars/text UI. **4b** (photos) — web #571 `f8f0456e` /
+    iOS #41 `f942635`: DTO grew `existingReview.mediaAssets[]` (render URLs via
+    `renderMediaUrlsBatch`); `ReviewsService` gained reviewMediaOptions /
+    uploadReviewPhoto (reuses `SupabaseSignedUpload.put`) / attach / remove +
+    create-time `attachedMediaIds`+`media` on submit; native Photos section =
+    session-photo grid (create) + PhotosPicker upload-on-pick + attached grid w/
+    remove (edit). Caps = 6 images + 1 video (server-enforced); fresh uploads are
+    images-only on native, session videos still attachable by id.
+  - ✅ **A3 COMPLETE 2026-07-10** — the whole §5 A3 client-booking-detail / payment-parity
+    epic is done. Web #567/#568/#569/#570/#571 all merged, PENDING a prod deploy (held for Tori).
 - [ ] **A4 — full pro parity** (build all): Last Minute EDITOR (iOS is read-only —
   create openings + settings/tiers) · Waitlist outreach workspace · pro's private
   client view — `ProClientChartView` per-tab write forms + technical-record
