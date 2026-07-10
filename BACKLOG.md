@@ -224,6 +224,26 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
     `/u/[handle]` public-client viewer** (add a handle-based entry point + guest/client follow
     modes later to finish A2). swift test 206 (+4). **➡️ The pro private-client-view slice is now
     COMPLETE (all 3 increments).**
+  - [x] **A4-lastminute-editor, increment 1 (settings / tiers / rules / blocks)** —
+    ✅ shipped 2026-07-10 (iOS #50 `f38dd04`, **iOS-only** — the web `/pro/last-minute`
+    settings editor routes already exist: `PATCH .../settings`, `PATCH .../rules`,
+    `POST`/`DELETE .../blocks`; no backend change, no migration). Turns the read-only
+    `ProLastMinuteView` into an editor. `ProScheduleService` gained `updateLastMinuteSettings`
+    (PATCH settings — whole "Last-minute defaults" form), `updateLastMinuteServiceRule`
+    (PATCH rules), `addLastMinuteBlock` (POST) + `deleteLastMinuteBlock` (DELETE) reusing
+    the already-decoded `ProLastMinuteWorkspace`; new `Encodable` request DTOs
+    (`ProLastMinuteSettingsPatchRequest` / `…ServiceRulePatchRequest` / `…BlockCreateRequest`)
+    that always emit `minCollectedSubtotal` (explicit JSON `null` clears the floor — a
+    dropped key wouldn't). New `ProLastMinuteEditSheets.swift`: **settings sheet**
+    (master toggle · visibility menu · min-subtotal · tier 2/3 send-time pickers via a
+    shared `LastMinuteAnchor` minutes↔wall-clock helper · priority-offer toggle + claim-window
+    stepper · 7-day disable grid, one Save), **service-rule sheet** (enabled + optional floor),
+    **add-block sheet** (start/end pickers + reason). `ProLastMinuteView` gains the Edit
+    affordances (status-card Edit + tappable tiers/service cards) + per-block Remove
+    (confirm → DELETE); every write reloads the workspace. swift test 213 (+7 write-path
+    tests). **Increment 2 = openings CREATE + list + cancel** (the heavier `OpeningsClient.tsx`
+    surface: `GET`/`POST`/`DELETE /api/v1/pro/openings` — offering multi-select, tier plans,
+    visibility/location, scheduling; also iOS-only, routes already exist).
   - ↪ **Predecessor for mid-session service change** (`tovis-app §22`, MS-iOS): A4's
     **edit-service-items** modal is the first place iOS gains a TovisKit method to change
     services on an existing booking (today only `sendConsultationProposal` exists — no
