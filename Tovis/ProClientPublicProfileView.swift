@@ -6,8 +6,12 @@
 // avatar · @handle · bio · follower/following/looks counts · published-looks
 // grid — no follow control (web passes `followMode="hidden"`). A null profile is
 // the "no public profile yet" empty state; a 404 (route not deployed) falls back
-// to a web pointer. Increment 3 of the pro private-client-view parity; the shared
-// view also seeds the A2 `/u/[handle]` public-client viewer.
+// to a web pointer.
+//
+// The profile render itself lives in the shared `PublicClientProfileContent`
+// (mode `.hidden` here), which the standalone `/u/{handle}` viewer
+// (`PublicClientViewerView`) reuses with an interactive follow control — the
+// native mirror of the web's shared `PublicProfileView`.
 import SwiftUI
 import TovisKit
 
@@ -25,7 +29,6 @@ struct ProClientPublicProfileView: View {
         case failed(String)
     }
     @State private var phase: Phase = .loading
-    @State private var viewingMedia: FullscreenMedia?
 
     var body: some View {
         Group {
@@ -34,7 +37,7 @@ struct ProClientPublicProfileView: View {
                 HStack { Spacer(); ProgressView().tint(BrandColor.accent); Spacer() }
                     .padding(.vertical, 40)
             case let .loaded(profile):
-                loaded(profile)
+                PublicClientProfileContent(profile: profile, followMode: .hidden)
             case .empty:
                 emptyState
             case .unavailable:
@@ -44,97 +47,6 @@ struct ProClientPublicProfileView: View {
             }
         }
         .task { if case .loading = phase { await load() } }
-        .mediaFullscreenCover($viewingMedia)
-    }
-
-    // MARK: - Loaded content
-
-    private func loaded(_ profile: ProClientPublicProfile) -> some View {
-        VStack(alignment: .leading, spacing: 20) {
-            header(profile)
-            looksSection(profile.looks)
-        }
-    }
-
-    private func header(_ profile: ProClientPublicProfile) -> some View {
-        BrandSurface {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 14) {
-                    BrandAvatar(name: profile.handle, avatarUrl: profile.avatarUrl, size: 56)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(profile.displayName)
-                            .font(BrandFont.display(20, .semibold)).foregroundStyle(BrandColor.textPrimary)
-                        Text("Public creator profile")
-                            .font(BrandFont.mono(9)).tracking(0.8).foregroundStyle(BrandColor.textMuted)
-                    }
-                    Spacer()
-                }
-                if let bio = profile.bio, !bio.isEmpty {
-                    Text(bio).font(BrandFont.body(13)).foregroundStyle(BrandColor.textSecondary)
-                }
-                HStack(spacing: 10) {
-                    statTile("\(profile.counts.followers)", "Followers")
-                    statTile("\(profile.counts.following)", "Following")
-                    statTile("\(profile.counts.looks)", "Looks")
-                }
-            }
-        }
-    }
-
-    private func statTile(_ value: String, _ label: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(value).font(BrandFont.body(15, .semibold)).foregroundStyle(BrandColor.textPrimary).lineLimit(1)
-            Text(label.uppercased()).font(BrandFont.mono(8)).tracking(0.6).foregroundStyle(BrandColor.textMuted)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10).background(BrandColor.bgPrimary).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
-
-    private func looksSection(_ looks: [ProClientPublicLook]) -> some View {
-        BrandSection(title: "Public looks", trailing: looks.isEmpty ? nil : "\(looks.count)") {
-            if looks.isEmpty {
-                Text("No public looks yet.").font(BrandFont.body(13)).foregroundStyle(BrandColor.textMuted)
-            } else {
-                LazyVGrid(
-                    columns: [
-                        GridItem(.flexible(), spacing: 10),
-                        GridItem(.flexible(), spacing: 10),
-                        GridItem(.flexible(), spacing: 10),
-                    ],
-                    spacing: 10
-                ) {
-                    ForEach(looks) { look in
-                        Button {
-                            guard let url = look.imageUrl else { return }
-                            viewingMedia = FullscreenMedia.remote(id: look.id, urlString: url, isVideo: false)
-                        } label: {
-                            lookTile(look)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(look.imageUrl == nil)
-                    }
-                }
-            }
-        }
-    }
-
-    private func lookTile(_ look: ProClientPublicLook) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            ZStack(alignment: .bottomLeading) {
-                BrandColor.bgSecondary
-                if let url = look.imageUrl, let parsed = URL(string: url) {
-                    AsyncImage(url: parsed) { $0.resizable().scaledToFill() } placeholder: { ProgressView().tint(BrandColor.accent) }
-                }
-                HStack(spacing: 3) {
-                    Image(systemName: "heart.fill").font(.system(size: 8)).foregroundStyle(.white)
-                    Text("\(look.saveCount)").font(BrandFont.mono(8)).foregroundStyle(.white)
-                }
-                .padding(.horizontal, 6).padding(.vertical, 3).background(.black.opacity(0.5)).clipShape(Capsule())
-                .padding(6)
-            }
-            .frame(height: 110).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            Text(look.name).font(BrandFont.body(11, .semibold)).foregroundStyle(BrandColor.textSecondary).lineLimit(1)
-        }
     }
 
     // MARK: - Fallback / empty states

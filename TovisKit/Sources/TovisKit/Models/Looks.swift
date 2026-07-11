@@ -110,8 +110,10 @@ public struct LooksProfessional: Decodable, Sendable, Identifiable, Hashable {
     }
 }
 
-/// A client who published a look (PII-safe: handle + avatar only).
-public struct LooksClientAuthor: Decodable, Sendable {
+/// A client who published a look (PII-safe: handle + avatar only). `Hashable` so
+/// it can drive a `NavigationLink` to the public `/u/{handle}` viewer, parallel to
+/// how `LooksProfessional` pushes the pro profile.
+public struct LooksClientAuthor: Decodable, Sendable, Hashable {
     public let handle: String
     public let avatarUrl: String?
     public let profileHref: String?

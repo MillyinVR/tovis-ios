@@ -30,6 +30,9 @@ public final class TovisClient: Sendable {
     public let reviews: ReviewsService
     /// Client referrals — the shareable digital invite link (/c/{code}).
     public let referrals: ReferralsService
+    /// The public creator surface addressed by handle — the native `/u/{handle}`
+    /// viewer (profile read + client→client follow toggle).
+    public let publicClient: PublicClientService
     /// PRO workspace — the live-session footer state machine. Only meaningful for
     /// a PRO acting role; CLIENT tokens 403 these endpoints.
     public let proSession: ProSessionService
@@ -126,6 +129,7 @@ public final class TovisClient: Sendable {
             supabaseKey: config.supabaseAnonKey
         )
         self.referrals = ReferralsService(api: api)
+        self.publicClient = PublicClientService(api: api)
         self.proSession = ProSessionService(api: api)
         self.proCalendar = ProCalendarService(api: api)
         self.proBookings = ProBookingService(api: api)

@@ -104,6 +104,9 @@ struct LooksView: View {
             .navigationDestination(for: LooksProfessional.self) { pro in
                 ProProfileView(professionalId: pro.id, fallbackName: pro.displayName)
             }
+            .navigationDestination(for: LooksClientAuthor.self) { author in
+                PublicClientViewerView(handle: author.handle)
+            }
             .toolbar(.hidden, for: .navigationBar)
         }
         .tint(BrandColor.accent)
@@ -627,7 +630,10 @@ private struct LookSlide: View {
                         .font(BrandFont.mono(11)).foregroundStyle(.white.opacity(0.7))
                 }
             } else if let author = item.clientAuthor {
-                Text(author.handleLabel).font(BrandFont.body(15, .semibold)).foregroundStyle(.white)
+                NavigationLink(value: author) {
+                    Text(author.handleLabel).font(BrandFont.body(15, .semibold)).foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
             }
         }
     }
@@ -654,7 +660,8 @@ private struct LookSlide: View {
                     .buttonStyle(.plain)
                 bookButton(pro: pro)
             } else if let author = item.clientAuthor {
-                avatarPlus(name: author.handleLabel, url: author.avatarUrl)
+                NavigationLink(value: author) { avatarPlus(name: author.handleLabel, url: author.avatarUrl) }
+                    .buttonStyle(.plain)
             }
 
             railButton(icon: liked ? "heart.fill" : "heart", tint: liked ? BrandColor.ember : .white,
