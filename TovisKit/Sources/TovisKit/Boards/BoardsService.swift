@@ -26,20 +26,27 @@ public final class BoardsService: Sendable {
 
     /// POST /api/v1/boards — create a board. `type` defaults to "GENERAL";
     /// `eventDate` (`YYYY-MM-DD`) is only meaningful for bridal/prom boards and is
-    /// omitted otherwise. Returns the created board's detail (the route responds
-    /// 201 with the same `{ board }` envelope as GET). Throws with a user-facing
-    /// message on a duplicate name / invalid input.
+    /// omitted otherwise. `answers` is the per-type chip answers (question key →
+    /// option value, spec §7.3), omitted when empty/nil; `writeThroughSelfProfile`
+    /// opts the person-describing subset into the self-profile (sent only when
+    /// true). Returns the created board's detail (the route responds 201 with the
+    /// same `{ board }` envelope as GET). Throws with a user-facing message on a
+    /// duplicate name / invalid input.
     public func create(
         name: String,
         visibility: String,
         type: String,
-        eventDate: String? = nil
+        eventDate: String? = nil,
+        answers: [String: String]? = nil,
+        writeThroughSelfProfile: Bool = false
     ) async throws -> Board {
         let payload = try JSONEncoder.canonical.encode(CreateBoardRequest(
             name: name,
             visibility: visibility,
             type: type,
-            eventDate: eventDate
+            eventDate: eventDate,
+            answers: (answers?.isEmpty ?? true) ? nil : answers,
+            writeThroughSelfProfile: writeThroughSelfProfile ? true : nil
         ))
         let response: BoardDetailResponse = try await api.request(
             "/boards", method: .post, body: payload
