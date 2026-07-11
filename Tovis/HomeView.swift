@@ -8,6 +8,9 @@ import TovisKit
 
 struct HomeView: View {
     @Environment(SessionModel.self) private var session
+    /// Two columns at regular width (iPad), single column on iPhone — mirrors the
+    /// web shell's `grid-cols-1 md:grid-cols-2` (phones stay single-column).
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     /// Switch the shell to the Inbox tab (the header bell), set by MainTabView.
     var onOpenInbox: () -> Void = {}
@@ -22,6 +25,9 @@ struct HomeView: View {
     @State private var showNotifications = false
     /// Drives the notifications-bell unread dot (GET .../notifications/summary).
     @State private var hasUnreadNotifications = false
+    /// The client's referral invite link, backing the "Invite a friend" card
+    /// (web InviteFriendCard). Loaded best-effort — the card is hidden if absent.
+    @State private var inviteLink: ClientInviteLink?
 
     var body: some View {
         NavigationStack {
@@ -146,32 +152,50 @@ struct HomeView: View {
         return first.uppercased() + base.dropFirst()
     }
 
-    // MARK: - Loaded content (web section order)
+    // MARK: - Loaded content (web section order + two-column at regular width)
 
     @ViewBuilder
     private func content(_ home: ClientHome) -> some View {
-        if let action = home.action {
-            ActionCard(action: action, onChanged: { await load() })
+        if horizontalSizeClass == .regular {
+            // Two side-by-side card stacks (web `md:grid-cols-2`): left = action /
+            // last-minute / next booking; right = favorites / waitlist / invite.
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 20) { leftColumn(home) }
+                VStack(alignment: .leading, spacing: 20) { rightColumn(home) }
+            }
+        } else {
+            // iPhone: single column — left stack then right stack (web `grid-cols-1`).
+            leftColumn(home)
+            rightColumn(home)
         }
-
-        InvitesCard(invites: home.invites, onChanged: { await load() })
-
-        UpcomingCard(booking: home.upcoming, upcomingCount: home.upcomingCount)
-
-        if !home.favoritePros.isEmpty {
-            FavoriteProsCard(favoritePros: home.favoritePros)
-        }
-
-        if !home.favoriteServices.isEmpty {
-            FavoritedServicesCard(services: home.favoriteServices)
-        }
-
-        WaitlistCard(waitlists: home.waitlists)
 
         ViralLooksBand(live: home.viralLive.first, pending: home.viralPending.first,
                        liveMore: max(0, home.viralLive.count - 1),
                        pendingMore: max(0, home.viralPending.count - 1))
             .padding(.top, 6)
+    }
+
+    @ViewBuilder
+    private func leftColumn(_ home: ClientHome) -> some View {
+        if let action = home.action {
+            ActionCard(action: action, onChanged: { await load() })
+        }
+        InvitesCard(invites: home.invites, onChanged: { await load() })
+        UpcomingCard(booking: home.upcoming, upcomingCount: home.upcomingCount)
+    }
+
+    @ViewBuilder
+    private func rightColumn(_ home: ClientHome) -> some View {
+        if !home.favoritePros.isEmpty {
+            FavoriteProsCard(favoritePros: home.favoritePros)
+        }
+        if !home.favoriteServices.isEmpty {
+            FavoritedServicesCard(services: home.favoriteServices)
+        }
+        WaitlistCard(waitlists: home.waitlists)
+        if let inviteLink {
+            ClientInviteCard(invite: inviteLink)
+        }
     }
 
     // MARK: - States
@@ -210,6 +234,10 @@ struct HomeView: View {
             phase = .failed("Something went wrong. Please try again.")
         }
         await loadNotificationSummary()
+        // Best-effort: the invite card is hidden until this resolves, never blocks.
+        if inviteLink == nil {
+            inviteLink = try? await session.client.referrals.inviteLink()
+        }
     }
 
     /// Best-effort unread-notifications check for the bell dot — never blocks or
