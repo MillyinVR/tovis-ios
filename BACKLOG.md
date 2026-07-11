@@ -509,6 +509,30 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
     2–4 REMAIN** = the guided import steps (Clients CSV · Services CSV+fuzzy-match+price-ramps · Calendar
     ICS/feed), each POST-only preview/commit with on-device CSV/ICS parsing (no PapaParse — native CSV
     parser + `.fileImporter`). Scope each web-first (route + client) per the per-slice rule.
+  - [x] **A4-migration data-migration wizard, increment 2 (clients import)** — ✅ shipped
+    2026-07-10 (iOS #73, **iOS-only** — the web `POST /api/v1/pro/migrate/clients/preview` + `/commit`
+    routes already exist as JSON endpoints with **no DTO/zod** (contract in
+    `tovis-app/lib/migration/clientImportServer.ts`), behind the same `ENABLE_PRO_MIGRATION`
+    404-when-off gate the entry screen handles → **no web change**, unlike increment 1's RSC-only
+    bookends). Native port of the web `/pro/migrate/clients` flow (`MigrateClientsClient.tsx`): the
+    four phases **upload → map columns → preview dedupe → commit**, reached from `ProMigrateView`'s
+    footer. **TovisKit:** `CsvParser` — on-device CSV parser matching the web PapaParse config
+    (`header:true`, `skipEmptyLines`): quoted fields, embedded commas/newlines, escaped `""`, CRLF, BOM
+    (scans Unicode **scalars**, not `Character`s, so a CRLF isn't swallowed as one grapheme). +
+    `ProMigrationClientImport` (Encodable request — `rows`/`mapping`/`excludeIndices` via
+    `encodeIfPresent`; Decodable preview/commit shapes hand-mirroring the server types; `ClientImportField`
+    enum; `guessClientImportMapping` = 1:1 port of the web `guessMapping`). + `ProMigrationService`
+    `previewClientImport`/`commitClientImport` POSTs (via `JSONEncoder.canonical`). **App:**
+    `ProMigrateClientsView` (upload → `.fileImporter` CSV pick + parse → column-map menus seeded by the
+    guess → preview list with per-row include toggles, non-importable rows auto-excluded (web parity) →
+    commit → done tally). Import is **silent** — `upsertProClient` never messages a client. `ProMigrateView`
+    footer now offers "Import your clients" (primary) alongside the review CTA (secondary). +11 iOS
+    `CsvParserTests` + +6 `ProMigrationClientImportTests` (preview POST route/verb/headers/body + decode ·
+    excludeIndices omitted for preview · commit POST + discriminated `ok` rows · flag-off 404 · guess +
+    required-field gate). swift test **272**; `xcodebuild build` clean. **NOT simulator-driven** (dark; needs
+    a live authed pro + the flag on). **⚠️ Increments 3–4 REMAIN** = Services (CSV + fuzzy-match + price-ramp
+    editor — most complex) · Calendar (ICS file / feed URL → `/calendar/fetch` → `/calendar/preview`+`/commit`;
+    the feed-URL path avoids on-device ICS parsing). Scope each web-first per the per-slice rule.
   - ↪ **Predecessor for mid-session service change** (`tovis-app §22`, MS-iOS): A4's
     **edit-service-items** modal is the first place iOS gains a TovisKit method to change
     services on an existing booking (today only `sendConsultationProposal` exists — no
