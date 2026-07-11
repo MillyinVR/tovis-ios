@@ -12,15 +12,16 @@ public final class ProSettingsService: Sendable {
 
     // MARK: - Appointment reminders (not flag-gated)
 
-    /// GET /api/v1/pro/reminder-settings → the cadence + the server-driven menu.
+    /// GET /api/v1/pro/reminder-settings → the cadence + suggested presets.
     public func reminderSettings() async throws -> ProReminderSettingsResponse {
         try await api.request("/pro/reminder-settings")
     }
 
-    /// PUT /api/v1/pro/reminder-settings → save the cadence.
+    /// PUT /api/v1/pro/reminder-settings → save the cadence from a structured
+    /// list of lead times (each `{value, unit}`, converted to minutes server-side).
     @discardableResult
-    public func updateReminderSettings(enabled: Bool, offsetDays: [Int]) async throws -> ProReminderSettingsResponse {
-        let body = try JSONEncoder.canonical.encode(ProReminderSettingsUpdate(enabled: enabled, offsetDays: offsetDays))
+    public func updateReminderSettings(enabled: Bool, reminders: [ReminderLeadInput]) async throws -> ProReminderSettingsResponse {
+        let body = try JSONEncoder.canonical.encode(ProReminderSettingsUpdate(enabled: enabled, reminders: reminders))
         return try await api.request("/pro/reminder-settings", method: .put, body: body)
     }
 

@@ -324,14 +324,20 @@ func fixture(_ name: String) throws -> Data {
     @Test func decodesProReminderSettings() throws {
         let json = """
         {"ok": true,
-         "settings": {"enabled": true, "offsetDays": [7, 1]},
-         "options": [{"days": 7, "label": "1 week before"}, {"days": 1, "label": "1 day before"}]}
+         "settings": {"enabled": true, "offsetMinutes": [10080, 240],
+           "leads": [{"minutes": 10080, "value": 7, "unit": "days", "label": "1 week before"},
+                     {"minutes": 240, "value": 4, "unit": "hours", "label": "4 hours before"}]},
+         "presets": [{"value": 7, "unit": "days", "label": "1 week before"},
+                     {"value": 4, "unit": "hours", "label": "4 hours before"}]}
         """.data(using: .utf8)!
         let res = try JSONDecoder().decode(ProReminderSettingsResponse.self, from: json)
         #expect(res.settings.enabled)
-        #expect(res.settings.offsetDays == [7, 1])
-        #expect(res.options.count == 2)
-        #expect(res.options.first?.label == "1 week before")
+        #expect(res.settings.offsetMinutes == [10080, 240])
+        #expect(res.settings.leads.count == 2)
+        #expect(res.settings.leads.first?.value == 7)
+        #expect(res.settings.leads.last?.unit == "hours")
+        #expect(res.presets.count == 2)
+        #expect(res.presets.first?.label == "1 week before")
     }
 
     @Test func decodesProNoShowSettings() throws {
