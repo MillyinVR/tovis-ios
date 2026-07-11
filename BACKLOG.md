@@ -534,7 +534,7 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
     editor — most complex) · Calendar (ICS file / feed URL → `/calendar/fetch` → `/calendar/preview`+`/commit`;
     the feed-URL path avoids on-device ICS parsing). Scope each web-first per the per-slice rule.
   - [x] **A4-migration data-migration wizard, increment 4 (calendar import)** — ✅ shipped
-    2026-07-10 (iOS #TBD, **iOS-only** — the web `POST /api/v1/pro/migrate/calendar/fetch` +
+    2026-07-10 (iOS #75, **iOS-only** — the web `POST /api/v1/pro/migrate/calendar/fetch` +
     `/preview` + `/commit` + `/subscription` routes already exist as JSON endpoints with **no DTO/zod**
     (contract in `tovis-app/lib/migration/calendarImportServer.ts` + `calendarFeed.ts` +
     `calendarFeedSubscription.ts`), behind the same `ENABLE_PRO_MIGRATION` 404-when-off gate → **no web
