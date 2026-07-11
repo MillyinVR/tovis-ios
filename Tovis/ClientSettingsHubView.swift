@@ -47,6 +47,12 @@ struct ClientSettingsHubView: View {
                         ) { ClientPublicProfileEditView() }
 
                         SettingsLinkRow(
+                            icon: "mappin.and.ellipse",
+                            title: "Saved addresses",
+                            subtitle: "Addresses for at-home service"
+                        ) { ClientServiceAddressesView() }
+
+                        SettingsLinkRow(
                             icon: "bell.badge",
                             title: "Notifications",
                             subtitle: "Channels & quiet hours"
