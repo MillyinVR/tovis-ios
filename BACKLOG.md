@@ -134,9 +134,17 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
   location, saved addresses, payment methods, notif prefs) · Activity feed ·
   Aftercare inbox · Priority Offers (claim) · standalone Openings feed · Referrals
   activity list · Boards detail + create + share/event-countdown (iOS shows
-  read-only preview tiles today) · **public client profile `/u/[handle]` viewer**
-  (looks / stats / follow; guest + client viewer modes — no native equivalent
-  exists today) · Share-your-look publish flow.
+  read-only preview tiles today) · ~~public client profile `/u/[handle]` viewer~~
+  ✅ **SHIPPED 2026-07-10 (iOS #78)** — `PublicClientViewerView(handle:)` +
+  `PublicClientService` (GET `/u/{handle}` reusing `ProClientPublicProfile`; POST
+  `/client/follow/{handle}` toggle reusing `FollowState`). Shared render extracted
+  to `PublicClientProfileContent` + `PublicProfileStats` (native mirror of web
+  `PublicProfileView`/`ProfileStats`); `ProClientPublicProfileView` now reuses it
+  (mode `.hidden`). Follow modes own/client/hidden (native is always authed → no
+  guest). Entry point: Looks-feed client-author `@handle`/avatar now
+  `NavigationLink`s (was a dead-end); `LooksClientAuthor` made `Hashable`.
+  **iOS-only** (web routes are the frozen native surface #388/#389). +4 tests,
+  swift test 294. · Share-your-look publish flow.
 - **A3 — client booking detail** — add web's aftercare pieces to `BookingDetailView`.
   Scoped 2026-07-09 (audit of web `app/client/(gated)/bookings/[id]/page.tsx` +
   `_data/loadClientBookingPage.ts` + each named component). **IA decision (Tori
