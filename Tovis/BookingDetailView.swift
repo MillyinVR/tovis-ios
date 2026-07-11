@@ -108,6 +108,10 @@ struct BookingDetailView: View {
     @State private var attachingReviewPhotos = false
     @State private var removingReviewMediaId: String?
 
+    // Share your look (§5 A2) — publish a public look from this completed visit.
+    // Presented from the aftercare section beside the review card.
+    @State private var showShareLook = false
+
     // Manage leg (reschedule / cancel)
     @State private var rescheduleSheet: RescheduleContext?
     @State private var loadingReschedule = false
@@ -349,6 +353,11 @@ struct BookingDetailView: View {
                 locationType: ctx.locationType
             )
             .onDisappear { Task { await onDecision() } }
+        }
+        .sheet(isPresented: $showShareLook) {
+            // Publishing a look changes the client's own looks grid, so refresh the
+            // list behind (Me tab) once it's shared.
+            ShareLookView(booking: booking) { await onDecision() }
         }
         .confirmationDialog(
             "Cancel this appointment?",
@@ -1047,6 +1056,40 @@ struct BookingDetailView: View {
                     }
 
                     reviewCard(detail)
+                    shareLookCard(detail)
+                }
+            }
+        }
+    }
+
+    /// "Share your look" entry point — a completed appointment can publish a public
+    /// look (before/after + name + caption) tagged to the pro. Gated on the same
+    /// completed-visit signal as the review card (`reviewEligible`). Ports the web
+    /// `/client/looks/share/[bookingId]` sheet.
+    @ViewBuilder
+    private func shareLookCard(_ detail: ClientAftercareDetail) -> some View {
+        if detail.reviewEligible {
+            BrandSurface {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "sparkles").foregroundStyle(BrandColor.accent)
+                        Text("Share your look")
+                            .font(BrandFont.body(14, .semibold))
+                            .foregroundStyle(BrandColor.textPrimary)
+                    }
+                    Text("Post your finished look to your profile and discovery — your pro gets tagged.")
+                        .font(BrandFont.body(12))
+                        .foregroundStyle(BrandColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Button { showShareLook = true } label: {
+                        Text("Share your look")
+                            .font(BrandFont.body(14, .semibold))
+                            .foregroundStyle(BrandColor.onAccent)
+                            .padding(.horizontal, 18).padding(.vertical, 11)
+                            .background(BrandColor.accent)
+                            .clipShape(Capsule())
+                    }
                 }
             }
         }

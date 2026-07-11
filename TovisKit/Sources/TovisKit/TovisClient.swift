@@ -34,6 +34,9 @@ public final class TovisClient: Sendable {
     public let places: PlacesService
     public let checkout: CheckoutService
     public let looks: LooksService
+    /// Client "share your look" — publish a public look from a completed visit
+    /// (presign fresh photos + POST share-look). Not flag-gated; ships live.
+    public let shareLook: ShareLookService
     public let notifications: NotificationsService
     /// Client reviews — create / edit / delete a completed appointment's text
     /// review (rating + headline + body). Media attachments are a later pass.
@@ -137,6 +140,11 @@ public final class TovisClient: Sendable {
         self.places = PlacesService(api: api)
         self.checkout = CheckoutService(api: api)
         self.looks = LooksService(api: api)
+        self.shareLook = ShareLookService(
+            api: api,
+            supabaseURL: config.supabaseURL,
+            supabaseKey: config.supabaseAnonKey
+        )
         self.notifications = NotificationsService(api: api)
         self.reviews = ReviewsService(
             api: api,
