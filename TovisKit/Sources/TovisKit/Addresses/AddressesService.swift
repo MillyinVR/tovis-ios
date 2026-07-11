@@ -35,11 +35,10 @@ public final class AddressesService: Sendable {
             .first
     }
 
-    /// Set (or replace) the discovery origin from a picked Places AREA result. The
-    /// origin (lat/lng/placeId/label) is server-persisted so it follows the client
-    /// across devices — parity with the web default SEARCH_AREA `ClientAddress`. The
-    /// search *radius* has no server home (web keeps it in localStorage), so it lives
-    /// in `UserDefaults` on the app side, not here.
+    /// Set (or replace) the discovery origin from a picked Places AREA result. Both
+    /// the origin (lat/lng/placeId/label) and the search `radiusMiles` are
+    /// server-persisted on the SEARCH_AREA `ClientAddress`, so they follow the client
+    /// across devices — parity with the web default SEARCH_AREA row.
     ///
     /// Creates a fresh default SEARCH_AREA (the create tx demotes any prior default),
     /// then best-effort deletes the row it replaced — so exactly one SEARCH_AREA row
@@ -47,6 +46,7 @@ public final class AddressesService: Sendable {
     /// label-clobber). `replacing` is the id returned by a prior `searchArea()`.
     public func saveSearchArea(
         from place: PlaceDetails,
+        radiusMiles: Int? = nil,
         replacing existingId: String? = nil
     ) async throws -> ClientAddress {
         let created = try await create(CreateClientAddressRequest(
@@ -62,7 +62,8 @@ public final class AddressesService: Sendable {
             placeId: place.placeId,
             lat: place.lat,
             lng: place.lng,
-            isDefault: true
+            isDefault: true,
+            radiusMiles: radiusMiles
         ))
 
         if let existingId, existingId != created.id {
@@ -71,6 +72,17 @@ public final class AddressesService: Sendable {
         }
 
         return created
+    }
+
+    /// PATCH just the SEARCH_AREA's discovery radius (miles) — keeps the saved
+    /// origin, updates only the radius so it syncs across devices. Used when the
+    /// client re-tunes the radius while an area is already set.
+    @discardableResult
+    public func setSearchAreaRadius(
+        id: String,
+        radiusMiles: Int
+    ) async throws -> ClientAddress {
+        try await patch(id: id, UpdateClientAddressRadiusRequest(radiusMiles: radiusMiles))
     }
 
     /// POST /api/v1/client/addresses — add a SERVICE_ADDRESS from a typed form.

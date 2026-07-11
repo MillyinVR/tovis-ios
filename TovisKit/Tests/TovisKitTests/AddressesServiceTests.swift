@@ -10,8 +10,11 @@ import Testing
 //       - a re-picked place SENDS the full anchor (formattedAddress + placeId + coords).
 //   • setDefault()           → PATCH /client/addresses/{id} with ONLY { isDefault: true }
 //   • delete()               → DELETE /client/addresses/{id}
-//   • searchArea()           → GET, returns the DEFAULT SEARCH_AREA (discovery origin) only
-//   • saveSearchArea()       → POST a default SEARCH_AREA create, then DELETE the row it replaced
+//   • searchArea()           → GET, returns the DEFAULT SEARCH_AREA (discovery origin) only,
+//                              decoding the synced `radiusMiles`
+//   • saveSearchArea()       → POST a default SEARCH_AREA create (with optional radiusMiles),
+//                              then DELETE the row it replaced
+//   • setSearchAreaRadius()  → PATCH ONLY { radiusMiles } (keeps the saved origin)
 // Plus the pure `mapsURL` helper (coords-first, else address text).
 
 /// Records the outgoing request and serves a canned envelope.
@@ -218,7 +221,7 @@ private extension URLRequest {
         {"addresses":[
           {"id":"svc_1","kind":"SERVICE_ADDRESS","label":"Home","isDefault":true,"formattedAddress":"123 Main St","addressLine1":null,"addressLine2":null,"city":"San Diego","state":"CA","postalCode":"92101","countryCode":"US","placeId":"pl_svc","lat":32.7,"lng":-117.1,"createdAt":"2026-07-10T00:00:00.000Z","updatedAt":"2026-07-10T00:00:00.000Z"},
           {"id":"area_2","kind":"SEARCH_AREA","label":null,"isDefault":false,"formattedAddress":"Los Angeles, CA, USA","addressLine1":null,"addressLine2":null,"city":"Los Angeles","state":"CA","postalCode":null,"countryCode":"US","placeId":"pl_la","lat":34.05,"lng":-118.24,"createdAt":"2026-07-09T00:00:00.000Z","updatedAt":"2026-07-09T00:00:00.000Z"},
-          {"id":"area_1","kind":"SEARCH_AREA","label":null,"isDefault":true,"formattedAddress":"San Diego, CA, USA","addressLine1":null,"addressLine2":null,"city":"San Diego","state":"CA","postalCode":null,"countryCode":"US","placeId":"pl_sd","lat":32.7157,"lng":-117.1611,"createdAt":"2026-07-10T00:00:00.000Z","updatedAt":"2026-07-10T00:00:00.000Z"}
+          {"id":"area_1","kind":"SEARCH_AREA","label":null,"isDefault":true,"formattedAddress":"San Diego, CA, USA","addressLine1":null,"addressLine2":null,"city":"San Diego","state":"CA","postalCode":null,"countryCode":"US","placeId":"pl_sd","lat":32.7157,"lng":-117.1611,"radiusMiles":20,"createdAt":"2026-07-10T00:00:00.000Z","updatedAt":"2026-07-10T00:00:00.000Z"}
         ]}
         """.utf8)
 
@@ -229,6 +232,8 @@ private extension URLRequest {
         #expect(area?.id == "area_1")
         #expect(area?.isSearchArea == true)
         #expect(area?.isDefault == true)
+        // The server-persisted (synced) radius decodes off the row.
+        #expect(area?.radiusMiles == 20)
     }
 
     @Test func searchAreaNilWhenNoneSaved() async throws {
@@ -276,7 +281,44 @@ private extension URLRequest {
         // An AREA pick carries no street line / apt (keys omitted, not null).
         #expect(sent["addressLine1"] == nil)
         #expect(sent["addressLine2"] == nil)
+        // No radius passed → the key is omitted (server keeps it null).
+        #expect(sent["radiusMiles"] == nil)
         #expect(saved.id == "addr_1")
+    }
+
+    @Test func saveSearchAreaSendsRadiusMilesWhenGiven() async throws {
+        reset()
+
+        let place = PlaceDetails(
+            placeId: "pl_sd",
+            formattedAddress: "San Diego, CA, USA",
+            lat: 32.7157,
+            lng: -117.1611,
+            city: "San Diego",
+            state: "CA",
+            postalCode: nil,
+            countryCode: "US"
+        )
+
+        _ = try await makeService().saveSearchArea(from: place, radiusMiles: 25)
+
+        let sent = try decodeBody(AddressesURLProtocol.capturedBody)
+        #expect(sent["kind"] as? String == "SEARCH_AREA")
+        #expect(sent["radiusMiles"] as? Int == 25)
+    }
+
+    @Test func setSearchAreaRadiusPatchesOnlyRadius() async throws {
+        reset()
+
+        _ = try await makeService().setSearchAreaRadius(id: "area_1", radiusMiles: 30)
+
+        #expect(AddressesURLProtocol.capturedPath == "/api/v1/client/addresses/area_1")
+        #expect(AddressesURLProtocol.capturedMethod == "PATCH")
+
+        let sent = try decodeBody(AddressesURLProtocol.capturedBody)
+        // Only the radius — the saved origin is untouched.
+        #expect(sent.count == 1)
+        #expect(sent["radiusMiles"] as? Int == 30)
     }
 
     @Test func saveSearchAreaReplacingDeletesPriorRow() async throws {
@@ -308,7 +350,7 @@ private extension URLRequest {
             id: "a", kind: "SERVICE_ADDRESS", label: "Home", isDefault: true,
             formattedAddress: "123 Main St", addressLine1: nil, addressLine2: nil,
             city: "San Diego", state: "CA", postalCode: "92101", countryCode: "US",
-            placeId: "pl_1", lat: 32.7, lng: -117.1,
+            placeId: "pl_1", lat: 32.7, lng: -117.1, radiusMiles: nil,
             createdAt: "2026-07-10T00:00:00.000Z", updatedAt: "2026-07-10T00:00:00.000Z"
         )
 
@@ -323,7 +365,7 @@ private extension URLRequest {
             id: "a", kind: "SERVICE_ADDRESS", label: nil, isDefault: false,
             formattedAddress: "123 Main St, San Diego", addressLine1: nil, addressLine2: nil,
             city: nil, state: nil, postalCode: nil, countryCode: nil,
-            placeId: nil, lat: nil, lng: nil,
+            placeId: nil, lat: nil, lng: nil, radiusMiles: nil,
             createdAt: "2026-07-10T00:00:00.000Z", updatedAt: "2026-07-10T00:00:00.000Z"
         )
 

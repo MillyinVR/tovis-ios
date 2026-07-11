@@ -152,6 +152,8 @@ struct DiscoverView: View {
     private func seedFromSavedAreaThenSearch() async {
         if let area = try? await session.client.addresses.searchArea(),
            let lat = area.lat, let lng = area.lng {
+            // The saved area carries its own synced radius; fall back to the cache.
+            radiusMiles = area.radiusMiles ?? DiscoveryRadius.current
             let coord = CLLocationCoordinate2D(latitude: lat, longitude: lng)
             searchedOrigin = coord
             mapCenter = coord

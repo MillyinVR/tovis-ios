@@ -169,7 +169,12 @@ struct ClientDiscoveryLocationView: View {
         let selected = radius == miles
         return Button {
             radius = miles
-            DiscoveryRadius.set(miles)
+            DiscoveryRadius.set(miles)   // local cache / no-area fallback
+            // When an area is set, persist the radius on its server row so it
+            // syncs across devices (best-effort; the local cache already updated).
+            if let id = area?.id {
+                Task { try? await session.client.addresses.setSearchAreaRadius(id: id, radiusMiles: miles) }
+            }
         } label: {
             Text("\(miles) mi")
                 .font(BrandFont.body(14, .medium))
@@ -230,7 +235,14 @@ struct ClientDiscoveryLocationView: View {
         phase = .loading
         radius = DiscoveryRadius.current
         do {
-            area = try await session.client.addresses.searchArea()
+            let saved = try await session.client.addresses.searchArea()
+            area = saved
+            // The server radius (synced across devices) wins; keep the local
+            // UserDefaults cache in step so DiscoverView's fallback agrees.
+            if let serverRadius = saved?.radiusMiles {
+                radius = serverRadius
+                DiscoveryRadius.set(serverRadius)
+            }
             phase = .loaded
         } catch let error as APIError {
             phase = .failed(error.userMessage)
@@ -250,7 +262,7 @@ struct ClientDiscoveryLocationView: View {
         }
         do {
             area = try await session.client.addresses.saveSearchArea(
-                from: place, replacing: area?.id
+                from: place, radiusMiles: radius, replacing: area?.id
             )
         } catch let error as APIError {
             banner = error.userMessage
