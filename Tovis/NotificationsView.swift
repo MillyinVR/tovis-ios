@@ -1,18 +1,45 @@
 // Notifications — the client's in-app notification center (GET /api/v1/client/
 // notifications). A native list of every notification (bookings, reminders,
-// payments, aftercare, social), newest first, with an unread dot, a per-row
-// mark-read on tap, "Mark all read", pull-to-refresh, and cursor pagination.
-// Booking notifications push into the read-only BookingDetailView.
+// payments, aftercare, social), grouped into Today / Yesterday / "Thu, Jun 28"
+// sections with per-day counts, filterable by category chips (All · Unread ·
+// Bookings · Payments · Social), with an unread dot, a per-row mark-read on tap,
+// "Mark all read", pull-to-refresh, and cursor pagination. Booking notifications
+// push into the read-only BookingDetailView.
 //
-// Mirrors the same ClientNotification rows the web surfaces (the Activity feed +
-// pro notification cards) — marking read here is the same backend state, so the
-// web stays in step. Presented as a sheet from the Home header bell.
+// Mirrors the web client notifications page (app/client/(gated)/notifications):
+// same day-grouping (Today/Yesterday/"EEE, MMM d") and the same category chips
+// (CATEGORY_EVENT_KEYS). Marking read here is the same backend state, so the web
+// stays in step. Presented as a sheet from the Home header bell.
 import SwiftUI
 import TovisKit
 
 struct NotificationsView: View {
     @Environment(SessionModel.self) private var session
     @Environment(\.dismiss) private var dismiss
+
+    /// Web filter categories, in the web client page's chip order.
+    private enum Filter: String, CaseIterable, Identifiable {
+        case all, unread, bookings, payments, social
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .all: return "All"
+            case .unread: return "Unread"
+            case .bookings: return "Bookings"
+            case .payments: return "Payments"
+            case .social: return "Social"
+            }
+        }
+        /// The event-category this chip filters to (nil = no category filter).
+        var category: String? {
+            switch self {
+            case .bookings: return "BOOKINGS"
+            case .payments: return "PAYMENTS"
+            case .social: return "SOCIAL"
+            default: return nil
+            }
+        }
+    }
 
     private enum Phase {
         case loading
@@ -23,6 +50,7 @@ struct NotificationsView: View {
     @State private var phase: Phase = .loading
     @State private var nextCursor: String?
     @State private var loadingMore = false
+    @State private var filter: Filter = .all
     /// Ids marked read locally this session (optimistic, survives until refetch).
     @State private var locallyRead: Set<String> = []
     @State private var markingAll = false
@@ -42,13 +70,21 @@ struct NotificationsView: View {
                 case let .failed(message):
                     errorState(message)
                 case let .loaded(items):
-                    if items.isEmpty { emptyState } else { list(items) }
+                    if items.isEmpty {
+                        emptyState
+                    } else {
+                        VStack(spacing: 0) {
+                            chips
+                            Divider().overlay(BrandColor.textMuted.opacity(0.12))
+                            if visible.isEmpty { filteredEmptyState } else { list }
+                        }
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(BrandColor.bgPrimary.ignoresSafeArea())
             .navigationTitle("Notifications")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -93,26 +129,76 @@ struct NotificationsView: View {
         return []
     }
 
+    /// Loaded items after the active category filter (Unread is a server filter,
+    /// so `.loaded` already holds only unread rows when that chip is active).
+    private var visible: [ClientNotification] {
+        guard let category = filter.category else { return loadedItems }
+        return loadedItems.filter { Self.category(of: $0.eventKey) == category }
+    }
+
     private var hasUnread: Bool {
         loadedItems.contains { isUnread($0) }
+    }
+
+    private var unreadCount: Int {
+        loadedItems.filter { isUnread($0) }.count
     }
 
     private func isUnread(_ item: ClientNotification) -> Bool {
         item.isUnread && !locallyRead.contains(item.id)
     }
 
+    // MARK: - Chips
+
+    private var chips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(Filter.allCases) { f in
+                    if f != .unread || unreadCount > 0 {
+                        chip(f)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+        }
+    }
+
+    private func chip(_ f: Filter) -> some View {
+        let active = filter == f
+        let label = f == .unread ? "Unread(\(unreadCount))" : f.label
+        return Button {
+            Task { await select(f) }
+        } label: {
+            Text(label)
+                .font(BrandFont.body(13, .semibold))
+                .foregroundStyle(active ? BrandColor.onAccent : BrandColor.textSecondary)
+                .padding(.horizontal, 14).padding(.vertical, 7)
+                .background(active ? BrandColor.accent : BrandColor.bgSecondary)
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
     // MARK: - List
 
-    private func list(_ items: [ClientNotification]) -> some View {
+    private var list: some View {
         ScrollView {
             LazyVStack(spacing: 10) {
-                ForEach(items) { item in
-                    Button(action: { Task { await tap(item) } }) {
-                        NotificationRow(item: item, unread: isUnread(item))
-                    }
-                    .buttonStyle(.plain)
-                    .onAppear {
-                        if item.id == items.last?.id { Task { await loadMore() } }
+                ForEach(groupedByDay(visible), id: \.key) { group in
+                    sectionHeader(group.key, count: group.items.count)
+                    ForEach(group.items) { item in
+                        Button(action: { Task { await tap(item) } }) {
+                            NotificationRow(item: item, unread: isUnread(item))
+                        }
+                        .buttonStyle(.plain)
+                        .onAppear {
+                            // Category filters are client-side over the loaded feed,
+                            // so only auto-page on All / Unread (mirrors the pro view).
+                            if filter.category == nil, item.id == visible.last?.id {
+                                Task { await loadMore() }
+                            }
+                        }
                     }
                 }
 
@@ -124,6 +210,19 @@ struct NotificationsView: View {
             .padding(.top, 8)
             .padding(.bottom, 40)
         }
+    }
+
+    private func sectionHeader(_ key: String, count: Int) -> some View {
+        HStack {
+            Text(dayHeading(key))
+                .font(BrandFont.mono(11)).tracking(0.5)
+                .foregroundStyle(BrandColor.textMuted)
+            Spacer()
+            Text(count == 1 ? "1 item" : "\(count) items")
+                .font(BrandFont.mono(10))
+                .foregroundStyle(BrandColor.textMuted)
+        }
+        .padding(.top, 8).padding(.bottom, 2)
     }
 
     private var emptyState: some View {
@@ -140,6 +239,20 @@ struct NotificationsView: View {
                 .multilineTextAlignment(.center)
         }
         .padding(.horizontal, 40)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var filteredEmptyState: some View {
+        VStack(spacing: 8) {
+            Text("Nothing in \(filter.label)")
+                .font(BrandFont.body(15, .semibold))
+                .foregroundStyle(BrandColor.textPrimary)
+            Text("Try a different filter.")
+                .font(BrandFont.body(13))
+                .foregroundStyle(BrandColor.textMuted)
+        }
+        .padding(.horizontal, 40)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func errorState(_ message: String) -> some View {
@@ -155,11 +268,78 @@ struct NotificationsView: View {
         .padding(.horizontal, 40)
     }
 
+    // MARK: - Category mapping (web parity — CATEGORY_EVENT_KEYS)
+
+    /// Event → category, matching the web client page's CATEGORY_EVENT_KEYS.
+    /// Uncategorized events (nil) only surface under All.
+    private static func category(of eventKey: String) -> String? {
+        switch eventKey {
+        case "BOOKING_CONFIRMED", "BOOKING_RESCHEDULED",
+             "BOOKING_CANCELLED_BY_CLIENT", "BOOKING_CANCELLED_BY_PRO",
+             "BOOKING_CANCELLED_BY_ADMIN", "CONSULTATION_PROPOSAL_SENT",
+             "CONSULTATION_APPROVED", "CONSULTATION_REJECTED",
+             "CLIENT_CLAIM_INVITE", "APPOINTMENT_REMINDER", "AFTERCARE_READY",
+             "LAST_MINUTE_OPENING_AVAILABLE":
+            return "BOOKINGS"
+        case "PAYMENT_COLLECTED", "PAYMENT_ACTION_REQUIRED", "PAYMENT_REFUNDED":
+            return "PAYMENTS"
+        case "REVIEW_RECEIVED", "VIRAL_REQUEST_APPROVED", "LOOK_FOLLOWER_NEW",
+             "CLIENT_FOLLOW", "LOOK_COMMENTED", "LOOK_COMMENT_REPLIED",
+             "LOOK_LIKED", "LOOK_SAVED", "LOOK_NEW_FROM_FOLLOWED_PRO",
+             "REFERRAL_TAP_RECEIVED", "REFERRAL_CONFIRMED", "REFERRAL_CONVERTED":
+            return "SOCIAL"
+        default:
+            return nil
+        }
+    }
+
+    // MARK: - Date grouping (web parity — Today / Yesterday / "EEE, MMM d")
+
+    private struct DayGroup { let key: String; let items: [ClientNotification] }
+
+    private func groupedByDay(_ list: [ClientNotification]) -> [DayGroup] {
+        let cal = Calendar.current
+        var order: [String] = []
+        var byDay: [String: [ClientNotification]] = [:]
+        let keyFmt = DateFormatter()
+        keyFmt.locale = Locale(identifier: "en_US_POSIX")
+        keyFmt.dateFormat = "yyyy-MM-dd"
+        for n in list {
+            let day = Wire.date(n.createdAt) ?? Date()
+            let key = keyFmt.string(from: cal.startOfDay(for: day))
+            if byDay[key] == nil { order.append(key) }
+            byDay[key, default: []].append(n)
+        }
+        return order.map { DayGroup(key: $0, items: byDay[$0] ?? []) }
+    }
+
+    private func dayHeading(_ key: String) -> String {
+        let parser = DateFormatter()
+        parser.locale = Locale(identifier: "en_US_POSIX")
+        parser.dateFormat = "yyyy-MM-dd"
+        guard let date = parser.date(from: key) else { return key }
+        let cal = Calendar.current
+        if cal.isDateInToday(date) { return "Today" }
+        if cal.isDateInYesterday(date) { return "Yesterday" }
+        let out = DateFormatter()
+        out.locale = Locale(identifier: "en_US")
+        out.dateFormat = "EEE, MMM d"
+        return out.string(from: date)
+    }
+
     // MARK: - Data
+
+    private func select(_ f: Filter) async {
+        filter = f
+        // Unread is a server filter; categories are client-side over the loaded feed.
+        if f == .all || f == .unread { await load() }
+    }
 
     private func load() async {
         do {
-            let page = try await session.client.notifications.feed(take: 50)
+            let page = try await session.client.notifications.feed(
+                unreadOnly: filter == .unread, take: 50
+            )
             nextCursor = page.nextCursor
             phase = .loaded(page.items)
         } catch let error as APIError {
@@ -175,7 +355,9 @@ struct NotificationsView: View {
         loadingMore = true
         defer { loadingMore = false }
         do {
-            let page = try await session.client.notifications.feed(cursor: cursor, take: 50)
+            let page = try await session.client.notifications.feed(
+                unreadOnly: filter == .unread, cursor: cursor, take: 50
+            )
             nextCursor = page.nextCursor
             phase = .loaded(current + page.items)
         } catch {
@@ -253,7 +435,7 @@ private struct NotificationRow: View {
                             .foregroundStyle(BrandColor.textPrimary)
                             .lineLimit(2)
                         Spacer(minLength: 4)
-                        Text(Wire.relativeAgo(item.createdAt))
+                        Text(Self.timeLabel(item.createdAt))
                             .font(BrandFont.mono(10))
                             .foregroundStyle(BrandColor.textMuted)
                         if unread {
@@ -269,6 +451,15 @@ private struct NotificationRow: View {
                 }
             }
         }
+    }
+
+    /// ISO instant → "2:45 PM" (the day is carried by the section header).
+    private static func timeLabel(_ iso: String) -> String {
+        guard let d = Wire.date(iso) else { return "" }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US")
+        f.dateFormat = "h:mm a"
+        return f.string(from: d)
     }
 }
 
