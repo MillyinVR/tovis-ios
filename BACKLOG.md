@@ -606,8 +606,16 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
     PATCH-with-serviceItems). Build A4 before/with §22-iOS so the client method isn't
     written twice. `ProConsultationFormView`'s single-BASE constraint (can't swap the base
     service) also needs a decision there — web is looser; keep both consistent.
-- [ ] **A5 — pro home → Calendar**: land on Calendar like web (iOS lands on the
-  Overview home today); delete the never-instantiated `Tovis/ProOverviewView.swift`.
+- [x] **A5 — pro home → Calendar** — ✅ shipped 2026-07-10 (iOS #80, **iOS-only**, no
+  web change / migration / DTO — web `/pro` already redirects to `/pro/calendar`).
+  `ProMainTabView` default tab `.overview` → `.calendar`; the Overview home (host for
+  the web top-header tab strip) stays reachable via the Calendar bar's Home control (it
+  was never a footer slot). Deleted the never-instantiated `Tovis/ProOverviewView.swift`
+  (only caller of `proOverview.overview()`; the Overview-home's Overview tab already
+  renders `ProFinanceView`) and retired the orphaned `ProOverviewService` +
+  `TovisClient.proOverview` (zero callers/tests). Kept `ProOverviewResponse` model +
+  `proOverview.json` fixture + decode test (Finance reuses the nested types). swift test
+  294; `xcodebuild build` clean. NOT simulator-driven (needs a live authed pro).
 - [ ] **A6 — minor drift**: ✅ **Inbox role-awareness FIX shipped** (PR #11, see §7) — rows
   + thread title now show the correct counterparty via the new `isViewerPro`. Still open:
   web's inbox filter tabs (All/Bookings/Waitlists/Pros) + context eyebrows (→ §7 increment 4) ·
