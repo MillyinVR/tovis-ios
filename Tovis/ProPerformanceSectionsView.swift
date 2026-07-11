@@ -1,7 +1,6 @@
 // The performance half of the pro Overview (revenue hero + primary/secondary
-// stat grids + top services), WITHOUT the month nav. Shared by the standalone
-// ProOverviewView and the folded Finance tab's Overview sub-tab (ProFinanceView),
-// so the retained stats render identically in both — mirrors the web
+// stat grids + top services), WITHOUT the month nav. Rendered by the folded
+// Finance tab's Overview sub-tab (ProFinanceView) — mirrors the web
 // `ProPerformanceSections` extraction. Values reuse the ProOverviewResponse
 // nested types (the Finance response reuses them too).
 import SwiftUI

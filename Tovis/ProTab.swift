@@ -8,10 +8,11 @@
 import SwiftUI
 
 struct ProTab: Identifiable, Hashable {
-    // `overview` is the dedicated Overview-home landing surface (hosts the web
-    // top-header tab strip). It is NOT a footer slot — `ProNav.tabs` below keeps
-    // the web `ProSessionFooter` 5 slots — so it only appears as the launch
-    // selection, reached again via the Home control on the Calendar bar.
+    // `overview` is the dedicated Overview-home surface (hosts the web top-header
+    // tab strip). It is NOT a footer slot — `ProNav.tabs` below keeps the web
+    // `ProSessionFooter` 5 slots — and it is no longer the launch selection: pros
+    // land on Calendar (matching web `/pro` → `/pro/calendar`), and reach the
+    // Overview home via the Home control on the Calendar bar.
     enum ID: String, Hashable { case overview, looks, calendar, messages, profile }
 
     let id: ID

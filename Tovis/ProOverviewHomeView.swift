@@ -2,8 +2,8 @@
 // (app/pro/ProHeader.tsx) and its secondary tab strip. On web the header is
 // global chrome over every pro page; natively the footer keeps the web
 // `ProSessionFooter` 5 slots, so the header tabs (Overview · Reviews · Aftercare
-// · Bookings · Last Minute · Locations) live here on a dedicated home that the
-// pro lands on.
+// · Bookings · Last Minute · Locations) live here on a dedicated home reached
+// from the Calendar bar's Home control (the pro lands on Calendar, like web).
 //
 // The strip swaps the body in place (like switching web routes). Each tab body
 // is filled in across the H2–H7 increments; until then they show a short
