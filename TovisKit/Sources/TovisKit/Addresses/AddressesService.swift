@@ -86,4 +86,63 @@ public final class AddressesService: Sendable {
         )
         return response.address
     }
+
+    /// PATCH /api/v1/client/addresses/{id} — edit a saved SERVICE_ADDRESS's label,
+    /// apt/unit, and default flag, optionally replacing the underlying address with a
+    /// freshly picked Places result.
+    ///
+    /// `place: nil` keeps the existing geocoded address (the server sees it's already
+    /// resolved and skips any re-geocode); passing a picked `place` swaps it. A nil
+    /// `label`/`apt` CLEARS that field (an explicit JSON null, matching the web form).
+    /// Throws an APIError with a user-facing message when the address can't be verified.
+    public func updateServiceAddress(
+        id: String,
+        label: String?,
+        apt: String?,
+        isDefault: Bool,
+        place: PlaceDetails? = nil
+    ) async throws -> ClientAddress {
+        let replacement = place.map { picked in
+            UpdateClientAddressRequest.PlaceReplacement(
+                formattedAddress: picked.formattedAddress,
+                city: picked.city,
+                state: picked.state,
+                postalCode: picked.postalCode,
+                countryCode: picked.countryCode,
+                placeId: picked.placeId,
+                lat: picked.lat,
+                lng: picked.lng
+            )
+        }
+        return try await patch(id: id, UpdateClientAddressRequest(
+            label: label,
+            addressLine2: apt,
+            isDefault: isDefault,
+            place: replacement
+        ))
+    }
+
+    /// PATCH /api/v1/client/addresses/{id} with only `{ isDefault: true }` — promote an
+    /// address to the default for its kind without touching any other field (the server
+    /// demotes the previous default). Works for either kind.
+    public func setDefault(id: String) async throws -> ClientAddress {
+        try await patch(id: id, SetDefaultClientAddressRequest(isDefault: true))
+    }
+
+    /// DELETE /api/v1/client/addresses/{id} — remove a saved address. When it was the
+    /// default for its kind, the server promotes the next-oldest as the new default.
+    public func delete(id: String) async throws {
+        try await api.requestVoid("/client/addresses/\(id)", method: .delete)
+    }
+
+    private func patch<Body: Encodable & Sendable>(
+        id: String,
+        _ body: Body
+    ) async throws -> ClientAddress {
+        let payload = try JSONEncoder.canonical.encode(body)
+        let response: ClientAddressResponse = try await api.request(
+            "/client/addresses/\(id)", method: .patch, body: payload
+        )
+        return response.address
+    }
 }

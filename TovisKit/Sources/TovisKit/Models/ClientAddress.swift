@@ -41,6 +41,30 @@ public struct ClientAddress: Decodable, Sendable, Identifiable, Hashable {
         let parts = [addressLine1, city, state].compactMap { $0 }.filter { !$0.isEmpty }
         return parts.isEmpty ? nil : parts.joined(separator: ", ")
     }
+
+    /// A Google Maps "search" URL for this address — the pin coordinates when we
+    /// have them, else the formatted/typed address text. Mirrors the web card's
+    /// `mapsHref`; nil when there's nothing to locate.
+    public var mapsURL: URL? {
+        let query: String
+        if let lat, let lng {
+            query = "\(lat),\(lng)"
+        } else {
+            let text = formattedAddress
+                ?? [addressLine1, addressLine2, city, state, postalCode]
+                    .compactMap { $0 }
+                    .filter { !$0.isEmpty }
+                    .joined(separator: ", ")
+            guard !text.isEmpty else { return nil }
+            query = text
+        }
+        var components = URLComponents(string: "https://www.google.com/maps/search/")
+        components?.queryItems = [
+            URLQueryItem(name: "api", value: "1"),
+            URLQueryItem(name: "query", value: query),
+        ]
+        return components?.url
+    }
 }
 
 // MARK: - Requests / responses
@@ -70,4 +94,80 @@ struct CreateClientAddressRequest: Encodable, Sendable {
     let lat: Double?
     let lng: Double?
     let isDefault: Bool?
+}
+
+/// PATCH /api/v1/client/addresses/{id} body for editing a saved SERVICE_ADDRESS.
+///
+/// `label` + `addressLine2` (apt/unit) are ALWAYS emitted — an explicit JSON `null`
+/// clears the field (an *absent* key reads as "no change" server-side, so nil is
+/// encoded as null, matching the web edit form). `isDefault` is always sent.
+///
+/// The geocoded address anchor (formattedAddress + city/state/zip + placeId +
+/// lat/lng) is emitted **only** when the user re-picks a new address (`place` set):
+/// omitting it makes the server keep the existing resolved address and short-circuit
+/// with no re-geocode (`resolveServiceAddressValues` sees it's already resolved). A
+/// re-picked autocomplete result already carries coordinates, so it also skips the
+/// geocode — just swapping the stored address.
+struct UpdateClientAddressRequest: Encodable, Sendable {
+    let label: String?
+    let addressLine2: String?
+    let isDefault: Bool
+    let place: PlaceReplacement?
+
+    /// The full anchor of a freshly picked Places result (carries coordinates, so
+    /// the server keeps them rather than re-geocoding).
+    struct PlaceReplacement: Sendable {
+        let formattedAddress: String
+        let city: String?
+        let state: String?
+        let postalCode: String?
+        let countryCode: String?
+        let placeId: String
+        let lat: Double
+        let lng: Double
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case label, addressLine2, isDefault
+        case formattedAddress, city, state, postalCode, countryCode, placeId, lat, lng
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try encodeNullable(&c, label, forKey: .label)
+        try encodeNullable(&c, addressLine2, forKey: .addressLine2)
+        try c.encode(isDefault, forKey: .isDefault)
+
+        if let place {
+            try c.encode(place.formattedAddress, forKey: .formattedAddress)
+            try encodeNullable(&c, place.city, forKey: .city)
+            try encodeNullable(&c, place.state, forKey: .state)
+            try encodeNullable(&c, place.postalCode, forKey: .postalCode)
+            try encodeNullable(&c, place.countryCode, forKey: .countryCode)
+            try c.encode(place.placeId, forKey: .placeId)
+            try c.encode(place.lat, forKey: .lat)
+            try c.encode(place.lng, forKey: .lng)
+        }
+    }
+
+    private func encodeNullable(
+        _ c: inout KeyedEncodingContainer<CodingKeys>,
+        _ value: String?,
+        forKey key: CodingKeys
+    ) throws {
+        if let value { try c.encode(value, forKey: key) } else { try c.encodeNil(forKey: key) }
+    }
+}
+
+/// PATCH body that touches only the default flag — every other key is omitted so the
+/// server keeps the address as-is and just promotes this row to the default for its
+/// kind (demoting the previous default). Used by the "Make default" row action.
+struct SetDefaultClientAddressRequest: Encodable, Sendable {
+    let isDefault: Bool
+}
+
+/// DELETE /api/v1/client/addresses/{id} response envelope.
+struct DeletedClientAddressResponse: Decodable, Sendable {
+    let deleted: Bool
+    let id: String
 }
