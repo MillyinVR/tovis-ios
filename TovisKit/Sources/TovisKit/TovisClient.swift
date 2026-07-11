@@ -20,6 +20,9 @@ public final class TovisClient: Sendable {
     /// birthday / avatar) behind the Settings hub. Distinct from `me` (dashboard).
     public let clientSettings: ClientSettingsService
     public let clientPublicProfile: ClientPublicProfileService
+    /// Client personalization — the "Get better matches" self-profile (hair/skin chips
+    /// + declared interests) behind the Settings hub. Explicit, user-entered signals.
+    public let clientSelfProfile: ClientSelfProfileService
     public let messages: MessagesService
     public let search: SearchService
     public let discover: DiscoverService
@@ -114,6 +117,7 @@ public final class TovisClient: Sendable {
         self.me = MeService(api: api)
         self.clientSettings = ClientSettingsService(api: api)
         self.clientPublicProfile = ClientPublicProfileService(api: api)
+        self.clientSelfProfile = ClientSelfProfileService(api: api)
         self.messages = MessagesService(
             api: api,
             supabaseURL: config.supabaseURL,

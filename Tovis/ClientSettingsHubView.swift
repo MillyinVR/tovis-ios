@@ -4,9 +4,10 @@
 // rows that push each sub-screen, plus Appearance + Sign out. Reached from the
 // gear in the Me tab header.
 //
-// Wires the ready sub-areas: Edit profile, Public profile (handle/bio/public
-// toggle), and Notifications (the existing NotificationPreferencesView). Saved
-// addresses, Payment methods, and Discovery location land in later increments.
+// Wires the ready sub-areas: Edit profile, Better matches (the personalization
+// self-profile), Public profile (handle/bio/public toggle), Saved addresses, and
+// Notifications (the existing NotificationPreferencesView). Payment methods and
+// Discovery location land in later increments.
 import SwiftUI
 import TovisKit
 
@@ -39,6 +40,12 @@ struct ClientSettingsHubView: View {
                             title: "Edit profile",
                             subtitle: "Name, phone, birthday & avatar"
                         ) { ClientProfileEditView() }
+
+                        SettingsLinkRow(
+                            icon: "sparkles",
+                            title: "Better matches",
+                            subtitle: "Hair, skin & what you’re into"
+                        ) { ClientPersonalizationView() }
 
                         SettingsLinkRow(
                             icon: "at",
