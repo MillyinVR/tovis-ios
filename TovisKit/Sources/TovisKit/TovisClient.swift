@@ -19,6 +19,7 @@ public final class TovisClient: Sendable {
     /// Client account settings — the editable identity profile (name / phone /
     /// birthday / avatar) behind the Settings hub. Distinct from `me` (dashboard).
     public let clientSettings: ClientSettingsService
+    public let clientPublicProfile: ClientPublicProfileService
     public let messages: MessagesService
     public let search: SearchService
     public let discover: DiscoverService
@@ -112,6 +113,7 @@ public final class TovisClient: Sendable {
         self.profiles = ProfileService(api: api)
         self.me = MeService(api: api)
         self.clientSettings = ClientSettingsService(api: api)
+        self.clientPublicProfile = ClientPublicProfileService(api: api)
         self.messages = MessagesService(
             api: api,
             supabaseURL: config.supabaseURL,
