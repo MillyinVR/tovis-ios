@@ -189,6 +189,53 @@ private extension URLRequest {
         // board is created rather than the key being interpreted downstream.
         #expect(body["eventDate"] == nil)
         #expect(body.keys.contains("eventDate") == false)
+        // No chip answers / no opt-in → both keys omitted (text-only body identical).
+        #expect(body.keys.contains("answers") == false)
+        #expect(body.keys.contains("writeThroughSelfProfile") == false)
+    }
+
+    @Test func createSendsAnswersAndWriteThrough() async throws {
+        reset()
+        BoardsURLProtocol.status = 201
+        BoardsURLProtocol.responseBody = Data("""
+        {"ok":true,"board":{"id":"bd_sk","clientId":"cl_1","name":"Glow","slug":"glow","visibility":"PRIVATE","type":"SKINCARE","eventDate":null,"itemCount":0,"items":[]}}
+        """.utf8)
+
+        _ = try await makeService().create(
+            name: "Glow",
+            visibility: "PRIVATE",
+            type: "SKINCARE",
+            answers: ["skin_type": "oily", "main_concern": "acne"],
+            writeThroughSelfProfile: true
+        )
+
+        let body = try bodyJSON()
+        let answers = try #require(body["answers"] as? [String: Any])
+        #expect(answers["skin_type"] as? String == "oily")
+        #expect(answers["main_concern"] as? String == "acne")
+        // The backend keys on `=== true`, so it must be a real JSON boolean.
+        #expect(body["writeThroughSelfProfile"] as? Bool == true)
+    }
+
+    @Test func createOmitsWriteThroughWhenFalseButKeepsAnswers() async throws {
+        reset()
+        BoardsURLProtocol.status = 201
+        BoardsURLProtocol.responseBody = Data("""
+        {"ok":true,"board":{"id":"bd_na","clientId":"cl_1","name":"Mani","slug":"mani","visibility":"PRIVATE","type":"NAILS","eventDate":null,"itemCount":0,"items":[]}}
+        """.utf8)
+
+        _ = try await makeService().create(
+            name: "Mani",
+            visibility: "PRIVATE",
+            type: "NAILS",
+            answers: ["length_preference": "short"],
+            writeThroughSelfProfile: false
+        )
+
+        let body = try bodyJSON()
+        #expect((body["answers"] as? [String: Any])?["length_preference"] as? String == "short")
+        // Not opted in → the key is omitted (never sent as false).
+        #expect(body.keys.contains("writeThroughSelfProfile") == false)
     }
 
     // MARK: - updateVisibility(...)
@@ -250,5 +297,33 @@ private extension URLRequest {
         #expect(wants("GENERAL") == false)
         #expect(wants("NAILS") == false)
         #expect(wants("SKINCARE") == false)
+    }
+
+    @Test func catalogQuestionSetsMatchWeb() {
+        // GENERAL (and unknown types) carry no chip questions.
+        #expect(BoardCatalog.questions(for: "GENERAL").isEmpty)
+        #expect(BoardCatalog.questions(for: "NOT_A_TYPE").isEmpty)
+        // Case-insensitive lookup.
+        #expect(BoardCatalog.questions(for: "bridal").map(\.key) == ["hair_length", "trial_timeline"])
+
+        // PROM leads with dress color; hair_length is shared with BRIDAL.
+        let prom = BoardCatalog.questions(for: "PROM")
+        #expect(prom.map(\.key) == ["dress_color", "hair_length"])
+        #expect(prom.first?.options.map(\.value) == [
+            "red", "pink", "blue", "green", "black", "white", "metallic", "undecided",
+        ])
+
+        // PERMANENT_MAKEUP has three questions; confidence_topic values must match
+        // the web exactly (server validates on VALUE).
+        let pmu = BoardCatalog.questions(for: "PERMANENT_MAKEUP")
+        #expect(pmu.map(\.key) == ["had_it_before", "confidence_topic", "brow_situation"])
+        #expect(pmu[1].options.map(\.value) == [
+            "healing-process", "pain-level", "natural-look", "cost",
+        ])
+
+        // The person-describing keys that gate the self-profile write-through.
+        #expect(BoardCatalog.writeThroughAnswerKeys == [
+            "hair_length", "current_color", "skin_type", "main_concern",
+        ])
     }
 }

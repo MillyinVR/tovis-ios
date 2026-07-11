@@ -73,15 +73,19 @@ struct BoardDetailResponse: Decodable, Sendable {
 
 // MARK: - Request bodies
 
-/// `POST /api/v1/boards` body. `visibility`/`type` are always sent; `eventDate`
-/// is omitted when nil (the synthesized encoder uses `encodeIfPresent`), which
-/// the backend reads as "no event date" — matching the web create form where an
-/// absent date leaves the board undated.
+/// `POST /api/v1/boards` body. `visibility`/`type` are always sent; `eventDate`,
+/// `answers`, and `writeThroughSelfProfile` are omitted when nil (the synthesized
+/// encoder uses `encodeIfPresent`) so a text-only create body stays byte-identical.
+/// `answers` is the per-type chip answers (question key → option value, spec §7.3);
+/// `writeThroughSelfProfile: true` opts the person-describing subset into the
+/// self-profile (the backend keys on `=== true`).
 struct CreateBoardRequest: Encodable, Sendable {
     let name: String
     let visibility: String
     let type: String
     let eventDate: String?
+    let answers: [String: String]?
+    let writeThroughSelfProfile: Bool?
 }
 
 /// `PATCH /api/v1/boards/{id}` body for the share (visibility) toggle — the only
@@ -111,6 +115,29 @@ public struct BoardTypeOption: Identifiable, Sendable, Equatable {
     }
 }
 
+/// One chip option for a board creation-context question — a faithful port of a
+/// `BoardQuestionOption` (lib/boards/context.ts). `value` is the stored answer
+/// (validated server-side by `normalizeBoardAnswers`); `label` is display only.
+public struct BoardQuestionOption: Identifiable, Sendable, Equatable {
+    public let value: String
+    public let label: String
+    public var id: String { value }
+
+    public init(_ value: String, _ label: String) {
+        self.value = value
+        self.label = label
+    }
+}
+
+/// A per-type creation-context question (spec §7.3) — a stable snake_case key, the
+/// question copy, and its single-select chip options. Port of `BoardQuestionDef`.
+public struct BoardQuestion: Identifiable, Sendable, Equatable {
+    public let key: String
+    public let label: String
+    public let options: [BoardQuestionOption]
+    public var id: String { key }
+}
+
 public enum BoardCatalog {
     /// The board types offered at creation, in the web chip order.
     public static let types: [BoardTypeOption] = [
@@ -129,4 +156,103 @@ public enum BoardCatalog {
         let upper = type.uppercased()
         return types.first { $0.value == upper }?.label
     }
+
+    /// The per-type chip questions asked once at creation (spec §7.3) — a faithful
+    /// port of `BOARD_QUESTION_SETS`. GENERAL (and any unknown type) has none. The
+    /// event-date question for bridal/prom is handled separately (a date picker).
+    public static func questions(for type: String) -> [BoardQuestion] {
+        questionSets[type.uppercased()] ?? []
+    }
+
+    /// Board answer keys that describe the PERSON (not the occasion), matching
+    /// `BOARD_ANSWER_WRITE_THROUGH` — answering any offers the "save to my
+    /// profile" opt-in. Option values match the self-profile 1:1 by construction.
+    public static let writeThroughAnswerKeys: Set<String> = [
+        "hair_length", "current_color", "skin_type", "main_concern",
+    ]
+
+    private static let hairLength = BoardQuestion(
+        key: "hair_length",
+        label: "How long is your hair right now?",
+        options: [.init("short", "Short"), .init("medium", "Medium"), .init("long", "Long")]
+    )
+
+    private static let questionSets: [String: [BoardQuestion]] = [
+        "GENERAL": [],
+        "BRIDAL": [
+            hairLength,
+            BoardQuestion(key: "trial_timeline", label: "When would you want a trial?", options: [
+                .init("6-8-weeks-before", "6–8 weeks before"),
+                .init("2-4-weeks-before", "2–4 weeks before"),
+                .init("no-trial", "No trial needed"),
+            ]),
+        ],
+        "PROM": [
+            BoardQuestion(key: "dress_color", label: "What color is your dress?", options: [
+                .init("red", "Red"), .init("pink", "Pink"), .init("blue", "Blue"),
+                .init("green", "Green"), .init("black", "Black"), .init("white", "White"),
+                .init("metallic", "Gold / silver"), .init("undecided", "Still deciding"),
+            ]),
+            hairLength,
+        ],
+        "SKINCARE": [
+            BoardQuestion(key: "skin_type", label: "How would you describe your skin?", options: [
+                .init("oily", "Oily"), .init("dry", "Dry"), .init("combination", "Combination"),
+                .init("sensitive", "Sensitive"), .init("normal", "Normal"),
+            ]),
+            BoardQuestion(key: "main_concern", label: "What matters most to you?", options: [
+                .init("acne", "Breakouts"), .init("aging", "Fine lines"),
+                .init("dullness", "Dullness"), .init("redness", "Redness"),
+                .init("texture", "Texture"),
+            ]),
+            BoardQuestion(key: "had_facial_before", label: "Ever had a facial before?", options: [
+                .init("yes", "Yes"), .init("no", "First time"),
+            ]),
+        ],
+        "PERMANENT_MAKEUP": [
+            BoardQuestion(key: "had_it_before", label: "Have you had it done before?", options: [
+                .init("yes", "Yes"), .init("no", "First time"),
+            ]),
+            BoardQuestion(
+                key: "confidence_topic",
+                label: "What do you want to feel confident about before booking?",
+                options: [
+                    .init("healing-process", "The healing process"),
+                    .init("pain-level", "How it feels"),
+                    .init("natural-look", "It looking natural"),
+                    .init("cost", "Cost"),
+                ]
+            ),
+            BoardQuestion(key: "brow_situation", label: "Your brows today?", options: [
+                .init("sparse", "Sparse"), .init("over-plucked", "Over-plucked"),
+                .init("patchy", "Patchy"), .init("full-but-undefined", "Full but undefined"),
+            ]),
+        ],
+        "COLOR_TRANSFORMATION": [
+            BoardQuestion(key: "current_color", label: "Your current color?", options: [
+                .init("blonde", "Blonde"), .init("brunette", "Brunette"),
+                .init("black", "Black"), .init("red", "Red"),
+                .init("gray", "Gray / silver"), .init("other", "Something else"),
+            ]),
+            BoardQuestion(key: "dream_color", label: "Your dream color?", options: [
+                .init("blonde", "Blonde"), .init("brunette", "Brunette"),
+                .init("black", "Black"), .init("red", "Red"),
+                .init("fantasy", "Fantasy / vivid"), .init("not-sure", "Not sure yet"),
+            ]),
+            BoardQuestion(key: "change_scale", label: "How big a change are you after?", options: [
+                .init("subtle", "Subtle"), .init("noticeable", "Noticeable"),
+                .init("total", "Total transformation"),
+            ]),
+        ],
+        "NAILS": [
+            BoardQuestion(key: "length_preference", label: "What length do you like?", options: [
+                .init("short", "Short"), .init("medium", "Medium"),
+                .init("long", "Long"), .init("extra-long", "Extra long"),
+            ]),
+            BoardQuestion(key: "occasion", label: "What are these for?", options: [
+                .init("everyday", "Everyday"), .init("event", "An event"),
+                .init("vacation", "Vacation"),
+            ]),
+        ],
+    ]
 }

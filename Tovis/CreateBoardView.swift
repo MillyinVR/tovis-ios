@@ -1,12 +1,9 @@
 // Native "New board" flow — the counterpart to the web CreateBoardForm
 // (app/client/(gated)/boards/_components/CreateBoardForm.tsx). Presented as a
 // sheet from the "Me" tab's BOARDS grid. Captures a board's name, purpose (type),
-// shareability, and — for bridal/prom — an optional event date, then POSTs to
-// /api/v1/boards via BoardsService.
-//
-// The per-type personalization chip questions + self-profile write-through (spec
-// §7) are intentionally left to a follow-on; this covers the board's identity,
-// purpose, and sharing.
+// shareability, — for bridal/prom — an optional event date, and (spec §7.3) the
+// per-type personalization chip questions with the optional self-profile
+// write-through, then POSTs to /api/v1/boards via BoardsService.
 import SwiftUI
 import TovisKit
 
@@ -24,12 +21,28 @@ struct CreateBoardView: View {
     @State private var isShared = false
     @State private var hasEventDate = false
     @State private var eventDate = Date()
+    /// Per-type chip answers (question key → chosen option value, spec §7.3).
+    /// Cleared whenever the board type changes (answers are type-specific).
+    @State private var answers: [String: String] = [:]
+    /// The "save these details to my profile" opt-in (only meaningful when a
+    /// person-describing question is answered).
+    @State private var writeThrough = false
 
     @State private var saving = false
     @State private var errorText: String?
 
     private var wantsEventDate: Bool {
         BoardCatalog.types.first { $0.value == selectedType }?.wantsEventDate ?? false
+    }
+
+    private var questions: [BoardQuestion] {
+        BoardCatalog.questions(for: selectedType)
+    }
+
+    /// True once a person-describing question is answered — mirrors the web's
+    /// `hasWriteThroughAnswers`, which gates the write-through opt-in.
+    private var hasWriteThroughAnswers: Bool {
+        answers.keys.contains { BoardCatalog.writeThroughAnswerKeys.contains($0) }
     }
 
     private var canSave: Bool {
@@ -53,6 +66,8 @@ struct CreateBoardView: View {
                     nameField
                     typeSection
                     if wantsEventDate { eventDateSection }
+                    if !questions.isEmpty { questionsSection }
+                    if hasWriteThroughAnswers { writeThroughSection }
                     visibilitySection
 
                     SignupPrimaryButton(
@@ -108,12 +123,64 @@ struct CreateBoardView: View {
             FlowLayout(spacing: 8, lineSpacing: 8) {
                 ForEach(BoardCatalog.types) { option in
                     BoardChip(label: option.label, selected: selectedType == option.value) {
+                        let changed = selectedType != option.value
                         selectedType = option.value
-                        // The event date belongs to the type that asked for it.
+                        // The event date + chip answers belong to the type that
+                        // asked for them — a type change wipes both (web parity).
                         if !wantsEventDate { hasEventDate = false }
+                        if changed {
+                            answers = [:]
+                            writeThrough = false
+                        }
                     }
                 }
             }
+        }
+    }
+
+    /// The per-type creation-context questions (spec §7.3) — single-select chips,
+    /// tap again to clear. All optional.
+    private var questionsSection: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            ForEach(questions) { question in
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 6) {
+                        SignupFieldLabel(question.label)
+                        Text("optional")
+                            .font(BrandFont.body(11))
+                            .foregroundStyle(BrandColor.textMuted)
+                    }
+                    FlowLayout(spacing: 8, lineSpacing: 8) {
+                        ForEach(question.options) { option in
+                            BoardChip(label: option.label, selected: answers[question.key] == option.value) {
+                                toggleAnswer(question.key, option.value)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// The optional self-profile write-through opt-in — shown only once a
+    /// person-describing question is answered (web `hasWriteThroughAnswers`).
+    private var writeThroughSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            BoardChip(label: "Save these details to my profile", selected: writeThrough) {
+                writeThrough.toggle()
+            }
+            Text("Answers about you (like hair length or skin type) can be saved to your profile so every board gets better matches. Optional — you can edit or clear them anytime in settings.")
+                .font(BrandFont.body(12))
+                .foregroundStyle(BrandColor.textSecondary)
+        }
+    }
+
+    /// Single-select: a second tap on the chosen option clears it (web `toggleAnswer`).
+    private func toggleAnswer(_ key: String, _ value: String) {
+        if answers[key] == value {
+            answers[key] = nil
+        } else {
+            answers[key] = value
         }
     }
 
@@ -177,7 +244,10 @@ struct CreateBoardView: View {
                 name: trimmed,
                 visibility: isShared ? "SHARED" : "PRIVATE",
                 type: selectedType,
-                eventDate: eventDateString
+                eventDate: eventDateString,
+                answers: answers.isEmpty ? nil : answers,
+                // Only opt in when a person-describing answer is actually present.
+                writeThroughSelfProfile: hasWriteThroughAnswers && writeThrough
             )
             onCreated(created)
             dismiss()
