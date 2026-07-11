@@ -71,7 +71,16 @@ enum Wire {
 
     /// Format a decimal-string amount (e.g. "120.00") as USD currency: "$120".
     static func money(_ amount: String?) -> String? {
-        guard let amount, let value = Decimal(string: amount) else { return nil }
+        guard let amount else { return nil }
+        return moneyDecimal(Decimal(string: amount))
+    }
+
+    /// Format a `Decimal` amount as USD currency ("$120" / "$45.50"); nil → nil. For
+    /// amounts that are computed rather than arriving as a wire string (e.g. an
+    /// opening's discounted price). `money(_:)` delegates here so the two share one
+    /// formatter.
+    static func moneyDecimal(_ value: Decimal?) -> String? {
+        guard let value else { return nil }
         let f = NumberFormatter()
         f.numberStyle = .currency
         f.currencyCode = "USD"

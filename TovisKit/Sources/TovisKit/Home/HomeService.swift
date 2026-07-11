@@ -33,4 +33,25 @@ public final class HomeService: Sendable {
             method: .post
         )
     }
+
+    /// GET /api/v1/client/openings → the client's active last-minute openings feed
+    /// (the "see all" of the home invites). Optional filters mirror the web feed
+    /// (`serviceId` / `professionalId` / `locationType`). Returns the rows verbatim;
+    /// the caller drops non-bookable ones (see `ClientOpening.isBookable`), matching
+    /// the web `parseCard` filter.
+    public func openings(
+        serviceId: String? = nil,
+        professionalId: String? = nil,
+        locationType: String? = nil
+    ) async throws -> [ClientOpening] {
+        var query: [URLQueryItem] = []
+        if let serviceId { query.append(URLQueryItem(name: "serviceId", value: serviceId)) }
+        if let professionalId { query.append(URLQueryItem(name: "professionalId", value: professionalId)) }
+        if let locationType { query.append(URLQueryItem(name: "locationType", value: locationType)) }
+        let response: ClientOpeningFeedResponse = try await api.request(
+            "/client/openings",
+            query: query.isEmpty ? nil : query
+        )
+        return response.notifications
+    }
 }

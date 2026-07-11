@@ -485,6 +485,12 @@ private struct InvitesCard: View {
                     Image(systemName: "bolt.fill").font(.system(size: 12)).foregroundStyle(BrandColor.gold)
                     Eyebrow(text: "Last-minute openings")
                     Spacer()
+                    NavigationLink { OpeningsFeedView() } label: {
+                        Text("See all")
+                            .font(BrandFont.body(12, .semibold))
+                            .foregroundStyle(BrandColor.accent)
+                    }
+                    .buttonStyle(.plain)
                 }
                 if invites.isEmpty {
                     Text("No last-minute openings right now. We’ll ping you the moment a pro opens a spot.")
