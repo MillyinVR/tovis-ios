@@ -3,6 +3,7 @@
 import SwiftUI
 import TovisKit
 import AuthenticationServices
+import UIKit
 
 // MARK: - App entry point
 
@@ -975,6 +976,13 @@ struct BrandField: View {
     let placeholder: String
     @Binding var text: String
     let isSecure: Bool
+    /// Optional keyboard/content-type hints so a caller can request the right
+    /// keyboard (phone pad, URL, …) and autofill without duplicating the styling.
+    /// All default to the plain-text behavior the existing call sites rely on.
+    var keyboardType: UIKeyboardType = .default
+    var textContentType: UITextContentType? = nil
+    var autocapitalization: TextInputAutocapitalization? = nil
+    var autocorrectionDisabled: Bool = false
 
     var body: some View {
         Group {
@@ -984,6 +992,10 @@ struct BrandField: View {
                 TextField("", text: $text, prompt: prompt)
             }
         }
+        .keyboardType(keyboardType)
+        .textContentType(textContentType)
+        .textInputAutocapitalization(autocapitalization)
+        .autocorrectionDisabled(autocorrectionDisabled)
         .font(BrandFont.body(16))
         .foregroundStyle(BrandColor.textPrimary)
         .padding(.horizontal, 16)
