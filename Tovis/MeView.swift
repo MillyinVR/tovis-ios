@@ -71,6 +71,7 @@ struct MeView: View {
 
         if let invite = inviteLink {
             inviteCard(invite).padding(.top, 24)
+            referralsLink.padding(.top, 10)
         }
 
         if !me.myLooks.isEmpty {
@@ -250,6 +251,30 @@ struct MeView: View {
     /// app's other ShareLink origins (hardcoded canonical web host).
     private func inviteShareURL(_ invite: ClientInviteLink) -> URL? {
         URL(string: "https://www.tovis.app\(invite.path)")
+    }
+
+    /// Entry to the "Your Referrals" list. The invite card above is the share
+    /// half of the web /client/referrals page; this pushes the list half — the
+    /// friends you've referred + any pending "did you refer them?" confirmations.
+    private var referralsLink: some View {
+        NavigationLink {
+            ClientReferralsView()
+        } label: {
+            HStack(spacing: 10) {
+                Text("See your referrals")
+                    .font(BrandFont.body(14, .semibold))
+                    .foregroundStyle(BrandColor.textPrimary)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(BrandColor.textMuted)
+            }
+            .padding(.vertical, 13).padding(.horizontal, 16)
+            .frame(maxWidth: .infinity)
+            .background(BrandColor.bgSecondary)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Upcoming
