@@ -74,6 +74,39 @@ public final class BookingsService: Sendable {
         return response.mediaUseConsent
     }
 
+    /// GET /api/v1/client/waitlist-offers → the client's outstanding pro-proposed
+    /// waitlist times (PENDING only), shown alongside priority offers on the
+    /// offers screen. Confirm/decline via `respondToWaitlistOffer`. Envelope
+    /// unwrapped. CLIENT-only.
+    public func waitlistOffers() async throws -> [ClientWaitlistOffer] {
+        let response: ClientWaitlistOfferResponse = try await api.request("/client/waitlist-offers")
+        return response.offers
+    }
+
+    /// POST /api/v1/client/waitlist-offers/{id} — respond to a pro-proposed
+    /// waitlist time. CONFIRM books the appointment at the offered slot (returns
+    /// it, so the caller can open its detail); DECLINE frees the pro to offer
+    /// another time (returns nil). Idempotent (same key ⇒ same body); the key is
+    /// derived from the offer + action, matching the web WaitlistOfferCards.
+    @discardableResult
+    public func respondToWaitlistOffer(
+        offerId: String,
+        confirm: Bool,
+        idempotencyKey: String? = nil
+    ) async throws -> RebookedBooking? {
+        let action = confirm ? "CONFIRM" : "DECLINE"
+        let payload = try JSONEncoder.canonical.encode(WaitlistOfferActionRequest(action: action))
+        let key = idempotencyKey ?? buildClientIdempotencyKey(
+            scope: "client-waitlist-offer", entityId: offerId, action: action)
+        let response: WaitlistOfferRespondResponse = try await api.request(
+            "/client/waitlist-offers/\(offerId)",
+            method: .post,
+            body: payload,
+            headers: ["idempotency-key": key]
+        )
+        return response.booking
+    }
+
     /// POST /api/v1/client/bookings/{id}/aftercare-rebook — confirm or decline the
     /// pro's proposed next appointment. CONFIRM creates the booking at the pro's
     /// proposed time (returns it); DECLINE just records the decline. Idempotent.
