@@ -407,7 +407,7 @@ private struct ActionCard: View {
         let proName = booking.professional?.displayName ?? "your pro"
         let notes = aftercare.notes?.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        return NavigationLink { AppointmentsView() } label: {
+        return NavigationLink { AftercareInboxView() } label: {
             HomeCard(accentEdge: BrandColor.ember) {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(spacing: 10) {

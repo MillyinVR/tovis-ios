@@ -16,6 +16,25 @@ public final class BookingsService: Sendable {
         return response.buckets
     }
 
+    /// GET /api/v1/client/aftercare → the client's aftercare inbox: every
+    /// aftercare summary they've received (the AFTERCARE_READY feed), enriched
+    /// with each visit's title / pro / before-after pair. The native counterpart
+    /// to the web /client/aftercare page. CLIENT-only. Envelope unwrapped.
+    public func aftercareInbox() async throws -> [ClientAftercareInboxItem] {
+        let response: ClientAftercareInboxResponse = try await api.request("/client/aftercare")
+        return response.items
+    }
+
+    /// Resolve a single `ClientBooking` by id from the bucketed list — there is no
+    /// single-booking client GET, so a surface that only carries the booking id
+    /// (e.g. the aftercare inbox) finds it here, then pushes `BookingDetailView`.
+    /// Returns nil when the booking isn't among the client's recent bookings.
+    public func booking(id: String) async throws -> ClientBooking? {
+        let buckets = try await fetch()
+        let all = buckets.upcoming + buckets.pending + buckets.prebooked + buckets.past
+        return all.first { $0.id == id }
+    }
+
     /// GET /api/v1/client/bookings/{id}/aftercare — the client's read of their
     /// own aftercare: care notes (once the pro has SENT the summary) + the pro's
     /// featured before/after pair. CLIENT-only, ownership-gated. Returns
