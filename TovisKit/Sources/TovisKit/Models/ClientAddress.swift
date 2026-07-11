@@ -20,6 +20,10 @@ public struct ClientAddress: Decodable, Sendable, Identifiable, Hashable {
     public let placeId: String?
     public let lat: Double?
     public let lng: Double?
+    /// SEARCH_AREA only: the server-persisted discovery radius in miles (5–50),
+    /// synced across devices. Nil for a SERVICE_ADDRESS or a search area saved
+    /// before a radius was stored (older server / pre-sync row).
+    public let radiusMiles: Int?
     public let createdAt: String
     public let updatedAt: String
 
@@ -98,6 +102,16 @@ struct CreateClientAddressRequest: Encodable, Sendable {
     let lat: Double?
     let lng: Double?
     let isDefault: Bool?
+    /// SEARCH_AREA discovery radius (miles). Omitted from the body when nil
+    /// (synthesized encode drops nil), so a SERVICE_ADDRESS create is unchanged.
+    var radiusMiles: Int? = nil
+}
+
+/// PATCH /api/v1/client/addresses/{id} body that touches only the SEARCH_AREA
+/// discovery radius — every other field is omitted so the server keeps the saved
+/// origin and just updates the radius (which then syncs across devices).
+struct UpdateClientAddressRadiusRequest: Encodable, Sendable {
+    let radiusMiles: Int
 }
 
 /// PATCH /api/v1/client/addresses/{id} body for editing a saved SERVICE_ADDRESS.
