@@ -5,9 +5,9 @@
 // gear in the Me tab header.
 //
 // Wires the ready sub-areas: Edit profile, Better matches (the personalization
-// self-profile), Public profile (handle/bio/public toggle), Saved addresses, and
-// Notifications (the existing NotificationPreferencesView). Payment methods and
-// Discovery location land in later increments.
+// self-profile), Public profile (handle/bio/public toggle), Saved addresses,
+// Payment methods (saved cards for no-show fees), and Notifications (the existing
+// NotificationPreferencesView). Discovery location lands in a later increment.
 import SwiftUI
 import TovisKit
 
@@ -58,6 +58,12 @@ struct ClientSettingsHubView: View {
                             title: "Saved addresses",
                             subtitle: "Addresses for at-home service"
                         ) { ClientServiceAddressesView() }
+
+                        SettingsLinkRow(
+                            icon: "creditcard",
+                            title: "Payment methods",
+                            subtitle: "Saved cards for no-show fees"
+                        ) { PaymentMethodsView() }
 
                         SettingsLinkRow(
                             icon: "bell.badge",

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A1B2C3D40000000000000001 /* StripePaymentSheet in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D40000000000000002 /* StripePaymentSheet */; };
 		C98B44BD2FF070000097B75C /* TovisKit in Frameworks */ = {isa = PBXBuildFile; productRef = C98B44BC2FF070000097B75C /* TovisKit */; };
 /* End PBXBuildFile section */
 
@@ -39,6 +40,7 @@
 		000000000000000130000000 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
+				A1B2C3D40000000000000001 /* StripePaymentSheet in Frameworks */,
 				C98B44BD2FF070000097B75C /* TovisKit in Frameworks */,
 			);
 		};
@@ -79,6 +81,7 @@
 			);
 			name = Tovis;
 			packageProductDependencies = (
+				A1B2C3D40000000000000002 /* StripePaymentSheet */,
 				C98B44BC2FF070000097B75C /* TovisKit */,
 			);
 			productName = MyApp;
@@ -110,6 +113,7 @@
 			mainGroup = 000000000000000000000001;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				A1B2C3D40000000000000003 /* XCRemoteSwiftPackageReference "stripe-ios" */,
 				C98F2E3B2FF071E100584CE3 /* XCLocalSwiftPackageReference "TovisKit" */,
 			);
 			preferredProjectObjectVersion = 90;
@@ -381,7 +385,23 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		A1B2C3D40000000000000003 /* XCRemoteSwiftPackageReference "stripe-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/stripe/stripe-ios";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 26.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
+		A1B2C3D40000000000000002 /* StripePaymentSheet */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1B2C3D40000000000000003 /* XCRemoteSwiftPackageReference "stripe-ios" */;
+			productName = StripePaymentSheet;
+		};
 		C98B44BC2FF070000097B75C /* TovisKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = TovisKit;

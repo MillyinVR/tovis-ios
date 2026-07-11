@@ -40,6 +40,9 @@ public final class TovisClient: Sendable {
     public let reviews: ReviewsService
     /// Client referrals — the shareable digital invite link (/c/{code}).
     public let referrals: ReferralsService
+    /// Client card-on-file — saved cards for no-show fees (Payment methods
+    /// settings). Dark unless ENABLE_NO_SHOW_PROTECTION (routes 404 while off).
+    public let paymentMethods: PaymentMethodsService
     /// The public creator surface addressed by handle — the native `/u/{handle}`
     /// viewer (profile read + client→client follow toggle).
     public let publicClient: PublicClientService
@@ -141,6 +144,7 @@ public final class TovisClient: Sendable {
             supabaseKey: config.supabaseAnonKey
         )
         self.referrals = ReferralsService(api: api)
+        self.paymentMethods = PaymentMethodsService(api: api)
         self.publicClient = PublicClientService(api: api)
         self.proSession = ProSessionService(api: api)
         self.proCalendar = ProCalendarService(api: api)
