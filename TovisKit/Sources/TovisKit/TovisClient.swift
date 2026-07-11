@@ -16,6 +16,9 @@ public final class TovisClient: Sendable {
     public let bookings: BookingsService
     public let profiles: ProfileService
     public let me: MeService
+    /// Client account settings — the editable identity profile (name / phone /
+    /// birthday / avatar) behind the Settings hub. Distinct from `me` (dashboard).
+    public let clientSettings: ClientSettingsService
     public let messages: MessagesService
     public let search: SearchService
     public let discover: DiscoverService
@@ -108,6 +111,7 @@ public final class TovisClient: Sendable {
         self.bookings = BookingsService(api: api)
         self.profiles = ProfileService(api: api)
         self.me = MeService(api: api)
+        self.clientSettings = ClientSettingsService(api: api)
         self.messages = MessagesService(
             api: api,
             supabaseURL: config.supabaseURL,

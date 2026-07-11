@@ -7,7 +7,6 @@ import TovisKit
 
 struct MeView: View {
     @Environment(SessionModel.self) private var session
-    @Environment(ThemeStore.self) private var theme
 
     private enum Phase {
         case loading
@@ -98,7 +97,7 @@ struct MeView: View {
                     .tracking(1.8)
                     .foregroundStyle(BrandColor.textSecondary)
                 Spacer()
-                accountMenu(me)
+                settingsButton(me)
             }
 
             HStack(alignment: .top, spacing: 16) {
@@ -132,29 +131,18 @@ struct MeView: View {
         }
     }
 
-    private func accountMenu(_ me: ClientMe) -> some View {
-        Menu {
-            if let email = me.user.email { Text(email) }
-
-            Picker("Theme", selection: Binding(
-                get: { theme.preference },
-                set: { theme.preference = $0 }
-            )) {
-                ForEach(ThemePreference.allCases) { Text($0.label).tag($0) }
-            }
-
-            Divider()
-
-            Button(role: .destructive) {
-                Task { await session.logout() }
-            } label: {
-                Label("Sign out", systemImage: "rectangle.portrait.and.arrow.right")
-            }
+    /// The gear that opens the Settings hub (profile · notifications · appearance ·
+    /// sign out). Replaced the old inline account Menu — theme + sign out moved into
+    /// the hub, matching the pro Profile tab's account section.
+    private func settingsButton(_ me: ClientMe) -> some View {
+        NavigationLink {
+            ClientSettingsHubView(email: me.user.email)
         } label: {
-            Image(systemName: "person.crop.circle")
-                .font(.system(size: 26))
+            Image(systemName: "gearshape")
+                .font(.system(size: 24))
                 .foregroundStyle(BrandColor.textSecondary)
         }
+        .buttonStyle(.plain)
     }
 
     private func stat(_ label: String, _ value: Int) -> some View {
