@@ -215,6 +215,32 @@ struct PasswordResetLink: Equatable {
     }
 }
 
+// MARK: - Public-board Universal Link
+
+/// A parsed `https://<host>/u/<handle>/boards/<slug>` Universal Link — the share
+/// link `BoardShareSection` generates. With the app installed, iOS hands the tap
+/// to `.onOpenURL`; we pull the handle + slug and present the native public-board
+/// viewer instead of the web page. The host is re-checked defensively — never
+/// trust an arbitrary https URL from onOpenURL.
+struct PublicBoardLink: Equatable {
+    let handle: String
+    let slug: String
+
+    init?(url: URL) {
+        guard url.scheme?.lowercased() == "https" else { return nil }
+        let host = url.host?.lowercased()
+        guard host == "tovis.app" || host == "www.tovis.app" else { return nil }
+        // Path segments minus the leading "/": ["u", "<handle>", "boards", "<slug>"].
+        let parts = url.pathComponents.filter { $0 != "/" }
+        guard parts.count >= 4, parts[0] == "u", parts[2] == "boards" else { return nil }
+        let handle = parts[1]
+        let slug = parts[3]
+        guard !handle.isEmpty, !slug.isEmpty else { return nil }
+        self.handle = handle
+        self.slug = slug
+    }
+}
+
 // MARK: - Auth state (owns the TovisClient)
 
 @MainActor
@@ -280,12 +306,22 @@ final class SessionModel {
     /// (works from a cold launch too — the cover survives the bootstrap swap).
     private(set) var pendingPasswordResetToken: String?
 
-    /// Handle an incoming deep link / Universal Link. Password-reset links route to
-    /// the native reset screen; the `tovis://checkout/return?…` scheme feeds the
-    /// active booking screen. Anything else is ignored so stray links are safe.
+    /// The handle + slug from a tapped public-board Universal Link
+    /// (`/u/<handle>/boards/<slug>`). RootView presents the native public-board
+    /// viewer over whatever is showing (cold-launch safe, like the reset cover).
+    private(set) var pendingPublicBoard: PublicBoardLink?
+
+    /// Handle an incoming deep link / Universal Link. Password-reset + public-board
+    /// links route to their native screens; the `tovis://checkout/return?…` scheme
+    /// feeds the active booking screen. Anything else is ignored so stray links are
+    /// safe.
     func handleDeepLink(_ url: URL) {
         if let reset = PasswordResetLink(url: url) {
             pendingPasswordResetToken = reset.token
+            return
+        }
+        if let board = PublicBoardLink(url: url) {
+            pendingPublicBoard = board
             return
         }
         guard let parsed = CheckoutReturn(url: url) else { return }
@@ -298,6 +334,9 @@ final class SessionModel {
 
     /// Dismiss the native set-new-password screen (done or cancelled).
     func clearPasswordResetToken() { pendingPasswordResetToken = nil }
+
+    /// Dismiss the native public-board viewer.
+    func clearPublicBoard() { pendingPublicBoard = nil }
 
     /// The destination a tapped push asked to open. The signed-in shell observes
     /// this and routes (e.g. presents the booking detail), then clears it. Set
@@ -820,6 +859,19 @@ struct RootView: View {
         )) {
             if let token = session.pendingPasswordResetToken {
                 ResetPasswordView(token: token)
+            }
+        }
+        // A tapped `/u/{handle}/boards/{slug}` share link opens the native
+        // public-board viewer over whatever is showing (wrapped in its own
+        // NavigationStack so the owner back-link can push the creator profile).
+        .fullScreenCover(isPresented: Binding(
+            get: { session.pendingPublicBoard != nil },
+            set: { if !$0 { session.clearPublicBoard() } }
+        )) {
+            if let board = session.pendingPublicBoard {
+                NavigationStack {
+                    PublicBoardView(handle: board.handle, slug: board.slug)
+                }
             }
         }
     }
