@@ -17,6 +17,12 @@ struct BookingFlowView: View {
     var rescheduleBookingId: String? = nil
     /// The booking's location mode, preserved across a reschedule. Defaults to SALON.
     var locationType: String = "SALON"
+    /// When set, the flow opens on this ISO instant's day and pre-selects it as the
+    /// time slot when it's still bookable — used by the openings feed to land the
+    /// client on the freed-up slot (mirrors the web `?scheduledFor=` deep-link).
+    /// General availability drives the hold, so a slot that's no longer open simply
+    /// isn't preselected and the client picks another time.
+    var preselectedSlot: String? = nil
 
     private var isReschedule: Bool { rescheduleBookingId != nil }
 
@@ -35,6 +41,8 @@ struct BookingFlowView: View {
     @State private var selectedSlot: String?
     @State private var booking = false
     @State private var bookError: String?
+    /// Guards the one-time preselect so a later date change / manual pick wins.
+    @State private var didApplyPreselect = false
 
     // Add-ons (new bookings only — reschedule keeps the original add-ons).
     @State private var addOns: [BookingAddOn] = []
@@ -369,9 +377,12 @@ struct BookingFlowView: View {
                 offeringId: offering.id, durationMinutes: duration,
                 locationType: mode
             )
-            // Open on the server's suggested first day when present.
-            if let first = boot.selectedDay?.date ?? boot.availableDays.first?.date,
-               let d = ymd(first, tz: boot.timeZone) {
+            // Open on the preselected slot's day when the feed handed us one, else
+            // the server's suggested first day.
+            if let iso = preselectedSlot, let instant = Wire.date(iso) {
+                selectedDate = ymd(ymdString(instant, tz: boot.timeZone), tz: boot.timeZone) ?? selectedDate
+            } else if let first = boot.selectedDay?.date ?? boot.availableDays.first?.date,
+                      let d = ymd(first, tz: boot.timeZone) {
                 selectedDate = d
             }
             phase = .ready(boot)
@@ -418,6 +429,11 @@ struct BookingFlowView: View {
             slots = day.slots
         } catch {
             slots = []
+        }
+        // One-time: land on the freed-up slot if it's still bookable on this day.
+        if !didApplyPreselect {
+            if let pre = preselectedSlot, slots.contains(pre) { selectedSlot = pre }
+            didApplyPreselect = true
         }
         loadingSlots = false
     }
