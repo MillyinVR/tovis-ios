@@ -195,8 +195,9 @@ public enum ProCalendarGrid {
     }
 
     /// Round `minutes` to the nearest `step`, clamped to [0, 1440 - step] — the
-    /// web `snapMinutes`.
-    static func snap(_ minutes: Int, step: Int) -> Int {
+    /// web `snapMinutes`. Public so the drag-to-reschedule layer in the app target
+    /// can snap a dropped tile to the same 15-min grid the layout uses.
+    public static func snap(_ minutes: Int, step: Int) -> Int {
         let s = max(1, step)
         let snapped = Int((Double(minutes) / Double(s)).rounded()) * s
         return max(0, min(minutesPerDay - s, snapped))
