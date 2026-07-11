@@ -13,7 +13,7 @@ import TovisKit
 
 struct ProMainTabView: View {
     @Environment(SessionModel.self) private var session
-    @State private var tab: ProTab.ID = .overview   // pros land on the Overview home (hosts the top-header tabs)
+    @State private var tab: ProTab.ID = .calendar   // pros land on Calendar (web `/pro` → `/pro/calendar`); the Overview home is reached via the Calendar bar's Home control
     @State private var messagesBadge: String?
     @State private var proSession: ProSessionModel?
     /// A conversation surfaced by a tapped message push (`/messages/thread/{id}`),

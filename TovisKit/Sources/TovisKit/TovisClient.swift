@@ -53,8 +53,6 @@ public final class TovisClient: Sendable {
     public let proReminders: ProRemindersService
     /// PRO workspace — session media (before/after photo upload + list).
     public let proMedia: ProMediaService
-    /// PRO workspace — the Overview / dashboard monthly analytics.
-    public let proOverview: ProOverviewService
     /// PRO workspace — camera support content (trending shot packs).
     public let proCamera: ProCameraService
     /// PRO workspace — the Finance & Tax tab (income/expenses/tax + expense CRUD).
@@ -144,7 +142,6 @@ public final class TovisClient: Sendable {
             supabaseURL: config.supabaseURL,
             supabaseKey: config.supabaseAnonKey
         )
-        self.proOverview = ProOverviewService(api: api)
         self.proCamera = ProCameraService(api: api)
         self.proFinance = ProFinanceService(api: api)
         self.proMembership = ProMembershipService(api: api)
