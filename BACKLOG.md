@@ -482,6 +482,33 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
     increment-1 "omits beforeAssetId" test still covers the `.untouched` default. swift test 252; `xcodebuild
     build` clean. **NOT simulator-driven** (needs a live authed pro with a booking's before/after photos).
     **✅ A4 media manager COMPLETE; only the data-migration wizard remains in A4.**
+  - [x] **A4-migration data-migration wizard, increment 1 (entry + review bookends)** — ✅ shipped
+    2026-07-10 (iOS #71 + **paired web #577** `feat(pro-migrate)…summary read API`). Ports the web
+    `/pro/migrate` flow's two **RSC-only** "bookend" screens — the entry/landing progress + the
+    review/go-live summary. ⚠️ **Scoped web-first** (per the per-slice rule): the web entry + review
+    pages query Prisma directly via `loadMigrationReviewSummary` and pass a view-model into a client
+    component → **no JSON route**, so this needed a **paired web read API** (like the media manager,
+    NOT iOS-only). The three working import steps (services/clients/calendar) ARE JSON-backed but
+    **POST-only** (preview/commit) with client-side CSV/ICS parsing — those are later increments.
+    **Web #577** (no migration): new `GET /api/v1/pro/migrate/summary` → `{ summary: { offerings,
+    clients, importedBookings, importedBlocks, raises[] } }`, guards `requirePro()` then
+    `isProMigrationEnabled()` → **404 while flag off**; new `lib/dto/proMigration.ts` + barrel +
+    regen'd api-schema; +3 route tests. **Build-dark:** `ENABLE_PRO_MIGRATION` HELD, so the route 404s
+    in prod → the entry screen shows a "not available yet" state (same pattern as ProNoShowSettings).
+    **TovisKit:** `ProMigrationSummary`/`ProMigrationRaise`/`ProMigrationSummaryResponse` (derive the
+    entry progress counts — `calendar = importedBookings + importedBlocks` — + review raise labels
+    `fromLabel`/`toLabel`/`cadenceLabel` to match web `buildReviewViewModel`) + `ProMigrationService.summary()`
+    (`GET /pro/migrate/summary`), wired on `TovisClient`. **App:** `ProMigrateView` (entry — hero +
+    source-app picker → per-source **export guide** = 1:1 port of `_exportInstructions.ts` + "what
+    you'll bring over" progress cards; owns the load + 404/error states; navigates to review) +
+    `ProMigrateReviewView` (review — three tone-coded summary cards + price-grace raise recap +
+    preflight checklist + go-live confirmation; presentational given the loaded summary) + a Business-
+    section entry "Import from another app". +3 iOS tests (`ProMigrationTests`: GET route/decode +
+    derived progress/labels · flag-off 404 · empty-migration `hasAnyImport`). swift test 255; `xcodebuild
+    build` clean. **NOT simulator-driven** (dark; needs a live authed pro + the flag on). **⚠️ Increments
+    2–4 REMAIN** = the guided import steps (Clients CSV · Services CSV+fuzzy-match+price-ramps · Calendar
+    ICS/feed), each POST-only preview/commit with on-device CSV/ICS parsing (no PapaParse — native CSV
+    parser + `.fileImporter`). Scope each web-first (route + client) per the per-slice rule.
   - ↪ **Predecessor for mid-session service change** (`tovis-app §22`, MS-iOS): A4's
     **edit-service-items** modal is the first place iOS gains a TovisKit method to change
     services on an existing booking (today only `sendConsultationProposal` exists — no
