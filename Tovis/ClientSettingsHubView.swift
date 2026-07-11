@@ -6,8 +6,9 @@
 //
 // Wires the ready sub-areas: Edit profile, Better matches (the personalization
 // self-profile), Public profile (handle/bio/public toggle), Saved addresses,
-// Payment methods (saved cards for no-show fees), and Notifications (the existing
-// NotificationPreferencesView). Discovery location lands in a later increment.
+// Discovery location (where "pros near you" searches from), Payment methods (saved
+// cards for no-show fees), and Notifications (the existing
+// NotificationPreferencesView).
 import SwiftUI
 import TovisKit
 
@@ -58,6 +59,12 @@ struct ClientSettingsHubView: View {
                             title: "Saved addresses",
                             subtitle: "Addresses for at-home service"
                         ) { ClientServiceAddressesView() }
+
+                        SettingsLinkRow(
+                            icon: "location.magnifyingglass",
+                            title: "Discovery location",
+                            subtitle: "Where you search for pros"
+                        ) { ClientDiscoveryLocationView() }
 
                         SettingsLinkRow(
                             icon: "creditcard",

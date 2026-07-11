@@ -15,6 +15,8 @@ struct DiscoverFilterSheet: View {
     @Binding var openNowOnly: Bool
     @Binding var minRating: Double?
     @Binding var maxPrice: Int?
+    /// The radius "Reset" restores to — the client's saved Discovery-location radius.
+    var defaultRadius = 15
     let onApply: () -> Void
 
     private let radiusOptions = [5, 10, 15, 25, 50]
@@ -115,7 +117,7 @@ struct DiscoverFilterSheet: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Reset") {
-                        radiusMiles = 25; sort = .distance; mobileOnly = false
+                        radiusMiles = defaultRadius; sort = .distance; mobileOnly = false
                         openNowOnly = false; minRating = nil; maxPrice = nil
                     }
                     .tint(BrandColor.textSecondary)

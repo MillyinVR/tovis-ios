@@ -57,7 +57,9 @@ struct DiscoverView: View {
     @State private var didInitialLocate = false
 
     // Filters (all already honored server-side via DiscoverService.searchPros).
-    @State private var radiusMiles = 25
+    // Radius seeds from the client's saved Discovery-location setting (default 15mi,
+    // web parity); the filter sheet can override it per session and persists it back.
+    @State private var radiusMiles = DiscoveryRadius.current
     @State private var sort: DiscoverService.Sort = .distance
     @State private var mobileOnly = false
     @State private var openNowOnly = false
@@ -79,8 +81,10 @@ struct DiscoverView: View {
     )
 
     /// True when any filter differs from the defaults (drives the filter-button dot).
+    /// The radius baseline is the saved Discovery-location radius (which the filter
+    /// sheet writes back on apply), so an unchanged radius never lights the dot.
     private var filtersActive: Bool {
-        radiusMiles != 25 || sort != .distance || mobileOnly
+        radiusMiles != DiscoveryRadius.current || sort != .distance || mobileOnly
             || openNowOnly || minRating != nil || maxPrice != nil
     }
 
@@ -134,12 +138,36 @@ struct DiscoverView: View {
     }
 
     /// Lazily kick off the pro search + geolocation the first time the pro-finder
-    /// is opened (web parity — looks mode never geolocates).
+    /// is opened (web parity — looks mode never geolocates). If the client saved a
+    /// Discovery location, the search opens there; otherwise it geolocates as before.
     private func enterMode() {
         guard discoverMode == .pros, !didLoadPros else { return }
         didLoadPros = true
-        location.request()
-        Task { await runSearch() }
+        radiusMiles = DiscoveryRadius.current
+        Task { await seedFromSavedAreaThenSearch() }
+    }
+
+    /// Seed the origin from the client's saved Discovery location when set (so a
+    /// returning user lands on their area), else fall back to the device location.
+    private func seedFromSavedAreaThenSearch() async {
+        if let area = try? await session.client.addresses.searchArea(),
+           let lat = area.lat, let lng = area.lng {
+            let coord = CLLocationCoordinate2D(latitude: lat, longitude: lng)
+            searchedOrigin = coord
+            mapCenter = coord
+            didInitialLocate = true   // a later CoreLocation fix must not steal the saved area
+            withAnimation {
+                camera = .region(MKCoordinateRegion(
+                    center: coord,
+                    span: MKCoordinateSpan(latitudeDelta: 0.2, longitudeDelta: 0.2)
+                ))
+            }
+            await runSearch()
+            location.request()        // still surface the user dot / recenter button
+        } else {
+            location.request()        // no saved area → geolocate (recenterOnUser searches on fix)
+            await runSearch()
+        }
     }
 
     // MARK: - Map
@@ -607,7 +635,13 @@ struct DiscoverView: View {
             DiscoverFilterSheet(
                 radiusMiles: $radiusMiles, sort: $sort, mobileOnly: $mobileOnly,
                 openNowOnly: $openNowOnly, minRating: $minRating, maxPrice: $maxPrice,
-                onApply: { Task { await runSearch() } }
+                defaultRadius: DiscoveryRadius.current,
+                onApply: {
+                    // Radius doubles as the saved Discovery-location radius — persist it
+                    // so it sticks (and clears the filter dot at its new baseline).
+                    DiscoveryRadius.set(radiusMiles)
+                    Task { await runSearch() }
+                }
             )
             .presentationDetents([.medium, .large])
         }

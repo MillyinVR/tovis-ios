@@ -24,6 +24,55 @@ public final class AddressesService: Sendable {
             .sorted { $0.isDefault && !$1.isDefault }
     }
 
+    // MARK: - Search area (discovery origin)
+
+    /// The saved SEARCH_AREA — the client's discovery origin — default first, or nil
+    /// if none is set. There's conceptually one; `saveSearchArea` keeps it that way.
+    public func searchArea() async throws -> ClientAddress? {
+        try await list()
+            .filter { $0.isSearchArea }
+            .sorted { $0.isDefault && !$1.isDefault }
+            .first
+    }
+
+    /// Set (or replace) the discovery origin from a picked Places AREA result. The
+    /// origin (lat/lng/placeId/label) is server-persisted so it follows the client
+    /// across devices — parity with the web default SEARCH_AREA `ClientAddress`. The
+    /// search *radius* has no server home (web keeps it in localStorage), so it lives
+    /// in `UserDefaults` on the app side, not here.
+    ///
+    /// Creates a fresh default SEARCH_AREA (the create tx demotes any prior default),
+    /// then best-effort deletes the row it replaced — so exactly one SEARCH_AREA row
+    /// survives, defined wholly by the new pick (no stale field carry-over, no PATCH
+    /// label-clobber). `replacing` is the id returned by a prior `searchArea()`.
+    public func saveSearchArea(
+        from place: PlaceDetails,
+        replacing existingId: String? = nil
+    ) async throws -> ClientAddress {
+        let created = try await create(CreateClientAddressRequest(
+            kind: "SEARCH_AREA",
+            label: nil,
+            formattedAddress: place.formattedAddress,
+            addressLine1: nil,
+            addressLine2: nil,
+            city: place.city,
+            state: place.state,
+            postalCode: place.postalCode,
+            countryCode: place.countryCode,
+            placeId: place.placeId,
+            lat: place.lat,
+            lng: place.lng,
+            isDefault: true
+        ))
+
+        if let existingId, existingId != created.id {
+            // The new row is already the default; drop the one it superseded.
+            try? await delete(id: existingId)
+        }
+
+        return created
+    }
+
     /// POST /api/v1/client/addresses — add a SERVICE_ADDRESS from a typed form.
     /// The backend geocodes it on save (fills formattedAddress + lat/lng). Throws
     /// an APIError with a user-facing message if the address can't be verified.
