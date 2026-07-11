@@ -4,10 +4,9 @@
 // rows that push each sub-screen, plus Appearance + Sign out. Reached from the
 // gear in the Me tab header.
 //
-// Increment 1 wires the two sub-areas that are ready: Edit profile (native, this
-// increment) and Notifications (the existing NotificationPreferencesView). Public
-// profile, Saved addresses, Payment methods, and Discovery location land in later
-// increments.
+// Wires the ready sub-areas: Edit profile, Public profile (handle/bio/public
+// toggle), and Notifications (the existing NotificationPreferencesView). Saved
+// addresses, Payment methods, and Discovery location land in later increments.
 import SwiftUI
 import TovisKit
 
@@ -40,6 +39,12 @@ struct ClientSettingsHubView: View {
                             title: "Edit profile",
                             subtitle: "Name, phone, birthday & avatar"
                         ) { ClientProfileEditView() }
+
+                        SettingsLinkRow(
+                            icon: "at",
+                            title: "Public profile",
+                            subtitle: "Handle, bio & public looks"
+                        ) { ClientPublicProfileEditView() }
 
                         SettingsLinkRow(
                             icon: "bell.badge",
