@@ -80,6 +80,20 @@ struct ProCalendarView: View {
     // Collapses the stats / location / auto-accept chrome to give the grid room.
     @State private var chromeCollapsed = false
 
+    // Drag-to-reschedule (web `useDragDrop` + `useConfirmChange`): the time-grid
+    // sets `pendingMove` when a booking is dropped on a new time; we confirm it,
+    // then PATCH /pro/bookings/{id} via ProBookingService.reschedule, reusing the
+    // same override "save it anyway?" retry as ProRescheduleView (intent `.edit`).
+    @State private var pendingMove: PendingCalendarMove?
+    @State private var showMoveConfirm = false
+    @State private var moveSubmitting = false
+    @State private var moveError: String?
+    // Idempotency + override carry-over, mirroring ProRescheduleView's contract.
+    @State private var moveAttemptKey: String?
+    @State private var moveAppliedOverrides: Set<BookingOverrideFlag> = []
+    @State private var moveOverridePrompt: BookingOverridePrompt?
+    @State private var moveOverrideReason = ""
+
     // Management sheet (web ManagementModal): tapping a stats tile opens the
     // Booked / Pending / Blocked / Waitlist lists. Block edit/add is routed back
     // here (a block editor is itself a sheet) via `pendingManagementAction`.
@@ -263,6 +277,19 @@ struct ProCalendarView: View {
             } message: {
                 Text(editorErrorMessage ?? "")
             }
+            // Drag-to-reschedule confirm / override / error alerts (extracted to a
+            // ViewModifier so this already-large body still type-checks in time).
+            .modifier(CalendarMoveAlerts(
+                pendingMove: $pendingMove,
+                showMoveConfirm: $showMoveConfirm,
+                moveOverridePrompt: $moveOverridePrompt,
+                moveOverrideReason: $moveOverrideReason,
+                moveError: $moveError,
+                message: moveConfirmMessage,
+                onConfirm: beginMove,
+                onOverride: confirmMoveOverride,
+                onCancel: cancelMove
+            ))
             .tint(BrandColor.accent)
         }
     }
@@ -368,7 +395,8 @@ struct ProCalendarView: View {
                     onTapBooking: { id in bookingNav = BookingNav(id: id) },
                     onTapBlock: { event in openBlockEditor(event) },
                     onTapEmptySlot: { date in newBookingNav = NewBookingNav(date: date) },
-                    collapseToggle: chromeCollapsed
+                    collapseToggle: chromeCollapsed,
+                    pendingMove: $pendingMove
                 )
                 .frame(maxHeight: .infinity)
             }
@@ -589,5 +617,143 @@ struct ProCalendarView: View {
         } catch {
             phase = .failed("Couldn’t load your calendar. Please try again.")
         }
+    }
+
+    // MARK: - Drag-to-reschedule
+
+    /// Confirm-alert copy: who's moving and to when (in the calendar's zone).
+    private func moveConfirmMessage(_ move: PendingCalendarMove) -> String {
+        let who = move.event.clientName.isEmpty ? "this appointment" : move.event.clientName
+        return "Move \(who) to \(moveTimeLabel(move.newStart))?"
+    }
+
+    private func moveTimeLabel(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US")
+        f.timeZone = calendarTimeZone
+        f.dateFormat = "EEE, MMM d · h:mm a"
+        return f.string(from: date)
+    }
+
+    /// Abandon a pending move — clears the optimistic tile so it snaps back and
+    /// drops any carried override state.
+    private func cancelMove() {
+        pendingMove = nil
+        moveAttemptKey = nil
+        moveAppliedOverrides = []
+        moveOverrideReason = ""
+    }
+
+    /// The pro confirmed the drop — mint one idempotency key and submit.
+    private func beginMove(_ move: PendingCalendarMove) {
+        guard !moveSubmitting else { return }
+        moveAppliedOverrides = []
+        moveOverrideReason = ""
+        moveAttemptKey = UUID().uuidString
+        Task { await submitMove(move) }
+    }
+
+    /// The pro approved an override-gated prompt — carry the flag and re-submit
+    /// with a fresh key (the changed body is a new logical request).
+    private func confirmMoveOverride(_ prompt: BookingOverridePrompt) {
+        guard let move = pendingMove else { return }
+        moveAppliedOverrides.insert(prompt.flag)
+        moveOverridePrompt = nil
+        moveAttemptKey = UUID().uuidString
+        Task { await submitMove(move) }
+    }
+
+    /// PATCH the new time. On an override-gated rejection surface a "save it
+    /// anyway?" retry (unless the flag was already applied — then it's a real
+    /// failure); any other error snaps the tile back and shows an alert.
+    private func submitMove(_ move: PendingCalendarMove) async {
+        guard let key = moveAttemptKey else { return }
+        moveSubmitting = true
+        defer { moveSubmitting = false }
+
+        let reason = moveOverrideReason.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            try await session.client.proBookings.reschedule(
+                bookingId: move.event.id,
+                scheduledFor: ProCalendarGrid.iso(move.newStart),
+                notifyClient: true,
+                allowOutsideWorkingHours: moveAppliedOverrides.contains(.allowOutsideWorkingHours),
+                allowShortNotice: moveAppliedOverrides.contains(.allowShortNotice),
+                allowFarFuture: moveAppliedOverrides.contains(.allowFarFuture),
+                overrideReason: (moveAppliedOverrides.isEmpty || reason.isEmpty) ? nil : reason,
+                idempotencyKey: key
+            )
+            moveAttemptKey = nil
+            moveAppliedOverrides = []
+            moveOverrideReason = ""
+            pendingMove = nil
+            await load()
+        } catch let error as APIError {
+            if let prompt = error.bookingOverridePrompt(intent: .edit),
+               !moveAppliedOverrides.contains(prompt.flag) {
+                moveOverridePrompt = prompt   // keep pendingMove so the tile holds its spot
+            } else {
+                moveError = error.userMessage
+                cancelMove()
+            }
+        } catch {
+            moveError = "Couldn’t reschedule the booking. Please try again."
+            cancelMove()
+        }
+    }
+}
+
+/// The drag-to-reschedule alert stack, factored out of `ProCalendarView.body` so
+/// the (already large) body keeps type-checking quickly: a confirm prompt when a
+/// tile is dropped on a new time, the override "save it anyway?" retry, and a
+/// terminal error. State + actions are injected from the parent.
+private struct CalendarMoveAlerts: ViewModifier {
+    @Binding var pendingMove: PendingCalendarMove?
+    @Binding var showMoveConfirm: Bool
+    @Binding var moveOverridePrompt: BookingOverridePrompt?
+    @Binding var moveOverrideReason: String
+    @Binding var moveError: String?
+    let message: (PendingCalendarMove) -> String
+    let onConfirm: (PendingCalendarMove) -> Void
+    let onOverride: (BookingOverridePrompt) -> Void
+    let onCancel: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            // A drop set `pendingMove`; open the confirm prompt.
+            .onChange(of: pendingMove?.id) {
+                if pendingMove != nil { showMoveConfirm = true }
+            }
+            .alert("Move appointment", isPresented: $showMoveConfirm, presenting: pendingMove) { move in
+                Button("Move appointment") { onConfirm(move) }
+                Button("Cancel", role: .cancel) { onCancel() }
+            } message: { move in
+                Text(message(move))
+            }
+            .alert(
+                "Confirm reschedule",
+                isPresented: Binding(
+                    get: { moveOverridePrompt != nil },
+                    set: { if !$0 { moveOverridePrompt = nil } }
+                ),
+                presenting: moveOverridePrompt
+            ) { prompt in
+                TextField(prompt.reasonPlaceholder, text: $moveOverrideReason)
+                Button("Save anyway") { onOverride(prompt) }
+                Button("Cancel", role: .cancel) { onCancel() }
+            } message: { prompt in
+                Text(prompt.question)
+            }
+            .alert(
+                "Couldn’t move appointment",
+                isPresented: Binding(
+                    get: { moveError != nil },
+                    set: { if !$0 { moveError = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) { moveError = nil }
+            } message: {
+                Text(moveError ?? "")
+            }
     }
 }

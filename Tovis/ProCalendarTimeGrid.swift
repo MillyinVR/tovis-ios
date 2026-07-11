@@ -3,11 +3,43 @@
 // 24-hour timeline at `PX_PER_MINUTE` with a time gutter, one column per visible
 // day, hour rules, a now-line on today, and event tiles positioned by their
 // minutes-since-midnight window (`ProCalendarGrid.eventDayMinutes`). Tapping a
-// tile opens the booking detail or the block editor. Read-only: block creation
-// is the FAB, booking edits live in the detail screen (web drag/resize omitted).
+// tile opens the booking detail or the block editor; tapping empty space starts
+// a new booking (the FAB also blocks personal time).
+//
+// Drag-to-reschedule (native port of the web `useDragDrop` + `useConfirmChange`
+// move flow): long-press a PENDING/ACCEPTED booking tile to lift it, then drag
+// vertically to a new time (snapped to the 15-min grid, clamped within the day).
+// On release the parent (`ProCalendarView`) confirms the move and PATCHes
+// `/pro/bookings/{id}` via `ProBookingService.reschedule`, reusing the same
+// override "save it anyway?" retry as the reschedule form. The long-press arms
+// the drag so the enclosing ScrollView doesn't swallow it; a plain tap still
+// opens the detail. (Scope: bookings only — blocks stay tap-to-edit — and
+// time-only within a day column; cross-day week drag is a follow-up.)
 import Combine
 import SwiftUI
 import TovisKit
+
+/// A booking the pro dropped on a new time, awaiting confirmation. The grid sets
+/// it (via a binding) on drop; `ProCalendarView` shows the confirm prompt and,
+/// on approval, submits the reschedule. Kept non-nil while a move is pending so
+/// the tile renders optimistically at the dropped position until it resolves.
+struct PendingCalendarMove: Identifiable {
+    let event: ProCalendarEvent
+    /// The proposed new start instant (day-local midnight + `newStartMinutes`).
+    let newStart: Date
+    /// The day column the tile lives in (moves stay within their own day).
+    let dayYmd: String
+    /// Minutes-since-midnight of the proposed start (drives the optimistic offset).
+    let newStartMinutes: Int
+    var id: String { event.id }
+}
+
+/// Live drag state while a tile is lifted (before release). `currentStartMinutes`
+/// is the snapped, clamped minutes-since-midnight the tile currently hovers at.
+private struct CalendarDragState: Equatable {
+    let eventId: String
+    var currentStartMinutes: Int
+}
 
 struct ProCalendarTimeGrid: View {
     let view: ProCalendarViewMode          // .day or .week
@@ -23,8 +55,16 @@ struct ProCalendarTimeGrid: View {
     /// after the height change.
     var collapseToggle: Bool = false
 
+    /// Set by a drag-drop when a booking is moved to a new time; the parent shows
+    /// the confirm prompt + submits the reschedule. Bound so the tile can render
+    /// optimistically at the dropped position until the move resolves.
+    @Binding var pendingMove: PendingCalendarMove?
+
     /// Top-most visible hour cell — set to "now" on open (iOS 17 scrollPosition).
     @State private var scrolledHour: Int?
+
+    /// The tile currently lifted under a long-press drag (nil when not dragging).
+    @State private var activeDrag: CalendarDragState?
 
     // Web parity: PX_PER_MINUTE = 1.5 → a 24h day is 2160pt tall.
     private let pxPerMinute: CGFloat = 1.5
@@ -228,9 +268,7 @@ struct ProCalendarTimeGrid: View {
             // overlay on the day-columns HStack — see `body` — so in week view it
             // reads as a single line spanning all seven days, matching web.)
             ForEach(layouts, id: \.event.id) { item in
-                eventTile(item.event,
-                          topPx: CGFloat(item.start) * pxPerMinute,
-                          heightPx: CGFloat(item.end - item.start) * pxPerMinute)
+                eventTile(item.event, day: day, startMinutes: item.start, endMinutes: item.end)
             }
         }
         .background(day.isToday ? BrandColor.accent.opacity(0.04) : Color.clear)
@@ -250,38 +288,179 @@ struct ProCalendarTimeGrid: View {
         return cal.date(byAdding: .minute, value: snapped, to: day.startOfDay)
     }
 
-    private func eventTile(_ event: ProCalendarEvent, topPx: CGFloat, heightPx: CGFloat) -> some View {
+    @ViewBuilder
+    private func eventTile(
+        _ event: ProCalendarEvent, day: ProMonthCell, startMinutes: Int, endMinutes: Int
+    ) -> some View {
         let tone = event.isBlock ? BrandColor.textMuted : statusTone(event.status)
+        let duration = max(stepMinutes, endMinutes - startMinutes)
+        let draggable = event.isBooking && isReschedulable(event.status)
+
+        let isActive = activeDrag?.eventId == event.id
+        let isPending = pendingMove?.event.id == event.id && pendingMove?.dayYmd == day.dayYmd
+        // While lifting/dragging (or awaiting confirm) the tile renders at its
+        // proposed minutes; otherwise at its real laid-out start.
+        let effectiveStart: Int = {
+            if let drag = activeDrag, drag.eventId == event.id { return drag.currentStartMinutes }
+            if isPending, let move = pendingMove { return move.newStartMinutes }
+            return startMinutes
+        }()
+        let heightPx = CGFloat(duration) * pxPerMinute
+        let topPx = CGFloat(effectiveStart) * pxPerMinute
         let micro = heightPx < 28
-        return Button {
-            if event.isBooking { onTapBooking(event.id) } else { onTapBlock(event) }
-        } label: {
-            HStack(spacing: 0) {
-                Rectangle().fill(tone).frame(width: 3)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(event.isBlock ? (event.title.isEmpty ? "Blocked" : event.title) : event.clientName)
-                        .font(BrandFont.body(micro ? 10 : 12, .semibold))
-                        .foregroundStyle(BrandColor.textPrimary)
-                        .lineLimit(1)
-                    if !micro {
-                        Text(timeLabel(event.startsAt))
-                            .font(BrandFont.mono(9))
-                            .foregroundStyle(BrandColor.textSecondary)
-                            .lineLimit(1)
-                    }
-                }
-                .padding(.leading, 6)
-                .padding(.vertical, 2)
-                Spacer(minLength: 0)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(height: max(heightPx - 2, 16), alignment: .top)
-            .background(tone.opacity(0.16))
-            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-        }
-        .buttonStyle(.plain)
+        let showProposedTime = isActive || isPending
+
+        let tile = tileBody(
+            event: event,
+            tone: tone,
+            micro: micro,
+            heightPx: heightPx,
+            timeText: showProposedTime ? minutesLabel(effectiveStart) : timeLabel(event.startsAt),
+            lifted: isActive,
+            pending: isPending
+        )
         .padding(.horizontal, 2)
         .offset(y: topPx)
+        .zIndex(isActive ? 2 : (isPending ? 1 : 0))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if event.isBooking { onTapBooking(event.id) } else { onTapBlock(event) }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(tileAccessibilityLabel(event))
+        .accessibilityAddTraits(.isButton)
+        .animation(.easeOut(duration: 0.16), value: isPending)
+
+        // A long-press arms the drag (so the ScrollView doesn't steal it), then a
+        // vertical drag moves the time. Attached only to reschedulable bookings so
+        // blocks / terminal bookings keep a plain tap and don't block scrolling.
+        if draggable {
+            tile.gesture(
+                moveGesture(event: event, day: day, startMinutes: startMinutes, durationMinutes: duration)
+            )
+        } else {
+            tile
+        }
+    }
+
+    /// The tile's visual body (shared by draggable + static tiles). `lifted` adds a
+    /// shadow/scale while dragging; `pending` outlines a dropped-but-unconfirmed move.
+    private func tileBody(
+        event: ProCalendarEvent,
+        tone: Color,
+        micro: Bool,
+        heightPx: CGFloat,
+        timeText: String,
+        lifted: Bool,
+        pending: Bool
+    ) -> some View {
+        HStack(spacing: 0) {
+            Rectangle().fill(tone).frame(width: 3)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(event.isBlock ? (event.title.isEmpty ? "Blocked" : event.title) : event.clientName)
+                    .font(BrandFont.body(micro ? 10 : 12, .semibold))
+                    .foregroundStyle(BrandColor.textPrimary)
+                    .lineLimit(1)
+                if !micro {
+                    Text(timeText)
+                        .font(BrandFont.mono(9))
+                        .foregroundStyle(lifted ? BrandColor.accent : BrandColor.textSecondary)
+                        .lineLimit(1)
+                }
+            }
+            .padding(.leading, 6)
+            .padding(.vertical, 2)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: max(heightPx - 2, 16), alignment: .top)
+        .background(tone.opacity(lifted ? 0.26 : 0.16))
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .strokeBorder(BrandColor.accent, lineWidth: (lifted || pending) ? 1.5 : 0)
+        )
+        .shadow(color: lifted ? BrandColor.accent.opacity(0.35) : .clear,
+                radius: lifted ? 8 : 0, y: lifted ? 3 : 0)
+        .scaleEffect(lifted ? 1.02 : 1.0)
+        .opacity(lifted ? 0.97 : 1.0)
+        .animation(.easeOut(duration: 0.12), value: lifted)
+    }
+
+    // MARK: - Drag-to-reschedule
+
+    /// Long-press (arms past the ScrollView) → vertical drag → drop. Translates the
+    /// drag's y into minutes at `pxPerMinute`, snaps to the 15-min grid, and clamps
+    /// so the tile stays within the day. On drop it hands the parent a `pendingMove`.
+    private func moveGesture(
+        event: ProCalendarEvent, day: ProMonthCell, startMinutes: Int, durationMinutes: Int
+    ) -> some Gesture {
+        LongPressGesture(minimumDuration: 0.3)
+            .sequenced(before: DragGesture(minimumDistance: 0))
+            .onChanged { value in
+                switch value {
+                case .first(true):
+                    // Long-press engaged — lift the tile at its current time.
+                    activeDrag = CalendarDragState(eventId: event.id, currentStartMinutes: startMinutes)
+                case let .second(true, drag):
+                    let dyMinutes = drag.map { Int(($0.translation.height / pxPerMinute).rounded()) } ?? 0
+                    activeDrag = CalendarDragState(
+                        eventId: event.id,
+                        currentStartMinutes: clampSnapStart(startMinutes + dyMinutes, duration: durationMinutes))
+                default:
+                    break
+                }
+            }
+            .onEnded { value in
+                guard case let .second(_, drag) = value else { activeDrag = nil; return }
+                let dyMinutes = drag.map { Int(($0.translation.height / pxPerMinute).rounded()) } ?? 0
+                let snapped = clampSnapStart(startMinutes + dyMinutes, duration: durationMinutes)
+                activeDrag = nil
+                // No net change (or an un-representable instant) → nothing to confirm.
+                guard snapped != startMinutes, let newStart = slotDate(day: day, minutes: snapped) else { return }
+                pendingMove = PendingCalendarMove(
+                    event: event, newStart: newStart, dayYmd: day.dayYmd, newStartMinutes: snapped)
+            }
+    }
+
+    /// Snap a proposed minutes-since-midnight to the 15-min grid, clamped so the
+    /// whole appointment (its `duration`) still fits before midnight.
+    private func clampSnapStart(_ minutes: Int, duration: Int) -> Int {
+        let maxStart = max(0, ProCalendarGrid.minutesPerDay - duration)
+        return min(ProCalendarGrid.snap(minutes, step: stepMinutes), maxStart)
+    }
+
+    /// The instant `minutes` past `day`'s local midnight (DST-safe, TZ-aware —
+    /// same construction as the empty-slot tap).
+    private func slotDate(day: ProMonthCell, minutes: Int) -> Date? {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = timeZone
+        return cal.date(byAdding: .minute, value: minutes, to: day.startOfDay)
+    }
+
+    /// Only PENDING / ACCEPTED bookings can be dragged (mirrors the reschedule
+    /// action's eligibility — not started, not terminal). The server is the final
+    /// authority; this just keeps un-movable tiles tap-only.
+    private func isReschedulable(_ status: String) -> Bool {
+        switch status.uppercased() {
+        case "PENDING", "ACCEPTED": return true
+        default: return false
+        }
+    }
+
+    /// `h:mmam/pm` for a minutes-since-midnight value (the live drag/pending label).
+    private func minutesLabel(_ minutes: Int) -> String {
+        let h24 = (minutes / 60) % 24
+        let m = minutes % 60
+        let h12 = h24 % 12 == 0 ? 12 : h24 % 12
+        return "\(h12):\(String(format: "%02d", m))\(h24 < 12 ? "am" : "pm")"
+    }
+
+    private func tileAccessibilityLabel(_ event: ProCalendarEvent) -> String {
+        let name = event.isBlock
+            ? (event.title.isEmpty ? "Blocked time" : event.title)
+            : event.clientName
+        return "\(name), \(timeLabel(event.startsAt))"
     }
 
     // MARK: - Formatting
