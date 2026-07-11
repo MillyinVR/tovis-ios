@@ -533,6 +533,36 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
     a live authed pro + the flag on). **⚠️ Increments 3–4 REMAIN** = Services (CSV + fuzzy-match + price-ramp
     editor — most complex) · Calendar (ICS file / feed URL → `/calendar/fetch` → `/calendar/preview`+`/commit`;
     the feed-URL path avoids on-device ICS parsing). Scope each web-first per the per-slice rule.
+  - [x] **A4-migration data-migration wizard, increment 4 (calendar import)** — ✅ shipped
+    2026-07-10 (iOS #75, **iOS-only** — the web `POST /api/v1/pro/migrate/calendar/fetch` +
+    `/preview` + `/commit` + `/subscription` routes already exist as JSON endpoints with **no DTO/zod**
+    (contract in `tovis-app/lib/migration/calendarImportServer.ts` + `calendarFeed.ts` +
+    `calendarFeedSubscription.ts`), behind the same `ENABLE_PRO_MIGRATION` 404-when-off gate → **no web
+    change**, like increment 2). Native port of the web `/pro/migrate/calendar` flow
+    (`MigrateCalendarClient.tsx`): the three phases **upload (.ics file OR read-only feed URL) → review →
+    done**, reached from `ProMigrateView`'s footer. ⚠️ **Key realization:** the web client **never parses
+    the .ics** — for *both* the file-upload and feed-URL paths it just shuttles the raw text to the
+    server's `/preview` (which parses it), so **no on-device ICS parser was needed** and **both** input
+    paths ship together (fuller web parity than the handoff's feed-URL-only floor). File path = read the
+    picked file's text; URL path = `POST /calendar/fetch` (server pulls the .ics, SSRF-guarded) → then
+    `/calendar/preview` classifies each event (booking / blocked time / client history / skipped) → the
+    pro toggles off any row → `/calendar/commit`. A feed-URL source can be **kept in sync** (`POST
+    /calendar/subscription`) after commit. Import is **silent** — the import-mode booking/client/block
+    writes never message a client. **TovisKit:** `ProMigrationCalendarImport` (Decodable
+    fetch/preview/commit/subscription shapes hand-mirroring the server types — `CalendarImportPreviewRow`
+    with derived `kind`/`title`, `CalendarImportCommitCreated`, `CalendarFeedSubscription`; Encodable
+    request bodies — `{ url }` and `{ ics, excludeUids? }` via `encodeIfPresent`). +
+    `ProMigrationService` `fetchCalendarFeed`/`previewCalendarImport`/`commitCalendarImport`/
+    `connectCalendarSubscription` POSTs (via `JSONEncoder.canonical`). **App:** `ProMigrateCalendarView`
+    (upload — `.fileImporter` .ics pick + read text, OR feed-URL field + "keep synced" toggle + fetch →
+    review list with per-row include toggles + live booking/blocked/history stats → commit → done tally,
+    with a "kept in sync" confirmation). `ProMigrateView` footer now offers "Import your calendar"
+    (secondary) alongside clients + review; the "coming soon" note narrows to just the service menu.
+    +5 `ProMigrationCalendarImportTests` (fetch POST route/body/decode · preview POST + `excludeUids`
+    omitted + decode/derived helpers · commit POST + `excludeUids` + decode · subscription POST + decode ·
+    flag-off 404). swift test **277**; `xcodebuild build` clean. **NOT simulator-driven** (dark; needs a
+    live authed pro + the flag on). **⚠️ Only increment 3 (Services) REMAINS** = CSV + fuzzy catalog match
+    + price-ramp editor (most complex; reuse `CsvParser`). Scope web-first per the per-slice rule.
   - ↪ **Predecessor for mid-session service change** (`tovis-app §22`, MS-iOS): A4's
     **edit-service-items** modal is the first place iOS gains a TovisKit method to change
     services on an existing booking (today only `sendConsultationProposal` exists — no

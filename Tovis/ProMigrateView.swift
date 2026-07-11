@@ -216,7 +216,7 @@ struct ProMigrateView: View {
             .clipShape(Capsule())
     }
 
-    // MARK: - Footer CTAs → clients import + review summary
+    // MARK: - Footer CTAs → clients import + calendar import + review summary
 
     private func footer(_ summary: ProMigrationSummary) -> some View {
         VStack(spacing: 12) {
@@ -232,26 +232,36 @@ struct ProMigrateView: View {
             }
             .buttonStyle(.plain)
             NavigationLink {
-                ProMigrateReviewView(summary: summary)
+                ProMigrateCalendarView()
             } label: {
-                Text("Review your migration")
-                    .font(BrandFont.body(16, .semibold))
-                    .frame(maxWidth: .infinity).padding(.vertical, 14)
-                    .foregroundStyle(BrandColor.textPrimary)
-                    .background(BrandColor.bgSurface)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(BrandColor.textMuted.opacity(0.15), lineWidth: 1)
-                    )
+                secondaryCTALabel("Import your calendar")
             }
             .buttonStyle(.plain)
-            Text("Bringing your service menu and calendar over is coming to the app soon. Everything already imported shows in the review.")
+            NavigationLink {
+                ProMigrateReviewView(summary: summary)
+            } label: {
+                secondaryCTALabel("Review your migration")
+            }
+            .buttonStyle(.plain)
+            Text("Bringing your service menu over is coming to the app soon. Everything already imported shows in the review.")
                 .font(BrandFont.body(12))
                 .foregroundStyle(BrandColor.textMuted)
                 .multilineTextAlignment(.center)
         }
         .padding(.top, 4)
+    }
+
+    private func secondaryCTALabel(_ title: String) -> some View {
+        Text(title)
+            .font(BrandFont.body(16, .semibold))
+            .frame(maxWidth: .infinity).padding(.vertical, 14)
+            .foregroundStyle(BrandColor.textPrimary)
+            .background(BrandColor.bgSurface)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(BrandColor.textMuted.opacity(0.15), lineWidth: 1)
+            )
     }
 
     // MARK: - Dark / error states
