@@ -85,7 +85,7 @@ struct PushDeepLink: Equatable {
 
         // Client-shell targets.
         case booking(id: String, step: String?)  // /client/bookings/{id}?step=… (#review → "review")
-        case offers                          // /client/offers
+        case offers(accept: String?)         // /client/offers?accept={recipientId}
         case referrals                       // /client/referrals
         case activity                        // /client/activity
         case clientHome                      // any other /client/*
@@ -148,7 +148,10 @@ struct PushDeepLink: Equatable {
                 // A `#review` fragment is folded into `step` so the target is
                 // distinct and a future scroll-to-section can use it.
                 target = .booking(id: parts[2], step: step ?? (fragment == "review" ? "review" : nil))
-            case "offers":    target = .offers
+            case "offers":
+                // The priority-offer push is `/client/offers?accept={recipientId}`;
+                // carry that id so the offers screen floats + highlights it.
+                target = .offers(accept: comps.queryItems?.first(where: { $0.name == "accept" })?.value)
             case "referrals": target = .referrals
             case "activity":  target = .activity
             default:          target = .clientHome

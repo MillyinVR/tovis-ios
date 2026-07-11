@@ -504,6 +504,20 @@ private struct InvitesCard: View {
                             }
                         }
                     }
+
+                    // The full claim surface — priority offers with live countdowns
+                    // + any pro-proposed waitlist times (the /client/offers page).
+                    NavigationLink { PriorityOffersView() } label: {
+                        HStack(spacing: 4) {
+                            Text("Your priority offers")
+                            Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
+                        }
+                        .font(BrandFont.body(12.5, .semibold))
+                        .foregroundStyle(BrandColor.accent)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 4)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }

@@ -31,6 +31,15 @@ struct MainTabView: View {
     /// The activity feed surfaced by a `/client/activity` push, presented over the
     /// shell. Mirrors HomeView's own notifications sheet.
     @State private var showActivity = false
+    /// The priority-offers screen surfaced by a `/client/offers` push, presented
+    /// over the shell. Carries the `?accept=` recipient id to float + highlight.
+    @State private var offersPresentation: OffersPresentation?
+
+    /// Identifiable wrapper so `.sheet(item:)` can carry the optional highlight id.
+    private struct OffersPresentation: Identifiable {
+        let id = UUID()
+        let highlight: String?
+    }
 
     var body: some View {
         TabView(selection: $tab) {
@@ -91,6 +100,20 @@ struct MainTabView: View {
         // NotificationsView brings its own NavigationStack + Done button (same as
         // HomeView's notifications sheet) — present it bare.
         .sheet(isPresented: $showActivity) { NotificationsView() }
+        // PriorityOffersView owns no stack (it's also pushed from Home), so wrap it
+        // in one + a Done button when presenting from a push, like the booking sheet.
+        .sheet(item: $offersPresentation) { presentation in
+            NavigationStack {
+                PriorityOffersView(highlightRecipientId: presentation.highlight)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Done") { offersPresentation = nil }
+                                .tint(BrandColor.textSecondary)
+                        }
+                    }
+            }
+            .tint(BrandColor.accent)
+        }
     }
 
     /// Resolve a push deep link to a concrete destination and present it, then
@@ -122,9 +145,11 @@ struct MainTabView: View {
         case .look:
             // No native single-look detail yet — land on the Looks feed.
             tab = .looks
-        case .offers:
-            // Offers surface as cards on Home.
-            tab = .home
+        case let .offers(accept):
+            // The full priority-offers + waitlist-offers screen (countdown claim/
+            // pass + pro-proposed-time confirm/decline). `accept` floats + highlights
+            // the offer the push was about.
+            offersPresentation = OffersPresentation(highlight: accept)
         case .referrals:
             // Referrals live under the Me tab.
             tab = .me

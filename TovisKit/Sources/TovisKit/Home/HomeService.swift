@@ -16,9 +16,19 @@ public final class HomeService: Sendable {
         return response.home
     }
 
-    /// Accept a last-minute (priority) offer. `recipientId` is `HomeInvite.id`.
-    /// A 410 (expired / opening inactive) or 409 (no longer priority) surfaces as
-    /// `APIError.server`.
+    /// GET /api/v1/client/priority-offer → the client's active priority offers:
+    /// last-minute openings they're first in line for, each with a countdown
+    /// window. The standalone offers screen renders these with Claim/Pass; the
+    /// claim/pass writes reuse `acceptInvite`/`declineInvite` below (same
+    /// `/client/priority-offer/{id}` routes). Envelope unwrapped. CLIENT-only.
+    public func priorityOffers() async throws -> [ClientPriorityOffer] {
+        let response: ClientPriorityOfferResponse = try await api.request("/client/priority-offer")
+        return response.offers
+    }
+
+    /// Accept a last-minute (priority) offer. `recipientId` is `HomeInvite.id` or
+    /// `ClientPriorityOffer.recipientId`. A 410 (expired / opening inactive) or 409
+    /// (no longer priority) surfaces as `APIError.server`.
     public func acceptInvite(recipientId: String) async throws {
         try await api.requestVoid(
             "/client/priority-offer/\(recipientId)/accept",
