@@ -23,6 +23,9 @@ public final class TovisClient: Sendable {
     /// Client personalization — the "Get better matches" self-profile (hair/skin chips
     /// + declared interests) behind the Settings hub. Explicit, user-entered signals.
     public let clientSelfProfile: ClientSelfProfileService
+    /// Client boards — detail / create / share for the "Me" tab's BOARDS grid.
+    /// The board LIST arrives in the `/me` payload; this covers everything else.
+    public let boards: BoardsService
     public let messages: MessagesService
     public let search: SearchService
     public let discover: DiscoverService
@@ -118,6 +121,7 @@ public final class TovisClient: Sendable {
         self.clientSettings = ClientSettingsService(api: api)
         self.clientPublicProfile = ClientPublicProfileService(api: api)
         self.clientSelfProfile = ClientSelfProfileService(api: api)
+        self.boards = BoardsService(api: api)
         self.messages = MessagesService(
             api: api,
             supabaseURL: config.supabaseURL,

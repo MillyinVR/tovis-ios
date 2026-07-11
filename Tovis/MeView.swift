@@ -26,6 +26,8 @@ struct MeView: View {
     /// backend ships GET /client/referrals/invite-link this 404s and the
     /// invite card simply stays hidden.
     @State private var inviteLink: ClientInviteLink?
+    /// Drives the "New board" create sheet from the BOARDS tab.
+    @State private var showingCreateBoard = false
 
     var body: some View {
         NavigationStack {
@@ -79,7 +81,7 @@ struct MeView: View {
 
         Group {
             switch tab {
-            case .boards: boardsTab(me.boards)
+            case .boards: boardsTab(me.boards, handle: me.profile.handle)
             case .following: followingTab(me.following.items)
             case .history: historyTab(me.history)
             }
@@ -337,24 +339,50 @@ struct MeView: View {
     }
 
     @ViewBuilder
-    private func boardsTab(_ boards: [ClientMeBoard]) -> some View {
-        if boards.isEmpty {
-            emptyState("No boards yet", "Save looks from the feed to start building boards.")
-        } else {
-            LazyVGrid(columns: twoCol, spacing: 18) {
-                ForEach(boards) { board in
-                    VStack(alignment: .leading, spacing: 8) {
-                        boardPreview(board.previewImageUrls)
-                        Text(board.name)
-                            .font(BrandFont.body(14, .semibold))
-                            .foregroundStyle(BrandColor.textPrimary)
-                            .lineLimit(1)
-                        Text("\(board.itemCount) SAVED")
-                            .font(BrandFont.mono(9)).tracking(1.2)
-                            .foregroundStyle(BrandColor.textSecondary)
+    private func boardsTab(_ boards: [ClientMeBoard], handle: String?) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                Spacer()
+                Button { showingCreateBoard = true } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "plus").font(.system(size: 12, weight: .bold))
+                        Text("New board").font(BrandFont.body(13, .semibold))
+                    }
+                    .foregroundStyle(BrandColor.accent)
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(BrandColor.accent.opacity(0.10), in: Capsule())
+                    .overlay(Capsule().stroke(BrandColor.accent.opacity(0.3), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("New board")
+            }
+
+            if boards.isEmpty {
+                emptyState("No boards yet", "Create a board or save looks from the feed to start building.")
+            } else {
+                LazyVGrid(columns: twoCol, spacing: 18) {
+                    ForEach(boards) { board in
+                        NavigationLink {
+                            BoardDetailView(board: board, ownerHandle: handle)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 8) {
+                                boardPreview(board.previewImageUrls)
+                                Text(board.name)
+                                    .font(BrandFont.body(14, .semibold))
+                                    .foregroundStyle(BrandColor.textPrimary)
+                                    .lineLimit(1)
+                                Text("\(board.itemCount) SAVED")
+                                    .font(BrandFont.mono(9)).tracking(1.2)
+                                    .foregroundStyle(BrandColor.textSecondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
+        }
+        .sheet(isPresented: $showingCreateBoard) {
+            CreateBoardView { _ in Task { await load() } }
         }
     }
 
