@@ -14,6 +14,9 @@ struct PlacesAddressSearchField: View {
     /// The resolved address, or nil while the field is empty / being edited.
     @Binding var picked: PlaceDetails?
     var placeholder: String = "Search your address"
+    /// Autocomplete bias: "ADDRESS" for a street-level service address (default),
+    /// "AREA" for a city/ZIP-level discovery origin (mirrors the web `kind=AREA`).
+    var kind: String = "ADDRESS"
     /// Disables editing (e.g. while the parent is saving).
     var disabled: Bool = false
 
@@ -99,7 +102,7 @@ struct PlacesAddressSearchField: View {
             try? await Task.sleep(for: .milliseconds(300))
             guard token == searchToken else { return }
             let results = try? await session.client.places.autocomplete(
-                input: trimmed, sessionToken: sessionToken
+                input: trimmed, sessionToken: sessionToken, kind: kind
             )
             if token == searchToken { predictions = results ?? [] }
         }

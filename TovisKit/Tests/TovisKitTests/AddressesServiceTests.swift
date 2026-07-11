@@ -10,6 +10,8 @@ import Testing
 //       - a re-picked place SENDS the full anchor (formattedAddress + placeId + coords).
 //   • setDefault()           → PATCH /client/addresses/{id} with ONLY { isDefault: true }
 //   • delete()               → DELETE /client/addresses/{id}
+//   • searchArea()           → GET, returns the DEFAULT SEARCH_AREA (discovery origin) only
+//   • saveSearchArea()       → POST a default SEARCH_AREA create, then DELETE the row it replaced
 // Plus the pure `mapsURL` helper (coords-first, else address text).
 
 /// Records the outgoing request and serves a canned envelope.
@@ -203,6 +205,99 @@ private extension URLRequest {
         try await makeService().delete(id: "addr_1")
 
         #expect(AddressesURLProtocol.capturedPath == "/api/v1/client/addresses/addr_1")
+        #expect(AddressesURLProtocol.capturedMethod == "DELETE")
+    }
+
+    // MARK: - searchArea (discovery origin)
+
+    @Test func searchAreaReturnsDefaultSearchAreaOnly() async throws {
+        reset()
+        // A mix: a service address + two search areas (one default). searchArea()
+        // must return the DEFAULT search area — never the service address.
+        AddressesURLProtocol.responseBody = Data("""
+        {"addresses":[
+          {"id":"svc_1","kind":"SERVICE_ADDRESS","label":"Home","isDefault":true,"formattedAddress":"123 Main St","addressLine1":null,"addressLine2":null,"city":"San Diego","state":"CA","postalCode":"92101","countryCode":"US","placeId":"pl_svc","lat":32.7,"lng":-117.1,"createdAt":"2026-07-10T00:00:00.000Z","updatedAt":"2026-07-10T00:00:00.000Z"},
+          {"id":"area_2","kind":"SEARCH_AREA","label":null,"isDefault":false,"formattedAddress":"Los Angeles, CA, USA","addressLine1":null,"addressLine2":null,"city":"Los Angeles","state":"CA","postalCode":null,"countryCode":"US","placeId":"pl_la","lat":34.05,"lng":-118.24,"createdAt":"2026-07-09T00:00:00.000Z","updatedAt":"2026-07-09T00:00:00.000Z"},
+          {"id":"area_1","kind":"SEARCH_AREA","label":null,"isDefault":true,"formattedAddress":"San Diego, CA, USA","addressLine1":null,"addressLine2":null,"city":"San Diego","state":"CA","postalCode":null,"countryCode":"US","placeId":"pl_sd","lat":32.7157,"lng":-117.1611,"createdAt":"2026-07-10T00:00:00.000Z","updatedAt":"2026-07-10T00:00:00.000Z"}
+        ]}
+        """.utf8)
+
+        let area = try await makeService().searchArea()
+
+        #expect(AddressesURLProtocol.capturedPath == "/api/v1/client/addresses")
+        #expect(AddressesURLProtocol.capturedMethod == "GET")
+        #expect(area?.id == "area_1")
+        #expect(area?.isSearchArea == true)
+        #expect(area?.isDefault == true)
+    }
+
+    @Test func searchAreaNilWhenNoneSaved() async throws {
+        reset()
+        AddressesURLProtocol.responseBody = Data("""
+        {"addresses":[{"id":"svc_1","kind":"SERVICE_ADDRESS","label":"Home","isDefault":true,"formattedAddress":"123 Main St","addressLine1":null,"addressLine2":null,"city":"San Diego","state":"CA","postalCode":"92101","countryCode":"US","placeId":"pl_svc","lat":32.7,"lng":-117.1,"createdAt":"2026-07-10T00:00:00.000Z","updatedAt":"2026-07-10T00:00:00.000Z"}]}
+        """.utf8)
+
+        let area = try await makeService().searchArea()
+        #expect(area == nil)
+    }
+
+    // MARK: - saveSearchArea (discovery origin from a picked AREA)
+
+    @Test func saveSearchAreaPostsSearchAreaCreate() async throws {
+        reset()   // POST returns the default addressEnvelope (id addr_1)
+
+        let place = PlaceDetails(
+            placeId: "pl_sd",
+            formattedAddress: "San Diego, CA, USA",
+            lat: 32.7157,
+            lng: -117.1611,
+            city: "San Diego",
+            state: "CA",
+            postalCode: nil,
+            countryCode: "US"
+        )
+
+        let saved = try await makeService().saveSearchArea(from: place)
+
+        #expect(AddressesURLProtocol.capturedPath == "/api/v1/client/addresses")
+        #expect(AddressesURLProtocol.capturedMethod == "POST")
+
+        let sent = try decodeBody(AddressesURLProtocol.capturedBody)
+        #expect(sent["kind"] as? String == "SEARCH_AREA")
+        // A fresh discovery origin is always the default for its kind.
+        #expect(sent["isDefault"] as? Bool == true)
+        #expect(sent["formattedAddress"] as? String == "San Diego, CA, USA")
+        #expect(sent["placeId"] as? String == "pl_sd")
+        #expect(sent["city"] as? String == "San Diego")
+        #expect(sent["state"] as? String == "CA")
+        #expect(sent["countryCode"] as? String == "US")
+        #expect((sent["lat"] as? Double) == 32.7157)
+        #expect((sent["lng"] as? Double) == -117.1611)
+        // An AREA pick carries no street line / apt (keys omitted, not null).
+        #expect(sent["addressLine1"] == nil)
+        #expect(sent["addressLine2"] == nil)
+        #expect(saved.id == "addr_1")
+    }
+
+    @Test func saveSearchAreaReplacingDeletesPriorRow() async throws {
+        reset()   // POST returns id addr_1; the follow-up DELETE reuses the same body (void)
+
+        let place = PlaceDetails(
+            placeId: "pl_sd",
+            formattedAddress: "San Diego, CA, USA",
+            lat: 32.7157,
+            lng: -117.1611,
+            city: "San Diego",
+            state: "CA",
+            postalCode: nil,
+            countryCode: "US"
+        )
+
+        // The prior row id differs from the created id, so the cleanup DELETE fires.
+        _ = try await makeService().saveSearchArea(from: place, replacing: "area_old")
+
+        // The LAST request the mock saw is the cleanup DELETE of the superseded row.
+        #expect(AddressesURLProtocol.capturedPath == "/api/v1/client/addresses/area_old")
         #expect(AddressesURLProtocol.capturedMethod == "DELETE")
     }
 

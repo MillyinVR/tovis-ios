@@ -25,6 +25,10 @@ public struct ClientAddress: Decodable, Sendable, Identifiable, Hashable {
 
     public var isServiceAddress: Bool { kind == "SERVICE_ADDRESS" }
 
+    /// A SEARCH_AREA is the client's saved discovery origin (where "pros near you"
+    /// searches from) — the server-persisted half of the web viewer location.
+    public var isSearchArea: Bool { kind == "SEARCH_AREA" }
+
     /// A one-line label for the picker — the saved label, else the formatted
     /// address, else a street/city composite.
     public var displayLine: String {
