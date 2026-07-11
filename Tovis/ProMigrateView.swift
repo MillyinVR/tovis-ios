@@ -4,10 +4,10 @@
 // loadMigrationReviewSummary), so there is a dedicated native read API:
 // GET /api/v1/pro/migrate/summary. Reached from the Profile tab → Business.
 //
-// Increment 1 (this slice) covers the two read-only "bookend" screens — this
-// entry progress + the review/go-live summary (ProMigrateReviewView). The three
-// guided import steps (services / clients / calendar CSV+ICS upload → preview →
-// commit) are later increments; until then the CTA leads to the review summary.
+// Increment 1 covered the two read-only "bookend" screens — this entry progress
+// + the review/go-live summary (ProMigrateReviewView). Increment 2 adds the
+// clients import step (ProMigrateClientsView), reached from the footer CTA. The
+// services + calendar CSV/ICS steps are later increments.
 //
 // Dark unless ENABLE_PRO_MIGRATION: the summary route 404s while the flag is off,
 // so we show a "not available yet" state (same build-dark pattern as
@@ -216,14 +216,14 @@ struct ProMigrateView: View {
             .clipShape(Capsule())
     }
 
-    // MARK: - Footer CTA → review summary
+    // MARK: - Footer CTAs → clients import + review summary
 
     private func footer(_ summary: ProMigrationSummary) -> some View {
         VStack(spacing: 12) {
             NavigationLink {
-                ProMigrateReviewView(summary: summary)
+                ProMigrateClientsView()
             } label: {
-                Text("Review your migration")
+                Text("Import your clients")
                     .font(BrandFont.body(16, .semibold))
                     .frame(maxWidth: .infinity).padding(.vertical, 15)
                     .foregroundStyle(BrandColor.onAccent)
@@ -231,7 +231,22 @@ struct ProMigrateView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
             .buttonStyle(.plain)
-            Text("Guided import — bringing your menu, clients, and calendar over — is coming to the app soon. Everything already imported shows in the review.")
+            NavigationLink {
+                ProMigrateReviewView(summary: summary)
+            } label: {
+                Text("Review your migration")
+                    .font(BrandFont.body(16, .semibold))
+                    .frame(maxWidth: .infinity).padding(.vertical, 14)
+                    .foregroundStyle(BrandColor.textPrimary)
+                    .background(BrandColor.bgSurface)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(BrandColor.textMuted.opacity(0.15), lineWidth: 1)
+                    )
+            }
+            .buttonStyle(.plain)
+            Text("Bringing your service menu and calendar over is coming to the app soon. Everything already imported shows in the review.")
                 .font(BrandFont.body(12))
                 .foregroundStyle(BrandColor.textMuted)
                 .multilineTextAlignment(.center)

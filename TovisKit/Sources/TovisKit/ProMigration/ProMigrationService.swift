@@ -1,13 +1,12 @@
 import Foundation
 
-/// PRO data-migration wizard — the native read side of the web `/pro/migrate`
-/// flow. Increment 1 covers the two RSC-only "bookend" screens: the entry
-/// progress + the review/go-live summary, both fed by a single read route (the
-/// same counts both web screens derive from `loadMigrationReviewSummary`). The
-/// three working import steps (services / clients / calendar CSV+ICS upload,
-/// preview, commit) are later increments.
+/// PRO data-migration wizard — the native side of the web `/pro/migrate` flow.
+/// Increment 1 covers the two RSC-only "bookend" screens (entry progress +
+/// review/go-live summary), fed by `summary()`. Increment 2 adds the **clients
+/// import** step — `previewClientImport` + `commitClientImport`, POSTing to the
+/// existing web routes. The services + calendar steps are later increments.
 ///
-/// Dark unless `ENABLE_PRO_MIGRATION`: the route 404s while the flag is off, so
+/// Dark unless `ENABLE_PRO_MIGRATION`: every route 404s while the flag is off, so
 /// callers show a "not available yet" state (mirrors ProNoShowSettings).
 /// PRO-only, owner-scoped server-side.
 public final class ProMigrationService: Sendable {
@@ -24,5 +23,33 @@ public final class ProMigrationService: Sendable {
     public func summary() async throws -> ProMigrationSummary {
         let response: ProMigrationSummaryResponse = try await api.request("/pro/migrate/summary")
         return response.summary
+    }
+
+    /// POST /api/v1/pro/migrate/clients/preview → the dedupe preview for a set of
+    /// raw CSV rows + column mapping. Read-only (no writes); `excludeIndices` is
+    /// not sent (the route ignores it for preview). 404s while the flag is off.
+    public func previewClientImport(
+        rows: [[String: String]],
+        mapping: ClientImportMapping
+    ) async throws -> ClientImportPreviewResponse {
+        let body = try JSONEncoder.canonical.encode(
+            ClientImportRequestBody(rows: rows, mapping: mapping, excludeIndices: nil)
+        )
+        return try await api.request("/pro/migrate/clients/preview", method: .post, body: body)
+    }
+
+    /// POST /api/v1/pro/migrate/clients/commit → import the (non-excluded,
+    /// importable) rows through the silent `upsertProClient` path, in one
+    /// transaction. `excludeIndices` are the rows the pro deselected (plus the
+    /// auto-excluded non-importable ones). 404s while the flag is off.
+    public func commitClientImport(
+        rows: [[String: String]],
+        mapping: ClientImportMapping,
+        excludeIndices: [Int]
+    ) async throws -> ClientImportCommitResponse {
+        let body = try JSONEncoder.canonical.encode(
+            ClientImportRequestBody(rows: rows, mapping: mapping, excludeIndices: excludeIndices)
+        )
+        return try await api.request("/pro/migrate/clients/commit", method: .post, body: body)
     }
 }
