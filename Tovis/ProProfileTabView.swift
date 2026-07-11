@@ -477,6 +477,7 @@ struct ProProfileTabView: View {
                     businessLink(icon: "clock", title: "Working hours") { ProWorkingHoursView() }
                     businessLink(icon: "bell.badge", title: "Appointment reminders") { ProReminderSettingsView() }
                     businessLink(icon: "clock.badge.exclamationmark", title: "No-show fees") { ProNoShowSettingsView() }
+                    businessLink(icon: "square.and.arrow.down", title: "Import from another app") { ProMigrateView() }
                 }
             }
 

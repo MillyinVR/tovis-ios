@@ -69,6 +69,9 @@ public final class TovisClient: Sendable {
     /// PRO workspace — license / document verification (status + license edit +
     /// doc upload/delete).
     public let proVerification: ProVerificationService
+    /// PRO workspace — data-migration wizard read surface (entry progress +
+    /// review summary). Dark unless ENABLE_PRO_MIGRATION (route 404s while off).
+    public let proMigration: ProMigrationService
     public let tokenStore: TokenStore
 
     /// Stable per-install id. Persisted in the Keychain-backed store's UserDefaults
@@ -146,6 +149,7 @@ public final class TovisClient: Sendable {
         self.proSettings = ProSettingsService(api: api)
         self.proReadiness = ProReadinessService(api: api)
         self.proVerification = ProVerificationService(api: api, media: self.proMedia)
+        self.proMigration = ProMigrationService(api: api)
     }
 
     /// The signed-in user's id, decoded from the stored JWT. Works on a cold
