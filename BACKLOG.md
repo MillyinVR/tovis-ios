@@ -561,8 +561,37 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
     +5 `ProMigrationCalendarImportTests` (fetch POST route/body/decode · preview POST + `excludeUids`
     omitted + decode/derived helpers · commit POST + `excludeUids` + decode · subscription POST + decode ·
     flag-off 404). swift test **277**; `xcodebuild build` clean. **NOT simulator-driven** (dark; needs a
-    live authed pro + the flag on). **⚠️ Only increment 3 (Services) REMAINS** = CSV + fuzzy catalog match
-    + price-ramp editor (most complex; reuse `CsvParser`). Scope web-first per the per-slice rule.
+    live authed pro + the flag on). **Only increment 3 (Services) remained after this — now ✅ shipped
+    below; the wizard + all of A4 is COMPLETE.**
+  - [x] **A4-migration data-migration wizard, increment 3 (services import)** — ✅ shipped
+    2026-07-10 (iOS #76, **iOS-only** — the web `POST /api/v1/pro/migrate/services/preview` + `/commit`
+    routes already exist as JSON with **no DTO/zod** (contract in
+    `tovis-app/lib/migration/serviceImportServer.ts`), behind the same `ENABLE_PRO_MIGRATION`
+    404-when-off gate → **no web change**; `services/page.tsx` does no server data fetch, so nothing is
+    RSC-only, unlike increment 1's summary bookends). Native port of the web `/pro/migrate/services` flow
+    (`MigrateServicesClient.tsx`): **upload .csv → map (match + tune raises) → done**, reached from
+    `ProMigrateView`'s footer. **The last and most complex wizard step — closes the wizard + §5 A4.**
+    The **server runs the fuzzy match**, so iOS consumes `suggestions` + `bestServiceId` rather than
+    porting `serviceMatch`. Ported client-side (all pure, from the web client): the **CSV column
+    heuristic + number parsing** (`parseServiceMenuRows`/`parseMenuNumber`, reusing `CsvParser`), the
+    **row-status derivation** (OK / PRICE_GRACE / NEEDS_ATTENTION + the commit-eligibility rule — any
+    unmatched row blocks commit, web parity), and the **price-grace ramp math** (`ServicePriceRamp` — a
+    port of `lib/migration/priceRamp` + the web `buildRampSchedule`, so the on-device raise editor previews
+    exactly what the server persists: 10%/10-week policy floor, whole-dollar, clamps never gentler). Commit
+    is **silent** (import-mode offering write never messages a client), idempotent on
+    [professionalId, serviceId]. **TovisKit:** `ProMigrationServiceImport` (Encodable `ServiceMenuInputRow`
+    / `ServiceImportDecision` incl. nested `ramp`; Decodable catalog/preview/commit shapes — commit row is
+    a flattened `ok`-discriminated union) + the CSV helpers; `ServicePriceRamp`; `ProMigrationService`
+    `previewServiceImport`/`commitServiceImport` (POST via `JSONEncoder.canonical`). **App:**
+    `ProMigrateServicesView` (upload → **map**: per-row catalog-picker Menu grouped by category + live
+    to-add / raises-unlocked / need-a-match stat pills + a **raise configurator** per below-minimum service
+    — percent/dollars toggle, step & cadence sliders, live metrics + step-by-step schedule → commit → done
+    tally). `ProMigrateView` footer now **leads with "Import your services"** (primary) then clients /
+    calendar / review, and drops the obsolete "service menu coming soon" note. +13 tests (6
+    `ProMigrationServiceImportTests`: preview/commit route+body+decode, flag-off 404, CSV helpers; 7
+    `ServicePriceRampTests`: floor/clamp/step/`nextStepPrice`/`needsRamp`/schedule parity). swift test
+    **290**; `xcodebuild build` clean. **NOT simulator-driven** (dark; needs a live authed pro + the flag
+    on). **✅ §5 A4 pro-parity umbrella COMPLETE.**
   - ↪ **Predecessor for mid-session service change** (`tovis-app §22`, MS-iOS): A4's
     **edit-service-items** modal is the first place iOS gains a TovisKit method to change
     services on an existing booking (today only `sendConsultationProposal` exists — no
