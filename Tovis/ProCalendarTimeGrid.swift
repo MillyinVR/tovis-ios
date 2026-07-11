@@ -395,8 +395,11 @@ struct ProCalendarTimeGrid: View {
     private func moveGesture(
         event: ProCalendarEvent, day: ProMonthCell, startMinutes: Int, durationMinutes: Int
     ) -> some Gesture {
+        // Global coordinate space: the tile moves itself via `.offset(y:)` while
+        // dragging, so a `.local` space would feed its own movement back into the
+        // translation. Global measures a clean finger delta regardless of offset.
         LongPressGesture(minimumDuration: 0.3)
-            .sequenced(before: DragGesture(minimumDistance: 0))
+            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .global))
             .onChanged { value in
                 switch value {
                 case .first(true):
