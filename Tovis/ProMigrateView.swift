@@ -5,9 +5,9 @@
 // GET /api/v1/pro/migrate/summary. Reached from the Profile tab → Business.
 //
 // Increment 1 covered the two read-only "bookend" screens — this entry progress
-// + the review/go-live summary (ProMigrateReviewView). Increment 2 adds the
-// clients import step (ProMigrateClientsView), reached from the footer CTA. The
-// services + calendar CSV/ICS steps are later increments.
+// + the review/go-live summary (ProMigrateReviewView). Increments 2–4 add the
+// import steps reached from the footer CTAs: services (ProMigrateServicesView),
+// clients (ProMigrateClientsView), and calendar (ProMigrateCalendarView).
 //
 // Dark unless ENABLE_PRO_MIGRATION: the summary route 404s while the flag is off,
 // so we show a "not available yet" state (same build-dark pattern as
@@ -216,19 +216,26 @@ struct ProMigrateView: View {
             .clipShape(Capsule())
     }
 
-    // MARK: - Footer CTAs → clients import + calendar import + review summary
+    // MARK: - Footer CTAs → services + clients + calendar import + review summary
 
     private func footer(_ summary: ProMigrationSummary) -> some View {
+        // Ordered by the web wizard's steps: services → clients → calendar → review.
         VStack(spacing: 12) {
             NavigationLink {
-                ProMigrateClientsView()
+                ProMigrateServicesView()
             } label: {
-                Text("Import your clients")
+                Text("Import your services")
                     .font(BrandFont.body(16, .semibold))
                     .frame(maxWidth: .infinity).padding(.vertical, 15)
                     .foregroundStyle(BrandColor.onAccent)
                     .background(BrandColor.accent)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            NavigationLink {
+                ProMigrateClientsView()
+            } label: {
+                secondaryCTALabel("Import your clients")
             }
             .buttonStyle(.plain)
             NavigationLink {
@@ -243,10 +250,6 @@ struct ProMigrateView: View {
                 secondaryCTALabel("Review your migration")
             }
             .buttonStyle(.plain)
-            Text("Bringing your service menu over is coming to the app soon. Everything already imported shows in the review.")
-                .font(BrandFont.body(12))
-                .foregroundStyle(BrandColor.textMuted)
-                .multilineTextAlignment(.center)
         }
         .padding(.top, 4)
     }

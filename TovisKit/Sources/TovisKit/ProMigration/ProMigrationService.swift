@@ -6,7 +6,8 @@ import Foundation
 /// import** step — `previewClientImport` + `commitClientImport`. Increment 4 adds
 /// the **calendar import** step — `fetchCalendarFeed` + `previewCalendarImport` +
 /// `commitCalendarImport` + `connectCalendarSubscription`. All POST to the
-/// existing web routes. The services step is a later increment.
+/// existing web routes. Increment 3 adds the **services import** step —
+/// `previewServiceImport` + `commitServiceImport`.
 ///
 /// Dark unless `ENABLE_PRO_MIGRATION`: every route 404s while the flag is off, so
 /// callers show a "not available yet" state (mirrors ProNoShowSettings).
@@ -98,5 +99,25 @@ public final class ProMigrationService: Sendable {
             "/pro/migrate/calendar/subscription", method: .post, body: body
         )
         return response.subscription
+    }
+
+    // MARK: - Services import (increment 3)
+
+    /// POST /api/v1/pro/migrate/services/preview → fuzzy-match a set of on-device
+    /// parsed CSV menu rows against the pro's license-gated catalog. Read-only (no
+    /// writes); returns the catalog + per-row suggestions and the confident match.
+    /// 404s while the flag is off.
+    public func previewServiceImport(rows: [ServiceMenuInputRow]) async throws -> ServiceImportPreviewResponse {
+        let body = try JSONEncoder.canonical.encode(ServiceImportPreviewRequestBody(rows: rows))
+        return try await api.request("/pro/migrate/services/preview", method: .post, body: body)
+    }
+
+    /// POST /api/v1/pro/migrate/services/commit → write each mapped decision as a
+    /// service offering, grandfathering below-minimum prices behind a raise ramp.
+    /// Silent (never messages a client), idempotent on [professionalId, serviceId].
+    /// 404s while the flag is off.
+    public func commitServiceImport(decisions: [ServiceImportDecision]) async throws -> ServiceImportCommitResponse {
+        let body = try JSONEncoder.canonical.encode(ServiceImportCommitRequestBody(decisions: decisions))
+        return try await api.request("/pro/migrate/services/commit", method: .post, body: body)
     }
 }
