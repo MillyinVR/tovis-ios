@@ -238,18 +238,32 @@ private struct BoardShareSection: View {
 
                 if isShared {
                     Divider().overlay(BrandColor.textMuted.opacity(0.15))
-                    if let shareURL {
-                        ShareLink(item: shareURL) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "square.and.arrow.up")
-                                    .font(.system(size: 12, weight: .semibold))
-                                Text("Share link")
-                                    .font(BrandFont.body(13, .semibold))
+                    if let handle, !handle.isEmpty, let shareURL {
+                        HStack(spacing: 10) {
+                            ShareLink(item: shareURL) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "square.and.arrow.up")
+                                        .font(.system(size: 12, weight: .semibold))
+                                    Text("Share link")
+                                        .font(BrandFont.body(13, .semibold))
+                                }
+                                .foregroundStyle(BrandColor.accent)
+                                .padding(.horizontal, 14).padding(.vertical, 9)
+                                .background(BrandColor.accent.opacity(0.10), in: Capsule())
+                                .overlay(Capsule().stroke(BrandColor.accent.opacity(0.3), lineWidth: 1))
                             }
-                            .foregroundStyle(BrandColor.accent)
-                            .padding(.horizontal, 14).padding(.vertical, 9)
-                            .background(BrandColor.accent.opacity(0.10), in: Capsule())
-                            .overlay(Capsule().stroke(BrandColor.accent.opacity(0.3), lineWidth: 1))
+                            // See exactly what a recipient sees — the native
+                            // `/u/{handle}/boards/{slug}` viewer (viewer.isOwn).
+                            NavigationLink {
+                                PublicBoardView(handle: handle, slug: slug)
+                            } label: {
+                                Text("Preview")
+                                    .font(BrandFont.body(13, .semibold))
+                                    .foregroundStyle(BrandColor.textSecondary)
+                                    .padding(.horizontal, 14).padding(.vertical, 9)
+                                    .overlay(Capsule().stroke(BrandColor.textMuted.opacity(0.25), lineWidth: 1))
+                            }
+                            .buttonStyle(.plain)
                         }
                     } else {
                         claimHandlePrompt
