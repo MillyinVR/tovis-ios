@@ -406,18 +406,18 @@ struct ProCalendarTimeGrid: View {
                     // Long-press engaged — lift the tile at its current time.
                     activeDrag = CalendarDragState(eventId: event.id, currentStartMinutes: startMinutes)
                 case let .second(true, drag):
-                    let dyMinutes = drag.map { Int(($0.translation.height / pxPerMinute).rounded()) } ?? 0
                     activeDrag = CalendarDragState(
                         eventId: event.id,
-                        currentStartMinutes: clampSnapStart(startMinutes + dyMinutes, duration: durationMinutes))
+                        currentStartMinutes: droppedStartMinutes(
+                            from: startMinutes, drag: drag, duration: durationMinutes))
                 default:
                     break
                 }
             }
             .onEnded { value in
                 guard case let .second(_, drag) = value else { activeDrag = nil; return }
-                let dyMinutes = drag.map { Int(($0.translation.height / pxPerMinute).rounded()) } ?? 0
-                let snapped = clampSnapStart(startMinutes + dyMinutes, duration: durationMinutes)
+                let snapped = droppedStartMinutes(
+                    from: startMinutes, drag: drag, duration: durationMinutes)
                 activeDrag = nil
                 // No net change (or an un-representable instant) → nothing to confirm.
                 guard snapped != startMinutes, let newStart = slotDate(day: day, minutes: snapped) else { return }
@@ -426,19 +426,23 @@ struct ProCalendarTimeGrid: View {
             }
     }
 
-    /// Snap a proposed minutes-since-midnight to the 15-min grid, clamped so the
-    /// whole appointment (its `duration`) still fits before midnight.
-    private func clampSnapStart(_ minutes: Int, duration: Int) -> Int {
-        let maxStart = max(0, ProCalendarGrid.minutesPerDay - duration)
-        return min(ProCalendarGrid.snap(minutes, step: stepMinutes), maxStart)
+    /// The snapped, clamped minutes-since-midnight a drag drops on (pure math in
+    /// `ProCalendarGrid.draggedStartMinutes`, so it's unit-tested there).
+    private func droppedStartMinutes(
+        from startMinutes: Int, drag: DragGesture.Value?, duration: Int
+    ) -> Int {
+        ProCalendarGrid.draggedStartMinutes(
+            originalStartMinutes: startMinutes,
+            translationPoints: Double(drag?.translation.height ?? 0),
+            pxPerMinute: Double(pxPerMinute),
+            durationMinutes: duration,
+            stepMinutes: stepMinutes)
     }
 
-    /// The instant `minutes` past `day`'s local midnight (DST-safe, TZ-aware —
-    /// same construction as the empty-slot tap).
+    /// The instant `minutes` past `day`'s local midnight (TZ-aware — same
+    /// construction as the empty-slot tap).
     private func slotDate(day: ProMonthCell, minutes: Int) -> Date? {
-        var cal = Calendar(identifier: .gregorian)
-        cal.timeZone = timeZone
-        return cal.date(byAdding: .minute, value: minutes, to: day.startOfDay)
+        ProCalendarGrid.instant(dayStart: day.startOfDay, minutes: minutes, timeZone: timeZone)
     }
 
     /// Only PENDING / ACCEPTED bookings can be dragged (mirrors the reschedule
@@ -453,10 +457,7 @@ struct ProCalendarTimeGrid: View {
 
     /// `h:mmam/pm` for a minutes-since-midnight value (the live drag/pending label).
     private func minutesLabel(_ minutes: Int) -> String {
-        let h24 = (minutes / 60) % 24
-        let m = minutes % 60
-        let h12 = h24 % 12 == 0 ? 12 : h24 % 12
-        return "\(h12):\(String(format: "%02d", m))\(h24 < 12 ? "am" : "pm")"
+        ProCalendarGrid.minuteOfDayLabel(minutes)
     }
 
     private func tileAccessibilityLabel(_ event: ProCalendarEvent) -> String {

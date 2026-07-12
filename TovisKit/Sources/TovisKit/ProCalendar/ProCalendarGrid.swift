@@ -203,6 +203,46 @@ public enum ProCalendarGrid {
         return max(0, min(minutesPerDay - s, snapped))
     }
 
+    // ─── Drag-to-reschedule drop math (native port of web useDragDrop) ───────
+
+    /// Where a dragged booking tile lands: convert a vertical drag translation
+    /// (points) to minutes at `pxPerMinute`, add it to the tile's original start,
+    /// snap to `stepMinutes`, and clamp so the whole appointment (`durationMinutes`)
+    /// still fits before midnight. Pure so the drop position is unit-testable
+    /// without driving the gesture (mirrors the web `startMinutesFromPointer`).
+    public static func draggedStartMinutes(
+        originalStartMinutes: Int,
+        translationPoints: Double,
+        pxPerMinute: Double,
+        durationMinutes: Int,
+        stepMinutes: Int
+    ) -> Int {
+        let px = pxPerMinute > 0 ? pxPerMinute : 1
+        let deltaMinutes = Int((translationPoints / px).rounded())
+        let maxStart = max(0, minutesPerDay - durationMinutes)
+        return min(snap(originalStartMinutes + deltaMinutes, step: stepMinutes), maxStart)
+    }
+
+    /// The instant `minutes` past a day's local midnight (`dayStart` = the UTC
+    /// instant of that midnight), in `timeZone`. Turns a dropped slot back into a
+    /// `scheduledFor`. NB: this adds elapsed minutes (matching the empty-slot tap);
+    /// on a DST-transition day a move across the 2–3am gap can shift by the offset,
+    /// but same-day business-hours moves are unaffected.
+    public static func instant(dayStart: Date, minutes: Int, timeZone: TimeZone) -> Date? {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = timeZone
+        return cal.date(byAdding: .minute, value: minutes, to: dayStart)
+    }
+
+    /// `h:mmam/pm` for a minutes-since-midnight value — the live drag / pending-move
+    /// tile label (mirrors the now-line's `formatNowLabel`).
+    public static func minuteOfDayLabel(_ minutes: Int) -> String {
+        let h24 = (minutes / 60) % 24
+        let m = ((minutes % 60) + 60) % 60
+        let h12 = h24 % 12 == 0 ? 12 : h24 % 12
+        return "\(h12):\(String(format: "%02d", m))\(h24 < 12 ? "am" : "pm")"
+    }
+
     /// The minutes-since-midnight `[start, end]` window an event occupies on
     /// `dayYmd` (the day cell's local key), TZ-aware with multi-day spillover and
     /// step snapping — the native port of `buildEventLayout`. Returns nil for an
