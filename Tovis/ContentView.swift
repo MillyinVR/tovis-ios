@@ -3,6 +3,7 @@
 import SwiftUI
 import TovisKit
 import AuthenticationServices
+import GoogleSignIn
 import UIKit
 
 // MARK: - App entry point
@@ -845,6 +846,26 @@ final class SessionModel {
         }
     }
 
+    /// Exchange a Google id-token (from the Google Sign-In SDK) for a session,
+    /// then route it exactly like Apple/login. The token was minted with the web
+    /// OAuth client id as its audience so `POST /auth/google` accepts it.
+    func googleLogin(identityToken: String) async {
+        isWorking = true
+        errorMessage = nil
+        defer { isWorking = false }
+        do {
+            let result = try await client.auth.googleLogin(
+                identityToken: identityToken,
+                deviceId: client.deviceId
+            )
+            await handleAuthResult(result)
+        } catch let error as APIError {
+            errorMessage = error.userMessage
+        } catch {
+            errorMessage = "Something went wrong. Please try again."
+        }
+    }
+
     /// Phone-OTP step 1. Returns true if the request was accepted (move to the
     /// code step). The response is generic, so this never reveals account existence.
     func phoneSend(_ phone: String) async -> Bool {
@@ -928,7 +949,14 @@ struct RootView: View {
         // (via the backend bounce page). Route it into the session so the active
         // booking screen can dismiss the browser and refetch. A tapped
         // password-reset Universal Link routes through the same handler.
-        .onOpenURL { session.handleDeepLink($0) }
+        .onOpenURL { url in
+            // Give the Google Sign-In SDK first crack at its OAuth redirect (the
+            // SFSafariViewController fallback routes back through the app's URL
+            // handler); it returns false for anything else, which flows on to our
+            // own deep-link routing. No-op when Google isn't provisioned.
+            if GIDSignIn.sharedInstance.handle(url) { return }
+            session.handleDeepLink(url)
+        }
         // A tapped password-reset link opens the native set-new-password screen
         // over whatever is showing (even mid-launch — the token survives the
         // bootstrap state swap), mirroring the web /reset-password/<token> page.
@@ -1053,6 +1081,27 @@ struct LoginView: View {
             .frame(height: 52)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
+            // Shown only once Google Sign-In is provisioned (both OAuth client ids
+            // set in TovisConfig) — inert otherwise, mirroring web's
+            // NEXT_PUBLIC_GOOGLE_CLIENT_ID gating.
+            if session.client.googleClientID != nil,
+               session.client.googleServerClientID != nil {
+                Button {
+                    handleGoogle()
+                } label: {
+                    Text("Continue with Google")
+                        .font(BrandFont.body(16, .semibold))
+                        .foregroundStyle(BrandColor.textPrimary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 15)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(BrandColor.textMuted.opacity(0.3), lineWidth: 1)
+                        )
+                }
+                .disabled(session.isWorking)
+            }
+
             Button {
                 showPhone = true
             } label: {
@@ -1114,6 +1163,29 @@ struct LoginView: View {
         case .failure:
             // User canceled or the request failed — leave the screen as-is.
             break
+        }
+    }
+
+    /// Present the Google Sign-In sheet, then exchange the id-token for a session.
+    /// Only reachable when Google is provisioned (the button is hidden otherwise).
+    private func handleGoogle() {
+        guard
+            let clientID = session.client.googleClientID,
+            let serverClientID = session.client.googleServerClientID
+        else { return }
+        Task {
+            do {
+                let idToken = try await GoogleSignInFlow.idToken(
+                    clientID: clientID,
+                    serverClientID: serverClientID
+                )
+                await session.googleLogin(identityToken: idToken)
+            } catch {
+                // The SDK throws GIDSignInError.canceled when the user backs out;
+                // treat that (and any pre-network SDK failure) as a silent no-op,
+                // mirroring the Apple handler's `.failure` branch. Network/auth
+                // errors from /auth/google surface via SessionModel.googleLogin.
+            }
         }
     }
 }

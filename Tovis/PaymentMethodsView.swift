@@ -261,7 +261,7 @@ struct PaymentMethodsView: View {
             config.returnURL = "tovis://stripe-redirect"
             let sheet = PaymentSheet(setupIntentClientSecret: intent.clientSecret, configuration: config)
 
-            guard let presenter = Self.topViewController() else {
+            guard let presenter = UIApplication.topPresentedViewController() else {
                 actionError = "Couldn’t open the card form."
                 return
             }
@@ -321,15 +321,6 @@ struct PaymentMethodsView: View {
     private static func isDarkFlag(_ error: APIError) -> Bool {
         if case let .server(status, _, _) = error, status == 404 { return true }
         return false
-    }
-
-    /// The top-most presented view controller to hang the Stripe sheet off of.
-    private static func topViewController() -> UIViewController? {
-        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
-        guard var top = scene?.keyWindow?.rootViewController else { return nil }
-        while let presented = top.presentedViewController { top = presented }
-        return top
     }
 
     // MARK: - Web-parity formatting (mirrors ClientPaymentMethodsSettings.tsx)

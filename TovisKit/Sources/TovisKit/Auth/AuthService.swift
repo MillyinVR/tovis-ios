@@ -239,6 +239,28 @@ public final class AuthService: Sendable {
         return response
     }
 
+    /// POST /api/v1/auth/google. Send Google's OIDC id-token (from the Google
+    /// Sign-In SDK). The backend verifies it, find-or-creates a CLIENT account
+    /// (email pre-verified, phone not — same as Apple), and returns the standard
+    /// session payload. Persists the returned token on success.
+    @discardableResult
+    public func googleLogin(
+        identityToken: String,
+        deviceId: String?
+    ) async throws -> LoginResponse {
+        let payload = try JSONEncoder.canonical.encode(
+            GoogleLoginRequest(identityToken: identityToken, deviceId: deviceId)
+        )
+        let response: LoginResponse = try await api.request(
+            "/auth/google",
+            method: .post,
+            body: payload,
+            authenticated: false
+        )
+        await tokenStore.save(response.token)
+        return response
+    }
+
     /// POST /api/v1/auth/phone-login/send. Requests an SMS code. The response is
     /// intentionally generic (it never reveals whether the number has an account).
     @discardableResult

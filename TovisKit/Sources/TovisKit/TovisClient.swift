@@ -102,10 +102,21 @@ public final class TovisClient: Sendable {
     /// per-device revocation wants.
     public let deviceId: String
 
+    /// Google Sign-In OAuth client ids surfaced from `TovisConfig` so the login
+    /// UI can (a) gate the "Continue with Google" button on Google being
+    /// configured and (b) hand both ids to the Google Sign-In SDK. Both nil until
+    /// provisioned — see `TovisConfig`. `googleClientID` = the iOS OAuth client
+    /// id; `googleServerClientID` = the web OAuth client id (the returned
+    /// id-token's audience, which `POST /auth/google` pins).
+    public let googleClientID: String?
+    public let googleServerClientID: String?
+
     public init(config: TovisConfig, session: URLSession? = nil) {
         let store = TokenStore()
         self.tokenStore = store
         self.deviceId = Self.resolveDeviceId()
+        self.googleClientID = config.googleClientID
+        self.googleServerClientID = config.googleServerClientID
 
         // Native auth is bearer-token (Keychain) based and MUST stay cookieless.
         // `URLSession.shared` has a shared cookie jar that would store the
