@@ -100,12 +100,18 @@ Source: `docs/PRO-WEB-PARITY.md` (all 5 pages parity-complete; these are the tai
 - [ ] Pro sub-screens: locations editor (create/edit/set-primary/publish), payment-settings/membership, offering CREATE/DELETE (only toggle/edit shipped).
 - [~] Calendar parity: **tap-to-create ✅, drag-to-reschedule ✅ (#99/#100), booking-override retry dialog ✅, passive double-book warning ✅ (#104).** Remaining: working-hours shading, side-by-side overlap columns, full `ManagementModal` (pending/waitlist list).
   - **Passive double-book warning follow-up** — #104 shipped the overlap ring/glyph on calendar tiles + the "overlaps {client}" note in the drag-reschedule confirm (paired web tovis-app#584; conflict-detection audit finding #1, "passive warning only"). Deferred: the same heads-up in the **new-booking form** (`ProNewBookingView`) when a pro places a brand-new booking on a colliding time — needs an existing-bookings fetch there. Reuse `ProCalendarGrid.overlappingIntervalIds`. Non-blocking; the server still allows the overlap.
-  - **Drag-to-reschedule follow-ups** — #99 shipped drag-to-MOVE a PENDING/ACCEPTED booking (long-press to lift → vertical drag → confirm → PATCH `/pro/bookings/{id}`, snapped 15-min, time-only within a day column); #100 hardened the gesture to `.global` coordinate space. Deferred:
+  - **Drag-to-reschedule follow-ups** — #99 shipped drag-to-MOVE a PENDING/ACCEPTED booking (long-press to lift → vertical drag → confirm → PATCH `/pro/bookings/{id}`, snapped 15-min, time-only within a day column); #100 hardened the gesture to `.global` coordinate space; **#111 fixed the gesture never arming at all** (field test 2026-07-11 / tovis-app §26): the long-press→drag lost arbitration to the tile's inner tap + the ScrollView pan — now `.highPriorityGesture` + `.scrollDisabled` while lifted. ⚠️ Dropping onto an *occupied* slot also needs web #593 deployed (server-side pro-overlap gate). Deferred:
     - [ ] **Resize** — drag a tile's bottom edge to change duration (web `useConfirmChange` kind `resize` → PATCH `durationMinutes`). The confirm/override plumbing already exists; needs a bottom-edge handle + duration math.
     - [ ] **Cross-day drag in week view** — drop a tile into a different day column (v1 keeps a move within its own day; needs x-hit-testing across the 7-column HStack).
     - [ ] **Drag blocks** — blocks stay tap-to-edit today; web drags them too via PATCH `/pro/calendar/blocked` (a different endpoint from booking reschedule).
     - [ ] **Drag haptics** — lift/drop sensory feedback (`.sensoryFeedback`), omitted from v1 to keep the gesture minimal.
 - [ ] Client card-on-file (needs the Stripe iOS SDK).
+- [ ] **ACCOUNT_EXISTS log-in bridge on client signup** (deferred parity with web
+  tovis-app #593 / `tovis-app §27 C1`): when signup hits "account already exists,"
+  web now offers a "log in to continue" link prefilled with the typed contact;
+  `ClientSignupView` just shows `session.errorMessage` with no bridge. Needs the
+  error `code` plumbed through TovisKit (`AuthService`/`SessionStore`) so the view
+  can distinguish `ACCOUNT_EXISTS`, then a button into the existing login screen.
 
 ## 5. Web↔iOS parity epic (audit 2026-07-08)
 Comprehensive screen-by-screen audit of both apps (findings + Tori's layout
