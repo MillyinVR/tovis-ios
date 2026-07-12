@@ -127,6 +127,9 @@ struct ProCalendarTimeGrid: View {
                 }
             }
             .scrollPosition(id: $scrolledHour, anchor: .top)
+            // While a tile is lifted, the ScrollView must not pan — otherwise it
+            // re-claims the finger's movement mid-drag and cancels the move.
+            .scrollDisabled(activeDrag != nil)
             .onAppear { setNowScroll() }
             .onChange(of: scrollKey) { setNowScroll() }
             // Re-snap to "now" once the collapse/expand height change settles.
@@ -350,11 +353,16 @@ struct ProCalendarTimeGrid: View {
         .accessibilityAddTraits(.isButton)
         .animation(.easeOut(duration: 0.16), value: isPending)
 
-        // A long-press arms the drag (so the ScrollView doesn't steal it), then a
-        // vertical drag moves the time. Attached only to reschedulable bookings so
-        // blocks / terminal bookings keep a plain tap and don't block scrolling.
+        // A long-press arms the drag, then a vertical drag moves the time. It must
+        // be HIGH priority: at plain `.gesture` priority it loses arbitration to
+        // the tile's own (inner) tap gesture and to the enclosing ScrollView's pan,
+        // so the long-press never armed and the tile never lifted. High priority
+        // preempts both; a quick tap still opens the detail because the long-press
+        // fails on early touch-up, letting the tap through. Attached only to
+        // reschedulable bookings so blocks / terminal bookings keep a plain tap
+        // and don't block scrolling.
         if draggable {
-            tile.gesture(
+            tile.highPriorityGesture(
                 moveGesture(event: event, day: day, startMinutes: startMinutes, durationMinutes: duration)
             )
         } else {
