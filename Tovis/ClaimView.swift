@@ -168,14 +168,24 @@ struct ClaimView: View {
         return "Claim your client history"
     }
 
+    /// Ready-state lead copy (mirrors the web /claim page's three-way branch).
+    /// Only a booking has something to "manage"; only a pro-attributed invite has
+    /// a professional to "message" — a cold self-serve orphan (booking-less AND
+    /// pro-less) has neither, so keep that copy about the history alone.
+    private func readyLeadCopy(_ context: ClaimContextResponse) -> String {
+        if context.booking != nil {
+            return "Create a free account to manage this booking, message your professional, and keep your history together."
+        }
+        if let pro = context.professionalName, !pro.isEmpty {
+            return "Create a free account to keep this history attached to your identity and message your professional."
+        }
+        return "Create a free account to attach this history to your identity and keep everything together."
+    }
+
     @ViewBuilder
     private func readyActions(_ context: ClaimContextResponse) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(
-                context.booking != nil
-                    ? "Create a free account to manage this booking, message your professional, and keep your history together."
-                    : "Create a free account to claim this history and keep your bookings, aftercare, and rebook context together."
-            )
+            Text(readyLeadCopy(context))
                 .font(BrandFont.body(14))
                 .foregroundStyle(BrandColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
