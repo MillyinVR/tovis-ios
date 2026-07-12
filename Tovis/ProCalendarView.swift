@@ -621,10 +621,32 @@ struct ProCalendarView: View {
 
     // MARK: - Drag-to-reschedule
 
-    /// Confirm-alert copy: who's moving and to when (in the calendar's zone).
+    /// Confirm-alert copy: who's moving and to when (in the calendar's zone), plus a
+    /// passive heads-up when the new time double-books another appointment.
     private func moveConfirmMessage(_ move: PendingCalendarMove) -> String {
         let who = move.event.clientName.isEmpty ? "this appointment" : move.event.clientName
-        return "Move \(who) to \(moveTimeLabel(move.newStart))?"
+        var message = "Move \(who) to \(moveTimeLabel(move.newStart))?"
+        if let other = overlappingClientName(for: move) {
+            message += "\n\nHeads up — this overlaps \(other). You can still move it."
+        }
+        return message
+    }
+
+    /// The client a proposed move would double-book, if any (passive — the move is
+    /// still allowed; this only surfaces the overlap in the confirm).
+    private func overlappingClientName(for move: PendingCalendarMove) -> String? {
+        guard let data = loadedData else { return nil }
+        let start = move.newStart
+        let end = start.addingTimeInterval(Double(max(15, move.event.durationMinutes)) * 60)
+        for event in data.events where event.isBooking && event.id != move.event.id {
+            guard let otherStart = Wire.date(event.startsAt) else { continue }
+            let otherEnd = Wire.date(event.endsAt)
+                ?? otherStart.addingTimeInterval(Double(max(15, event.durationMinutes)) * 60)
+            if otherStart < end && start < otherEnd {
+                return event.clientName.isEmpty ? "another appointment" : event.clientName
+            }
+        }
+        return nil
     }
 
     private func moveTimeLabel(_ date: Date) -> String {
