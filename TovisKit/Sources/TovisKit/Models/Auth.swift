@@ -31,6 +31,16 @@ struct AppleLoginRequest: Encodable, Sendable {
     let lastName: String?
 }
 
+/// POST /api/v1/auth/google — request body. `identityToken` is the OIDC id-token
+/// from the Google Sign-In SDK (`GIDGoogleUser.idToken`); the backend reads the
+/// name straight off the verified token, so — unlike Apple — no name fields are
+/// sent (see app/api/v1/auth/google/route.ts, which only reads
+/// `identityToken` + `deviceId`).
+struct GoogleLoginRequest: Encodable, Sendable {
+    let identityToken: String
+    let deviceId: String?
+}
+
 /// A client's ZIP resolved to the coordinates + IANA timezone the signup needs
 /// for its `CLIENT_ZIP` `signupLocation` payload. Produced by
 /// `PlacesService.resolveClientZip` (geocode + timezone), consumed by

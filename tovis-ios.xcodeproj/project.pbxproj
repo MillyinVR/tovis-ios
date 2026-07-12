@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		A1B2C3D40000000000000001 /* StripePaymentSheet in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D40000000000000002 /* StripePaymentSheet */; };
+		A1B2C3D40000000000000011 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D40000000000000012 /* GoogleSignIn */; };
 		C98B44BD2FF070000097B75C /* TovisKit in Frameworks */ = {isa = PBXBuildFile; productRef = C98B44BC2FF070000097B75C /* TovisKit */; };
 /* End PBXBuildFile section */
 
@@ -41,6 +42,7 @@
 			isa = PBXFrameworksBuildPhase;
 			files = (
 				A1B2C3D40000000000000001 /* StripePaymentSheet in Frameworks */,
+				A1B2C3D40000000000000011 /* GoogleSignIn in Frameworks */,
 				C98B44BD2FF070000097B75C /* TovisKit in Frameworks */,
 			);
 		};
@@ -82,6 +84,7 @@
 			name = Tovis;
 			packageProductDependencies = (
 				A1B2C3D40000000000000002 /* StripePaymentSheet */,
+				A1B2C3D40000000000000012 /* GoogleSignIn */,
 				C98B44BC2FF070000097B75C /* TovisKit */,
 			);
 			productName = MyApp;
@@ -114,6 +117,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				A1B2C3D40000000000000003 /* XCRemoteSwiftPackageReference "stripe-ios" */,
+				A1B2C3D40000000000000013 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 				C98F2E3B2FF071E100584CE3 /* XCLocalSwiftPackageReference "TovisKit" */,
 			);
 			preferredProjectObjectVersion = 90;
@@ -394,6 +398,14 @@
 				minimumVersion = 26.0.0;
 			};
 		};
+		A1B2C3D40000000000000013 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 9.0.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -401,6 +413,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A1B2C3D40000000000000003 /* XCRemoteSwiftPackageReference "stripe-ios" */;
 			productName = StripePaymentSheet;
+		};
+		A1B2C3D40000000000000012 /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1B2C3D40000000000000013 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
 		};
 		C98B44BC2FF070000097B75C /* TovisKit */ = {
 			isa = XCSwiftPackageProductDependency;

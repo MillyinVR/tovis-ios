@@ -20,8 +20,9 @@ Tori 2026-07-08).** We work that tier order, not section number. Where the iOS i
 - **Tier 3:** ~~§7 messaging **M3–M5**~~ ✅ DONE (#14–#17) · ~~§6 post-payment read-endpoint
   follow-up~~ ✅ DONE (#24). Tier 3 is clear on iOS.
 - **Tier 4:** §5 **A1** residual (pro onboarding checklist + license/doc verification —
-  the rest of A1 is SHIPPED, see the ⚠️ note on A1 below) · **A8** Google Sign-In
-  (`tovis-app §15`) · §5 **A2** client screens · **A3** booking detail · **A4/A5** pro parity.
+  the rest of A1 is SHIPPED, see the ⚠️ note on A1 below) · ~~**A8** Google Sign-In
+  (`tovis-app §15`)~~ ✅ DONE 2026-07-11 (iOS-only; see A8 entry) · §5 **A2** client
+  screens · **A3** booking detail · **A4/A5** pro parity.
 - **Tier 7/8:** §1 live-verification · §2 launch train (**App Store upload**) · §3–§4
   deferred pro polish · camera polish (`tovis-app §17`) · **A9** TikTok (parked, `tovis-app §15`).
 
@@ -140,6 +141,25 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
   email-verify half → forgot/reset password → pro onboarding readiness checklist
   → pro license/document verification. Endpoints exist on web
   (`/api/v1/auth/register`, `/password-reset/*`, `/email/verify`, verification-docs).
+- [x] **A8 — Google Sign-In (web-parity port)** — ✅ **DONE 2026-07-11 (iOS-only, no
+  web change).** Cloned the Apple path: added **GoogleSignIn-iOS 9.2.0** as the app
+  target's second remote SPM dep (project.pbxproj 6-edit recipe, memory
+  `ios-first-remote-spm-dependency`) — SDK stays OFF TovisKit (UI SDK). TovisKit:
+  `GoogleLoginRequest` + `AuthService.googleLogin(identityToken:deviceId:)` → the
+  already-live `POST /api/v1/auth/google`; `TovisConfig`/`TovisClient` gained
+  `googleClientID` (iOS OAuth id) + `googleServerClientID` (web OAuth id). App target:
+  `GoogleSignInFlow.idToken(...)` presents the SDK sheet (shared
+  `UIApplication.topPresentedViewController()` extracted from the Stripe view),
+  `SessionModel.googleLogin` routes the result through `handleAuthResult`, and
+  `LoginView` shows a "Continue with Google" button **gated on both ids being set**
+  (inert otherwise — parity with web's `NEXT_PUBLIC_GOOGLE_CLIENT_ID`). Verifier
+  detail: the SDK stamps `serverClientID` as the id-token's `aud`, which
+  `lib/auth/googleIdentity.ts` pins, so no web change. +2 TovisKit tests (suite 400
+  green); `xcodebuild build` green. **⚙️ Provisioning (deferred, not blocking — the
+  button is hidden until then):** in one Google Cloud project set `googleIOSClientID`
+  + `googleWebClientID` in `TovisConfig.swift` (both nil today) and add the iOS
+  client's reverse-client-id (`com.googleusercontent.apps.<id>`) as a
+  `CFBundleURLSchemes` entry in `Tovis/Info.plist`.
 - [ ] **A2 — first-class client screens** (today folded into Me/Home/Notifications
   or absent): **Settings hub** (biggest — profile edit, public handle, discovery
   location, saved addresses, payment methods, notif prefs) · Activity feed ·
