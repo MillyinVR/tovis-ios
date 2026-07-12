@@ -97,7 +97,12 @@ Source: `docs/PRO-WEB-PARITY.md` (all 5 pages parity-complete; these are the tai
 - [ ] Looks/followers profile stat tiles.
 - [ ] Orphaned `ProClientDetailView` — re-link or delete.
 - [ ] Pro sub-screens: locations editor (create/edit/set-primary/publish), payment-settings/membership, offering CREATE/DELETE (only toggle/edit shipped).
-- [ ] Calendar parity: working-hours shading, drag/resize + tap-to-create, `ManagementModal` (full pending/waitlist list), booking-override retry dialog, side-by-side overlap columns.
+- [~] Calendar parity: **tap-to-create ✅, drag-to-reschedule ✅ (#99/#100), booking-override retry dialog ✅.** Remaining: working-hours shading, side-by-side overlap columns, full `ManagementModal` (pending/waitlist list).
+  - **Drag-to-reschedule follow-ups** — #99 shipped drag-to-MOVE a PENDING/ACCEPTED booking (long-press to lift → vertical drag → confirm → PATCH `/pro/bookings/{id}`, snapped 15-min, time-only within a day column); #100 hardened the gesture to `.global` coordinate space. Deferred:
+    - [ ] **Resize** — drag a tile's bottom edge to change duration (web `useConfirmChange` kind `resize` → PATCH `durationMinutes`). The confirm/override plumbing already exists; needs a bottom-edge handle + duration math.
+    - [ ] **Cross-day drag in week view** — drop a tile into a different day column (v1 keeps a move within its own day; needs x-hit-testing across the 7-column HStack).
+    - [ ] **Drag blocks** — blocks stay tap-to-edit today; web drags them too via PATCH `/pro/calendar/blocked` (a different endpoint from booking reschedule).
+    - [ ] **Drag haptics** — lift/drop sensory feedback (`.sensoryFeedback`), omitted from v1 to keep the gesture minimal.
 - [ ] Client card-on-file (needs the Stripe iOS SDK).
 
 ## 5. Web↔iOS parity epic (audit 2026-07-08)
