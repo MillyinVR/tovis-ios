@@ -43,7 +43,8 @@ public final class APIClient: Sendable {
         body: Data? = nil,
         headers: [String: String]? = nil,
         authenticated: Bool = true,
-        retryOn401: Bool = true
+        retryOn401: Bool = true,
+        captureErrorDetails: Bool = false
     ) async throws -> Response {
         let data = try await perform(
             path,
@@ -52,7 +53,8 @@ public final class APIClient: Sendable {
             body: body,
             headers: headers,
             authenticated: authenticated,
-            retryOn401: retryOn401
+            retryOn401: retryOn401,
+            captureErrorDetails: captureErrorDetails
         )
         do {
             return try JSONDecoder().decode(Response.self, from: data)
@@ -92,7 +94,8 @@ public final class APIClient: Sendable {
         body: Data?,
         headers: [String: String]? = nil,
         authenticated: Bool,
-        retryOn401: Bool
+        retryOn401: Bool,
+        captureErrorDetails: Bool = false
     ) async throws -> Data {
         let request = await buildRequest(path, method: method, query: query, body: body, headers: headers, authenticated: authenticated)
 
@@ -122,13 +125,22 @@ public final class APIClient: Sendable {
                     body: body,
                     headers: headers,
                     authenticated: authenticated,
-                    retryOn401: false
+                    retryOn401: false,
+                    captureErrorDetails: captureErrorDetails
                 )
             }
             throw APIError.unauthorized
         }
 
         let parsed = try? JSONDecoder().decode(APIErrorBody.self, from: data)
+        if captureErrorDetails {
+            throw APIError.serverDetails(
+                status: http.statusCode,
+                message: parsed?.error,
+                code: parsed?.code,
+                maskedDestination: parsed?.maskedDestination
+            )
+        }
         throw APIError.server(status: http.statusCode, message: parsed?.error, code: parsed?.code)
     }
 

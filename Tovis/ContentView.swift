@@ -740,10 +740,16 @@ final class SessionModel {
             state = .needsVerification
             return true
         } catch let error as APIError {
-            if case let .server(status, message, code) = error,
+            // registerClient opts into captureErrorDetails, so its errors arrive as
+            // `.serverDetails`. The self-serve-claim 409 carries `maskedDestination`
+            // ("t***@x.com") when the contact matched — surface it in the check-inbox
+            // hint, mirroring the web signup card.
+            if case let .serverDetails(status, message, code, maskedDestination) = error,
                status == 409, code == "CLAIMABLE_HISTORY" {
-                claimableHistoryMessage = message
-                    ?? "We found existing history for this contact. Check your email or text for a secure link to finish setting up your account."
+                claimableHistoryMessage = Self.claimableHistoryMessage(
+                    maskedDestination: maskedDestination,
+                    serverMessage: message
+                )
                 return false
             }
             errorMessage = error.userMessage
@@ -752,6 +758,17 @@ final class SessionModel {
             errorMessage = "Couldn’t create your account. Please try again."
             return false
         }
+    }
+
+    /// Body copy for the "Check your email or text" card after a cold self-serve
+    /// claim. Mirrors the web signup card (SignupClientClient): names the masked
+    /// destination when the backend returned one.
+    static func claimableHistoryMessage(maskedDestination: String?, serverMessage: String?) -> String {
+        if let maskedDestination, !maskedDestination.isEmpty {
+            return "We found existing history for this contact and sent a secure link to \(maskedDestination). Open it to finish setting up your account and keep your booking history together."
+        }
+        return serverMessage
+            ?? "We found existing history for this contact and sent a secure link. Open it to finish setting up your account and keep your booking history together."
     }
 
     /// Create a PRO account (native pro signup). Same post-signup path as
