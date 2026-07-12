@@ -118,6 +118,18 @@ Source: `docs/PRO-WEB-PARITY.md` (all 5 pages parity-complete; these are the tai
   accent/info/success/warn/neutral onto the token palette); (2) optionally send
   `viewerLat`/`viewerLng` query params (same location the availability drawer
   uses) to light up the distance badge. No write path; server does all selection.
+- [ ] **Looks feed "Not for me" hide control** (deferred parity with web tovis-app
+  `feat/algo-hide-control`, personalization spec §2.2): web added a one-tap
+  "Not for me" control on every feed card (action rail, `EyeOff` icon) that removes
+  the card and `POST`s `/api/v1/looks/{id}/hide` (idempotent; `DELETE` un-hides;
+  response `{ lookPostId, hidden }`). A hidden look is then excluded server-side
+  from that viewer's personalized, chronological, AND board feeds, and repeated
+  hides in a category apply a decayed category-level suppression to ranking —
+  all server-side, so an iOS viewer's hides made on web already shape their feed.
+  Parity = (1) a hide/"not for me" affordance on the iOS feed card (overflow or
+  rail) calling the additive `POST .../hide` and dropping the card locally; the
+  server excludes it from every subsequent serve. Requires being signed in
+  (`requireUser` → 401 for guests, bounce to login). Small, additive, non-blocking.
 - [ ] **ACCOUNT_EXISTS log-in bridge on client signup** (deferred parity with web
   tovis-app #593 / `tovis-app §27 C1`): when signup hits "account already exists,"
   web now offers a "log in to continue" link prefilled with the typed contact;
