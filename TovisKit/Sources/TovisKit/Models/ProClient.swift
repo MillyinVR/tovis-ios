@@ -30,6 +30,10 @@ public struct ProClientSummary: Decodable, Sendable, Identifiable {
     /// "Last booking: …" / "No bookings yet" — present on the directory list,
     /// absent on search results.
     public let lastBookingLabel: String?
+    /// Whether this UNCLAIMED, unowned client can be sent a claim link
+    /// (booking-less directory invite). Present on the directory list only when
+    /// the booking-less-claim feature is on; nil elsewhere (treated as false).
+    public let invitable: Bool?
 
     public init(
         id: String,
@@ -37,7 +41,8 @@ public struct ProClientSummary: Decodable, Sendable, Identifiable {
         canViewClient: Bool,
         email: String?,
         phone: String?,
-        lastBookingLabel: String? = nil
+        lastBookingLabel: String? = nil,
+        invitable: Bool? = nil
     ) {
         self.id = id
         self.fullName = fullName
@@ -45,6 +50,28 @@ public struct ProClientSummary: Decodable, Sendable, Identifiable {
         self.email = email
         self.phone = phone
         self.lastBookingLabel = lastBookingLabel
+        self.invitable = invitable
+    }
+}
+
+/// POST /api/v1/pro/clients/{id}/invite → the minted claim-invite summary +
+/// delivery outcome. Mirrors the web endpoint.
+public struct ProClientInviteResponse: Decodable, Sendable {
+    public let invite: Invite
+    public let inviteDelivery: Delivery
+
+    public struct Invite: Decodable, Sendable {
+        public let id: String
+        /// The raw claim token — the pro can share /claim/{token} directly.
+        public let token: String?
+        public let invitedEmail: String?
+        public let invitedPhone: String?
+    }
+
+    public struct Delivery: Decodable, Sendable {
+        /// Whether an email/SMS delivery was enqueued (false when the client has
+        /// no contact channel on file — the pro shares the link manually).
+        public let queued: Bool
     }
 }
 

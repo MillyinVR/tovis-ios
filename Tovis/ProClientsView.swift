@@ -15,6 +15,11 @@ struct ProClientsView: View {
     @State private var error: String?
     @State private var showAdd = false
 
+    // Booking-less claim invite (feature-gated server-side; `invitable` is only
+    // set when it's on). Tracks the in-flight client + a result alert.
+    @State private var invitingId: String?
+    @State private var inviteAlert: String?
+
     // Web `/pro/clients` has no server search — it lists the whole visible set.
     // Native loads that directory once and filters in memory.
     private var filtered: [ProClientSummary] {
@@ -57,6 +62,16 @@ struct ProClientsView: View {
         .sheet(isPresented: $showAdd) {
             ProAddClientSheet { Task { await load() } }
         }
+        .alert(
+            "Claim invite",
+            isPresented: Binding(
+                get: { inviteAlert != nil },
+                set: { if !$0 { inviteAlert = nil } }
+            ),
+            presenting: inviteAlert
+        ) { _ in
+            Button("OK", role: .cancel) { inviteAlert = nil }
+        } message: { Text($0) }
         .tint(BrandColor.accent)
     }
 
@@ -73,7 +88,14 @@ struct ProClientsView: View {
                         .font(BrandFont.body(14)).foregroundStyle(BrandColor.textMuted)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
                 } else {
-                    ForEach(filtered) { client in row(client) }
+                    ForEach(filtered) { client in
+                        VStack(alignment: .leading, spacing: 8) {
+                            row(client)
+                            if client.invitable == true {
+                                inviteToClaimButton(client)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -111,6 +133,50 @@ struct ProClientsView: View {
                 }
                 .buttonStyle(.plain)
             }
+        }
+    }
+
+    // An UNCLAIMED, booking-less client this pro created — offer to send a claim
+    // link so they can take ownership of their history.
+    private func inviteToClaimButton(_ client: ProClientSummary) -> some View {
+        Button {
+            Task { await sendInvite(client) }
+        } label: {
+            HStack(spacing: 8) {
+                if invitingId == client.id {
+                    ProgressView().tint(BrandColor.accent).scaleEffect(0.8)
+                } else {
+                    Image(systemName: "paperplane.fill").font(.system(size: 12, weight: .semibold))
+                }
+                Text(invitingId == client.id ? "Sending…" : "Invite to claim")
+                    .font(BrandFont.body(12, .semibold))
+            }
+            .foregroundStyle(BrandColor.accent)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(BrandColor.accent.opacity(0.4), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .disabled(invitingId != nil)
+        .padding(.bottom, 2)
+    }
+
+    private func sendInvite(_ client: ProClientSummary) async {
+        guard invitingId == nil else { return }
+        invitingId = client.id
+        defer { invitingId = nil }
+        do {
+            let result = try await session.client.proClients.inviteToClaim(clientId: client.id)
+            inviteAlert = result.inviteDelivery.queued
+                ? "We sent \(client.fullName) a secure link to claim their account."
+                : "\(client.fullName) has no email or phone on file. Add one, then invite again."
+            // Refresh so the row reflects any state change.
+            await load()
+        } catch let e as APIError {
+            inviteAlert = e.userMessage
+        } catch {
+            inviteAlert = "Couldn’t send the invite. Please try again."
         }
     }
 

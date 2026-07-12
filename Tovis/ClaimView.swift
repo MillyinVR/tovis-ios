@@ -70,7 +70,7 @@ struct ClaimView: View {
             }
             .buttonStyle(.plain)
 
-            Text("Your booking")
+            Text(topBarTitle)
                 .font(BrandFont.body(15))
                 .fontWeight(.semibold)
                 .foregroundStyle(BrandColor.textPrimary)
@@ -81,11 +81,19 @@ struct ClaimView: View {
         .padding(.vertical, 10)
     }
 
+    /// "Your booking" once a booking-bearing claim loads, else a generic title.
+    private var topBarTitle: String {
+        if case let .loaded(context) = phase, context.booking == nil {
+            return "Claim your history"
+        }
+        return "Your booking"
+    }
+
     // MARK: - Loaded
 
     @ViewBuilder
     private func loadedContent(_ context: ClaimContextResponse) -> some View {
-        bookingCard(context)
+        claimHeaderCard(context)
 
         switch context.state {
         case ClaimContextState.alreadyClaimed:
@@ -103,25 +111,32 @@ struct ClaimView: View {
         }
     }
 
-    private func bookingCard(_ context: ClaimContextResponse) -> some View {
+    private func claimHeaderCard(_ context: ClaimContextResponse) -> some View {
         let booking = context.booking
         return VStack(alignment: .leading, spacing: 10) {
-            Text("\(booking.serviceName ?? "Service") with \(booking.professionalName)")
+            Text(headerTitle(context))
                 .font(BrandFont.display(22, .semibold))
                 .foregroundStyle(BrandColor.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
 
             if let invitedName = context.invitedName, !invitedName.isEmpty {
-                Text("This booking was created for \(invitedName).")
+                Text(
+                    booking != nil
+                        ? "This booking was created for \(invitedName)."
+                        : "This profile was created for \(invitedName)."
+                )
                     .font(BrandFont.body(14))
                     .foregroundStyle(BrandColor.textSecondary)
             }
 
-            if let when = formattedAppointment(booking.scheduledFor, timeZone: booking.timeZone) {
-                detailRow(label: "Booking", value: when)
-            }
-            if let location = booking.locationLabel, !location.isEmpty {
-                detailRow(label: "Location", value: location)
+            // Appointment + location only exist for a booking-bearing claim.
+            if let booking {
+                if let when = formattedAppointment(booking.scheduledFor, timeZone: booking.timeZone) {
+                    detailRow(label: "Booking", value: when)
+                }
+                if let location = booking.locationLabel, !location.isEmpty {
+                    detailRow(label: "Location", value: location)
+                }
             }
 
             if let email = context.invitedEmail, !email.isEmpty {
@@ -141,10 +156,26 @@ struct ClaimView: View {
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(BrandColor.textMuted.opacity(0.12), lineWidth: 1))
     }
 
+    /// Booking-bearing: "{service} with {pro}". Booking-less: a pro/brand-level
+    /// claim header (mirrors the web /claim page).
+    private func headerTitle(_ context: ClaimContextResponse) -> String {
+        if let booking = context.booking {
+            return "\(booking.serviceName ?? "Service") with \(booking.professionalName)"
+        }
+        if let pro = context.professionalName, !pro.isEmpty {
+            return "Claim your history with \(pro)"
+        }
+        return "Claim your client history"
+    }
+
     @ViewBuilder
     private func readyActions(_ context: ClaimContextResponse) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Create a free account to manage this booking, message your professional, and keep your history together.")
+            Text(
+                context.booking != nil
+                    ? "Create a free account to manage this booking, message your professional, and keep your history together."
+                    : "Create a free account to claim this history and keep your bookings, aftercare, and rebook context together."
+            )
                 .font(BrandFont.body(14))
                 .foregroundStyle(BrandColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
