@@ -91,6 +91,13 @@ struct RegisterRequest: Encodable, Sendable {
     /// Simulator; the backend then relies on its local dev fail-open.
     let appAttest: AppAttestPayload?
 
+    // MARK: Claim-invite handoff (nil → key omitted). When a client signs up from
+    // a claim link, `intent = "CLAIM_INVITE"` + `inviteToken` let the backend ADOPT
+    // the pro's existing unclaimed profile instead of minting a duplicate — see
+    // app/api/v1/auth/register/route.ts (adoptClaimInviteDuringRegistration).
+    var intent: String? = nil
+    var inviteToken: String? = nil
+
     // MARK: Pro-only fields (nil → key omitted on a CLIENT signup)
     var professionType: String? = nil
     var licenseState: String? = nil

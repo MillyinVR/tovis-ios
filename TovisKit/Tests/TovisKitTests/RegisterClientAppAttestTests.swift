@@ -127,4 +127,86 @@ final class CaptureBodyURLProtocol: URLProtocol {
         let captured = await provider.capturedHash
         #expect(captured == expected)
     }
+
+    @Test func sendsClaimInviteHandoffWhenProvided() async throws {
+        CaptureBodyURLProtocol.capturedBody = nil
+        CaptureBodyURLProtocol.responseBody = Self.registerResponseJSON
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [CaptureBodyURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+
+        let tokenStore = TokenStore(service: "me.tovis.app.session.tests")
+        let api = APIClient(
+            config: TovisConfig(baseURL: URL(string: "https://test.local/api/v1")!),
+            session: session,
+            tokenStore: tokenStore
+        )
+        let auth = AuthService(api: api, tokenStore: tokenStore, appAttest: RecordingAttestProvider(returning: nil))
+
+        _ = try await auth.registerClient(
+            email: "client@example.com",
+            password: "secret",
+            firstName: "Tori",
+            lastName: "Morales",
+            phone: "+15551234567",
+            location: ClientSignupLocation(
+                postalCode: "90210",
+                city: "Beverly Hills",
+                state: "CA",
+                countryCode: "US",
+                lat: 34.0,
+                lng: -118.0,
+                timeZoneId: "America/Los_Angeles"
+            ),
+            deviceId: "device-1",
+            intent: "CLAIM_INVITE",
+            inviteToken: "tok_claim_1"
+        )
+
+        let body = try #require(CaptureBodyURLProtocol.capturedBody)
+        let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        #expect(json["intent"] as? String == "CLAIM_INVITE")
+        #expect(json["inviteToken"] as? String == "tok_claim_1")
+    }
+
+    @Test func omitsClaimInviteHandoffForANormalSignup() async throws {
+        CaptureBodyURLProtocol.capturedBody = nil
+        CaptureBodyURLProtocol.responseBody = Self.registerResponseJSON
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [CaptureBodyURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+
+        let tokenStore = TokenStore(service: "me.tovis.app.session.tests")
+        let api = APIClient(
+            config: TovisConfig(baseURL: URL(string: "https://test.local/api/v1")!),
+            session: session,
+            tokenStore: tokenStore
+        )
+        let auth = AuthService(api: api, tokenStore: tokenStore, appAttest: RecordingAttestProvider(returning: nil))
+
+        _ = try await auth.registerClient(
+            email: "client@example.com",
+            password: "secret",
+            firstName: "Tori",
+            lastName: "Morales",
+            phone: "+15551234567",
+            location: ClientSignupLocation(
+                postalCode: "90210",
+                city: "Beverly Hills",
+                state: "CA",
+                countryCode: "US",
+                lat: 34.0,
+                lng: -118.0,
+                timeZoneId: "America/Los_Angeles"
+            ),
+            deviceId: "device-1"
+        )
+
+        let body = try #require(CaptureBodyURLProtocol.capturedBody)
+        let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        #expect(json["intent"] == nil)
+        #expect(json["inviteToken"] == nil)
+    }
 }

@@ -116,9 +116,14 @@ superset (adds auth + the full client surface). One screen/PR per session.
 
 **Accepted divergences (leave as-is):** camera / best-shots / frame-scrubber +
 wrap-up AI photographer-review (iOS-only, correct); membership purchase stays
-web-only (Apple IAP — iOS display-only is right); NFC card/short-code + claim
-ACCEPTANCE stay web (iOS generates claim links, web accepts); public SEO
-`/p` pro-vanity mirror stays web (iOS renders the native pro profile instead).
+web-only (Apple IAP — iOS display-only is right); NFC card/short-code stays web;
+public SEO `/p` pro-vanity mirror stays web (iOS renders the native pro profile
+instead). ~~claim ACCEPTANCE stays web~~ — **SUPERSEDED 2026-07-11:** native
+now accepts claims (`/claim/<token>` Universal Link → `ClaimView` → signup with
+intent=CLAIM_INVITE + inviteToken adopts the profile; cold self-serve
+`CLAIMABLE_HISTORY` handled in `ClientSignupView`). Backed by web
+`GET /api/v1/public/claim/[token]` (tovis-app #587) + adopt/self-serve
+(#585/#586).
 NOT accepted divergences (they're A2 build items): the public *client* profile
 `/u/[handle]` + public boards are social surfaces (looks/stats/follow), not SEO.
 

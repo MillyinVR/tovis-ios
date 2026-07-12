@@ -48,7 +48,9 @@ public final class AuthService: Sendable {
         lastName: String,
         phone: String,
         location: ClientSignupLocation,
-        deviceId: String?
+        deviceId: String?,
+        intent: String? = nil,
+        inviteToken: String? = nil
     ) async throws -> RegisterResponse {
         // Bind an App Attest attestation to this exact identity: attest over
         // SHA256("email\nphone\ntimestamp"), then send the same timestamp so the
@@ -89,7 +91,9 @@ public final class AuthService: Sendable {
                     timeZoneId: location.timeZoneId
                 ),
                 deviceId: deviceId,
-                appAttest: appAttestPayload
+                appAttest: appAttestPayload,
+                intent: intent,
+                inviteToken: inviteToken
             )
         )
         let response: RegisterResponse = try await api.request(

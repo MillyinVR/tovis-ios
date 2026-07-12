@@ -241,6 +241,30 @@ struct PublicBoardLink: Equatable {
     }
 }
 
+// MARK: - Client-claim Universal Link
+
+/// A parsed `https://<host>/claim/<token>` Universal Link — the claim link a pro
+/// texts/emails an unclaimed client. With the app installed, iOS hands the tap to
+/// `.onOpenURL`; we pull the token and present the native claim screen (which reads
+/// the booking context and routes into signup with intent=CLAIM_INVITE) instead of
+/// the web page. The host is re-checked defensively — never trust an arbitrary
+/// https URL from onOpenURL.
+struct PublicClaimLink: Equatable {
+    let token: String
+
+    init?(url: URL) {
+        guard url.scheme?.lowercased() == "https" else { return nil }
+        let host = url.host?.lowercased()
+        guard host == "tovis.app" || host == "www.tovis.app" else { return nil }
+        // Path segments minus the leading "/": ["claim", "<token>"].
+        let parts = url.pathComponents.filter { $0 != "/" }
+        guard parts.count >= 2, parts[0] == "claim" else { return nil }
+        let token = parts[1]
+        guard !token.isEmpty else { return nil }
+        self.token = token
+    }
+}
+
 // MARK: - Auth state (owns the TovisClient)
 
 @MainActor
@@ -311,6 +335,17 @@ final class SessionModel {
     /// viewer over whatever is showing (cold-launch safe, like the reset cover).
     private(set) var pendingPublicBoard: PublicBoardLink?
 
+    /// The token from a tapped client-claim Universal Link (`/claim/<token>`).
+    /// RootView presents the native claim screen over whatever is showing
+    /// (cold-launch + signed-out safe, like the reset cover).
+    private(set) var pendingClaim: PublicClaimLink?
+
+    /// Set when a plain client signup matched pro-created history and the backend
+    /// sent a claim link to the on-file contact instead of creating an account
+    /// (409 CLAIMABLE_HISTORY). The signup screen shows this as a "check your
+    /// email/text" message rather than an error. Mirrors the web check-inbox state.
+    private(set) var claimableHistoryMessage: String?
+
     /// Handle an incoming deep link / Universal Link. Password-reset + public-board
     /// links route to their native screens; the `tovis://checkout/return?…` scheme
     /// feeds the active booking screen. Anything else is ignored so stray links are
@@ -322,6 +357,10 @@ final class SessionModel {
         }
         if let board = PublicBoardLink(url: url) {
             pendingPublicBoard = board
+            return
+        }
+        if let claim = PublicClaimLink(url: url) {
+            pendingClaim = claim
             return
         }
         guard let parsed = CheckoutReturn(url: url) else { return }
@@ -337,6 +376,12 @@ final class SessionModel {
 
     /// Dismiss the native public-board viewer.
     func clearPublicBoard() { pendingPublicBoard = nil }
+
+    /// Dismiss the native claim screen.
+    func clearClaim() { pendingClaim = nil }
+
+    /// Clear the cold-claim "check your email/text" message (e.g. on retry/back).
+    func clearClaimableHistory() { claimableHistoryMessage = nil }
 
     /// The destination a tapped push asked to open. The signed-in shell observes
     /// this and routes (e.g. presents the booking detail), then clears it. Set
@@ -654,16 +699,25 @@ final class SessionModel {
     /// already texted the code, so `pendingVerificationPhone` lets that screen
     /// skip straight to code entry. Returns true so the caller can dismiss the
     /// signup flow.
+    ///
+    /// `intent`/`inviteToken` are set from the claim flow (`intent = "CLAIM_INVITE"`)
+    /// so the backend ADOPTS the pro's existing unclaimed profile. For a PLAIN
+    /// signup whose contact matches pro-created history, the backend returns
+    /// 409 CLAIMABLE_HISTORY and mails/texts a claim link instead of creating the
+    /// account — surfaced via `claimableHistoryMessage` (not an error).
     func registerClient(
         email: String,
         password: String,
         firstName: String,
         lastName: String,
         phone: String,
-        location: ClientSignupLocation
+        location: ClientSignupLocation,
+        intent: String? = nil,
+        inviteToken: String? = nil
     ) async -> Bool {
         isWorking = true
         errorMessage = nil
+        claimableHistoryMessage = nil
         defer { isWorking = false }
         do {
             let result = try await client.auth.registerClient(
@@ -673,7 +727,9 @@ final class SessionModel {
                 lastName: lastName,
                 phone: phone,
                 location: location,
-                deviceId: client.deviceId
+                deviceId: client.deviceId,
+                intent: intent,
+                inviteToken: inviteToken
             )
             currentUser = result.user
             activeRole = result.user.role
@@ -684,6 +740,12 @@ final class SessionModel {
             state = .needsVerification
             return true
         } catch let error as APIError {
+            if case let .server(status, message, code) = error,
+               status == 409, code == "CLAIMABLE_HISTORY" {
+                claimableHistoryMessage = message
+                    ?? "We found existing history for this contact. Check your email or text for a secure link to finish setting up your account."
+                return false
+            }
             errorMessage = error.userMessage
             return false
         } catch {
@@ -871,6 +933,20 @@ struct RootView: View {
             if let board = session.pendingPublicBoard {
                 NavigationStack {
                     PublicBoardView(handle: board.handle, slug: board.slug)
+                }
+            }
+        }
+        // A tapped `/claim/<token>` link opens the native claim screen over
+        // whatever is showing (works signed-out and from a cold launch), mirroring
+        // the web /claim/<token> page — read booking context, then create an
+        // account to adopt the pro-created history.
+        .fullScreenCover(isPresented: Binding(
+            get: { session.pendingClaim != nil },
+            set: { if !$0 { session.clearClaim() } }
+        )) {
+            if let claim = session.pendingClaim {
+                NavigationStack {
+                    ClaimView(token: claim.token)
                 }
             }
         }

@@ -52,6 +52,9 @@ public final class TovisClient: Sendable {
     /// The public board surface addressed by handle + slug — the native
     /// `/u/{handle}/boards/{slug}` viewer (read-only).
     public let publicBoard: PublicBoardService
+    /// The public client-claim surface addressed by token — the native
+    /// `/claim/{token}` viewer (read booking context, then adopt via signup).
+    public let claim: ClaimService
     /// PRO workspace — the live-session footer state machine. Only meaningful for
     /// a PRO acting role; CLIENT tokens 403 these endpoints.
     public let proSession: ProSessionService
@@ -158,6 +161,7 @@ public final class TovisClient: Sendable {
         self.paymentMethods = PaymentMethodsService(api: api)
         self.publicClient = PublicClientService(api: api)
         self.publicBoard = PublicBoardService(api: api)
+        self.claim = ClaimService(api: api)
         self.proSession = ProSessionService(api: api)
         self.proCalendar = ProCalendarService(api: api)
         self.proBookings = ProBookingService(api: api)

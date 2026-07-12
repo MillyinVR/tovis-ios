@@ -10,16 +10,32 @@
 import SwiftUI
 import TovisKit
 
+/// Prefill + handoff for a signup that CLAIMS pro-created history. Built by
+/// `ClaimView` from the claim link's booking context; carries the `inviteToken`
+/// the register call sends (with intent=CLAIM_INVITE) so the backend adopts the
+/// existing unclaimed profile.
+struct ClientSignupClaimContext: Equatable {
+    let inviteToken: String
+    let firstName: String
+    let lastName: String
+    let email: String
+    let phone: String
+}
+
 struct ClientSignupView: View {
     @Environment(SessionModel.self) private var session
 
     private static let passwordMinLength = 10
 
-    @State private var firstName = ""
-    @State private var lastName = ""
+    /// Non-nil when this signup is claiming pro-created history (fields prefilled;
+    /// register carries intent=CLAIM_INVITE + inviteToken). nil for a normal signup.
+    private let claimContext: ClientSignupClaimContext?
+
+    @State private var firstName: String
+    @State private var lastName: String
     @State private var zip = ""
-    @State private var phone = ""
-    @State private var email = ""
+    @State private var phone: String
+    @State private var email: String
     @State private var password = ""
     @State private var smsConsent = false
     @State private var tosAccepted = false
@@ -35,6 +51,14 @@ struct ClientSignupView: View {
 
     private let termsURL = URL(string: "https://www.tovis.app/terms")
     private let privacyURL = URL(string: "https://www.tovis.app/privacy")
+
+    init(claimContext: ClientSignupClaimContext? = nil) {
+        self.claimContext = claimContext
+        _firstName = State(initialValue: claimContext?.firstName ?? "")
+        _lastName = State(initialValue: claimContext?.lastName ?? "")
+        _phone = State(initialValue: claimContext?.phone ?? "")
+        _email = State(initialValue: claimContext?.email ?? "")
+    }
 
     var body: some View {
         ZStack {
@@ -86,6 +110,29 @@ struct ClientSignupView: View {
 
                     consentRow(isOn: $tosAccepted, text: tosLabel)
 
+                    if let claimMessage = session.claimableHistoryMessage {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Check your email or text")
+                                .font(BrandFont.body(14))
+                                .fontWeight(.semibold)
+                                .foregroundStyle(BrandColor.textPrimary)
+                            Text(claimMessage)
+                                .font(BrandFont.body(13))
+                                .foregroundStyle(BrandColor.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(BrandColor.emerald.opacity(0.12))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(BrandColor.emerald.opacity(0.35), lineWidth: 1)
+                        )
+                    }
+
                     if let message = formError ?? session.errorMessage {
                         Text(message)
                             .font(BrandFont.body(13))
@@ -104,17 +151,24 @@ struct ClientSignupView: View {
         }
         .navigationTitle("Client account")
         .navigationBarTitleDisplayMode(.inline)
-        .onDisappear { session.errorMessage = nil }
+        .onDisappear {
+            session.errorMessage = nil
+            session.clearClaimableHistory()
+        }
     }
 
     // MARK: - Sections
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Create your client account")
+            Text(claimContext != nil ? "Claim your history" : "Create your client account")
                 .font(BrandFont.display(24, .semibold))
                 .foregroundStyle(BrandColor.textPrimary)
-            Text("Find pros, book fast, and keep your beauty life organized.")
+            Text(
+                claimContext != nil
+                    ? "Create your account to attach your booking history to the right identity."
+                    : "Find pros, book fast, and keep your beauty life organized."
+            )
                 .font(BrandFont.body(14))
                 .foregroundStyle(BrandColor.textMuted)
                 .fixedSize(horizontal: false, vertical: true)
@@ -277,7 +331,9 @@ struct ClientSignupView: View {
             firstName: trimmedFirst,
             lastName: trimmedLast,
             phone: trimmedPhone,
-            location: location
+            location: location,
+            intent: claimContext != nil ? "CLAIM_INVITE" : nil,
+            inviteToken: claimContext?.inviteToken
         )
     }
 }
