@@ -59,6 +59,7 @@ final class ClaimURLProtocol: URLProtocol {
         ClaimURLProtocol.responseBody = Data("""
         {"ok":true,"state":"ready","invitedName":"Tori Morales",
          "invitedEmail":"tori@example.com","invitedPhone":"+16195551234",
+         "professionalName":"Glow Studio",
          "booking":{"serviceName":"Balayage","professionalName":"Glow Studio",
          "scheduledFor":"2026-05-01T17:00:00.000Z","timeZone":"America/Los_Angeles",
          "locationLabel":"Studio A, San Diego"}}
@@ -73,18 +74,52 @@ final class ClaimURLProtocol: URLProtocol {
         #expect(context?.invitedName == "Tori Morales")
         #expect(context?.invitedEmail == "tori@example.com")
         #expect(context?.invitedPhone == "+16195551234")
-        #expect(context?.booking.serviceName == "Balayage")
-        #expect(context?.booking.professionalName == "Glow Studio")
-        #expect(context?.booking.scheduledFor == "2026-05-01T17:00:00.000Z")
-        #expect(context?.booking.timeZone == "America/Los_Angeles")
-        #expect(context?.booking.locationLabel == "Studio A, San Diego")
+        #expect(context?.professionalName == "Glow Studio")
+        #expect(context?.booking?.serviceName == "Balayage")
+        #expect(context?.booking?.professionalName == "Glow Studio")
+        #expect(context?.booking?.scheduledFor == "2026-05-01T17:00:00.000Z")
+        #expect(context?.booking?.timeZone == "America/Los_Angeles")
+        #expect(context?.booking?.locationLabel == "Studio A, San Diego")
+    }
+
+    @Test func claimContextDecodesBooklessClaimWithPro() async throws {
+        reset()
+        // A booking-less pro-facing claim: no booking, but a pro name to head it.
+        ClaimURLProtocol.responseBody = Data("""
+        {"ok":true,"state":"ready","invitedName":"Tori Morales",
+         "invitedEmail":"tori@example.com","invitedPhone":null,
+         "professionalName":"Glow Studio","booking":null}
+        """.utf8)
+
+        let context = try await makeService().claimContext(token: "tok_bookless")
+
+        #expect(context?.state == "ready")
+        #expect(context?.invitedName == "Tori Morales")
+        #expect(context?.professionalName == "Glow Studio")
+        #expect(context?.booking == nil)
+    }
+
+    @Test func claimContextDecodesBooklessProlessClaim() async throws {
+        reset()
+        // Cold self-serve orphan: no booking AND no pro.
+        ClaimURLProtocol.responseBody = Data("""
+        {"ok":true,"state":"ready","invitedName":null,"invitedEmail":"tori@example.com",
+         "invitedPhone":null,"professionalName":null,"booking":null}
+        """.utf8)
+
+        let context = try await makeService().claimContext(token: "tok_orphan")
+
+        #expect(context?.state == "ready")
+        #expect(context?.professionalName == nil)
+        #expect(context?.booking == nil)
     }
 
     @Test func claimContextDecodesNullContactAndSchedule() async throws {
         reset()
         ClaimURLProtocol.responseBody = Data("""
         {"ok":true,"state":"revoked","invitedName":null,"invitedEmail":null,
-         "invitedPhone":null,"booking":{"serviceName":null,
+         "invitedPhone":null,"professionalName":"your professional",
+         "booking":{"serviceName":null,
          "professionalName":"your professional","scheduledFor":null,
          "timeZone":"UTC","locationLabel":null}}
         """.utf8)
@@ -93,9 +128,9 @@ final class ClaimURLProtocol: URLProtocol {
 
         #expect(context?.state == "revoked")
         #expect(context?.invitedName == nil)
-        #expect(context?.booking.serviceName == nil)
-        #expect(context?.booking.scheduledFor == nil)
-        #expect(context?.booking.professionalName == "your professional")
+        #expect(context?.booking?.serviceName == nil)
+        #expect(context?.booking?.scheduledFor == nil)
+        #expect(context?.booking?.professionalName == "your professional")
     }
 
     @Test func claimContextReturnsNilOn404() async throws {

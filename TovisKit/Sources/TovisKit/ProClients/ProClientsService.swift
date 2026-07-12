@@ -42,6 +42,18 @@ public final class ProClientsService: Sendable {
         return try await api.request("/pro/clients", method: .post, body: payload)
     }
 
+    /// POST /api/v1/pro/clients/{id}/invite → mint + send a BOOKING-LESS claim
+    /// link for an UNCLAIMED client this pro created (directory add / migration
+    /// import). Gated by ENABLE_BOOKINGLESS_CLAIM server-side (404 while off);
+    /// 404 for a non-owned/missing client; 409 when already claimed. Returns the
+    /// minted invite (raw token to share) + whether a delivery was enqueued.
+    @discardableResult
+    public func inviteToClaim(clientId: String) async throws -> ProClientInviteResponse {
+        try await api.request(
+            "/pro/clients/\(clientId)/invite", method: .post, body: Data("{}".utf8)
+        )
+    }
+
     /// GET /api/v1/pro/clients/{id}/chart → the aggregate client chart (header +
     /// safety strip + allergies + notes + history + products + reviews + feedback +
     /// photos + technical gate). 404 when the pro can't currently view the client.

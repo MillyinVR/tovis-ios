@@ -12,19 +12,26 @@ public struct ClaimContextResponse: Codable, Sendable {
     public let invitedName: String?
     public let invitedEmail: String?
     public let invitedPhone: String?
-    public let booking: ClaimContextBooking
+    /// Pro's public display name (resolved from the booking OR the invite's own
+    /// pro); nil for a pro-less claim (a cold self-serve orphan).
+    public let professionalName: String?
+    /// Booking context, or nil for a booking-less claim (a directory-created /
+    /// migration-imported client with no appointment).
+    public let booking: ClaimContextBooking?
 
     public init(
         state: String,
         invitedName: String?,
         invitedEmail: String?,
         invitedPhone: String?,
-        booking: ClaimContextBooking
+        professionalName: String?,
+        booking: ClaimContextBooking?
     ) {
         self.state = state
         self.invitedName = invitedName
         self.invitedEmail = invitedEmail
         self.invitedPhone = invitedPhone
+        self.professionalName = professionalName
         self.booking = booking
     }
 }
