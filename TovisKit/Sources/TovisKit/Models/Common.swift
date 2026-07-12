@@ -22,9 +22,13 @@ public struct AuthUser: Codable, Sendable, Identifiable, Equatable {
     public let role: Role
 }
 
-/// Shape of a failed JSON response: `{ ok: false, error, code? }`
-/// (`jsonFail` in app/api/_utils/responses.ts).
+/// Shape of a failed JSON response: `{ ok: false, error, code?, ... }`
+/// (`jsonFail` in app/api/_utils/responses.ts). Extra top-level fields some
+/// endpoints attach are decoded here when a caller needs them — e.g. the
+/// self-serve-claim 409 carries `maskedDestination` (a "we sent a link to
+/// t***@x.com" hint), surfaced via `APIError.serverDetails`.
 struct APIErrorBody: Decodable {
     let error: String?
     let code: String?
+    let maskedDestination: String?
 }

@@ -96,11 +96,15 @@ public final class AuthService: Sendable {
                 inviteToken: inviteToken
             )
         )
+        // captureErrorDetails: surface the self-serve-claim 409's `maskedDestination`
+        // (dropped by the plain `.server` path) so the signup screen can show a
+        // "we sent a link to t***@x.com" hint. Only the register call opts in.
         let response: RegisterResponse = try await api.request(
             "/auth/register",
             method: .post,
             body: payload,
-            authenticated: false
+            authenticated: false,
+            captureErrorDetails: true
         )
         await tokenStore.save(response.token)
         return response
