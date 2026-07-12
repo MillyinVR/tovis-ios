@@ -38,6 +38,9 @@ struct BookingFlowView: View {
     @State private var selectedDate = Date()
     @State private var slots: [String] = []
     @State private var loadingSlots = false
+    /// Non-nil when the availability fetch itself failed (vs. a genuinely empty
+    /// day) — surfaced with a retry instead of a misleading "no openings".
+    @State private var slotError: String?
     @State private var selectedSlot: String?
     @State private var booking = false
     @State private var bookError: String?
@@ -163,6 +166,15 @@ struct BookingFlowView: View {
                 BrandSection(title: "Pick a time", trailing: timeZoneLabel(boot)) {
                     if loadingSlots {
                         ProgressView().tint(BrandColor.accent).frame(maxWidth: .infinity).padding(.vertical, 20)
+                    } else if let slotError {
+                        // A failed fetch is not an empty day — say so, and offer a retry.
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(slotError)
+                                .font(BrandFont.body(13)).foregroundStyle(BrandColor.ember)
+                            Button("Try again") { Task { await loadSlots(boot) } }
+                                .font(BrandFont.body(13, .semibold)).tint(BrandColor.accent)
+                        }
+                        .padding(.vertical, 8)
                     } else if slots.isEmpty {
                         Text("No openings on this day. Try another date.")
                             .font(BrandFont.body(13)).foregroundStyle(BrandColor.textMuted)
@@ -418,6 +430,7 @@ struct BookingFlowView: View {
 
     private func loadSlots(_ boot: AvailabilityBootstrap) async {
         loadingSlots = true
+        slotError = nil
         selectedSlot = nil
         let date = ymdString(selectedDate, tz: boot.timeZone)
         do {
@@ -427,8 +440,12 @@ struct BookingFlowView: View {
                 durationMinutes: duration, date: date, locationType: mode
             )
             slots = day.slots
+        } catch let error as APIError {
+            slots = []
+            slotError = error.userMessage
         } catch {
             slots = []
+            slotError = "Couldn’t load open times. Check your connection and try again."
         }
         // One-time: land on the freed-up slot if it's still bookable on this day.
         if !didApplyPreselect {
