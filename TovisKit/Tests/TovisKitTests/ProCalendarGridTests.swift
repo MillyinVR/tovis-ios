@@ -131,4 +131,36 @@ struct ProCalendarGridTests {
         #expect(ProCalendarGrid.snap(608, step: 15) == 615)
         #expect(ProCalendarGrid.minutesSinceMidnight(noon(2026, 7, 15), zone) == 720)
     }
+
+    // ── Passive double-book highlight ──
+
+    @Test func overlappingIntervalIdsFlagsOnlyTrueOverlaps() {
+        // a 10:00–11:00, b 10:30–11:30 (overlap), c 12:00–13:00 (clear).
+        let ids = ProCalendarGrid.overlappingIntervalIds([
+            (id: "a", start: 600, end: 660),
+            (id: "b", start: 630, end: 690),
+            (id: "c", start: 720, end: 780),
+        ])
+        #expect(ids == ["a", "b"])
+    }
+
+    @Test func adjacentIntervalsDoNotOverlap() {
+        // Back-to-back (11:00 end == 11:00 start) is NOT a conflict.
+        let ids = ProCalendarGrid.overlappingIntervalIds([
+            (id: "a", start: 600, end: 660),
+            (id: "b", start: 660, end: 720),
+        ])
+        #expect(ids.isEmpty)
+    }
+
+    @Test func overlappingIntervalIdsHandlesNoneAndTriples() {
+        #expect(ProCalendarGrid.overlappingIntervalIds([]).isEmpty)
+        // Three mutually overlapping intervals all flag.
+        let ids = ProCalendarGrid.overlappingIntervalIds([
+            (id: "a", start: 600, end: 720),
+            (id: "b", start: 630, end: 700),
+            (id: "c", start: 690, end: 760),
+        ])
+        #expect(ids == ["a", "b", "c"])
+    }
 }

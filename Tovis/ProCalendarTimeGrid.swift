@@ -237,6 +237,9 @@ struct ProCalendarTimeGrid: View {
             return (event, window.start, window.end)
         }
 
+        // Passive double-book signal: which bookings overlap another booking today.
+        let conflictIds = conflictingBookingIds(layouts)
+
         return ZStack(alignment: .topLeading) {
             // Full-height spacer establishes the ZStack's intrinsic height so the
             // .offset(y:) children measure from the TOP. Without it the ZStack has
@@ -268,10 +271,24 @@ struct ProCalendarTimeGrid: View {
             // overlay on the day-columns HStack — see `body` — so in week view it
             // reads as a single line spanning all seven days, matching web.)
             ForEach(layouts, id: \.event.id) { item in
-                eventTile(item.event, day: day, startMinutes: item.start, endMinutes: item.end)
+                eventTile(item.event, day: day, startMinutes: item.start, endMinutes: item.end,
+                          conflict: conflictIds.contains(item.event.id))
             }
         }
         .background(day.isToday ? BrandColor.accent.opacity(0.04) : Color.clear)
+    }
+
+    /// Booking ids on a day whose time window overlaps another booking's — the
+    /// passive double-book signal. Blocks are excluded (the pro's own time isn't a
+    /// client conflict); uses the laid-out [start, end) minutes, matching what's
+    /// drawn. The server still allows the overlap; this only surfaces it.
+    private func conflictingBookingIds(
+        _ layouts: [(event: ProCalendarEvent, start: Int, end: Int)]
+    ) -> Set<String> {
+        ProCalendarGrid.overlappingIntervalIds(
+            layouts
+                .filter { $0.event.isBooking }
+                .map { (id: $0.event.id, start: $0.start, end: $0.end) })
     }
 
     /// Maps a tap's y-position in a day column to the instant it represents:
@@ -290,7 +307,8 @@ struct ProCalendarTimeGrid: View {
 
     @ViewBuilder
     private func eventTile(
-        _ event: ProCalendarEvent, day: ProMonthCell, startMinutes: Int, endMinutes: Int
+        _ event: ProCalendarEvent, day: ProMonthCell, startMinutes: Int, endMinutes: Int,
+        conflict: Bool
     ) -> some View {
         let tone = event.isBlock ? BrandColor.textMuted : statusTone(event.status)
         let duration = max(stepMinutes, endMinutes - startMinutes)
@@ -317,7 +335,8 @@ struct ProCalendarTimeGrid: View {
             heightPx: heightPx,
             timeText: showProposedTime ? minutesLabel(effectiveStart) : timeLabel(event.startsAt),
             lifted: isActive,
-            pending: isPending
+            pending: isPending,
+            conflict: conflict
         )
         .padding(.horizontal, 2)
         .offset(y: topPx)
@@ -327,7 +346,7 @@ struct ProCalendarTimeGrid: View {
             if event.isBooking { onTapBooking(event.id) } else { onTapBlock(event) }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(tileAccessibilityLabel(event))
+        .accessibilityLabel(tileAccessibilityLabel(event, conflict: conflict))
         .accessibilityAddTraits(.isButton)
         .animation(.easeOut(duration: 0.16), value: isPending)
 
@@ -344,7 +363,8 @@ struct ProCalendarTimeGrid: View {
     }
 
     /// The tile's visual body (shared by draggable + static tiles). `lifted` adds a
-    /// shadow/scale while dragging; `pending` outlines a dropped-but-unconfirmed move.
+    /// shadow/scale while dragging; `pending` outlines a dropped-but-unconfirmed move;
+    /// `conflict` is the passive double-book signal (amber ring + corner glyph).
     private func tileBody(
         event: ProCalendarEvent,
         tone: Color,
@@ -352,9 +372,16 @@ struct ProCalendarTimeGrid: View {
         heightPx: CGFloat,
         timeText: String,
         lifted: Bool,
-        pending: Bool
+        pending: Bool,
+        conflict: Bool
     ) -> some View {
-        HStack(spacing: 0) {
+        // Drag states own the ring; otherwise a conflict paints it amber.
+        let ringColor: Color = (lifted || pending)
+            ? BrandColor.accent
+            : (conflict ? BrandColor.amber : .clear)
+        let ringWidth: CGFloat = (lifted || pending) ? 1.5 : (conflict ? 1 : 0)
+
+        return HStack(spacing: 0) {
             Rectangle().fill(tone).frame(width: 3)
             VStack(alignment: .leading, spacing: 1) {
                 Text(event.isBlock ? (event.title.isEmpty ? "Blocked" : event.title) : event.clientName)
@@ -378,8 +405,18 @@ struct ProCalendarTimeGrid: View {
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .strokeBorder(BrandColor.accent, lineWidth: (lifted || pending) ? 1.5 : 0)
+                .strokeBorder(ringColor, lineWidth: ringWidth)
         )
+        // A small amber glyph marks a double-booked tile (hidden while it's the one
+        // being dragged, so the drag ring reads cleanly).
+        .overlay(alignment: .topTrailing) {
+            if conflict && !lifted {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(BrandColor.amber)
+                    .padding(3)
+            }
+        }
         .shadow(color: lifted ? BrandColor.accent.opacity(0.35) : .clear,
                 radius: lifted ? 8 : 0, y: lifted ? 3 : 0)
         .scaleEffect(lifted ? 1.02 : 1.0)
@@ -460,11 +497,12 @@ struct ProCalendarTimeGrid: View {
         ProCalendarGrid.minuteOfDayLabel(minutes)
     }
 
-    private func tileAccessibilityLabel(_ event: ProCalendarEvent) -> String {
+    private func tileAccessibilityLabel(_ event: ProCalendarEvent, conflict: Bool) -> String {
         let name = event.isBlock
             ? (event.title.isEmpty ? "Blocked time" : event.title)
             : event.clientName
-        return "\(name), \(timeLabel(event.startsAt))"
+        let base = "\(name), \(timeLabel(event.startsAt))"
+        return conflict ? "\(base), overlaps another appointment" : base
     }
 
     // MARK: - Formatting

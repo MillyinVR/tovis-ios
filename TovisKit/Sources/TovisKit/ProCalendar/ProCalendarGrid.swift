@@ -243,6 +243,25 @@ public enum ProCalendarGrid {
         return "\(h12):\(String(format: "%02d", m))\(h24 < 12 ? "am" : "pm")"
     }
 
+    /// The ids among `[ (id, start, end) ]` intervals that overlap at least one other
+    /// — the calendar's passive double-book highlight. Half-open [start, end): two
+    /// appointments that merely touch (one's end == the other's start) do NOT count.
+    public static func overlappingIntervalIds(
+        _ intervals: [(id: String, start: Int, end: Int)]
+    ) -> Set<String> {
+        var ids: Set<String> = []
+        for i in intervals.indices {
+            for j in intervals.indices where j > i {
+                let a = intervals[i], b = intervals[j]
+                if a.start < b.end && b.start < a.end {
+                    ids.insert(a.id)
+                    ids.insert(b.id)
+                }
+            }
+        }
+        return ids
+    }
+
     /// The minutes-since-midnight `[start, end]` window an event occupies on
     /// `dayYmd` (the day cell's local key), TZ-aware with multi-day spillover and
     /// step snapping — the native port of `buildEventLayout`. Returns nil for an
