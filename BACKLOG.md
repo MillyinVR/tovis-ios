@@ -106,6 +106,18 @@ Source: `docs/PRO-WEB-PARITY.md` (all 5 pages parity-complete; these are the tai
     - [ ] **Drag blocks** — blocks stay tap-to-edit today; web drags them too via PATCH `/pro/calendar/blocked` (a different endpoint from booking reschedule).
     - [ ] **Drag haptics** — lift/drop sensory feedback (`.sensoryFeedback`), omitted from v1 to keep the gesture minimal.
 - [ ] Client card-on-file (needs the Stripe iOS SDK).
+- [ ] **Looks feed badge pill** (deferred parity with web tovis-app
+  `feat/algo-badge-engine`, personalization spec §5): `GET /api/v1/looks` items
+  now carry an optional `badge: { kind, label, tone } | null` — a server-computed
+  live-data badge ("Booking fast" · "N bookings in 30 days" · "% of clients
+  rebook" · "New to {brand}" · "Booked N× this week" · "42 days until your
+  wedding" · "About N miles away"), one per card, already commitment-tier-guarded
+  and holdout-sampled server-side. iOS decoding ignores the unknown key today, so
+  nothing breaks. Parity = (1) decode the field in TovisKit's feed DTO and render
+  a pill on the feed card (label is pre-composed — render verbatim, map `tone`
+  accent/info/success/warn/neutral onto the token palette); (2) optionally send
+  `viewerLat`/`viewerLng` query params (same location the availability drawer
+  uses) to light up the distance badge. No write path; server does all selection.
 - [ ] **ACCOUNT_EXISTS log-in bridge on client signup** (deferred parity with web
   tovis-app #593 / `tovis-app §27 C1`): when signup hits "account already exists,"
   web now offers a "log in to continue" link prefilled with the typed contact;
