@@ -267,6 +267,21 @@ public enum ProCalendarGrid {
         return cal.date(byAdding: .minute, value: minutes, to: dayStart)
     }
 
+    /// Which day column a horizontal position falls in — the week-view cross-day
+    /// drop target. `columns` are the day keys with their global x-extents (min
+    /// inclusive, max exclusive), in left-to-right order; returns the key whose band
+    /// contains `x`, or nil when `x` is left of the first / right of the last column
+    /// (the caller then keeps the tile on its original day). Half-open bands so a
+    /// shared divider pixel resolves to exactly one column.
+    public static func dayColumnForX(
+        _ x: Double, columns: [(key: String, minX: Double, maxX: Double)]
+    ) -> String? {
+        for column in columns where x >= column.minX && x < column.maxX {
+            return column.key
+        }
+        return nil
+    }
+
     /// `h:mmam/pm` for a minutes-since-midnight value — the live drag / pending-move
     /// tile label (mirrors the now-line's `formatNowLabel`).
     public static func minuteOfDayLabel(_ minutes: Int) -> String {
