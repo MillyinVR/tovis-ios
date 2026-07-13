@@ -177,6 +177,11 @@ public enum ProCalendarGrid {
 
     public static let minutesPerDay = 24 * 60
 
+    /// The longest a single appointment can be resized to — the web `MAX_DURATION`
+    /// (12h). A bottom-edge resize can't stretch a tile past this even when the day
+    /// still has room below it.
+    public static let maxDurationMinutes = 12 * 60
+
     /// Parse a backend ISO-8601 instant (with or without fractional seconds).
     static func parseISO(_ value: String) -> Date? {
         let withFraction = ISO8601DateFormatter()
@@ -221,6 +226,34 @@ public enum ProCalendarGrid {
         let deltaMinutes = Int((translationPoints / px).rounded())
         let maxStart = max(0, minutesPerDay - durationMinutes)
         return min(snap(originalStartMinutes + deltaMinutes, step: stepMinutes), maxStart)
+    }
+
+    /// Where a resized booking's BOTTOM edge lands: the start stays fixed and only
+    /// the end moves. Convert the vertical drag translation (points) to minutes at
+    /// `pxPerMinute`, add it to the tile's original end, snap the *end* to
+    /// `stepMinutes`, then take the new duration as `snappedEnd - startMinutes` and
+    /// clamp it to `[stepMinutes, min(maxDurationMinutes, 1440 - startMinutes)]` so
+    /// the tile keeps at least one step of height and never spills past midnight.
+    /// Pure so the resized length is unit-testable without driving the gesture
+    /// (mirrors the web `resizeDurationFromPointer` — a drag delta rather than an
+    /// absolute pointer, matching `draggedStartMinutes`).
+    public static func resizedDurationMinutes(
+        originalStartMinutes: Int,
+        originalDurationMinutes: Int,
+        translationPoints: Double,
+        pxPerMinute: Double,
+        stepMinutes: Int,
+        maxDurationMinutes: Int = ProCalendarGrid.maxDurationMinutes
+    ) -> Int {
+        let px = pxPerMinute > 0 ? pxPerMinute : 1
+        let step = max(1, stepMinutes)
+        let deltaMinutes = Int((translationPoints / px).rounded())
+        let originalEnd = originalStartMinutes + originalDurationMinutes
+        let snappedEnd = Int((Double(originalEnd + deltaMinutes) / Double(step)).rounded()) * step
+        let rawDuration = snappedEnd - originalStartMinutes
+        let dayCeiling = max(step, minutesPerDay - originalStartMinutes)
+        let ceiling = min(max(step, maxDurationMinutes), dayCeiling)
+        return max(step, min(rawDuration, ceiling))
     }
 
     /// The instant `minutes` past a day's local midnight (`dayStart` = the UTC
