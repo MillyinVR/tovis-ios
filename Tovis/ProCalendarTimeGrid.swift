@@ -14,8 +14,9 @@
 // override "save it anyway?" retry as the reschedule form. The long-press arms
 // the drag so the enclosing ScrollView doesn't swallow it; a plain tap still
 // opens the detail. In week view a drag can also land in a DIFFERENT day column
-// (x-hit-testing the captured column frames), moving the booking across days at
-// the same dropped time. (Scope: bookings only — blocks stay tap-to-edit.)
+// (x-hit-testing the captured column frames), moving the event across days at the
+// same dropped time. Blocks (the pro's own time) drag too — move + resize route to
+// PATCH /pro/calendar/blocked (a different endpoint), branched in the parent.
 import Combine
 import SwiftUI
 import TovisKit
@@ -442,7 +443,10 @@ struct ProCalendarTimeGrid: View {
     ) -> some View {
         let tone = event.isBlock ? BrandColor.textMuted : statusTone(event.status)
         let duration = max(stepMinutes, endMinutes - startMinutes)
-        let draggable = event.isBooking && isReschedulable(event.status)
+        // Bookings drag only while reschedulable; blocks (the pro's own time) always
+        // drag — move + resize route to /pro/calendar/blocked instead of the booking
+        // endpoint (branched in ProCalendarView.submitChange).
+        let draggable = (event.isBooking && isReschedulable(event.status)) || event.isBlock
         // Gate the resize handle on the tile's LAID-OUT height (not the live one),
         // so it stays mounted through a shrink and never tears down the in-flight
         // gesture; only tall-enough tiles get a bottom grab zone.
