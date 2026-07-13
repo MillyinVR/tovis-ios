@@ -66,6 +66,65 @@ struct ProCalendarDragTests {
             durationMinutes: 60, stepMinutes: 15) == 630)
     }
 
+    // ── resize (bottom-edge drag → new duration) ──
+
+    /// Resize a tile at `start` (minutes) with `duration` by dragging its bottom
+    /// edge `points` vertically; the start stays fixed, only the end/duration moves.
+    private func resized(from start: Int, duration: Int, drag points: Double) -> Int {
+        ProCalendarGrid.resizedDurationMinutes(
+            originalStartMinutes: start,
+            originalDurationMinutes: duration,
+            translationPoints: points,
+            pxPerMinute: px,
+            stepMinutes: step)
+    }
+
+    @Test func dragBottomDownLengthensByOneStep() {
+        // 10:00–11:00 (60m); drag the bottom +22.5pt (15 min) → 75 min.
+        #expect(resized(from: 600, duration: 60, drag: 22.5) == 75)
+    }
+
+    @Test func dragBottomUpShortens() {
+        // 10:00–11:30 (90m); drag the bottom -45pt (-30 min) → 60 min.
+        #expect(resized(from: 600, duration: 90, drag: -45) == 60)
+    }
+
+    @Test func resizeSubStepDragSnapsToNearestStep() {
+        // ~6.7 min rounds to 0 steps (no change); ~8 min rounds up one step.
+        #expect(resized(from: 600, duration: 60, drag: 10) == 60)
+        #expect(resized(from: 600, duration: 60, drag: 12) == 75)
+    }
+
+    @Test func resizeOffGridEndSnapsToTheGrid() {
+        // An off-grid end (10:00 + 67m = 11:07) with no drag snaps its end to the
+        // 15-min grid (11:00) → a clean 60-min duration.
+        #expect(resized(from: 600, duration: 67, drag: 0) == 60)
+    }
+
+    @Test func resizeClampsToMinimumOneStep() {
+        // Dragging the bottom far above the start can't invert the tile — it holds
+        // at one step (15 min).
+        #expect(resized(from: 600, duration: 90, drag: -10_000) == 15)
+    }
+
+    @Test func resizeClampsSoDurationFitsBeforeMidnight() {
+        // A tile starting 23:00 (1380) can't stretch past midnight: max 60 min.
+        #expect(resized(from: 1380, duration: 30, drag: 10_000) == 60)
+    }
+
+    @Test func resizeClampsToMaxDuration() {
+        // From midnight the day has 24h of room, but a single appointment caps at
+        // the 12h `maxDurationMinutes` (720).
+        #expect(resized(from: 0, duration: 60, drag: 100_000) == 720)
+    }
+
+    @Test func resizeZeroPxPerMinuteDoesNotCrash() {
+        // Degenerate scale falls back to 1 px/min, never divides by zero.
+        #expect(ProCalendarGrid.resizedDurationMinutes(
+            originalStartMinutes: 600, originalDurationMinutes: 60,
+            translationPoints: 30, pxPerMinute: 0, stepMinutes: 15) == 90)
+    }
+
     // ── minutes → instant ──
 
     @Test func instantRoundTripsWithinTheDay() {
