@@ -41,6 +41,31 @@ private struct CalendarDragState: Equatable {
     var currentStartMinutes: Int
 }
 
+/// Drag-to-reschedule haptics, factored out of `ProCalendarTimeGrid.body` (three
+/// inline `.sensoryFeedback` closures pushed the body past the type-checker's
+/// complexity limit). Fires a firm tap when a tile lifts, a light selection tick
+/// on each 15-min snap while dragging, and a solid tap when it drops.
+private struct DragHaptics: ViewModifier {
+    let liftedId: String?
+    let snappedMinutes: Int?
+    let droppedId: String?
+
+    func body(content: Content) -> some View {
+        content
+            .sensoryFeedback(trigger: liftedId) { (old: String?, new: String?) -> SensoryFeedback? in
+                (old == nil && new != nil) ? .impact(flexibility: .rigid) : nil
+            }
+            .sensoryFeedback(trigger: snappedMinutes) { (old: Int?, new: Int?) -> SensoryFeedback? in
+                // Both non-nil → an in-drag step change; nil→value is the lift (skip).
+                guard let old, let new, old != new else { return nil }
+                return .selection
+            }
+            .sensoryFeedback(trigger: droppedId) { (old: String?, new: String?) -> SensoryFeedback? in
+                (new != nil && old != new) ? .impact(flexibility: .solid) : nil
+            }
+    }
+}
+
 struct ProCalendarTimeGrid: View {
     let view: ProCalendarViewMode          // .day or .week
     let currentDate: Date
@@ -81,65 +106,71 @@ struct ProCalendarTimeGrid: View {
             view: view, reference: currentDate, timeZone: timeZone, today: Date())
     }
 
+    /// The bounded, internally-scrolling 24h timeline (day headers stay pinned
+    /// above it). Extracted from `body` so the outer chain stays type-checkable.
+    private var timeline: some View {
+        ScrollView(.vertical, showsIndicators: true) {
+            VStack(spacing: 0) {
+                ZStack(alignment: .topLeading) {
+                    // Real-layout anchor ladder: one cell per hour at its true
+                    // height. `scrollPosition(id:)` binds the top-most cell, so
+                    // these are the scroll targets (the visual grid uses .offset(),
+                    // which can't be targeted directly).
+                    VStack(spacing: 0) {
+                        ForEach(0..<24, id: \.self) { hour in
+                            Color.clear
+                                .frame(height: CGFloat(60) * pxPerMinute)
+                                .id(hour)
+                        }
+                    }
+                    .scrollTargetLayout()
+
+                    HStack(alignment: .top, spacing: 0) {
+                        timeGutter
+                        ForEach(days) { day in
+                            dayColumn(day)
+                            if day.id != days.last?.id {
+                                Rectangle()
+                                    .fill(BrandColor.textMuted.opacity(0.12))
+                                    .frame(width: 1)
+                            }
+                        }
+                    }
+                    .frame(height: totalHeight)
+                    // Now-line spans the day columns (inset past the gutter) so in
+                    // week view it reads across all seven days, like web. Shown
+                    // whenever today is in the visible range; labeled + live-ticking.
+                    .overlay(alignment: .topLeading) {
+                        if days.contains(where: { $0.isToday }) {
+                            ProCalendarNowLine(timeZone: timeZone, pxPerMinute: pxPerMinute)
+                                .padding(.leading, gutterWidth)
+                                .allowsHitTesting(false)
+                        }
+                    }
+                }
+                // Trailing room so a midday hour can sit at the very top.
+                Color.clear.frame(height: 640)
+            }
+        }
+        .scrollPosition(id: $scrolledHour, anchor: .top)
+        // While a tile is lifted, the ScrollView must not pan — otherwise it
+        // re-claims the finger's movement mid-drag and cancels the move.
+        .scrollDisabled(activeDrag != nil)
+        .onAppear { setNowScroll() }
+        .onChange(of: scrollKey) { setNowScroll() }
+        // Re-snap to "now" once the collapse/expand height change settles.
+        .onChange(of: collapseToggle) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { setNowScroll() }
+        }
+    }
+
     var body: some View {
         // A bounded, internally-scrolling timeline (the day headers stay pinned
         // above it). Opens scrolled to the current hour so a pro lands on "now",
         // while the page above (stats/controls/etc.) stays visible.
         VStack(spacing: 0) {
             headerRow
-            ScrollView(.vertical, showsIndicators: true) {
-                VStack(spacing: 0) {
-                    ZStack(alignment: .topLeading) {
-                        // Real-layout anchor ladder: one cell per hour at its true
-                        // height. `scrollPosition(id:)` binds the top-most cell, so
-                        // these are the scroll targets (the visual grid uses .offset(),
-                        // which can't be targeted directly).
-                        VStack(spacing: 0) {
-                            ForEach(0..<24, id: \.self) { hour in
-                                Color.clear
-                                    .frame(height: CGFloat(60) * pxPerMinute)
-                                    .id(hour)
-                            }
-                        }
-                        .scrollTargetLayout()
-
-                        HStack(alignment: .top, spacing: 0) {
-                            timeGutter
-                            ForEach(days) { day in
-                                dayColumn(day)
-                                if day.id != days.last?.id {
-                                    Rectangle()
-                                        .fill(BrandColor.textMuted.opacity(0.12))
-                                        .frame(width: 1)
-                                }
-                            }
-                        }
-                        .frame(height: totalHeight)
-                        // Now-line spans the day columns (inset past the gutter) so in
-                        // week view it reads across all seven days, like web. Shown
-                        // whenever today is in the visible range; labeled + live-ticking.
-                        .overlay(alignment: .topLeading) {
-                            if days.contains(where: { $0.isToday }) {
-                                ProCalendarNowLine(timeZone: timeZone, pxPerMinute: pxPerMinute)
-                                    .padding(.leading, gutterWidth)
-                                    .allowsHitTesting(false)
-                            }
-                        }
-                    }
-                    // Trailing room so a midday hour can sit at the very top.
-                    Color.clear.frame(height: 640)
-                }
-            }
-            .scrollPosition(id: $scrolledHour, anchor: .top)
-            // While a tile is lifted, the ScrollView must not pan — otherwise it
-            // re-claims the finger's movement mid-drag and cancels the move.
-            .scrollDisabled(activeDrag != nil)
-            .onAppear { setNowScroll() }
-            .onChange(of: scrollKey) { setNowScroll() }
-            // Re-snap to "now" once the collapse/expand height change settles.
-            .onChange(of: collapseToggle) {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { setNowScroll() }
-            }
+            timeline
         }
         .background(BrandColor.bgPrimary)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -147,6 +178,13 @@ struct ProCalendarTimeGrid: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(BrandColor.textMuted.opacity(0.12), lineWidth: 1)
         )
+        // Drag haptics (extracted to a ViewModifier to keep `body` type-checkable):
+        // a firm tap on lift, a light tick on each 15-min snap, a solid tap on drop.
+        .modifier(DragHaptics(
+            liftedId: activeDrag?.eventId,
+            snappedMinutes: activeDrag?.currentStartMinutes,
+            droppedId: pendingMove?.id
+        ))
     }
 
     /// Pins the timeline's top to the current hour (or 8am when today isn't in
