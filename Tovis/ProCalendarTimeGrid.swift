@@ -13,8 +13,9 @@
 // `/pro/bookings/{id}` via `ProBookingService.reschedule`, reusing the same
 // override "save it anyway?" retry as the reschedule form. The long-press arms
 // the drag so the enclosing ScrollView doesn't swallow it; a plain tap still
-// opens the detail. (Scope: bookings only — blocks stay tap-to-edit — and
-// time-only within a day column; cross-day week drag is a follow-up.)
+// opens the detail. In week view a drag can also land in a DIFFERENT day column
+// (x-hit-testing the captured column frames), moving the booking across days at
+// the same dropped time. (Scope: bookings only — blocks stay tap-to-edit.)
 import Combine
 import SwiftUI
 import TovisKit
@@ -62,6 +63,16 @@ private struct CalendarDragState: Equatable {
 private struct CalendarResizeState: Equatable {
     let eventId: String
     var currentDurationMinutes: Int
+}
+
+/// Collects each day column's global frame (keyed by its `dayYmd`) so a week-view
+/// drag can resolve which day column the finger released over (x-hit-testing for
+/// cross-day moves). X-extents are scroll-invariant; only vertical scroll shifts.
+private struct DayColumnFramesKey: PreferenceKey {
+    static var defaultValue: [String: CGRect] { [:] }
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue()) { _, new in new }
+    }
 }
 
 /// Drag-to-reschedule haptics, factored out of `ProCalendarTimeGrid.body` (three
@@ -126,6 +137,10 @@ struct ProCalendarTimeGrid: View {
     /// The tile currently being bottom-edge resized (nil when not resizing).
     @State private var activeResize: CalendarResizeState?
 
+    /// Each visible day column's global frame (keyed by `dayYmd`) — drives cross-day
+    /// drop resolution in week view (which column the drag released over).
+    @State private var dayColumnFrames: [String: CGRect] = [:]
+
     // Web parity: PX_PER_MINUTE = 1.5 → a 24h day is 2160pt tall.
     private let pxPerMinute: CGFloat = 1.5
     private let stepMinutes = 15
@@ -178,6 +193,9 @@ struct ProCalendarTimeGrid: View {
                                 .allowsHitTesting(false)
                         }
                     }
+                    // Collect the day columns' global x-extents so a week-view drag
+                    // can resolve which column it released over (cross-day move).
+                    .onPreferenceChange(DayColumnFramesKey.self) { dayColumnFrames = $0 }
                 }
                 // Trailing room so a midday hour can sit at the very top.
                 Color.clear.frame(height: 640)
@@ -383,6 +401,8 @@ struct ProCalendarTimeGrid: View {
                               colWidth: colWidth, colX: colWidth * CGFloat(column))
                 }
             }
+            // Publish this column's global x-extent for cross-day drop resolution.
+            .preference(key: DayColumnFramesKey.self, value: [day.dayYmd: geo.frame(in: .global)])
         }
         .frame(height: totalHeight)
         .background(day.isToday ? BrandColor.accent.opacity(0.04) : Color.clear)
@@ -600,12 +620,34 @@ struct ProCalendarTimeGrid: View {
                 guard case let .second(_, drag) = value else { activeDrag = nil; return }
                 let snapped = droppedStartMinutes(
                     from: startMinutes, drag: drag, duration: durationMinutes)
+                // In week view the tile can land in a different day column — resolve
+                // it from the release x; day view keeps the single column.
+                let targetDay = drag.map { dropTargetDay(globalX: $0.location.x, fallback: day) } ?? day
                 activeDrag = nil
-                // No net change (or an un-representable instant) → nothing to confirm.
-                guard snapped != startMinutes, let newStart = slotDate(day: day, minutes: snapped) else { return }
+                let sameDay = targetDay.dayYmd == day.dayYmd
+                // No net change (same day + same time, or an un-representable instant)
+                // → nothing to confirm.
+                guard !(sameDay && snapped == startMinutes),
+                      let newStart = slotDate(day: targetDay, minutes: snapped) else { return }
                 pendingMove = PendingCalendarMove(
-                    event: event, newStart: newStart, dayYmd: day.dayYmd, newStartMinutes: snapped)
+                    event: event, newStart: newStart, dayYmd: targetDay.dayYmd, newStartMinutes: snapped)
             }
+    }
+
+    /// The day column a week-view drag released over (x-hit-testing the captured
+    /// column frames), or `fallback` when the release is outside all columns / in
+    /// day view. The vertical drop time is column-independent, so a cross-day drop
+    /// keeps the same time-of-day on the new day.
+    private func dropTargetDay(globalX: CGFloat, fallback: ProMonthCell) -> ProMonthCell {
+        guard view == .week else { return fallback }
+        let columns = days.compactMap { cell -> (key: String, minX: Double, maxX: Double)? in
+            guard let frame = dayColumnFrames[cell.dayYmd] else { return nil }
+            return (key: cell.dayYmd, minX: Double(frame.minX), maxX: Double(frame.maxX))
+        }
+        guard let key = ProCalendarGrid.dayColumnForX(Double(globalX), columns: columns),
+              let match = days.first(where: { $0.dayYmd == key })
+        else { return fallback }
+        return match
     }
 
     /// The snapped, clamped minutes-since-midnight a drag drops on (pure math in

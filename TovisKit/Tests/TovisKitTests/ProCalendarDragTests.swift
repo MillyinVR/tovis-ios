@@ -125,6 +125,41 @@ struct ProCalendarDragTests {
             translationPoints: 30, pxPerMinute: 0, stepMinutes: 15) == 90)
     }
 
+    // ── cross-day drop target (x → day column) ──
+
+    private let weekColumns: [(key: String, minX: Double, maxX: Double)] = [
+        (key: "2026-07-13", minX: 52, maxX: 100),   // Mon (past the 52pt gutter)
+        (key: "2026-07-14", minX: 100, maxX: 148),  // Tue
+        (key: "2026-07-15", minX: 148, maxX: 196),  // Wed
+        (key: "2026-07-16", minX: 196, maxX: 244),  // Thu
+    ]
+
+    @Test func dropXPicksTheColumnItLandsIn() {
+        #expect(ProCalendarGrid.dayColumnForX(120, columns: weekColumns) == "2026-07-14")
+        #expect(ProCalendarGrid.dayColumnForX(200, columns: weekColumns) == "2026-07-16")
+    }
+
+    @Test func dropXOnBandStartIsInclusiveEndIsExclusive() {
+        // A shared divider pixel (a column's maxX == the next's minX) resolves to the
+        // right-hand column, never both.
+        #expect(ProCalendarGrid.dayColumnForX(148, columns: weekColumns) == "2026-07-15")
+        #expect(ProCalendarGrid.dayColumnForX(52, columns: weekColumns) == "2026-07-13")
+    }
+
+    @Test func dropXOutsideAllColumnsIsNil() {
+        // Left of the first column (in the gutter) or right of the last → nil, so the
+        // caller keeps the tile on its original day.
+        #expect(ProCalendarGrid.dayColumnForX(10, columns: weekColumns) == nil)
+        #expect(ProCalendarGrid.dayColumnForX(300, columns: weekColumns) == nil)
+    }
+
+    @Test func dropXSingleColumnDayView() {
+        // Day view has one column; an in-band x returns it, an out-of-band x is nil.
+        let one: [(key: String, minX: Double, maxX: Double)] = [(key: "2026-07-15", minX: 52, maxX: 393)]
+        #expect(ProCalendarGrid.dayColumnForX(200, columns: one) == "2026-07-15")
+        #expect(ProCalendarGrid.dayColumnForX(20, columns: one) == nil)
+    }
+
     // ── minutes → instant ──
 
     @Test func instantRoundTripsWithinTheDay() {
