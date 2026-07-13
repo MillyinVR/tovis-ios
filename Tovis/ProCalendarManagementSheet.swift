@@ -58,6 +58,15 @@ struct ProCalendarManagementSheet: View {
     @State private var chartTarget: ChartTarget?
     @State private var bookingTarget: BookingTarget?
     @State private var offerTarget: OfferTarget?
+    // Message a client from a row → resolve-or-create the BOOKING/WAITLIST thread
+    // and push ThreadView (web parity: the "Message" action). `messageWorkingId`
+    // is the row currently resolving (drives its spinner + disables the others).
+    @State private var messageNav: MessageThreadNav?
+    @State private var messageWorkingId: String?
+    // Two-step deny guard: the first "Deny" tap arms this to the row id, swapping in
+    // a Cancel / Confirm-deny pair so a client's request isn't declined by a stray
+    // tap (web `confirmDenyId`).
+    @State private var confirmDenyId: String?
 
     // MARK: - Derived lists (mirror the web management buckets)
 
@@ -116,6 +125,9 @@ struct ProCalendarManagementSheet: View {
                     prefillOfferingId: target.offeringId
                 )
             }
+            .navigationDestination(item: $messageNav) { nav in
+                ThreadView(thread: nav.thread)
+            }
             .tint(BrandColor.accent)
         }
     }
@@ -128,6 +140,7 @@ struct ProCalendarManagementSheet: View {
                 ForEach(ProCalendarManagementTab.allCases) { tab in
                     let active = selectedTab == tab
                     Button {
+                        confirmDenyId = nil
                         withAnimation(.easeOut(duration: 0.15)) { selectedTab = tab }
                     } label: {
                         Text("\(tab.shortTitle) (\(list(for: tab).count))")
@@ -251,14 +264,33 @@ struct ProCalendarManagementSheet: View {
                 Spacer()
             }
 
+            // Primary actions — open (or review, for a pending request) + message.
             HStack(spacing: 10) {
-                secondaryButton("Open") { bookingTarget = BookingTarget(id: event.id) }
-                if moderated {
-                    let busy = pendingBusyId == event.id
-                    secondaryButton("Deny", tint: BrandColor.ember) { deny(event) }
+                secondaryButton(moderated ? "Review" : "Open") {
+                    bookingTarget = BookingTarget(id: event.id)
+                }
+                messageButton(event)
+                Spacer(minLength: 0)
+            }
+
+            // Moderation — pending only; Deny arms a Cancel / Confirm-deny pair.
+            if moderated {
+                let busy = pendingBusyId == event.id
+                HStack(spacing: 10) {
+                    if confirmDenyId == event.id {
+                        secondaryButton("Cancel") { confirmDenyId = nil }
+                            .disabled(busy)
+                        secondaryButton(busy ? "Working…" : "Confirm deny", tint: BrandColor.ember) {
+                            deny(event)
+                        }
                         .disabled(busy)
+                    } else {
+                        secondaryButton("Deny", tint: BrandColor.ember) { confirmDenyId = event.id }
+                            .disabled(busy)
+                    }
                     primaryButton(busy ? "Working…" : "Approve") { approve(event) }
                         .disabled(busy)
+                    Spacer(minLength: 0)
                 }
             }
         }
@@ -285,11 +317,12 @@ struct ProCalendarManagementSheet: View {
                 Spacer()
             }
 
-            if let target = offerTarget(from: event.offerHref) {
-                HStack {
+            HStack(spacing: 10) {
+                if let target = offerTarget(from: event.offerHref) {
                     primaryButton("Offer a time") { offerTarget = target }
-                    Spacer()
                 }
+                messageButton(event)
+                Spacer(minLength: 0)
             }
         }
         .padding(14)
@@ -382,6 +415,16 @@ struct ProCalendarManagementSheet: View {
         .buttonStyle(.plain)
     }
 
+    /// "Message" the client on a booking or waitlist row — resolves the right
+    /// context thread and pushes ThreadView. Disabled (all rows) while one resolves.
+    private func messageButton(_ event: ProCalendarEvent) -> some View {
+        let working = messageWorkingId == event.id
+        return secondaryButton(working ? "Opening…" : "Message") {
+            Task { await openThread(for: event) }
+        }
+        .disabled(messageWorkingId != nil)
+    }
+
     // MARK: - Actions
 
     private func offerTarget(from href: String?) -> OfferTarget? {
@@ -394,11 +437,34 @@ struct ProCalendarManagementSheet: View {
         return OfferTarget(clientId: clientId, offeringId: offeringId)
     }
 
+    /// Resolve-or-create the client thread for a row (BOOKING or WAITLIST context)
+    /// and push ThreadView — the native "Message" action (web
+    /// `/messages/start?contextType=…`). Waitlist ids carry a "waitlist:" prefix;
+    /// the raw entry id is what the WAITLIST resolve expects.
+    private func openThread(for event: ProCalendarEvent) async {
+        guard messageWorkingId == nil else { return }
+        messageWorkingId = event.id
+        defer { messageWorkingId = nil }
+
+        let thread: MessageThread?
+        if event.isWaitlist {
+            let entryId = event.id.hasPrefix("waitlist:")
+                ? String(event.id.dropFirst("waitlist:".count))
+                : event.id
+            thread = try? await session.client.messages.openWaitlistThread(waitlistEntryId: entryId)
+        } else {
+            thread = try? await session.client.messages.openBookingThread(bookingId: event.id)
+        }
+        if let thread { messageNav = MessageThreadNav(thread: thread) }
+    }
+
     private func approve(_ event: ProCalendarEvent) {
+        confirmDenyId = nil
         runPending(event) { try await session.client.proBookings.accept(bookingId: event.id) }
     }
 
     private func deny(_ event: ProCalendarEvent) {
+        confirmDenyId = nil
         runPending(event) { try await session.client.proBookings.decline(bookingId: event.id) }
     }
 
