@@ -107,7 +107,7 @@ Source: `docs/PRO-WEB-PARITY.md` (all 5 pages parity-complete; these are the tai
     - [ ] **Resize** — drag a tile's bottom edge to change duration (web `useConfirmChange` kind `resize` → PATCH `durationMinutes`). The confirm/override plumbing already exists; needs a bottom-edge handle + duration math.
     - [ ] **Cross-day drag in week view** — drop a tile into a different day column (v1 keeps a move within its own day; needs x-hit-testing across the 7-column HStack).
     - [ ] **Drag blocks** — blocks stay tap-to-edit today; web drags them too via PATCH `/pro/calendar/blocked` (a different endpoint from booking reschedule).
-    - [ ] **Drag haptics** — lift/drop sensory feedback (`.sensoryFeedback`), omitted from v1 to keep the gesture minimal.
+    - [x] **Drag haptics ✅ (#119)** — `DragHaptics` ViewModifier on the grid: firm impact on lift, light selection tick on each 15-min snap, solid impact on drop. (Also extracted the ScrollView into a `timeline` computed property — the inline `.sensoryFeedback` closures pushed `body` past the type-checker limit.) Device-only feel; extraction verified render-identical on the sim.
 - [ ] Client card-on-file (needs the Stripe iOS SDK).
 - [ ] **Looks feed badge pill** (deferred parity with web tovis-app
   `feat/algo-badge-engine`, personalization spec §5): `GET /api/v1/looks` items
