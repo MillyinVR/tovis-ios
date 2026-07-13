@@ -243,41 +243,55 @@ struct ProCalendarTimeGrid: View {
         // Passive double-book signal: which bookings overlap another booking today.
         let conflictIds = conflictingBookingIds(layouts)
 
-        return ZStack(alignment: .topLeading) {
-            // Full-height spacer establishes the ZStack's intrinsic height so the
-            // .offset(y:) children measure from the TOP. Without it the ZStack has
-            // no intrinsic height and the outer .frame centers everything (the 2×
-            // offset bug — a 10am tile landed at ~8:30pm). It also backs the
-            // empty-slot tap: event tiles (Buttons) sit on top and take their own
-            // taps, so this only fires for genuinely empty space.
-            Color.clear
-                .frame(maxWidth: .infinity, minHeight: totalHeight, maxHeight: totalHeight)
-                .contentShape(Rectangle())
-                .gesture(
-                    SpatialTapGesture().onEnded { value in
-                        if let date = emptySlotDate(day: day, y: value.location.y) {
-                            onTapEmptySlot?(date)
+        // Side-by-side column packing over ALL events (bookings AND blocks) so
+        // concurrent tiles sit next to each other instead of stacking (the amber
+        // conflict ring still marks true double-books on top of the columns).
+        let columns = ProCalendarGrid.overlapColumnLayout(
+            layouts.map { (id: $0.event.id, start: $0.start, end: $0.end) })
+
+        // GeometryReader gives the column's pixel width, which we divide by the
+        // per-cluster `columnCount` to size + x-offset each tile.
+        return GeometryReader { geo in
+            ZStack(alignment: .topLeading) {
+                // Full-height spacer establishes the ZStack's intrinsic height so
+                // the .offset(y:) children measure from the TOP. It also backs the
+                // empty-slot tap: event tiles sit on top and take their own taps,
+                // so this only fires for genuinely empty space.
+                Color.clear
+                    .frame(maxWidth: .infinity, minHeight: totalHeight, maxHeight: totalHeight)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        SpatialTapGesture().onEnded { value in
+                            if let date = emptySlotDate(day: day, y: value.location.y) {
+                                onTapEmptySlot?(date)
+                            }
                         }
-                    }
-                )
+                    )
 
-            // Hour rules (decorative — let taps fall through to the slot layer).
-            ForEach(0..<24) { hour in
-                Rectangle()
-                    .fill(BrandColor.textMuted.opacity(0.16))
-                    .frame(height: 1)
-                    .offset(y: CGFloat(hour * 60) * pxPerMinute)
-            }
-            .allowsHitTesting(false)
+                // Hour rules (decorative — let taps fall through to the slot layer).
+                ForEach(0..<24) { hour in
+                    Rectangle()
+                        .fill(BrandColor.textMuted.opacity(0.16))
+                        .frame(height: 1)
+                        .offset(y: CGFloat(hour * 60) * pxPerMinute)
+                }
+                .allowsHitTesting(false)
 
-            // Event tiles. (The now-line is drawn once across the whole grid as an
-            // overlay on the day-columns HStack — see `body` — so in week view it
-            // reads as a single line spanning all seven days, matching web.)
-            ForEach(layouts, id: \.event.id) { item in
-                eventTile(item.event, day: day, startMinutes: item.start, endMinutes: item.end,
-                          conflict: conflictIds.contains(item.event.id))
+                // Event tiles, each laid into its overlap column. (The now-line is
+                // drawn once across the whole grid as an overlay on the day-columns
+                // HStack — see `body` — so in week view it spans all seven days.)
+                ForEach(layouts, id: \.event.id) { item in
+                    let placement = columns[item.event.id]
+                    let columnCount = max(1, placement?.columnCount ?? 1)
+                    let column = placement?.column ?? 0
+                    let colWidth = geo.size.width / CGFloat(columnCount)
+                    eventTile(item.event, day: day, startMinutes: item.start, endMinutes: item.end,
+                              conflict: conflictIds.contains(item.event.id),
+                              colWidth: colWidth, colX: colWidth * CGFloat(column))
+                }
             }
         }
+        .frame(height: totalHeight)
         .background(day.isToday ? BrandColor.accent.opacity(0.04) : Color.clear)
     }
 
@@ -311,7 +325,7 @@ struct ProCalendarTimeGrid: View {
     @ViewBuilder
     private func eventTile(
         _ event: ProCalendarEvent, day: ProMonthCell, startMinutes: Int, endMinutes: Int,
-        conflict: Bool
+        conflict: Bool, colWidth: CGFloat, colX: CGFloat
     ) -> some View {
         let tone = event.isBlock ? BrandColor.textMuted : statusTone(event.status)
         let duration = max(stepMinutes, endMinutes - startMinutes)
@@ -341,8 +355,9 @@ struct ProCalendarTimeGrid: View {
             pending: isPending,
             conflict: conflict
         )
-        .padding(.horizontal, 2)
-        .offset(y: topPx)
+        .padding(.horizontal, 1.5)
+        .frame(width: colWidth, alignment: .leading)
+        .offset(x: colX, y: topPx)
         .zIndex(isActive ? 2 : (isPending ? 1 : 0))
         .contentShape(Rectangle())
         .onTapGesture {
