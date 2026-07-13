@@ -72,6 +72,13 @@ struct ProNewBookingView: View {
     @State private var manualMode = false
     @State private var manualTime = Date().addingTimeInterval(3600)
 
+    // Passive double-book heads-up: the clients the picked time collides with
+    // (empty when clear). Fetched from the pro calendar so it stays in lockstep
+    // with the grid's own overlap signal. The server still allows a pro overlap
+    // (PRO_AUTHORIZED_OVERLAP) — this only surfaces it before submit. Mirrors the
+    // web NewBookingForm + the drag-reschedule confirm note (#104).
+    @State private var overlapNames: [String] = []
+
     @State private var notes = ""
     @State private var showAdvanced = false
     @State private var allowOutsideWorkingHours = false
@@ -181,6 +188,7 @@ struct ProNewBookingView: View {
         }
         .onChange(of: bookingMode) { _, _ in revalidateForMode() }
         .task(id: addressFetchKey) { await loadClientAddresses() }
+        .task(id: overlapCheckKey) { await refreshOverlapWarning() }
         .alert("Confirm booking", isPresented: overrideAlertBinding, presenting: overridePrompt) { prompt in
             TextField(prompt.reasonPlaceholder, text: $overrideReason)
             Button("Book anyway") { Task { await confirmOverride(prompt) } }
@@ -253,6 +261,23 @@ struct ProNewBookingView: View {
     /// picker could need them (mode/client changes).
     private var addressFetchKey: String {
         "\(bookingMode.rawValue)|\(clientMode.rawValue)|\(clientId)"
+    }
+
+    /// Re-run the double-book check whenever the proposed window moves — the time
+    /// (slot or custom), the location it's scoped to, or the service duration.
+    private var overlapCheckKey: String {
+        let timePart = manualMode
+            ? "m:\(manualTime.timeIntervalSince1970)"
+            : "s:\(selectedSlot ?? "")"
+        let duration = selectedOffering.map { durationMinutes($0) } ?? 0
+        return "\(locationId)|\(timePart)|\(duration)"
+    }
+
+    /// The proposed booking's start instant: the chosen custom time, or the
+    /// picked open slot parsed back to a `Date`. nil when no time is set yet.
+    private var proposedStartDate: Date? {
+        if manualMode { return manualTime }
+        return selectedSlot.flatMap(Wire.date)
     }
 
     // MARK: - Sections
@@ -430,7 +455,41 @@ struct ProNewBookingView: View {
                 } else {
                     emptyHint("Choose a service to see open times.")
                 }
+
+                if !overlapNames.isEmpty { overlapWarning }
             }
+        }
+    }
+
+    /// Soft amber note when the picked time collides with an existing booking —
+    /// the pre-submit mirror of the calendar grid's overlap ring + the drag
+    /// confirm's "overlaps {client}" note. Non-blocking; never disables Create.
+    private var overlapWarning: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Schedule conflict")
+                .font(BrandFont.body(11, .semibold))
+                .foregroundStyle(BrandColor.amber)
+            Text("This overlaps \(overlapNamesText). You can still book it.")
+                .font(BrandFont.body(12))
+                .foregroundStyle(BrandColor.textSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(BrandColor.amber.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .stroke(BrandColor.amber.opacity(0.25), lineWidth: 1))
+    }
+
+    /// "Sam" / "Sam and Alex" / "Sam, Alex, and Jordan" — a plain-English join.
+    private var overlapNamesText: String {
+        switch overlapNames.count {
+        case 0: return ""
+        case 1: return overlapNames[0]
+        case 2: return "\(overlapNames[0]) and \(overlapNames[1])"
+        default:
+            let head = overlapNames.dropLast().joined(separator: ", ")
+            return "\(head), and \(overlapNames[overlapNames.count - 1])"
         }
     }
 
@@ -667,6 +726,53 @@ struct ProNewBookingView: View {
             clientAddresses = []
             clientAddressId = ""
             addressMode = .new
+        }
+    }
+
+    /// Fetch the pro's bookings around the proposed time and surface the clients
+    /// it collides with. Debounced (a superseding key cancels the task, which
+    /// aborts the sleep); a background failure never errors the form — it just
+    /// clears the note. BLOCK events are dropped so this only warns on
+    /// client-vs-client double-books, matching the calendar confirm note.
+    private func refreshOverlapWarning() async {
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        if Task.isCancelled { return }
+
+        guard let location = selectedLocation,
+              let offering = selectedOffering,
+              let start = proposedStartDate else {
+            overlapNames = []
+            return
+        }
+
+        let duration = max(15, durationMinutes(offering))
+        let end = start.addingTimeInterval(Double(duration) * 60)
+
+        // A generous ±1-day fetch window comfortably covers the longest possible
+        // appointment; the half-open overlap check does the precise filtering.
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime]
+        let from = iso.string(from: start.addingTimeInterval(-86_400))
+        let to = iso.string(from: start.addingTimeInterval(86_400))
+
+        do {
+            let response = try await session.client.proCalendar.calendar(
+                from: from, to: to, locationId: location.id)
+            if Task.isCancelled { return }
+
+            let events: [(id: String, clientName: String, start: Date, end: Date)] =
+                response.events.compactMap { event in
+                    guard event.isBooking, let s = Wire.date(event.startsAt) else { return nil }
+                    let e = Wire.date(event.endsAt)
+                        ?? s.addingTimeInterval(Double(max(15, event.durationMinutes)) * 60)
+                    return (event.id, event.clientName, s, e)
+                }
+
+            overlapNames = ProCalendarGrid.overlappingClientNames(
+                proposedStart: start, proposedEnd: end,
+                events: events, fallbackName: "another appointment")
+        } catch {
+            overlapNames = []
         }
     }
 
