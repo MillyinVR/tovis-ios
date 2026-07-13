@@ -262,6 +262,75 @@ public enum ProCalendarGrid {
         return ids
     }
 
+    /// Side-by-side column packing for overlapping intervals — the calendar's
+    /// Google-Calendar-style layout so concurrent events sit next to each other
+    /// instead of stacking. Returns, per id, its `column` (0-based) and the
+    /// `columnCount` (how many columns to divide the day's width into for that
+    /// id's cluster). Non-overlapping events get `column 0, columnCount 1` and so
+    /// render full-width.
+    ///
+    /// Sweep-line: sort by start; a **cluster** is a maximal run of transitively
+    /// overlapping events — it closes when an event starts at/after the running
+    /// max end of every event seen so far in the cluster (half-open, so a touching
+    /// back-to-back event opens a fresh cluster). Within a cluster each event takes
+    /// the first column whose last event ended ≤ its start, else a new column;
+    /// `columnCount` is that cluster's peak concurrency (= its column total, since
+    /// left-endpoint first-fit coloring is optimal for interval graphs).
+    ///
+    /// Callers pass BOTH bookings and blocks so nothing visually stacks. Ordering
+    /// within a start-tie is made deterministic (end, then id) so the layout is
+    /// stable across reloads.
+    public static func overlapColumnLayout(
+        _ intervals: [(id: String, start: Int, end: Int)]
+    ) -> [String: (column: Int, columnCount: Int)] {
+        guard !intervals.isEmpty else { return [:] }
+
+        let sorted = intervals.sorted {
+            if $0.start != $1.start { return $0.start < $1.start }
+            if $0.end != $1.end { return $0.end < $1.end }
+            return $0.id < $1.id
+        }
+
+        var result: [String: (column: Int, columnCount: Int)] = [:]
+
+        // Current cluster state: the members placed so far, the last end per column,
+        // and the max end across the whole cluster (its close threshold).
+        var clusterMembers: [(id: String, column: Int)] = []
+        var columnEnds: [Int] = []
+        var clusterMaxEnd = Int.min
+
+        func closeCluster() {
+            let count = columnEnds.count
+            for member in clusterMembers {
+                result[member.id] = (column: member.column, columnCount: count)
+            }
+            clusterMembers.removeAll(keepingCapacity: true)
+            columnEnds.removeAll(keepingCapacity: true)
+            clusterMaxEnd = Int.min
+        }
+
+        for interval in sorted {
+            // No overlap with anything still in the cluster → seal it and start fresh.
+            if !clusterMembers.isEmpty && interval.start >= clusterMaxEnd {
+                closeCluster()
+            }
+
+            // First column whose last event has ended by this start; else a new one.
+            var placed = columnEnds.firstIndex { $0 <= interval.start } ?? -1
+            if placed < 0 {
+                placed = columnEnds.count
+                columnEnds.append(interval.end)
+            } else {
+                columnEnds[placed] = interval.end
+            }
+            clusterMembers.append((id: interval.id, column: placed))
+            clusterMaxEnd = max(clusterMaxEnd, interval.end)
+        }
+        closeCluster()
+
+        return result
+    }
+
     /// The client names of the bookings whose window overlaps the half-open
     /// `[proposedStart, proposedEnd)` — the new-booking form's passive
     /// double-book heads-up (native mirror of web `overlappingClientNamesForRange`).

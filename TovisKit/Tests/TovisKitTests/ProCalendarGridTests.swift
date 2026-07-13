@@ -164,6 +164,109 @@ struct ProCalendarGridTests {
         #expect(ids == ["a", "b", "c"])
     }
 
+    // ── Side-by-side overlap column packing ──
+
+    @Test func overlapColumnLayoutTwoOverlapSplitIntoColumns() {
+        // a 10:00–11:00, b 10:30–11:30 overlap → two columns, both count 2.
+        let cols = ProCalendarGrid.overlapColumnLayout([
+            (id: "a", start: 600, end: 660),
+            (id: "b", start: 630, end: 690),
+        ])
+        #expect(cols["a"]?.column == 0)
+        #expect(cols["a"]?.columnCount == 2)
+        #expect(cols["b"]?.column == 1)
+        #expect(cols["b"]?.columnCount == 2)
+    }
+
+    @Test func overlapColumnLayoutDisjointAreFullWidth() {
+        // No overlap → each is its own cluster, full width (column 0, count 1).
+        let cols = ProCalendarGrid.overlapColumnLayout([
+            (id: "a", start: 600, end: 660),
+            (id: "b", start: 720, end: 780),
+        ])
+        #expect(cols["a"]?.column == 0)
+        #expect(cols["a"]?.columnCount == 1)
+        #expect(cols["b"]?.column == 0)
+        #expect(cols["b"]?.columnCount == 1)
+    }
+
+    @Test func overlapColumnLayoutBackToBackDoNotShareCluster() {
+        // Touching (11:00 end == 11:00 start) is half-open non-overlap → each
+        // full-width, so a back-to-back pair stays edge-to-edge, not side-by-side.
+        let cols = ProCalendarGrid.overlapColumnLayout([
+            (id: "a", start: 600, end: 660),
+            (id: "b", start: 660, end: 720),
+        ])
+        #expect(cols["a"]?.columnCount == 1)
+        #expect(cols["b"]?.columnCount == 1)
+        #expect(cols["a"]?.column == 0)
+        #expect(cols["b"]?.column == 0)
+    }
+
+    @Test func overlapColumnLayoutThreeMutualUseThreeColumns() {
+        let cols = ProCalendarGrid.overlapColumnLayout([
+            (id: "a", start: 600, end: 720),
+            (id: "b", start: 630, end: 700),
+            (id: "c", start: 690, end: 760),
+        ])
+        #expect(cols["a"]?.column == 0)
+        #expect(cols["b"]?.column == 1)
+        #expect(cols["c"]?.column == 2)
+        #expect(cols["a"]?.columnCount == 3)
+        #expect(cols["b"]?.columnCount == 3)
+        #expect(cols["c"]?.columnCount == 3)
+    }
+
+    @Test func overlapColumnLayoutReusesAFreedColumn() {
+        // Long a spans the cluster; b then c are short and non-overlapping with each
+        // other, so c reuses b's column. Peak concurrency is 2 → count 2 for all.
+        let cols = ProCalendarGrid.overlapColumnLayout([
+            (id: "a", start: 0, end: 100),
+            (id: "b", start: 10, end: 20),
+            (id: "c", start: 30, end: 40),
+        ])
+        #expect(cols["a"]?.column == 0)
+        #expect(cols["b"]?.column == 1)
+        #expect(cols["c"]?.column == 1) // reuses b's freed column
+        #expect(cols["a"]?.columnCount == 2)
+        #expect(cols["b"]?.columnCount == 2)
+        #expect(cols["c"]?.columnCount == 2)
+    }
+
+    @Test func overlapColumnLayoutSeparateClustersCountIndependently() {
+        // Cluster 1 (a,b) overlaps → count 2; cluster 2 (c) is alone → count 1.
+        let cols = ProCalendarGrid.overlapColumnLayout([
+            (id: "a", start: 600, end: 660),
+            (id: "b", start: 630, end: 690),
+            (id: "c", start: 800, end: 860),
+        ])
+        #expect(cols["a"]?.columnCount == 2)
+        #expect(cols["b"]?.columnCount == 2)
+        #expect(cols["c"]?.columnCount == 1)
+        #expect(cols["c"]?.column == 0)
+    }
+
+    @Test func overlapColumnLayoutEmptyIsEmpty() {
+        #expect(ProCalendarGrid.overlapColumnLayout([]).isEmpty)
+    }
+
+    @Test func overlapColumnLayoutIsStableRegardlessOfInputOrder() {
+        // Shuffled input yields the same column assignment (deterministic sort).
+        let forward = ProCalendarGrid.overlapColumnLayout([
+            (id: "a", start: 600, end: 720),
+            (id: "b", start: 630, end: 700),
+            (id: "c", start: 690, end: 760),
+        ])
+        let shuffled = ProCalendarGrid.overlapColumnLayout([
+            (id: "c", start: 690, end: 760),
+            (id: "a", start: 600, end: 720),
+            (id: "b", start: 630, end: 700),
+        ])
+        #expect(forward["a"]?.column == shuffled["a"]?.column)
+        #expect(forward["b"]?.column == shuffled["b"]?.column)
+        #expect(forward["c"]?.column == shuffled["c"]?.column)
+    }
+
     // ── New-booking form passive double-book heads-up ──
 
     /// 2026-07-15, minutes UTC via a fixed epoch so the tests are TZ-independent.
