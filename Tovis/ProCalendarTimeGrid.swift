@@ -20,6 +20,7 @@
 import Combine
 import SwiftUI
 import TovisKit
+import UIKit
 
 /// A booking the pro dropped on a new time, awaiting confirmation. The grid sets
 /// it (via a binding) on drop; `ProCalendarView` shows the confirm prompt and,
@@ -73,6 +74,35 @@ private struct DayColumnFramesKey: PreferenceKey {
     static var defaultValue: [String: CGRect] { [:] }
     static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
         value.merge(nextValue()) { _, new in new }
+    }
+}
+
+/// Reaches the enclosing `UIScrollView` and turns OFF `delaysContentTouches`, so a
+/// long-press on a tile arms **immediately** instead of being swallowed by the
+/// scroll view's ~150ms "is this a scroll?" touch-delay — the reason the
+/// drag-to-reschedule long-press never armed on device (a quick tap still sailed
+/// through on release, but a held press got stuck in the delay). `canCancelContentTouches`
+/// stays on, so a real scroll swipe that starts on a tile still scrolls; only the
+/// *stationary* hold now registers. Attach to the ScrollView's content via
+/// `.background(...)` so the probe lives inside the scroll view's view tree.
+private struct ScrollTouchDelayDisabler: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIView {
+        let probe = UIView(frame: .zero)
+        probe.isUserInteractionEnabled = false
+        return probe
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        DispatchQueue.main.async {
+            var ancestor = uiView.superview
+            while let current = ancestor {
+                if let scrollView = current as? UIScrollView {
+                    scrollView.delaysContentTouches = false
+                    return
+                }
+                ancestor = current.superview
+            }
+        }
     }
 }
 
@@ -201,6 +231,11 @@ struct ProCalendarTimeGrid: View {
                 // Trailing room so a midday hour can sit at the very top.
                 Color.clear.frame(height: 640)
             }
+            // Turn off the scroll view's content-touch delay so a long-press on a
+            // tile arms immediately (otherwise the ~150ms scroll-detection delay
+            // swallows the held press and the drag never lifts). Inside the scroll
+            // content so the probe can walk up to the UIScrollView.
+            .background(ScrollTouchDelayDisabler())
         }
         .scrollPosition(id: $scrolledHour, anchor: .top)
         // While a tile is lifted or being resized, the ScrollView must not pan —
