@@ -35,6 +35,11 @@ struct ProSettingsUpdateRequest: Encodable {
 /// `kind` ("BOOKING" | "BLOCK").
 public struct ProCalendarEvent: Decodable, Sendable, Identifiable {
     public let id: String
+    /// BLOCK events only: the bare block id. The calendar API namespaces a block
+    /// event's `id` as `block:{id}` (so it can't collide with a booking id) and
+    /// also sends the bare `blockId`; the block routes (`…/blocked/{id}`) expect
+    /// the bare id. nil for bookings. Use `calendarBlockId` to resolve it safely.
+    public let blockId: String?
     public let kind: String
     public let startsAt: String
     public let endsAt: String
@@ -61,6 +66,16 @@ public struct ProCalendarEvent: Decodable, Sendable, Identifiable {
     public var isBooking: Bool { kind == "BOOKING" }
     public var isBlock: Bool { kind == "BLOCK" }
     public var isWaitlist: Bool { status == "WAITLIST" }
+
+    /// The bare block id for block operations (`GET`/`PATCH`/`DELETE …/blocked/{id}`),
+    /// which expect the un-namespaced id. Prefers the API's `blockId`, else strips a
+    /// `block:` prefix off `id`, else falls back to `id`. Only meaningful for blocks.
+    public var calendarBlockId: String {
+        if let blockId, !blockId.isEmpty { return blockId }
+        let prefix = "block:"
+        if id.hasPrefix(prefix) { return String(id.dropFirst(prefix.count)) }
+        return id
+    }
 }
 
 public struct ProCalendarStats: Decodable, Sendable {

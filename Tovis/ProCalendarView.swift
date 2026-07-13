@@ -340,7 +340,7 @@ struct ProCalendarView: View {
     private func openBlockEditor(_ event: ProCalendarEvent) {
         Task {
             do {
-                let block = try await session.client.proCalendar.block(id: event.id)
+                let block = try await session.client.proCalendar.block(id: event.calendarBlockId)
                 blockSheet = .edit(block)
             } catch let error as APIError {
                 editorErrorMessage = error.userMessage
@@ -355,7 +355,7 @@ struct ProCalendarView: View {
     private func openBlockFromManagement(_ event: ProCalendarEvent) {
         Task {
             do {
-                let block = try await session.client.proCalendar.block(id: event.id)
+                let block = try await session.client.proCalendar.block(id: event.calendarBlockId)
                 pendingManagementAction = .editBlock(block)
             } catch let error as APIError {
                 editorErrorMessage = error.userMessage
@@ -659,7 +659,7 @@ struct ProCalendarView: View {
     /// Confirm-alert title / primary-button label — the action being confirmed.
     private func changeConfirmTitle(_ change: PendingCalendarChange) -> String {
         switch change {
-        case .move: return "Move appointment"
+        case let .move(move): return move.event.isBlock ? "Move blocked time" : "Move appointment"
         case .resize: return "Change duration"
         }
     }
@@ -668,10 +668,16 @@ struct ProCalendarView: View {
         changeConfirmTitle(change)
     }
 
+    /// What the change is acting on, for the confirm copy.
+    private func subjectLabel(_ event: ProCalendarEvent) -> String {
+        if event.isBlock { return "this blocked time" }
+        return event.clientName.isEmpty ? "this appointment" : event.clientName
+    }
+
     /// Confirm-alert copy: what's changing (in the calendar's zone), plus a passive
     /// heads-up when the new window double-books another appointment.
     private func changeConfirmMessage(_ change: PendingCalendarChange) -> String {
-        let who = change.event.clientName.isEmpty ? "this appointment" : change.event.clientName
+        let who = subjectLabel(change.event)
         var message: String
         switch change {
         case let .move(move):
@@ -691,6 +697,10 @@ struct ProCalendarView: View {
     /// new duration.
     private func overlappingClientName(for change: PendingCalendarChange) -> String? {
         guard let data = loadedData else { return nil }
+        // Blocks can't passively overlap: the server hard-rejects a block that
+        // collides with a booking/hold/block, so a "you can still save it" note
+        // would be misleading — surface the real rejection instead.
+        guard !change.event.isBlock else { return nil }
 
         let start: Date
         let durationMinutes: Int
@@ -775,6 +785,31 @@ struct ProCalendarView: View {
         let overrideReason = (changeAppliedOverrides.isEmpty || reason.isEmpty) ? nil : reason
         do {
             switch change {
+            case let .move(move) where move.event.isBlock:
+                // Blocks move via /pro/calendar/blocked (absolute window; no
+                // client-notify / override flags). Keep the duration; preserve the
+                // note (omit it → server leaves it unchanged).
+                let endsAt = move.newStart.addingTimeInterval(Double(max(15, move.event.durationMinutes)) * 60)
+                try await session.client.proCalendar.updateBlock(
+                    id: move.event.calendarBlockId,
+                    startsAt: ProCalendarGrid.iso(move.newStart),
+                    endsAt: ProCalendarGrid.iso(endsAt),
+                    note: nil
+                )
+            case let .resize(resize) where resize.event.isBlock:
+                // Block resize keeps the start, extends the end via the same route.
+                guard let start = Wire.date(resize.event.startsAt) else {
+                    changeError = "Couldn’t resize this block. Please try again."
+                    cancelChange()
+                    return
+                }
+                let endsAt = start.addingTimeInterval(Double(resize.newDurationMinutes) * 60)
+                try await session.client.proCalendar.updateBlock(
+                    id: resize.event.calendarBlockId,
+                    startsAt: resize.event.startsAt,
+                    endsAt: ProCalendarGrid.iso(endsAt),
+                    note: nil
+                )
             case let .move(move):
                 try await session.client.proBookings.reschedule(
                     bookingId: move.event.id,
@@ -813,7 +848,7 @@ struct ProCalendarView: View {
                 cancelChange()
             }
         } catch {
-            changeError = "Couldn’t update the booking. Please try again."
+            changeError = "Couldn’t update your calendar. Please try again."
             cancelChange()
         }
     }
