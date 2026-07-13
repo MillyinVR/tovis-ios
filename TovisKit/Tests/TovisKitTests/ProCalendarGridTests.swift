@@ -267,6 +267,73 @@ struct ProCalendarGridTests {
         #expect(forward["c"]?.column == shuffled["c"]?.column)
     }
 
+    // ── Working-hours shading (off-hours segments) ──
+
+    /// A week with the given Mon config; all other days closed.
+    private func weekMon(enabled: Bool, start: String, end: String) -> ProWeekHours {
+        let off = ProDayHours(enabled: false, start: "09:00", end: "17:00")
+        return ProWeekHours(
+            sun: off,
+            mon: ProDayHours(enabled: enabled, start: start, end: end),
+            tue: off, wed: off, thu: off, fri: off, sat: off)
+    }
+
+    /// 2026-07-13 is a Monday; noon in `zone`.
+    private var monday: Date { noon(2026, 7, 13) }
+
+    @Test func offHoursSameDayWindowShadesBeforeAndAfter() {
+        // Mon 09:00–17:00 → shade [0, 540) and [1020, 1440).
+        let segs = ProCalendarGrid.offHoursSegments(
+            week: weekMon(enabled: true, start: "09:00", end: "17:00"),
+            date: monday, timeZone: zone)
+        #expect(segs.count == 2)
+        #expect(segs[0] == (start: 0, end: 540))
+        #expect(segs[1] == (start: 1020, end: 1440))
+    }
+
+    @Test func offHoursClosedDayShadesWholeColumn() {
+        // Sunday is closed in weekMon → whole column shaded.
+        let segs = ProCalendarGrid.offHoursSegments(
+            week: weekMon(enabled: true, start: "09:00", end: "17:00"),
+            date: noon(2026, 7, 12), timeZone: zone) // 2026-07-12 is a Sunday
+        #expect(segs.count == 1)
+        #expect(segs[0] == (start: 0, end: 1440))
+    }
+
+    @Test func offHoursDisabledMondayShadesWholeColumn() {
+        let segs = ProCalendarGrid.offHoursSegments(
+            week: weekMon(enabled: false, start: "09:00", end: "17:00"),
+            date: monday, timeZone: zone)
+        #expect(segs.count == 1)
+        #expect(segs.first! == (start: 0, end: 1440))
+    }
+
+    @Test func offHoursOvernightWindowShadesTheMiddleGap() {
+        // Mon 22:00–02:00 → works the edges; shade [120, 1320).
+        let segs = ProCalendarGrid.offHoursSegments(
+            week: weekMon(enabled: true, start: "22:00", end: "02:00"),
+            date: monday, timeZone: zone)
+        #expect(segs.count == 1)
+        #expect(segs.first! == (start: 120, end: 1320))
+    }
+
+    @Test func offHoursOpenAtMidnightDropsLeadingEdge() {
+        // Mon 00:00–17:00 → no [0,0) leading segment, just [1020, 1440).
+        let segs = ProCalendarGrid.offHoursSegments(
+            week: weekMon(enabled: true, start: "00:00", end: "17:00"),
+            date: monday, timeZone: zone)
+        #expect(segs.count == 1)
+        #expect(segs.first! == (start: 1020, end: 1440))
+    }
+
+    @Test func offHoursZeroLengthWindowDoesNotShade() {
+        // 09:00–09:00 is misconfigured (zero length) → don't over-shade.
+        let segs = ProCalendarGrid.offHoursSegments(
+            week: weekMon(enabled: true, start: "09:00", end: "09:00"),
+            date: monday, timeZone: zone)
+        #expect(segs.isEmpty)
+    }
+
     // ── New-booking form passive double-book heads-up ──
 
     /// 2026-07-15, minutes UTC via a fixed epoch so the tests are TZ-independent.
