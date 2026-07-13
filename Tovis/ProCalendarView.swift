@@ -51,6 +51,9 @@ struct ProCalendarView: View {
     // Blocked-time CRUD (web BlockTimeModal / EditBlockModal). `locations` holds
     // the bookable locations a block can pin to; an empty list hides the FAB.
     @State private var locations: [ProLocationSummary] = []
+    // The pro's weekly working hours (primary bookable location) — drives the
+    // day/week grid's off-hours shading. nil until loaded (no shading).
+    @State private var workingWeek: ProWeekHours?
     @State private var blockSheet: BlockSheetTarget?
     // The "+" FAB opens this chooser: add an appointment or block personal time
     // (web MobileCalendarFab + CalendarCreateSheet).
@@ -295,8 +298,23 @@ struct ProCalendarView: View {
     }
 
     private func loadLocations() async {
-        if let locs = try? await session.client.proCalendar.locations() {
-            locations = locs.filter { $0.isBookable }
+        guard let locs = try? await session.client.proCalendar.locations() else { return }
+        let bookable = locs.filter { $0.isBookable }
+        locations = bookable
+        await loadWorkingHours(from: bookable)
+    }
+
+    /// Load the primary bookable location's weekly hours for the grid's off-hours
+    /// shading (reusing the same resolution the working-hours editor uses, so a
+    /// mobile-only pro shades their mobile week, not a phantom salon).
+    private func loadWorkingHours(from bookable: [ProLocationSummary]) async {
+        guard let loc = ProWorkingHours.locationToEdit(from: bookable) else {
+            workingWeek = nil
+            return
+        }
+        if let res = try? await session.client.proSchedule.workingHours(
+            locationType: ProWorkingHours.mode(for: loc), locationId: loc.id) {
+            workingWeek = res.workingHours
         }
     }
 
@@ -396,6 +414,7 @@ struct ProCalendarView: View {
                     onTapBlock: { event in openBlockEditor(event) },
                     onTapEmptySlot: { date in newBookingNav = NewBookingNav(date: date) },
                     collapseToggle: chromeCollapsed,
+                    workingHours: workingWeek,
                     pendingMove: $pendingMove
                 )
                 .frame(maxHeight: .infinity)

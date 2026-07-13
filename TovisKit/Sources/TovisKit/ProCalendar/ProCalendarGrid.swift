@@ -408,6 +408,63 @@ public enum ProCalendarGrid {
         ymd(now, timeZone) == dayYmd
     }
 
+    // ─── Working-hours shading (web _grid/DayColumn getWorkingWindowForDay) ───
+
+    /// Minutes since local midnight for an "HH:MM" (24h) string — nil when it
+    /// isn't a valid 00:00…23:59 time.
+    static func hhmmToMinutes(_ value: String) -> Int? {
+        let parts = value.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 2,
+              let h = Int(parts[0]), let m = Int(parts[1]),
+              (0...23).contains(h), (0...59).contains(m)
+        else { return nil }
+        return h * 60 + m
+    }
+
+    /// The `ProDayHours` for `date`'s weekday in `timeZone` (Sun…Sat).
+    static func dayHours(_ week: ProWeekHours, date: Date, timeZone: TimeZone) -> ProDayHours {
+        switch gregorian(timeZone).component(.weekday, from: date) { // 1=Sun … 7=Sat
+        case 1: return week.sun
+        case 2: return week.mon
+        case 3: return week.tue
+        case 4: return week.wed
+        case 5: return week.thu
+        case 6: return week.fri
+        default: return week.sat
+        }
+    }
+
+    /// The minutes-since-midnight `[start, end)` ranges OUTSIDE the pro's working
+    /// window on `date`'s weekday — the segments the calendar dims. Native mirror
+    /// of the web `getWorkingWindowForDay` + `buildOutsideHoursSegments`
+    /// (single-window):
+    /// - closed / disabled day → the whole column `[0, 1440)`;
+    /// - same-day window `open < close` → `[0, open)` + `[close, 1440)` (empty
+    ///   edges dropped, so a `00:00` open or `24:00`-ish close adds nothing);
+    /// - overnight window (`close < open`, e.g. 22:00→02:00, so the pro works the
+    ///   edges of the day) → the middle gap `[close, open)`;
+    /// - unparseable / zero-length times → `[]` (don't over-shade on bad data).
+    public static func offHoursSegments(
+        week: ProWeekHours, date: Date, timeZone: TimeZone
+    ) -> [(start: Int, end: Int)] {
+        let day = dayHours(week, date: date, timeZone: timeZone)
+        guard day.enabled else { return [(0, minutesPerDay)] }
+        guard let open = hhmmToMinutes(day.start),
+              let close = hhmmToMinutes(day.end),
+              open != close
+        else { return [] }
+
+        if close < open {
+            // Overnight: works [0, close) and [open, 1440); off = [close, open).
+            return [(close, open)]
+        }
+
+        var segments: [(start: Int, end: Int)] = []
+        if open > 0 { segments.append((0, open)) }
+        if close < minutesPerDay { segments.append((close, minutesPerDay)) }
+        return segments
+    }
+
     /// The day column(s) a timeline view spans — 1 for day, 7 (Mon-start) for
     /// week (the web `getTimelineDays`). Reuses `ProMonthCell` for the per-day
     /// key/number/today flags; `isInCurrentMonth` is unused here (always true).

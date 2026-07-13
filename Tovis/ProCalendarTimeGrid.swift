@@ -54,6 +54,10 @@ struct ProCalendarTimeGrid: View {
     /// Flips when the chrome collapses/expands — re-snaps the timeline to "now"
     /// after the height change.
     var collapseToggle: Bool = false
+    /// The pro's weekly working hours (primary bookable location). When set, each
+    /// day column dims the hours outside the working window (web `DayColumn`
+    /// off-hours shading). nil until loaded → no shading.
+    var workingHours: ProWeekHours? = nil
 
     /// Set by a drag-drop when a booking is moved to a new time; the parent shows
     /// the confirm prompt + submits the reschedule. Bound so the tile can render
@@ -249,6 +253,12 @@ struct ProCalendarTimeGrid: View {
         let columns = ProCalendarGrid.overlapColumnLayout(
             layouts.map { (id: $0.event.id, start: $0.start, end: $0.end) })
 
+        // Hours outside the pro's working window for this weekday — dimmed behind
+        // the grid. Empty until the working-hours load resolves (no shading).
+        let offHours: [(start: Int, end: Int)] = workingHours.map {
+            ProCalendarGrid.offHoursSegments(week: $0, date: day.startOfDay, timeZone: timeZone)
+        } ?? []
+
         // GeometryReader gives the column's pixel width, which we divide by the
         // per-cluster `columnCount` to size + x-offset each tile.
         return GeometryReader { geo in
@@ -267,6 +277,18 @@ struct ProCalendarTimeGrid: View {
                             }
                         }
                     )
+
+                // Working-hours shading: dim the hours outside the pro's window
+                // (drawn behind the rules + tiles; non-interactive so empty-slot
+                // taps still fall through to the slot layer below).
+                ForEach(Array(offHours.enumerated()), id: \.offset) { _, segment in
+                    let segHeight = CGFloat(segment.end - segment.start) * pxPerMinute
+                    Rectangle()
+                        .fill(BrandColor.textMuted.opacity(0.10))
+                        .frame(maxWidth: .infinity, minHeight: segHeight, maxHeight: segHeight)
+                        .offset(y: CGFloat(segment.start) * pxPerMinute)
+                }
+                .allowsHitTesting(false)
 
                 // Hour rules (decorative — let taps fall through to the slot layer).
                 ForEach(0..<24) { hour in
