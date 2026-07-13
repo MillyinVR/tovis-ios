@@ -262,6 +262,38 @@ public enum ProCalendarGrid {
         return ids
     }
 
+    /// The client names of the bookings whose window overlaps the half-open
+    /// `[proposedStart, proposedEnd)` — the new-booking form's passive
+    /// double-book heads-up (native mirror of web `overlappingClientNamesForRange`).
+    /// Half-open, so a back-to-back booking that merely touches does NOT warn;
+    /// order-preserving and de-duplicated by name. A nameless overlap falls back
+    /// to `fallbackName`. Callers pass real bookings only (BLOCK events — the
+    /// pro's own time — filtered out first), matching the confirm-modal note.
+    public static func overlappingClientNames(
+        proposedStart: Date,
+        proposedEnd: Date,
+        events: [(id: String, clientName: String, start: Date, end: Date)],
+        fallbackName: String
+    ) -> [String] {
+        guard proposedEnd > proposedStart else { return [] }
+
+        var names: [String] = []
+        var seen: Set<String> = []
+
+        for event in events {
+            guard event.start < proposedEnd && proposedStart < event.end else { continue }
+
+            let trimmed = event.clientName.trimmingCharacters(in: .whitespacesAndNewlines)
+            let display = trimmed.isEmpty ? fallbackName : trimmed
+            if seen.contains(display) { continue }
+
+            seen.insert(display)
+            names.append(display)
+        }
+
+        return names
+    }
+
     /// The minutes-since-midnight `[start, end]` window an event occupies on
     /// `dayYmd` (the day cell's local key), TZ-aware with multi-day spillover and
     /// step snapping — the native port of `buildEventLayout`. Returns nil for an

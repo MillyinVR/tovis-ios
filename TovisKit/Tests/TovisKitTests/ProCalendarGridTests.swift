@@ -163,4 +163,51 @@ struct ProCalendarGridTests {
         ])
         #expect(ids == ["a", "b", "c"])
     }
+
+    // ── New-booking form passive double-book heads-up ──
+
+    /// 2026-07-15, minutes UTC via a fixed epoch so the tests are TZ-independent.
+    private func at(_ hour: Int, _ minute: Int = 0) -> Date {
+        // 2026-07-15T00:00:00Z = 1_784_246_400.
+        Date(timeIntervalSince1970: 1_784_246_400 + Double(hour * 3600 + minute * 60))
+    }
+
+    @Test func overlappingClientNamesReturnsEveryCollision() {
+        // Proposed 17:00–18:00 vs Sam 17:30–18:30 (overlap), Alex 16:30–17:15
+        // (overlap), Jordan 19:00–20:00 (clear).
+        let names = ProCalendarGrid.overlappingClientNames(
+            proposedStart: at(17), proposedEnd: at(18),
+            events: [
+                (id: "a", clientName: "Sam Rivera", start: at(17, 30), end: at(18, 30)),
+                (id: "b", clientName: "Alex Rivera", start: at(16, 30), end: at(17, 15)),
+                (id: "c", clientName: "Jordan Lee", start: at(19), end: at(20)),
+            ],
+            fallbackName: "another appointment")
+        #expect(names == ["Sam Rivera", "Alex Rivera"])
+    }
+
+    @Test func overlappingClientNamesIgnoresBackToBack() {
+        let names = ProCalendarGrid.overlappingClientNames(
+            proposedStart: at(17), proposedEnd: at(18),
+            events: [(id: "a", clientName: "Sam Rivera", start: at(18), end: at(19))],
+            fallbackName: "another appointment")
+        #expect(names.isEmpty)
+    }
+
+    @Test func overlappingClientNamesFallsBackAndDedupes() {
+        #expect(ProCalendarGrid.overlappingClientNames(
+            proposedStart: at(17), proposedEnd: at(18),
+            events: [], fallbackName: "x").isEmpty)
+
+        // A nameless overlap uses the fallback; a repeated name collapses.
+        let names = ProCalendarGrid.overlappingClientNames(
+            proposedStart: at(17), proposedEnd: at(18),
+            events: [
+                (id: "a", clientName: "   ", start: at(17, 10), end: at(17, 40)),
+                (id: "b", clientName: "Sam Rivera", start: at(17, 20), end: at(17, 50)),
+                (id: "c", clientName: "Sam Rivera", start: at(17, 45), end: at(18, 30)),
+            ],
+            fallbackName: "another appointment")
+        #expect(names == ["another appointment", "Sam Rivera"])
+    }
 }
