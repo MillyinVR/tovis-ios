@@ -94,7 +94,7 @@ Source: `docs/PRO-WEB-PARITY.md` (all 5 pages parity-complete; these are the tai
   always writes them, coercing an absent field → null). No web/server change, no
   migration. **SHIPPED (PR #31)**
 - [ ] In-app Message deep-link from the clients list.
-- [ ] Per-tab chart write forms + technical-record decryption.
+- [x] Per-tab chart write forms + technical-record decryption. ✅ #31 (write forms) + #48 (technical record).
 - [ ] Looks/followers profile stat tiles.
 - [ ] Orphaned `ProClientDetailView` — re-link or delete.
 - [ ] Pro sub-screens: locations editor (create/edit/set-primary/publish), payment-settings/membership, offering CREATE/DELETE (only toggle/edit shipped).
@@ -251,9 +251,8 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
     epic is done. Web #567/#568/#569/#570/#571 all merged, PENDING a prod deploy (held for Tori).
 - [ ] **A4 — full pro parity** (build all): Last Minute EDITOR (iOS is read-only —
   create openings + settings/tiers) · Waitlist outreach workspace · pro's private
-  client view — `ProClientChartView` per-tab write forms + technical-record
-  decryption + a **`view=public` toggle** (chart ↔ that client's public profile;
-  web has it, iOS doesn't) · calendar reschedule/
+  client view (✅ DONE — write forms #31, technical-record decryption #48,
+  `view=public` toggle #49) · calendar reschedule/
   edit-service-items + "offer a time" modals · booking-detail money-trail
   inspector · manual reminders creator/list (distinct from cadence settings) ·
   referral-REWARD config (iOS has activity-only) · data-migration wizard (5
@@ -284,9 +283,10 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
     `ProClientChartView` (header Edit-context, safety-strip Edit-alert, always-present
     do-not-rebook flag/edit, allergies-tab Add-allergy); each write reloads the chart on save
     (`ProAddNoteSheet` got the same `onSaved` reload → fixes stale-after-add-note). +7 tests
-    (swift test 198). **Increment 2 = technical record** (formula/consent decrypt+write,
-    founder-gated — needs a PAIRED WEB change to carry decrypted entries; the native chart
-    aggregate exposes only `technicalEnabled` today). ✅ **Increment 3 = `view=public` toggle
+    (swift test 198). ✅ **Increment 2 = technical record SHIPPED** (iOS #48 +
+    paired web `GET …/technical` · `POST …/formula` · `POST …/consent` ·
+    `PATCH …/photo-release`) — `ProClientTechnicalView` + `ProClientTechnicalEditSheets`
+    decrypt + write formula/consent entries, founder-gated. ✅ **Increment 3 = `view=public` toggle
     SHIPPED** (iOS #49 + web #574) — a segmented Chart ↔ Public-profile control on
     `ProClientChartView` flips to the new `ProClientPublicProfileView` (avatar · @handle · bio ·
     follower/following/looks counts · 3-col looks grid, tap→fullscreen; read-only, no follow —
