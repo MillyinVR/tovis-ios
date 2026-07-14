@@ -165,7 +165,8 @@ struct BestShotsReviewView: View {
                 try await session.client.proMedia.uploadSessionPhoto(
                     bookingId: bookingId,
                     phase: phase,
-                    imageData: payload
+                    imageData: payload,
+                    focal: MediaFocalPoint(faceCenter: shot.focalPoint)
                 )
                 uploaded.insert(shot.id)
             } catch let error as APIError {

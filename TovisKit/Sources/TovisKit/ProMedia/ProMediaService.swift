@@ -26,17 +26,21 @@ public final class ProMediaService: Sendable {
     }
 
     /// One-shot photo upload: presign → PUT → confirm. `imageData` is JPEG bytes.
+    /// `focal` is the normalized subject focal point (camera C6) computed on the
+    /// captured still — nil (no face / not computed) → the server stores no focal
+    /// → the feed cover-crop stays centered (byte-identical to pre-C6).
     @discardableResult
     public func uploadSessionPhoto(
         bookingId: String,
         phase: MediaPhase,
         imageData: Data,
         contentType: String = "image/jpeg",
-        caption: String? = nil
+        caption: String? = nil,
+        focal: MediaFocalPoint? = nil
     ) async throws -> ProBookingMediaItem {
         try await upload(
             bookingId: bookingId, phase: phase, data: imageData,
-            contentType: contentType, mediaType: .image, caption: caption
+            contentType: contentType, mediaType: .image, caption: caption, focal: focal
         )
     }
 
@@ -93,7 +97,8 @@ public final class ProMediaService: Sendable {
         data: Data,
         contentType: String,
         mediaType: MediaType,
-        caption: String?
+        caption: String?,
+        focal: MediaFocalPoint? = nil
     ) async throws -> ProBookingMediaItem {
         let initData = try await presign(
             bookingId: bookingId,
@@ -107,7 +112,8 @@ public final class ProMediaService: Sendable {
             uploadSessionId: initData.uploadSessionId,
             phase: phase,
             mediaType: mediaType,
-            caption: caption
+            caption: caption,
+            focal: focal
         )
     }
 
@@ -285,6 +291,7 @@ public final class ProMediaService: Sendable {
         mediaType: MediaType,
         caption: String? = nil,
         thumbUploadSessionId: String? = nil,
+        focal: MediaFocalPoint? = nil,
         idempotencyKey: String? = nil
     ) async throws -> ProBookingMediaItem {
         let payload = try JSONEncoder.canonical.encode(
@@ -293,7 +300,9 @@ public final class ProMediaService: Sendable {
                 thumbUploadSessionId: thumbUploadSessionId,
                 phase: phase.rawValue,
                 mediaType: mediaType.rawValue,
-                caption: caption
+                caption: caption,
+                focalX: focal?.x,
+                focalY: focal?.y
             )
         )
         // Key off the upload session (the server's own dedup anchor) so a retry of
