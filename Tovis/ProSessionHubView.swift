@@ -30,6 +30,9 @@ struct ProSessionHubView: View {
     @State private var clientUseConsent = false
     @State private var working = false
     @State private var actionError: String?
+    /// Which before/after pair the comparison pager is showing — the one the
+    /// "Publish this transformation" button acts on.
+    @State private var comparisonPage = 0
     @State private var capturing: CaptureSelection?
     /// The before/after shot currently open full-screen (tap a thumbnail).
     @State private var viewingMedia: FullscreenMedia?
@@ -60,24 +63,39 @@ struct ProSessionHubView: View {
     /// "Before" photos (capture order) the AFTER camera ghosts as onion-skin so the
     /// after shots line up with the before — only IMAGE rows, not video clips.
     private var beforeReferenceURLs: [URL] { imageURLs(.before) }
-    private var afterImageURLs: [URL] { imageURLs(.after) }
 
-    private func imageURLs(_ phase: MediaPhase) -> [URL] {
+    /// IMAGE rows for a phase in capture order — the shared basis for both the
+    /// onion-skin reference URLs and the before/after comparison pairs. Filtered to
+    /// rows that actually have a displayable URL so the pair zip stays aligned.
+    private func imageItems(_ phase: MediaPhase) -> [ProBookingMediaItem] {
         media
-            .filter { $0.phase == phase && $0.mediaType == .image }
+            .filter { $0.phase == phase && $0.mediaType == .image && $0.displayUrl != nil }
             .sorted { $0.createdAt < $1.createdAt }
-            .compactMap { $0.displayUrl.flatMap(URL.init(string:)) }
     }
 
+    private func imageURLs(_ phase: MediaPhase) -> [URL] {
+        imageItems(phase).compactMap { $0.displayUrl.flatMap(URL.init(string:)) }
+    }
+
+    /// A matched before/after. Carries the underlying media items (not just URLs) so
+    /// the wrap-up can publish the exact pair the pro is viewing: the "after" is the
+    /// asset featured into the portfolio, the "before" pins its comparison partner.
     private struct ComparePair: Identifiable {
-        let before: URL; let after: URL
-        var id: String { before.absoluteString + "|" + after.absoluteString }
+        let beforeItem: ProBookingMediaItem
+        let afterItem: ProBookingMediaItem
+        let before: URL
+        let after: URL
+        var id: String { beforeItem.id + "|" + afterItem.id }
     }
 
     /// Before/after pairs in capture order (the camera shoots both in guide order),
     /// for the comparison slider.
     private var comparisonPairs: [ComparePair] {
-        zip(beforeReferenceURLs, afterImageURLs).map { ComparePair(before: $0, after: $1) }
+        zip(imageItems(.before), imageItems(.after)).compactMap { before, after in
+            guard let beforeURL = before.displayUrl.flatMap(URL.init(string:)),
+                  let afterURL = after.displayUrl.flatMap(URL.init(string:)) else { return nil }
+            return ComparePair(beforeItem: before, afterItem: after, before: beforeURL, after: afterURL)
+        }
     }
 
     var body: some View {
@@ -371,20 +389,71 @@ struct ProSessionHubView: View {
 
     /// Before & after comparison slider(s) — the transformation payoff. Paged when
     /// there's more than one matched pair. Hidden until at least one pair exists.
+    /// Below the pager: publish the visible pair straight into the pro's Looks feed.
     @ViewBuilder
     private func beforeAfterSection() -> some View {
-        if !comparisonPairs.isEmpty {
+        let pairs = comparisonPairs
+        if !pairs.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Before & after").font(BrandFont.body(15, .semibold))
                     .foregroundStyle(BrandColor.textPrimary)
-                TabView {
-                    ForEach(comparisonPairs) { pair in
+                TabView(selection: $comparisonPage) {
+                    ForEach(Array(pairs.enumerated()), id: \.element.id) { index, pair in
                         BeforeAfterCompareView(beforeURL: pair.before, afterURL: pair.after)
+                            .tag(index)
                     }
                 }
-                .tabViewStyle(.page(indexDisplayMode: comparisonPairs.count > 1 ? .automatic : .never))
+                .tabViewStyle(.page(indexDisplayMode: pairs.count > 1 ? .automatic : .never))
                 .frame(height: 412)
+
+                if pairs.indices.contains(comparisonPage) {
+                    publishTransformationControl(for: pairs[comparisonPage])
+                }
             }
+        }
+    }
+
+    /// Publish the visible before/after into the pro's public Looks feed. Three
+    /// states: already published (confirmation), consent granted (the live button),
+    /// or consent pending (locked, explains why). The action features the "after"
+    /// asset and pins the "before" partner; the server-side share guard is the real
+    /// gate — this just keeps the pro from getting their first "no" from a 403.
+    @ViewBuilder
+    private func publishTransformationControl(for pair: ComparePair) -> some View {
+        if pair.afterItem.isFeaturedInPortfolio {
+            HStack(spacing: 6) {
+                Image(systemName: "checkmark.seal.fill").font(.system(size: 12, weight: .semibold))
+                Text("Published to your Looks").font(BrandFont.body(14, .semibold))
+            }
+            .frame(maxWidth: .infinity).padding(.vertical, 12)
+            .foregroundStyle(BrandColor.emerald)
+            .background(BrandColor.emerald.opacity(0.12))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        } else if clientUseConsent {
+            Button { Task { await publishTransformation(pair) } } label: {
+                HStack(spacing: 6) {
+                    if working {
+                        ProgressView().tint(BrandColor.onAccent)
+                    } else {
+                        Image(systemName: "square.and.arrow.up").font(.system(size: 13, weight: .semibold))
+                    }
+                    Text("Publish this transformation").font(BrandFont.body(14, .semibold))
+                }
+                .frame(maxWidth: .infinity).padding(.vertical, 12)
+                .background(BrandColor.accent)
+                .foregroundStyle(BrandColor.onAccent)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            .disabled(working)
+        } else {
+            HStack(spacing: 6) {
+                Image(systemName: "lock.fill").font(.system(size: 11, weight: .semibold))
+                Text("Publish once the client approves sharing").font(BrandFont.body(13))
+            }
+            .frame(maxWidth: .infinity).padding(.vertical, 12)
+            .foregroundStyle(BrandColor.textMuted)
+            .background(BrandColor.bgSecondary)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
     }
 
@@ -966,6 +1035,21 @@ struct ProSessionHubView: View {
     private func reloadAfterCapture() async {
         await loadMedia()
         await load()
+    }
+
+    /// Feature the visible pair's "after" into the portfolio (server publishes the
+    /// before/after `LookPost`), pinning the exact "before" the pro is viewing so a
+    /// multi-pair session doesn't fall back to the auto-paired earliest before. `run`
+    /// reloads media, so the button flips to its "Published" state on success; a
+    /// consent 403 surfaces via `actionError`.
+    private func publishTransformation(_ pair: ComparePair) async {
+        await run {
+            try await session.client.proProfile.setMediaFeaturedInPortfolio(
+                mediaId: pair.afterItem.id,
+                beforeAssetId: pair.beforeItem.id,
+                featured: true
+            )
+        }
     }
 
     private func transition(to step: SessionStep) async {
