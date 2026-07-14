@@ -58,8 +58,9 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     /// "captures across the session, keeps the best frames" behavior. Synced from
     /// the pro's toggle.
     nonisolated(unsafe) var autoHarvestEnabled = false
-    /// Emits a harvested JPEG + its readiness. The engine stages it for review.
-    nonisolated(unsafe) var onHarvest: (@Sendable (Data, Double) -> Void)?
+    /// Emits a harvested JPEG + its readiness + the frame's face center (camera
+    /// C6, normalized top-left; nil when no face). The engine stages it for review.
+    nonisolated(unsafe) var onHarvest: (@Sendable (Data, Double, CGPoint?) -> Void)?
     private var lastHarvestAt: CFTimeInterval = 0
 
     /// The full-res JPEG encode is expensive and mustn't run inline on the serial
@@ -203,13 +204,18 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                 lastHarvestAt = now
                 let frame = pixelBuffer
                 let peak = readiness
+                // The subject focal for the smart 9:16 feed crop (camera C6): the
+                // face center already computed for THIS frame, in the same upright
+                // top-left space as the harvested JPEG (both from `.oriented(.right)`),
+                // so it maps directly onto the render. Free — no extra detection.
+                let faceCenter = face.map { CGPoint(x: $0.midX, y: $0.midY) }
                 harvestQueue.async { [weak self] in
                     guard let self else { return }
                     guard let data = self.harvest(frame) else {
                         self.releaseHarvestSlots()   // encode failed — hand the slot back
                         return
                     }
-                    self.onHarvest?(data, peak)
+                    self.onHarvest?(data, peak, faceCenter)
                 }
             }
         }
@@ -330,6 +336,9 @@ struct HarvestedShot: Identifiable {
     let image: UIImage
     let fileURL: URL
     let readiness: Double
+    /// Subject focal for the smart 9:16 feed crop (camera C6), normalized top-left;
+    /// nil when the harvest frame had no face → center. Sent at upload.
+    let focalPoint: CGPoint?
 }
 
 @Observable
@@ -389,8 +398,8 @@ final class CoachEngine {
         analyzer.sink = { [weak self] result in
             Task { @MainActor in self?.apply(result) }
         }
-        analyzer.onHarvest = { [weak self] data, readiness in
-            Task { @MainActor in self?.addHarvest(data, readiness) }
+        analyzer.onHarvest = { [weak self] data, readiness, focalPoint in
+            Task { @MainActor in self?.addHarvest(data, readiness, focalPoint) }
         }
         // Feed device roll to both the live horizon UI and the level coach.
         level.onUpdate = { [weak self] roll in
@@ -426,7 +435,7 @@ final class CoachEngine {
         if !removed.isEmpty { analyzer.releaseHarvestSlots(removed.count) }
     }
 
-    private func addHarvest(_ data: Data, _ readiness: Double) {
+    private func addHarvest(_ data: Data, _ readiness: Double, _ focalPoint: CGPoint?) {
         // Tray-cell decode only (up to 24 staged — full decodes would be GBs), then
         // spill the full-res bytes to disk so only the 640px thumb stays in memory.
         // If either step fails, hand back the slot the frame queue reserved so the
@@ -436,7 +445,9 @@ final class CoachEngine {
             analyzer.releaseHarvestSlots()
             return
         }
-        harvested.insert(HarvestedShot(image: image, fileURL: url, readiness: readiness), at: 0)
+        harvested.insert(
+            HarvestedShot(image: image, fileURL: url, readiness: readiness, focalPoint: focalPoint),
+            at: 0)
     }
 
     private func apply(_ result: CoachResult) {

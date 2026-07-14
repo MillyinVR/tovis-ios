@@ -167,13 +167,19 @@ struct FrameScrubberView: View {
         guard let frame, let data = frame.jpegData(compressionQuality: 0.9) else { return }
         working = true; message = nil
         defer { working = false }
+        // Subject focal for the smart 9:16 feed crop (camera C6). The extracted
+        // frame is already upright (the generator applies the preferred track
+        // transform), so PhotoQC's EXIF-corrected face rect maps directly onto the
+        // render. checkBlink:false — we only want the focal, not a QC verdict.
+        let focal = MediaFocalPoint(
+            faceCenter: await PhotoQC.evaluate(data, checkBlink: false).focalPoint)
         var payload = data
         if let correction, let corrected = await CardCorrection.apply(correction, to: data) {
             payload = corrected
         }
         do {
             try await session.client.proMedia.uploadSessionPhoto(
-                bookingId: bookingId, phase: phase, imageData: payload
+                bookingId: bookingId, phase: phase, imageData: payload, focal: focal
             )
             session.signalRefresh()
             message = "Saved that frame."

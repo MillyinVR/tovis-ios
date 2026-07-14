@@ -87,7 +87,7 @@ struct ProCapturePhotosView: View {
     /// Captured JPEGs whose upload failed — spilled to the session byte store (not
     /// held as `[Data]` in RAM, which grows unbounded on a dead connection) and
     /// retried on demand, so a flaky connection never loses a shot the pro took.
-    @State private var failedUploads: [URL] = []
+    @State private var failedUploads: [(url: URL, focal: MediaFocalPoint?)] = []
     @State private var uploading = false
     /// Recorded clips whose upload failed — kept safe in the ClipVault (never
     /// tmp), retried on demand. Tuple carries the phase so a BEFORE clip
@@ -113,6 +113,9 @@ struct ProCapturePhotosView: View {
         /// — carried from the capture decision so a kept-anyway shot advances the
         /// guide exactly as an accepted one would (and a freeform grab doesn't).
         let advanceGuide: Bool
+        /// Subject focal (camera C6) computed on this still — carried so a
+        /// kept-anyway shot uploads with the same smart-crop hint as an accepted one.
+        let focal: MediaFocalPoint?
     }
 
     /// Measured light (luma + warmth) of each "before" reference — the target
@@ -371,7 +374,7 @@ struct ProCapturePhotosView: View {
         .modifier(RetakeDialog(pendingRetake: $pendingRetake, keep: { retake in
             Task {
                 uploading = true
-                await finalize(retake.data, advanceGuide: retake.advanceGuide)
+                await finalize(retake.data, advanceGuide: retake.advanceGuide, focal: retake.focal)
                 uploading = false
             }
         }))
@@ -1692,11 +1695,13 @@ struct ProCapturePhotosView: View {
         }
         shutterFeedback()
         let qc = await PhotoQC.evaluate(data, checkBlink: blinkCheckApplies)
+        let focal = MediaFocalPoint(faceCenter: qc.focalPoint)
         if let reason = qc.retakeReason {
-            pendingRetake = PendingRetake(data: data, reason: reason, advanceGuide: advancesGuide)
+            pendingRetake = PendingRetake(data: data, reason: reason,
+                                          advanceGuide: advancesGuide, focal: focal)
             return false
         }
-        await finalize(data, advanceGuide: advancesGuide)
+        await finalize(data, advanceGuide: advancesGuide, focal: focal)
         return true
     }
 
@@ -1723,7 +1728,9 @@ struct ProCapturePhotosView: View {
             return false
         }
         shutterFeedback()
-        await finalize(best.data, advanceGuide: true)   // auto only fires when ready for the step
+        // auto only fires when ready for the step
+        await finalize(best.data, advanceGuide: true,
+                       focal: MediaFocalPoint(faceCenter: best.qc.focalPoint))
         return true
     }
 
@@ -1753,14 +1760,14 @@ struct ProCapturePhotosView: View {
     /// `advanceGuide` is decided at the capture site — always true for the guided
     /// auto-shot (it only fires when ready for the step), and gated on
     /// `manualShotAdvancesGuide` for a manual tap.
-    private func finalize(_ data: Data, advanceGuide: Bool) async {
+    private func finalize(_ data: Data, advanceGuide: Bool, focal: MediaFocalPoint?) async {
         // Strip-sized decode only — holding the full-sensor UIImage here pinned
         // ~100–200 MB per shot and jetsam-killed real sessions.
         if let thumb = await ImageDownsample.thumbnail(from: data, maxPixel: 216) {
             captured.insert(CapturedShot(image: thumb), at: 0)
         }
         if advanceGuide { markCurrentCaptured() }   // complete the guided shot + advance
-        await upload(data)
+        await upload(data, focal: focal)
     }
 
     /// Upload one captured photo, baking in the card-solved color correction
@@ -1768,39 +1775,42 @@ struct ProCapturePhotosView: View {
     /// a failed render falls back to the original bytes). On failure the
     /// (already-corrected) bytes join the retry queue — a flaky connection
     /// must never lose a shot the pro already took.
-    private func upload(_ data: Data) async {
+    private func upload(_ data: Data, focal: MediaFocalPoint?) async {
         var payload = data
         if let cardMatrix, let corrected = await CardCorrection.apply(cardMatrix, to: data) {
             payload = corrected
         }
-        await uploadCorrected(payload)
+        // Card correction is color-only — geometry (and thus the focal) is unchanged.
+        await uploadCorrected(payload, focal: focal)
     }
 
     /// Upload bytes that are already color-final (retries must not re-correct). On
     /// failure the bytes spill to disk and their URL joins the retry queue — a
     /// flaky connection must never lose a shot the pro already took, and the bytes
     /// mustn't pile up in RAM while the queue drains.
-    private func uploadCorrected(_ payload: Data) async {
+    private func uploadCorrected(_ payload: Data, focal: MediaFocalPoint?) async {
         do {
             try await session.client.proMedia.uploadSessionPhoto(
                 bookingId: bookingId,
                 phase: phase,
-                imageData: payload
+                imageData: payload,
+                focal: focal
             )
             session.signalRefresh()   // the hub's gallery refreshes
         } catch let error as APIError {
-            queueFailedUpload(payload, message: error.userMessage)
+            queueFailedUpload(payload, focal: focal, message: error.userMessage)
         } catch {
-            queueFailedUpload(payload, message: "Couldn’t save that photo — it’s kept here to retry.")
+            queueFailedUpload(payload, focal: focal,
+                              message: "Couldn’t save that photo — it’s kept here to retry.")
         }
     }
 
     /// Spill a failed upload's bytes to disk and remember the URL for the retry
     /// pill. If even the spill fails, surface it rather than silently pinning the
     /// bytes in RAM (the whole point of spilling).
-    private func queueFailedUpload(_ payload: Data, message: String) {
+    private func queueFailedUpload(_ payload: Data, focal: MediaFocalPoint?, message: String) {
         if let url = SessionByteVault.write(payload, to: .pendingUpload) {
-            failedUploads.append(url)
+            failedUploads.append((url: url, focal: focal))
             errorMessage = message
         } else {
             errorMessage = "Couldn’t save that photo, and it couldn’t be kept to retry."
@@ -1815,13 +1825,13 @@ struct ProCapturePhotosView: View {
         defer { uploading = false }
         let pending = failedUploads
         failedUploads = []
-        for url in pending {
+        for entry in pending {
             guard let payload = await Task.detached(
                 priority: .userInitiated,
-                operation: { SessionByteVault.read(url) }
+                operation: { SessionByteVault.read(entry.url) }
             ).value else { continue }   // gone from disk — nothing to retry
-            SessionByteVault.remove(url)       // uploadCorrected re-spills on re-failure
-            await uploadCorrected(payload)
+            SessionByteVault.remove(entry.url)   // uploadCorrected re-spills on re-failure
+            await uploadCorrected(payload, focal: entry.focal)
         }
     }
 

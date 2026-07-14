@@ -62,16 +62,41 @@ public struct MediaUploadInit: Decodable, Sendable {
     public let uploadSessionId: String
 }
 
+/// A normalized subject focal point (camera C6) — the (x, y) of the face in the
+/// EXIF-corrected upright image, both in [0,1] from the TOP-LEFT origin. Sent on
+/// the media confirm so the Looks feed's full-screen cover-crop centers on the
+/// subject instead of the blind geometric center. Mirrors the web
+/// `resolveFocalPoint` (`lib/media/focalPoint.ts`): a non-finite or out-of-[0,1]
+/// coordinate is rejected, so a bad focal degrades to nil (center) rather than
+/// shipping garbage the render would clamp anyway.
+public struct MediaFocalPoint: Sendable, Equatable {
+    public let x: Double
+    public let y: Double
+
+    /// Validated init — nil unless BOTH coordinates are finite and within [0,1].
+    public init?(x: Double?, y: Double?) {
+        guard let x, let y, x.isFinite, y.isFinite,
+              (0.0...1.0).contains(x), (0.0...1.0).contains(y) else { return nil }
+        self.x = x
+        self.y = y
+    }
+}
+
 /// `POST /api/v1/pro/bookings/{id}/media` — confirm body. The server resolves the
 /// storage path from the upload session, so we only send the session + tags.
 /// `thumbUploadSessionId` is a second presigned session carrying a poster frame
 /// (video rows get a real thumbnail); nil is omitted, which older servers ignore.
+/// `focalX`/`focalY` are the normalized subject focal (camera C6) — same nil-is-
+/// omitted contract, so a faceless shot (or a server that predates the field)
+/// stays center.
 struct MediaConfirmRequest: Encodable, Sendable {
     let uploadSessionId: String
     let thumbUploadSessionId: String?
     let phase: String
     let mediaType: String
     let caption: String?
+    let focalX: Double?
+    let focalY: Double?
 }
 
 /// A session media row (`ProBookingMediaItemDTO`). Private bucket → `url`/`thumbUrl`
