@@ -423,7 +423,14 @@ struct ProCalendarView: View {
                     collapseToggle: chromeCollapsed,
                     workingHours: workingWeek,
                     pendingMove: $pendingMove,
-                    pendingResize: $pendingResize
+                    pendingResize: $pendingResize,
+                    // Cross-week drag: dwelling a lifted tile at the grid's edge pages
+                    // one week. Shifts `currentDate` (same `step` the nav buttons use)
+                    // → `.onChange` refetches; the drag survives (grid `@State`).
+                    onEdgePage: { delta in
+                        currentDate = ProCalendarGrid.step(
+                            view: .week, reference: currentDate, by: delta, timeZone: calendarTimeZone)
+                    }
                 )
                 .frame(maxHeight: .infinity)
             }

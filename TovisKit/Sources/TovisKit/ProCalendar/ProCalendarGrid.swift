@@ -12,6 +12,11 @@ public enum ProCalendarViewMode: String, Sendable, CaseIterable {
     case day, week, month
 }
 
+/// The week the calendar should page to when a cross-week drag dwells at an edge.
+public enum EdgePageDirection: Sendable, Equatable {
+    case previous, next, none
+}
+
 /// One cell of the month grid (6×7). `dayYmd` is the local "yyyy-MM-dd" in the
 /// calendar zone — it matches a `ProCalendarEvent.localDateKey` for bucketing.
 public struct ProMonthCell: Sendable, Identifiable, Equatable {
@@ -280,6 +285,21 @@ public enum ProCalendarGrid {
             return column.key
         }
         return nil
+    }
+
+    /// The week-edge band a cross-week drag's finger sits in. `.previous` when the
+    /// finger is within `threshold` of the leading edge (past the time gutter),
+    /// `.next` when within `threshold` of the trailing edge, `.none` in between —
+    /// the caller dwells on a non-`.none` band to paginate. A finger dragged off
+    /// either edge still resolves to that side. Leading takes precedence when the
+    /// grid is narrower than both bands.
+    public static func edgePageDirection(
+        globalX: Double, gridMinX: Double, gridMaxX: Double,
+        gutterWidth: Double, threshold: Double
+    ) -> EdgePageDirection {
+        if globalX <= gridMinX + gutterWidth + threshold { return .previous }
+        if globalX >= gridMaxX - threshold { return .next }
+        return .none
     }
 
     /// `h:mmam/pm` for a minutes-since-midnight value — the live drag / pending-move
