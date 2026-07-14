@@ -61,11 +61,39 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     /// Emits a harvested JPEG + its readiness. The engine stages it for review.
     nonisolated(unsafe) var onHarvest: (@Sendable (Data, Double) -> Void)?
     private var lastHarvestAt: CFTimeInterval = 0
-    /// How many harvested shots are currently staged (unreviewed) in the tray.
-    /// The engine writes the authoritative tray count after every add/review, so
-    /// reviewing shots re-opens harvest headroom — the cap bounds the *tray*, not
-    /// the whole session. Same cross-queue pattern as `autoHarvestEnabled`.
-    nonisolated(unsafe) var stagedCount = 0
+
+    /// The full-res JPEG encode is expensive and mustn't run inline on the serial
+    /// frame queue (it would stall analysis for the whole encode). It runs on this
+    /// serial queue instead, with its own CIContext so a full-res harvest render
+    /// never contends with the per-frame analysis renders.
+    private let harvestQueue = DispatchQueue(label: "tovis.coach.harvest", qos: .utility)
+    private let harvestContext = CIContext(options: [.priorityRequestLow: true])
+
+    /// Unreviewed-tray headroom, capped at `maxHarvest`. Single-owner: the count
+    /// is mutated ONLY through the lock-guarded reserve/release helpers below —
+    /// the frame queue reserves a slot before it hands a frame to the encode, the
+    /// encode releases it if the JPEG fails, and the engine releases slots as
+    /// reviewed shots leave the tray. It stays equal to (staged tray + in-flight
+    /// encodes), so the cap bounds both. (Replaces a plain cross-queue `Int` that
+    /// the frame queue and the main actor both wrote — a real data race.)
+    private let harvestCountLock = NSLock()
+    private var _harvestSlots = 0
+
+    /// Claim a harvest slot; true only while the tray (+ in-flight encodes) is
+    /// still under the cap. Called on the frame queue.
+    private func reserveHarvestSlot() -> Bool {
+        harvestCountLock.lock(); defer { harvestCountLock.unlock() }
+        guard _harvestSlots < CoachTuning.maxHarvest else { return false }
+        _harvestSlots += 1
+        return true
+    }
+
+    /// Give slots back — a failed encode (1), or shots leaving the tray on review
+    /// (n). Called from the encode queue and the main actor; the lock makes both safe.
+    func releaseHarvestSlots(_ n: Int = 1) {
+        harvestCountLock.lock(); defer { harvestCountLock.unlock() }
+        _harvestSlots = max(0, _harvestSlots - n)
+    }
 
     init(coaches: [ShotCoach]) {
         self.coaches = coaches
@@ -163,25 +191,37 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                               frameLuma: avgLuma, frameWarmth: cachedColor?.warmth,
                               debug: debug))
 
-            // Harvest a keeper when quality peaks (rate-limited + capped).
+            // Harvest a keeper when quality peaks (rate-limited + capped). Reserve
+            // the slot here, but run the full-res JPEG encode OFF this frame queue
+            // so it never stalls analysis mid-burst. Retaining `pixelBuffer` for
+            // the async encode is safe: the output discards late frames, so a held
+            // buffer just drops the next frame or two rather than backing up.
             if autoHarvestEnabled,
                readiness >= CoachTuning.harvestThreshold,
                now - lastHarvestAt >= CoachTuning.minHarvestInterval,
-               stagedCount < CoachTuning.maxHarvest,
-               let data = harvest(pixelBuffer) {
+               reserveHarvestSlot() {
                 lastHarvestAt = now
-                stagedCount += 1   // engine overwrites with the real tray count
-                onHarvest?(data, readiness)
+                let frame = pixelBuffer
+                let peak = readiness
+                harvestQueue.async { [weak self] in
+                    guard let self else { return }
+                    guard let data = self.harvest(frame) else {
+                        self.releaseHarvestSlots()   // encode failed — hand the slot back
+                        return
+                    }
+                    self.onHarvest?(data, peak)
+                }
             }
         }
     }
 
     /// Convert the current frame to an upright JPEG for the best-shots tray. High
-    /// JPEG quality — these can end up on the profile / Looks feed.
+    /// JPEG quality — these can end up on the profile / Looks feed. Runs on the
+    /// harvest queue against its own CIContext (never the frame queue's).
     private func harvest(_ pixelBuffer: CVPixelBuffer) -> Data? {
         let image = CIImage(cvPixelBuffer: pixelBuffer).oriented(.right)
         let quality = CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String)
-        return ciContext.jpegRepresentation(
+        return harvestContext.jpegRepresentation(
             of: image,
             colorSpace: CGColorSpaceCreateDeviceRGB(),
             options: [quality: 0.95]
@@ -284,9 +324,11 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
 /// pro to review (keep/upload) rather than uploaded silently.
 struct HarvestedShot: Identifiable {
     let id = UUID()
-    /// Tray-cell thumbnail — `data` holds the full still.
+    /// Tray-cell thumbnail (640px). The full still is spilled to disk — holding
+    /// up to 24 full-res JPEGs in RAM (~120–240 MB) is an OOM the camera can't
+    /// afford — and read back from `fileURL` only at upload.
     let image: UIImage
-    let data: Data
+    let fileURL: URL
     let readiness: Double
 }
 
@@ -335,6 +377,10 @@ final class CoachEngine {
 
     init(settings: CoachSettings) {
         self.settings = settings
+        // A new engine == a fresh camera session. Sweep the session-scoped byte
+        // store so best-shot / failed-upload spills stranded by a previous
+        // dismiss or crash don't accumulate (they're discarded on exit anyway).
+        SessionByteVault.reset()
         self.analyzer = CoachAnalyzer(coaches: [
             LightingCoach(), CompositionCoach(), SharpnessCoach(),
             BackgroundCoach(), PoseCoach(), LevelCoach(), ColorCoach(),
@@ -371,18 +417,26 @@ final class CoachEngine {
     }
 
     /// Drop reviewed shots (kept or discarded) from the tray. Reviewing re-opens
-    /// harvest headroom (the cap bounds the unreviewed tray, not the session).
+    /// harvest headroom (the cap bounds the unreviewed tray, not the session):
+    /// each removed shot releases its slot and its spilled bytes.
     func removeHarvested(_ ids: Set<UUID>) {
+        let removed = harvested.filter { ids.contains($0.id) }
+        for shot in removed { SessionByteVault.remove(shot.fileURL) }
         harvested.removeAll { ids.contains($0.id) }
-        analyzer.stagedCount = harvested.count
+        if !removed.isEmpty { analyzer.releaseHarvestSlots(removed.count) }
     }
 
     private func addHarvest(_ data: Data, _ readiness: Double) {
-        // Tray-cell decode only (up to 24 staged — full decodes would be GBs);
-        // the JPEG bytes ride along untouched for upload.
-        guard let image = ImageDownsample.thumbnailSync(from: data, maxPixel: 640) else { return }
-        harvested.insert(HarvestedShot(image: image, data: data, readiness: readiness), at: 0)
-        analyzer.stagedCount = harvested.count
+        // Tray-cell decode only (up to 24 staged — full decodes would be GBs), then
+        // spill the full-res bytes to disk so only the 640px thumb stays in memory.
+        // If either step fails, hand back the slot the frame queue reserved so the
+        // cap doesn't leak (the bytes are dropped rather than pinned in RAM).
+        guard let image = ImageDownsample.thumbnailSync(from: data, maxPixel: 640),
+              let url = SessionByteVault.write(data, to: .harvest) else {
+            analyzer.releaseHarvestSlots()
+            return
+        }
+        harvested.insert(HarvestedShot(image: image, fileURL: url, readiness: readiness), at: 0)
     }
 
     private func apply(_ result: CoachResult) {

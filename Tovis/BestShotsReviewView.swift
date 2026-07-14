@@ -148,8 +148,17 @@ struct BestShotsReviewView: View {
         var lastError: String?
         for (index, shot) in shots.enumerated() {
             progress = "Uploading \(index + 1) of \(shots.count)…"
-            var payload = shot.data
-            if let correction, let corrected = await CardCorrection.apply(correction, to: shot.data) {
+            // The full-res bytes live on disk (only the tray thumb is in RAM) —
+            // read them back off the main actor for the upload.
+            guard let raw = await Task.detached(
+                priority: .userInitiated,
+                operation: { SessionByteVault.read(shot.fileURL) }
+            ).value else {
+                lastError = "Couldn’t read some photos — try again."
+                continue   // leave it in the tray; the file may return next retry
+            }
+            var payload = raw
+            if let correction, let corrected = await CardCorrection.apply(correction, to: raw) {
                 payload = corrected
             }
             do {
