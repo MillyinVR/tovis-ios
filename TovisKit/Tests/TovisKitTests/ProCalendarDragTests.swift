@@ -160,6 +160,51 @@ struct ProCalendarDragTests {
         #expect(ProCalendarGrid.dayColumnForX(20, columns: one) == nil)
     }
 
+    // ── cross-week edge pagination (finger x → page direction) ──
+
+    // A 393pt-wide grid (iPhone width) with the standard 52pt time gutter and a
+    // 24pt dwell band: leading band is x ≤ 52+24 = 76, trailing band is x ≥ 369.
+    private func edge(_ x: Double) -> EdgePageDirection {
+        ProCalendarGrid.edgePageDirection(
+            globalX: x, gridMinX: 0, gridMaxX: 393, gutterWidth: 52, threshold: 24)
+    }
+
+    @Test func edgeLeftBandPaginatesToPrevious() {
+        #expect(edge(60) == .previous)
+        #expect(edge(76) == .previous) // inclusive inner boundary (52 + 24)
+    }
+
+    @Test func edgeJustInsideLeftIsNone() {
+        #expect(edge(77) == .none)
+    }
+
+    @Test func edgeRightBandPaginatesToNext() {
+        #expect(edge(380) == .next)
+        #expect(edge(369) == .next) // inclusive inner boundary (393 − 24)
+    }
+
+    @Test func edgeJustInsideRightIsNone() {
+        #expect(edge(368) == .none)
+    }
+
+    @Test func edgeMiddleIsNone() {
+        #expect(edge(200) == .none)
+    }
+
+    @Test func edgeOffEitherSideStillPaginates() {
+        // Finger dragged past the screen edge keeps paginating that way.
+        #expect(edge(-10) == .previous)
+        #expect(edge(500) == .next)
+    }
+
+    @Test func edgeNarrowGridPrefersPrevious() {
+        // Bands overlap when the grid is narrower than both → leading wins.
+        #expect(
+            ProCalendarGrid.edgePageDirection(
+                globalX: 60, gridMinX: 0, gridMaxX: 80, gutterWidth: 52, threshold: 24)
+                == .previous)
+    }
+
     // ── minutes → instant ──
 
     @Test func instantRoundTripsWithinTheDay() {
