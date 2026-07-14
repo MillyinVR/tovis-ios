@@ -55,6 +55,11 @@ struct ProCapturePhotosView: View {
     /// Guided auto-capture is armed (fires once per stabilization — must drop out
     /// of "ready" and settle again before the next auto-shot).
     @State private var autoArmed = true
+    /// A steady-ready auto-capture was wanted but a transient gate (upload in
+    /// flight, review sheet, calibration, recording, interrupted session) blocked
+    /// it. Re-fire when the gate clears instead of waiting for the subject to
+    /// break the hold and re-stabilize — which may never happen if they hold still.
+    @State private var guidedCaptureQueued = false
     /// Showing the white-balance calibration target (fill it with a neutral surface).
     @State private var calibrating = false
     /// Within calibration: card mode (scan the printed calibration card —
@@ -103,6 +108,10 @@ struct ProCapturePhotosView: View {
         let id = UUID()
         let data: Data
         let reason: String
+        /// Whether keeping this shot should also complete the current guided step
+        /// — carried from the capture decision so a kept-anyway shot advances the
+        /// guide exactly as an accepted one would (and a freeform grab doesn't).
+        let advanceGuide: Bool
     }
 
     /// Measured light (luma + warmth) of each "before" reference — the target
@@ -273,8 +282,16 @@ struct ProCapturePhotosView: View {
                 camera.stop()
             } else {
                 camera.resume()
+                retryGuidedIfReady()
             }
         }
+        // A transient gate that blocked a queued auto-capture just cleared — if
+        // the subject is still held steady, take the shot now instead of waiting
+        // for a fresh stabilization edge that may never come.
+        .onChange(of: uploading) { _, busy in if !busy { retryGuidedIfReady() } }
+        .onChange(of: calibrating) { _, active in if !active { retryGuidedIfReady() } }
+        .onChange(of: camera.isRecording) { _, recording in if !recording { retryGuidedIfReady() } }
+        .onChange(of: camera.status) { _, status in if status == .ready { retryGuidedIfReady() } }
         // Ghost the "before" that matches the current guided shot (before/after
         // were shot in the same order), so the pair lines up. Manual cycle overrides.
         .onChange(of: currentStepID) {
@@ -350,10 +367,10 @@ struct ProCapturePhotosView: View {
                               correction: cardMatrix)
         }
         .mediaFullscreenCover($viewingMedia)
-        .modifier(RetakeDialog(pendingRetake: $pendingRetake, keep: { data in
+        .modifier(RetakeDialog(pendingRetake: $pendingRetake, keep: { retake in
             Task {
                 uploading = true
-                await finalize(data)
+                await finalize(retake.data, advanceGuide: retake.advanceGuide)
                 uploading = false
             }
         }))
@@ -375,7 +392,7 @@ struct ProCapturePhotosView: View {
     /// resolves in reasonable time.
     private struct RetakeDialog: ViewModifier {
         @Binding var pendingRetake: PendingRetake?
-        let keep: (Data) -> Void
+        let keep: (PendingRetake) -> Void
 
         func body(content: Content) -> some View {
             content.confirmationDialog(
@@ -389,9 +406,9 @@ struct ProCapturePhotosView: View {
             ) { shot in
                 Button("Retake") { pendingRetake = nil }
                 Button("Keep it anyway") {
-                    let data = shot.data
+                    let retake = shot
                     pendingRetake = nil
-                    keep(data)
+                    keep(retake)
                 }
             } message: { shot in
                 Text("\(shot.reason). Retake it while they’re still in position?")
@@ -731,15 +748,26 @@ struct ProCapturePhotosView: View {
 
     /// Sustained warmth drift vs the scan moment → surface the re-scan nudge.
     private func updateDrift(_ warmth: Double) {
-        guard cardMatrix != nil, let calibrated = calibrationWarmth, !driftDismissed else {
+        guard cardMatrix != nil, let calibrated = calibrationWarmth else {
             driftSince = nil
             return
         }
-        if abs(warmth - calibrated) > CoachTuning.calibrationDriftWarmth {
-            if driftSince == nil { driftSince = Date() }
-        } else {
+        if abs(warmth - calibrated) <= CoachTuning.calibrationDriftWarmth {
+            // Back within tolerance of the scan-moment light — clear any pending
+            // drift AND release the dismissal latch, so a fresh drift later can
+            // nudge again (one dismissal shouldn't silence drift for the whole
+            // session).
             driftSince = nil
+            driftDismissed = false
+            return
         }
+        // Drifting: stay quiet while the pro has already acted on/dismissed the
+        // nudge (until the light returns above and drifts anew).
+        guard !driftDismissed else {
+            driftSince = nil
+            return
+        }
+        if driftSince == nil { driftSince = Date() }
     }
 
     private var driftNudgeActive: Bool {
@@ -809,10 +837,21 @@ struct ProCapturePhotosView: View {
     /// steady, fire the full-quality capture, confirm, and advance. Disarms until the
     /// shot drops out of "ready" again so it shoots once per setup, not continuously.
     private func attemptGuidedCapture() {
-        guard settings.autoCapture, settings.showGuides, !guide.steps.isEmpty,
-              !allStepsDone, !uploading, !isReviewing, !calibrating,
+        // Permanent-for-now gates: auto-capture simply isn't in play — nothing to
+        // queue (it re-arms naturally when guides/auto come back on).
+        guard settings.autoCapture, settings.showGuides, !guide.steps.isEmpty, !allStepsDone else {
+            guidedCaptureQueued = false
+            return
+        }
+        // Transient gates: remember we wanted the shot and take it once they clear
+        // (see `retryGuidedIfReady`) rather than waiting for the next stabilization.
+        guard !uploading, !isReviewing, !calibrating,
               !camera.isRecording,   // don't auto-fire stills mid-clip
-              camera.status == .ready else { return }
+              camera.status == .ready else {
+            guidedCaptureQueued = true
+            return
+        }
+        guidedCaptureQueued = false
         autoArmed = false
         Task {
             let title = currentStep?.title
@@ -820,6 +859,13 @@ struct ProCapturePhotosView: View {
             coach?.resetHold()
             if kept, settings.speak, let title { coach?.announce("Got the \(title).") }
         }
+    }
+
+    /// A transient gate that blocked a queued auto-capture just cleared — if the
+    /// shot is still held steady and armed, take it now.
+    private func retryGuidedIfReady() {
+        guard guidedCaptureQueued, autoArmed, coach?.isSteadyReady ?? false else { return }
+        attemptGuidedCapture()
     }
 
     /// Camera level / horizon indicator — fixed reference ticks plus a line that
@@ -1543,7 +1589,7 @@ struct ProCapturePhotosView: View {
                         }
                     }
                 }
-                .disabled(uploading || camera.status != .ready)
+                .disabled(uploading || scanningCard || camera.status != .ready)
 
                 // Done
                 Button("Done") { requestExit() }
@@ -1607,13 +1653,25 @@ struct ProCapturePhotosView: View {
     private func capture(trigger: CaptureTrigger = .manual) async -> Bool {
         // One capture at a time — the guided auto-shot and a manual shutter tap
         // can otherwise interleave (a second capturePhoto would be rejected by
-        // the controller, but never let it get that far).
-        guard !uploading else { return false }
+        // the controller, but never let it get that far). Also stand off while a
+        // card scan owns the capture pipeline (two in-flight captures collide →
+        // "Couldn't take that photo.").
+        guard !uploading, !scanningCard else { return false }
         uploading = true
         errorMessage = nil
         defer { uploading = false }
 
         if trigger == .auto { return await autoCaptureBest() }
+
+        // A manual shutter press supersedes any auto-capture queued behind a
+        // transient gate — clear it so releasing `uploading` here doesn't kick
+        // off a redundant auto-shot right after this one. (Manual-path only:
+        // the auto branch returned above.)
+        defer { guidedCaptureQueued = false }
+
+        // Whether this shot completes the current guided step — sampled at the
+        // press, before the capture await moves the coach's readiness on.
+        let advancesGuide = manualShotAdvancesGuide
 
         let data: Data
         do {
@@ -1625,10 +1683,10 @@ struct ProCapturePhotosView: View {
         shutterFeedback()
         let qc = await PhotoQC.evaluate(data, checkBlink: blinkCheckApplies)
         if let reason = qc.retakeReason {
-            pendingRetake = PendingRetake(data: data, reason: reason)
+            pendingRetake = PendingRetake(data: data, reason: reason, advanceGuide: advancesGuide)
             return false
         }
-        await finalize(data)
+        await finalize(data, advanceGuide: advancesGuide)
         return true
     }
 
@@ -1655,7 +1713,7 @@ struct ProCapturePhotosView: View {
             return false
         }
         shutterFeedback()
-        await finalize(best.data)
+        await finalize(best.data, advanceGuide: true)   // auto only fires when ready for the step
         return true
     }
 
@@ -1673,14 +1731,25 @@ struct ProCapturePhotosView: View {
         withAnimation(.easeIn(duration: 0.18).delay(0.08)) { flash = false }
     }
 
-    /// Keep a shot: thumbnail, complete the guided step, upload.
-    private func finalize(_ data: Data) async {
+    /// Whether a *manual* shot should count toward the current guided step. Only
+    /// when the coach was actively judging THIS step and read the frame as ready
+    /// — a freeform extra angle (no active step, or the coach not ready for it)
+    /// must not skip the guide forward. Sampled at the shutter press.
+    private var manualShotAdvancesGuide: Bool {
+        activeExpectations != nil && isReady
+    }
+
+    /// Keep a shot: thumbnail, optionally complete the guided step, upload.
+    /// `advanceGuide` is decided at the capture site — always true for the guided
+    /// auto-shot (it only fires when ready for the step), and gated on
+    /// `manualShotAdvancesGuide` for a manual tap.
+    private func finalize(_ data: Data, advanceGuide: Bool) async {
         // Strip-sized decode only — holding the full-sensor UIImage here pinned
         // ~100–200 MB per shot and jetsam-killed real sessions.
         if let thumb = await ImageDownsample.thumbnail(from: data, maxPixel: 216) {
             captured.insert(CapturedShot(image: thumb), at: 0)
         }
-        markCurrentCaptured()   // complete the guided shot + advance
+        if advanceGuide { markCurrentCaptured() }   // complete the guided shot + advance
         await upload(data)
     }
 
