@@ -101,9 +101,27 @@ public struct ProBookingMediaItem: Decodable, Sendable, Identifiable {
     public var displayThumbUrl: String? { renderThumbUrl ?? thumbUrl ?? renderUrl ?? url }
 }
 
-/// `GET /api/v1/pro/bookings/{id}/media` → list envelope.
-struct ProBookingMediaListResponse: Decodable, Sendable {
-    let items: [ProBookingMediaItem]
+/// `GET /api/v1/pro/bookings/{id}/media` → list envelope. `clientUseConsent` is
+/// booking-scoped (from `Booking.mediaUseConsentAt`): true when the client
+/// granted media-use consent, unlocking the pro's public-share action for the
+/// whole session's media (alongside review-promotion — see the web
+/// `publicShareGuard`). Decode tolerates its absence (defaults false) so it
+/// still decodes against a server that predates the field.
+public struct ProBookingMediaListResponse: Decodable, Sendable {
+    public let items: [ProBookingMediaItem]
+    public let clientUseConsent: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case items
+        case clientUseConsent
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        items = try container.decode([ProBookingMediaItem].self, forKey: .items)
+        clientUseConsent =
+            try container.decodeIfPresent(Bool.self, forKey: .clientUseConsent) ?? false
+    }
 }
 
 /// `POST /api/v1/pro/bookings/{id}/media` → create envelope.

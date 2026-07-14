@@ -492,6 +492,7 @@ func fixture(_ name: String) throws -> Data {
     @Test func decodesProBookingMedia() throws {
         let res = try JSONDecoder().decode(ProBookingMediaListResponse.self, from: fixture("proBookingMedia"))
         #expect(res.items.count == 2)
+        #expect(res.clientUseConsent)   // booking-scoped media-use consent (C4)
         let before = try #require(res.items.first)
         #expect(before.phase == .before)
         #expect(before.mediaType == .image)
@@ -500,6 +501,14 @@ func fixture(_ name: String) throws -> Data {
         #expect(after.phase == .after)
         #expect(after.caption == "fresh balayage")
         #expect(after.displayThumbUrl == "https://x/media_2_t.jpg")     // falls back when no render
+    }
+
+    // clientUseConsent tolerates absence (server predating the field) → false.
+    @Test func decodesProBookingMediaWithoutConsentField() throws {
+        let json = Data(#"{"ok":true,"items":[]}"#.utf8)
+        let res = try JSONDecoder().decode(ProBookingMediaListResponse.self, from: json)
+        #expect(res.items.isEmpty)
+        #expect(!res.clientUseConsent)
     }
 
     // GET /api/v1/pro/bookings/{id} — Fixtures/proBookingDetail.json. Pro booking
