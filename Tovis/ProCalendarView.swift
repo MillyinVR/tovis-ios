@@ -162,7 +162,7 @@ struct ProCalendarView: View {
                 }
             }
             .background(BrandColor.bgPrimary.ignoresSafeArea())
-            .navigationTitle("Calendar ✦FIX")
+            .navigationTitle("Calendar ✦XDAY")
             // Inline (not large) title keeps the chrome compact so the time-grid
             // gets more vertical room.
             .navigationBarTitleDisplayMode(.inline)

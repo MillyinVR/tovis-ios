@@ -54,10 +54,14 @@ struct PendingCalendarResize: Identifiable {
 }
 
 /// Live drag state while a tile is lifted (before release). `currentStartMinutes`
-/// is the snapped, clamped minutes-since-midnight the tile currently hovers at.
+/// is the snapped, clamped minutes-since-midnight the tile currently hovers at;
+/// `originDayYmd` is the column it started in and `columnDeltaX` is the horizontal
+/// offset to the column the finger is currently over (week-view cross-day follow).
 private struct CalendarDragState: Equatable {
     let eventId: String
+    let originDayYmd: String
     var currentStartMinutes: Int
+    var columnDeltaX: CGFloat
 }
 
 /// Live resize state while a tile's bottom edge is being dragged (before release).
@@ -206,6 +210,10 @@ struct ProCalendarTimeGrid: View {
                         timeGutter
                         ForEach(days) { day in
                             dayColumn(day)
+                                // While a tile is dragged across days, lift its origin
+                                // column above the others so the tile (offset out past
+                                // its own column) draws ON TOP of the neighbours.
+                                .zIndex(activeDrag?.originDayYmd == day.dayYmd ? 1 : 0)
                             if day.id != days.last?.id {
                                 Rectangle()
                                     .fill(BrandColor.textMuted.opacity(0.12))
@@ -486,6 +494,9 @@ struct ProCalendarTimeGrid: View {
         let showResizeHandle = draggable && CGFloat(duration) * pxPerMinute >= 44
 
         let isActive = activeDrag?.eventId == event.id
+        // Live cross-day follow: while this tile is the one being dragged, shift it
+        // horizontally toward the column the finger is over (0 otherwise).
+        let activeColumnDeltaX: CGFloat = isActive ? (activeDrag?.columnDeltaX ?? 0) : 0
         let isPending = pendingMove?.event.id == event.id && pendingMove?.dayYmd == day.dayYmd
         let isResizing = activeResize?.eventId == event.id
         let isPendingResize = pendingResize?.event.id == event.id && pendingResize?.dayYmd == day.dayYmd
@@ -563,11 +574,11 @@ struct ProCalendarTimeGrid: View {
                     }
                 }
                 .zIndex(lifted ? 2 : (pending ? 1 : 0))
-                .offset(x: colX, y: topPx)
+                .offset(x: colX + activeColumnDeltaX, y: topPx)
         } else {
             tile
                 .zIndex(lifted ? 2 : (pending ? 1 : 0))
-                .offset(x: colX, y: topPx)
+                .offset(x: colX + activeColumnDeltaX, y: topPx)
         }
     }
 
@@ -649,7 +660,9 @@ struct ProCalendarTimeGrid: View {
             .onEnded { _ in
                 // Arm only if nothing else is active (a handle resize wins the edge).
                 guard activeDrag == nil, activeResize == nil else { return }
-                activeDrag = CalendarDragState(eventId: event.id, currentStartMinutes: startMinutes)
+                activeDrag = CalendarDragState(
+                    eventId: event.id, originDayYmd: day.dayYmd,
+                    currentStartMinutes: startMinutes, columnDeltaX: 0)
             }
             .simultaneously(with:
                 DragGesture(minimumDistance: 0, coordinateSpace: .global)
@@ -657,9 +670,12 @@ struct ProCalendarTimeGrid: View {
                         // Only tracks once the long-press has lifted THIS tile.
                         guard activeDrag?.eventId == event.id else { return }
                         activeDrag = CalendarDragState(
-                            eventId: event.id,
+                            eventId: event.id, originDayYmd: day.dayYmd,
                             currentStartMinutes: droppedStartMinutes(
-                                from: startMinutes, drag: drag, duration: durationMinutes))
+                                from: startMinutes, drag: drag, duration: durationMinutes),
+                            // Live cross-day follow: slide the tile toward the column
+                            // the finger is over (week view only).
+                            columnDeltaX: columnDeltaX(globalX: drag.location.x, origin: day))
                     }
                     .onEnded { drag in
                         guard activeDrag?.eventId == event.id else { return }
@@ -677,6 +693,17 @@ struct ProCalendarTimeGrid: View {
                             event: event, newStart: newStart, dayYmd: targetDay.dayYmd, newStartMinutes: snapped)
                     }
             )
+    }
+
+    /// The horizontal offset (points) from the drag's origin column to the column
+    /// the finger is currently over — the live cross-day follow in week view. 0 in
+    /// day view, when the finger is over no column, or still over the origin.
+    private func columnDeltaX(globalX: CGFloat, origin: ProMonthCell) -> CGFloat {
+        guard view == .week, let originFrame = dayColumnFrames[origin.dayYmd] else { return 0 }
+        let target = dropTargetDay(globalX: globalX, fallback: origin)
+        guard target.dayYmd != origin.dayYmd,
+              let targetFrame = dayColumnFrames[target.dayYmd] else { return 0 }
+        return targetFrame.minX - originFrame.minX
     }
 
     /// The day column a week-view drag released over (x-hit-testing the captured
