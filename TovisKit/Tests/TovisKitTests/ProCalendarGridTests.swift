@@ -334,6 +334,93 @@ struct ProCalendarGridTests {
         #expect(segs.isEmpty)
     }
 
+    // ── Salon + mobile working-window merge (mergedOffHoursSegments) ──
+
+    @Test func mergedOffHoursSingleWeekMatchesOffHoursSegments() {
+        // One week → identical to the single-window helper (fast path).
+        let week = weekMon(enabled: true, start: "09:00", end: "17:00")
+        let merged = ProCalendarGrid.mergedOffHoursSegments(
+            weeks: [week], date: monday, timeZone: zone)
+        let single = ProCalendarGrid.offHoursSegments(
+            week: week, date: monday, timeZone: zone)
+        #expect(merged.map { [$0.start, $0.end] } == single.map { [$0.start, $0.end] })
+    }
+
+    @Test func mergedOffHoursEmptyWeeksNoShading() {
+        #expect(ProCalendarGrid.mergedOffHoursSegments(
+            weeks: [], date: monday, timeZone: zone).isEmpty)
+    }
+
+    @Test func mergedOffHoursUnionsDisjointSalonAndMobileWindows() {
+        // Salon 09:00–13:00, mobile 15:00–19:00 → shade [0,540), gap [780,900),
+        // and [1140,1440); both windows stay un-shaded.
+        let salon = weekMon(enabled: true, start: "09:00", end: "13:00")
+        let mobile = weekMon(enabled: true, start: "15:00", end: "19:00")
+        let segs = ProCalendarGrid.mergedOffHoursSegments(
+            weeks: [salon, mobile], date: monday, timeZone: zone)
+        #expect(segs.count == 3)
+        #expect(segs[0] == (start: 0, end: 540))
+        #expect(segs[1] == (start: 780, end: 900))
+        #expect(segs[2] == (start: 1140, end: 1440))
+    }
+
+    @Test func mergedOffHoursCollapsesOverlappingWindows() {
+        // Salon 09:00–17:00 overlaps mobile 13:00–20:00 → one window 09:00–20:00,
+        // so just [0,540) and [1200,1440) are shaded (no middle gap).
+        let salon = weekMon(enabled: true, start: "09:00", end: "17:00")
+        let mobile = weekMon(enabled: true, start: "13:00", end: "20:00")
+        let segs = ProCalendarGrid.mergedOffHoursSegments(
+            weeks: [salon, mobile], date: monday, timeZone: zone)
+        #expect(segs.count == 2)
+        #expect(segs[0] == (start: 0, end: 540))
+        #expect(segs[1] == (start: 1200, end: 1440))
+    }
+
+    @Test func mergedOffHoursDisabledLocationDoesNotEraseTheOther() {
+        // Salon 09:00–17:00, mobile disabled that day → still shade outside salon.
+        let salon = weekMon(enabled: true, start: "09:00", end: "17:00")
+        let mobile = weekMon(enabled: false, start: "10:00", end: "14:00")
+        let segs = ProCalendarGrid.mergedOffHoursSegments(
+            weeks: [salon, mobile], date: monday, timeZone: zone)
+        #expect(segs.count == 2)
+        #expect(segs[0] == (start: 0, end: 540))
+        #expect(segs[1] == (start: 1020, end: 1440))
+    }
+
+    @Test func mergedOffHoursBadLocationDoesNotEraseTheOther() {
+        // Salon 09:00–17:00, mobile misconfigured (zero-length) → salon still shades.
+        let salon = weekMon(enabled: true, start: "09:00", end: "17:00")
+        let mobile = weekMon(enabled: true, start: "10:00", end: "10:00")
+        let segs = ProCalendarGrid.mergedOffHoursSegments(
+            weeks: [salon, mobile], date: monday, timeZone: zone)
+        #expect(segs.count == 2)
+        #expect(segs[0] == (start: 0, end: 540))
+        #expect(segs[1] == (start: 1020, end: 1440))
+    }
+
+    @Test func mergedOffHoursBothClosedShadesWholeColumn() {
+        // Both locations disabled that day → whole column shaded (matches web's
+        // all-day-closed segment).
+        let a = weekMon(enabled: false, start: "09:00", end: "17:00")
+        let b = weekMon(enabled: false, start: "10:00", end: "14:00")
+        let segs = ProCalendarGrid.mergedOffHoursSegments(
+            weeks: [a, b], date: monday, timeZone: zone)
+        #expect(segs.count == 1)
+        #expect(segs.first! == (start: 0, end: 1440))
+    }
+
+    @Test func mergedOffHoursMergesOvernightWithSameDayWindow() {
+        // Salon overnight 22:00–02:00 (works [0,120)+[1320,1440)) + mobile
+        // 09:00–17:00 → shade only [120,540) and [1020,1320).
+        let salon = weekMon(enabled: true, start: "22:00", end: "02:00")
+        let mobile = weekMon(enabled: true, start: "09:00", end: "17:00")
+        let segs = ProCalendarGrid.mergedOffHoursSegments(
+            weeks: [salon, mobile], date: monday, timeZone: zone)
+        #expect(segs.count == 2)
+        #expect(segs[0] == (start: 120, end: 540))
+        #expect(segs[1] == (start: 1020, end: 1320))
+    }
+
     // ── New-booking form passive double-book heads-up ──
 
     /// 2026-07-15, minutes UTC via a fixed epoch so the tests are TZ-independent.
