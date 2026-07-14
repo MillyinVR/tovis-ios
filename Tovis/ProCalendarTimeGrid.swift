@@ -541,18 +541,17 @@ struct ProCalendarTimeGrid: View {
         .accessibilityAddTraits(.isButton)
         .animation(.easeOut(duration: 0.16), value: pending)
 
-        // A long-press arms the drag, then a vertical drag moves the time. It must
-        // be HIGH priority: at plain `.gesture` priority it loses arbitration to
-        // the tile's own (inner) tap gesture and to the enclosing ScrollView's pan,
-        // so the long-press never armed and the tile never lifted. High priority
-        // preempts both; a quick tap still opens the detail because the long-press
-        // fails on early touch-up, letting the tap through. Attached only to
-        // reschedulable bookings so blocks / terminal bookings keep a plain tap
-        // and don't block scrolling. A bottom-edge resize handle rides on top (its
-        // own high-priority gesture) so grabbing the edge resizes instead of moves.
+        // A standalone long-press arms the drag; a gated drag then moves the time.
+        // Attached as a SIMULTANEOUS gesture so it recognizes alongside the enclosing
+        // ScrollView's pan rather than fighting it for priority (the old sequenced
+        // high-priority form never armed on device). A quick tap still opens the
+        // detail (the long-press never fires, the gated drag is a no-op); scrolling
+        // still works until the tile is armed, at which point `.scrollDisabled` stops
+        // the pan. Attached only to draggable events. A bottom-edge resize handle
+        // rides on top with its own (shorter) arm-then-drag so the edge resizes.
         if draggable {
             tile
-                .highPriorityGesture(
+                .simultaneousGesture(
                     moveGesture(event: event, day: day, startMinutes: startMinutes, durationMinutes: duration)
                 )
                 .overlay(alignment: .bottom) {
@@ -630,47 +629,48 @@ struct ProCalendarTimeGrid: View {
 
     // MARK: - Drag-to-reschedule
 
-    /// Long-press (arms past the ScrollView) → vertical drag → drop. Translates the
-    /// drag's y into minutes at `pxPerMinute`, snaps to the 15-min grid, and clamps
-    /// so the tile stays within the day. On drop it hands the parent a `pendingMove`.
+    /// Decoupled arm-then-drag: a STANDALONE long-press lifts the tile, and a
+    /// SEPARATE drag (gated on "armed") repositions it. Both run as
+    /// `.simultaneousGesture`s so they recognize ALONGSIDE the enclosing ScrollView's
+    /// pan instead of fighting it for priority — the old sequenced
+    /// `.highPriorityGesture` form never armed on device (the held press got lost to
+    /// the scroll pan). Global space so the tile's own `.offset` while dragging
+    /// doesn't feed back into the translation.
     private func moveGesture(
         event: ProCalendarEvent, day: ProMonthCell, startMinutes: Int, durationMinutes: Int
     ) -> some Gesture {
-        // Global coordinate space: the tile moves itself via `.offset(y:)` while
-        // dragging, so a `.local` space would feed its own movement back into the
-        // translation. Global measures a clean finger delta regardless of offset.
-        LongPressGesture(minimumDuration: 0.3)
-            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .global))
-            .onChanged { value in
-                switch value {
-                case .first(true):
-                    // Long-press engaged — lift the tile at its current time.
-                    activeDrag = CalendarDragState(eventId: event.id, currentStartMinutes: startMinutes)
-                case let .second(true, drag):
-                    activeDrag = CalendarDragState(
-                        eventId: event.id,
-                        currentStartMinutes: droppedStartMinutes(
-                            from: startMinutes, drag: drag, duration: durationMinutes))
-                default:
-                    break
-                }
+        LongPressGesture(minimumDuration: 0.3, maximumDistance: 30)
+            .onEnded { _ in
+                // Arm only if nothing else is active (a handle resize wins the edge).
+                guard activeDrag == nil, activeResize == nil else { return }
+                activeDrag = CalendarDragState(eventId: event.id, currentStartMinutes: startMinutes)
             }
-            .onEnded { value in
-                guard case let .second(_, drag) = value else { activeDrag = nil; return }
-                let snapped = droppedStartMinutes(
-                    from: startMinutes, drag: drag, duration: durationMinutes)
-                // In week view the tile can land in a different day column — resolve
-                // it from the release x; day view keeps the single column.
-                let targetDay = drag.map { dropTargetDay(globalX: $0.location.x, fallback: day) } ?? day
-                activeDrag = nil
-                let sameDay = targetDay.dayYmd == day.dayYmd
-                // No net change (same day + same time, or an un-representable instant)
-                // → nothing to confirm.
-                guard !(sameDay && snapped == startMinutes),
-                      let newStart = slotDate(day: targetDay, minutes: snapped) else { return }
-                pendingMove = PendingCalendarMove(
-                    event: event, newStart: newStart, dayYmd: targetDay.dayYmd, newStartMinutes: snapped)
-            }
+            .simultaneously(with:
+                DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                    .onChanged { drag in
+                        // Only tracks once the long-press has lifted THIS tile.
+                        guard activeDrag?.eventId == event.id else { return }
+                        activeDrag = CalendarDragState(
+                            eventId: event.id,
+                            currentStartMinutes: droppedStartMinutes(
+                                from: startMinutes, drag: drag, duration: durationMinutes))
+                    }
+                    .onEnded { drag in
+                        guard activeDrag?.eventId == event.id else { return }
+                        let snapped = droppedStartMinutes(
+                            from: startMinutes, drag: drag, duration: durationMinutes)
+                        // In week view the tile can land in a different day column —
+                        // resolve it from the release x; day view keeps one column.
+                        let targetDay = dropTargetDay(globalX: drag.location.x, fallback: day)
+                        activeDrag = nil
+                        let sameDay = targetDay.dayYmd == day.dayYmd
+                        // No net change → nothing to confirm.
+                        guard !(sameDay && snapped == startMinutes),
+                              let newStart = slotDate(day: targetDay, minutes: snapped) else { return }
+                        pendingMove = PendingCalendarMove(
+                            event: event, newStart: newStart, dayYmd: targetDay.dayYmd, newStartMinutes: snapped)
+                    }
+            )
     }
 
     /// The day column a week-view drag released over (x-hit-testing the captured
@@ -710,11 +710,12 @@ struct ProCalendarTimeGrid: View {
 
     // MARK: - Resize (bottom-edge drag → new duration)
 
-    /// The bottom-edge grab strip on a draggable tile: a small centered grip inside
-    /// a touch-sized clear strip, riding as a high-priority overlay ON TOP of the
-    /// move gesture so grabbing the edge resizes instead of moving the whole tile.
-    /// It brightens to accent while the resize is armed. Kept out of the
-    /// accessibility tree (the tile itself carries the label).
+    /// The bottom-edge grab strip on a draggable tile: a small centered grip inside a
+    /// touch-sized clear strip, riding as an overlay ON TOP of the move gesture. It
+    /// carries its own arm-then-drag gesture with a slightly SHORTER long-press than
+    /// the move, so grabbing the edge arms the resize first and wins over a move. It
+    /// brightens to accent while armed. Kept out of the accessibility tree (the tile
+    /// itself carries the label).
     private func resizeHandle(
         event: ProCalendarEvent, day: ProMonthCell, startMinutes: Int, durationMinutes: Int
     ) -> some View {
@@ -727,54 +728,55 @@ struct ProCalendarTimeGrid: View {
         }
         .contentShape(Rectangle())
         .padding(.horizontal, 1.5)
-        .highPriorityGesture(
+        .simultaneousGesture(
             resizeGesture(event: event, day: day,
                           startMinutes: startMinutes, durationMinutes: durationMinutes)
         )
         .accessibilityHidden(true)
     }
 
-    /// Long-press (arms past the ScrollView, like the move gesture) → vertical drag
-    /// of the bottom edge → drop. The start stays fixed; the drag's y becomes a new
-    /// duration (snapped to the 15-min grid, clamped within the day + max length).
-    /// On drop it hands the parent a `pendingResize`. Global space so the growing
-    /// tile's own height change never feeds back into the translation.
+    /// Decoupled arm-then-drag for the bottom edge (same simultaneous strategy as the
+    /// move gesture). A standalone long-press — a touch SHORTER than the move's, so on
+    /// the handle it arms first and wins — sets `activeResize`; a gated drag then
+    /// changes the duration (start fixed, snapped to the 15-min grid, clamped within
+    /// the day + max length). Global space so the growing tile's own height change
+    /// doesn't feed back into the translation. On drop it hands the parent a
+    /// `pendingResize`.
     private func resizeGesture(
         event: ProCalendarEvent, day: ProMonthCell, startMinutes: Int, durationMinutes: Int
     ) -> some Gesture {
-        LongPressGesture(minimumDuration: 0.3)
-            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .global))
-            .onChanged { value in
-                switch value {
-                case .first(true):
-                    // Long-press engaged — arm the resize at the tile's current length.
-                    activeResize = CalendarResizeState(
-                        eventId: event.id, currentDurationMinutes: durationMinutes)
-                case let .second(true, drag):
-                    activeResize = CalendarResizeState(
-                        eventId: event.id,
-                        currentDurationMinutes: resizedDuration(
-                            from: startMinutes, original: durationMinutes, drag: drag))
-                default:
-                    break
-                }
+        LongPressGesture(minimumDuration: 0.25, maximumDistance: 30)
+            .onEnded { _ in
+                guard activeDrag == nil, activeResize == nil else { return }
+                activeResize = CalendarResizeState(
+                    eventId: event.id, currentDurationMinutes: durationMinutes)
             }
-            .onEnded { value in
-                guard case let .second(_, drag) = value else { activeResize = nil; return }
-                let newDuration = resizedDuration(
-                    from: startMinutes, original: durationMinutes, drag: drag)
-                // Compare against the ZERO-drag result, not the raw laid-out duration:
-                // a tile whose end isn't on the 15-min grid snaps on release even with
-                // no drag, so guarding on `durationMinutes` would fire a spurious
-                // resize when the pro merely long-presses the handle and lets go.
-                let restingDuration = resizedDuration(
-                    from: startMinutes, original: durationMinutes, drag: nil)
-                activeResize = nil
-                guard newDuration != restingDuration else { return }
-                pendingResize = PendingCalendarResize(
-                    event: event, dayYmd: day.dayYmd,
-                    newDurationMinutes: newDuration, startMinutes: startMinutes)
-            }
+            .simultaneously(with:
+                DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                    .onChanged { drag in
+                        guard activeResize?.eventId == event.id else { return }
+                        activeResize = CalendarResizeState(
+                            eventId: event.id,
+                            currentDurationMinutes: resizedDuration(
+                                from: startMinutes, original: durationMinutes, drag: drag))
+                    }
+                    .onEnded { drag in
+                        guard activeResize?.eventId == event.id else { return }
+                        let newDuration = resizedDuration(
+                            from: startMinutes, original: durationMinutes, drag: drag)
+                        // Compare against the ZERO-drag result, not the raw laid-out
+                        // duration: a tile whose end isn't on the 15-min grid snaps on
+                        // release even with no drag, so guarding on `durationMinutes`
+                        // would spuriously resize on a bare arm-and-release.
+                        let restingDuration = resizedDuration(
+                            from: startMinutes, original: durationMinutes, drag: nil)
+                        activeResize = nil
+                        guard newDuration != restingDuration else { return }
+                        pendingResize = PendingCalendarResize(
+                            event: event, dayYmd: day.dayYmd,
+                            newDurationMinutes: newDuration, startMinutes: startMinutes)
+                    }
+            )
     }
 
     /// The snapped, clamped new duration a bottom-edge drag lands on (pure math in
