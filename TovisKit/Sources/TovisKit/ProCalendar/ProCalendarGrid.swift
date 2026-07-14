@@ -533,6 +533,84 @@ public enum ProCalendarGrid {
         return segments
     }
 
+    /// The minutes-since-midnight `[start, end)` ranges the pro is WORKING on
+    /// `date`'s weekday — the complement of `offHoursSegments` within the day:
+    /// - closed / disabled / unparseable / zero-length → `[]` (no working time,
+    ///   contributes nothing to a union);
+    /// - same-day window `open < close` → `[(open, close)]`;
+    /// - overnight window (`close < open`) → `[(0, close), (open, 1440)]`.
+    /// Used to merge multiple locations' windows (`mergedOffHoursSegments`).
+    static func workingIntervals(
+        week: ProWeekHours, date: Date, timeZone: TimeZone
+    ) -> [(start: Int, end: Int)] {
+        let day = dayHours(week, date: date, timeZone: timeZone)
+        guard day.enabled,
+              let open = hhmmToMinutes(day.start),
+              let close = hhmmToMinutes(day.end),
+              open != close
+        else { return [] }
+
+        if close < open { return [(0, close), (open, minutesPerDay)] }
+        return [(open, close)]
+    }
+
+    /// Off-hours shading across MULTIPLE location weeks (web `_grid/DayColumn`
+    /// `mergeWindows` of salon + mobile): a minute is shaded only when it's
+    /// OUTSIDE every location's working window, so a dual-location pro (bookable
+    /// salon AND mobile base) sees the union of both windows un-shaded.
+    /// - zero weeks → `[]` (no shading);
+    /// - one week → identical to `offHoursSegments` (preserves the single-window
+    ///   behavior exactly, including bad-data-no-shade);
+    /// - many weeks → merge each week's `workingIntervals`, then invert within the
+    ///   day. All-closed / all-disabled → the whole column `[0, 1440)` (matches
+    ///   web's all-day-closed segment).
+    public static func mergedOffHoursSegments(
+        weeks: [ProWeekHours], date: Date, timeZone: TimeZone
+    ) -> [(start: Int, end: Int)] {
+        if weeks.isEmpty { return [] }
+        if weeks.count == 1 {
+            return offHoursSegments(week: weeks[0], date: date, timeZone: timeZone)
+        }
+        let working = mergeIntervals(
+            weeks.flatMap { workingIntervals(week: $0, date: date, timeZone: timeZone) })
+        return invertWithinDay(working)
+    }
+
+    /// Merge overlapping/adjacent `[start, end)` intervals into a sorted, disjoint
+    /// set (empty/reversed spans dropped). Used by the working-window union.
+    static func mergeIntervals(
+        _ intervals: [(start: Int, end: Int)]
+    ) -> [(start: Int, end: Int)] {
+        let sorted = intervals.filter { $0.start < $0.end }.sorted { $0.start < $1.start }
+        guard var current = sorted.first else { return [] }
+        var merged: [(start: Int, end: Int)] = []
+        for interval in sorted.dropFirst() {
+            if interval.start <= current.end {
+                current.end = max(current.end, interval.end)
+            } else {
+                merged.append(current)
+                current = interval
+            }
+        }
+        merged.append(current)
+        return merged
+    }
+
+    /// The `[start, end)` gaps within `[0, 1440)` NOT covered by `working` (which
+    /// must be merged + sorted). Empty `working` → the whole day `[(0, 1440)]`.
+    static func invertWithinDay(
+        _ working: [(start: Int, end: Int)]
+    ) -> [(start: Int, end: Int)] {
+        var gaps: [(start: Int, end: Int)] = []
+        var cursor = 0
+        for window in working {
+            if window.start > cursor { gaps.append((cursor, window.start)) }
+            cursor = max(cursor, window.end)
+        }
+        if cursor < minutesPerDay { gaps.append((cursor, minutesPerDay)) }
+        return gaps
+    }
+
     /// The day column(s) a timeline view spans — 1 for day, 7 (Mon-start) for
     /// week (the web `getTimelineDays`). Reuses `ProMonthCell` for the per-day
     /// key/number/today flags; `isInCurrentMonth` is unused here (always true).

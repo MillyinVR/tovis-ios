@@ -327,10 +327,11 @@ struct ProCalendarTimeGrid: View {
     /// Flips when the chrome collapses/expands — re-snaps the timeline to "now"
     /// after the height change.
     var collapseToggle: Bool = false
-    /// The pro's weekly working hours (primary bookable location). When set, each
-    /// day column dims the hours outside the working window (web `DayColumn`
-    /// off-hours shading). nil until loaded → no shading.
-    var workingHours: ProWeekHours? = nil
+    /// The pro's weekly working hours, one per bookable location TYPE (salon +
+    /// mobile base). Each day column dims the hours outside the UNION of these
+    /// windows (web `DayColumn` merges salon + mobile before shading). Empty until
+    /// loaded → no shading; usually one entry (single-location pro).
+    var workingWeeks: [ProWeekHours] = []
 
     /// Set by a drag-drop when a booking is moved to a new time; the parent shows
     /// the confirm prompt + submits the reschedule. Bound so the tile can render
@@ -615,11 +616,12 @@ struct ProCalendarTimeGrid: View {
         let columns = ProCalendarGrid.overlapColumnLayout(
             layouts.map { (id: $0.event.id, start: $0.start, end: $0.end) })
 
-        // Hours outside the pro's working window for this weekday — dimmed behind
-        // the grid. Empty until the working-hours load resolves (no shading).
-        let offHours: [(start: Int, end: Int)] = workingHours.map {
-            ProCalendarGrid.offHoursSegments(week: $0, date: day.startOfDay, timeZone: timeZone)
-        } ?? []
+        // Hours outside the pro's working window(s) for this weekday — dimmed
+        // behind the grid. Shades outside the UNION of every bookable location
+        // type's window (web merges salon + mobile). Empty until the working-hours
+        // load resolves (no shading).
+        let offHours = ProCalendarGrid.mergedOffHoursSegments(
+            weeks: workingWeeks, date: day.startOfDay, timeZone: timeZone)
 
         // GeometryReader gives the column's pixel width, which we divide by the
         // per-cluster `columnCount` to size + x-offset each tile.

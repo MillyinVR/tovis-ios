@@ -51,9 +51,11 @@ struct ProCalendarView: View {
     // Blocked-time CRUD (web BlockTimeModal / EditBlockModal). `locations` holds
     // the bookable locations a block can pin to; an empty list hides the FAB.
     @State private var locations: [ProLocationSummary] = []
-    // The pro's weekly working hours (primary bookable location) — drives the
-    // day/week grid's off-hours shading. nil until loaded (no shading).
-    @State private var workingWeek: ProWeekHours?
+    // The pro's weekly working hours, one per bookable location TYPE (salon +
+    // mobile base) — drives the day/week grid's off-hours shading, which dims the
+    // hours OUTSIDE the union of these windows (web merges salon + mobile). Empty
+    // until loaded (no shading); usually one entry (single-location pro).
+    @State private var workingWeeks: [ProWeekHours] = []
     @State private var blockSheet: BlockSheetTarget?
     // The "+" FAB opens this chooser: add an appointment or block personal time
     // (web MobileCalendarFab + CalendarCreateSheet).
@@ -311,18 +313,31 @@ struct ProCalendarView: View {
         await loadWorkingHours(from: bookable)
     }
 
-    /// Load the primary bookable location's weekly hours for the grid's off-hours
-    /// shading (reusing the same resolution the working-hours editor uses, so a
-    /// mobile-only pro shades their mobile week, not a phantom salon).
+    /// Load each bookable location TYPE's weekly hours for the grid's off-hours
+    /// shading. The grid dims the hours outside the UNION of these windows (web
+    /// merges salon + mobile), so a dual-location pro who works the salon by day
+    /// and mobile in the evening sees both windows un-shaded. Picks the primary
+    /// bookable location for each type present (salon vs mobile base) — filtered to
+    /// bookable, so a mobile-only pro's archived salon never adds a phantom window.
+    /// A single-location pro yields one week, identical to the old behavior.
     private func loadWorkingHours(from bookable: [ProLocationSummary]) async {
-        guard let loc = ProWorkingHours.locationToEdit(from: bookable) else {
-            workingWeek = nil
+        let salon = bookable.first(where: { $0.isPrimary && !$0.isMobileBase })
+            ?? bookable.first(where: { !$0.isMobileBase })
+        let mobile = bookable.first(where: { $0.isPrimary && $0.isMobileBase })
+            ?? bookable.first(where: { $0.isMobileBase })
+        let targets = [salon, mobile].compactMap { $0 }
+        guard !targets.isEmpty else {
+            workingWeeks = []
             return
         }
-        if let res = try? await session.client.proSchedule.workingHours(
-            locationType: ProWorkingHours.mode(for: loc), locationId: loc.id) {
-            workingWeek = res.workingHours
+        var weeks: [ProWeekHours] = []
+        for loc in targets {
+            if let res = try? await session.client.proSchedule.workingHours(
+                locationType: ProWorkingHours.mode(for: loc), locationId: loc.id) {
+                weeks.append(res.workingHours)
+            }
         }
+        workingWeeks = weeks
     }
 
     // Default start for a new block: the selected day, bumped to the next 15-min
@@ -421,7 +436,7 @@ struct ProCalendarView: View {
                     onTapBlock: { event in openBlockEditor(event) },
                     onTapEmptySlot: { date in newBookingNav = NewBookingNav(date: date) },
                     collapseToggle: chromeCollapsed,
-                    workingHours: workingWeek,
+                    workingWeeks: workingWeeks,
                     pendingMove: $pendingMove,
                     pendingResize: $pendingResize,
                     // Cross-week drag: dwelling a lifted tile at the grid's edge pages
