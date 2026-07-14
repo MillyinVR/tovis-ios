@@ -1001,9 +1001,18 @@ struct ProCapturePhotosView: View {
                 }
             } catch {
                 // The measured on-device brief is already driving the shoot —
-                // enhance failing (offline, daily cap, refusal) costs nothing.
+                // enhance failing costs nothing, so we degrade gracefully here
+                // rather than block capture or push a mid-shoot upgrade prompt
+                // (the membership route lives on the wrap-up critique instead).
                 guard matchLook?.image === look.image else { return }
-                errorMessage = "AI enhance didn’t come through — shooting with the measured brief."
+                switch ProCameraAIError.from(error) {
+                case .quotaExceeded:
+                    errorMessage = "AI enhance is out of images this month — shooting with the measured brief."
+                case .dailyLimitReached:
+                    errorMessage = "AI enhance hit today’s limit — shooting with the measured brief."
+                case .other:
+                    errorMessage = "AI enhance didn’t come through — shooting with the measured brief."
+                }
             }
         }
     }
