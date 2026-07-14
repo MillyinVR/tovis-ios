@@ -1,5 +1,6 @@
 {
   "ok": true,
+  "clientUseConsent": true,
   "items": [
     {
       "id": "media_1",

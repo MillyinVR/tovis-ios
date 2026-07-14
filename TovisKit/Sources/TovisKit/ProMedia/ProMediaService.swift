@@ -111,14 +111,21 @@ public final class ProMediaService: Sendable {
         )
     }
 
-    /// GET /api/v1/pro/bookings/{id}/media (optionally filtered by phase).
-    public func list(bookingId: String, phase: MediaPhase? = nil) async throws -> [ProBookingMediaItem] {
+    /// GET /api/v1/pro/bookings/{id}/media (optionally filtered by phase) → the
+    /// full envelope, including the booking-scoped `clientUseConsent` flag the
+    /// session hub reads to show whether the client approved public sharing.
+    public func listWithConsent(
+        bookingId: String,
+        phase: MediaPhase? = nil
+    ) async throws -> ProBookingMediaListResponse {
         let query = phase.map { [URLQueryItem(name: "phase", value: $0.rawValue)] }
-        let response: ProBookingMediaListResponse = try await api.request(
-            "/pro/bookings/\(bookingId)/media",
-            query: query
-        )
-        return response.items
+        return try await api.request("/pro/bookings/\(bookingId)/media", query: query)
+    }
+
+    /// GET /api/v1/pro/bookings/{id}/media (optionally filtered by phase) — just
+    /// the items (callers that don't need the consent flag).
+    public func list(bookingId: String, phase: MediaPhase? = nil) async throws -> [ProBookingMediaItem] {
+        try await listWithConsent(bookingId: bookingId, phase: phase).items
     }
 
     // MARK: - Media manager (web `/pro/media` grid + OwnerMediaMenu editor)

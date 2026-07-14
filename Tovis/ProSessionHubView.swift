@@ -23,6 +23,11 @@ struct ProSessionHubView: View {
     @State private var phase: Phase = .loading
     @State private var detail: ProBookingDetail?
     @State private var media: [ProBookingMediaItem] = []
+    /// Booking-scoped media-use consent (`clientUseConsent` on the media list).
+    /// When true the client approved featuring this session's photos publicly, so
+    /// the pro's publish action is unlocked; surfaced passively so it isn't a
+    /// surprise at publish time. Defaults false (also the pre-deploy fallback).
+    @State private var clientUseConsent = false
     @State private var working = false
     @State private var actionError: String?
     @State private var capturing: CaptureSelection?
@@ -759,8 +764,25 @@ struct ProSessionHubView: View {
                     .foregroundStyle(primary ? BrandColor.onAccent : BrandColor.accent)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
+                sharingConsentRow()
             }
         }
+    }
+
+    /// Passive media-use consent indicator (C4): tells the pro up-front whether
+    /// the client approved featuring this session's photos publicly, so a publish
+    /// attempt doesn't get its first "no" from the server-side share guard.
+    @ViewBuilder
+    private func sharingConsentRow() -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: clientUseConsent ? "checkmark.seal.fill" : "lock.fill")
+                .font(.system(size: 11, weight: .semibold))
+            Text(clientUseConsent
+                 ? "Client approved sharing these publicly"
+                 : "Private until the client approves sharing")
+                .font(BrandFont.body(12))
+        }
+        .foregroundStyle(clientUseConsent ? BrandColor.emerald : BrandColor.textMuted)
     }
 
     @ViewBuilder
@@ -934,7 +956,11 @@ struct ProSessionHubView: View {
     }
 
     private func loadMedia() async {
-        media = (try? await session.client.proMedia.list(bookingId: bookingId)) ?? media
+        // Keep prior media/consent on a failed refresh (don't blank the UI).
+        if let response = try? await session.client.proMedia.listWithConsent(bookingId: bookingId) {
+            media = response.items
+            clientUseConsent = response.clientUseConsent
+        }
     }
 
     private func reloadAfterCapture() async {
