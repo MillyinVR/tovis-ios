@@ -84,9 +84,10 @@ struct ProCapturePhotosView: View {
     @State private var captured: [CapturedShot] = []
     /// A captured shot opened full-screen (tap the captured strip).
     @State private var viewingMedia: FullscreenMedia?
-    /// Captured JPEGs whose upload failed — kept for retry so a flaky connection
-    /// never loses a shot the pro already took.
-    @State private var failedUploads: [Data] = []
+    /// Captured JPEGs whose upload failed — spilled to the session byte store (not
+    /// held as `[Data]` in RAM, which grows unbounded on a dead connection) and
+    /// retried on demand, so a flaky connection never loses a shot the pro took.
+    @State private var failedUploads: [URL] = []
     @State private var uploading = false
     /// Recorded clips whose upload failed — kept safe in the ClipVault (never
     /// tmp), retried on demand. Tuple carries the phase so a BEFORE clip
@@ -1775,7 +1776,10 @@ struct ProCapturePhotosView: View {
         await uploadCorrected(payload)
     }
 
-    /// Upload bytes that are already color-final (retries must not re-correct).
+    /// Upload bytes that are already color-final (retries must not re-correct). On
+    /// failure the bytes spill to disk and their URL joins the retry queue — a
+    /// flaky connection must never lose a shot the pro already took, and the bytes
+    /// mustn't pile up in RAM while the queue drains.
     private func uploadCorrected(_ payload: Data) async {
         do {
             try await session.client.proMedia.uploadSessionPhoto(
@@ -1785,15 +1789,25 @@ struct ProCapturePhotosView: View {
             )
             session.signalRefresh()   // the hub's gallery refreshes
         } catch let error as APIError {
-            errorMessage = error.userMessage
-            failedUploads.append(payload)
+            queueFailedUpload(payload, message: error.userMessage)
         } catch {
-            errorMessage = "Couldn’t save that photo — it’s kept here to retry."
-            failedUploads.append(payload)
+            queueFailedUpload(payload, message: "Couldn’t save that photo — it’s kept here to retry.")
         }
     }
 
-    /// Re-attempt every queued failed upload; whatever fails again re-queues.
+    /// Spill a failed upload's bytes to disk and remember the URL for the retry
+    /// pill. If even the spill fails, surface it rather than silently pinning the
+    /// bytes in RAM (the whole point of spilling).
+    private func queueFailedUpload(_ payload: Data, message: String) {
+        if let url = SessionByteVault.write(payload, to: .pendingUpload) {
+            failedUploads.append(url)
+            errorMessage = message
+        } else {
+            errorMessage = "Couldn’t save that photo, and it couldn’t be kept to retry."
+        }
+    }
+
+    /// Re-attempt every queued failed upload; whatever fails again re-spills.
     private func retryFailedUploads() async {
         guard !uploading, !failedUploads.isEmpty else { return }
         uploading = true
@@ -1801,7 +1815,14 @@ struct ProCapturePhotosView: View {
         defer { uploading = false }
         let pending = failedUploads
         failedUploads = []
-        for payload in pending { await uploadCorrected(payload) }
+        for url in pending {
+            guard let payload = await Task.detached(
+                priority: .userInitiated,
+                operation: { SessionByteVault.read(url) }
+            ).value else { continue }   // gone from disk — nothing to retry
+            SessionByteVault.remove(url)       // uploadCorrected re-spills on re-failure
+            await uploadCorrected(payload)
+        }
     }
 
     private func toggleRecording() async {
