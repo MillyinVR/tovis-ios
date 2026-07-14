@@ -478,10 +478,12 @@ struct ProCalendarTimeGrid: View {
     ) -> some View {
         let tone = event.isBlock ? BrandColor.textMuted : statusTone(event.status)
         let duration = max(stepMinutes, endMinutes - startMinutes)
-        // Bookings drag only while reschedulable; blocks (the pro's own time) always
-        // drag — move + resize route to /pro/calendar/blocked instead of the booking
-        // endpoint (branched in ProCalendarView.submitChange).
-        let draggable = (event.isBooking && isReschedulable(event.status)) || event.isBlock
+        // Every booking + block is draggable, matching the web (`canDragOrResize =
+        // apiId !== null` — no status gate). The SERVER is the authority: a reschedule
+        // of a terminal/started booking is rejected on confirm with a message. (The
+        // earlier PENDING/ACCEPTED-only gate meant no gesture was attached to any
+        // other status, so those tiles couldn't be dragged at all.)
+        let draggable = event.isBooking || event.isBlock
         // Gate the resize handle on the tile's LAID-OUT height (not the live one),
         // so it stays mounted through a shrink and never tears down the in-flight
         // gesture; only tall-enough tiles get a bottom grab zone.
@@ -790,16 +792,6 @@ struct ProCalendarTimeGrid: View {
             translationPoints: Double(drag?.translation.height ?? 0),
             pxPerMinute: Double(pxPerMinute),
             stepMinutes: stepMinutes)
-    }
-
-    /// Only PENDING / ACCEPTED bookings can be dragged (mirrors the reschedule
-    /// action's eligibility — not started, not terminal). The server is the final
-    /// authority; this just keeps un-movable tiles tap-only.
-    private func isReschedulable(_ status: String) -> Bool {
-        switch status.uppercased() {
-        case "PENDING", "ACCEPTED": return true
-        default: return false
-        }
     }
 
     /// `h:mmam/pm` for a minutes-since-midnight value (the live drag/pending label).
