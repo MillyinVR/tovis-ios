@@ -516,6 +516,12 @@ struct ProCalendarTimeGrid: View {
             return timeLabel(event.startsAt)
         }()
 
+        // Build the fully-interactive tile at its NATURAL (un-offset) position:
+        // content shape, tap, gestures, and the resize-handle overlay all attach
+        // here. `.offset` is applied LAST (below) so the touch target travels with
+        // the visual. (A `.contentShape`/gesture applied AFTER `.offset` re-pins the
+        // hit region to the un-offset layout frame — the tiles drew in place but were
+        // untappable, so every tap fell through to the empty-slot layer.)
         let tile = tileBody(
             event: event,
             tone: tone,
@@ -529,8 +535,6 @@ struct ProCalendarTimeGrid: View {
         .padding(.horizontal, 1.5)
         .frame(width: colWidth, alignment: .leading)
         .border(Color.red, width: 2) // DIAGNOSTIC: outline every tile's hit frame
-        .offset(x: colX, y: topPx)
-        .zIndex(lifted ? 2 : (pending ? 1 : 0))
         .contentShape(Rectangle())
         .onTapGesture {
             if event.isBooking { onTapBooking(event.id) } else { onTapBlock(event) }
@@ -542,12 +546,11 @@ struct ProCalendarTimeGrid: View {
 
         // A standalone long-press arms the drag; a gated drag then moves the time.
         // Attached as a SIMULTANEOUS gesture so it recognizes alongside the enclosing
-        // ScrollView's pan rather than fighting it for priority (the old sequenced
-        // high-priority form never armed on device). A quick tap still opens the
-        // detail (the long-press never fires, the gated drag is a no-op); scrolling
-        // still works until the tile is armed, at which point `.scrollDisabled` stops
-        // the pan. Attached only to draggable events. A bottom-edge resize handle
-        // rides on top with its own (shorter) arm-then-drag so the edge resizes.
+        // ScrollView's pan rather than fighting it for priority. A quick tap still
+        // opens the detail; scrolling still works until the tile is armed, at which
+        // point `.scrollDisabled` stops the pan. A bottom-edge resize handle rides on
+        // top with its own (shorter) arm-then-drag so the edge resizes. `.offset` +
+        // `.zIndex` are OUTERMOST so the whole interactive tile moves as one unit.
         if draggable {
             tile
                 .simultaneousGesture(
@@ -559,8 +562,12 @@ struct ProCalendarTimeGrid: View {
                                      startMinutes: startMinutes, durationMinutes: duration)
                     }
                 }
+                .zIndex(lifted ? 2 : (pending ? 1 : 0))
+                .offset(x: colX, y: topPx)
         } else {
             tile
+                .zIndex(lifted ? 2 : (pending ? 1 : 0))
+                .offset(x: colX, y: topPx)
         }
     }
 
