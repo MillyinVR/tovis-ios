@@ -8,7 +8,7 @@ import AVFoundation
 import SwiftUI
 import TovisKit
 
-enum CameraError: Error { case noData, captureInProgress }
+enum CameraError: Error { case noData, captureInProgress, timedOut }
 
 @Observable
 @MainActor
@@ -40,6 +40,13 @@ final class CameraController: NSObject {
     nonisolated(unsafe) private let movieOutput = AVCaptureMovieFileOutput()
     nonisolated(unsafe) private var configured = false
     nonisolated(unsafe) private var captureContinuation: CheckedContinuation<Data, Error>?
+    /// Bumped per capture so a stale watchdog for a finished shot can't resolve a
+    /// newer capture that has since reused the continuation slot. sessionQueue.
+    nonisolated(unsafe) private var captureToken = 0
+    /// Longest we wait on a still's delegate callback before failing the awaiting
+    /// continuation, so a capture the system silently drops can't strand the
+    /// shutter (and leave `uploading` gating the whole UI shut) forever.
+    private static let captureWatchdog: TimeInterval = 10
     nonisolated(unsafe) private var recordContinuation: CheckedContinuation<URL, Error>?
     /// Whether the session could add the movie output (false → recording hidden).
     private(set) var recordingAvailable = false
@@ -109,6 +116,8 @@ final class CameraController: NSObject {
                     return
                 }
                 self.captureContinuation = cont
+                self.captureToken &+= 1
+                let token = self.captureToken
                 // Force JPEG so the bytes match the "image/jpeg" content-type we
                 // presign with (the device default can be HEIC).
                 let settings: AVCapturePhotoSettings
@@ -132,7 +141,28 @@ final class CameraController: NSObject {
                     settings.maxPhotoDimensions = outputMax
                 }
                 self.photoOutput.capturePhoto(with: settings, delegate: self)
+                // Watchdog: if neither capture delegate fires (a shot the system
+                // silently drops — session interrupted mid-capture, an output
+                // glitch), fail this capture after a beat so the caller recovers.
+                // Gated on the token so it can't clobber a later capture that has
+                // since reused the slot.
+                self.sessionQueue.asyncAfter(deadline: .now() + Self.captureWatchdog) { [weak self] in
+                    guard let self, self.captureToken == token else { return }
+                    self.resolveCapture(.failure(CameraError.timedOut))
+                }
             }
+        }
+    }
+
+    /// Resolve the pending photo continuation exactly once — whichever of the
+    /// capture delegate or the watchdog reaches it first wins; the other no-ops
+    /// because the continuation is already cleared. sessionQueue-confined.
+    nonisolated private func resolveCapture(_ result: Result<Data, Error>) {
+        guard let cont = self.captureContinuation else { return }
+        self.captureContinuation = nil
+        switch result {
+        case let .success(data): cont.resume(returning: data)
+        case let .failure(error): cont.resume(throwing: error)
         }
     }
 
@@ -512,14 +542,12 @@ extension CameraController: AVCapturePhotoCaptureDelegate {
         // the continuation back on the session queue where it was set.
         let bytes = photo.fileDataRepresentation()
         sessionQueue.async {
-            let cont = self.captureContinuation
-            self.captureContinuation = nil
             if let error {
-                cont?.resume(throwing: error)
+                self.resolveCapture(.failure(error))
             } else if let bytes {
-                cont?.resume(returning: bytes)
+                self.resolveCapture(.success(bytes))
             } else {
-                cont?.resume(throwing: CameraError.noData)
+                self.resolveCapture(.failure(CameraError.noData))
             }
         }
     }

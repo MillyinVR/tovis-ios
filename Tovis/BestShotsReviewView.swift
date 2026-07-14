@@ -145,6 +145,7 @@ struct BestShotsReviewView: View {
         defer { uploading = false }
 
         var uploaded: Set<UUID> = []
+        var lastError: String?
         for (index, shot) in shots.enumerated() {
             progress = "Uploading \(index + 1) of \(shots.count)…"
             var payload = shot.data
@@ -159,17 +160,23 @@ struct BestShotsReviewView: View {
                 )
                 uploaded.insert(shot.id)
             } catch let error as APIError {
-                errorMessage = error.userMessage
-                break
+                lastError = error.userMessage
             } catch {
-                errorMessage = "Couldn’t upload a photo. Please try again."
-                break
+                lastError = "Couldn’t upload some photos — they’re still here to retry."
             }
+            // Keep going: one flaky upload must not strand the shots behind it.
         }
 
+        // Only the successes leave the tray; failures stay selected so the pro can
+        // tap "Keep" again to retry (their bytes are never dropped).
         coach.removeHarvested(uploaded)
         selected.subtract(uploaded)
-        session.signalRefresh()   // the hub gallery picks up the new photos
+        if !uploaded.isEmpty { session.signalRefresh() }   // the hub gallery picks up the new photos
+        let failedCount = shots.count - uploaded.count
+        if failedCount > 0 {
+            errorMessage = lastError
+                ?? "Couldn’t upload \(failedCount) photo\(failedCount == 1 ? "" : "s") — still here to retry."
+        }
         if coach.harvested.isEmpty { dismiss() }
     }
 
