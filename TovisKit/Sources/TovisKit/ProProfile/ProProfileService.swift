@@ -41,22 +41,39 @@ public final class ProProfileService: Sendable {
     }
 
     /// POST / DELETE /api/v1/pro/media/{id}/portfolio — feature (POST) or
-    /// un-feature (DELETE) one of a review's media assets in the pro's public
+    /// un-feature (DELETE) `mediaId` (the "after" asset) in the pro's public
     /// portfolio. Mirrors the web `MediaPortfolioToggle` on `/pro/reviews`, which
     /// sends **no body** on either verb: an empty POST lets the route auto-pair the
-    /// featured "after" with the booking's "before" for the comparison slider (an
-    /// explicit `beforeAssetId` could override, but the reviews toggle never does).
+    /// featured "after" with the booking's earliest "before" for the comparison
+    /// slider. Pass `beforeAssetId` to pin the exact partner instead — the session
+    /// wrap-up publishes the specific before/after the pro is looking at, which a
+    /// multi-pair session can't leave to the auto-pair (it always grabs the earliest
+    /// before). DELETE never carries a body.
     ///
-    /// Review media is already publish-consented — the client attached it to their
-    /// review (`reviewId` is set) — so the server's public-share consent gate
-    /// passes. Featuring flips `visibility` to PUBLIC server-side. Setting a boolean
-    /// is naturally idempotent (a repeat POST/DELETE lands on the same state), so no
-    /// idempotency key, matching web.
-    public func setMediaFeaturedInPortfolio(mediaId: String, featured: Bool) async throws {
+    /// The server enforces the public-share consent gate: review media is already
+    /// consented (`reviewId` set), and session media unlocks once the client grants
+    /// aftercare media-use consent (`Booking.mediaUseConsentAt`) — otherwise the POST
+    /// 403s. Featuring flips `visibility` to PUBLIC and (re)publishes the before/after
+    /// `LookPost` server-side. Setting a boolean is naturally idempotent (a repeat
+    /// POST/DELETE lands on the same state), so no idempotency key, matching web.
+    public func setMediaFeaturedInPortfolio(
+        mediaId: String,
+        beforeAssetId: String? = nil,
+        featured: Bool
+    ) async throws {
+        var body: Data?
+        if featured, let beforeAssetId {
+            body = try JSONEncoder.canonical.encode(FeaturePortfolioBody(beforeAssetId: beforeAssetId))
+        }
         try await api.requestVoid(
             "/pro/media/\(mediaId)/portfolio",
-            method: featured ? .post : .delete
+            method: featured ? .post : .delete,
+            body: body
         )
+    }
+
+    private struct FeaturePortfolioBody: Encodable {
+        let beforeAssetId: String
     }
 
     /// PATCH /api/v1/pro/profile — sparse update; only the provided fields change.

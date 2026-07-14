@@ -2,13 +2,13 @@ import Foundation
 import Testing
 @testable import TovisKit
 
-// Proves the pro "feature review media in portfolio" toggle hits the shared media
-// route with the right verb and NO body — matching the web `MediaPortfolioToggle`
-// on `/pro/reviews`:
+// Proves the pro "feature media in portfolio" toggle hits the shared media route
+// with the right verb and body — matching the web `MediaPortfolioToggle`:
 //   • setMediaFeaturedInPortfolio(_, featured: true)  → POST   /pro/media/{id}/portfolio
 //   • setMediaFeaturedInPortfolio(_, featured: false) → DELETE /pro/media/{id}/portfolio
-// The web toggle sends no request body on either verb (an empty POST lets the route
-// auto-pair before/after server-side), so the native call must not send one either.
+// By default the POST carries no body — the route auto-pairs before/after server-side.
+// The wrap-up "publish this transformation" path passes an explicit `beforeAssetId`
+// to pin the exact pair the pro is viewing; that (and only that) rides in a JSON body.
 
 /// Records the outgoing request and serves the route's canned `{ ok, media }` envelope.
 final class PortfolioFeatureURLProtocol: URLProtocol {
@@ -94,6 +94,21 @@ private extension URLRequest {
         #expect(PortfolioFeatureURLProtocol.capturedNativeHeader == "ios")
         // The web toggle sends no body; the route auto-pairs before/after itself.
         #expect((PortfolioFeatureURLProtocol.capturedBody?.isEmpty ?? true))
+    }
+
+    @Test func featureWithExplicitBeforePinsPairingInBody() async throws {
+        reset()
+        PortfolioFeatureURLProtocol.responseBody = Data(
+            "{\"ok\":true,\"media\":{\"id\":\"media_5\",\"isFeaturedInPortfolio\":true}}".utf8)
+        try await makeService().setMediaFeaturedInPortfolio(
+            mediaId: "media_5", beforeAssetId: "before_9", featured: true)
+
+        #expect(PortfolioFeatureURLProtocol.capturedPath == "/api/v1/pro/media/media_5/portfolio")
+        #expect(PortfolioFeatureURLProtocol.capturedMethod == "POST")
+        // An explicit before pins the comparison partner instead of the auto-pair.
+        let body = try #require(PortfolioFeatureURLProtocol.capturedBody)
+        let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+        #expect(json?["beforeAssetId"] as? String == "before_9")
     }
 
     @Test func unfeatureDeletesPortfolioRoute() async throws {
