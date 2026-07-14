@@ -748,17 +748,24 @@ struct ProSessionHubView: View {
 
     @ViewBuilder
     private func thumbnail(_ item: ProBookingMediaItem) -> some View {
+        // A video row without a real image thumb must NOT fall back to the
+        // signed .mov URL — AsyncImage can't decode video, so the tile would
+        // spin forever. Show a static video badge instead.
+        let thumbString = item.mediaType == .video
+            ? (item.renderThumbUrl ?? item.thumbUrl)
+            : item.displayThumbUrl
         Button {
             viewingMedia = FullscreenMedia.session(item)
         } label: {
             ZStack {
                 BrandColor.bgSecondary
-                if let urlString = item.displayThumbUrl, let url = URL(string: urlString) {
+                if let urlString = thumbString, let url = URL(string: urlString) {
                     AsyncImage(url: url) { image in image.resizable().scaledToFill() } placeholder: {
                         ProgressView().tint(BrandColor.accent)
                     }
                 } else {
-                    Image(systemName: "photo").foregroundStyle(BrandColor.textMuted)
+                    Image(systemName: item.mediaType == .video ? "video" : "photo")
+                        .foregroundStyle(BrandColor.textMuted)
                 }
                 if item.mediaType == .video {
                     Image(systemName: "play.circle.fill")

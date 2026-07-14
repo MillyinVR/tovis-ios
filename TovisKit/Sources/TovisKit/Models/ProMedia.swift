@@ -64,8 +64,11 @@ public struct MediaUploadInit: Decodable, Sendable {
 
 /// `POST /api/v1/pro/bookings/{id}/media` — confirm body. The server resolves the
 /// storage path from the upload session, so we only send the session + tags.
+/// `thumbUploadSessionId` is a second presigned session carrying a poster frame
+/// (video rows get a real thumbnail); nil is omitted, which older servers ignore.
 struct MediaConfirmRequest: Encodable, Sendable {
     let uploadSessionId: String
+    let thumbUploadSessionId: String?
     let phase: String
     let mediaType: String
     let caption: String?

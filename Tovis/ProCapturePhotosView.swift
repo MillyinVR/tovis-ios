@@ -83,6 +83,12 @@ struct ProCapturePhotosView: View {
     /// never loses a shot the pro already took.
     @State private var failedUploads: [Data] = []
     @State private var uploading = false
+    /// Recorded clips whose upload failed — kept safe in the ClipVault (never
+    /// tmp), retried on demand. Tuple carries the phase so a BEFORE clip
+    /// stranded by a crash still lands in BEFORE when swept up later.
+    @State private var failedClips: [(url: URL, phase: MediaPhase)] = []
+    /// Clip uploads currently running in the background ("Saving clip…" pill).
+    @State private var savingClips = 0
     @State private var errorMessage: String?
 
     private struct CapturedShot: Identifiable {
@@ -219,6 +225,13 @@ struct ProCapturePhotosView: View {
                let response = try? await session.client.proCamera.shotPacks() {
                 trendingPacks = ShotGuide.matchingPacks(response.packs, serviceName: serviceName)
             }
+            // Re-queue clips stranded by a crash/offline exit for this booking.
+            // (.task re-fires after every fullScreenCover round-trip, so skip
+            // anything already queued or in flight.)
+            let queued = Set(failedClips.map(\.url))
+            let stranded = ClipVault.strandedClips(bookingId: bookingId)
+                .filter { !queued.contains($0.url) }
+            if !stranded.isEmpty { failedClips.append(contentsOf: stranded) }
         }
         // Keep the coach judging "ready for THIS shot" — expectations follow the
         // current guided step (and clear for freeform / all-done shooting).
@@ -246,17 +259,17 @@ struct ProCapturePhotosView: View {
             }
         }
         .onDisappear { camera.stop(); coach?.stop() }
-        // A recorded clip is one-shot: once its review closes (saved or not),
-        // clear the temp file so tovis-clip-*.mov files don't pile up in tmp.
-        .onChange(of: scrubClip) { old, new in
-            if let old, new == nil { try? FileManager.default.removeItem(at: old.url) }
-        }
+        // (Clip files are owned by the ClipVault from the moment recording
+        // stops — nothing here may delete them; the vault releases each file
+        // only after its upload is confirmed.)
         // Pause the live camera while the pro is reviewing/picking shots or in
         // settings — otherwise it keeps capturing, scoring, and auto-harvesting
-        // behind the sheet. Resume when they return to shooting.
+        // behind the sheet. Resume when they return to shooting. A rolling
+        // recording is stopped AND SAVED — interrupting a take must never
+        // discard it.
         .onChange(of: isReviewing) { _, reviewing in
             if reviewing {
-                if camera.isRecording { Task { _ = try? await camera.stopRecording() } }
+                if camera.isRecording { Task { await stopRecordingAndSave(review: false) } }
                 camera.stop()
             } else {
                 camera.resume()
@@ -388,8 +401,11 @@ struct ProCapturePhotosView: View {
 
     /// Leave the camera — but if the coach is holding unreviewed best shots, ask
     /// first so they're not silently lost. Manually captured photos already
-    /// uploaded, so only the harvest tray is at risk.
+    /// uploaded, so only the harvest tray is at risk. A rolling recording is
+    /// stopped + saved first (the upload finishes in the background; a failure
+    /// lands in the ClipVault and is swept up next time the camera opens).
     private func requestExit() {
+        if camera.isRecording { Task { await stopRecordingAndSave(review: false) } }
         if (coach?.harvested.isEmpty == false) {
             showExitConfirm = true
         } else {
@@ -539,23 +555,25 @@ struct ProCapturePhotosView: View {
 
     // MARK: - Crop-safe guide (publish crops)
 
-    /// Publishing crops beauty work actually ships in: 4:5 (feed) and 9:16
-    /// (reel/story). Drawn from the sensor frame through the preview layer so
-    /// what's inside the lines is exactly what survives each crop — keep the
-    /// money shot inside the tighter box.
+    /// Publishing crops beauty work actually ships in. The PRIMARY box is 9:16
+    /// — the Tovis Looks feed is a full-screen cover-cropped pager, so a 3:4
+    /// capture loses ~40% of its width there; whatever must survive the feed
+    /// stays inside the bright box. 4:5 (Instagram feed) rides along dimmer.
+    /// Drawn from the sensor frame through the preview layer so what's inside
+    /// the lines is exactly what survives each crop.
     private var cropSafeOverlay: some View {
         GeometryReader { geo in
             ZStack {
-                cropBox(aspect: 4.0 / 5.0, label: "4:5", in: geo.size)
-                cropBox(aspect: 9.0 / 16.0, label: "9:16", in: geo.size)
+                cropBox(aspect: 4.0 / 5.0, label: "4:5", primary: false, in: geo.size)
+                cropBox(aspect: 9.0 / 16.0, label: "9:16 · feed", primary: true, in: geo.size)
             }
         }
         .allowsHitTesting(false)
     }
 
     /// A centered crop of `aspect` (w/h) within the upright 3:4 capture frame,
-    /// mapped to preview space.
-    private func cropBox(aspect: CGFloat, label: String, in size: CGSize) -> some View {
+    /// mapped to preview space. `primary` = the crop the Tovis feed itself uses.
+    private func cropBox(aspect: CGFloat, label: String, primary: Bool, in size: CGSize) -> some View {
         let frameAspect: CGFloat = 3.0 / 4.0   // upright sensor frame w/h (.photo preset)
         let normalized: CGRect
         if aspect > frameAspect {
@@ -569,12 +587,12 @@ struct ProCapturePhotosView: View {
         }
         let box = previewRect(uprightNormalized: normalized, in: size)
         return Rectangle()
-            .strokeBorder(.white.opacity(0.3), lineWidth: 1)
+            .strokeBorder(.white.opacity(primary ? 0.6 : 0.22), lineWidth: primary ? 1.5 : 1)
             .frame(width: box.width, height: box.height)
             .overlay(alignment: .topLeading) {
                 Text(label)
                     .font(BrandFont.mono(9)).tracking(0.5)
-                    .foregroundStyle(.white.opacity(0.55))
+                    .foregroundStyle(.white.opacity(primary ? 0.85 : 0.45))
                     .padding(.horizontal, 5).padding(.vertical, 2)
                     .background(.black.opacity(0.35), in: Capsule())
                     .padding(4)
@@ -1406,6 +1424,35 @@ struct ProCapturePhotosView: View {
                 .disabled(uploading)
             }
 
+            // Clips whose upload failed — safe in the ClipVault, retried on demand.
+            if !failedClips.isEmpty {
+                Button { retryFailedClips() } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.clockwise").font(.system(size: 13, weight: .semibold))
+                        Text("Retry \(failedClips.count) unsaved clip\(failedClips.count == 1 ? "" : "s")")
+                            .font(BrandFont.body(14, .semibold))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(BrandColor.ember.opacity(0.85), in: Capsule())
+                }
+                .disabled(savingClips > 0)
+            }
+
+            // A stopped recording is uploading in the background.
+            if savingClips > 0 {
+                HStack(spacing: 8) {
+                    ProgressView().tint(.white).scaleEffect(0.8)
+                    Text("Saving clip…")
+                        .font(BrandFont.body(13, .semibold))
+                        .foregroundStyle(.white)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(.black.opacity(0.45), in: Capsule())
+            }
+
             // Auto-harvested "best shots" awaiting review (Session Reel).
             if let coach, !coach.harvested.isEmpty {
                 Button { showBestShots = true } label: {
@@ -1682,12 +1729,70 @@ struct ProCapturePhotosView: View {
     private func toggleRecording() async {
         if camera.isRecording {
             errorMessage = nil
-            if let url = try? await camera.stopRecording() {
-                scrubClip = ScrubClip(url: url)   // → frame-by-frame review
-            }
+            await stopRecordingAndSave(review: true)
         } else {
             camera.startRecording()
         }
+    }
+
+    /// Stop the rolling recording and SAVE it — recording is capture, not
+    /// review. The clip moves into the ClipVault immediately (tmp is not safe
+    /// custody), uploads in the background, and optionally opens the scrubber
+    /// so the pro can pull a still while it saves.
+    private func stopRecordingAndSave(review: Bool) async {
+        let url: URL
+        do {
+            url = try await camera.stopRecording()
+        } catch {
+            errorMessage = "Couldn’t finish that recording. Please try again."
+            return
+        }
+        let stored = ClipVault.stash(url, bookingId: bookingId, phase: phase)
+        if review { scrubClip = ScrubClip(url: stored) }
+        uploadClip(stored, phase: phase)
+    }
+
+    /// Upload one vaulted clip: bake the card correction in, attach a poster
+    /// frame (so the gallery tile is a real image, not a spinner), confirm. On
+    /// failure the clip stays in the vault and joins the retry pill — a flaky
+    /// connection must never lose a take the pro already recorded.
+    private func uploadClip(_ url: URL, phase: MediaPhase) {
+        guard ClipVault.beginUpload(url) else { return }
+        savingClips += 1
+        let matrix = cardMatrix
+        let client = session.client
+        Task {
+            defer { savingClips -= 1 }
+            var uploadURL = url
+            if let matrix, let corrected = await CardCorrection.applyToVideo(matrix, at: url) {
+                uploadURL = corrected
+            }
+            defer {
+                if uploadURL != url { try? FileManager.default.removeItem(at: uploadURL) }
+            }
+            let poster = await ClipVault.poster(for: uploadURL)
+            do {
+                try await client.proMedia.uploadSessionVideo(
+                    bookingId: bookingId, phase: phase,
+                    fileURL: uploadURL, posterData: poster
+                )
+                ClipVault.remove(url)
+                session.signalRefresh()   // the hub's gallery refreshes
+            } catch {
+                ClipVault.endUpload(url)
+                failedClips.append((url: url, phase: phase))
+                errorMessage = "Couldn’t save the clip — it’s kept here to retry."
+            }
+        }
+    }
+
+    /// Re-attempt every failed clip upload; whatever fails again re-queues.
+    private func retryFailedClips() {
+        guard savingClips == 0, !failedClips.isEmpty else { return }
+        errorMessage = nil
+        let pending = failedClips
+        failedClips = []
+        for clip in pending { uploadClip(clip.url, phase: clip.phase) }
     }
 
     private var phaseLabel: String {
@@ -1737,7 +1842,7 @@ private struct CoachSettingsSheet: View {
                     Toggle("Readiness ring", isOn: $settings.showReadinessRing)
                     Toggle("Level / horizon", isOn: $settings.showLevel)
                     Toggle("Rule-of-thirds grid", isOn: $settings.showGrid)
-                    Toggle("Crop-safe guide (4:5 · 9:16)", isOn: $settings.showCropGuide)
+                    Toggle("Feed-crop guide (9:16 feed · 4:5)", isOn: $settings.showCropGuide)
                     Toggle("Extra best-shots (background)", isOn: $settings.autoHarvest)
                 } header: {
                     Text("On the camera")

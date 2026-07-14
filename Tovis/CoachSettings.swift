@@ -17,8 +17,10 @@ final class CoachSettings {
     var haptics: Bool { didSet { persist(\.haptics, "haptics") } }
     /// Draw a rule-of-thirds grid over the preview.
     var showGrid: Bool { didSet { persist(\.showGrid, "showGrid") } }
-    /// Draw the publish-crop safe areas (4:5 feed · 9:16 reel) so the money
-    /// shot stays inside what survives the crop.
+    /// Draw the publish-crop safe areas so the money shot stays inside what
+    /// survives the crop. ON by default: the Tovis Looks feed is a full-screen
+    /// 9:16 cover crop, so composing to the full 3:4 sensor frame loses ~40%
+    /// of the width the moment the shot is published.
     var showCropGuide: Bool { didSet { persist(\.showCropGuide, "showCropGuide") } }
     /// Show the readiness ring around the shutter (green = good to shoot).
     var showReadinessRing: Bool { didSet { persist(\.showReadinessRing, "showReadinessRing") } }
@@ -45,7 +47,7 @@ final class CoachSettings {
         speak = d.object(forKey: Self.key("speak")) as? Bool ?? false
         haptics = d.object(forKey: Self.key("haptics")) as? Bool ?? true
         showGrid = d.object(forKey: Self.key("showGrid")) as? Bool ?? false
-        showCropGuide = d.object(forKey: Self.key("showCropGuide")) as? Bool ?? false
+        showCropGuide = d.object(forKey: Self.key("showCropGuide")) as? Bool ?? true
         showReadinessRing = d.object(forKey: Self.key("showReadinessRing")) as? Bool ?? true
         showLevel = d.object(forKey: Self.key("showLevel")) as? Bool ?? true
         autoCapture = d.object(forKey: Self.key("autoCapture")) as? Bool ?? true

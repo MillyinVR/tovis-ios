@@ -41,19 +41,47 @@ public final class ProMediaService: Sendable {
     }
 
     /// One-shot video upload from a recorded clip file (silent .mov → VIDEO).
-    /// Lands in the same session media as before/after photos.
+    /// Lands in the same session media as before/after photos. `posterData` is
+    /// an optional JPEG poster frame uploaded alongside the clip so the row gets
+    /// a real thumbnail (galleries can't decode a frame from a signed .mov URL);
+    /// a failed poster upload never fails the clip — the clip simply confirms
+    /// without a thumb.
     @discardableResult
     public func uploadSessionVideo(
         bookingId: String,
         phase: MediaPhase,
         fileURL: URL,
+        posterData: Data? = nil,
         contentType: String = "video/quicktime",
         caption: String? = nil
     ) async throws -> ProBookingMediaItem {
         let data = try Data(contentsOf: fileURL)
-        return try await upload(
-            bookingId: bookingId, phase: phase, data: data,
-            contentType: contentType, mediaType: .video, caption: caption
+        let initData = try await presign(
+            bookingId: bookingId, phase: phase, contentType: contentType, size: data.count
+        )
+        try await putBytes(data, to: initData, contentType: contentType)
+
+        var thumbUploadSessionId: String?
+        if let posterData {
+            do {
+                let posterInit = try await presign(
+                    bookingId: bookingId, phase: phase,
+                    contentType: "image/jpeg", size: posterData.count
+                )
+                try await putBytes(posterData, to: posterInit, contentType: "image/jpeg")
+                thumbUploadSessionId = posterInit.uploadSessionId
+            } catch {
+                thumbUploadSessionId = nil   // clip beats poster — confirm without it
+            }
+        }
+
+        return try await confirm(
+            bookingId: bookingId,
+            uploadSessionId: initData.uploadSessionId,
+            phase: phase,
+            mediaType: .video,
+            caption: caption,
+            thumbUploadSessionId: thumbUploadSessionId
         )
     }
 
@@ -249,11 +277,13 @@ public final class ProMediaService: Sendable {
         phase: MediaPhase,
         mediaType: MediaType,
         caption: String? = nil,
+        thumbUploadSessionId: String? = nil,
         idempotencyKey: String? = nil
     ) async throws -> ProBookingMediaItem {
         let payload = try JSONEncoder.canonical.encode(
             MediaConfirmRequest(
                 uploadSessionId: uploadSessionId,
+                thumbUploadSessionId: thumbUploadSessionId,
                 phase: phase.rawValue,
                 mediaType: mediaType.rawValue,
                 caption: caption
