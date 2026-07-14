@@ -1,6 +1,7 @@
-// Frame-by-frame review of a recorded session clip. The pro scrubs the video,
-// picks the exact best frame, and extracts it as a still — or saves the whole
-// clip. Both land in the same session media as the before/after photos.
+// Frame-by-frame review of a recorded session clip. The pro scrubs the video
+// and can pull the exact best frame out as a still. The clip ITSELF is already
+// saving — recording auto-uploads on stop (ClipVault owns the file); this
+// screen is an optional extra, and closing it never discards anything.
 // (Part of the "Session Reel" — B3a.)
 import AVFoundation
 import SwiftUI
@@ -14,8 +15,8 @@ struct FrameScrubberView: View {
     let bookingId: String
     let phase: MediaPhase
     /// Card-solved color correction — baked into an extracted still at upload
-    /// (the saved VIDEO clip stays uncorrected — video correction is a
-    /// different pipeline). Nil = no card scanned.
+    /// (the clip's own upload bakes it into the video separately). Nil = no
+    /// card scanned.
     var correction: ColorMatrix3x3? = nil
 
     @State private var duration: Double = 0
@@ -55,7 +56,7 @@ struct FrameScrubberView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }.tint(BrandColor.textSecondary)
+                    Button("Done") { dismiss() }.tint(BrandColor.textSecondary)
                 }
             }
         }
@@ -94,10 +95,12 @@ struct FrameScrubberView: View {
             }
             .disabled(working || frame == nil)
 
-            Button { Task { await saveVideo() } } label: {
-                label("Save the whole clip", system: "video.badge.plus", filled: false)
+            HStack(spacing: 6) {
+                Image(systemName: "checkmark.circle.fill")
+                Text("The whole clip is saving to your session media.")
             }
-            .disabled(working)
+            .font(BrandFont.body(12))
+            .foregroundStyle(BrandColor.textMuted)
 
             if working { ProgressView().tint(BrandColor.accent) }
         }
@@ -182,33 +185,4 @@ struct FrameScrubberView: View {
         }
     }
 
-    private func saveVideo() async {
-        working = true; message = nil
-        defer { working = false }
-        // Bake the card correction into the clip too (falls back to the
-        // original if the re-export fails — a raw clip beats a lost one).
-        var uploadURL = videoURL
-        if let correction {
-            message = "Applying color correction…"
-            if let corrected = await CardCorrection.applyToVideo(correction, at: videoURL) {
-                uploadURL = corrected
-            }
-            message = nil
-        }
-        defer {
-            if uploadURL != videoURL { try? FileManager.default.removeItem(at: uploadURL) }
-        }
-        do {
-            try await session.client.proMedia.uploadSessionVideo(
-                bookingId: bookingId, phase: phase, fileURL: uploadURL
-            )
-            session.signalRefresh()
-            message = "Saved the clip."
-            dismiss()
-        } catch let error as APIError {
-            message = error.userMessage
-        } catch {
-            message = "Couldn’t save the clip."
-        }
-    }
 }

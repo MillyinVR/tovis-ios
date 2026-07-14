@@ -139,6 +139,12 @@
 
 ## Camera (AI photographer)
 
+- Session media confirm: `POST /pro/bookings/{id}/media { uploadSessionId,
+  thumbUploadSessionId?, phase, mediaType, caption? }` → `ProBookingMediaCreateResponseDTO`.
+  `thumbUploadSessionId` (additive) is a SECOND presigned `CONSULT_PRIVATE` session
+  carrying a JPEG poster frame for a VIDEO row — same booking/phase, image/*
+  content type — so galleries get a real `thumbUrl` instead of a signed .mov URL.
+  Older servers ignore the field (nil is omitted client-side).
 - `GET /pro/camera/shot-packs` → `{ ok, version, packs:[{ id, name, tagline,
   serviceKeywords[], trendScore, steps:[{ title, hint, icon, face:"required"|"absent"|"either",
   fillBandMin(num|null), fillBandMax(num|null), isDetail, allowsClosedEyes,
