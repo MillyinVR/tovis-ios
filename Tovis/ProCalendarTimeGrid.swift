@@ -392,16 +392,12 @@ struct ProCalendarTimeGrid: View {
                 // the .offset(y:) children measure from the TOP. It also backs the
                 // empty-slot tap: event tiles sit on top and take their own taps,
                 // so this only fires for genuinely empty space.
+                // DIAGNOSTIC: empty-slot tap temporarily disabled to prove whether it
+                // was intercepting taps meant for tiles. Restore the `.gesture(...)`
+                // once the tile hit-testing is confirmed.
                 Color.clear
                     .frame(maxWidth: .infinity, minHeight: totalHeight, maxHeight: totalHeight)
-                    .contentShape(Rectangle())
-                    .gesture(
-                        SpatialTapGesture().onEnded { value in
-                            if let date = emptySlotDate(day: day, y: value.location.y) {
-                                onTapEmptySlot?(date)
-                            }
-                        }
-                    )
+                    .allowsHitTesting(false)
 
                 // Working-hours shading: dim the hours outside the pro's window
                 // (drawn behind the rules + tiles; non-interactive so empty-slot
@@ -532,6 +528,7 @@ struct ProCalendarTimeGrid: View {
         )
         .padding(.horizontal, 1.5)
         .frame(width: colWidth, alignment: .leading)
+        .border(Color.red, width: 2) // DIAGNOSTIC: outline every tile's hit frame
         .offset(x: colX, y: topPx)
         .zIndex(lifted ? 2 : (pending ? 1 : 0))
         .contentShape(Rectangle())
