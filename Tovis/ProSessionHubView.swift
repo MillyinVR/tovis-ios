@@ -39,6 +39,9 @@ struct ProSessionHubView: View {
     @State private var critique: ProSetCritique?
     @State private var critiqueLoading = false
     @State private var critiqueError: String?
+    /// True when the last critique failure was the monthly image quota (403) —
+    /// drives the "See membership options" upgrade route below the error.
+    @State private var critiqueOffersUpgrade = false
     @State private var showCritiqueConsent = false
 
     private struct CaptureSelection: Identifiable {
@@ -418,6 +421,17 @@ struct ProSessionHubView: View {
                     if let critiqueError {
                         Text(critiqueError).font(BrandFont.body(12))
                             .foregroundStyle(BrandColor.ember)
+                        if critiqueOffersUpgrade {
+                            NavigationLink { ProMembershipView() } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "sparkles")
+                                        .font(.system(size: 11, weight: .semibold))
+                                    Text("See membership options")
+                                        .font(BrandFont.body(13, .semibold))
+                                }
+                                .foregroundStyle(BrandColor.accent)
+                            }
+                        }
                     }
                     Text(CameraVisionConsent.critiqueDisclosure)
                         .font(BrandFont.body(11)).foregroundStyle(BrandColor.textMuted)
@@ -512,6 +526,7 @@ struct ProSessionHubView: View {
 
     private func requestCritique() {
         critiqueError = nil
+        critiqueOffersUpgrade = false
         if CameraVisionConsent.granted {
             startCritique()
         } else {
@@ -529,10 +544,12 @@ struct ProSessionHubView: View {
                 critique = try await session.client.proCamera.setCritique(request)
             } catch let error as CritiqueBuildError {
                 critiqueError = error.message
-            } catch let error as APIError {
-                critiqueError = error.userMessage
             } catch {
-                critiqueError = "Couldn’t review the set. Please try again."
+                // Monthly quota (403) → friendly copy + upgrade route; daily cap
+                // (429) → "try again tomorrow"; everything else → its message.
+                let aiError = ProCameraAIError.from(error)
+                critiqueError = aiError.userMessage
+                critiqueOffersUpgrade = aiError.offersUpgrade
             }
         }
     }
