@@ -294,19 +294,41 @@ public struct CardReferenceProfile: Sendable, Equatable {
         self.referenceSwatches = referenceSwatches
     }
 
-    /// PLACEHOLDER profile — nominal 24-patch ColorChecker sRGB values (X-Rite),
-    /// normalized 0…1. Replace with a real batch's *measured* values, selected by
-    /// the NFC card-version id, before trusting the 3×3 matrix.
+    /// Nominal 24-patch ColorChecker Classic sRGB (X-Rite / BabelColor published
+    /// averages), reading order 1–24, normalized 0…1. Deliberately SHARED by two
+    /// profiles with opposite trust levels: as the printed Tovis card's
+    /// placeholder these are only illustrative (a dye-sub print is not
+    /// color-accurate — measure the batch), but as a *real* ColorChecker's
+    /// reference they're legitimate (the chart is manufactured to ~these values,
+    /// ΔE a few; a per-unit spectrophotometer read refines them).
+    public static let colorCheckerNominalSRGB: [RGB] = [
+        RGB(115, 82, 68), RGB(194, 150, 130), RGB(98, 122, 157), RGB(87, 108, 67),
+        RGB(133, 128, 177), RGB(103, 189, 170), RGB(214, 126, 44), RGB(80, 91, 166),
+        RGB(193, 90, 99), RGB(94, 60, 108), RGB(157, 188, 64), RGB(224, 163, 46),
+        RGB(56, 61, 150), RGB(70, 148, 73), RGB(175, 54, 60), RGB(231, 199, 31),
+        RGB(187, 86, 149), RGB(8, 133, 161), RGB(243, 243, 242), RGB(200, 200, 200),
+        RGB(160, 160, 160), RGB(122, 122, 121), RGB(85, 85, 85), RGB(52, 52, 52),
+    ].map { RGB($0.r / 255, $0.g / 255, $0.b / 255) }
+
+    /// PLACEHOLDER profile for the printed TOVIS card — nominal values, NOT the
+    /// card's *measured* colors, so its 3×3 matrix is illustrative until a batch
+    /// is measured and keyed by `cardVersion`. (A real ColorChecker chart uses
+    /// `.colorCheckerClassic`, whose nominal values it genuinely matches.)
     public static let placeholderClassic = CardReferenceProfile(
         cardVersion: "placeholder-classic-v0",
         neutralPatchIndex: 21,  // "neutral 5" gray
-        referenceSwatches: [
-            RGB(115, 82, 68), RGB(194, 150, 130), RGB(98, 122, 157), RGB(87, 108, 67),
-            RGB(133, 128, 177), RGB(103, 189, 170), RGB(214, 126, 44), RGB(80, 91, 166),
-            RGB(193, 90, 99), RGB(94, 60, 108), RGB(157, 188, 64), RGB(224, 163, 46),
-            RGB(56, 61, 150), RGB(70, 148, 73), RGB(175, 54, 60), RGB(231, 199, 31),
-            RGB(187, 86, 149), RGB(8, 133, 161), RGB(243, 243, 242), RGB(200, 200, 200),
-            RGB(160, 160, 160), RGB(122, 122, 121), RGB(85, 85, 85), RGB(52, 52, 52),
-        ].map { RGB($0.r / 255, $0.g / 255, $0.b / 255) }
+        referenceSwatches: colorCheckerNominalSRGB
+    )
+
+    /// A real ColorChecker Classic (24-patch) chart. Unlike a dye-sub print, the
+    /// physical chart genuinely matches these published nominal sRGB values, so
+    /// this profile is TRUSTWORTHY for calibrating/validating the color pipeline
+    /// with no printing (see `CalibrationTarget.colorCheckerClassic`). Reading
+    /// order + neutral index match the Tovis card's (gray ramp last, neutral-5 at
+    /// 21). Refine with a per-unit spectrophotometer read for sub-ΔE accuracy.
+    public static let colorCheckerClassic = CardReferenceProfile(
+        cardVersion: "colorchecker-classic",
+        neutralPatchIndex: 21,  // "neutral 5" gray (row 4, patch 22)
+        referenceSwatches: colorCheckerNominalSRGB
     )
 }
