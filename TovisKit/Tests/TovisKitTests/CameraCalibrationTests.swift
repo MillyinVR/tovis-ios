@@ -126,6 +126,32 @@ struct CameraCalibrationTests {
         #expect(CameraCalibration.isPlausible(.identity))
     }
 
+    @Test func determinantMatchesManualExpansion() {
+        #expect(abs(CameraCalibration.determinant(.identity) - 1) < 1e-12)
+        #expect(abs(CameraCalibration.determinant(ColorMatrix3x3([2, 0, 0, 0, 3, 0, 0, 0, 4])) - 24) < 1e-12)
+        // A channel swap has determinant -1 (orientation flip).
+        #expect(abs(CameraCalibration.determinant(ColorMatrix3x3([0, 0, 1, 0, 1, 0, 1, 0, 0])) + 1) < 1e-12)
+    }
+
+    @Test func gateFreeSolveReturnsImplausibleMatrices() {
+        // The gate-free solve backs diagnostics: it returns a matrix EVEN when the
+        // plausibility gate would reject it, so a bad read is diagnosable. Measured
+        // = reference with R and B swapped → a perfectly solvable but wild
+        // correction (≈ a swap matrix, det ≈ -1) that `chromaticCorrection` rejects.
+        let profile = CardReferenceProfile.placeholderClassic
+        let measured = profile.referenceSwatches.map { RGB($0.b, $0.g, $0.r) }
+        let solved = try! #require(
+            CameraCalibration.solvedChromaticMatrix(measuredSRGB: measured, profile: profile))
+        #expect(!CameraCalibration.isPlausible(solved))                                     // gate rejects
+        #expect(CameraCalibration.chromaticCorrection(measuredSRGB: measured, profile: profile) == nil)
+        // A clean read: the gate-free solve and the gated one agree exactly.
+        let clean = CameraCalibration.solvedChromaticMatrix(
+            measuredSRGB: profile.referenceSwatches, profile: profile)
+        let gated = CameraCalibration.chromaticCorrection(
+            measuredSRGB: profile.referenceSwatches, profile: profile)
+        #expect(clean == gated)
+    }
+
     // MARK: - Exposure anchor
 
     @Test func halfLumaNeutralReadsAsPlusOneEV() {

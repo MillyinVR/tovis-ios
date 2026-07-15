@@ -100,6 +100,21 @@ public enum CameraCalibration {
         measuredSRGB: [RGB],
         profile: CardReferenceProfile
     ) -> ColorMatrix3x3? {
+        guard let matrix = solvedChromaticMatrix(measuredSRGB: measuredSRGB, profile: profile),
+              isPlausible(matrix) else { return nil }
+        return matrix
+    }
+
+    /// The gain-stripped chromatic matrix — the raw solve `chromaticCorrection`
+    /// then accepts or rejects via `isPlausible`, WITHOUT that plausibility gate.
+    /// Nil only when the solve itself can't run (count mismatch, under-determined /
+    /// singular, or a zero-luma neutral). Exposed so diagnostics can inspect a
+    /// matrix the gate would reject — the whole point when tuning geometry against
+    /// a real card is seeing WHY a read reads as implausible.
+    static func solvedChromaticMatrix(
+        measuredSRGB: [RGB],
+        profile: CardReferenceProfile
+    ) -> ColorMatrix3x3? {
         guard measuredSRGB.count == profile.referenceSwatches.count else { return nil }
         let measured = measuredSRGB.map(srgbToLinear)
         let reference = profile.referenceSwatches.map(srgbToLinear)
@@ -113,8 +128,6 @@ public enum CameraCalibration {
         guard before > 1e-4, after > 1e-4 else { return nil }
         let gain = after / before
         matrix = ColorMatrix3x3(matrix.m.map { $0 / gain })
-
-        guard isPlausible(matrix) else { return nil }
         return matrix
     }
 
@@ -142,10 +155,17 @@ public enum CameraCalibration {
         let m = matrix.m
         for d in [m[0], m[4], m[8]] where !(0.4...2.5).contains(d) { return false }
         for o in [m[1], m[2], m[3], m[5], m[6], m[7]] where abs(o) > 0.6 { return false }
-        let det = m[0] * (m[4] * m[8] - m[5] * m[7])
-                - m[1] * (m[3] * m[8] - m[5] * m[6])
-                + m[2] * (m[3] * m[7] - m[4] * m[6])
-        return det > 0.05
+        return determinant(matrix) > 0.05
+    }
+
+    /// Determinant of a row-major 3×3 — the volume-scale of the correction, and
+    /// one leg of `isPlausible` (a near-zero/negative det means a degenerate,
+    /// un-invertible solve). Surfaced for diagnostics alongside the gate.
+    public static func determinant(_ matrix: ColorMatrix3x3) -> Double {
+        let m = matrix.m
+        return m[0] * (m[4] * m[8] - m[5] * m[7])
+             - m[1] * (m[3] * m[8] - m[5] * m[6])
+             + m[2] * (m[3] * m[7] - m[4] * m[6])
     }
 
     /// "Did we actually read a card?" — the last six swatches are a gray ramp
