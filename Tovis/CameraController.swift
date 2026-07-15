@@ -1,9 +1,10 @@
 // A minimal custom camera over AVFoundation: live preview + still capture → JPEG.
 //
-// Built custom (not the system PhotosPicker) on purpose: Phase B of the "AI
-// photographer" taps the live frame buffer for the on-device coach (lighting /
-// composition / background / pose) and draws overlays on the preview. For Phase A
-// this is capture-only; the AVCaptureVideoDataOutput coaching hook lands in B.
+// Built custom (not the system PhotosPicker) on purpose: the "AI photographer"
+// taps the live frame buffer (AVCaptureVideoDataOutput) for the on-device coach
+// (lighting / composition / background / pose) and draws overlays on the preview.
+// Capture, recording, and the live coaching hook all ship here today — the coach
+// itself lives in CoachEngine.
 import AVFoundation
 import SwiftUI
 import TovisKit

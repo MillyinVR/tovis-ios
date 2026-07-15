@@ -64,6 +64,7 @@ struct BestShotsReviewView: View {
 
     private func cell(_ shot: HarvestedShot) -> some View {
         let isSelected = selected.contains(shot.id)
+        let quality = Int((shot.readiness * 100).rounded())
         return Image(uiImage: shot.image)
             .resizable()
             .scaledToFill()
@@ -77,6 +78,9 @@ struct BestShotsReviewView: View {
                     .padding(6)
                     .shadow(radius: 2)
             }
+            // The coach harvested each shot at a quality peak — show that score so
+            // the pro can rank the tray at a glance (was carried but never surfaced).
+            .overlay(alignment: .bottomLeading) { qualityBadge(shot.readiness) }
             .overlay {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(isSelected ? BrandColor.accent : .clear, lineWidth: 2)
@@ -85,6 +89,30 @@ struct BestShotsReviewView: View {
             .onTapGesture {
                 if isSelected { selected.remove(shot.id) } else { selected.insert(shot.id) }
             }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Best shot, \(quality) percent quality")
+            .accessibilityValue(isSelected ? "Selected" : "Not selected")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityHint(isSelected ? "Double tap to deselect" : "Double tap to select")
+    }
+
+    /// Per-shot readiness score (0–100), tinted to match the capture screen's
+    /// readiness ring (green ≥ ready, amber = close, ember = lower).
+    private func qualityBadge(_ readiness: Double) -> some View {
+        Text("\(Int((readiness * 100).rounded()))")
+            .font(BrandFont.mono(11))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(qualityTint(readiness).opacity(0.9), in: Capsule())
+            .padding(6)
+    }
+
+    private func qualityTint(_ readiness: Double) -> Color {
+        switch readiness {
+        case ..<CoachTuning.readyWarnThreshold: return BrandColor.ember
+        case ..<CoachTuning.readyThreshold: return BrandColor.gold
+        default: return BrandColor.emerald
+        }
     }
 
     private var uploadBar: some View {
