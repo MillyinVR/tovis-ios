@@ -51,6 +51,11 @@ public struct PublicBoardLook: Decodable, Sendable, Identifiable {
     /// The web look-detail path (`/looks/{id}`). Carried for parity / future native
     /// routing; the viewer opens the image fullscreen for now.
     public let href: String
+    /// Normalized subject focal point (camera C6), [0,1] top-left. The board grid's
+    /// cover-cropped tiles center here; nil → center (`focalPoint`). Decoded
+    /// optionally so a backend that predates the field still decodes.
+    public let focalX: Double?
+    public let focalY: Double?
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -58,9 +63,14 @@ public struct PublicBoardLook: Decodable, Sendable, Identifiable {
         name = try c.decodeIfPresent(String.self, forKey: .name) ?? "Look"
         imageUrl = try c.decodeIfPresent(String.self, forKey: .imageUrl)
         href = try c.decodeIfPresent(String.self, forKey: .href) ?? "/looks/\(id)"
+        focalX = try c.decodeIfPresent(Double.self, forKey: .focalX)
+        focalY = try c.decodeIfPresent(Double.self, forKey: .focalY)
     }
 
-    private enum CodingKeys: String, CodingKey { case id, name, imageUrl, href }
+    /// The validated focal point to crop on, or nil (center) when absent/invalid.
+    public var focalPoint: MediaFocalPoint? { MediaFocalPoint(x: focalX, y: focalY) }
+
+    private enum CodingKeys: String, CodingKey { case id, name, imageUrl, href, focalX, focalY }
 }
 
 /// Signed-in-viewer flags for a public board.

@@ -33,6 +33,13 @@ public struct LooksFeedItem: Decodable, Sendable, Identifiable {
     public let category: String?
     public let priceStartingAt: Double?
 
+    /// Normalized subject focal point of the primary asset (camera C6), [0,1]
+    /// top-left. The full-screen cover-cropped feed centers its window here
+    /// instead of the blind geometric center. Optional so an older/not-yet-
+    /// deployed payload (no focal) still decodes; nil → center (`focalPoint`).
+    public let focalX: Double?
+    public let focalY: Double?
+
     /// Opt-in before/after pairing on the primary image → the reveal slider.
     public let before: LooksPairedBefore?
 
@@ -49,11 +56,17 @@ public struct LooksFeedItem: Decodable, Sendable, Identifiable {
         case count = "_count"
         case viewerLiked, viewerSaved, viewerFollows
         case serviceId, serviceName, category, priceStartingAt
+        case focalX, focalY
         case before
         case tagsRaw = "tags"
     }
 
     public var isVideo: Bool { mediaType.uppercased() == "VIDEO" }
+
+    /// The validated focal point to crop on, or nil (center) when absent/invalid.
+    /// Mirrors the web `resolveFocalPoint` — a non-finite or out-of-[0,1] value
+    /// degrades to nil rather than a bad crop.
+    public var focalPoint: MediaFocalPoint? { MediaFocalPoint(x: focalX, y: focalY) }
 
     /// The before/after pair to render, when the primary is a paired image.
     /// Nil for videos or unpaired looks (fall back to the single-image slide).

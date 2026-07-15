@@ -1103,9 +1103,9 @@ private struct DiscoverLookCard: View {
                 ZStack(alignment: .topLeading) {
                     Group {
                         if let url = (look.thumbUrl ?? look.url).flatMap(URL.init(string:)) {
-                            AsyncImage(url: url) { img in
-                                img.resizable().scaledToFill()
-                            } placeholder: { CardSheen() }
+                            // Focal-aware cover crop (camera C6c) — center the 3:4
+                            // tile on the subject; null focal → centered fill.
+                            FocalCoverImage(url: url, focal: look.focalPoint) { CardSheen() }
                         } else {
                             CardSheen()
                         }
