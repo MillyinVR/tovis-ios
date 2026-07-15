@@ -69,10 +69,15 @@ struct BookingFlowView: View {
         !isReschedule && offering.offersInSalon && offering.offersMobile
     }
 
-    /// The mode a new flow opens in: SALON when offered, else MOBILE; reschedule
-    /// keeps the booking's existing mode.
+    /// The mode a new flow opens in. Reschedule keeps the booking's existing
+    /// mode; a rebook passes the original booking's mode as `locationType`, so
+    /// honor a MOBILE hint whenever the offering still offers it (previously a
+    /// mobile rebook on a dual-mode offering silently opened in SALON). Plain
+    /// new bookings keep the SALON-when-offered default (`locationType`'s
+    /// default is SALON, so untouched callers behave identically).
     private var initialMode: String {
         if isReschedule { return locationType }
+        if locationType.uppercased() == "MOBILE" && offering.offersMobile { return "MOBILE" }
         if offering.offersInSalon { return "SALON" }
         if offering.offersMobile { return "MOBILE" }
         return locationType

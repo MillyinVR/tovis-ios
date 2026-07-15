@@ -21,6 +21,11 @@ public struct ProBookingDetail: Decodable, Sendable, Identifiable {
     public let locationAddressSnapshot: String?
     public let locationLatSnapshot: Double?
     public let locationLngSnapshot: Double?
+    /// MOBILE bookings: the client's saved service-address id (nil for SALON or
+    /// when the booking never carried one). Feeds the aftercare rebook slot
+    /// picker so mobile availability respects the pro's travel radius. Optional
+    /// so pre-field backend responses still decode.
+    public let clientAddressId: String?
     public let bufferMinutes: Int
     public let durationMinutes: Int
     public let totalDurationMinutes: Int
