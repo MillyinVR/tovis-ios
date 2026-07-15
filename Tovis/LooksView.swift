@@ -501,13 +501,15 @@ private struct LookSlide: View {
             .contentShape(Rectangle())
             .onTapGesture { onToggleMute() }
         } else if let url = URL(string: item.url) {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case let .success(image): image.resizable().scaledToFill()
-                case .failure: fallback
-                default: ProgressView().tint(BrandColor.accent)
-                }
-            }
+            // Smart 9:16 crop (camera C6c): center the full-screen cover window on
+            // the subject focal instead of the blind geometric center. Null focal →
+            // plain centered fill (byte-identical to pre-C6c).
+            FocalCoverImage(
+                url: url,
+                focal: item.focalPoint,
+                placeholder: { ProgressView().tint(BrandColor.accent) },
+                failure: { fallback }
+            )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipped()
         } else {

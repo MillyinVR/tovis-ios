@@ -199,8 +199,10 @@ struct PublicBoardView: View {
         ZStack(alignment: .bottomLeading) {
             BrandColor.bgSecondary
             if let url = look.imageUrl, let parsed = URL(string: url) {
-                AsyncImage(url: parsed) { $0.resizable().scaledToFill() }
-                    placeholder: { ProgressView().tint(BrandColor.accent) }
+                // Focal-aware cover crop (camera C6c); null focal → centered fill.
+                FocalCoverImage(url: parsed, focal: look.focalPoint) {
+                    ProgressView().tint(BrandColor.accent)
+                }
             }
             LinearGradient(
                 colors: [.black.opacity(0.55), .clear],
