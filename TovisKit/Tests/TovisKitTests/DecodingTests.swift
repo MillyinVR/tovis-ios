@@ -540,6 +540,8 @@ func fixture(_ name: String) throws -> Data {
         #expect(b.checkoutStatus == "AWAITING_CONFIRMATION")
         #expect(b.isAwaitingPaymentConfirmation)
         #expect(b.rebookOfBookingId == nil)
+        // Absent key (pre-field backend response) must decode as nil.
+        #expect(b.clientAddressId == nil)
         #expect(b.sessionStep == "NONE")
         #expect(b.aftercareSummary?.isSent == true)
         #expect(b.aftercareSummary?.version == 2)

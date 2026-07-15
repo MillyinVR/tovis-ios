@@ -53,6 +53,9 @@ struct ProAftercareAuthorView: View {
     @State private var rebookOfferingId = ""
     @State private var rebookLocationId = ""
     @State private var rebookLocationType = "SALON"
+    /// MOBILE source bookings: the client's saved service address, reused so
+    /// the slot picker can query mobile availability (nil for SALON).
+    @State private var rebookClientAddressId: String?
     @State private var rebookDurationMinutes = 60
     @State private var selectedSlot: String?   // chosen ISO start instant
 
@@ -270,6 +273,11 @@ struct ProAftercareAuthorView: View {
                 if rebookOfferingId.isEmpty || professionalId.isEmpty {
                     Text("This booking has no service offering set, so an exact next appointment can’t be proposed. Use “Booking window” instead.")
                         .font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
+                } else if rebookLocationType == "MOBILE" && rebookClientAddressId == nil {
+                    // Mobile availability is checked against the client's saved
+                    // service address; without one the picker would only error.
+                    Text("This mobile booking has no saved client service address, so open times can’t be checked. Use “Booking window” instead.")
+                        .font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
                 } else {
                     ProOpenSlotPicker(
                         professionalId: professionalId,
@@ -279,6 +287,7 @@ struct ProAftercareAuthorView: View {
                         locationType: rebookLocationType,
                         locationTimeZone: timeZone,
                         durationMinutes: rebookDurationMinutes,
+                        clientAddressId: rebookClientAddressId,
                         selectedSlot: $selectedSlot,
                     )
                 }
@@ -532,6 +541,8 @@ struct ProAftercareAuthorView: View {
                 rebookOfferingId = detail.baseItem?.offeringId ?? ""
                 rebookLocationId = detail.locationId ?? ""
                 rebookLocationType = detail.locationType.uppercased() == "SALON" ? "SALON" : "MOBILE"
+                rebookClientAddressId =
+                    rebookLocationType == "MOBILE" ? detail.clientAddressId : nil
                 rebookDurationMinutes = detail.totalDurationMinutes > 0 ? detail.totalDurationMinutes : 60
             }
 
