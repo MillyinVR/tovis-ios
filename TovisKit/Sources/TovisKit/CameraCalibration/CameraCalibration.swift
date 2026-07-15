@@ -152,12 +152,17 @@ public enum CameraCalibration {
     /// (light → dark). A real read shows monotonically decreasing, near-neutral
     /// luma; a misaligned card or a random scene won't. Cheap and decisive.
     public static func looksLikeGrayRamp(measuredSRGB: [RGB]) -> Bool {
-        guard measuredSRGB.count >= 24 else { return false }
-        let ramp = Array(measuredSRGB[18...23]).map(srgbToLinear)
+        guard measuredSRGB.count >= CardGeometry.swatchCount else { return false }
+        // Ramp indices are defined against the full swatch grid; the count guard
+        // above keeps them in range.
+        let rampIndices = CardGeometry.grayRampIndices
+        assert(rampIndices.upperBound <= measuredSRGB.count,
+               "gray-ramp indices \(rampIndices) exceed \(measuredSRGB.count) swatches")
+        let ramp = rampIndices.map { srgbToLinear(measuredSRGB[$0]) }
         let lumas = ramp.map(linearLuma)
         // Monotonic decreasing with real spread end-to-end.
         for i in 1..<lumas.count where lumas[i] >= lumas[i - 1] - 1e-4 { return false }
-        guard lumas[0] > lumas[5] * 2 else { return false }
+        guard lumas[0] > lumas[lumas.count - 1] * 2 else { return false }
         // Near-neutral: no channel dominates (WB is locked before this check).
         for c in ramp {
             let mx = max(c.r, c.g, c.b), mn = min(c.r, c.g, c.b)
@@ -215,20 +220,33 @@ public enum CardGeometry {
     private static let botY = 38.5, botH = 10.0
     private static let swatchPad = 0.75, gap = 0.5
 
-    /// The 24 swatch sampling rects in reading order (top row 1–12, bottom row
-    /// 13–24), each inset toward its swatch's center so a slightly misaligned
-    /// hand-held card still samples paint, not borders. `inset` is the fraction
-    /// shaved off EACH side (0.28 keeps the central ~44%).
+    /// Swatches per row, and the full grid count (top row + bottom row). A
+    /// reference profile must carry exactly `swatchCount` values — see
+    /// `CardReferenceProfile.init`.
+    public static let swatchesPerRow = 12
+    public static var swatchCount: Int { swatchesPerRow * 2 }
+
+    /// The gray ramp is the last `grayRampCount` swatches (light → dark); a real
+    /// card read shows them monotonically decreasing and near-neutral (see
+    /// `CameraCalibration.looksLikeGrayRamp`).
+    public static let grayRampCount = 6
+    /// Reading-order indices of the gray-ramp swatches (the last `grayRampCount`).
+    public static var grayRampIndices: Range<Int> { (swatchCount - grayRampCount)..<swatchCount }
+
+    /// The `swatchCount` swatch sampling rects in reading order (top row 1–12,
+    /// bottom row 13–24), each inset toward its swatch's center so a slightly
+    /// misaligned hand-held card still samples paint, not borders. `inset` is the
+    /// fraction shaved off EACH side (0.28 keeps the central ~44%).
     public static func swatchSampleRects(inset: Double = 0.28) -> [CGRect] {
         rowRects(y: topY, h: topH, inset: inset) + rowRects(y: botY, h: botH, inset: inset)
     }
 
     private static func rowRects(y: Double, h: Double, inset: Double) -> [CGRect] {
         let innerW = widthMM - 2 * border
-        let w = (innerW - gap * 11) / 12
+        let w = (innerW - gap * Double(swatchesPerRow - 1)) / Double(swatchesPerRow)
         let swatchY = y + swatchPad
         let swatchH = h - 2 * swatchPad
-        return (0..<12).map { i in
+        return (0..<swatchesPerRow).map { i in
             let x = border + Double(i) * (w + gap)
             let insetX = w * inset, insetY = swatchH * inset
             return CGRect(
@@ -261,6 +279,16 @@ public struct CardReferenceProfile: Sendable, Equatable {
     public let referenceSwatches: [RGB]
 
     public init(cardVersion: String, neutralPatchIndex: Int, referenceSwatches: [RGB]) {
+        // The profile must line up 1:1 with the card's physical sampling grid — a
+        // mismatched count would silently map every measured color onto the wrong
+        // reference (or drop the solve to nil), and an out-of-range neutral index
+        // would crash the exposure-strip step in `chromaticCorrection`.
+        precondition(
+            referenceSwatches.count == CardGeometry.swatchCount,
+            "CardReferenceProfile '\(cardVersion)' needs \(CardGeometry.swatchCount) swatches, got \(referenceSwatches.count)")
+        precondition(
+            referenceSwatches.indices.contains(neutralPatchIndex),
+            "neutralPatchIndex \(neutralPatchIndex) out of range for \(referenceSwatches.count) swatches")
         self.cardVersion = cardVersion
         self.neutralPatchIndex = neutralPatchIndex
         self.referenceSwatches = referenceSwatches

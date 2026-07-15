@@ -797,6 +797,8 @@ struct ProCapturePhotosView: View {
                 .background(.black.opacity(0.45), in: Capsule())
                 .overlay(Capsule().strokeBorder(BrandColor.gold.opacity(0.5), lineWidth: 1))
             }
+            .accessibilityLabel("The light has changed — re-scan the card")
+            .accessibilityHint("Reopens the card scan")
         }
     }
 
@@ -1274,6 +1276,9 @@ struct ProCapturePhotosView: View {
             .background(.black.opacity(0.45), in: Capsule())
             .overlay(Capsule().strokeBorder(
                 (match.ok ? BrandColor.emerald : BrandColor.gold).opacity(0.5), lineWidth: 1))
+            // The ✓ / ⚠︎ icon carries the ok/off state — name it for VoiceOver.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(match.ok ? "Light matched" : "Light off") — \(match.label)")
         }
     }
 
@@ -1298,7 +1303,9 @@ struct ProCapturePhotosView: View {
 
             if showOnion {
                 Image(systemName: "circle.lefthalf.filled").font(.system(size: 12)).foregroundStyle(.white.opacity(0.6))
+                    .accessibilityHidden(true)
                 Slider(value: $onionOpacity, in: 0.1...0.7).tint(.white)
+                    .accessibilityLabel("Ghost overlay strength")
 
                 if matchLook == nil, referenceURLs.count > 1 {
                     Button {
@@ -1309,6 +1316,8 @@ struct ProCapturePhotosView: View {
                             .padding(.horizontal, 10).padding(.vertical, 6)
                             .background(.white.opacity(0.12), in: Capsule())
                     }
+                    .accessibilityLabel("Reference photo \(min(referenceIndex, referenceURLs.count - 1) + 1) of \(referenceURLs.count)")
+                    .accessibilityHint("Cycles to the next reference photo")
                 }
             }
         }
@@ -1337,10 +1346,20 @@ struct ProCapturePhotosView: View {
                 .padding(.vertical, 5)
                 .background(.black.opacity(0.45), in: Capsule())
                 .overlay(Capsule().strokeBorder(Self.hudTint(status).opacity(0.5), lineWidth: 1))
+                // The pill's status is color-only — spell it out for VoiceOver.
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(info.label), \(Self.hudA11yStatus(status))")
             }
         }
         .padding(.top, 10)
         .animation(.easeOut(duration: 0.2), value: statuses)
+    }
+
+    /// Spoken form of a fundamental's status (mirrors `hudTint`): the pill tints
+    /// green/amber/red, which VoiceOver can't see.
+    private static func hudA11yStatus(_ s: CoachStatus) -> String {
+        guard s.message != nil else { return "good" }
+        return s.score < 0.5 ? "needs fixing" : "minor issue"
     }
 
     private static func hudDisplay(_ c: CoachCategory) -> (label: String, icon: String) {
@@ -1374,6 +1393,7 @@ struct ProCapturePhotosView: View {
             .padding(.top, 12)
             .transition(.move(edge: .top).combined(with: .opacity))
             .animation(.easeInOut(duration: 0.25), value: message)
+            .accessibilityLabel("Coaching tip: \(message)")
     }
 
     private var phaseHeader: some View {
@@ -1603,6 +1623,10 @@ struct ProCapturePhotosView: View {
                     }
                 }
                 .disabled(uploading || scanningCard || camera.status != .ready)
+                .accessibilityLabel("Shutter")
+                .accessibilityHint(isReady
+                    ? "Ready — double tap to take the photo"
+                    : "Hold steady for the coach's green ring, then double tap to capture")
 
                 // Done
                 Button("Done") { requestExit() }

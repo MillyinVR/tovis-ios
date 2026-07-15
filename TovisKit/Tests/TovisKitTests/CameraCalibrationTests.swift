@@ -183,4 +183,19 @@ struct CameraCalibrationTests {
         // The WB band sample avoids the swatch rows entirely.
         #expect(CardGeometry.aspect > 1.5 && CardGeometry.aspect < 1.7)
     }
+
+    @Test func swatchGridCouplesToProfileAndRamp() {
+        // The sampling grid, the swatch-count constant, and the reference profile
+        // must all agree — the profile init depends on it.
+        #expect(CardGeometry.swatchCount == 24)
+        #expect(CardGeometry.swatchSampleRects().count == CardGeometry.swatchCount)
+        #expect(CardReferenceProfile.placeholderClassic.referenceSwatches.count
+                == CardGeometry.swatchCount)
+
+        // The gray ramp is the last `grayRampCount` swatches, in range.
+        let ramp = CardGeometry.grayRampIndices
+        #expect(ramp.count == CardGeometry.grayRampCount)
+        #expect(ramp.upperBound == CardGeometry.swatchCount)
+        #expect(ramp.lowerBound >= 0)
+    }
 }

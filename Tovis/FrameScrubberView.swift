@@ -20,6 +20,7 @@ struct FrameScrubberView: View {
     var correction: ColorMatrix3x3? = nil
 
     @State private var duration: Double = 0
+    @State private var fps: Double = 30               // derived from the track; 30 = fallback
     @State private var position: Double = 0           // seconds
     @State private var frame: UIImage?
     @State private var generator: AVAssetImageGenerator?
@@ -78,7 +79,7 @@ struct FrameScrubberView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
-    /// Nudge one frame at a time (assumes ~30 fps).
+    /// Nudge one frame at a time (step = 1/fps, derived from the clip's track).
     private var frameStepper: some View {
         HStack(spacing: 24) {
             Button { step(-1) } label: { Image(systemName: "backward.frame.fill") }
@@ -134,11 +135,17 @@ struct FrameScrubberView: View {
         if let seconds = try? await asset.load(.duration).seconds, seconds.isFinite {
             duration = seconds
         }
+        // Step by the clip's real frame rate, not an assumed 30 — a 24/60 fps clip
+        // would otherwise nudge by the wrong amount.
+        if let track = try? await asset.loadTracks(withMediaType: .video).first,
+           let rate = try? await track.load(.nominalFrameRate), rate > 0 {
+            fps = Double(rate)
+        }
         await renderFrame(at: 0)
     }
 
     private func step(_ frames: Int) {
-        let delta = Double(frames) / 30.0
+        let delta = Double(frames) / fps
         position = min(max(position + delta, 0), duration)
         schedulePreview()
     }
