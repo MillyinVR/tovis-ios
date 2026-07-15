@@ -67,6 +67,11 @@ struct ProCapturePhotosView: View {
     @State private var cardMode = false
     /// A card scan is in flight (two captures + solve).
     @State private var scanningCard = false
+    /// Which physical reference the card scan targets — the printed Tovis card by
+    /// default. DEBUG builds can switch to a standard ColorChecker Classic chart
+    /// (e.g. a ColorChecker Passport), whose factory-known colors let the color
+    /// pipeline be validated against a trustworthy reference with no printing.
+    @State private var scanTarget: CalibrationTarget = .tovisCardV0
     /// The active card-solved chromatic correction, baked into every captured
     /// JPEG before upload. Persisted per booking (before + after match).
     @State private var cardMatrix: ColorMatrix3x3?
@@ -550,7 +555,7 @@ struct ProCapturePhotosView: View {
     /// (required by `previewRect`'s axis-swap mapping).
     private var cardRegion: CGRect {
         let width = 0.8
-        let height = width * (3.0 / 4.0) / CardGeometry.aspect   // frame is 3:4 (w/h)
+        let height = width * (3.0 / 4.0) / scanTarget.aspect   // frame is 3:4 (w/h)
         return CGRect(x: (1 - width) / 2, y: (1 - height) / 2, width: width, height: height)
     }
 
@@ -661,6 +666,23 @@ struct ProCapturePhotosView: View {
                         .padding(.horizontal, 10).padding(.vertical, 10)
                 }
             }
+            #if DEBUG
+            // Dev-only: pick the physical reference the scan targets. Lets the
+            // color pipeline be validated against a real ColorChecker (factory
+            // reference, no printing) before the measured-Tovis-card path exists.
+            if cardMode {
+                HStack(spacing: 6) {
+                    Text("Ref").font(BrandFont.body(11)).foregroundStyle(.white.opacity(0.5))
+                    ForEach(CalibrationTarget.all, id: \.id) { t in
+                        calibrationModeChip(t.displayName, active: scanTarget.id == t.id) {
+                            guard scanTarget.id != t.id else { return }
+                            scanTarget = t
+                            calibrationStatus = nil   // stale read state for the old target
+                        }
+                    }
+                }
+            }
+            #endif
         }
         .padding(.horizontal, 20)
     }
@@ -709,8 +731,9 @@ struct ProCapturePhotosView: View {
         defer { scanningCard = false }
         calibrationStatus = "Reading the card…"
 
+        let target = scanTarget
         guard let first = try? await camera.capturePhoto(),
-              let firstRead = await CardScanner.read(jpeg: first, cardRegion: cardRegion) else {
+              let firstRead = await CardScanner.read(jpeg: first, cardRegion: cardRegion, target: target) else {
             calibrationStatus = "Couldn’t read the card — line it up with the box."
             return
         }
@@ -721,17 +744,17 @@ struct ProCapturePhotosView: View {
         try? await Task.sleep(nanoseconds: 400_000_000)
 
         guard let second = try? await camera.capturePhoto(),
-              let read = await CardScanner.read(jpeg: second, cardRegion: cardRegion),
+              let read = await CardScanner.read(jpeg: second, cardRegion: cardRegion, target: target),
               CameraCalibration.looksLikeGrayRamp(measuredSRGB: read.swatches) else {
             calibrationStatus = "Couldn’t read the card — avoid glare and fill the box."
             return
         }
         guard let matrix = CameraCalibration.chromaticCorrection(
                   measuredSRGB: read.swatches,
-                  profile: .placeholderClassic),
+                  profile: target.profile),
               let ev = CameraCalibration.exposureBiasEV(
                   measuredNeutralSRGB: read.neutralBand,
-                  referenceNeutralSRGB: CardGeometry.wbNominalSRGB) else {
+                  referenceNeutralSRGB: target.wbNominalSRGB) else {
             calibrationStatus = "Card read wasn’t clean — try again in steadier light."
             return
         }

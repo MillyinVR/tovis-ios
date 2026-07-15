@@ -33,20 +33,24 @@ enum CardScanner {
     /// the swatch order, so a read whose gray ramp doesn't validate is retried
     /// 180°-flipped (the neutral band is centered, so it's flip-immune either
     /// way). Nil when the bytes don't decode.
-    static func read(jpeg: Data, cardRegion: CGRect) async -> Reading? {
+    static func read(
+        jpeg: Data,
+        cardRegion: CGRect,
+        target: CalibrationTarget = .tovisCardV0
+    ) async -> Reading? {
         // Pooled: full-res Vision + CoreImage on a detached-task thread, same
         // reasoning as the live coach's per-frame pool.
         await Task.detached(priority: .userInitiated) {
-            autoreleasepool { readSync(jpeg: jpeg, cardRegion: cardRegion) }
+            autoreleasepool { readSync(jpeg: jpeg, cardRegion: cardRegion, target: target) }
         }.value
     }
 
-    private static func readSync(jpeg: Data, cardRegion: CGRect) -> Reading? {
+    private static func readSync(jpeg: Data, cardRegion: CGRect, target: CalibrationTarget) -> Reading? {
         guard let full = CIImage(data: jpeg, options: [.applyOrientationProperty: true]) else {
             return nil
         }
-        let card = detectAndRectify(full) ?? FrameMath.crop(full, normalizedTopLeft: cardRegion)
-        guard let reading = sampleGrid(card) else { return nil }
+        let card = detectAndRectify(full, target: target) ?? FrameMath.crop(full, normalizedTopLeft: cardRegion)
+        guard let reading = sampleGrid(card, target: target) else { return nil }
         if CameraCalibration.looksLikeGrayRamp(measuredSRGB: reading.swatches) {
             return reading
         }
@@ -54,7 +58,7 @@ enum CardScanner {
         let flipped = card.transformed(by: CGAffineTransform(
             a: -1, b: 0, c: 0, d: -1,
             tx: e.minX + e.maxX, ty: e.minY + e.maxY))
-        if let flippedReading = sampleGrid(flipped),
+        if let flippedReading = sampleGrid(flipped, target: target),
            CameraCalibration.looksLikeGrayRamp(measuredSRGB: flippedReading.swatches) {
             return flippedReading
         }
@@ -63,13 +67,14 @@ enum CardScanner {
         return reading
     }
 
-    /// Find the card-shaped rectangle and warp it flat. Nil = no candidate.
-    private static func detectAndRectify(_ image: CIImage) -> CIImage? {
+    /// Find the target-shaped rectangle and warp it flat. Nil = no candidate.
+    /// The aspect band comes from the target (CR-80 card ≈ 0.63; a ColorChecker's
+    /// 6×4 patch array ≈ 1.5), so detection is tuned to whatever's being scanned.
+    private static func detectAndRectify(_ image: CIImage, target: CalibrationTarget) -> CIImage? {
         let request = VNDetectRectanglesRequest()
-        // CR-80 short/long ≈ 0.63; leave slack for perspective foreshortening.
-        request.minimumAspectRatio = 0.5
-        request.maximumAspectRatio = 0.78
-        request.minimumSize = 0.2          // the card should be a real chunk of frame
+        request.minimumAspectRatio = Float(target.detectionAspectMin)
+        request.maximumAspectRatio = Float(target.detectionAspectMax)
+        request.minimumSize = 0.2          // the target should be a real chunk of frame
         request.minimumConfidence = 0.6
         request.maximumObservations = 3
         let handler = VNImageRequestHandler(ciImage: image, options: [:])
@@ -93,8 +98,9 @@ enum CardScanner {
         ])
     }
 
-    /// Sample the swatch grid + neutral band from a flattened card image.
-    private static func sampleGrid(_ card: CIImage) -> Reading? {
+    /// Sample the swatch grid + neutral region from a flattened target image,
+    /// using the target's own geometry.
+    private static func sampleGrid(_ card: CIImage, target: CalibrationTarget) -> Reading? {
         guard card.extent.width > 8, card.extent.height > 8 else { return nil }
         func sample(_ rect: CGRect) -> RGB {
             let cell = FrameMath.crop(card, normalizedTopLeft: rect)
@@ -102,8 +108,8 @@ enum CardScanner {
             return RGB(avg.r, avg.g, avg.b)
         }
         return Reading(
-            swatches: CardGeometry.swatchSampleRects().map(sample),
-            neutralBand: sample(CardGeometry.wbSampleRect)
+            swatches: target.swatchSampleRects.map(sample),
+            neutralBand: sample(target.wbSampleRect)
         )
     }
 }
