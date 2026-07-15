@@ -137,6 +137,12 @@ struct ProCapturePhotosView: View {
     @State private var showSettings = false
     /// DEBUG tuning console (rides over the live camera; not a reviewing state).
     @State private var showTuning = false
+    #if DEBUG
+    /// The most recent card-scan read-out (pass or fail) for the DEBUG diagnostics
+    /// sheet — the signal that turns tuning a target's geometry into a tight loop.
+    @State private var lastDiagnostics: CalibrationDiagnostics?
+    @State private var showingDiagnostics = false
+    #endif
     @State private var showBestShots = false
     /// Guards exit while the coach has auto-harvested best shots the pro hasn't
     /// reviewed yet — otherwise tapping Done silently discards them.
@@ -225,13 +231,18 @@ struct ProCapturePhotosView: View {
                 camera.applyWhiteBalanceGains(r: gains[0], g: gains[1], b: gains[2])
             }
             // Same for a card calibration (matrix + exposure anchor [+ the
-            // scan-time warmth the drift detector compares against]).
+            // scan-time warmth the drift detector compares against]) — but only
+            // restore it when the stored calibration was solved against the
+            // currently-active target; a matrix from a different reference would
+            // silently mis-correct every photo.
             if cardMatrix == nil,
-               let stored = UserDefaults.standard.array(forKey: cardCalDefaultsKey) as? [Double],
-               stored.count >= 10 {
-                cardMatrix = ColorMatrix3x3(Array(stored[0..<9]))
-                camera.setCalibrationExposureBias(Float(stored[9]))
-                calibrationWarmth = stored.count >= 11 ? stored[10] : nil
+               let data = UserDefaults.standard.data(forKey: cardCalDefaultsKey),
+               let record = (try? JSONDecoder().decode(StoredCardCalibration.self, from: data))?
+                   .restorable(for: scanTarget),
+               let matrix = record.colorMatrix {
+                cardMatrix = matrix
+                camera.setCalibrationExposureBias(Float(record.exposureBiasEV))
+                calibrationWarmth = record.calibrationWarmth
             }
             // Stamp each "before" reference's light so the AFTER can match it.
             if referenceLight.isEmpty, !referenceURLs.isEmpty {
@@ -678,6 +689,18 @@ struct ProCapturePhotosView: View {
                             guard scanTarget.id != t.id else { return }
                             scanTarget = t
                             calibrationStatus = nil   // stale read state for the old target
+                            lastDiagnostics = nil     // and its diagnostics
+                        }
+                    }
+                    // Read-out of the last scan (pass or fail) — the tight-loop
+                    // signal for tuning a target's geometry constants.
+                    if lastDiagnostics != nil {
+                        Button { showingDiagnostics = true } label: {
+                            Label("Diagnostics", systemImage: "scope")
+                                .font(BrandFont.body(12, .semibold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 11).padding(.vertical, 8)
+                                .background(.white.opacity(0.12), in: Capsule())
                         }
                     }
                 }
@@ -685,6 +708,14 @@ struct ProCapturePhotosView: View {
             #endif
         }
         .padding(.horizontal, 20)
+        #if DEBUG
+        .sheet(isPresented: $showingDiagnostics) {
+            if let lastDiagnostics {
+                CalibrationDiagnosticsView(diagnostics: lastDiagnostics)
+                    .presentationDetents([.medium, .large])
+            }
+        }
+        #endif
     }
 
     private func calibrationModeChip(_ label: String, active: Bool, action: @escaping () -> Void) -> some View {
@@ -729,6 +760,9 @@ struct ProCapturePhotosView: View {
         guard !scanningCard, !uploading, camera.status == .ready else { return }
         scanningCard = true
         defer { scanningCard = false }
+        #if DEBUG
+        lastDiagnostics = nil   // stale read state until this scan reads a grid
+        #endif
         calibrationStatus = "Reading the card…"
 
         let target = scanTarget
@@ -744,8 +778,19 @@ struct ProCapturePhotosView: View {
         try? await Task.sleep(nanoseconds: 400_000_000)
 
         guard let second = try? await camera.capturePhoto(),
-              let read = await CardScanner.read(jpeg: second, cardRegion: cardRegion, target: target),
-              CameraCalibration.looksLikeGrayRamp(measuredSRGB: read.swatches) else {
+              let read = await CardScanner.read(jpeg: second, cardRegion: cardRegion, target: target) else {
+            calibrationStatus = "Couldn’t read the card — avoid glare and fill the box."
+            return
+        }
+        #if DEBUG
+        // Read out everything this scan learned (pass OR fail) so a failed read
+        // says WHY — the gray-ramp lumas, the solved matrix even when the gate
+        // rejects it, the EV bias, and per-patch measured-vs-reference. This is
+        // what makes tuning a ColorChecker's geometry constants a tight loop.
+        lastDiagnostics = CameraCalibration.diagnose(
+            measuredSRGB: read.swatches, neutralBand: read.neutralBand, target: target)
+        #endif
+        guard CameraCalibration.looksLikeGrayRamp(measuredSRGB: read.swatches) else {
             calibrationStatus = "Couldn’t read the card — avoid glare and fill the box."
             return
         }
@@ -765,8 +810,15 @@ struct ProCapturePhotosView: View {
         calibrationWarmth = coach?.frameWarmth
         driftSince = nil
         driftDismissed = false
-        let stored = matrix.m + [ev] + (calibrationWarmth.map { [$0] } ?? [])
-        UserDefaults.standard.set(stored, forKey: cardCalDefaultsKey)
+        // Tag the cached calibration with the target it was solved against, so a
+        // later restore only reuses it when the SAME reference is active — never
+        // silently apply a ColorChecker (or stale-batch) matrix to a Tovis-card
+        // session (see StoredCardCalibration.restorable).
+        let record = StoredCardCalibration(
+            target: target, matrix: matrix, exposureBiasEV: ev, calibrationWarmth: calibrationWarmth)
+        if let data = try? JSONEncoder().encode(record) {
+            UserDefaults.standard.set(data, forKey: cardCalDefaultsKey)
+        }
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         calibrationStatus = "Card locked — color & exposure are calibrated."
     }
