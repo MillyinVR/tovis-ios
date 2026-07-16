@@ -85,6 +85,11 @@ const CHECKS = [
     def: 'ProVisibilityHealthDTO',
     pick: (d) => [d.visibility],
   },
+  {
+    file: 'supportTicket.json',
+    def: 'SupportTicketDTO',
+    pick: (d) => [d],
+  },
 ]
 
 function fail(msg) {

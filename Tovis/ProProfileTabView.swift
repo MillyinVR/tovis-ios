@@ -517,6 +517,8 @@ struct ProProfileTabView: View {
                 }
             }
 
+            SettingsSupportSection()
+
             SettingsLegalSection()
 
             Button(role: .destructive) {

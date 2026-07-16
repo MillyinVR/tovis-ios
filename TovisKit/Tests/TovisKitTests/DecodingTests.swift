@@ -1226,6 +1226,17 @@ func fixture(_ name: String) throws -> Data {
         #expect(json == #"{"action":"APPROVE"}"#)
     }
 
+    // POST /api/v1/support/tickets — Fixtures/supportTicket.json (schema-validated
+    // against SupportTicketDTO). The route's response is the ticket itself; the
+    // submitted message is deliberately not echoed back.
+    @Test func decodesSupportTicket() throws {
+        let ticket = try JSONDecoder().decode(SupportTicket.self, from: fixture("supportTicket"))
+        #expect(ticket.id == "cmrnv7n140001pofjp183ql40")
+        #expect(ticket.subject == "Booking not confirming")
+        #expect(ticket.status == "OPEN")
+        #expect(ticket.createdAt == "2026-07-16T18:51:19.769Z")
+    }
+
     // GET /api/v1/professionals/{id} — Fixtures/proProfile.json (schema-validated).
     @Test func decodesProProfile() throws {
         let res = try JSONDecoder().decode(ProProfileResponse.self, from: fixture("proProfile"))

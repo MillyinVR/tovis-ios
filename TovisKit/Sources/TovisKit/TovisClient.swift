@@ -20,6 +20,10 @@ public final class TovisClient: Sendable {
     /// birthday / avatar) behind the Settings hub. Distinct from `me` (dashboard).
     public let clientSettings: ClientSettingsService
     public let clientPublicProfile: ClientPublicProfileService
+    /// Support tickets — file a request from the in-app contact form. Any
+    /// signed-in role; filing through the API is what attaches the real user, so
+    /// the admin queue can reply.
+    public let support: SupportService
     /// Client personalization — the "Get better matches" self-profile (hair/skin chips
     /// + declared interests) behind the Settings hub. Explicit, user-entered signals.
     public let clientSelfProfile: ClientSelfProfileService
@@ -145,6 +149,7 @@ public final class TovisClient: Sendable {
         self.me = MeService(api: api)
         self.clientSettings = ClientSettingsService(api: api)
         self.clientPublicProfile = ClientPublicProfileService(api: api)
+        self.support = SupportService(api: api)
         self.clientSelfProfile = ClientSelfProfileService(api: api)
         self.boards = BoardsService(api: api)
         self.messages = MessagesService(

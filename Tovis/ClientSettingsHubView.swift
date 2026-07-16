@@ -92,6 +92,8 @@ struct ClientSettingsHubView: View {
                     }
                 }
 
+                SettingsSupportSection()
+
                 SettingsLegalSection()
 
                 Button(role: .destructive) {
