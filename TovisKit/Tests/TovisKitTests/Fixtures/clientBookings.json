@@ -66,7 +66,99 @@
         }
       }
     ],
-    "pending": [],
+    "pending": [
+      {
+        "id": "bk_consult",
+        "status": "ACCEPTED",
+        "source": "CLIENT",
+        "rebookOfBookingId": null,
+        "sessionStep": "CONSULTATION_PENDING_CLIENT",
+        "scheduledFor": "2026-07-05T17:00:00.000Z",
+        "totalDurationMinutes": 120,
+        "bufferMinutes": 0,
+        "subtotalSnapshot": "150.00",
+        "checkout": {
+          "subtotalSnapshot": "150.00",
+          "serviceSubtotalSnapshot": "150.00",
+          "productSubtotalSnapshot": null,
+          "tipAmount": null,
+          "taxAmount": null,
+          "discountAmount": null,
+          "totalAmount": "150.00",
+          "checkoutStatus": null,
+          "selectedPaymentMethod": null,
+          "paymentAuthorizedAt": null,
+          "paymentCollectedAt": null,
+          "depositStatus": null,
+          "depositAmount": null
+        },
+        "locationType": "SALON",
+        "locationId": "loc_1",
+        "timeZone": "America/Los_Angeles",
+        "timeZoneSource": "LOCATION",
+        "locationLabel": "1 Main St, Los Angeles",
+        "professional": {
+          "id": "pro_1", "businessName": null, "firstName": "Dana", "lastName": "Lee",
+          "handle": "dana", "nameDisplay": "REAL_NAME", "location": "LA", "timeZone": "America/Los_Angeles"
+        },
+        "bookedLocation": {
+          "id": "loc_1", "name": "Plume", "formattedAddress": "1 Main St",
+          "city": "Los Angeles", "state": "CA", "timeZone": "America/Los_Angeles"
+        },
+        "display": { "title": "Balayage", "baseName": "Balayage", "addOnNames": [], "addOnCount": 0 },
+        "items": [
+          { "id": "it_4", "type": "BASE", "serviceId": "svc_1", "name": "Balayage", "price": "150.00", "durationMinutes": 120, "parentItemId": null, "sortOrder": 0 }
+        ],
+        "productSales": [],
+        "hasUnreadAftercare": false,
+        "hasPendingConsultationApproval": true,
+        "hasPendingRebookConfirmation": false,
+        "rebookProposedFor": null,
+        "mediaUseConsent": false,
+        "consultation": {
+          "consultationNotes": "Going lighter than last time — adding a gloss.",
+          "consultationPrice": null,
+          "consultationConfirmedAt": null,
+          "approvalStatus": "PENDING",
+          "approvalNotes": null,
+          "proposedTotal": "215.00",
+          "proposedServicesJson": {
+            "currency": "USD",
+            "items": [
+              {
+                "bookingServiceItemId": "it_4",
+                "offeringId": "off_1",
+                "serviceId": "svc_1",
+                "itemType": "BASE",
+                "label": "Full Balayage",
+                "categoryName": "Color",
+                "price": "175.00",
+                "durationMinutes": 135,
+                "notes": null,
+                "sortOrder": 0,
+                "source": "BOOKING"
+              },
+              {
+                "bookingServiceItemId": null,
+                "offeringId": null,
+                "serviceId": "svc_4",
+                "itemType": "ADD_ON",
+                "label": "Gloss",
+                "categoryName": null,
+                "price": "40.00",
+                "durationMinutes": 30,
+                "notes": "Adds shine, tones brass.",
+                "sortOrder": 1,
+                "source": "PROPOSAL"
+              }
+            ]
+          },
+          "approvedAt": null,
+          "rejectedAt": null
+        },
+        "paymentOptions": null
+      }
+    ],
     "prebooked": [
       {
         "id": "bk_next",

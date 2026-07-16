@@ -4,7 +4,7 @@ import Foundation
 // Mirrors `ClientBookingDTO` + the bucketed response in lib/dto/clientBooking.ts
 // and app/api/v1/client/bookings/route.ts. As elsewhere, only the rendered
 // subset is modeled; nullable fields are Swift optionals and unknown keys are
-// ignored (so e.g. `consultation.proposedServicesJson` is simply skipped).
+// ignored.
 
 /// Envelope for `GET /api/v1/client/bookings` → `{ ok, buckets, meta }`.
 struct ClientBookingsResponse: Decodable, Sendable {
@@ -247,6 +247,69 @@ public struct ClientBookingConsultation: Decodable, Sendable {
     public let proposedTotal: String?
     public let approvedAt: String?
     public let rejectedAt: String?
+    /// The proposal's line items, decoded from the free-form `proposedServicesJson`
+    /// blob. Nil when the blob is absent, null, or not the expected shape.
+    public let proposedServices: ClientBookingProposedServices?
+
+    private enum CodingKeys: String, CodingKey {
+        case consultationNotes, consultationPrice, consultationConfirmedAt
+        case approvalStatus, approvalNotes, proposedTotal, approvedAt, rejectedAt
+        case proposedServicesJson
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        consultationNotes = try c.decodeIfPresent(String.self, forKey: .consultationNotes)
+        consultationPrice = try c.decodeIfPresent(String.self, forKey: .consultationPrice)
+        consultationConfirmedAt = try c.decodeIfPresent(String.self, forKey: .consultationConfirmedAt)
+        approvalStatus = try c.decodeIfPresent(String.self, forKey: .approvalStatus)
+        approvalNotes = try c.decodeIfPresent(String.self, forKey: .approvalNotes)
+        proposedTotal = try c.decodeIfPresent(String.self, forKey: .proposedTotal)
+        approvedAt = try c.decodeIfPresent(String.self, forKey: .approvedAt)
+        rejectedAt = try c.decodeIfPresent(String.self, forKey: .rejectedAt)
+        // `proposedServicesJson` is an untyped Json column on the backend, so a row
+        // that isn't `{ items: [...] }` must degrade to "no line items" rather than
+        // fail the whole booking's decode (mirrors the web card's `asItems`).
+        proposedServices = try? c.decodeIfPresent(
+            ClientBookingProposedServices.self, forKey: .proposedServicesJson
+        )
+    }
+}
+
+/// The `proposedServicesJson` blob a pro's consultation proposal is stored as —
+/// written by `buildProposalJson` in the web `consultation-proposal` route as
+/// `{ currency, items: [...] }`.
+public struct ClientBookingProposedServices: Decodable, Sendable {
+    public let currency: String?
+    public let items: [ClientBookingProposedServiceItem]
+}
+
+/// One proposed line item. Only the fields the client is shown are modeled; the
+/// blob also carries the ids/duration/sort metadata the pro's form round-trips.
+public struct ClientBookingProposedServiceItem: Decodable, Sendable {
+    public let label: String?
+    public let categoryName: String?
+    /// Decimal-dollars string, e.g. "45.00" — feed it to `Wire.money`.
+    public let price: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case label, categoryName, price
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        label = try? c.decodeIfPresent(String.self, forKey: .label)
+        categoryName = try? c.decodeIfPresent(String.self, forKey: .categoryName)
+        // The backend always writes `price` as a decimal string, but the column is
+        // untyped — accept a bare number too, as `ProReferralRewardSettings` does.
+        if let text = try? c.decodeIfPresent(String.self, forKey: .price) {
+            price = text
+        } else if let number = try? c.decodeIfPresent(Double.self, forKey: .price) {
+            price = String(number)
+        } else {
+            price = nil
+        }
+    }
 }
 
 // MARK: - Waitlist (the bookings endpoint returns raw waitlist rows)

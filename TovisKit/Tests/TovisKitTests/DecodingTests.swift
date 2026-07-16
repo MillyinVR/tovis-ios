@@ -1113,6 +1113,17 @@ func fixture(_ name: String) throws -> Data {
         #expect(options.tipSuggestions == [18, 20, 25])
         #expect(options.paymentNote == "Cash or Venmo preferred, thank you!")
         #expect(options.collectPaymentAt == "AFTER_SERVICE")
+        // A pending consultation carries the pro's proposal: the client sees the
+        // itemized plan they're approving, not just the total.
+        let consult = try #require(b.pending.first)
+        #expect(consult.hasPendingConsultationApproval)
+        let proposal = try #require(consult.consultation?.proposedServices)
+        #expect(proposal.currency == "USD")
+        #expect(proposal.items.map(\.label) == ["Full Balayage", "Gloss"])
+        #expect(proposal.items.map(\.price) == ["175.00", "40.00"])
+        // categoryName is nullable per item — the second has none.
+        #expect(proposal.items.map(\.categoryName) == ["Color", nil])
+        #expect(consult.consultation?.proposedTotal == "215.00")
         // The prebooked aftercare rebook is PENDING + coupled to bk_1's payment —
         // drives the "pending — your pro will confirm" label (§10).
         let next = try #require(b.prebooked.first)
@@ -1123,6 +1134,37 @@ func fixture(_ name: String) throws -> Data {
         #expect(booking.professional?.displayName == "Dana Lee")
         #expect(b.waitlist.first?.professional?.displayName == "Snip")
         #expect(b.waitlist.first?.service?.name == "Cut")
+    }
+
+    // `proposedServicesJson` is an untyped Json column, so a blob that isn't the
+    // expected `{ items: [...] }` object must degrade to "no line items" instead of
+    // failing the surrounding consultation's decode.
+    @Test func toleratesUnexpectedProposedServicesShapes() throws {
+        func consultation(_ proposedServicesJson: String) throws -> ClientBookingConsultation {
+            let json = """
+            {
+              "consultationNotes": null, "consultationPrice": null,
+              "consultationConfirmedAt": null, "approvalStatus": "PENDING",
+              "approvalNotes": null, "proposedTotal": "10.00",
+              "approvedAt": null, "rejectedAt": null,
+              "proposedServicesJson": \(proposedServicesJson)
+            }
+            """
+            return try JSONDecoder().decode(
+                ClientBookingConsultation.self, from: Data(json.utf8)
+            )
+        }
+
+        // Null, a non-object, and an object without `items` all decode to no proposal.
+        #expect(try consultation("null").proposedServices == nil)
+        #expect(try consultation(#""garbage""#).proposedServices == nil)
+        #expect(try consultation("{}").proposedServices == nil)
+        // ...but the rest of the consultation still decodes.
+        #expect(try consultation("null").proposedTotal == "10.00")
+
+        // A bare-number price (the column is untyped) still renders as money.
+        let numeric = try consultation(#"{"items":[{"label":"Gloss","price":40.5}]}"#)
+        #expect(numeric.proposedServices?.items.first?.price == "40.5")
     }
 
     // The consultation decision body must use the backend's exact action verbs.

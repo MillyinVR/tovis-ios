@@ -2358,6 +2358,13 @@ struct BookingDetailView: View {
 
     private var consultationActions: some View {
         VStack(spacing: 10) {
+            // What the client is actually approving — itemized, as the web
+            // consultation card does. The proposal always accompanies a pending
+            // approval, so a nil consultation means there's nothing to itemize.
+            if booking.consultation != nil {
+                proposedServicesList
+            }
+
             if let proposed = Wire.money(booking.consultation?.proposedTotal) {
                 HStack {
                     Text("Proposed total")
@@ -2392,6 +2399,43 @@ struct BookingDetailView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+    }
+
+    @ViewBuilder
+    private var proposedServicesList: some View {
+        let items = booking.consultation?.proposedServices?.items ?? []
+
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Proposed services")
+                .font(BrandFont.body(13, .semibold))
+                .foregroundStyle(BrandColor.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            if items.isEmpty {
+                Text("No line items provided.")
+                    .font(BrandFont.body(13))
+                    .foregroundStyle(BrandColor.textMuted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                    LineRow(
+                        name: proposedServiceName(item),
+                        amount: item.price,
+                        subtitle: item.categoryName
+                    )
+                }
+            }
+        }
+        .padding(.bottom, 2)
+    }
+
+    /// Line items carry a label, but it's optional on the wire — fall back the way
+    /// the web card does.
+    private func proposedServiceName(_ item: ClientBookingProposedServiceItem) -> String {
+        guard let label = item.label?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !label.isEmpty
+        else { return "Service" }
+        return label
     }
 
     private func actionLabel(_ title: String, filled: Bool) -> some View {
@@ -2656,14 +2700,23 @@ struct BookingDetailView: View {
 
 private struct LineRow: View {
     let name: String
-    let amount: String
+    let amount: String?
+    /// Optional second line under the name (e.g. a proposed service's category).
+    var subtitle: String? = nil
 
     var body: some View {
         BrandSurface {
-            HStack {
-                Text(name)
-                    .font(BrandFont.body(14))
-                    .foregroundStyle(BrandColor.textPrimary)
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(name)
+                        .font(BrandFont.body(14))
+                        .foregroundStyle(BrandColor.textPrimary)
+                    if let subtitle, !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(BrandFont.body(12))
+                            .foregroundStyle(BrandColor.textMuted)
+                    }
+                }
                 Spacer()
                 Text(Wire.money(amount) ?? "—")
                     .font(BrandFont.body(14, .semibold))

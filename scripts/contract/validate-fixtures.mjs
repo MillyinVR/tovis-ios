@@ -96,6 +96,19 @@ if (!existsSync(schemaPath)) {
 }
 
 const schema = JSON.parse(readFileSync(schemaPath, 'utf8'))
+
+// ts-json-schema-generator renders type-fest's `JsonArray` (a `JsonValue[]`) as an
+// OBJECT requiring a numeric `length` — it picks up the array's `length` property
+// instead of emitting an array schema. That makes every `JsonValue` field reject
+// any nested array (e.g. a consultation's `proposedServicesJson.items`). Repair the
+// one definition here rather than regenerating the shared backend schema.
+if (schema.definitions?.JsonArray) {
+  schema.definitions.JsonArray = {
+    type: 'array',
+    items: { $ref: '#/definitions/JsonValue' },
+  }
+}
+
 const ajv = new Ajv({ allErrors: true, strict: false })
 ajv.addSchema(schema, 'api')
 
