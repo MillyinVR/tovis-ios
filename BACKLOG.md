@@ -667,6 +667,15 @@ NOT accepted divergences (they're A2 build items): the public *client* profile
     `ServicePriceRampTests`: floor/clamp/step/`nextStepPrice`/`needsRamp`/schedule parity). swift test
     **290**; `xcodebuild build` clean. **NOT simulator-driven** (dark; needs a live authed pro + the flag
     on). **✅ §5 A4 pro-parity umbrella COMPLETE.**
+  - [x] **A4 wizard robustness parity** (2026-07-16, `feat/migrate-import-robustness` — counterpart of
+    web #639 + #641): export guides re-ported 1:1 after the web fact-check audit (per-app strings +
+    `calendarFeed` flags: Vagaro/Square → false, GlossGenius/Fresha → true); clients+services pickers
+    accept Excel (`.xlsx/.xlsm/.xls`) + multi-file (`migrationSpreadsheetContentTypes`); binary files
+    route to the shared `POST /pro/migrate/parse` via `SpreadsheetFileLoader` (TovisKit — magic-byte
+    sniff, security-scoped reads, web `tablesShareHeaders` parity; pick/parse logic de-duplicated out
+    of both views); clients mapping gains `fullName` ("Full name (one column)", auto-guessed for bare
+    Name/Client/Customer headers, server splits; gate = first+last OR fullName). Still dark behind the
+    server flag; NOT simulator-driven.
   - ↪ **Predecessor for mid-session service change** (`tovis-app §22`, MS-iOS): A4's
     **edit-service-items** modal is the first place iOS gains a TovisKit method to change
     services on an existing booking (today only `sendConsultationProposal` exists — no

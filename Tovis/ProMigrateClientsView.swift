@@ -59,8 +59,8 @@ struct ProMigrateClientsView: View {
         .tint(BrandColor.accent)
         .fileImporter(
             isPresented: $isPickingFile,
-            allowedContentTypes: [.commaSeparatedText, .plainText, .text],
-            allowsMultipleSelection: false
+            allowedContentTypes: migrationSpreadsheetContentTypes,
+            allowsMultipleSelection: true
         ) { result in handlePick(result) }
     }
 
@@ -70,19 +70,20 @@ struct ProMigrateClientsView: View {
         VStack(alignment: .leading, spacing: 16) {
             stepHeader(
                 title: "Bring your client list over",
-                subtitle: "Upload a CSV of your contacts. You’ll map the columns, preview the matches, and only import what you choose."
+                subtitle: "Upload your contacts as CSV or Excel. You’ll map the columns, preview the matches, and only import what you choose."
             )
             BrandSurface {
                 VStack(alignment: .leading, spacing: 12) {
-                    bullet("A header row, then one client per line")
-                    bullet("First and last name are required")
+                    bullet("A header row, then one client per line — CSV or Excel")
+                    bullet("First and last name columns — or one full-name column we split for you")
                     bullet("Email or phone lets us de-duplicate against your book")
                     bullet("Importing never messages your clients — they stay quiet until you book them")
                 }
             }
             if let errorMessage { errorBanner(errorMessage) }
-            Button { isPickingFile = true } label: { primaryLabel("Choose a CSV file") }
+            Button { isPickingFile = true } label: { primaryLabel(busy ? "Reading…" : "Choose a file") }
                 .buttonStyle(.plain)
+                .disabled(busy)
         }
     }
 
@@ -294,31 +295,37 @@ struct ProMigrateClientsView: View {
         case let .failure(error):
             errorMessage = "Couldn’t open that file. \(error.localizedDescription)"
         case let .success(urls):
-            guard let url = urls.first else { return }
-            let didAccess = url.startAccessingSecurityScopedResource()
-            defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
-            do {
-                let data = try Data(contentsOf: url)
-                guard let text = decodeText(data) else {
-                    errorMessage = "That file isn’t readable text. Export a plain CSV and try again."
-                    return
-                }
-                let table = CsvParser.parse(text)
-                guard !table.isEmpty else {
-                    errorMessage = "That CSV looks empty — it needs a header row and at least one client."
-                    return
-                }
-                mappingSelection = guessClientImportMapping(headers: table.headers)
-                excluded = []
-                step = .mapping(headers: table.headers, rows: table.rows)
-            } catch {
-                errorMessage = "Couldn’t read that file. \(error.localizedDescription)"
-            }
+            guard !urls.isEmpty else { return }
+            Task { await loadPicked(urls: urls) }
         }
     }
 
-    private func decodeText(_ data: Data) -> String? {
-        String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1)
+    /// Read + parse the picked files (CSV on-device; Excel via the server parse
+    /// endpoint). Several files are fine when they're pages of the same export —
+    /// different column sets can't share one mapping, so ask for one at a time.
+    private func loadPicked(urls: [URL]) async {
+        guard !busy else { return }
+        busy = true
+        errorMessage = nil
+        defer { busy = false }
+        do {
+            let tables = try await SpreadsheetFileLoader.loadAll(urls: urls, using: session.client.proMigration)
+            guard SpreadsheetFileLoader.tablesShareHeaders(tables) else {
+                errorMessage = "Those files have different columns — upload them one at a time and import each batch."
+                return
+            }
+            guard let headers = tables.first?.headers else { return }
+            let rows = tables.flatMap(\.rows)
+            mappingSelection = guessClientImportMapping(headers: headers)
+            excluded = []
+            step = .mapping(headers: headers, rows: rows)
+        } catch SpreadsheetFileLoader.LoadError.emptyTable {
+            errorMessage = "That file looks empty — it needs a header row and at least one client."
+        } catch let error as APIError {
+            errorMessage = migrationErrorMessage(error)
+        } catch {
+            errorMessage = "Couldn’t read that file. \(error.localizedDescription)"
+        }
     }
 
     // MARK: - Network

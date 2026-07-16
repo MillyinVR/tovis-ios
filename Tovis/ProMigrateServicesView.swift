@@ -74,8 +74,8 @@ struct ProMigrateServicesView: View {
         .tint(BrandColor.accent)
         .fileImporter(
             isPresented: $isPickingFile,
-            allowedContentTypes: [.commaSeparatedText, .plainText, .text],
-            allowsMultipleSelection: false
+            allowedContentTypes: migrationSpreadsheetContentTypes,
+            allowsMultipleSelection: true
         ) { result in handlePick(result) }
     }
 
@@ -85,19 +85,20 @@ struct ProMigrateServicesView: View {
         VStack(alignment: .leading, spacing: 16) {
             stepHeader(
                 title: "Bring your service menu over",
-                subtitle: "Upload a CSV of your services. We’ll match each one to the catalog, and you review the prices before anything is added."
+                subtitle: "Upload your services as CSV or Excel — several files at once are fine. We’ll match each one to the catalog, and you review the prices before anything is added."
             )
             BrandSurface {
                 VStack(alignment: .leading, spacing: 12) {
-                    bullet("A header row, then one service per line")
+                    bullet("A header row, then one service per line — CSV or Excel")
                     bullet("Columns for the service name, price, and duration")
                     bullet("We match each name to the catalog — you can fix any that are off")
                     bullet("Prices under the platform minimum are grandfathered, then eased up over time")
                 }
             }
             if let errorMessage { errorBanner(errorMessage) }
-            Button { isPickingFile = true } label: { primaryLabel("Choose a CSV file") }
+            Button { isPickingFile = true } label: { primaryLabel(busy ? "Reading…" : "Choose a file") }
                 .buttonStyle(.plain)
+                .disabled(busy)
         }
     }
 
@@ -326,34 +327,36 @@ struct ProMigrateServicesView: View {
         case let .failure(error):
             errorMessage = "Couldn’t open that file. \(error.localizedDescription)"
         case let .success(urls):
-            guard let url = urls.first else { return }
-            let didAccess = url.startAccessingSecurityScopedResource()
-            defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
-            do {
-                let data = try Data(contentsOf: url)
-                guard let text = decodeText(data) else {
-                    errorMessage = "That file isn’t readable text. Export a plain CSV and try again."
-                    return
-                }
-                let table = CsvParser.parse(text)
-                guard !table.isEmpty else {
-                    errorMessage = "That CSV looks empty — it needs a header row and at least one service."
-                    return
-                }
-                let menuRows = parseServiceMenuRows(headers: table.headers, rows: table.rows)
-                guard !menuRows.isEmpty else {
-                    errorMessage = "We couldn’t find any named services in that file. Check the header row and try again."
-                    return
-                }
-                Task { await runPreview(menuRows) }
-            } catch {
-                errorMessage = "Couldn’t read that file. \(error.localizedDescription)"
-            }
+            guard !urls.isEmpty else { return }
+            Task { await loadPicked(urls: urls) }
         }
     }
 
-    private func decodeText(_ data: Data) -> String? {
-        String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1)
+    /// Read + parse the picked files (CSV on-device; Excel via the server parse
+    /// endpoint), then concatenate the menu rows. Columns are detected per file,
+    /// so a multi-file pick works even when layouts differ (e.g. Vagaro's
+    /// one-spreadsheet-per-stylist service exports).
+    private func loadPicked(urls: [URL]) async {
+        guard !busy else { return }
+        busy = true
+        errorMessage = nil
+        defer { busy = false }
+        do {
+            let tables = try await SpreadsheetFileLoader.loadAll(urls: urls, using: session.client.proMigration)
+            let menuRows = tables.flatMap { parseServiceMenuRows(headers: $0.headers, rows: $0.rows) }
+            guard !menuRows.isEmpty else {
+                errorMessage = "We couldn’t find any named services in that file. Check the header row and try again."
+                return
+            }
+            busy = false // runPreview takes over the busy flag (it guards on it)
+            await runPreview(menuRows)
+        } catch SpreadsheetFileLoader.LoadError.emptyTable {
+            errorMessage = "That file looks empty — it needs a header row and at least one service."
+        } catch let error as APIError {
+            errorMessage = migrationErrorMessage(error)
+        } catch {
+            errorMessage = "Couldn’t read that file. \(error.localizedDescription)"
+        }
     }
 
     // MARK: - Network

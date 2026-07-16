@@ -14,15 +14,18 @@ import Foundation
 // MARK: - Column mapping
 
 /// A logical import field, mapped to the CSV header the pro picked for it. Mirrors
-/// the web `ClientImportField` union + `FIELD_ORDER`/`REQUIRED_FIELDS`.
+/// the web `ClientImportField` union + `FIELD_ORDER`/`REQUIRED_FIELDS`. `fullName`
+/// covers exports with one combined name column (support-provided Booksy/StyleSeat
+/// CSVs) — the server splits it at evaluate time; explicit first/last win.
 public enum ClientImportField: String, CaseIterable, Sendable {
     case firstName
     case lastName
+    case fullName
     case email
     case phone
 
-    /// firstName + lastName are mandatory (the server 400s without them); email +
-    /// phone are optional but a row needs at least one to be importable.
+    /// firstName + lastName carry the required star in the mapping UI; the actual
+    /// gate is `ClientImportMapping(selection:)` — first+last OR fullName.
     public var isRequired: Bool { self == .firstName || self == .lastName }
 
     /// Human label — matches the web copy `fields` map.
@@ -30,6 +33,7 @@ public enum ClientImportField: String, CaseIterable, Sendable {
         switch self {
         case .firstName: return "First name"
         case .lastName: return "Last name"
+        case .fullName: return "Full name (one column)"
         case .email: return "Email"
         case .phone: return "Phone"
         }
@@ -37,37 +41,57 @@ public enum ClientImportField: String, CaseIterable, Sendable {
 }
 
 /// The `mapping` request field: each logical field → chosen CSV header name.
-/// firstName/lastName are required; email/phone are `encodeIfPresent` (omitted
-/// when unmapped, exactly like the web deletes unmapped optional keys).
+/// All fields are `encodeIfPresent` (omitted when unmapped, exactly like the web
+/// deletes unmapped keys); the server requires first+last OR fullName.
 public struct ClientImportMapping: Encodable, Sendable, Equatable {
-    public let firstName: String
-    public let lastName: String
+    public let firstName: String?
+    public let lastName: String?
+    public let fullName: String?
     public let email: String?
     public let phone: String?
 
-    public init(firstName: String, lastName: String, email: String? = nil, phone: String? = nil) {
+    public init(
+        firstName: String? = nil,
+        lastName: String? = nil,
+        fullName: String? = nil,
+        email: String? = nil,
+        phone: String? = nil
+    ) {
         self.firstName = firstName
         self.lastName = lastName
+        self.fullName = fullName
         self.email = email
         self.phone = phone
     }
 
     /// Build from a per-field header selection (the mapping-step UI state). Returns
-    /// nil until both required fields are chosen — the "Continue" gate. Empty
-    /// selections drop out so they encode as omitted, not blank.
+    /// nil until names are derivable — both first+last, or one full-name column —
+    /// the "Continue" gate. Empty selections drop out so they encode as omitted,
+    /// not blank.
     public init?(selection: [ClientImportField: String]) {
         func pick(_ field: ClientImportField) -> String? {
             guard let header = selection[field], !header.isEmpty else { return nil }
             return header
         }
-        guard let firstName = pick(.firstName), let lastName = pick(.lastName) else { return nil }
-        self.init(firstName: firstName, lastName: lastName, email: pick(.email), phone: pick(.phone))
+        let firstName = pick(.firstName)
+        let lastName = pick(.lastName)
+        let fullName = pick(.fullName)
+        guard (firstName != nil && lastName != nil) || fullName != nil else { return nil }
+        self.init(
+            firstName: firstName,
+            lastName: lastName,
+            fullName: fullName,
+            email: pick(.email),
+            phone: pick(.phone)
+        )
     }
 }
 
 /// Auto-guess a column mapping from the CSV headers by case-insensitive substring
 /// — a 1:1 port of the web `guessMapping` (MigrateClientsClient.tsx). First match
-/// wins per field; the pro can override every choice in the mapping step.
+/// wins per field; the pro can override every choice in the mapping step. A bare
+/// combined-name column ("Name"/"Client"/"Customer") is only guessed when neither
+/// split-name column exists.
 public func guessClientImportMapping(headers: [String]) -> [ClientImportField: String] {
     let hints: [ClientImportField: [String]] = [
         .firstName: ["first"],
@@ -83,6 +107,15 @@ public func guessClientImportMapping(headers: [String]) -> [ClientImportField: S
             return needles.contains { lower.contains($0) }
         }) {
             mapping[field] = match
+        }
+    }
+    if mapping[.firstName] == nil && mapping[.lastName] == nil {
+        let needles = ["name", "client", "customer"]
+        if let match = headers.first(where: { header in
+            let lower = header.lowercased()
+            return needles.contains { lower.contains($0) }
+        }) {
+            mapping[.fullName] = match
         }
     }
     return mapping
