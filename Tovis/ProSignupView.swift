@@ -58,9 +58,6 @@ struct ProSignupView: View {
     @State private var step = 0
     @State private var formError: String?
 
-    private let termsURL = URL(string: "https://www.tovis.app/terms")
-    private let privacyURL = URL(string: "https://www.tovis.app/privacy")
-
     private static let expiryFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -453,24 +450,8 @@ struct ProSignupView: View {
                     .foregroundStyle(BrandColor.textMuted)
             }
 
-            SignupConsentRow(isOn: $tosAccepted, text: tosLabel, onToggle: { formError = nil })
+            SignupConsentRow(isOn: $tosAccepted, text: SignupCopy.tosLabel, onToggle: { formError = nil })
         }
-    }
-
-    private var tosLabel: Text {
-        var label = Text("I agree to the ")
-        if let termsURL {
-            label = label + Text("[Terms](\(termsURL.absoluteString))")
-        } else {
-            label = label + Text("Terms")
-        }
-        label = label + Text(" and ")
-        if let privacyURL {
-            label = label + Text("[Privacy Policy](\(privacyURL.absoluteString))")
-        } else {
-            label = label + Text("Privacy Policy")
-        }
-        return label + Text(".")
     }
 
     // MARK: - Buttons

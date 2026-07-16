@@ -4,6 +4,20 @@
 import SwiftUI
 import UIKit
 
+/// Consent copy shared by both signup flows.
+enum SignupCopy {
+    /// "I agree to the Terms and Privacy Policy." — the Terms/Privacy markdown
+    /// links resolve through `TovisWebLinks`, so the same pages the settings
+    /// hubs link to are the ones consented to here.
+    static var tosLabel: Text {
+        Text("I agree to the ")
+            + Text("[Terms](\(TovisWebLinks.terms.absoluteString))")
+            + Text(" and ")
+            + Text("[Privacy Policy](\(TovisWebLinks.privacy.absoluteString))")
+            + Text(".")
+    }
+}
+
 /// The small secondary label shown above a signup input.
 struct SignupFieldLabel: View {
     let text: String
