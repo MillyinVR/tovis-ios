@@ -92,16 +92,25 @@ struct PhoneVerificationView: View {
                     .opacity(code.count < 6 ? 0.5 : 1)
 
                     HStack(spacing: 18) {
-                        Button("Resend code") {
+                        OTPResendButton(
+                            cooldown: session.phoneCodeCooldown,
+                            isWorking: session.isWorking
+                        ) {
                             Task { await session.resendVerificationCode() }
                         }
-                        Button("Change number") {
+
+                        // Web's "Wrong number?" (verify-phone/page.tsx), which
+                        // reveals an inline field posting to /auth/phone/correct.
+                        // Native already routes that through the phone step —
+                        // "Send code" there calls the same endpoint — so this
+                        // only needed web's wording, not a second form.
+                        Button("Wrong number?") {
                             code = ""
                             step = .phone
                         }
+                        .font(BrandFont.body(14))
+                        .foregroundStyle(BrandColor.accent)
                     }
-                    .font(BrandFont.body(14))
-                    .foregroundStyle(BrandColor.accent)
                     .padding(.top, 2)
 
                 case .email:

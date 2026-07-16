@@ -291,6 +291,18 @@ final class SessionModel {
     var isWorking = false
     var errorMessage: String?
 
+    /// Resend cooldown for the post-signup phone-verification code. Set
+    /// optimistically after a successful send and, more importantly, from a 429's
+    /// `retryAfterSeconds` — the SMS throttle allows only 5 sends per 15 minutes,
+    /// so an opaque "Too many requests" leaves a user hammering a button that
+    /// cannot succeed for a quarter of an hour. See `OTPResendCooldown`.
+    private(set) var phoneCodeCooldown = OTPResendCooldown()
+
+    /// The same, for the passwordless phone-LOGIN flow. Kept separate because the
+    /// two surfaces are reachable independently (login sheet vs. the verification
+    /// root state) and neither should show a wait the other earned.
+    private(set) var phoneLoginCooldown = OTPResendCooldown()
+
     /// Whether the partial session's EMAIL is already verified (Apple sets this),
     /// so the verification screen knows phone is the only step left.
     private(set) var emailVerified = false
@@ -546,15 +558,20 @@ final class SessionModel {
 
     /// Step 1: set the account phone + send the SMS code. Returns true to advance
     /// to the code entry step.
-    func submitVerificationPhone(_ phone: String) async -> Bool {
+    ///
+    /// A new number is throttled under its own key, so the cooldown from a
+    /// previous number is cleared on success rather than carried over.
+    func submitVerificationPhone(_ phone: String, now: Date = Date()) async -> Bool {
         isWorking = true
         errorMessage = nil
         defer { isWorking = false }
         do {
             try await client.auth.setAccountPhoneAndSendCode(phone: phone)
+            phoneCodeCooldown.reset()
+            phoneCodeCooldown.startDefault(now: now)
             return true
         } catch let error as APIError {
-            errorMessage = error.userMessage
+            errorMessage = applyPhoneCooldown(from: error, now: now) ?? error.userMessage
             return false
         } catch {
             errorMessage = "Couldn’t send the code. Please try again."
@@ -563,9 +580,32 @@ final class SessionModel {
     }
 
     /// Resend the code to the phone already on file.
-    func resendVerificationCode() async {
+    ///
+    /// Previously `try?`-swallowed every failure, so a throttled resend was
+    /// indistinguishable from a sent one — the user saw nothing at all and kept
+    /// tapping. Surfaces the error, and times the cooldown when the server gives
+    /// us one.
+    func resendVerificationCode(now: Date = Date()) async {
         errorMessage = nil
-        try? await client.auth.resendAccountPhoneCode()
+        do {
+            try await client.auth.resendAccountPhoneCode()
+            phoneCodeCooldown.startDefault(now: now)
+        } catch let error as APIError {
+            errorMessage = applyPhoneCooldown(from: error, now: now) ?? error.userMessage
+        } catch {
+            errorMessage = "Couldn’t resend the code. Please try again."
+        }
+    }
+
+    /// If `error` is a rate-limit refusal, start the cooldown and return the copy
+    /// naming the wait. Returns nil for anything else, so callers fall back to
+    /// the server's own message.
+    private func applyPhoneCooldown(from error: Error, now: Date) -> String? {
+        guard let seconds = OTPResendCooldown.retryAfterSeconds(from: error) else {
+            return nil
+        }
+        phoneCodeCooldown.start(seconds: seconds, now: now)
+        return "You already requested a code. Wait \(OTPResendCooldown.format(seconds: seconds)) and try again."
     }
 
     /// Step 2: verify the code. On full verification the new ACTIVE token is
@@ -771,10 +811,10 @@ final class SessionModel {
             // `.serverDetails`. The self-serve-claim 409 carries `maskedDestination`
             // ("t***@x.com") when the contact matched — surface it in the check-inbox
             // hint, mirroring the web signup card.
-            if case let .serverDetails(status, message, code, maskedDestination) = error,
+            if case let .serverDetails(status, message, code, details) = error,
                status == 409, code == "CLAIMABLE_HISTORY" {
                 claimableHistoryMessage = Self.claimableHistoryMessage(
-                    maskedDestination: maskedDestination,
+                    maskedDestination: details.maskedDestination,
                     serverMessage: message
                 )
                 return false
@@ -894,20 +934,42 @@ final class SessionModel {
 
     /// Phone-OTP step 1. Returns true if the request was accepted (move to the
     /// code step). The response is generic, so this never reveals account existence.
-    func phoneSend(_ phone: String) async -> Bool {
+    @discardableResult
+    func phoneSend(_ phone: String, now: Date = Date()) async -> Bool {
         isWorking = true
         errorMessage = nil
         defer { isWorking = false }
         do {
             _ = try await client.auth.phoneLoginSend(phone: phone)
+            phoneLoginCooldown.startDefault(now: now)
             return true
         } catch let error as APIError {
-            errorMessage = error.userMessage
+            errorMessage = applyPhoneLoginCooldown(from: error, now: now) ?? error.userMessage
             return false
         } catch {
             errorMessage = "Something went wrong. Please try again."
             return false
         }
+    }
+
+    /// Resend the login code to the same number, staying on the code step.
+    func resendPhoneLoginCode(_ phone: String, now: Date = Date()) async {
+        _ = await phoneSend(phone, now: now)
+    }
+
+    /// Clear the login cooldown — a different number is throttled under its own
+    /// key, so the previous number's wait doesn't apply.
+    func resetPhoneLoginCooldown() {
+        phoneLoginCooldown.reset()
+    }
+
+    /// As `applyPhoneCooldown`, for the passwordless-login surface.
+    private func applyPhoneLoginCooldown(from error: Error, now: Date) -> String? {
+        guard let seconds = OTPResendCooldown.retryAfterSeconds(from: error) else {
+            return nil
+        }
+        phoneLoginCooldown.start(seconds: seconds, now: now)
+        return "Too many requests. Wait \(OTPResendCooldown.format(seconds: seconds)) and try again."
     }
 
     /// Phone-OTP step 2. On success, signs in.
