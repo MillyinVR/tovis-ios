@@ -55,7 +55,9 @@ Tori 2026-07-08).** We work that tier order, not section number. Where the iOS i
 ---
 
 ## 1. Live-verification pass (nothing below is a build — it exercises shipped code)
-Start the stack (`docker start tovis-dev-postgres` → `cd ~/Dev/tovis-app && pnpm dev`), Xcode ⌘R (Debug → localhost), sign in `client@tovis.app`/`password123`.
+Start the stack (`docker start tovis-dev-postgres` → `cd ~/Dev/tovis-app && pnpm dev`), then **`./scripts/sim-login.sh`** — build + install + launch **already signed in**. Screenshot with `xcrun simctl io booted screenshot /tmp/shot.png`.
+
+> ⚠️ **Do NOT try to sign in as `client@tovis.app`/`password123` — that has never worked and no password will fix it.** `/auth/login` looks users up by `emailHashV2` (a PII-keyring HMAC), so it 401s before the password is even compared. This blocked live-verification for four straight parity steps; `sim-login.sh` is the way in (see README).
 - [ ] Client polish #1–#6 live-verify: add-ons total-duration + finalize · mobile booking + Places autocomplete · deposit-pay CTA (`tovis://` return) · rebook-confirm card · Looks video autoplay/loop/mute · Discover filter sheet + place-jump + pin cluster tap-to-zoom.
 - [ ] **(device)** Stripe `tovis://` redirect: confirm `SFSafariViewController` auto-follows the bounce (else the "Return to the app" button) — the one item a compile can't confirm.
 - [ ] **(device)** Push deep-link tap → opens the specific booking (sim has no APNs).
