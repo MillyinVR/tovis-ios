@@ -49,15 +49,6 @@ struct PriorityOffersView: View {
         let name: String
     }
 
-    /// Hashable wrapper so a confirmed booking can drive `.navigationDestination`
-    /// (`ClientBooking` is Identifiable but not Hashable). Mirrors AftercareInboxView.
-    private struct BookingNav: Identifiable, Hashable {
-        let booking: ClientBooking
-        var id: String { booking.id }
-        static func == (lhs: BookingNav, rhs: BookingNav) -> Bool { lhs.id == rhs.id }
-        func hash(into hasher: inout Hasher) { hasher.combine(id) }
-    }
-
     @State private var phase: Phase = .loading
     /// Ticks every second so the countdowns re-render live.
     @State private var now = Date()
@@ -65,7 +56,7 @@ struct PriorityOffersView: View {
     @State private var busy: String?
     @State private var bookLaunch: BookLaunch?
     @State private var proNav: ProNav?
-    @State private var bookingNav: BookingNav?
+    @State private var bookingNav: ClientBookingNav?
     @State private var actionError: String?
 
     private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -376,7 +367,7 @@ struct PriorityOffersView: View {
         do {
             let booked = try await session.client.bookings.respondToWaitlistOffer(offerId: offer.offerId, confirm: true)
             if let booked, let booking = try await session.client.bookings.booking(id: booked.id) {
-                bookingNav = BookingNav(booking: booking)
+                bookingNav = ClientBookingNav(booking: booking)
                 session.signalRefresh()
             } else {
                 await load()

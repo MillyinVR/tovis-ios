@@ -93,6 +93,13 @@ struct ThreadView: View {
     @State private var hasMoreOlder = false
     @State private var loadingOlder = false
 
+    // Context navigation (see `contextBar`). The client's "View booking" has to
+    // resolve the booking before it can push, so it carries its own in-flight and
+    // error state; every other context link is a plain push.
+    @State private var contextBookingNav: ClientBookingNav?
+    @State private var resolvingBooking = false
+    @State private var contextError: String?
+
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
@@ -144,8 +151,132 @@ struct ThreadView: View {
         .navigationTitle(thread.counterpartyName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
+        .safeAreaInset(edge: .top) { contextBar }
         .safeAreaInset(edge: .bottom) { composer }
+        .navigationDestination(item: $contextBookingNav) { nav in
+            BookingDetailView(booking: nav.booking)
+        }
         .tint(BrandColor.accent)
+    }
+
+    // MARK: - Context navigation
+
+    /// Jumps into the thread's own context, mirroring the web thread header's
+    /// "View booking" / "View profile" links plus, for the thread's pro, "View
+    /// client chart" (app/messages/thread/[id]/page.tsx). Which links show is the
+    /// model's call (`contextDestination` / `showsClientChartLink`), so the two
+    /// clients can't drift.
+    ///
+    /// Web stacks these under the page title; the native title lives in the nav
+    /// bar, so they pin just below it rather than riding the scroll content — a
+    /// thread opens scrolled to the newest message, where a header inside the
+    /// scroll would start off-screen. Renders nothing (and takes no space) for a
+    /// context with no destination.
+    @ViewBuilder
+    private var contextBar: some View {
+        if thread.contextDestination != nil || thread.showsClientChartLink {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 18) {
+                    contextDestinationLink
+                    if thread.showsClientChartLink {
+                        NavigationLink {
+                            ProClientChartView(
+                                clientId: thread.client.id,
+                                fullName: thread.client.displayName
+                            )
+                        } label: {
+                            contextLinkLabel("View client chart")
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Spacer(minLength: 0)
+                }
+                if let contextError {
+                    Text(contextError)
+                        .font(BrandFont.body(11.5))
+                        .foregroundStyle(BrandColor.ember)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(BrandColor.bgPrimary)
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(BrandColor.textMuted.opacity(0.15))
+                    .frame(height: 1)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var contextDestinationLink: some View {
+        if let destination = thread.contextDestination {
+            switch destination {
+            case let .booking(id):
+                // Web has one dual-role receipt at /booking/{id}; native splits it,
+                // and only the pro's side fetches from a bare id.
+                if thread.isViewerPro {
+                    NavigationLink {
+                        ProBookingDetailView(bookingId: id)
+                    } label: {
+                        contextLinkLabel("View booking")
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Button { Task { await openClientBooking(id: id) } } label: {
+                        contextLinkLabel("View booking", working: resolvingBooking)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(resolvingBooking)
+                }
+            case let .proProfile(id):
+                NavigationLink {
+                    ProProfileView(
+                        professionalId: id,
+                        fallbackName: thread.professional.displayName
+                    )
+                } label: {
+                    contextLinkLabel("View profile")
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func contextLinkLabel(_ title: String, working: Bool = false) -> some View {
+        HStack(spacing: 4) {
+            Text(title)
+            if working {
+                ProgressView().controlSize(.mini).tint(BrandColor.accent)
+            } else {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+            }
+        }
+        .font(BrandFont.body(12.5, .semibold))
+        .foregroundStyle(BrandColor.accent)
+    }
+
+    /// Resolve the thread's booking, then push its detail. `BookingDetailView`
+    /// takes the whole `ClientBooking` because there's no single-booking client
+    /// GET, so this goes through the bucketed list (`BookingsService.booking(id:)`)
+    /// — best-effort: a booking that isn't there, or a failed load, says so inline
+    /// instead of pushing an empty screen.
+    private func openClientBooking(id: String) async {
+        guard !resolvingBooking else { return }
+        resolvingBooking = true
+        contextError = nil
+        defer { resolvingBooking = false }
+
+        do {
+            if let booking = try await session.client.bookings.booking(id: id) {
+                contextBookingNav = ClientBookingNav(booking: booking)
+            } else {
+                contextError = "Couldn’t find that booking."
+            }
+        } catch {
+            contextError = "Couldn’t open that booking."
+        }
     }
 
     private var composer: some View {

@@ -72,6 +72,50 @@ public struct MessageThread: Decodable, Sendable, Identifiable {
     public var counterpartyAvatarUrl: String? {
         isViewerPro ? client.avatarUrl : professional.avatarUrl
     }
+
+    /// Where this thread's header context link points, or nil when the context has
+    /// no destination. Mirrors web's `contextNav` (app/messages/thread/[id]/page.tsx):
+    /// BOOKING and PRO_PROFILE threads get a link; SERVICE / OFFERING / WAITLIST
+    /// threads deliberately get none there, so they get none here.
+    public var contextDestination: MessageThreadContextDestination? {
+        guard let contextType else { return nil }
+        switch contextType {
+        case "BOOKING":
+            guard let bookingId, !bookingId.isEmpty else { return nil }
+            return .booking(id: bookingId)
+        case "PRO_PROFILE":
+            return .proProfile(id: professional.id)
+        default:
+            return nil
+        }
+    }
+
+    /// Whether to offer the viewing pro a jump into this client's chart.
+    ///
+    /// Web gates the same link on `assertProCanViewClient`, but that gate cannot
+    /// deny from inside a thread: `getProClientVisibility` (lib/clientVisibility.ts)
+    /// falls back to an open-ended ACTIVE_THREAD grant whenever ANY thread links
+    /// the pro and client, and this IS one — `MessageThread.clientId` and
+    /// `professionalId` are required columns, so that lookup always finds at least
+    /// this thread. Being the thread's pro is therefore the whole condition, and
+    /// the link can never land on a chart the backend refuses.
+    public var showsClientChartLink: Bool { isViewerPro }
+}
+
+/// A thread-header context link's destination — the native counterpart of the
+/// hrefs web's thread header builds from the thread's own context ids.
+public enum MessageThreadContextDestination: Equatable, Sendable {
+    /// This thread's booking. Web links to `/booking/{id}`, a single dual-role
+    /// receipt both parties can open; native splits booking detail by role, so the
+    /// caller picks `ProBookingDetailView` vs `BookingDetailView` off `isViewerPro`.
+    case booking(id: String)
+    /// This thread's professional's public profile. Web keys this off the thread's
+    /// `contextId`, which for a PRO_PROFILE thread IS the professional's id —
+    /// every construction path sets the two from the same value (web's
+    /// `toResolvePayload` in lib/messages.ts; `openProfileThread`/`openClientThread`
+    /// here) — so the modeled `professional.id` names the same pro without the
+    /// wire model having to carry `contextId`.
+    case proProfile(id: String)
 }
 
 public struct MessageClientPreview: Decodable, Sendable, Identifiable {

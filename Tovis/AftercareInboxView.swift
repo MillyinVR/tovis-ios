@@ -18,18 +18,9 @@ struct AftercareInboxView: View {
         case failed(String)
     }
 
-    /// Hashable wrapper so a resolved booking can drive `.navigationDestination(item:)`
-    /// (`ClientBooking` is Identifiable but not Hashable). Mirrors `MessageThreadNav`.
-    private struct BookingNav: Identifiable, Hashable {
-        let booking: ClientBooking
-        var id: String { booking.id }
-        static func == (lhs: BookingNav, rhs: BookingNav) -> Bool { lhs.id == rhs.id }
-        func hash(into hasher: inout Hasher) { hasher.combine(id) }
-    }
-
     @State private var phase: Phase = .loading
     /// The booking a tapped row resolved to — drives the detail push.
-    @State private var bookingNav: BookingNav?
+    @State private var bookingNav: ClientBookingNav?
     /// The row (notification id) currently resolving its booking, for a spinner.
     @State private var resolving: String?
     @State private var resolveError: String?
@@ -181,7 +172,7 @@ struct AftercareInboxView: View {
         defer { resolving = nil }
         do {
             if let booking = try await session.client.bookings.booking(id: bookingId) {
-                bookingNav = BookingNav(booking: booking)
+                bookingNav = ClientBookingNav(booking: booking)
             } else {
                 resolveError = "not found"
             }
