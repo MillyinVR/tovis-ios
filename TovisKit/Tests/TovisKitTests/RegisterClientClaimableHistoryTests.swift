@@ -81,7 +81,7 @@ final class CannedResponseURLProtocol: URLProtocol {
             status: 409,
             message: "We found existing history for this contact.",
             code: "CLAIMABLE_HISTORY",
-            maskedDestination: "t***@example.com"
+            details: ServerErrorDetails(maskedDestination: "t***@example.com")
         )) {
             _ = try await register(auth)
         }
@@ -102,7 +102,7 @@ final class CannedResponseURLProtocol: URLProtocol {
             status: 409,
             message: "We found existing history for this contact.",
             code: "CLAIMABLE_HISTORY",
-            maskedDestination: nil
+            details: ServerErrorDetails(maskedDestination: nil)
         )) {
             _ = try await register(auth)
         }

@@ -64,12 +64,27 @@ struct PhoneLoginView: View {
                     .disabled(code.count < 6 || session.isWorking)
                     .opacity(code.count < 6 ? 0.5 : 1)
 
-                    Button("Use a different number") {
-                        code = ""
-                        step = .phone
+                    HStack(spacing: 18) {
+                        // Web's phone-login card has a resend; native never did,
+                        // so a user whose code never arrived had to back out and
+                        // retype the number to get another.
+                        OTPResendButton(
+                            cooldown: session.phoneLoginCooldown,
+                            isWorking: session.isWorking
+                        ) {
+                            Task { await session.resendPhoneLoginCode(phone) }
+                        }
+
+                        Button("Use a different number") {
+                            code = ""
+                            // A different number is throttled under its own key,
+                            // so this number's wait must not follow the user back.
+                            session.resetPhoneLoginCooldown()
+                            step = .phone
+                        }
+                        .font(BrandFont.body(14))
+                        .foregroundStyle(BrandColor.accent)
                     }
-                    .font(BrandFont.body(14))
-                    .foregroundStyle(BrandColor.accent)
                 }
 
                 Spacer()

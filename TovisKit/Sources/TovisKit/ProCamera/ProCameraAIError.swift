@@ -42,6 +42,8 @@ public enum ProCameraAIError: Error, Equatable, Sendable {
         case let .server(s, m, c):
             (status, message, code) = (s, m, c)
         case let .serverDetails(s, m, c, _):
+            // The extra details are claim/rate-limit hints; the daily cap below
+            // keys on the status alone.
             (status, message, code) = (s, m, c)
         default:
             // .unauthorized / .transport / .decoding / .invalidResponse have no

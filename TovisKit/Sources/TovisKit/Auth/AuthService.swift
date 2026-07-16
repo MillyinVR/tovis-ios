@@ -263,6 +263,11 @@ public final class AuthService: Sendable {
 
     /// POST /api/v1/auth/phone-login/send. Requests an SMS code. The response is
     /// intentionally generic (it never reveals whether the number has an account).
+    ///
+    /// captureErrorDetails: the SMS throttle answers a 429 with
+    /// `details.retryAfterSeconds`; without opting in it's dropped and the user
+    /// gets "Too many requests" with no idea how long to wait. See
+    /// `OTPResendCooldown`.
     @discardableResult
     public func phoneLoginSend(phone: String) async throws -> PhoneLoginSendResponse {
         let payload = try JSONEncoder.canonical.encode(PhoneLoginSendRequest(phone: phone))
@@ -270,7 +275,8 @@ public final class AuthService: Sendable {
             "/auth/phone-login/send",
             method: .post,
             body: payload,
-            authenticated: false
+            authenticated: false,
+            captureErrorDetails: true
         )
     }
 
@@ -303,14 +309,29 @@ public final class AuthService: Sendable {
 
     /// POST /api/v1/auth/phone/correct — set the account's phone number AND send
     /// an SMS code to it. Use this to (re)set the phone before verifying.
+    ///
+    /// captureErrorDetails: as `phoneLoginSend` — surfaces the 429 cooldown.
     public func setAccountPhoneAndSendCode(phone: String) async throws {
         let payload = try JSONEncoder.canonical.encode(PhoneCorrectRequest(phone: phone))
-        try await api.requestVoid("/auth/phone/correct", method: .post, body: payload)
+        try await api.requestVoid(
+            "/auth/phone/correct",
+            method: .post,
+            body: payload,
+            captureErrorDetails: true
+        )
     }
 
     /// POST /api/v1/auth/phone/send — resend the code to the phone already on file.
+    ///
+    /// captureErrorDetails: as `phoneLoginSend` — surfaces the 429 cooldown. This
+    /// is the call a user hammers, so it's the one that most needs the hint.
     public func resendAccountPhoneCode() async throws {
-        try await api.requestVoid("/auth/phone/send", method: .post, body: Data("{}".utf8))
+        try await api.requestVoid(
+            "/auth/phone/send",
+            method: .post,
+            body: Data("{}".utf8),
+            captureErrorDetails: true
+        )
     }
 
     /// POST /api/v1/auth/phone/verify — check the SMS code. On full verification

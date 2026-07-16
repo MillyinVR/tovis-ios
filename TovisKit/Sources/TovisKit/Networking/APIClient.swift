@@ -72,7 +72,8 @@ public final class APIClient: Sendable {
         body: Data? = nil,
         headers: [String: String]? = nil,
         authenticated: Bool = true,
-        retryOn401: Bool = true
+        retryOn401: Bool = true,
+        captureErrorDetails: Bool = false
     ) async throws -> Data {
         try await perform(
             path,
@@ -81,7 +82,8 @@ public final class APIClient: Sendable {
             body: body,
             headers: headers,
             authenticated: authenticated,
-            retryOn401: retryOn401
+            retryOn401: retryOn401,
+            captureErrorDetails: captureErrorDetails
         )
     }
 
@@ -138,7 +140,10 @@ public final class APIClient: Sendable {
                 status: http.statusCode,
                 message: parsed?.error,
                 code: parsed?.code,
-                maskedDestination: parsed?.maskedDestination
+                details: ServerErrorDetails(
+                    maskedDestination: parsed?.maskedDestination,
+                    retryAfterSeconds: parsed?.details?.retryAfterSeconds
+                )
             )
         }
         throw APIError.server(status: http.statusCode, message: parsed?.error, code: parsed?.code)
