@@ -92,6 +92,8 @@ struct ClientSettingsHubView: View {
                     }
                 }
 
+                SettingsLegalSection()
+
                 Button(role: .destructive) {
                     Task { await session.logout() }
                 } label: {
@@ -118,8 +120,8 @@ struct ClientSettingsHubView: View {
 }
 
 /// A tappable settings row that pushes a destination — the client-hub counterpart
-/// of the pro `businessLink`, with an optional subtitle. Kept standalone so later
-/// increments (and eventually the pro side) can share one row style.
+/// of the pro `businessLink`, with an optional subtitle. Draws its chrome from the
+/// shared `SettingsRowLabel`.
 struct SettingsLinkRow<Destination: View>: View {
     let icon: String
     let title: String
@@ -130,28 +132,7 @@ struct SettingsLinkRow<Destination: View>: View {
         NavigationLink {
             destination()
         } label: {
-            BrandSurface {
-                HStack(spacing: 12) {
-                    Image(systemName: icon)
-                        .font(.system(size: 18))
-                        .foregroundStyle(BrandColor.accent)
-                        .frame(width: 28)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(title)
-                            .font(BrandFont.body(15, .semibold))
-                            .foregroundStyle(BrandColor.textPrimary)
-                        if let subtitle {
-                            Text(subtitle)
-                                .font(BrandFont.body(12))
-                                .foregroundStyle(BrandColor.textMuted)
-                        }
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(BrandColor.textMuted)
-                }
-            }
+            SettingsRowLabel(icon: icon, title: title, subtitle: subtitle)
         }
         .buttonStyle(.plain)
     }

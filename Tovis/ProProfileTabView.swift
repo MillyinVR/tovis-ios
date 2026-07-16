@@ -501,6 +501,8 @@ struct ProProfileTabView: View {
                 }
             }
 
+            SettingsLegalSection()
+
             Button(role: .destructive) {
                 Task { await session.logout() }
             } label: {
@@ -523,21 +525,7 @@ struct ProProfileTabView: View {
         NavigationLink {
             destination()
         } label: {
-            BrandSurface {
-                HStack(spacing: 12) {
-                    Image(systemName: icon)
-                        .font(.system(size: 18))
-                        .foregroundStyle(BrandColor.accent)
-                        .frame(width: 28)
-                    Text(title)
-                        .font(BrandFont.body(15, .semibold))
-                        .foregroundStyle(BrandColor.textPrimary)
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(BrandColor.textMuted)
-                }
-            }
+            SettingsRowLabel(icon: icon, title: title)
         }
         .buttonStyle(.plain)
     }

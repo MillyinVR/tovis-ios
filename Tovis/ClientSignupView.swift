@@ -49,9 +49,6 @@ struct ClientSignupView: View {
     /// Client-side validation message (server errors use session.errorMessage).
     @State private var formError: String?
 
-    private let termsURL = URL(string: "https://www.tovis.app/terms")
-    private let privacyURL = URL(string: "https://www.tovis.app/privacy")
-
     init(claimContext: ClientSignupClaimContext? = nil) {
         self.claimContext = claimContext
         _firstName = State(initialValue: claimContext?.firstName ?? "")
@@ -108,7 +105,7 @@ struct ClientSignupView: View {
                             .foregroundStyle(BrandColor.textMuted)
                     }
 
-                    consentRow(isOn: $tosAccepted, text: tosLabel)
+                    consentRow(isOn: $tosAccepted, text: SignupCopy.tosLabel)
 
                     if let claimMessage = session.claimableHistoryMessage {
                         VStack(alignment: .leading, spacing: 4) {
@@ -224,22 +221,6 @@ struct ClientSignupView: View {
         ) {
             Task { await handleSubmit() }
         }
-    }
-
-    private var tosLabel: Text {
-        var label = Text("I agree to the ")
-        if let termsURL {
-            label = label + Text("[Terms](\(termsURL.absoluteString))")
-        } else {
-            label = label + Text("Terms")
-        }
-        label = label + Text(" and ")
-        if let privacyURL {
-            label = label + Text("[Privacy Policy](\(privacyURL.absoluteString))")
-        } else {
-            label = label + Text("Privacy Policy")
-        }
-        return label + Text(".")
     }
 
     // MARK: - Building blocks
