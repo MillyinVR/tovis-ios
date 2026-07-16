@@ -230,7 +230,7 @@ struct CreateBoardView: View {
 
     private var eventDateString: String? {
         guard wantsEventDate, hasEventDate else { return nil }
-        return Self.ymd.string(from: eventDate)
+        return BoardEventDate.ymd(from: eventDate)
     }
 
     private func save() async {
@@ -257,16 +257,6 @@ struct CreateBoardView: View {
             errorText = "Couldn’t create the board."
         }
     }
-
-    /// `YYYY-MM-DD` in UTC — the calendar-date format the board event date uses
-    /// (matches ProVerification's license-expiry / the client birthday encoding).
-    private static let ymd: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.timeZone = TimeZone(identifier: "UTC")
-        f.dateFormat = "yyyy-MM-dd"
-        return f
-    }()
 }
 
 /// A single-select chip for the board-type row. Matches the accent-tinted pill
