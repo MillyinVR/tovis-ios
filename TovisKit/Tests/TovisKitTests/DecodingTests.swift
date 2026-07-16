@@ -1240,7 +1240,30 @@ func fixture(_ name: String) throws -> Data {
         #expect(p.reviews.first?.rating == 5)
         #expect(p.stats.averageRatingLabel == "4.9")
         #expect(p.stats.followerCount == 45)
+        #expect(p.stats.looksLabel == "18")
+        #expect(p.stats.followersLabel == "45")
         #expect(p.acceptedPayments == ["Cash", "Venmo"])
+    }
+
+    // The looks/followers labels post-date the native tab, so a backend that
+    // predates tovis-app PR #645 omits them — the stats must still decode and the
+    // pro-profile grid then drops those two tiles rather than showing a wrong count.
+    @Test func decodesProProfileStatsWithoutLooksAndFollowersLabels() throws {
+        let json = #"""
+        {
+          "priceFromLabel": "From $100",
+          "completedBookingsLabel": "120",
+          "favoritesLabel": "45",
+          "reviewCountLabel": "30",
+          "averageRatingLabel": "4.9",
+          "followerCount": 45
+        }
+        """#.data(using: .utf8)!
+
+        let stats = try JSONDecoder().decode(ProProfileStats.self, from: json)
+        #expect(stats.looksLabel == nil)
+        #expect(stats.followersLabel == nil)
+        #expect(stats.followerCount == 45)
     }
 
     // POST/DELETE /api/v1/professionals/{id}/favorite → { ok, favorited, count }.

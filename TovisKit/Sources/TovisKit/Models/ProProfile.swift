@@ -70,6 +70,13 @@ public struct ProProfileStats: Decodable, Sendable {
     public let averageRatingLabel: String?
     /// Raw ProFollow count. Optional so older API deploys still decode.
     public let followerCount: Int?
+    /// Published-look and follower counts, compacted server-side ("1.2K") for the
+    /// pro-owner stats grid. Formatting lives on the backend so web and native
+    /// can't drift; `followerCount` above stays raw for the Follow button, which
+    /// nudges it optimistically. Optional so an older API deploy still decodes —
+    /// the tile is then omitted rather than rendering a wrong number.
+    public let looksLabel: String?
+    public let followersLabel: String?
 }
 
 public struct ProOffering: Decodable, Sendable, Identifiable {

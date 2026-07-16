@@ -255,29 +255,44 @@ struct ProProfileTabView: View {
     // MARK: - Stats
 
     private func statsGrid(_ stats: ProProfileStats) -> some View {
-        // Web shows rating · reviews · favorites · looks · followers. The native
-        // public-profile read carries rating/reviews/favorites; looks & followers
-        // aren't in that projection, so they're omitted until exposed.
-        HStack(spacing: 10) {
+        // Web's rating · reviews · favs · looks · followers, same order and wording
+        // (`buildStats` in the management loader). Looks/followers come pre-compacted
+        // from the API — see ProProfileStats — so a "1.2K" here can't drift from web.
+        // A backend without them (pre-deploy) simply drops those tiles.
+        HStack(spacing: 6) {
             statTile(stats.averageRatingLabel ?? "–", "Rating")
             statTile(stats.reviewCountLabel, "Reviews")
             statTile(stats.favoritesLabel, "Favs")
+            if let looks = stats.looksLabel { statTile(looks, "Looks") }
+            if let followers = stats.followersLabel { statTile(followers, "Followers") }
         }
     }
 
+    /// Mirrors web's `.brand-pro-profile-stat`: centered, tightly padded, bordered.
+    /// Five across a phone leaves ~55pt of content per tile, so the padding stays
+    /// small and the label scales down rather than truncating "FOLLOWERS".
     private func statTile(_ value: String, _ label: String) -> some View {
-        BrandSurface {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(value)
-                    .font(BrandFont.body(15, .semibold))
-                    .foregroundStyle(BrandColor.textPrimary)
-                    .lineLimit(1)
-                Text(label.uppercased())
-                    .font(BrandFont.mono(9)).tracking(0.7)
-                    .foregroundStyle(BrandColor.textMuted)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(spacing: 3) {
+            Text(value)
+                .font(BrandFont.body(15, .semibold))
+                .foregroundStyle(BrandColor.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(label.uppercased())
+                .font(BrandFont.mono(8)).tracking(0.5)
+                .foregroundStyle(BrandColor.textMuted)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 10)
+        .padding(.horizontal, 6)
+        .background(BrandColor.bgSurface)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(BrandColor.textMuted.opacity(0.12), lineWidth: 1)
+        )
     }
 
     // MARK: - Quick actions
