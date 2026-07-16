@@ -12,6 +12,7 @@ import Testing
 /// Records the outgoing request and serves a canned envelope.
 final class BoardsURLProtocol: URLProtocol {
     nonisolated(unsafe) static var capturedPath: String?
+    nonisolated(unsafe) static var capturedQuery: String?
     nonisolated(unsafe) static var capturedMethod: String?
     nonisolated(unsafe) static var capturedContentType: String?
     nonisolated(unsafe) static var capturedBody: Data?
@@ -23,6 +24,7 @@ final class BoardsURLProtocol: URLProtocol {
 
     override func startLoading() {
         Self.capturedPath = request.url?.path
+        Self.capturedQuery = request.url?.query
         Self.capturedMethod = request.httpMethod
         Self.capturedContentType = request.value(forHTTPHeaderField: "Content-Type")
         Self.capturedBody = request.httpBody ?? request.boardsBodyStreamData()
@@ -73,6 +75,7 @@ private extension URLRequest {
 
     private func reset() {
         BoardsURLProtocol.capturedPath = nil
+        BoardsURLProtocol.capturedQuery = nil
         BoardsURLProtocol.capturedMethod = nil
         BoardsURLProtocol.capturedContentType = nil
         BoardsURLProtocol.capturedBody = nil
@@ -272,6 +275,81 @@ private extension URLRequest {
         #expect(board.isShared == false)
     }
 
+    // MARK: - updateEventDate(...)
+
+    @Test func updateEventDatePatchesYmd() async throws {
+        reset()
+        BoardsURLProtocol.responseBody = Data("""
+        {"ok":true,"board":{"id":"bd_1","clientId":"cl_1","name":"Big day","slug":"big-day","visibility":"PRIVATE","type":"BRIDAL","eventDate":"2026-09-01","itemCount":0,"items":[]}}
+        """.utf8)
+
+        let board = try await makeService().updateEventDate(id: "bd_1", eventDate: "2026-09-01")
+
+        #expect(BoardsURLProtocol.capturedPath == "/api/v1/boards/bd_1")
+        #expect(BoardsURLProtocol.capturedMethod == "PATCH")
+        #expect(BoardsURLProtocol.capturedContentType == "application/json")
+
+        let body = try bodyJSON()
+        #expect(body["eventDate"] as? String == "2026-09-01")
+        #expect(body.count == 1) // ONLY eventDate is sent
+        #expect(board.eventDate == "2026-09-01")
+    }
+
+    @Test func updateEventDateSendsExplicitNullToClear() async throws {
+        reset()
+        BoardsURLProtocol.responseBody = Data("""
+        {"ok":true,"board":{"id":"bd_1","clientId":"cl_1","name":"Big day","slug":"big-day","visibility":"PRIVATE","type":"BRIDAL","eventDate":null,"itemCount":0,"items":[]}}
+        """.utf8)
+
+        let board = try await makeService().updateEventDate(id: "bd_1", eventDate: nil)
+
+        let body = try bodyJSON()
+        // The clear MUST be an explicit JSON null. The synthesized encoder would
+        // have omitted the key (`encodeIfPresent`), and PATCH /boards/{id} reads
+        // an absent key as "nothing to update" → 400, silently never clearing.
+        #expect(body.keys.contains("eventDate") == true)
+        #expect(body["eventDate"] is NSNull)
+        #expect(body.count == 1)
+        #expect(board.eventDate == nil)
+    }
+
+    // MARK: - recommendations(...)
+
+    @Test func recommendationsGetsBoardFeedAndDecodes() async throws {
+        reset()
+        BoardsURLProtocol.responseBody = Data("""
+        {"ok":true,"nextCursor":null,"viewerContext":{"isAuthenticated":true},"items":[
+          {"id":"lk_1","url":"https://cdn/full.jpg","thumbUrl":"https://cdn/thumb.jpg","mediaType":"IMAGE","caption":"Soft updo","createdAt":"2026-07-01T00:00:00.000Z","_count":{"likes":3,"comments":1},"viewerLiked":false,"viewerSaved":false,"viewerFollows":false},
+          {"id":"lk_2","url":"https://cdn/clip.mp4","thumbUrl":null,"mediaType":"VIDEO","caption":null,"createdAt":"2026-07-02T00:00:00.000Z","_count":{"likes":0,"comments":0},"viewerLiked":false,"viewerSaved":false,"viewerFollows":false}
+        ]}
+        """.utf8)
+
+        let items = try await makeService().recommendations(id: "bd_1")
+
+        #expect(BoardsURLProtocol.capturedPath == "/api/v1/boards/bd_1/feed")
+        #expect(BoardsURLProtocol.capturedQuery == "limit=12")
+        #expect(BoardsURLProtocol.capturedMethod == "GET")
+
+        #expect(items.count == 2)
+        #expect(items.first?.id == "lk_1")
+        #expect(items.first?.thumbUrl == "https://cdn/thumb.jpg")
+        #expect(items.first?.isVideo == false)
+        // A video recommendation decodes too — the tile falls back to the full URL
+        // when there's no thumb, and opens the viewer in video mode.
+        #expect(items.last?.isVideo == true)
+        #expect(items.last?.thumbUrl == nil)
+        #expect(items.last?.caption == nil)
+    }
+
+    @Test func recommendationsDecodesEmptyFeed() async throws {
+        reset()
+        BoardsURLProtocol.responseBody = Data("""
+        {"ok":true,"items":[],"nextCursor":null,"viewerContext":{"isAuthenticated":true}}
+        """.utf8)
+
+        #expect(try await makeService().recommendations(id: "bd_new").isEmpty)
+    }
+
     // MARK: - BoardCatalog parity
 
     @Test func catalogMatchesWebTypeSetAndLabels() {
@@ -325,5 +403,166 @@ private extension URLRequest {
         #expect(BoardCatalog.writeThroughAnswerKeys == [
             "hair_length", "current_color", "skin_type", "main_concern",
         ])
+    }
+
+    @Test func catalogEventNounsMatchWeb() {
+        // BOARD_EVENT_NOUNS — what the countdown counts down TO.
+        #expect(BoardCatalog.eventNoun(for: "BRIDAL") == "your wedding")
+        #expect(BoardCatalog.eventNoun(for: "PROM") == "prom")
+        #expect(BoardCatalog.eventNoun(for: "bridal") == "your wedding")
+        #expect(BoardCatalog.eventNoun(for: "GENERAL") == nil)
+        #expect(BoardCatalog.eventNoun(for: "NOT_A_TYPE") == nil)
+
+        // boardTypeWantsEventDate — and it must agree with the noun map exactly,
+        // or a dated type would render "the big day" instead of its own noun.
+        #expect(BoardCatalog.wantsEventDate(for: "BRIDAL") == true)
+        #expect(BoardCatalog.wantsEventDate(for: "prom") == true)
+        #expect(BoardCatalog.wantsEventDate(for: "GENERAL") == false)
+        #expect(BoardCatalog.wantsEventDate(for: "NOT_A_TYPE") == false)
+        for type in BoardCatalog.types {
+            #expect(type.wantsEventDate == (BoardCatalog.eventNoun(for: type.value) != nil))
+        }
+    }
+}
+
+// MARK: - Event date + countdown
+
+/// The `BoardEventCountdown` port: the calendar math behind "42 days until your
+/// wedding" and the card's three copy states. An event date is a CALENDAR date
+/// with no timezone on the wire, so every case pins an explicit calendar.
+@Suite struct BoardEventDateTests {
+    private func calendar(_ identifier: String) throws -> Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: identifier))
+        calendar.locale = Locale(identifier: "en_US_POSIX")
+        return calendar
+    }
+
+    /// 8pm on 2026-06-05 in Los Angeles — i.e. already 2026-06-**06** in UTC.
+    private func juneFifthEveningLA(_ la: Calendar) throws -> Date {
+        try #require(la.date(from: DateComponents(year: 2026, month: 6, day: 5, hour: 20)))
+    }
+
+    @Test func ymdUsesTheViewersCalendarNotUTC() throws {
+        let la = try calendar("America/Los_Angeles")
+        let evening = try juneFifthEveningLA(la)
+
+        // A DatePicker set to "June 5" hands back an instant carrying the CURRENT
+        // time of day. Read in the viewer's calendar it is June 5 — which is the
+        // date they picked, and the only thing `<input type="date">` would send.
+        #expect(BoardEventDate.ymd(from: evening, calendar: la) == "2026-06-05")
+
+        // Pinned deliberately: reading that same instant in UTC yields the NEXT
+        // day. That was the create flow's bug — a UTC formatter silently shifted
+        // every evening pick west of UTC by a day, so the board counted down to
+        // the wrong date.
+        #expect(BoardEventDate.ymd(from: evening, calendar: try calendar("UTC")) == "2026-06-06")
+    }
+
+    @Test func ymdRoundTripsThroughTheParser() throws {
+        let la = try calendar("America/Los_Angeles")
+        let parsed = try #require(BoardEventDate.date(fromYmd: "2026-06-05", calendar: la))
+        #expect(BoardEventDate.ymd(from: parsed, calendar: la) == "2026-06-05")
+        // Parsing lands on local midnight — the picker opens on the stored day.
+        #expect(la.dateComponents([.hour, .minute], from: parsed).hour == 0)
+    }
+
+    @Test func parserRejectsMalformedAndImpossibleDates() throws {
+        let la = try calendar("America/Los_Angeles")
+        #expect(BoardEventDate.date(fromYmd: "", calendar: la) == nil)
+        #expect(BoardEventDate.date(fromYmd: "nope", calendar: la) == nil)
+        // Not zero-padded / not a bare calendar date.
+        #expect(BoardEventDate.date(fromYmd: "2026-6-05", calendar: la) == nil)
+        #expect(BoardEventDate.date(fromYmd: "2026-06-05T00:00:00Z", calendar: la) == nil)
+        // Impossible — a Calendar would happily ROLL this to March 2, so the
+        // components are read back and compared (mirrors parseBoardEventDateYmd).
+        #expect(BoardEventDate.date(fromYmd: "2026-02-30", calendar: la) == nil)
+        #expect(BoardEventDate.date(fromYmd: "2026-13-01", calendar: la) == nil)
+        // A real leap day still parses.
+        #expect(BoardEventDate.date(fromYmd: "2028-02-29", calendar: la) != nil)
+    }
+
+    @Test func daysUntilCountsWholeCalendarDays() throws {
+        let la = try calendar("America/Los_Angeles")
+        let now = try juneFifthEveningLA(la)
+
+        func days(_ ymd: String) -> Int? {
+            BoardEventDate.daysUntil(eventYmd: ymd, from: now, calendar: la)
+        }
+
+        #expect(days("2026-06-05") == 0)    // today, despite it being 8pm
+        #expect(days("2026-06-06") == 1)
+        #expect(days("2026-07-17") == 42)
+        #expect(days("2026-06-04") == -1)   // passed
+        #expect(days("garbage") == nil)
+    }
+
+    @Test func daysUntilIsUnskewedByDST() throws {
+        let la = try calendar("America/Los_Angeles")
+        // 2026-11-01 is a 25-hour day in Los Angeles (DST ends). Counting in hours
+        // rather than calendar days would land 2 days off-by-one here.
+        let beforeFallBack = try #require(
+            la.date(from: DateComponents(year: 2026, month: 10, day: 31, hour: 23))
+        )
+        #expect(
+            BoardEventDate.daysUntil(
+                eventYmd: "2026-11-02", from: beforeFallBack, calendar: la
+            ) == 2
+        )
+    }
+
+    @Test func countdownCopyMatchesTheWebCard() throws {
+        let la = try calendar("America/Los_Angeles")
+        let now = try juneFifthEveningLA(la)
+
+        func state(_ type: String, _ eventDate: String?) -> BoardEventCountdownState? {
+            BoardEventCountdownState.resolve(
+                type: type, eventDate: eventDate, now: now, calendar: la
+            )
+        }
+
+        #expect(state("BRIDAL", "2026-07-17") == .countdown("42 days until your wedding"))
+        #expect(state("BRIDAL", "2026-06-06") == .countdown("1 day until your wedding"))
+        #expect(state("BRIDAL", "2026-06-05") == .countdown("Today’s the day — it’s your wedding!"))
+        #expect(state("BRIDAL", "2026-06-04") == .passed("Hope your wedding was everything you wanted."))
+        #expect(state("BRIDAL", nil) == .prompt(
+            "Add the date of your wedding to get a countdown and better timing."
+        ))
+        #expect(state("PROM", "2026-06-06") == .countdown("1 day until prom"))
+        #expect(state("prom", "2026-06-05") == .countdown("Today’s the day — it’s prom!"))
+
+        // Only the live countdown is the emphasized payoff line.
+        #expect(state("BRIDAL", "2026-07-17")?.isEmphasized == true)
+        #expect(state("BRIDAL", "2026-06-04")?.isEmphasized == false)
+        #expect(state("BRIDAL", nil)?.isEmphasized == false)
+    }
+
+    @Test func countdownHiddenForTypesWithoutAnEventDate() throws {
+        let la = try calendar("America/Los_Angeles")
+        let now = try juneFifthEveningLA(la)
+
+        func state(_ type: String, _ eventDate: String?) -> BoardEventCountdownState? {
+            BoardEventCountdownState.resolve(
+                type: type, eventDate: eventDate, now: now, calendar: la
+            )
+        }
+
+        // nil → the card renders nothing at all, for every undated type…
+        #expect(state("GENERAL", nil) == nil)
+        #expect(state("NAILS", nil) == nil)
+        #expect(state("NOT_A_TYPE", nil) == nil)
+        // …even if a date somehow rode along on one.
+        #expect(state("GENERAL", "2026-06-06") == nil)
+    }
+
+    @Test func boardExposesItsOwnCountdown() throws {
+        let la = try calendar("America/Los_Angeles")
+        let now = try juneFifthEveningLA(la)
+        let board = try JSONDecoder().decode(Board.self, from: Data("""
+        {"id":"bd_1","clientId":"cl_1","name":"Big day","slug":"big-day","visibility":"PRIVATE","type":"BRIDAL","eventDate":"2026-07-17","itemCount":0,"items":[]}
+        """.utf8))
+
+        #expect(board.eventCountdown(now: now, calendar: la)
+            == .countdown("42 days until your wedding"))
     }
 }

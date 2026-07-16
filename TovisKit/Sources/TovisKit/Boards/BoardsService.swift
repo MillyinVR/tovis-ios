@@ -4,12 +4,14 @@ import Foundation
 /// BOARDS grid. Authenticated (bearer token; client only). Mirrors
 /// `app/api/v1/boards`. The list itself rides the `/me` payload (see
 /// `MeService.fetch()`); this service adds:
-///   • detail(id:)                  → GET   /boards/{id}   (looks grid + share state)
-///   • create(name:visibility:…)    → POST  /boards        (new board, 201)
-///   • updateVisibility(id:isShared:) → PATCH /boards/{id}  (share ↔ private toggle)
+///   • detail(id:)                    → GET   /boards/{id}       (looks grid + share state)
+///   • create(name:visibility:…)      → POST  /boards            (new board, 201)
+///   • updateVisibility(id:isShared:) → PATCH /boards/{id}       (share ↔ private toggle)
+///   • updateEventDate(id:eventDate:) → PATCH /boards/{id}       (bridal/prom countdown date)
+///   • recommendations(id:limit:)     → GET   /boards/{id}/feed  ("Recommended for this board")
 ///
 /// Board deletion + name/answers edits aren't exposed here — the web board detail
-/// page is view + share only, and this keeps native at parity.
+/// page doesn't edit them either, and this keeps native at parity.
 public final class BoardsService: Sendable {
     private let api: APIClient
 
@@ -65,5 +67,33 @@ public final class BoardsService: Sendable {
             "/boards/\(id)", method: .patch, body: payload
         )
         return response.board
+    }
+
+    /// PATCH /api/v1/boards/{id} — set or clear the board's event date
+    /// (`YYYY-MM-DD`; nil clears). Only bridal/prom boards carry one. Returns the
+    /// updated board so the caller reads back the authoritative date.
+    public func updateEventDate(id: String, eventDate: String?) async throws -> Board {
+        let payload = try JSONEncoder.canonical.encode(
+            UpdateBoardEventDateRequest(eventDate: eventDate)
+        )
+        let response: BoardDetailResponse = try await api.request(
+            "/boards/\(id)", method: .patch, body: payload
+        )
+        return response.board
+    }
+
+    /// GET /api/v1/boards/{id}/feed — "Recommended for this board" (spec §4.4):
+    /// looks the owner hasn't saved yet, ranked to the board's purpose, chip
+    /// answers, and saved-look taste. Owner-only, like the detail GET.
+    ///
+    /// Returns the standard looks-feed item, so recommendations render with the
+    /// same models as every other feed. Paging isn't exposed — the card shows a
+    /// single fixed-size set, matching web.
+    public func recommendations(id: String, limit: Int = 12) async throws -> [LooksFeedItem] {
+        let response: LooksFeedResponse = try await api.request(
+            "/boards/\(id)/feed",
+            query: [URLQueryItem(name: "limit", value: String(limit))]
+        )
+        return response.items
     }
 }

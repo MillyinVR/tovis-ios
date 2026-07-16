@@ -31,6 +31,18 @@ public struct Board: Decodable, Sendable, Identifiable {
 
     /// True when the board is public/shareable.
     public var isShared: Bool { visibility.uppercased() == "SHARED" }
+
+    /// The event-date payoff line for this board, or nil when its type takes no
+    /// date (only bridal/prom do) — port of the web `BoardEventCountdown` card's
+    /// state machine. `now` is injectable for tests.
+    public func eventCountdown(
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> BoardEventCountdownState? {
+        BoardEventCountdownState.resolve(
+            type: type, eventDate: eventDate, now: now, calendar: calendar
+        )
+    }
 }
 
 /// One saved look on a board — `LooksBoardDetailItemDto`.
@@ -95,6 +107,139 @@ struct UpdateBoardVisibilityRequest: Encodable, Sendable {
     let visibility: String
 }
 
+/// `PATCH /api/v1/boards/{id}` body for the event-date editor ("the wedding date
+/// moves" is the spec's canonical edit case). `nil` CLEARS the date.
+struct UpdateBoardEventDateRequest: Encodable, Sendable {
+    /// `YYYY-MM-DD`, or nil to clear.
+    let eventDate: String?
+
+    private enum CodingKeys: String, CodingKey { case eventDate }
+
+    /// Hand-written because the synthesized encoder uses `encodeIfPresent`, which
+    /// would OMIT a nil `eventDate` — and an absent key means "nothing to update"
+    /// to the route (400 `NOTHING_TO_UPDATE`), not "clear it". The clear is an
+    /// explicit `eventDate: null`, exactly what the web card PATCHes.
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        if let eventDate {
+            try container.encode(eventDate, forKey: .eventDate)
+        } else {
+            try container.encodeNil(forKey: .eventDate)
+        }
+    }
+}
+
+// MARK: - Event date
+
+/// Calendar-date helpers for a board's `eventDate` — the `YYYY-MM-DD` wire format
+/// shared by the create flow, the detail editor, and the countdown.
+///
+/// An event date is a CALENDAR date, not an instant: the wire string carries no
+/// timezone, and the backend stores it as a `@db.Date` (`parseBoardEventDateYmd`
+/// → UTC midnight, read back via `boardEventDateToYmd`). So every conversion here
+/// runs in the VIEWER'S calendar, matching web — where `<input type="date">`
+/// yields the literal date the user picked and `daysUntilEvent` counts from
+/// `today.getFullYear()/getMonth()/getDate()` (local). Formatting a picked date in
+/// UTC instead shifts it a day for any viewer whose offset crosses midnight.
+public enum BoardEventDate {
+    /// Strict `YYYY-MM-DD` — mirrors the web `BOARD_EVENT_DATE_REGEX`. Computed,
+    /// not stored: `Regex` isn't `Sendable`, so a static constant trips Swift 6's
+    /// global-concurrency check.
+    private static var pattern: Regex<(Substring, Substring, Substring, Substring)> {
+        /^(\d{4})-(\d{2})-(\d{2})$/
+    }
+
+    /// The `YYYY-MM-DD` a picked `Date` falls on in the viewer's calendar.
+    public static func ymd(from date: Date, calendar: Calendar = .current) -> String {
+        let parts = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(
+            format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0
+        )
+    }
+
+    /// Midnight on `ymd` in the viewer's calendar — the DatePicker's selection.
+    /// Returns nil for anything malformed or impossible (`2026-02-30`), mirroring
+    /// `parseBoardEventDateYmd`: a calendar would silently ROLL those over, so the
+    /// components are read back and compared.
+    public static func date(fromYmd ymd: String, calendar: Calendar = .current) -> Date? {
+        guard let match = ymd.wholeMatch(of: pattern),
+              let year = Int(match.1), let month = Int(match.2), let day = Int(match.3),
+              let parsed = calendar.date(
+                  from: DateComponents(year: year, month: month, day: day)
+              )
+        else { return nil }
+
+        let parts = calendar.dateComponents([.year, .month, .day], from: parsed)
+        guard parts.year == year, parts.month == month, parts.day == day else { return nil }
+        return parsed
+    }
+
+    /// Whole calendar days from `now` to `eventYmd` — the "42 days until prom"
+    /// number. Negative once the event has passed; nil when `eventYmd` is
+    /// malformed. Port of `daysUntilEvent` (lib/boards/context.ts).
+    public static func daysUntil(
+        eventYmd: String,
+        from now: Date,
+        calendar: Calendar = .current
+    ) -> Int? {
+        guard let event = date(fromYmd: eventYmd, calendar: calendar) else { return nil }
+        return calendar.dateComponents(
+            [.day], from: calendar.startOfDay(for: now), to: event
+        ).day
+    }
+}
+
+/// What the board detail's event-date card says right now — the three states of
+/// the web `BoardEventCountdown` card, resolved off the board's type + date.
+public enum BoardEventCountdownState: Equatable, Sendable {
+    /// The payoff line: "42 days until your wedding".
+    case countdown(String)
+    /// The date is in the past — warm, and never a nag.
+    case passed(String)
+    /// No date captured yet; the card asks for one.
+    case prompt(String)
+
+    /// The line to render.
+    public var text: String {
+        switch self {
+        case let .countdown(text), let .passed(text), let .prompt(text): text
+        }
+    }
+
+    /// Only the live countdown is the emphasized payoff; the other two are
+    /// secondary copy (web renders them in `text-textSecondary`).
+    public var isEmphasized: Bool {
+        if case .countdown = self { return true }
+        return false
+    }
+
+    /// nil when this board type takes no event date, so the card hides entirely.
+    /// A malformed/unparseable stored date reads as "no date" rather than
+    /// rendering a broken countdown.
+    public static func resolve(
+        type: String,
+        eventDate: String?,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> BoardEventCountdownState? {
+        guard BoardCatalog.wantsEventDate(for: type) else { return nil }
+        let noun = BoardCatalog.eventNoun(for: type) ?? BoardCatalog.fallbackEventNoun
+
+        guard let eventDate,
+              let days = BoardEventDate.daysUntil(eventYmd: eventDate, from: now, calendar: calendar)
+        else {
+            return .prompt("Add the date of \(noun) to get a countdown and better timing.")
+        }
+
+        switch days {
+        case ..<0: return .passed("Hope \(noun) was everything you wanted.")
+        case 0: return .countdown("Today’s the day — it’s \(noun)!")
+        case 1: return .countdown("1 day until \(noun)")
+        default: return .countdown("\(days) days until \(noun)")
+        }
+    }
+}
+
 // MARK: - Board type catalog
 
 /// A board-type chip option — a faithful port of a `BOARD_TYPE_VALUES` entry +
@@ -110,9 +255,7 @@ public struct BoardTypeOption: Identifiable, Sendable, Equatable {
 
     /// Whether creating this type of board asks for an event date — mirrors
     /// `boardTypeWantsEventDate` (bridal/prom only).
-    public var wantsEventDate: Bool {
-        value == "BRIDAL" || value == "PROM"
-    }
+    public var wantsEventDate: Bool { BoardCatalog.wantsEventDate(for: value) }
 }
 
 /// One chip option for a board creation-context question — a faithful port of a
@@ -156,6 +299,31 @@ public enum BoardCatalog {
         let upper = type.uppercased()
         return types.first { $0.value == upper }?.label
     }
+
+    /// Board types whose flow captures an event date — port of
+    /// `EVENT_DATE_BOARD_TYPES` / `boardTypeWantsEventDate` (bridal/prom only).
+    /// The single source of truth for both the create picker and the countdown.
+    public static func wantsEventDate(for type: String) -> Bool {
+        eventNouns[type.uppercased()] != nil
+    }
+
+    /// What a board's countdown counts down TO ("42 days until **prom**") — port
+    /// of `BOARD_EVENT_NOUNS`. nil for a type that takes no date.
+    public static func eventNoun(for type: String) -> String? {
+        eventNouns[type.uppercased()]
+    }
+
+    /// Mirrors the web card's `?? 'the big day'`. Unreachable while every
+    /// event-dated type has a noun (the two lists are the same map here), kept so
+    /// a future dated type can't render an empty phrase.
+    public static let fallbackEventNoun = "the big day"
+
+    /// `BOARD_EVENT_NOUNS`. Keying `wantsEventDate` off this map — rather than a
+    /// second list of type values — makes the two impossible to drift apart.
+    private static let eventNouns: [String: String] = [
+        "BRIDAL": "your wedding",
+        "PROM": "prom",
+    ]
 
     /// The per-type chip questions asked once at creation (spec §7.3) — a faithful
     /// port of `BOARD_QUESTION_SETS`. GENERAL (and any unknown type) has none. The
