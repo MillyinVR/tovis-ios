@@ -83,6 +83,8 @@ public final class TovisClient: Sendable {
     public let proMembership: ProMembershipService
     /// PRO workspace — "Your Looks performance" creator analytics.
     public let proLooks: ProLooksService
+    /// PRO workspace — "why you're showing up" visibility levers (§6.5).
+    public let proVisibility: ProVisibilityService
     /// PRO workspace — referral activity credited to this pro.
     public let proReferrals: ProReferralsService
     /// PRO workspace — account policy settings (reminder cadence, no-show fees).
@@ -191,6 +193,7 @@ public final class TovisClient: Sendable {
         self.proFinance = ProFinanceService(api: api)
         self.proMembership = ProMembershipService(api: api)
         self.proLooks = ProLooksService(api: api)
+        self.proVisibility = ProVisibilityService(api: api)
         self.proReferrals = ProReferralsService(api: api)
         self.proSettings = ProSettingsService(api: api)
         self.proReadiness = ProReadinessService(api: api)

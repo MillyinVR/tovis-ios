@@ -484,6 +484,7 @@ struct ProProfileTabView: View {
             BrandSection(title: "Growth") {
                 VStack(spacing: 10) {
                     businessLink(icon: "chart.line.uptrend.xyaxis", title: "Your Looks performance") { ProLooksPerformanceView() }
+                    businessLink(icon: "eye", title: "Your visibility") { ProVisibilityView() }
                     businessLink(icon: "gift", title: "Referral rewards") { ProReferralActivityView() }
                     businessLink(icon: "star.circle", title: "Membership") { ProMembershipView() }
                 }

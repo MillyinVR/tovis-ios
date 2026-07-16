@@ -78,6 +78,26 @@ Start the stack (`docker start tovis-dev-postgres` → `cd ~/Dev/tovis-app && pn
 
 ## 4. Deferred web-parity polish
 Source: `docs/PRO-WEB-PARITY.md` (all 5 pages parity-complete; these are the tail).
+- [x] **A-VIS1** Pro "Your visibility" — native parity for the web §6.5 pro
+  transparency section on `/pro/dashboard` (tovis-app PR #643, personalization
+  Step 15). `ProVisibilityView` (Profile tab → Growth) renders the ranked
+  visibility levers off the new `GET /api/v1/pro/visibility` — the same loader
+  the web page uses, so the two can never tell a pro a different story. New
+  `TovisKit/ProVisibility/` model + service; `ProVisibilityStatus` decodes with
+  an `.unknown` fallback so a status added server-side degrades to "not measured
+  yet" instead of blanking the screen on an older build. The screen holds NO
+  thresholds and no ranking knowledge — it renders generically from server
+  status + copy, so a new lever needs no client release. Fixture
+  `proVisibility.json` registered in `scripts/contract` (validates green).
+  **SHIPPED (PR #144)**
+  - [ ] **A-VIS1a — deferred:** the levers' fix actions render as guidance TEXT,
+    not buttons. Each `action.href` is a WEB pro path (`/pro/calendar`,
+    `/pro/services`, `/pro/media/new`, …) and the native equivalents live in
+    OTHER tabs, so deep-linking needs cross-tab navigation plumbing plus an
+    href→destination map that would rot as either side moves. The labels are
+    written to stand alone, so v1 loses only the tap. Wire it when a general
+    web-path→native-route resolver exists (the same primitive several deferred
+    items want).
 - [x] **A-AC1** Pro aftercare-detail screen — renders the before/after visual
   record (new shared `AftercareBeforeAfterPair`, also adopted by the aftercare
   list). Fed by the `media` pass-through on `GET .../aftercare` (tovis-app #554);
