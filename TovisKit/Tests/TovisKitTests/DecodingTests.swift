@@ -790,6 +790,55 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.critique.photos[2].verdict == "someFutureVerdict")
     }
 
+    // GET /api/v1/pro/visibility — Fixtures/proVisibility.json. The §6.5
+    // "why you're showing up" transparency read (tovis-app PR #643).
+    @Test func decodesProVisibility() throws {
+        let res = try JSONDecoder().decode(ProVisibilityResponse.self, from: fixture("proVisibility"))
+        let v = res.visibility
+
+        #expect(v.status == .action)
+        #expect(v.discoverable == false)
+        #expect(v.levers.count == 4)
+
+        // Server order is authoritative — the screen never re-sorts.
+        #expect(v.levers[0].key == "BOOKABLE")
+        #expect(v.levers[0].status == .action)
+        #expect(v.levers[0].actions.count == 2)
+        #expect(v.levers[0].actions[0].href == "/pro/services")
+
+        #expect(v.levers[1].status == .attention)
+        #expect(v.levers[2].status == .good)
+        #expect(v.levers[3].status == .unknown)
+        #expect(v.levers[2].actions.isEmpty)
+
+        #expect(v.looks.feedEligibleCount == 3)
+        #expect(v.looks.rejectedCount == 2)
+        #expect(v.looks.distinctServiceCount == 2)
+        #expect(v.notMeasured.count == 2)
+    }
+
+    // Forward-compat probe — inline, NOT in the shared fixture: the fixture is
+    // validated against the backend schema, so it must only ever carry statuses
+    // the schema's enum allows. A status added server-side must degrade to
+    // .unknown ("not measured yet") rather than fail the decode and blank the
+    // whole screen for a pro on an older build.
+    @Test func proVisibilityUnknownStatusDegradesRatherThanFailing() throws {
+        let json = Data("""
+        {"visibility":{"status":"someFutureStatus","discoverable":true,
+        "levers":[{"key":"SOME_FUTURE_LEVER","status":"alsoFromTheFuture",
+        "headline":"H","detail":"D","actions":[]}],
+        "looks":{"feedEligibleCount":0,"pendingReviewCount":0,"rejectedCount":0,
+        "draftCount":0,"distinctTagCount":0,"distinctServiceCount":0},
+        "notMeasured":[]}}
+        """.utf8)
+
+        let res = try JSONDecoder().decode(ProVisibilityResponse.self, from: json)
+        #expect(res.visibility.status == .unknown)
+        #expect(res.visibility.levers.count == 1)
+        #expect(res.visibility.levers[0].key == "SOME_FUTURE_LEVER")
+        #expect(res.visibility.levers[0].status == .unknown)
+    }
+
     // GET /api/v1/pro/overview — Fixtures/proOverview.json. The pro dashboard
     // monthly analytics (tovis-app PR #437). Inline shape; decode-only.
     @Test func decodesProOverview() throws {

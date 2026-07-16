@@ -1,0 +1,63 @@
+{
+  "ok": true,
+  "visibility": {
+    "status": "ACTION",
+    "discoverable": false,
+    "levers": [
+      {
+        "key": "BOOKABLE",
+        "status": "ACTION",
+        "headline": "You are not appearing in discovery yet",
+        "detail": "Discovery only shows professionals who can actually be booked, so this is the first thing to fix — until it is done, nothing else below can help.",
+        "actions": [
+          {
+            "label": "Add at least one active service offering.",
+            "href": "/pro/services"
+          },
+          {
+            "label": "Add or publish at least one bookable location.",
+            "href": "/pro/locations"
+          }
+        ]
+      },
+      {
+        "key": "LOOK_COVERAGE",
+        "status": "ATTENTION",
+        "headline": "Adding looks would widen your reach",
+        "detail": "Clients reach your work through the tags and services on your looks.",
+        "actions": [
+          {
+            "label": "Publish a look",
+            "href": "/pro/media/new"
+          }
+        ]
+      },
+      {
+        "key": "AVAILABILITY",
+        "status": "GOOD",
+        "headline": "You have an opening in 2 days",
+        "detail": "Near-term availability is working in your favour with clients looking to book soon.",
+        "actions": []
+      },
+      {
+        "key": "BOOKING_CONVERSION",
+        "status": "UNKNOWN",
+        "headline": "Not enough views to judge yet",
+        "detail": "Once your looks have been seen a bit more, this will show how often they turn into bookings.",
+        "actions": []
+      }
+    ],
+    "looks": {
+      "feedEligibleCount": 3,
+      "pendingReviewCount": 1,
+      "rejectedCount": 2,
+      "draftCount": 4,
+      "distinctTagCount": 5,
+      "distinctServiceCount": 2
+    },
+    "notMeasured": [
+      "How fast you reply to messages. The plan calls for it, but nothing measures it yet, so it does not affect where you appear.",
+      "Reviews and star ratings. They matter to clients deciding, but they are not an input to discovery ranking today."
+    ]
+  }
+}

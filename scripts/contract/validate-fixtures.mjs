@@ -80,6 +80,11 @@ const CHECKS = [
     def: 'ClientAftercareDetailDTO',
     pick: (d) => [d],
   },
+  {
+    file: 'proVisibility.json',
+    def: 'ProVisibilityHealthDTO',
+    pick: (d) => [d.visibility],
+  },
 ]
 
 function fail(msg) {
