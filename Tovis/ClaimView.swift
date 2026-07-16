@@ -4,9 +4,11 @@
 // pro-sent claim link (`https://tovis.app/claim/<token>`) with the app installed —
 // RootView presents this over whatever is showing (signed-out + cold-launch safe).
 //
-// Reads the booking context via ClaimService, then routes into client signup in
-// CLAIM mode (prefilled + intent=CLAIM_INVITE + inviteToken) so the backend adopts
-// the pro's existing unclaimed profile and the history stays attached.
+// Reads the booking context via ClaimService, then renders the same state machine
+// the web page does (`ClaimScreenState`): a signed-out viewer routes into client
+// signup in CLAIM mode (prefilled + intent=CLAIM_INVITE + inviteToken) so the
+// backend adopts the pro's existing unclaimed profile, while an already-signed-in
+// client claims in-app via ClaimService.acceptClaim — no signup detour.
 
 import SwiftUI
 import TovisKit
@@ -25,6 +27,27 @@ struct ClaimView: View {
         case failed(String)
     }
     @State private var phase: Phase = .loading
+
+    /// The server's answer to an accept attempt; nil until the viewer claims.
+    /// Takes precedence over the loaded context when resolving what to render.
+    @State private var outcome: ClaimAcceptOutcome?
+    @State private var isClaiming = false
+    /// Only for the genuinely exceptional (401 / transport / unknown code) —
+    /// every documented failure is an `outcome`, not an error.
+    @State private var claimError: String?
+
+    /// Web resolves the viewer server-side from its cookie session; native
+    /// already knows the same facts locally, so no wire field is needed.
+    /// `.loading` counts as signed-out: the claim cover can open on a cold launch
+    /// before bootstrap finishes, and offering signup is the safe default (the
+    /// state re-resolves the moment bootstrap lands).
+    private var viewer: ClaimViewer {
+        switch session.state {
+        case .loading, .signedOut: return .signedOut
+        case .needsVerification: return .needsVerification
+        case .signedIn: return session.activeRole == .pro ? .professional : .client
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -95,19 +118,129 @@ struct ClaimView: View {
     private func loadedContent(_ context: ClaimContextResponse) -> some View {
         claimHeaderCard(context)
 
-        switch context.state {
-        case ClaimContextState.alreadyClaimed:
+        switch ClaimScreenState.resolve(
+            contextState: context.state,
+            viewer: viewer,
+            outcome: outcome
+        ) {
+        case .signedOut:
+            readyActions(context)
+
+        case .readyToClaim:
+            claimActions(context)
+
+        case let .claimed(bookingId):
+            claimedCard(bookingId: bookingId)
+
+        case .needsVerification:
+            statusCard(
+                title: "Verify your account first",
+                message: "Verify your account, then come right back here to finish the claim."
+            ) {
+                // Dismissing reveals PhoneVerificationView — RootView already
+                // shows it for a `.needsVerification` session; this cover is
+                // simply on top of it.
+                secondaryButton("Verify and continue") { dismiss() }
+                    .padding(.top, 6)
+            }
+
+        case .notAClient:
+            statusCard(
+                title: "This link must be claimed from a client account",
+                message: "You’re signed in as a professional. Sign in with your client account to claim this history."
+            )
+
+        case .alreadyClaimed:
             statusCard(
                 title: "This history is already claimed",
                 message: "The client identity behind this link has already been claimed. If this is your account, sign in to continue."
             )
-        case ClaimContextState.revoked:
+
+        case .revoked:
             statusCard(
                 title: "This claim link is no longer available",
                 message: "This link was turned off. Your booking history is still safe, but this link can’t be used anymore."
             )
-        default:
-            readyActions(context)
+
+        case .clientMismatch:
+            statusCard(
+                title: "You’re signed into a different client account",
+                message: "This claim link belongs to a different client identity than the one you’re signed in as. Sign in with the right client account to finish claiming this history."
+            )
+
+        case .conflict:
+            statusCard(
+                title: "We couldn’t finish the claim",
+                message: "Nothing was deleted. Please try again — if this keeps happening, contact support."
+            ) {
+                secondaryButton("Try again") { Task { await claim() } }
+                    .padding(.top, 6)
+            }
+
+        case .notFound:
+            emptyState(
+                title: "Link not found",
+                message: "This claim link is no longer valid. If you think this is a mistake, ask your professional to resend it."
+            )
+        }
+    }
+
+    /// Signed-in verified client: claim in-app, no signup detour.
+    @ViewBuilder
+    private func claimActions(_ context: ClaimContextResponse) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("This will attach this history to your client identity.")
+                .font(BrandFont.body(14))
+                .foregroundStyle(BrandColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let claimError {
+                Text(claimError)
+                    .font(BrandFont.body(13))
+                    .foregroundStyle(BrandColor.ember)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Button {
+                Task { await claim() }
+            } label: {
+                Group {
+                    if isClaiming {
+                        ProgressView().tint(BrandColor.onAccent)
+                    } else {
+                        Text("Claim this history")
+                            .font(BrandFont.body(15))
+                            .fontWeight(.semibold)
+                            .foregroundStyle(BrandColor.onAccent)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(RoundedRectangle(cornerRadius: 14).fill(BrandColor.accent))
+            }
+            .buttonStyle(.plain)
+            .disabled(isClaiming)
+        }
+    }
+
+    /// Post-claim success. Mirrors web's redirect target: the booking when the
+    /// claim carried one, else the client home.
+    @ViewBuilder
+    private func claimedCard(bookingId: String?) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            statusCard(
+                title: "History claimed",
+                message: "This history is now attached to your client identity."
+            )
+
+            if let bookingId {
+                secondaryButton("Go to booking") {
+                    session.handlePushDeepLink(href: "/client/bookings/\(bookingId)")
+                    dismiss()
+                }
+            } else {
+                secondaryButton("Go to your account") { dismiss() }
+            }
         }
     }
 
@@ -203,21 +336,29 @@ struct ClaimView: View {
             }
             .buttonStyle(.plain)
 
-            Button { dismiss() } label: {
-                Text("I already have an account")
-                    .font(BrandFont.body(14))
-                    .fontWeight(.semibold)
-                    .foregroundStyle(BrandColor.textPrimary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(RoundedRectangle(cornerRadius: 14).fill(BrandColor.bgSurface))
-                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(BrandColor.textMuted.opacity(0.15), lineWidth: 1))
-            }
-            .buttonStyle(.plain)
+            secondaryButton("I already have an account") { dismiss() }
         }
     }
 
     // MARK: - Small building blocks
+
+    /// The screen's non-primary button chrome, shared by every branch.
+    private func secondaryButton(
+        _ title: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(BrandFont.body(14))
+                .fontWeight(.semibold)
+                .foregroundStyle(BrandColor.textPrimary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(RoundedRectangle(cornerRadius: 14).fill(BrandColor.bgSurface))
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(BrandColor.textMuted.opacity(0.15), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
 
     private func detailRow(label: String, value: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -231,7 +372,11 @@ struct ClaimView: View {
         }
     }
 
-    private func statusCard(title: String, message: String) -> some View {
+    private func statusCard(
+        title: String,
+        message: String,
+        @ViewBuilder actions: () -> some View = { EmptyView() }
+    ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(BrandFont.body(15))
@@ -241,6 +386,11 @@ struct ClaimView: View {
                 .font(BrandFont.body(13))
                 .foregroundStyle(BrandColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
+            // No padding wrapper here: a modifier applied to `EmptyView()` stops
+            // being SwiftUI's zero-subview special case and would allocate the
+            // VStack's spacing around a card that draws nothing. Callers that
+            // pass actions add their own top padding.
+            actions()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
@@ -307,6 +457,29 @@ struct ClaimView: View {
             }
         } catch {
             phase = .failed("Please try again in a moment.")
+        }
+    }
+
+    /// Accept the claim as the signed-in client. Every documented failure comes
+    /// back as an `outcome` the screen renders as its own state; only the
+    /// exceptional (401 / transport / an unknown code) surfaces as an error, and
+    /// it keeps the button available so a retry is always possible.
+    private func claim() async {
+        guard !isClaiming else { return }
+        isClaiming = true
+        claimError = nil
+        // Clear the previous answer so a retry that throws lands back on the
+        // claim button (which renders `claimError`) rather than on a stale
+        // conflict card that would swallow the message.
+        outcome = nil
+        defer { isClaiming = false }
+
+        do {
+            outcome = try await session.client.claim.acceptClaim(token: token)
+        } catch let error as APIError {
+            claimError = error.userMessage
+        } catch {
+            claimError = "Something went wrong. Please try again."
         }
     }
 }
