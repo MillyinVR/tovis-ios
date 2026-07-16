@@ -414,6 +414,14 @@ final class SessionModel {
     }
 
     func bootstrap() async {
+        #if DEBUG
+        // Debug builds only (the type doesn't exist in Release): let a launch
+        // environment hand us a pre-minted JWT, so a simulator session can be
+        // driven without the local login the PII keyring breaks. Runs BEFORE the
+        // Keychain check so a seeded token signs you in on the same launch.
+        await applyDebugSessionSeed()
+        #endif
+
         guard await client.auth.hasSession() else {
             state = .signedOut
             return
@@ -435,6 +443,24 @@ final class SessionModel {
         await startRealtime()
         await startPush()
     }
+
+    #if DEBUG
+    /// Apply `TOVIS_DEBUG_TOKEN` / `TOVIS_DEBUG_SIGNOUT` from the launch
+    /// environment. See `DebugSessionSeed` for the why, the usage, and why this
+    /// can't reach a Release build.
+    private func applyDebugSessionSeed() async {
+        switch DebugSessionSeed.action(in: ProcessInfo.processInfo.environment) {
+        case let .seed(token):
+            await client.tokenStore.save(token)
+            print("[DebugSessionSeed] seeded a session token from \(DebugSessionSeed.tokenEnvKey)")
+        case .signOut:
+            await client.tokenStore.clear()
+            print("[DebugSessionSeed] cleared the session token via \(DebugSessionSeed.signOutEnvKey)")
+        case .none:
+            break
+        }
+    }
+    #endif
 
     /// Re-read the acting role from the freshly stored JWT after a workspace
     /// switch (`POST /api/v1/workspace/switch` re-mints the token) and re-point

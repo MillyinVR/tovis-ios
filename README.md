@@ -49,12 +49,53 @@ duplicated logic** (CLAUDE.md house rule), **web parity 1:1**.
   `.env.development.local` → `DATABASE_URL=postgresql://postgres:postgres@localhost:5434/tovis_dev`
   (Docker `tovis-dev-postgres`). The iOS sim (Debug) + local web share this **local** DB; prod
   web uses prod Supabase. Start it with `docker start tovis-dev-postgres` (or `pnpm db:dev:up`).
-- **If signed-in endpoints 500 with "table … does not exist"** the local schema is stale:
-  `cd ~/Dev/tovis-app && DATABASE_URL=…5434…/tovis_dev DIRECT_URL=…5434…/tovis_dev npx prisma db push --skip-generate --accept-data-loss`.
-- **Seed login:** `client@tovis.app` / `password123` (CLIENT, local only — not in prod, so
-  Release/TestFlight needs a real prod account via web signup, Apple, or phone-OTP). Native
+- **If signed-in endpoints 500 with "table … does not exist"** the local schema is stale — apply
+  the migrations (**never `prisma db push`**, which the house rules forbid and which would drift
+  the local DB away from the migration history):
+  ```bash
+  cd ~/Dev/tovis-app && DATABASE_URL="postgresql://postgres:postgres@localhost:5434/tovis_dev" \
+    DIRECT_URL="postgresql://postgres:postgres@localhost:5434/tovis_dev" pnpm exec prisma migrate deploy
+  ```
+- **⚠️ Signing in with `client@tovis.app` / `password123` DOES NOT WORK, and no password will.**
+  `POST /api/v1/auth/login` looks a user up by **`emailHashV2`** — a PII-keyring HMAC — so the
+  seeded client 401s `INVALID_CREDENTIALS` under a different `PII_LOOKUP_HMAC_KEYS_JSON`. The
+  lookup fails *before* the password compare, so resetting the password can't help. This is a
+  keyring mismatch, not a bad credential. **Use `scripts/sim-login.sh`** (below) instead.
+- Release/TestFlight needs a real prod account (web signup, Apple, or phone-OTP). Native
   email/password **sign-UP** is web-only (captcha/TOS/SMS-consent/ZIP gates); Apple + phone-OTP
   are the native account-creation paths.
+
+## Running the sim SIGNED IN (`scripts/sim-login.sh`)
+
+Because of the keyring problem above, the simulator had **no way to reach a signed-in screen** —
+four parity-epic steps in a row shipped iOS screens that were build-green and unit-tested but
+never *looked at*. `getCurrentUser` accepts any correctly-signed bearer token, so we mint one and
+hand it to the app at launch.
+
+```bash
+docker start tovis-dev-postgres && (cd ~/Dev/tovis-app && pnpm dev)   # the stack must be up
+./scripts/sim-login.sh                      # build + install + launch, signed in as client@tovis.app
+./scripts/sim-login.sh --email pro@tovis.app
+./scripts/sim-login.sh --device 'iPhone 16'
+./scripts/sim-login.sh --no-build           # reuse the last Debug build
+./scripts/sim-login.sh --signout            # clear the session instead
+```
+
+Grab a screenshot of whatever you land on:
+
+```bash
+xcrun simctl io booted screenshot /tmp/shot.png
+```
+
+How it works: `pnpm dev:mint-jwt` (tovis-app) mints the token → `simctl launch` passes it as
+`SIMCTL_CHILD_TOVIS_DEBUG_TOKEN` → `TovisKit/Auth/DebugSessionSeed.swift` reads it out of the
+launch environment and seeds the Keychain before `bootstrap()` checks for a session. Passing it at
+*launch* keeps the credential out of any file on disk.
+
+**It cannot ship.** The seed is entirely `#if DEBUG`, and the minter hard-refuses any non-local
+database. Verified against the built binaries: the Release binary contains **0** `TOVIS_DEBUG_TOKEN`
+strings and **0** `DebugSessionSeed` symbols, where Debug has both (and a control string present in
+both proves the check can fail).
 
 ## Build / verify
 
