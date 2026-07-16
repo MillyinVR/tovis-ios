@@ -28,6 +28,18 @@ public final class ProMigrationService: Sendable {
         return response.summary
     }
 
+    /// POST /api/v1/pro/migrate/parse → parse a binary spreadsheet (xlsx/legacy
+    /// xls; CSV also accepted) server-side into headers + string rows — the same
+    /// shape the on-device CsvParser produces, so both feed the same mapping →
+    /// preview → commit pipeline. Use for files the device can't read as text.
+    /// 404s while the flag is off.
+    public func parseSpreadsheet(data: Data) async throws -> SpreadsheetParseResponse {
+        let body = try JSONEncoder.canonical.encode(
+            SpreadsheetParseRequestBody(contentBase64: data.base64EncodedString())
+        )
+        return try await api.request("/pro/migrate/parse", method: .post, body: body)
+    }
+
     /// POST /api/v1/pro/migrate/clients/preview → the dedupe preview for a set of
     /// raw CSV rows + column mapping. Read-only (no writes); `excludeIndices` is
     /// not sent (the route ignores it for preview). 404s while the flag is off.

@@ -267,4 +267,38 @@ private extension URLRequest {
         #expect(ok?.email == "Email")
         #expect(ok?.phone == nil)
     }
+
+    @Test func mappingAcceptsFullNameInPlaceOfFirstAndLast() {
+        let full = ClientImportMapping(selection: [.fullName: "Name", .email: "Email"])
+        #expect(full?.fullName == "Name")
+        #expect(full?.firstName == nil)
+        // A half-mapped split name alone still isn't enough…
+        #expect(ClientImportMapping(selection: [.firstName: "First"]) == nil)
+        // …but adding a full-name column unblocks it.
+        let mixed = ClientImportMapping(selection: [.firstName: "First", .fullName: "Name"])
+        #expect(mixed?.firstName == "First")
+        #expect(mixed?.fullName == "Name")
+    }
+
+    @Test func guessMappingFallsBackToACombinedNameColumn() {
+        // No first/last headers → a bare Name column maps to fullName.
+        let guess = guessClientImportMapping(headers: ["Name", "Email", "Phone"])
+        #expect(guess[.fullName] == "Name")
+        #expect(guess[.firstName] == nil)
+        // Split-name headers win — no fullName guess even though "Name" substrings match.
+        let split = guessClientImportMapping(headers: ["First Name", "Last Name", "Email"])
+        #expect(split[.fullName] == nil)
+        #expect(split[.firstName] == "First Name")
+    }
+
+    @Test func mappingEncodesOnlyChosenFields() throws {
+        let mapping = ClientImportMapping(selection: [.fullName: "Name", .phone: "Cell"])
+        let data = try JSONEncoder.canonical.encode(mapping)
+        let json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(json["fullName"] as? String == "Name")
+        #expect(json["phone"] as? String == "Cell")
+        #expect(json["firstName"] == nil)
+        #expect(json["lastName"] == nil)
+        #expect(json["email"] == nil)
+    }
 }
