@@ -109,6 +109,7 @@ private extension URLRequest {
               "reviewId": null,
               "isEligibleForLooks": false,
               "isFeaturedInPortfolio": true,
+              "isCoverMedia": true,
               "beforeAssetId": "media_before",
               "services": [{ "serviceId": "s1", "name": "Gel X" }],
               "url": "https://cdn.example/x.jpg",
@@ -137,6 +138,7 @@ private extension URLRequest {
         #expect(item.caption == "Fresh set")
         #expect(item.isFeaturedInPortfolio == true)
         #expect(item.isEligibleForLooks == false)
+        #expect(item.isCoverMedia == true)
         #expect(item.beforeAssetId == "media_before")
         #expect(item.serviceIds == ["s1"])
         #expect(item.displayThumbUrl == "https://signed.example/x_thumb.jpg")
@@ -249,6 +251,38 @@ private extension URLRequest {
         #expect(MediaManagerURLProtocol.capturedPath == "/api/v1/pro/media/media_9")
         #expect(MediaManagerURLProtocol.capturedMethod == "DELETE")
         #expect((MediaManagerURLProtocol.capturedBody?.isEmpty ?? true))
+    }
+
+    @Test func setCoverPostsCoverRoute() async throws {
+        reset()
+        try await makeService().setCover(mediaId: "media_3")
+
+        #expect(MediaManagerURLProtocol.capturedPath == "/api/v1/pro/media/media_3/cover")
+        #expect(MediaManagerURLProtocol.capturedMethod == "POST")
+        #expect(MediaManagerURLProtocol.capturedAuthHeader == "Bearer session.token.value")
+    }
+
+    @Test func removeCoverDeletesCoverRoute() async throws {
+        reset()
+        try await makeService().removeCover(mediaId: "media_3")
+
+        #expect(MediaManagerURLProtocol.capturedPath == "/api/v1/pro/media/media_3/cover")
+        #expect(MediaManagerURLProtocol.capturedMethod == "DELETE")
+    }
+
+    @Test func setCoverSurfacesConsentGate() async throws {
+        reset()
+        // A private/unpromoted photo can't be a public cover — the server 403s and
+        // the sheet surfaces it; a failure must throw, never be swallowed.
+        MediaManagerURLProtocol.status = 403
+        MediaManagerURLProtocol.responseBody = Data(
+            "{\"ok\":false,\"error\":\"This session photo can only be shared publicly after the client adds it to a review.\"}".utf8)
+
+        var threw = false
+        do { try await makeService().setCover(mediaId: "media_7") } catch { threw = true }
+        #expect(threw)
+        #expect(MediaManagerURLProtocol.capturedPath == "/api/v1/pro/media/media_7/cover")
+        #expect(MediaManagerURLProtocol.capturedMethod == "POST")
     }
 
     @Test func surfacesServerErrorOnConsentGate() async throws {

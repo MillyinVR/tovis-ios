@@ -8,9 +8,11 @@
 //   • remove a still-pending document.
 //
 // Reached from the onboarding checklist's verification/license rows (and any
-// future pro-settings entry point). NOTE: unlike web, the doc rows don't show an
-// inline photo preview — the private image sits behind an authenticated 302→signed
-// redirect that AsyncImage can't fetch with a bearer token; deferred as a nicety.
+// future pro-settings entry point). Each doc row shows an inline photo preview,
+// matching web: the private image sits behind an authenticated 302→signed
+// redirect that AsyncImage can't fetch with a bearer token, so the row resolves
+// the signed URL first (documentPreviewURL → APIClient.resolveRedirect reads the
+// redirect's Location) and then loads it — see VerificationDocPreview.
 import SwiftUI
 import PhotosUI
 import TovisKit
@@ -323,6 +325,10 @@ struct ProVerificationView: View {
                     Spacer(minLength: 8)
                     statusBadge(doc.status)
                 }
+
+                // Inline preview of the uploaded photo (matches web's thumbnail).
+                VerificationDocPreview(docId: doc.id)
+
                 if doc.status == .pending {
                     Button(role: .destructive) {
                         Task { await deleteDoc(doc.id) }
@@ -476,5 +482,77 @@ struct ProVerificationView: View {
         out.timeZone = TimeZone(identifier: "UTC")
         out.dateFormat = "MMM d, yyyy"
         return out.string(from: date)
+    }
+}
+
+// MARK: - Document preview
+
+/// Inline thumbnail of one verification doc's private image, matching web's row
+/// preview. The image sits in the private bucket behind an authenticated route
+/// that 302-redirects to a short-lived signed URL — which `AsyncImage` can't
+/// reach with a bearer — so this resolves the signed URL once on appear
+/// (`documentPreviewURL`) and then loads it. Any failure degrades to a small
+/// placeholder; the rest of the row keeps working.
+private struct VerificationDocPreview: View {
+    @Environment(SessionModel.self) private var session
+    let docId: String
+
+    @State private var url: URL?
+    @State private var resolving = true
+    @State private var failed = false
+
+    var body: some View {
+        Group {
+            if let url {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case let .success(image):
+                        image.resizable().scaledToFill()
+                    case .failure:
+                        placeholder("photo")
+                    case .empty:
+                        loading
+                    @unknown default:
+                        BrandColor.bgSecondary
+                    }
+                }
+            } else if resolving {
+                loading
+            } else {
+                placeholder("eye.slash")
+            }
+        }
+        .frame(width: 176, height: 112)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(BrandColor.textMuted.opacity(0.18), lineWidth: 1)
+        )
+        .task { await resolve() }
+        .accessibilityLabel("Uploaded document preview")
+    }
+
+    private var loading: some View {
+        ZStack { BrandColor.bgSecondary; ProgressView().tint(BrandColor.accent) }
+    }
+
+    private func placeholder(_ systemName: String) -> some View {
+        ZStack {
+            BrandColor.bgSecondary
+            Image(systemName: systemName)
+                .font(.system(size: 20))
+                .foregroundStyle(BrandColor.textMuted)
+        }
+    }
+
+    private func resolve() async {
+        guard url == nil, !failed else { return }
+        resolving = true
+        defer { resolving = false }
+        do {
+            url = try await session.client.proVerification.documentPreviewURL(id: docId)
+        } catch {
+            failed = true
+        }
     }
 }

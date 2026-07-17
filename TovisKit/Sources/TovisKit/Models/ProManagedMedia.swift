@@ -33,6 +33,11 @@ public struct ProManagedMediaItem: Decodable, Sendable, Identifiable {
     public let isEligibleForLooks: Bool
     /// Featured in the pro's public portfolio.
     public let isFeaturedInPortfolio: Bool
+    /// §18d — whether this asset is the pro's current creator-page cover banner
+    /// (`ProfessionalProfile.coverMediaAssetId`). Drives the editor's "Set as
+    /// cover" ↔ "Remove cover" action. The server already emits it on every item
+    /// (a required field, live since #599), so it decodes like the two flags above.
+    public let isCoverMedia: Bool
     /// The paired "before" asset id when this featured "after" has one; nil when
     /// unpaired. Fed to the pairing editor (a later increment).
     public let beforeAssetId: String?

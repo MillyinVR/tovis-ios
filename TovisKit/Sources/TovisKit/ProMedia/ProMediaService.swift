@@ -205,6 +205,22 @@ public final class ProMediaService: Sendable {
         try await api.requestVoid("/pro/media/\(mediaId)", method: .delete)
     }
 
+    /// POST /api/v1/pro/media/{id}/cover — promote this asset to the pro's
+    /// creator-page cover banner (§18d). Mirrors the web `OwnerMediaMenu`
+    /// "Set as cover photo" action. The cover renders publicly, so the server
+    /// gates it: IMAGE only (a video 400s) and consent-checked — an unpromoted
+    /// private session photo 403s (`APIError.server`), same as the portfolio path.
+    public func setCover(mediaId: String) async throws {
+        try await api.requestVoid("/pro/media/\(mediaId)/cover", method: .post)
+    }
+
+    /// DELETE /api/v1/pro/media/{id}/cover — clear the cover ("Remove cover
+    /// photo"). Idempotent server-side: it only clears when THIS asset is the
+    /// current cover, so it can't wipe a cover set to a different tile.
+    public func removeCover(mediaId: String) async throws {
+        try await api.requestVoid("/pro/media/\(mediaId)/cover", method: .delete)
+    }
+
     /// Upload a new avatar (or service image) to its stable public path and return
     /// the cache-busted public URL to store on the profile/offering. Two steps —
     /// presign (`AVATAR_PUBLIC`/`SERVICE_IMAGE_PUBLIC`) → signed PUT (`upsert:true`);
