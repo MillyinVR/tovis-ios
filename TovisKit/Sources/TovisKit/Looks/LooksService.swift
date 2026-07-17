@@ -53,6 +53,19 @@ public final class LooksService: Sendable {
         return FeedPage(items: response.items, nextCursor: response.nextCursor)
     }
 
+    /// GET /api/v1/looks/{id} — the single-look detail (before/after pair, the
+    /// full 5-counter stats, the linked review, tags and the post's other
+    /// assets). Guest-readable, like the feed: the same route backs web's
+    /// `/looks/[id]` page, which fetches it server-side rather than querying
+    /// Prisma — so this is the same contract web renders, not a native twin.
+    ///
+    /// A look the viewer may not see 404s (`LOOK_NOT_FOUND`) rather than 403ing,
+    /// deliberately — the backend does not enumerate hidden looks.
+    public func detail(id: String) async throws -> LookDetail {
+        let response: LookDetailResponse = try await api.request("/looks/\(id)")
+        return response.item
+    }
+
     /// GET /api/v1/looks/categories — the dynamic service-category tabs.
     public func categories() async throws -> [LooksCategory] {
         let response: LooksCategoriesResponse = try await api.request("/looks/categories")
@@ -135,11 +148,22 @@ public final class LooksService: Sendable {
     /// and fire-and-forget: the server dedupes/caps the ids and enqueues a job
     /// that denormalizes viewCount. No auth needed (impressions count for
     /// signed-out viewers too).
-    public func recordViews(lookIds: [String]) async throws {
+    ///
+    /// `source` tags where the look was surfaced, feeding the §5.6 per-source,
+    /// per-day aggregate. It is NOT cosmetic: native previously sent the legacy
+    /// untagged body, which the job reads as FEED — so a detail open would have
+    /// been counted as a feed impression.
+    public func recordViews(lookIds: [String], source: LookViewSource = .feed) async throws {
         let ids = lookIds.filter { !$0.isEmpty }
         guard !ids.isEmpty else { return }
 
-        let payload = try JSONEncoder.canonical.encode(LooksViewsRequest(lookPostIds: ids))
+        let payload = try JSONEncoder.canonical.encode(
+            LooksViewsRequest(
+                impressions: ids.map {
+                    LooksViewImpression(lookPostId: $0, source: source.rawValue)
+                }
+            )
+        )
         try await api.requestVoid(
             "/looks/views",
             method: .post,

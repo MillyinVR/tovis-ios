@@ -102,6 +102,10 @@ struct PushDeepLink: Equatable {
 
     let target: Target
 
+    /// Route straight to a known target (a tapped Universal Link that has already
+    /// been parsed), bypassing the href parser.
+    init(target: Target) { self.target = target }
+
     /// The role whose shell owns this target, or `nil` when either shell can open
     /// it (thread, look). When it differs from the acting role, the shell asks the
     /// session to `switchWorkspace(to:)` and leaves the link buffered so the newly
@@ -136,10 +140,10 @@ struct PushDeepLink: Equatable {
             if parts.count >= 3, parts[1] == "thread" { target = .thread(id: parts[2]); return }
             return nil
 
-        // /looks/{id} → the look. No native single-look detail yet, so the shell
-        // falls back to the Looks feed; the id is carried for a future detail view.
+        // /looks/{id} → the single-look detail. Both roles use this path; the
+        // active shell pushes `LookDetailView`.
         case "looks":
-            if parts.count >= 2 { target = .look(id: parts[1]); return }
+            if let id = LooksPath.lookId(from: parts) { target = .look(id: id); return }
             return nil
 
         case "client":
@@ -213,6 +217,52 @@ struct PasswordResetLink: Equatable {
         let token = parts[1]
         guard !token.isEmpty else { return nil }
         self.token = token
+    }
+}
+
+// MARK: - Single-look Universal Link
+
+/// How a `/looks/…` path resolves. Shared by the push-href parser and the
+/// Universal-Link parser so the two can never disagree about what a look id is.
+///
+/// ⚠️ `/looks/tags/{slug}` is a TAG page, not a look. The push parser used to
+/// take `parts[1]` for any `/looks/*` path, so a tag link parsed as
+/// `.look(id: "tags")` — harmless only because the id was thrown away and every
+/// look target landed on the feed. Now that the id opens a real fetch, that
+/// would be a guaranteed 404 on a link the app itself emits.
+enum LooksPath {
+    /// First segments under /looks that name a sub-route, never a look id.
+    /// Mirrors the web routes: app/(main)/looks/[id] + looks/tags/[slug].
+    private static let reserved: Set<String> = ["tags"]
+
+    /// The look id in `/looks/{id}`, or nil for the feed root (`/looks`) and any
+    /// sub-route (`/looks/tags/…`).
+    static func lookId(from parts: [String]) -> String? {
+        guard parts.count == 2, parts[0].lowercased() == "looks" else { return nil }
+        let candidate = parts[1]
+        guard !candidate.isEmpty, !reserved.contains(candidate.lowercased()) else { return nil }
+        return candidate
+    }
+}
+
+/// A tapped `https://(www.)tovis.app/looks/{id}` Universal Link.
+///
+/// The app's own share sheet generates exactly this URL (`LooksView.shareURL`),
+/// so before this existed the app produced links it could not open: `.onOpenURL`
+/// fell through every branch to `CheckoutReturn`'s guard and dropped them, and a
+/// shared look merely foregrounded the app.
+struct LooksLink: Equatable {
+    let id: String
+
+    init?(url: URL) {
+        guard url.scheme?.lowercased() == "https" else { return nil }
+        let host = url.host?.lowercased()
+        guard host == "tovis.app" || host == "www.tovis.app" else { return nil }
+        // Path segments minus the leading "/": ["looks", "<id>"].
+        guard let id = LooksPath.lookId(from: url.pathComponents.filter({ $0 != "/" })) else {
+            return nil
+        }
+        self.id = id
     }
 }
 
@@ -359,10 +409,10 @@ final class SessionModel {
     /// email/text" message rather than an error. Mirrors the web check-inbox state.
     private(set) var claimableHistoryMessage: String?
 
-    /// Handle an incoming deep link / Universal Link. Password-reset + public-board
-    /// links route to their native screens; the `tovis://checkout/return?…` scheme
-    /// feeds the active booking screen. Anything else is ignored so stray links are
-    /// safe.
+    /// Handle an incoming deep link / Universal Link. Password-reset, public-board,
+    /// claim + single-look links route to their native screens; the
+    /// `tovis://checkout/return?…` scheme feeds the active booking screen. Anything
+    /// else is ignored so stray links are safe.
     func handleDeepLink(_ url: URL) {
         if let reset = PasswordResetLink(url: url) {
             pendingPasswordResetToken = reset.token
@@ -374,6 +424,12 @@ final class SessionModel {
         }
         if let claim = PublicClaimLink(url: url) {
             pendingClaim = claim
+            return
+        }
+        // A shared look. Routed through the same `.look(id:)` target a push uses,
+        // so both entry points land on one handler in the shells.
+        if let look = LooksLink(url: url) {
+            pushDeepLink = PushDeepLink(target: .look(id: look.id))
             return
         }
         guard let parsed = CheckoutReturn(url: url) else { return }

@@ -188,10 +188,33 @@ struct LooksSaveMutationRequest: Encodable, Sendable {
 
 // MARK: - View tracking (POST /api/v1/looks/views)
 
+/// Where a look impression was surfaced. Mirrors the Prisma
+/// `LookImpressionSource` enum; the server coerces anything it doesn't know to
+/// FEED, so the raw values must match exactly.
+public enum LookViewSource: String, Sendable {
+    case feed = "FEED"
+    case detail = "DETAIL"
+    case board = "BOARD"
+}
+
 /// Batched, sampled view impressions (social-first plan B2). The server dedupes
 /// + caps, then enqueues a job that increments each look's viewCount.
+///
+/// The source-tagged batch body (`impressions: [{lookPostId, source}]`).
+///
+/// ⚠️ The route also accepts a legacy `lookPostIds: [...]` list, which is what
+/// native sent until now — and the job reads that shape as **FEED-sourced**
+/// (the route's own header says so). So every native impression, wherever it
+/// came from, was landing in the §5.6 per-source aggregate as a feed view. Send
+/// the tagged shape; do NOT send both keys, as the job merges them and the look
+/// would be counted twice.
 struct LooksViewsRequest: Encodable, Sendable {
-    let lookPostIds: [String]
+    let impressions: [LooksViewImpression]
+}
+
+struct LooksViewImpression: Encodable, Sendable {
+    let lookPostId: String
+    let source: String
 }
 
 // MARK: - Like (POST/DELETE /api/v1/looks/{id}/like)

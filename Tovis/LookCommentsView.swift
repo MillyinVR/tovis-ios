@@ -9,8 +9,13 @@ import TovisKit
 struct LookCommentsView: View {
     @Environment(SessionModel.self) private var session
 
-    let look: LooksFeedItem
-    /// Reports the net change in this look's comment count back to the feed.
+    /// The look being discussed. Only the id + the starting count are needed, so
+    /// this takes them rather than a whole `LooksFeedItem` — the feed and the
+    /// single-look detail carry different payloads (`LooksFeedItemDto` vs
+    /// `LooksDetailItemDto`) and both present this same sheet.
+    let lookId: String
+    let commentsCount: Int
+    /// Reports the net change in this look's comment count back to the presenter.
     var onCountChange: (Int) -> Void = { _ in }
 
     @State private var comments: [LooksComment] = []
@@ -54,7 +59,7 @@ struct LookCommentsView: View {
             if focused { withAnimation(.easeOut(duration: 0.2)) { detent = .large } }
         }
         .task {
-            totalCount = look.count.comments
+            totalCount = commentsCount
             await load()
         }
     }
@@ -218,7 +223,7 @@ struct LookCommentsView: View {
         loading = true; loadError = nil
         defer { loading = false }
         do {
-            comments = try await session.client.looks.comments(lookId: look.id)
+            comments = try await session.client.looks.comments(lookId: lookId)
         } catch let error as APIError {
             loadError = error.userMessage
         } catch {
@@ -239,7 +244,7 @@ struct LookCommentsView: View {
         let parentId = replyingTo?.commentId
         do {
             let created = try await session.client.looks.addComment(
-                lookId: look.id, body: text, parentCommentId: parentId
+                lookId: lookId, body: text, parentCommentId: parentId
             )
             draft = ""
             replyingTo = nil
@@ -272,7 +277,7 @@ struct LookCommentsView: View {
             defer { loadingReplies.remove(comment.id) }
             do {
                 replies[comment.id] = try await session.client.looks.replies(
-                    lookId: look.id, commentId: comment.id
+                    lookId: lookId, commentId: comment.id
                 )
             } catch {
                 return
@@ -288,7 +293,7 @@ struct LookCommentsView: View {
         likeCounts[comment.id] = max(0, base + (next ? 1 : -1))
         do {
             let res = try await session.client.looks.setCommentLiked(
-                lookId: look.id, commentId: comment.id, liked: next
+                lookId: lookId, commentId: comment.id, liked: next
             )
             likeOverrides[comment.id] = res.liked
             likeCounts[comment.id] = res.likeCount
@@ -302,7 +307,7 @@ struct LookCommentsView: View {
         let wasRemoved = removed.contains(comment.id)
         removed.insert(comment.id)
         do {
-            try await session.client.looks.deleteComment(lookId: look.id, commentId: comment.id)
+            try await session.client.looks.deleteComment(lookId: lookId, commentId: comment.id)
             // Top-level delete soft-removes the whole thread on the server.
             let removedReplies = comment.isReply ? 0 : (replies[comment.id]?.count ?? replyCount(comment))
             totalCount = max(0, totalCount - (1 + removedReplies))
