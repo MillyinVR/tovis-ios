@@ -1030,6 +1030,30 @@ func fixture(_ name: String) throws -> Data {
         #expect(chart.proFeedback.first?.title == "Punctual")
         #expect(chart.photos.first?.phase == "AFTER")
         #expect(!chart.technicalEnabled)
+        // Relationship intelligence — formatted server-side, decoded verbatim.
+        let intel = try #require(chart.relationshipIntelligence)
+        #expect(intel.lifetimeValue.value == "$720")
+        #expect(intel.lifetimeValue.hint == "$960 platform-wide")
+        #expect(intel.leadTime.hint == nil)
+        #expect(intel.rebooking.value == "At risk")
+        #expect(intel.rebooking.hint == "Birthday in 12d")
+        #expect(intel.referralSource == "Referred by a client")
+        #expect(intel.flags.count == 2)
+        #expect(intel.flags.first?.key == "retention-risk")
+        #expect(intel.flags.first?.tone == "warn")
+    }
+
+    // A chart from a backend that predates the relationship-intelligence field
+    // still decodes (the field is optional) — the card is simply hidden.
+    @Test func decodesProClientChartWithoutRelationshipIntelligence() throws {
+        var object = try JSONSerialization.jsonObject(
+            with: fixture("proClientChart")
+        ) as! [String: Any]
+        object.removeValue(forKey: "relationshipIntelligence")
+        let data = try JSONSerialization.data(withJSONObject: object)
+        let chart = try JSONDecoder().decode(ProClientChart.self, from: data)
+        #expect(chart.relationshipIntelligence == nil)
+        #expect(chart.header.fullName == "Jordan Rivera")
     }
 
     // GET /api/v1/pro/services/catalog — Fixtures/proServicesCatalog.json. The

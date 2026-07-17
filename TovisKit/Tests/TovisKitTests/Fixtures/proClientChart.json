@@ -13,6 +13,20 @@
     "bookingCount": 4,
     "reviewCount": 2
   },
+  "relationshipIntelligence": {
+    "lifetimeValue": { "value": "$720", "hint": "$960 platform-wide" },
+    "visits": { "value": "3", "hint": "4 platform-wide" },
+    "cadence": { "value": "~every 6 wks", "hint": "58 days since last visit" },
+    "leadTime": { "value": "9 days ahead", "hint": null },
+    "pattern": { "value": "Saturday · Afternoon", "hint": "1 cancelled" },
+    "rebooking": { "value": "At risk", "hint": "Birthday in 12d" },
+    "preferredContactMethod": "SMS",
+    "referralSource": "Referred by a client",
+    "flags": [
+      { "key": "retention-risk", "label": "Lapsed 8 wks · usual ~6 wk", "tone": "warn" },
+      { "key": "birthday-soon", "label": "Birthday in 12 days", "tone": "success" }
+    ]
+  },
   "alertBanner": "Sensitive scalp — patch test before color.",
   "doNotRebook": null,
   "allergies": [

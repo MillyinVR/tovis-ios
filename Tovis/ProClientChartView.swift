@@ -166,6 +166,9 @@ struct ProClientChartView: View {
         headerCard(chart.header)
         safetyStrip(chart)
         doNotRebookSection(chart)
+        if let intel = chart.relationshipIntelligence {
+            relationshipIntelligenceSection(intel)
+        }
         tabBar(technicalEnabled: chart.technicalEnabled)
         tabContent(chart)
     }
@@ -265,6 +268,100 @@ struct ProClientChartView: View {
                     Text(reason).font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
                 }
             }
+        }
+    }
+
+    // MARK: - Relationship intelligence
+
+    // Mirrors web's `RelationshipIntelligenceCard` — smart-flag chips above a 2-col
+    // grid of stat tiles, plus a contact/source footnote. Every string is formatted
+    // server-side (`formatRelationshipIntelligence`); this view only lays them out.
+    private func relationshipIntelligenceSection(
+        _ intel: ProChartRelationshipIntelligence
+    ) -> some View {
+        let columns = [
+            GridItem(.flexible(), spacing: 10),
+            GridItem(.flexible(), spacing: 10),
+        ]
+        let hasContact = intel.preferredContactMethod?.isEmpty == false
+        let hasSource = intel.referralSource?.isEmpty == false
+        return BrandSurface {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Relationship intelligence")
+                    .font(BrandFont.mono(9)).tracking(0.8).foregroundStyle(BrandColor.textMuted)
+                if !intel.flags.isEmpty {
+                    smartFlagChips(intel.flags)
+                }
+                LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
+                    intelTile("Lifetime value (you)", intel.lifetimeValue)
+                    intelTile("Visits with you", intel.visits)
+                    intelTile("Cadence", intel.cadence)
+                    intelTile("Lead time", intel.leadTime)
+                    intelTile("Pattern", intel.pattern)
+                    intelTile("Rebooking", intel.rebooking)
+                }
+                if hasContact || hasSource {
+                    HStack(spacing: 14) {
+                        if let contact = intel.preferredContactMethod, hasContact {
+                            (Text("Prefers ").foregroundStyle(BrandColor.textSecondary)
+                                + Text(contact).foregroundStyle(BrandColor.textPrimary).fontWeight(.bold))
+                                .font(BrandFont.body(11))
+                        }
+                        if let source = intel.referralSource, hasSource {
+                            (Text("Source: ").foregroundStyle(BrandColor.textSecondary)
+                                + Text(source).foregroundStyle(BrandColor.textPrimary).fontWeight(.bold))
+                                .font(BrandFont.body(11))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func intelTile(
+        _ label: String,
+        _ tile: ProChartRelationshipIntelligence.Tile
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label.uppercased())
+                .font(BrandFont.mono(8)).tracking(0.6).foregroundStyle(BrandColor.textMuted)
+                .lineLimit(1).minimumScaleFactor(0.7)
+            Text(tile.value)
+                .font(BrandFont.body(15, .semibold)).foregroundStyle(BrandColor.textPrimary)
+                .lineLimit(1).minimumScaleFactor(0.6)
+            if let hint = tile.hint, !hint.isEmpty {
+                Text(hint)
+                    .font(BrandFont.body(11)).foregroundStyle(BrandColor.textSecondary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10).background(BrandColor.bgPrimary)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func smartFlagChips(
+        _ flags: [ProChartRelationshipIntelligence.Flag]
+    ) -> some View {
+        let columns = [GridItem(.adaptive(minimum: 120), spacing: 6)]
+        return LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
+            ForEach(flags) { flag in
+                let tone = flagTone(flag.tone)
+                Text(flag.label)
+                    .font(BrandFont.mono(10)).foregroundStyle(tone)
+                    .lineLimit(1).minimumScaleFactor(0.8)
+                    .padding(.vertical, 4).padding(.horizontal, 8)
+                    .background(tone.opacity(0.12)).clipShape(Capsule())
+            }
+        }
+    }
+
+    /// Maps the wire tone string to a brand tone color (web's `Badge` tones).
+    private func flagTone(_ tone: String) -> Color {
+        switch tone {
+        case "warn": return BrandColor.amber
+        case "success": return BrandColor.emerald
+        default: return BrandColor.accent  // "info"
         }
     }
 
