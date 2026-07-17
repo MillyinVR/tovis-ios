@@ -317,55 +317,61 @@ struct LooksView: View {
     // MARK: - Feed
 
     private func feed(_ items: [LooksFeedItem]) -> some View {
-        ScrollView(.vertical) {
-            LazyVStack(spacing: 0) {
-                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                    LookSlide(
-                        item: item,
-                        isActive: activeId == item.id,
-                        muted: muted,
-                        liked: liked(item),
-                        likeCount: likeCount(item),
-                        commentCount: commentCount(item),
-                        following: following(item),
-                        saved: saved(item),
-                        shareURL: shareURL(item),
-                        bookResolving: resolvingBookId == item.id,
-                        onLike: { Task { await toggleLike(item) } },
-                        onComment: { commentsFor = item },
-                        onSave: { saveFor = item },
-                        onFollow: { Task { await toggleFollow(item) } },
-                        onShared: { Task { await recordShare(item) } },
-                        onBook: { Task { await startBooking(item) } },
-                        onToggleMute: { muted.toggle() },
-                        onOpenTag: { tag in
-                            if let url = tagURL(tag) { tagWebFor = TagWebLink(url: url) }
-                        },
-                        onHide: { hideCandidate = item }
-                    )
-                    .containerRelativeFrame([.horizontal, .vertical])
-                    .onAppear { Task { await loadMoreIfNeeded(at: index, total: items.count) } }
-                }
+        // Each slide must be EXACTLY the visible viewport tall. The previous
+        // `.containerRelativeFrame([.vertical])` + `.ignoresSafeArea(.top)` combo
+        // measured a container taller than the paging area, so every slide overflowed
+        // the bottom and the bottom-anchored overlays + rail were dragged below the
+        // footer. Measure the real, safe-area-respecting container with a
+        // GeometryReader and pin each slide to it, so paging snaps cleanly and the
+        // chrome sits above the footer. (The other half of why the chrome was missing
+        // was horizontal, not vertical — see the `.scaledToFill()` fix in
+        // FocalCoverImage, which stopped a landscape photo from widening the slide.)
+        GeometryReader { geo in
+            ScrollView(.vertical) {
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                        LookSlide(
+                            item: item,
+                            isActive: activeId == item.id,
+                            muted: muted,
+                            liked: liked(item),
+                            likeCount: likeCount(item),
+                            commentCount: commentCount(item),
+                            following: following(item),
+                            saved: saved(item),
+                            shareURL: shareURL(item),
+                            bookResolving: resolvingBookId == item.id,
+                            onLike: { Task { await toggleLike(item) } },
+                            onComment: { commentsFor = item },
+                            onSave: { saveFor = item },
+                            onFollow: { Task { await toggleFollow(item) } },
+                            onShared: { Task { await recordShare(item) } },
+                            onBook: { Task { await startBooking(item) } },
+                            onToggleMute: { muted.toggle() },
+                            onOpenTag: { tag in
+                                if let url = tagURL(tag) { tagWebFor = TagWebLink(url: url) }
+                            },
+                            onHide: { hideCandidate = item }
+                        )
+                        .frame(width: geo.size.width, height: geo.size.height)
+                        .onAppear { Task { await loadMoreIfNeeded(at: index, total: items.count) } }
+                    }
 
-                if loadingMore {
-                    ProgressView().tint(BrandColor.accent)
-                        .frame(maxWidth: .infinity).padding(.vertical, 24)
+                    if loadingMore {
+                        ProgressView().tint(BrandColor.accent)
+                            .frame(maxWidth: .infinity).padding(.vertical, 24)
+                    }
                 }
+                .scrollTargetLayout()
             }
-            .scrollTargetLayout()
+            .scrollPosition(id: $activeId, anchor: .center)
+            .scrollTargetBehavior(.paging)
+            // Record a sampled view impression for whichever slide snaps active (B2).
+            .onChange(of: activeId) { _, id in Task { await recordView(id) } }
+            // Start the first slide playing before any scroll happens.
+            .onAppear { if activeId == nil { activeId = items.first?.id } }
+            .onChange(of: items.first?.id) { _, first in if activeId == nil { activeId = first } }
         }
-        .scrollPosition(id: $activeId, anchor: .center)
-        .scrollTargetBehavior(.paging)
-        // Record a sampled view impression for whichever slide snaps active (B2).
-        .onChange(of: activeId) { _, id in Task { await recordView(id) } }
-        // Start the first slide playing before any scroll happens.
-        .onAppear { if activeId == nil { activeId = items.first?.id } }
-        .onChange(of: items.first?.id) { _, first in if activeId == nil { activeId = first } }
-        // Full-bleed up top, but RESPECT the bottom inset so the slide sits
-        // above the footer bar (was hidden behind it). The footer — including
-        // the center circle that pokes above it — is an overlay on top, so the
-        // circle still floats in front of the feed.
-        .ignoresSafeArea(edges: .top)
     }
 
     private var emptyState: some View {
