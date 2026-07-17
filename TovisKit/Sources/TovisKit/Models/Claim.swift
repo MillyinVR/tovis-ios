@@ -67,3 +67,143 @@ public enum ClaimContextState {
     public static let revoked = "revoked"
     public static let alreadyClaimed = "already_claimed"
 }
+
+/// POST /api/v1/pro/invites/{token}/accept — success body. `bookingId` is
+/// TOP-level (the route's `jsonOk` spreads the object) and is null for a
+/// booking-less claim, which is why it stays optional here.
+public struct ClaimAcceptResponse: Codable, Sendable {
+    public let bookingId: String?
+
+    public init(bookingId: String?) {
+        self.bookingId = bookingId
+    }
+}
+
+/// The server's authoritative answer to an accept attempt. Mirrors
+/// `AcceptClientClaimFromLinkResult` (lib/clients/clientClaim.ts), which the
+/// route maps onto an HTTP status + a top-level `code`.
+///
+/// ⚠️ **Key on `code`, never on the status** — the status is ambiguous: 404 is
+/// `NOT_FOUND` *or* `CLIENT_NOT_FOUND`, and 409 is `ALREADY_CLAIMED` *or*
+/// `CLIENT_MISMATCH` *or* `MERGE_REFUSED` *or* `CONFLICT`. Verified verbatim
+/// against the live route.
+public enum ClaimAcceptOutcome: Equatable, Sendable {
+    /// 200 — claimed. `bookingId` is nil for a booking-less claim.
+    case claimed(bookingId: String?)
+    /// 404 `NOT_FOUND` — the token no longer resolves.
+    case notFound
+    /// 410 `REVOKED`.
+    case revoked
+    /// 409 `ALREADY_CLAIMED`. Also what a REPLAYED successful claim returns.
+    case alreadyClaimed
+    /// 404 `CLIENT_NOT_FOUND` — the acting client identity vanished mid-request.
+    case clientNotFound
+    /// 409 `CLIENT_MISMATCH` — the link belongs to a different client identity.
+    ///
+    /// ⚠️ Two very different situations arrive here, and neither is the viewer's
+    /// fault. Normally this is unreachable — the backend absorbs the pro's shell
+    /// into the acting identity instead of refusing (web #652), so a mismatch
+    /// means a caller bug. But it is ALSO what the merge's kill switch returns:
+    /// `DISABLE_CLAIM_MERGE=1` makes the backend fall straight back to this
+    /// pre-#652 refusal (web #653), so during that emergency EVERY signed-in
+    /// claim lands here. Keep the case; don't build the UI around it.
+    case clientMismatch
+    /// 409 `MERGE_REFUSED` — absorbing the pro's history would have been unsafe,
+    /// so the backend wrote nothing and wants a human. The reason is deliberately
+    /// off the wire (every one means "our model of this data is wrong", which the
+    /// viewer cannot act on) — it is logged server-side for the people who can.
+    case mergeRefused
+    /// 409 `CONFLICT` — a concurrent claim won the race; nothing was destroyed.
+    case conflict
+    /// 403 `WORKSPACE_MISMATCH` — a non-client session tried to claim.
+    case notAClient
+}
+
+/// Who is looking at the claim screen. Native resolves this **locally** from
+/// `SessionModel` (its `state` + `activeRole`); web resolves the same facts
+/// server-side from the cookie session. Nothing here needs a wire field — see
+/// `ClaimScreenState` for why the one fact native *can't* know locally
+/// (whether the signed-in client owns this link) is answered by the accept POST.
+public enum ClaimViewer: Equatable, Sendable {
+    case signedOut
+    /// Signed in, but the session is still `VERIFICATION` — it cannot claim yet.
+    case needsVerification
+    /// Signed in as a professional; a claim must come from a client account.
+    case professional
+    case client
+}
+
+/// What the native claim screen should render — the port of web's
+/// `ClaimPageState` plus the sub-branches web nests inside its `ready` state.
+///
+/// ## Why native resolves this differently from web
+/// Web computes `isMatchingClient` server-side (it has the cookie session *and*
+/// `invite.client.id` in the same render) and can therefore show `client-mismatch`
+/// **before** the viewer acts. Native reads the claim over the **public,
+/// unauthenticated** `GET /public/claim/{token}`, which deliberately does not
+/// expose the invite's client id — so native cannot pre-empt a mismatch and
+/// instead lets the accept POST answer it. Same states, one extra tap; the POST
+/// is the authoritative check on both platforms regardless.
+public enum ClaimScreenState: Equatable, Sendable {
+    /// Offer signup / sign-in — nobody is signed in to claim with.
+    case signedOut
+    /// Signed in, but not as a client.
+    case notAClient
+    /// Signed in as a client whose session still needs verifying.
+    case needsVerification
+    /// Signed in as a verified client — offer the in-app claim.
+    case readyToClaim
+    /// The claim succeeded. `bookingId` is nil for a booking-less claim.
+    case claimed(bookingId: String?)
+    case alreadyClaimed
+    case revoked
+    case clientMismatch
+    /// The history could not be absorbed safely; nothing was written and support
+    /// has to finish it by hand. Mirrors web's `merge-unavailable` card.
+    case mergeRefused
+    case conflict
+    case notFound
+
+    /// Resolve what to render from the three inputs the screen has.
+    ///
+    /// Precedence: an `outcome`, when present, always wins — it is the server's
+    /// direct answer to the action the viewer just took, and is strictly fresher
+    /// than the context fetched before the tap. Otherwise the link's own state
+    /// (revoked / already-claimed) short-circuits, exactly as web's page does,
+    /// and only then does the viewer decide the branch.
+    public static func resolve(
+        contextState: String,
+        viewer: ClaimViewer,
+        outcome: ClaimAcceptOutcome? = nil
+    ) -> ClaimScreenState {
+        if let outcome {
+            switch outcome {
+            case let .claimed(bookingId): return .claimed(bookingId: bookingId)
+            case .notFound: return .notFound
+            case .revoked: return .revoked
+            case .alreadyClaimed: return .alreadyClaimed
+            case .clientMismatch: return .clientMismatch
+            case .mergeRefused: return .mergeRefused
+            case .conflict: return .conflict
+            case .notAClient: return .notAClient
+            // The acting client identity vanished mid-request, so there is
+            // nothing signed-in to claim with — web redirects this case to
+            // signup, and `.signedOut` is the state that offers exactly that.
+            case .clientNotFound: return .signedOut
+            }
+        }
+
+        switch contextState {
+        case ClaimContextState.revoked: return .revoked
+        case ClaimContextState.alreadyClaimed: return .alreadyClaimed
+        default: break
+        }
+
+        switch viewer {
+        case .signedOut: return .signedOut
+        case .needsVerification: return .needsVerification
+        case .professional: return .notAClient
+        case .client: return .readyToClaim
+        }
+    }
+}
