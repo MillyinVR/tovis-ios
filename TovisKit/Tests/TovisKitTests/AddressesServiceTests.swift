@@ -246,6 +246,34 @@ private extension URLRequest {
         #expect(area == nil)
     }
 
+    // MARK: - searchAreas (the full list, for the discovery-settings picker)
+
+    @Test func searchAreasReturnsAllSearchAreasActiveFirstExcludingServiceAddresses() async throws {
+        reset()
+        // A service address + two search areas (the newer one is the non-default).
+        // searchAreas() must return BOTH search areas — never the service address —
+        // with the default (active) one first, so a web-created secondary area shows.
+        AddressesURLProtocol.responseBody = Data("""
+        {"addresses":[
+          {"id":"svc_1","kind":"SERVICE_ADDRESS","label":"Home","isDefault":true,"formattedAddress":"123 Main St","addressLine1":null,"addressLine2":null,"city":"San Diego","state":"CA","postalCode":"92101","countryCode":"US","placeId":"pl_svc","lat":32.7,"lng":-117.1,"createdAt":"2026-07-10T00:00:00.000Z","updatedAt":"2026-07-10T00:00:00.000Z"},
+          {"id":"area_new","kind":"SEARCH_AREA","label":"Work","isDefault":false,"formattedAddress":"Los Angeles, CA, USA","addressLine1":null,"addressLine2":null,"city":"Los Angeles","state":"CA","postalCode":null,"countryCode":"US","placeId":"pl_la","lat":34.05,"lng":-118.24,"radiusMiles":10,"createdAt":"2026-07-12T00:00:00.000Z","updatedAt":"2026-07-12T00:00:00.000Z"},
+          {"id":"area_home","kind":"SEARCH_AREA","label":null,"isDefault":true,"formattedAddress":"San Diego, CA, USA","addressLine1":null,"addressLine2":null,"city":"San Diego","state":"CA","postalCode":null,"countryCode":"US","placeId":"pl_sd","lat":32.7157,"lng":-117.1611,"radiusMiles":20,"createdAt":"2026-07-10T00:00:00.000Z","updatedAt":"2026-07-10T00:00:00.000Z"}
+        ]}
+        """.utf8)
+
+        let list = try await makeService().searchAreas()
+
+        #expect(AddressesURLProtocol.capturedPath == "/api/v1/client/addresses")
+        #expect(AddressesURLProtocol.capturedMethod == "GET")
+        #expect(list.map(\.id) == ["area_home", "area_new"])   // default first, then the other
+        let allSearchAreas = list.allSatisfy(\.isSearchArea)
+        #expect(allSearchAreas)
+        #expect(list.first?.isDefault == true)
+        // searchArea() is exactly the head of searchAreas() (the active origin).
+        let head = try await makeService().searchArea()
+        #expect(head?.id == "area_home")
+    }
+
     // MARK: - saveSearchArea (discovery origin from a picked AREA)
 
     @Test func saveSearchAreaPostsSearchAreaCreate() async throws {
