@@ -1,21 +1,28 @@
 // The client "Discovery location" settings slice — the native home for the web
-// app/client/(gated)/settings/ClientLocationSettings.tsx. It sets where "pros near
-// you" searches from (the discovery origin) and the search radius.
+// app/client/(gated)/settings location + the "Search areas" list. It sets where
+// "pros near you" searches from (the discovery origin) and the search radius.
+//
+// A client can save MULTIPLE search areas (parity with the web Settings → Addresses
+// "Search areas" list): the list surfaces every saved SEARCH_AREA — including ones
+// created on web — and the ACTIVE (default) one is what DiscoverView searches from.
+// "Use" promotes an area to active (setDefault); adding a new area appends it (and
+// makes it active); the trash removes one.
 //
 // Persistence mirrors web, which splits the value across two layers:
-//   • Origin (lat/lng/placeId/label) → a default SEARCH_AREA `ClientAddress`,
-//     server-persisted via /api/v1/client/addresses. So an area set on web shows up
-//     here (and vice-versa) — real cross-device parity. Handled by AddressesService.
+//   • Origin (lat/lng/placeId/label) → a SEARCH_AREA `ClientAddress`, server-persisted
+//     via /api/v1/client/addresses. So areas set on web show up here (and vice-versa)
+//     — real cross-device parity. Handled by AddressesService.
 //   • Radius → localStorage-only on web (`tovis.viewerLocation.v1`); the addresses
-//     API/DTO carry no radius. Mirrored here in `UserDefaults` via `DiscoveryRadius`.
+//     API/DTO carry the active area's radius. Mirrored here in `UserDefaults` via
+//     `DiscoveryRadius`, written through to the active area's server row.
 //
-// DiscoverView (the pro-finder) reads both to seed its initial map + search.
+// DiscoverView (the pro-finder) reads the active area to seed its initial map + search.
 import SwiftUI
 import TovisKit
 
 /// The discovery search radius — the localStorage-only half of the web viewer
-/// location, kept device-local in `UserDefaults` (the addresses API has no server
-/// home for it). Default and bounds match web's `VIEWER_RADIUS_*` constants.
+/// location, kept device-local in `UserDefaults`. Default and bounds match web's
+/// `VIEWER_RADIUS_*` constants; the active area's server radius wins when set.
 enum DiscoveryRadius {
     static let key = "tovis.discovery.radiusMiles"
     static let minMiles = 5
@@ -46,8 +53,8 @@ struct ClientDiscoveryLocationView: View {
     }
 
     @State private var phase: Phase = .loading
-    /// The saved discovery origin (a default SEARCH_AREA), or nil if unset.
-    @State private var area: ClientAddress?
+    /// Every saved SEARCH_AREA, active (default) first. The active one drives discovery.
+    @State private var areas: [ClientAddress] = []
     @State private var radius = DiscoveryRadius.current
 
     /// The area just picked in the search field — saving it is driven by its change.
@@ -56,8 +63,14 @@ struct ClientDiscoveryLocationView: View {
     @State private var pickerResetToken = 0
 
     @State private var saving = false
-    @State private var clearing = false
+    /// The area id of an in-flight per-row action (activate / delete), for its spinner.
+    @State private var busyId: String?
     @State private var banner: String?
+
+    /// The area "pros near you" searches from — the default, else the newest saved.
+    private var activeArea: ClientAddress? {
+        areas.first(where: \.isDefault) ?? areas.first
+    }
 
     var body: some View {
         Group {
@@ -99,7 +112,7 @@ struct ClientDiscoveryLocationView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
 
-                currentCard
+                areasSection
                 radiusSection
                 searchSection
             }
@@ -112,47 +125,107 @@ struct ClientDiscoveryLocationView: View {
             Text("Where you search")
                 .font(BrandFont.display(18, .semibold))
                 .foregroundStyle(BrandColor.textPrimary)
-            Text("Set a home area so “pros near you” opens here — instead of asking for your location each time.")
+            Text("Save the places you search from — “pros near you” opens at your active area. Tap “Use” to switch, or add another below.")
                 .font(BrandFont.body(13))
                 .foregroundStyle(BrandColor.textSecondary)
         }
     }
 
-    private var currentCard: some View {
-        BrandSurface {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Current area")
-                        .font(BrandFont.mono(10)).tracking(1.2)
-                        .foregroundStyle(BrandColor.textMuted)
-                    if let area {
-                        Text("\(area.displayLine) • \(radius) mi")
-                            .font(BrandFont.body(15, .semibold))
-                            .foregroundStyle(BrandColor.textPrimary)
-                            .lineLimit(2)
-                    } else {
-                        Text("Not set — \(radius) mi radius")
-                            .font(BrandFont.body(15, .semibold))
-                            .foregroundStyle(BrandColor.textSecondary)
-                    }
-                }
-                Spacer(minLength: 0)
-                if clearing {
-                    ProgressView().controlSize(.mini).tint(BrandColor.accent)
-                } else if area != nil {
-                    Button { Task { await clearArea() } } label: {
-                        Text("Clear")
-                            .font(BrandFont.body(12, .semibold))
-                            .foregroundStyle(BrandColor.textSecondary)
-                            .padding(.horizontal, 11).padding(.vertical, 7)
-                            .overlay(Capsule().stroke(BrandColor.textMuted.opacity(0.3), lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(saving)
+    // MARK: - Areas list
+
+    private var areasSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SignupFieldLabel(areas.count > 1 ? "Your search areas" : "Current area")
+            if areas.isEmpty {
+                emptyAreaCard
+            } else {
+                ForEach(areas) { area in
+                    areaRow(area)
                 }
             }
         }
     }
+
+    private var emptyAreaCard: some View {
+        BrandSurface {
+            Text("No area set — “pros near you” asks for your location. Add one below to open here instead (\(radius) mi radius).")
+                .font(BrandFont.body(14))
+                .foregroundStyle(BrandColor.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func areaRow(_ area: ClientAddress) -> some View {
+        let isActive = area.id == activeArea?.id
+        return BrandSurface {
+            HStack(alignment: .center, spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(area.displayLine)
+                            .font(BrandFont.body(15, .semibold))
+                            .foregroundStyle(BrandColor.textPrimary)
+                            .lineLimit(1)
+                        if isActive { activeBadge }
+                    }
+                    if isActive {
+                        Text("Searching here • \(radius) mi")
+                            .font(BrandFont.body(12))
+                            .foregroundStyle(BrandColor.textMuted)
+                            .lineLimit(1)
+                    } else if let detail = area.detailLine {
+                        Text(detail)
+                            .font(BrandFont.body(12))
+                            .foregroundStyle(BrandColor.textMuted)
+                            .lineLimit(1)
+                    }
+                }
+
+                Spacer(minLength: 8)
+
+                if !isActive {
+                    Button { Task { await activate(area) } } label: {
+                        Text("Use")
+                            .font(BrandFont.body(12, .semibold))
+                            .foregroundStyle(BrandColor.accent)
+                            .padding(.horizontal, 11).padding(.vertical, 7)
+                            .overlay(Capsule().stroke(BrandColor.accent.opacity(0.45), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(saving || busyId != nil)
+                }
+
+                deleteControl(area)
+            }
+        }
+    }
+
+    private var activeBadge: some View {
+        Text("ACTIVE")
+            .font(BrandFont.mono(9)).tracking(1.0)
+            .foregroundStyle(BrandColor.onAccent)
+            .padding(.horizontal, 7).padding(.vertical, 3)
+            .background(BrandColor.accent)
+            .clipShape(Capsule())
+    }
+
+    @ViewBuilder
+    private func deleteControl(_ area: ClientAddress) -> some View {
+        if busyId == area.id {
+            ProgressView().controlSize(.mini).tint(BrandColor.accent)
+        } else {
+            Button { Task { await deleteArea(area) } } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(BrandColor.textMuted)
+                    .padding(6)
+            }
+            .buttonStyle(.plain)
+            .disabled(saving || busyId != nil)
+            .accessibilityLabel("Remove \(area.displayLine)")
+        }
+    }
+
+    // MARK: - Radius
 
     private var radiusSection: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -170,9 +243,9 @@ struct ClientDiscoveryLocationView: View {
         return Button {
             radius = miles
             DiscoveryRadius.set(miles)   // local cache / no-area fallback
-            // When an area is set, persist the radius on its server row so it
+            // When an area is active, persist the radius on its server row so it
             // syncs across devices (best-effort; the local cache already updated).
-            if let id = area?.id {
+            if let id = activeArea?.id {
                 Task { try? await session.client.addresses.setSearchAreaRadius(id: id, radiusMiles: miles) }
             }
         } label: {
@@ -188,11 +261,13 @@ struct ClientDiscoveryLocationView: View {
         .buttonStyle(.plain)
     }
 
+    // MARK: - Add an area
+
     private var searchSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SignupFieldLabel(area == nil ? "Set your area" : "Change area")
+            SignupFieldLabel(areas.isEmpty ? "Set your area" : "Add an area")
             // AREA-kind autocomplete (city/ZIP), mirroring the web `kind=AREA`. Picking
-            // a result saves it immediately (see the onChange above), like the web sheet.
+            // a result saves it immediately (see the onChange above) and makes it active.
             PlacesAddressSearchField(
                 picked: $picked,
                 placeholder: "ZIP code or city (e.g. 92101 or San Diego)",
@@ -235,19 +310,30 @@ struct ClientDiscoveryLocationView: View {
         phase = .loading
         radius = DiscoveryRadius.current
         do {
-            let saved = try await session.client.addresses.searchArea()
-            area = saved
-            // The server radius (synced across devices) wins; keep the local
-            // UserDefaults cache in step so DiscoverView's fallback agrees.
-            if let serverRadius = saved?.radiusMiles {
-                radius = serverRadius
-                DiscoveryRadius.set(serverRadius)
-            }
+            areas = try await session.client.addresses.searchAreas()
+            adoptActiveRadius()
             phase = .loaded
         } catch let error as APIError {
             phase = .failed(error.userMessage)
         } catch {
             phase = .failed("Couldn’t load your discovery location.")
+        }
+    }
+
+    /// The active area's server radius (synced across devices) wins; keep the local
+    /// UserDefaults cache in step so DiscoverView's fallback agrees. Areas saved
+    /// without a radius leave the local value untouched.
+    private func adoptActiveRadius() {
+        if let serverRadius = activeArea?.radiusMiles {
+            radius = serverRadius
+            DiscoveryRadius.set(serverRadius)
+        }
+    }
+
+    private func reloadAreas() async {
+        if let refreshed = try? await session.client.addresses.searchAreas() {
+            areas = refreshed
+            adoptActiveRadius()
         }
     }
 
@@ -261,9 +347,10 @@ struct ClientDiscoveryLocationView: View {
             pickerResetToken += 1   // recreate the field empty for the next search
         }
         do {
-            area = try await session.client.addresses.saveSearchArea(
-                from: place, radiusMiles: radius, replacing: area?.id
-            )
+            // Additive: a fresh area becomes the active default (the server demotes
+            // the prior one) but the others are kept — so the list can hold many.
+            _ = try await session.client.addresses.saveSearchArea(from: place, radiusMiles: radius)
+            await reloadAreas()
         } catch let error as APIError {
             banner = error.userMessage
         } catch {
@@ -271,18 +358,33 @@ struct ClientDiscoveryLocationView: View {
         }
     }
 
-    private func clearArea() async {
-        guard let current = area, !clearing else { return }
-        clearing = true
+    private func activate(_ area: ClientAddress) async {
+        guard busyId == nil, !area.isDefault else { return }
+        busyId = area.id
         banner = nil
-        defer { clearing = false }
+        defer { busyId = nil }
         do {
-            try await session.client.addresses.delete(id: current.id)
-            area = nil
+            _ = try await session.client.addresses.setDefault(id: area.id)
+            await reloadAreas()
         } catch let error as APIError {
             banner = error.userMessage
         } catch {
-            banner = "Couldn’t clear your discovery area."
+            banner = "Couldn’t switch your active area."
+        }
+    }
+
+    private func deleteArea(_ area: ClientAddress) async {
+        guard busyId == nil else { return }
+        busyId = area.id
+        banner = nil
+        defer { busyId = nil }
+        do {
+            try await session.client.addresses.delete(id: area.id)
+            await reloadAreas()
+        } catch let error as APIError {
+            banner = error.userMessage
+        } catch {
+            banner = "Couldn’t remove that area."
         }
     }
 }

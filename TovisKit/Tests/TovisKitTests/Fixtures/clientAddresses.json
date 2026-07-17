@@ -16,6 +16,7 @@
       "placeId": "ChIJabc123",
       "lat": 34.0522,
       "lng": -118.2437,
+      "radiusMiles": null,
       "createdAt": "2026-06-20T17:00:00.000Z",
       "updatedAt": "2026-06-20T17:00:00.000Z"
     },
@@ -34,6 +35,7 @@
       "placeId": null,
       "lat": 34.0195,
       "lng": -118.4912,
+      "radiusMiles": 15,
       "createdAt": "2026-06-21T17:00:00.000Z",
       "updatedAt": "2026-06-21T17:00:00.000Z"
     }

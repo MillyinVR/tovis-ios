@@ -27,12 +27,25 @@ public final class AddressesService: Sendable {
     // MARK: - Search area (discovery origin)
 
     /// The saved SEARCH_AREA — the client's discovery origin — default first, or nil
-    /// if none is set. There's conceptually one; `saveSearchArea` keeps it that way.
+    /// if none is set. Collapses to the single active area; DiscoverView seeds from
+    /// this and only the default drives "pros near you".
     public func searchArea() async throws -> ClientAddress? {
+        try await searchAreas().first
+    }
+
+    /// ALL saved SEARCH_AREA rows, active (default) first then newest — every area
+    /// the client saved on any device. Unlike `searchArea()` this surfaces the full
+    /// set so the discovery settings can list them and switch the active one (web
+    /// parity with the Settings → Addresses "Search areas" list; a secondary area
+    /// created on web is otherwise invisible on iOS). The active area is always the
+    /// default, so `.first` here equals `searchArea()`.
+    public func searchAreas() async throws -> [ClientAddress] {
         try await list()
             .filter { $0.isSearchArea }
-            .sorted { $0.isDefault && !$1.isDefault }
-            .first
+            .sorted { lhs, rhs in
+                if lhs.isDefault != rhs.isDefault { return lhs.isDefault }
+                return lhs.createdAt > rhs.createdAt
+            }
     }
 
     /// Set (or replace) the discovery origin from a picked Places AREA result. Both
