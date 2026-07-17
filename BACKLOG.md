@@ -165,6 +165,29 @@ Source: `docs/PRO-WEB-PARITY.md` (all 5 pages parity-complete; these are the tai
   `ClientSignupView` just shows `session.errorMessage` with no bridge. Needs the
   error `code` plumbed through TovisKit (`AuthService`/`SessionStore`) so the view
   can distinguish `ACCOUNT_EXISTS`, then a button into the existing login screen.
+- [ ] **Native `/c/<shortCode>` referral signup + attribution** (follow-up to the
+  parity-gaps step-17b SafariView shim — web `/c/*` AASA + iOS `PublicReferralLink`
+  → in-app browser, shipped 2026-07-17). Today a tapped referral link opens the WEB
+  funnel in a cookieless in-app browser, so referral credit is only earned if the
+  tapper completes signup there. Build the native flow so a `/c/` tap routes into
+  `ClientSignupView` with the referral attributed. **Plumbing facts (already dug):**
+  `/c/{code}` → looks up the client's `CLIENT_REFERRAL` `NfcCard` → redirects to
+  `/t/{cardId}`, which MINTS a `TapIntent` and sends `→ /signup?ti={intentId}`;
+  `consumeTapIntent` runs on register/login and grants the `PENDING Referral`. Web
+  `POST /auth/register` **and** `/auth/login` already accept a `tapIntentId` body
+  field; native `RegisterRequest` carries only `intent`/`inviteToken` — no
+  `tapIntentId`. There is **no JSON API** to turn a short code into a `tapIntentId`
+  today (`/t/` mints it as a redirect side effect). So the build is one of:
+  **(B1)** new bearer-optional `POST /api/v1/nfc/resolve` returning
+  `{ tapIntentId, destination }` for a short code (mint the intent server-side,
+  reuse `buildTapRouting`), then native signup passes `tapIntentId`; a signed-in
+  tapper hits a `consume` variant. **(B2)** native register accepts a
+  `referralShortCode` and the backend runs the whole `c → t → intent → consume`
+  chain at register time. Also decide the **signed-in tapper** behaviour (a referral
+  is moot for an existing member — likely a gentle "you're already a member" / route
+  to their OWN `ClientReferralsView`, not the signup funnel). Cross-repo (web API +
+  iOS). ⚠️ Keep the `/c/*` AASA + `PublicReferralLink` — this REPLACES the SafariView
+  present with a native route; the parse + association stay.
 
 ## 5. Web↔iOS parity epic (audit 2026-07-08)
 Comprehensive screen-by-screen audit of both apps (findings + Tori's layout

@@ -316,6 +316,55 @@ struct PublicClaimLink: Equatable {
     }
 }
 
+// MARK: - Client-referral Universal Link
+
+/// A parsed `https://<host>/c/<shortCode>` Universal Link — a client's shareable
+/// referral link. The invite card and its QR emit exactly this URL (`ClientInviteCard`
+/// / `QRCodeImage`; web `lib/referral/inviteCard.ts`).
+///
+/// The web target redirects through the NFC tap-funnel (`/c → /t → signup`), which is
+/// web-only BY DESIGN — there is no native funnel screen — so RootView opens the
+/// canonical URL in the in-app browser (`SafariView`) rather than a native screen.
+/// That still HANDLES the path (a deterministic action, not the silent no-op an
+/// associated-but-unhandled path becomes), and keeps the app-emitted invite/QR links
+/// inside the app instead of bouncing to system Safari. SFSafariViewController does not
+/// re-trigger a Universal Link for our own domain, so opening `/c/…` in it can't loop.
+///
+/// `url` is rebuilt from the validated short code — never the raw `onOpenURL` URL — so
+/// an arbitrary https link can't ride into the browser (mirrors the sibling parsers'
+/// "never trust an arbitrary https URL from onOpenURL" rule).
+///
+/// ⚠️ A richer NATIVE flow (route `/c/` into `ClientSignupView` and plumb the tap
+/// intent through register/login so referral credit is granted without the cookieless
+/// browser) is backlogged — see `tovis-ios/BACKLOG.md`. Today the in-app browser is
+/// cookieless, so credit is granted only if the tapper completes signup there.
+struct PublicReferralLink: Equatable {
+    let shortCode: String
+    /// The canonical `www.tovis.app` funnel URL to open in-app — the host the app's
+    /// own invite card / QR already emit.
+    let url: URL
+
+    init?(url: URL) {
+        guard url.scheme?.lowercased() == "https" else { return nil }
+        let host = url.host?.lowercased()
+        guard host == "tovis.app" || host == "www.tovis.app" else { return nil }
+        // Path segments minus the leading "/": ["c", "<shortCode>"].
+        let parts = url.pathComponents.filter { $0 != "/" }
+        guard parts.count == 2, parts[0].lowercased() == "c" else { return nil }
+        let code = parts[1]
+        // Referral short codes are Crockford-ish base32 (web `lib/nfcShortCode.ts`):
+        // ASCII alphanumerics, ~8 chars. Accept only ASCII alphanumerics so a malformed
+        // or hostile path segment can't ride into the in-app browser. (The invite card /
+        // QR only ever emit the raw code, so this rejects nothing the app produces.)
+        guard !code.isEmpty, code.count <= 32,
+              code.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) }),
+              let canonical = URL(string: "https://www.tovis.app/c/\(code)")
+        else { return nil }
+        self.shortCode = code
+        self.url = canonical
+    }
+}
+
 // MARK: - Auth state (owns the TovisClient)
 
 @MainActor
@@ -403,6 +452,11 @@ final class SessionModel {
     /// (cold-launch + signed-out safe, like the reset cover).
     private(set) var pendingClaim: PublicClaimLink?
 
+    /// A tapped client-referral Universal Link (`/c/<shortCode>`). The web funnel
+    /// (`/c → /t → signup`) is web-only by design, so RootView opens it in the in-app
+    /// browser (`SafariView`) rather than a native screen. Cold-launch safe.
+    private(set) var pendingReferralFunnel: PublicReferralLink?
+
     /// Set when a plain client signup matched pro-created history and the backend
     /// sent a claim link to the on-file contact instead of creating an account
     /// (409 CLAIMABLE_HISTORY). The signup screen shows this as a "check your
@@ -410,8 +464,9 @@ final class SessionModel {
     private(set) var claimableHistoryMessage: String?
 
     /// Handle an incoming deep link / Universal Link. Password-reset, public-board,
-    /// claim + single-look links route to their native screens; the
-    /// `tovis://checkout/return?…` scheme feeds the active booking screen. Anything
+    /// claim + single-look links route to their native screens; a `/c/<shortCode>`
+    /// referral link opens the web funnel in the in-app browser (web-only by design);
+    /// the `tovis://checkout/return?…` scheme feeds the active booking screen. Anything
     /// else is ignored so stray links are safe.
     func handleDeepLink(_ url: URL) {
         if let reset = PasswordResetLink(url: url) {
@@ -432,6 +487,12 @@ final class SessionModel {
             pushDeepLink = PushDeepLink(target: .look(id: look.id))
             return
         }
+        // A client-referral link (`/c/<shortCode>`). The web tap-funnel is web-only by
+        // design, so open the canonical URL in the in-app browser (see the type doc).
+        if let referral = PublicReferralLink(url: url) {
+            pendingReferralFunnel = referral
+            return
+        }
         guard let parsed = CheckoutReturn(url: url) else { return }
         checkoutReturn = parsed
         signalRefresh()
@@ -448,6 +509,9 @@ final class SessionModel {
 
     /// Dismiss the native claim screen.
     func clearClaim() { pendingClaim = nil }
+
+    /// Dismiss the in-app referral browser (done or swiped away).
+    func clearReferralFunnel() { pendingReferralFunnel = nil }
 
     /// Clear the cold-claim "check your email/text" message (e.g. on retry/back).
     func clearClaimableHistory() { claimableHistoryMessage = nil }
@@ -1137,6 +1201,20 @@ struct RootView: View {
                 NavigationStack {
                     ClaimView(token: claim.token)
                 }
+            }
+        }
+        // A tapped `/c/<shortCode>` referral link. The web tap-funnel (`/c → /t →
+        // signup`) is web-only by design — there is no native funnel screen — so open
+        // the canonical URL in the in-app browser, the same way `/looks/tags` pages
+        // open. That keeps the app's own invite/QR links inside the app instead of
+        // bouncing to system Safari. (SFSafariViewController does not re-trigger the
+        // Universal Link for our own domain, so there is no loop.)
+        .sheet(isPresented: Binding(
+            get: { session.pendingReferralFunnel != nil },
+            set: { if !$0 { session.clearReferralFunnel() } }
+        )) {
+            if let referral = session.pendingReferralFunnel {
+                SafariView(url: referral.url) { session.clearReferralFunnel() }
             }
         }
     }
