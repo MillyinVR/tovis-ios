@@ -180,10 +180,3 @@ public extension ClientOpening {
     }
 }
 
-private extension String {
-    /// Trimmed, or nil when blank — mirrors the web `str()` guard used by `parseCard`.
-    var trimmedOrNil: String? {
-        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
-    }
-}

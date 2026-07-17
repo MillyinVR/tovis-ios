@@ -37,7 +37,7 @@ public enum ProNameDisplay: String, Decodable, Sendable {
 
 /// The richer professional reference carried by bookings (has the real-name
 /// fields + the display toggle, unlike the leaner `HomeProfessional`).
-public struct BookingProfessional: Decodable, Sendable, Identifiable {
+public struct BookingProfessional: Decodable, Sendable, Identifiable, ProPublicNameSource {
     public let id: String
     public let businessName: String?
     public let firstName: String?
@@ -47,32 +47,9 @@ public struct BookingProfessional: Decodable, Sendable, Identifiable {
     public let location: String?
     public let timeZone: String?
 
-    /// Port of `pickProfessionalPublicDisplayName` (lib/privacy/professionalDisplayName.ts):
-    /// honor the pro's chosen mode, degrading to the other forms so solo pros
-    /// never render as a blank or a raw email.
-    public var displayName: String {
-        let business = Self.trimmed(businessName)
-        let real = [Self.trimmed(firstName), Self.trimmed(lastName)]
-            .compactMap { $0 }.joined(separator: " ")
-        let realName = real.isEmpty ? nil : real
-        let handleLabel = Self.trimmed(handle).map { "@\($0)" }
-
-        switch nameDisplay {
-        case .realName:
-            return realName ?? business ?? handleLabel ?? Self.fallback
-        case .handle:
-            return handleLabel ?? business ?? realName ?? Self.fallback
-        case .businessName, .unknown, .none:
-            return business ?? realName ?? Self.fallback
-        }
-    }
-
-    private static let fallback = "Your pro"
-
-    private static func trimmed(_ value: String?) -> String? {
-        let t = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return t.isEmpty ? nil : t
-    }
+    /// The pro's public name — "Your pro" when they have no usable name token
+    /// (this is a booking the viewer owns, so the possessive reads right).
+    public var displayName: String { publicDisplayName(fallback: "Your pro") }
 }
 
 // MARK: - Booking

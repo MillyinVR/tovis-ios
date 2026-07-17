@@ -91,7 +91,7 @@ public struct ClientMeFollowingItem: Decodable, Sendable, Identifiable {
 
 /// A pro preview (LooksProProfilePreviewDto). Carries the name-display toggle so
 /// it resolves the same public name the web does.
-public struct MeProPreview: Decodable, Sendable, Identifiable {
+public struct MeProPreview: Decodable, Sendable, Identifiable, ProPublicNameSource {
     public let id: String
     public let businessName: String?
     public let firstName: String?
@@ -102,36 +102,15 @@ public struct MeProPreview: Decodable, Sendable, Identifiable {
     public let professionType: String?
     public let avatarUrl: String?
 
-    /// Port of `pickProfessionalPublicDisplayName` — same fallbacks as
-    /// `BookingProfessional.displayName`.
-    public var displayName: String {
-        let business = Self.trimmed(businessName)
-        let real = [Self.trimmed(firstName), Self.trimmed(lastName)]
-            .compactMap { $0 }.joined(separator: " ")
-        let realName = real.isEmpty ? nil : real
-        let handleLabel = Self.trimmed(handle).map { "@\($0)" }
-
-        switch nameDisplay {
-        case .realName:
-            return realName ?? business ?? handleLabel ?? Self.fallback
-        case .handle:
-            return handleLabel ?? business ?? realName ?? Self.fallback
-        case .businessName, .unknown, .none:
-            return business ?? realName ?? Self.fallback
-        }
-    }
+    /// The pro's public name — "Professional" when they have no usable name
+    /// token (this is a browsing surface, so the neutral noun reads right; it is
+    /// also web's own default fallback).
+    public var displayName: String { publicDisplayName(fallback: "Professional") }
 
     /// "Hairstylist · Los Angeles" — mirrors the web `buildFollowingSubtitle`.
     public var subtitle: String? {
-        let parts = [Self.trimmed(professionType), Self.trimmed(location)].compactMap { $0 }
+        let parts = [professionType?.trimmedOrNil, location?.trimmedOrNil].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
-    }
-
-    private static let fallback = "Professional"
-
-    private static func trimmed(_ value: String?) -> String? {
-        let t = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return t.isEmpty ? nil : t
     }
 }
 

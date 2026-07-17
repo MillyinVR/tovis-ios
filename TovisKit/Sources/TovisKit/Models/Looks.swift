@@ -88,7 +88,7 @@ public struct LooksFeedItem: Decodable, Sendable, Identifiable {
 /// The pro credited on a look. Mirrors `LooksProfessionalDto`; carries the
 /// name-display toggle so it resolves the same public name the web does
 /// (port of `pickProfessionalPublicDisplayName`).
-public struct LooksProfessional: Decodable, Sendable, Identifiable, Hashable {
+public struct LooksProfessional: Decodable, Sendable, Identifiable, Hashable, ProPublicNameSource {
     public let id: String
     public let businessName: String?
     public let firstName: String?
@@ -100,27 +100,10 @@ public struct LooksProfessional: Decodable, Sendable, Identifiable, Hashable {
     public let location: String?
     public let followerCount: Int
 
-    public var displayName: String {
-        let business = Self.trimmed(businessName)
-        let real = [Self.trimmed(firstName), Self.trimmed(lastName)]
-            .compactMap { $0 }.joined(separator: " ")
-        let realName = real.isEmpty ? nil : real
-        let handleLabel = Self.trimmed(handle).map { "@\($0)" }
-
-        switch nameDisplay {
-        case .realName: return realName ?? business ?? handleLabel ?? Self.fallback
-        case .handle: return handleLabel ?? business ?? realName ?? Self.fallback
-        case .businessName, .unknown, .none: return business ?? realName ?? Self.fallback
-        }
-    }
-
-    public var handleLabel: String? { Self.trimmed(handle).map { "@\($0)" } }
-
-    private static let fallback = "A pro"
-    private static func trimmed(_ value: String?) -> String? {
-        let t = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return t.isEmpty ? nil : t
-    }
+    /// The pro's public name — "A pro" when they have no usable name token (a
+    /// look's author is a stranger to the viewer, so the indefinite article
+    /// reads right).
+    public var displayName: String { publicDisplayName(fallback: "A pro") }
 }
 
 /// A client who published a look (PII-safe: handle + avatar only). `Hashable` so
