@@ -23,6 +23,12 @@ struct BookingFlowView: View {
     /// General availability drives the hold, so a slot that's no longer open simply
     /// isn't preselected and the client picks another time.
     var preselectedSlot: String? = nil
+    /// The `LastMinuteOpening.id` when this flow is CLAIMING a last-minute opening
+    /// (openings feed / priority offer). Passed through to `finalize` so the server
+    /// consumes the opening and applies the tier incentive the client was shown —
+    /// without it the opening stays claimable and the discount is silently dropped.
+    /// `nil` for an ordinary booking or a reschedule.
+    var openingId: String? = nil
 
     private var isReschedule: Bool { rescheduleBookingId != nil }
 
@@ -484,7 +490,7 @@ struct BookingFlowView: View {
             } else {
                 let result = try await session.client.booking.finalize(
                     holdId: hold.id, offeringId: offering.id, locationType: mode,
-                    addOnIds: Array(selectedAddOnIds)
+                    addOnIds: Array(selectedAddOnIds), openingId: openingId
                 )
                 scheduledFor = result.scheduledFor
             }

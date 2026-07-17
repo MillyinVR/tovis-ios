@@ -39,6 +39,11 @@ struct PriorityOffersView: View {
         let proName: String
         let offering: ProOffering
         let preselectedSlot: String
+        /// The `LastMinuteOpening.id` so finalize consumes the opening + applies its
+        /// incentive (web parity). Optional: the priority-offer DTO gains this field
+        /// in a paired web change, so it's `nil` until that deploys — inert-safe (the
+        /// booking still succeeds, just without server-side opening consumption).
+        let openingId: String?
         var id: String { offering.id + preselectedSlot }
     }
 
@@ -93,7 +98,8 @@ struct PriorityOffersView: View {
                 professionalId: launch.professionalId,
                 proName: launch.proName,
                 offering: launch.offering,
-                preselectedSlot: launch.preselectedSlot
+                preselectedSlot: launch.preselectedSlot,
+                openingId: launch.openingId
             )
         }
         .refreshable { await load() }
@@ -335,7 +341,8 @@ struct PriorityOffersView: View {
                     professionalId: professionalId,
                     proName: offer.proName,
                     offering: offering,
-                    preselectedSlot: offer.startAt
+                    preselectedSlot: offer.startAt,
+                    openingId: offer.openingId
                 )
             } else {
                 proNav = ProNav(id: professionalId, name: offer.proName)

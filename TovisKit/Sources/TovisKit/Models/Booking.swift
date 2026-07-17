@@ -107,6 +107,14 @@ struct FinalizeBookingRequest: Encodable, Sendable {
     let locationType: String
     let addOnIds: [String]
     let source: String
+    /// The `LastMinuteOpening.id` when this booking is CLAIMING a last-minute
+    /// opening (openings feed / priority offer). The server (finalize →
+    /// `writeBoundary`) uses it to consume the opening (flip it to BOOKED, guarding
+    /// against a double-claim) AND to apply the tier incentive the client was shown,
+    /// so a claimed opening is charged at the advertised discount. `nil` for a normal
+    /// booking — and, being optional, it's omitted from the encoded body then, so the
+    /// finalize idempotency nonce (derived from the body) is unchanged for those.
+    let openingId: String?
 }
 
 struct FinalizeBookingResponse: Decodable, Sendable {
