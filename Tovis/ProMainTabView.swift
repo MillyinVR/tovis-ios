@@ -19,6 +19,10 @@ struct ProMainTabView: View {
     /// A conversation surfaced by a tapped message push (`/messages/thread/{id}`),
     /// presented over the pro shell. nil when nothing is being deep-linked.
     @State private var deepLinkThread: MessageThread?
+    /// A single look surfaced by a tapped share link (`/looks/{id}` Universal
+    /// Link) or a look push, presented over the pro shell. A look is role-less —
+    /// a pro tapping a shared look opens it without leaving their workspace.
+    @State private var deepLinkLook: LookPresentation?
     /// A pro booking surfaced by a `/pro/bookings/{id}` push, presented over the
     /// shell (id-based self-fetch). nil when nothing is being deep-linked.
     @State private var deepLinkProBooking: DeepLinkBookingRef?
@@ -88,6 +92,19 @@ struct ProMainTabView: View {
                     .toolbar {
                         ToolbarItem(placement: .topBarLeading) {
                             Button("Done") { deepLinkThread = nil }
+                                .tint(BrandColor.textSecondary)
+                        }
+                    }
+            }
+            .tint(BrandColor.accent)
+        }
+        // A tapped `/looks/{id}` share link → the single-look detail.
+        .sheet(item: $deepLinkLook) { look in
+            NavigationStack {
+                LookDetailView(lookId: look.id)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Done") { deepLinkLook = nil }
                                 .tint(BrandColor.textSecondary)
                         }
                     }
@@ -178,9 +195,9 @@ struct ProMainTabView: View {
         switch link.target {
         case let .thread(id):
             deepLinkThread = try? await session.client.messages.thread(id: id)
-        case .look:
-            // No native single-look detail yet — land on the Looks feed.
-            tab = .looks
+        case let .look(id):
+            // A shared look (Universal Link) or a look push → the native detail.
+            deepLinkLook = LookPresentation(id: id)
         case let .proBooking(id, step):
             // Carry the `step` so the detail scrolls to that section (aftercare);
             // the booking detail also links onward to the session hub.

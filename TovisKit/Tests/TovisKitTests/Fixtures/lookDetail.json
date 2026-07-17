@@ -1,0 +1,108 @@
+{
+  "ok": true,
+  "item": {
+    "id": "cmrbry49n005vpo0df2x71ceu",
+    "caption": "Lived-in balayage with soft money piece \u2728",
+    "status": "PUBLISHED",
+    "visibility": "PUBLIC",
+    "moderationStatus": "APPROVED",
+    "publishedAt": "2026-04-18T12:00:00.000Z",
+    "createdAt": "2026-07-08T07:46:42.587Z",
+    "updatedAt": "2026-07-08T07:47:29.792Z",
+    "professional": {
+      "id": "cmrbry44b0003po0d5f1fcs2u",
+      "businessName": "TOVIS Test Pro",
+      "firstName": "Test",
+      "lastName": "Professional",
+      "handle": "tovis-test-pro",
+      "nameDisplay": "BUSINESS_NAME",
+      "avatarUrl": null,
+      "professionType": "COSMETOLOGIST",
+      "location": "Los Angeles, CA",
+      "verificationStatus": "APPROVED",
+      "isPremium": false
+    },
+    "clientAuthor": null,
+    "service": {
+      "id": "cmrbry482000xpo0di0hbjtni",
+      "name": "Balayage",
+      "category": {
+        "name": "Color",
+        "slug": "hair-color"
+      }
+    },
+    "primaryMedia": {
+      "id": "cmrbry49h005hpo0dx44nzvlr",
+      "url": "https://rqhhvuaoksuvbvlypztn.supabase.co/storage/v1/object/public/media-public/seed/look-1.png",
+      "thumbUrl": null,
+      "mediaType": "IMAGE",
+      "caption": "Lived-in balayage with soft money piece \u2728",
+      "createdAt": "2026-07-08T07:46:42.581Z",
+      "focalX": null,
+      "focalY": null,
+      "review": {
+        "id": "seed-review-balayage-001",
+        "rating": 5,
+        "headline": "Best balayage I have ever had",
+        "helpfulCount": 12
+      }
+    },
+    "before": {
+      "id": "cmrbry49i005jpo0dgjdcwpeh",
+      "thumbUrl": "https://rqhhvuaoksuvbvlypztn.supabase.co/storage/v1/object/public/media-public/seed/look-2.png",
+      "fullUrl": "https://rqhhvuaoksuvbvlypztn.supabase.co/storage/v1/object/public/media-public/seed/look-2.png"
+    },
+    "tags": [
+      {
+        "slug": "balayage",
+        "display": "balayage"
+      },
+      {
+        "slug": "lived-in-color",
+        "display": "livedInColor"
+      },
+      {
+        "slug": "money-piece",
+        "display": "moneyPiece"
+      }
+    ],
+    "assets": [
+      {
+        "id": "cmrbry49p005xpo0dyusgbzwk",
+        "sortOrder": 0,
+        "mediaAssetId": "cmrbry49h005hpo0dx44nzvlr",
+        "media": {
+          "id": "cmrbry49h005hpo0dx44nzvlr",
+          "url": "https://rqhhvuaoksuvbvlypztn.supabase.co/storage/v1/object/public/media-public/seed/look-1.png",
+          "thumbUrl": null,
+          "mediaType": "IMAGE",
+          "caption": "Lived-in balayage with soft money piece \u2728",
+          "createdAt": "2026-07-08T07:46:42.581Z",
+          "focalX": null,
+          "focalY": null,
+          "review": {
+            "id": "seed-review-balayage-001",
+            "rating": 5,
+            "headline": "Best balayage I have ever had",
+            "helpfulCount": 12
+          }
+        }
+      }
+    ],
+    "_count": {
+      "likes": 128,
+      "comments": 2,
+      "saves": 42,
+      "shares": 7,
+      "views": 2304
+    },
+    "viewerContext": {
+      "isAuthenticated": false,
+      "viewerLiked": false,
+      "viewerSaved": false,
+      "canComment": true,
+      "canSave": true,
+      "isOwner": false
+    }
+  }
+}

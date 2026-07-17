@@ -28,6 +28,10 @@ struct MainTabView: View {
     /// A conversation surfaced by a tapped message push (`/messages/thread/{id}`),
     /// presented over the shell. nil when nothing is being deep-linked.
     @State private var deepLinkThread: MessageThread?
+    /// A single look surfaced by a tapped share link (`/looks/{id}` Universal
+    /// Link) or a look push, presented over the shell. Carries only the id — the
+    /// detail screen self-fetches, so nothing has to be resolved before routing.
+    @State private var deepLinkLook: LookPresentation?
     /// The activity feed surfaced by a `/client/activity` push, presented over the
     /// shell. Mirrors HomeView's own notifications sheet.
     @State private var showActivity = false
@@ -97,6 +101,18 @@ struct MainTabView: View {
             }
             .tint(BrandColor.accent)
         }
+        .sheet(item: $deepLinkLook) { look in
+            NavigationStack {
+                LookDetailView(lookId: look.id)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Done") { deepLinkLook = nil }
+                                .tint(BrandColor.textSecondary)
+                        }
+                    }
+            }
+            .tint(BrandColor.accent)
+        }
         // NotificationsView brings its own NavigationStack + Done button (same as
         // HomeView's notifications sheet) — present it bare.
         .sheet(isPresented: $showActivity) { NotificationsView() }
@@ -142,9 +158,9 @@ struct MainTabView: View {
             }
         case let .thread(id):
             deepLinkThread = try? await session.client.messages.thread(id: id)
-        case .look:
-            // No native single-look detail yet — land on the Looks feed.
-            tab = .looks
+        case let .look(id):
+            // A shared look (Universal Link) or a look push → the native detail.
+            deepLinkLook = LookPresentation(id: id)
         case let .offers(accept):
             // The full priority-offers + waitlist-offers screen (countdown claim/
             // pass + pro-proposed-time confirm/decline). `accept` floats + highlights

@@ -146,7 +146,7 @@ struct LooksView: View {
         .sheet(item: $commentsFor) { item in
             // TikTok-style: opens as a partial-height sheet (presentation detents
             // are managed inside the view so it can expand when the input is tapped).
-            LookCommentsView(look: item) { delta in
+            LookCommentsView(lookId: item.id, commentsCount: commentCount(item)) { delta in
                 commentCounts[item.id] = commentCount(item) + delta
             }
         }
@@ -508,17 +508,15 @@ struct LooksView: View {
             if navPath.last != pro { navPath.append(pro) }
         }
 
-        guard let serviceId = item.serviceId else { fallbackToProfile(); return }
-        do {
-            let profile = try await session.client.profiles.professional(id: pro.id)
-            guard let offering = profile.offerings.first(where: { $0.serviceId == serviceId }) else {
-                fallbackToProfile()
-                return
-            }
-            bookLaunch = BookLaunch(pro: pro, offering: offering)
-        } catch {
+        guard let offering = await LookBooking.offering(
+            client: session.client,
+            professionalId: pro.id,
+            serviceId: item.serviceId
+        ) else {
             fallbackToProfile()
+            return
         }
+        bookLaunch = BookLaunch(pro: pro, offering: offering)
     }
 
     private func toggleLike(_ item: LooksFeedItem) async {
@@ -951,19 +949,9 @@ private struct LookSlide: View {
             .shadow(color: .black.opacity(0.45), radius: 4, y: 1)
     }
 
-    private func countLabel(_ n: Int) -> String {
-        if n >= 1000 {
-            let k = Double(n) / 1000
-            return k.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(k))K" : String(format: "%.1fK", k)
-        }
-        return "\(n)"
-    }
+    // Shared with the single-look detail so the same look can't read "1.2K" here
+    // and "1200" there — see TovisKit's CompactCount.
+    private func countLabel(_ n: Int) -> String { CompactCount.label(n) }
 
-    private func followerLabel(_ n: Int) -> String {
-        if n >= 1000 {
-            let k = Double(n) / 1000
-            return (k.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(k))K" : String(format: "%.1fK", k)) + " followers"
-        }
-        return n == 1 ? "1 follower" : "\(n) followers"
-    }
+    private func followerLabel(_ n: Int) -> String { CompactCount.followers(n) }
 }
