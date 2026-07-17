@@ -28,6 +28,8 @@ struct MeView: View {
     @State private var inviteLink: ClientInviteLink?
     /// Drives the "New board" create sheet from the BOARDS tab.
     @State private var showingCreateBoard = false
+    /// Drives the Activity feed sheet from the header bell.
+    @State private var showActivity = false
 
     var body: some View {
         NavigationStack {
@@ -100,7 +102,10 @@ struct MeView: View {
                     .tracking(1.8)
                     .foregroundStyle(BrandColor.textSecondary)
                 Spacer()
-                settingsButton(me)
+                HStack(spacing: 14) {
+                    activityBell(me)
+                    settingsButton(me)
+                }
             }
 
             HStack(alignment: .top, spacing: 16) {
@@ -132,6 +137,41 @@ struct MeView: View {
             }
             .padding(.top, 20)
         }
+    }
+
+    /// The Activity bell + unread badge, mirroring web's Me header (`ClientMeDashboard`
+    /// renders the same bell beside the workspace switcher, linking to /client/activity).
+    ///
+    /// The count rides `GET /api/v1/me` (`activityUnreadCount`) — already fetched for
+    /// this screen, so the badge costs no extra request. Web caps the badge at "9+";
+    /// so do we.
+    private func activityBell(_ me: ClientMe) -> some View {
+        Button { showActivity = true } label: {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: "bell")
+                    .font(.system(size: 21))
+                    .foregroundStyle(BrandColor.textSecondary)
+                    // Reserve the badge's corner so the glyph doesn't shift when a
+                    // badge appears, and keep a comfortable tap target.
+                    .frame(width: 30, height: 30)
+
+                if me.activityUnreadCount > 0 {
+                    Text(me.activityUnreadCount > 9 ? "9+" : "\(me.activityUnreadCount)")
+                        .font(BrandFont.mono(9))
+                        .foregroundStyle(BrandColor.onAccent)
+                        .padding(.horizontal, 4)
+                        .frame(minWidth: 15, minHeight: 15)
+                        .background(BrandColor.accent, in: Capsule())
+                        .offset(x: 4, y: -3)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(
+            me.activityUnreadCount > 0
+                ? "Activity, \(me.activityUnreadCount) unread"
+                : "Activity"
+        )
     }
 
     /// The gear that opens the Settings hub (profile · notifications · appearance ·
@@ -355,6 +395,10 @@ struct MeView: View {
         .sheet(isPresented: $showingCreateBoard) {
             CreateBoardView { _ in Task { await load() } }
         }
+        // ClientActivityView brings its own NavigationStack + Done button, so it is
+        // presented bare (same as HomeView's notifications sheet). Marking read there
+        // signalRefreshes, which reloads this screen and drops the bell's badge.
+        .sheet(isPresented: $showActivity) { ClientActivityView() }
     }
 
     @ViewBuilder

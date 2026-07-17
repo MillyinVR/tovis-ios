@@ -1,0 +1,108 @@
+{
+    "ok": true,
+    "activity": {
+        "items": [
+            {
+                "id": "seed_act_1",
+                "iconKind": "follow",
+                "who": "@ava",
+                "action": "started following you",
+                "highlight": null,
+                "timestamp": "2026-07-17T07:46:07.279Z",
+                "unread": true,
+                "href": "/u/ava",
+                "followBack": {
+                    "handle": "ava",
+                    "alreadyFollowing": false
+                }
+            },
+            {
+                "id": "seed_act_2",
+                "iconKind": "follow",
+                "who": "Someone",
+                "action": "started following you",
+                "highlight": null,
+                "timestamp": "2026-07-17T07:40:37.279Z",
+                "unread": true,
+                "href": null,
+                "followBack": null
+            },
+            {
+                "id": "seed_act_8",
+                "iconKind": "milestone",
+                "who": "Your look",
+                "action": "hit 50 likes",
+                "highlight": null,
+                "timestamp": "2026-07-17T06:46:37.279Z",
+                "unread": true,
+                "href": "/looks/cmrbry49r0063po0dyrjkeq1n",
+                "followBack": null
+            },
+            {
+                "id": "seed_act_3",
+                "iconKind": "comment",
+                "who": "@ava",
+                "action": "commented on your look",
+                "highlight": "\u201cObsessed with this colour!\u201d",
+                "timestamp": "2026-07-17T04:46:37.279Z",
+                "unread": true,
+                "href": "/looks/cmrbry49q005zpo0dfdcsrjy2",
+                "followBack": null
+            },
+            {
+                "id": "seed_act_4",
+                "iconKind": "like",
+                "who": "@ava",
+                "action": "liked your look",
+                "highlight": null,
+                "timestamp": "2026-07-15T07:46:37.279Z",
+                "unread": false,
+                "href": "/looks/cmrbry49r0063po0dyrjkeq1n",
+                "followBack": null
+            },
+            {
+                "id": "seed_act_5",
+                "iconKind": "like",
+                "who": "4 people",
+                "action": "liked your look",
+                "highlight": null,
+                "timestamp": "2026-07-08T07:46:37.279Z",
+                "unread": false,
+                "href": "/looks/cmrbry49n005vpo0df2x71ceu",
+                "followBack": null
+            },
+            {
+                "id": "seed_act_6",
+                "iconKind": "save",
+                "who": "3 saves",
+                "action": "on your look",
+                "highlight": null,
+                "timestamp": "2026-06-27T07:46:37.279Z",
+                "unread": false,
+                "href": "/looks/cmrbry49q005zpo0dfdcsrjy2",
+                "followBack": null
+            },
+            {
+                "id": "seed_act_7",
+                "iconKind": "new-look",
+                "who": "A pro you follow",
+                "action": "posted a new look",
+                "highlight": "\u201cLived-in balayage with soft money piece\u201d",
+                "timestamp": "2026-06-07T07:46:37.279Z",
+                "unread": false,
+                "href": "/looks/cmrbry49n005vpo0df2x71ceu",
+                "followBack": null
+            }
+        ],
+        "unreadCount": 4,
+        "markReadEventKeys": [
+            "CLIENT_FOLLOW",
+            "LOOK_COMMENTED",
+            "LOOK_COMMENT_REPLIED",
+            "LOOK_LIKED",
+            "LOOK_SAVED",
+            "LOOK_NEW_FROM_FOLLOWED_PRO",
+            "LOOK_MILESTONE_REACHED"
+        ]
+    }
+}

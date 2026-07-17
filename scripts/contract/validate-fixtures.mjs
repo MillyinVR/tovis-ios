@@ -23,6 +23,10 @@ const schemaPath = process.env.TOVIS_API_SCHEMA || defaultSchema
 const CHECKS = [
   { file: 'clientHome.json', def: 'ClientHomeDTO', pick: (d) => [d.home] },
   { file: 'clientMe.json', def: 'ClientMePageDTO', pick: (d) => [d.me] },
+  // Validate the whole feed (not just the rows) so `unreadCount` +
+  // `markReadEventKeys` — the bell's badge and the mark-read allowlist — are
+  // covered too.
+  { file: 'clientActivity.json', def: 'ClientActivityFeedDTO', pick: (d) => [d.activity] },
   { file: 'messagesThreads.json', def: 'MessageThreadListItemDTO', pick: (d) => d.threads },
   { file: 'clientInviteLink.json', def: 'ClientInviteLinkResponseDTO', pick: (d) => [d] },
   { file: 'publicClaim.json', def: 'ClaimPublicViewResponseDTO', pick: (d) => [d] },

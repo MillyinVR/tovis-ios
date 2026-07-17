@@ -35,6 +35,7 @@ struct MainTabView: View {
     /// The activity feed surfaced by a `/client/activity` push, presented over the
     /// shell. Mirrors HomeView's own notifications sheet.
     @State private var showActivity = false
+    /// (The Me tab's header bell presents the same screen from its own state.)
     /// The priority-offers screen surfaced by a `/client/offers` push, presented
     /// over the shell. Carries the `?accept=` recipient id to float + highlight.
     @State private var offersPresentation: OffersPresentation?
@@ -113,9 +114,12 @@ struct MainTabView: View {
             }
             .tint(BrandColor.accent)
         }
-        // NotificationsView brings its own NavigationStack + Done button (same as
-        // HomeView's notifications sheet) — present it bare.
-        .sheet(isPresented: $showActivity) { NotificationsView() }
+        // ClientActivityView brings its own NavigationStack + Done button (same as
+        // HomeView's notifications sheet) — present it bare. This used to open
+        // NotificationsView as a placeholder, so a /client/activity push landed on
+        // the transactional notification centre instead of the engagement feed it
+        // named.
+        .sheet(isPresented: $showActivity) { ClientActivityView() }
         // PriorityOffersView owns no stack (it's also pushed from Home), so wrap it
         // in one + a Done button when presenting from a push, like the booking sheet.
         .sheet(item: $offersPresentation) { presentation in
