@@ -28,6 +28,7 @@ struct ProMediaManagerView: View {
 
     @State private var phase: Phase = .loading
     @State private var editing: ProManagedMediaItem?
+    @State private var composing = false
 
     var body: some View {
         ScrollView {
@@ -59,12 +60,23 @@ struct ProMediaManagerView: View {
         .navigationBarTitleDisplayMode(.large)
         .refreshable { await load() }
         .task { if case .loading = phase { await load() } }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { composing = true } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel("New post")
+            }
+        }
         .sheet(item: $editing) { item in
             if case let .loaded(_, options) = phase {
                 ProMediaEditSheet(item: item, serviceOptions: options) {
                     Task { await load() }
                 }
             }
+        }
+        .sheet(isPresented: $composing) {
+            ProNewMediaPostView { Task { await load() } }
         }
         .tint(BrandColor.accent)
     }
@@ -131,12 +143,27 @@ struct ProMediaManagerView: View {
     }
 
     private var emptyState: some View {
-        Text("No media yet. Upload your work from a session, a review, or your portfolio and it will show up here.")
-            .font(BrandFont.body(13))
-            .foregroundStyle(BrandColor.textMuted)
-            .frame(maxWidth: .infinity)
-            .multilineTextAlignment(.center)
-            .padding(.vertical, 40)
+        VStack(spacing: 14) {
+            // Was "…it will show up here" — accurate while media could only arrive
+            // from a session, a review or the web portfolio. The + makes this the
+            // place posts START, so the copy points at it.
+            Text("No media yet. Tap + to post your work, or add it from a session or a review.")
+                .font(BrandFont.body(13))
+                .foregroundStyle(BrandColor.textMuted)
+                .multilineTextAlignment(.center)
+
+            Button { composing = true } label: {
+                Text("New post")
+                    .font(BrandFont.body(14, .semibold))
+                    .foregroundStyle(BrandColor.onAccent)
+                    .padding(.vertical, 11).padding(.horizontal, 20)
+                    .background(BrandColor.accent)
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
     }
 
     private func errorState(_ message: String) -> some View {
@@ -188,8 +215,7 @@ struct ProMediaEditSheet: View {
     @State private var caption: String
     @State private var isEligibleForLooks: Bool
     @State private var isFeaturedInPortfolio: Bool
-    @State private var selectedServiceIds: Set<String>
-    @State private var serviceQuery = ""
+    @State private var selectedServiceIds: [String]
     @State private var saving = false
     @State private var error: String?
     @State private var confirmingDelete = false
@@ -212,7 +238,7 @@ struct ProMediaEditSheet: View {
         _caption = State(initialValue: item.caption ?? "")
         _isEligibleForLooks = State(initialValue: item.isEligibleForLooks)
         _isFeaturedInPortfolio = State(initialValue: item.isFeaturedInPortfolio)
-        _selectedServiceIds = State(initialValue: Set(item.serviceIds))
+        _selectedServiceIds = State(initialValue: item.serviceIds)
         _beforeAssetId = State(initialValue: item.beforeAssetId)
     }
 
@@ -225,16 +251,15 @@ struct ProMediaEditSheet: View {
     }
 
     private var computedVisibility: Visibility {
-        (isEligibleForLooks || isFeaturedInPortfolio) ? .pub : .client
+        // The rule lives on the TovisKit model (shared with the new-post composer
+        // and covered by `swift test`); this view only maps it to its own labels.
+        MediaPostVisibility.derived(
+            isEligibleForLooks: isEligibleForLooks,
+            isFeaturedInPortfolio: isFeaturedInPortfolio
+        ) == .pub ? .pub : .client
     }
 
     private var canSave: Bool { !saving && !selectedServiceIds.isEmpty }
-
-    private var filteredOptions: [ProMediaServiceTag] {
-        let q = serviceQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !q.isEmpty else { return serviceOptions }
-        return serviceOptions.filter { $0.name.lowercased().contains(q) }
-    }
 
     var body: some View {
         NavigationStack {
@@ -359,51 +384,13 @@ struct ProMediaEditSheet: View {
     private var servicesSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             fieldLabel("Service tags")
-
-            if !selectedServiceIds.isEmpty {
-                FlowLayout(spacing: 8, lineSpacing: 8) {
-                    ForEach(selectedTags) { tag in
-                        Button { selectedServiceIds.remove(tag.serviceId) } label: {
-                            HStack(spacing: 5) {
-                                Text(tag.name).font(BrandFont.body(12, .semibold))
-                                Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
-                            }
-                            .foregroundStyle(BrandColor.onAccent)
-                            .padding(.vertical, 6).padding(.horizontal, 11)
-                            .background(BrandColor.accent)
-                            .clipShape(Capsule())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            } else {
-                Text("Attach at least 1 service before saving.")
-                    .font(BrandFont.body(12))
-                    .foregroundStyle(BrandColor.ember)
-            }
-
-            TextField("Search services", text: $serviceQuery)
-                .font(BrandFont.body(14))
-                .foregroundStyle(BrandColor.textPrimary)
-                .padding(.vertical, 9).padding(.horizontal, 12)
-                .background(BrandColor.bgSecondary)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
-
-            ScrollView {
-                VStack(spacing: 0) {
-                    ForEach(filteredOptions) { option in
-                        optionRow(option)
-                        if option.id != filteredOptions.last?.id {
-                            Divider().overlay(BrandColor.textMuted.opacity(0.12))
-                        }
-                    }
-                }
-            }
-            .frame(maxHeight: 240)
-            .background(BrandColor.bgSecondary)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            // Shared with the new-post composer — one picker, one behavior.
+            ProServiceTagPicker(
+                options: serviceOptions,
+                selectedServiceIds: $selectedServiceIds,
+                emptyMessage: "Attach at least 1 service before saving.",
+                isDisabled: saving
+            )
         }
     }
 
@@ -527,27 +514,6 @@ struct ProMediaEditSheet: View {
         beforeOptionsLoaded = true
     }
 
-    private func optionRow(_ option: ProMediaServiceTag) -> some View {
-        let selected = selectedServiceIds.contains(option.serviceId)
-        return Button {
-            if selected { selectedServiceIds.remove(option.serviceId) }
-            else { selectedServiceIds.insert(option.serviceId) }
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 16))
-                    .foregroundStyle(selected ? BrandColor.accent : BrandColor.textMuted)
-                Text(option.name)
-                    .font(BrandFont.body(14, selected ? .semibold : .regular))
-                    .foregroundStyle(BrandColor.textPrimary)
-                Spacer()
-            }
-            .padding(.vertical, 10).padding(.horizontal, 12)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-
     private var deleteButton: some View {
         Button(role: .destructive) { confirmingDelete = true } label: {
             Text("Delete media")
@@ -565,10 +531,6 @@ struct ProMediaEditSheet: View {
     }
 
     // MARK: Helpers
-
-    private var selectedTags: [ProMediaServiceTag] {
-        serviceOptions.filter { selectedServiceIds.contains($0.serviceId) }
-    }
 
     private func setVisibility(_ v: Visibility) {
         switch v {
@@ -606,7 +568,7 @@ struct ProMediaEditSheet: View {
                 caption: trimmed.isEmpty ? nil : trimmed,
                 isEligibleForLooks: isEligibleForLooks,
                 isFeaturedInPortfolio: isFeaturedInPortfolio,
-                serviceIds: Array(selectedServiceIds),
+                serviceIds: selectedServiceIds,
                 // Only send the pairing when the pro actually touched the picker,
                 // so a normal save never clobbers server auto-pairing.
                 pairing: pairingTouched ? .set(beforeAssetId) : .untouched

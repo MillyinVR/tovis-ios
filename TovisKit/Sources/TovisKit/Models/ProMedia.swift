@@ -30,10 +30,18 @@ struct MediaUploadInitRequest: Encodable, Sendable {
     let size: Int
 }
 
-/// `POST /api/v1/pro/uploads` — request body for a public, stable-path upload
-/// (`AVATAR_PUBLIC` / `SERVICE_IMAGE_PUBLIC`). No booking/phase; `serviceId` only
-/// for service images. Produces a `publicUrl` (no UploadSession).
-struct PublicUploadInitRequest: Encodable, Sendable {
+/// `POST /api/v1/pro/uploads` — request body for an upload identified by `kind`
+/// alone (no booking). Covers both families the route accepts here; what differs
+/// is the RESPONSE, not the request:
+///   - the stable-path public kinds (`AVATAR_PUBLIC` / `SERVICE_IMAGE_PUBLIC`)
+///     overwrite a fixed path and return NO upload session → `PublicUploadInit`;
+///   - the dated portfolio/Looks kinds (`LOOKS_PUBLIC` / `PORTFOLIO_PUBLIC` /
+///     `PORTFOLIO_PRIVATE`) mint a unique path + an UploadSession the create step
+///     keys on → `MediaUploadInit`.
+///
+/// `serviceId` applies only to service images; nil is omitted from the body, which
+/// is exactly what the other kinds want.
+struct KindUploadInitRequest: Encodable, Sendable {
     let kind: String
     let contentType: String
     let size: Int
@@ -97,6 +105,59 @@ struct MediaConfirmRequest: Encodable, Sendable {
     let caption: String?
     let focalX: Double?
     let focalY: Double?
+}
+
+/// `POST /api/v1/pro/media` — create body for a from-scratch post (the native
+/// counterpart of web's `/pro/media/new` submit). The server resolves the storage
+/// pointer from the upload session, derives `visibility` from the two surface
+/// flags, and — per §19b — turns any public asset into a LookPost.
+///
+/// Every optional is nil-omitted, which the route reads as "not supplied":
+/// `primaryServiceId`/`lookVisibility`/`priceStartingAt` are Looks-only, and
+/// `focalX`/`focalY` are the normalized subject focal. A server that predates the
+/// focal field simply ignores the two keys and centers the crop, so this degrades
+/// cleanly against an un-deployed backend.
+struct ProMediaPostRequest: Encodable, Sendable {
+    let uploadSessionId: String
+    let caption: String?
+    let mediaType: String
+    let isFeaturedInPortfolio: Bool
+    let isEligibleForLooks: Bool
+    let publishToLooks: Bool
+    let serviceIds: [String]
+    let primaryServiceId: String?
+    let lookVisibility: String?
+    let priceStartingAt: String?
+    let focalX: Double?
+    let focalY: Double?
+}
+
+/// The created asset (`ProMediaCreatedDTO`), echoing the server's RECONCILED
+/// flags — §19b's publication mirror can move them after the insert, so these are
+/// DB truth rather than what was sent.
+public struct ProMediaCreated: Decodable, Sendable, Identifiable {
+    public let id: String
+    public let mediaType: MediaType
+    /// Raw visibility ("PUBLIC" / "PRO_CLIENT"), kept as String for forward-compat
+    /// — same convention as `ProManagedMediaItem`.
+    public let visibility: String
+    public let caption: String?
+    public let isFeaturedInPortfolio: Bool
+    public let isEligibleForLooks: Bool
+    public let url: String?
+    public let createdAt: String
+    public let services: [ProMediaServiceTag]
+}
+
+/// `POST /api/v1/pro/media` → `{ media, lookPublication? }` (201).
+///
+/// ⚠️ `lookPublication` is deliberately NOT modeled. It's a large optional nested
+/// DTO, and a synthesized `Decodable` on one of those sinks the WHOLE parent's
+/// decode on any shape surprise — the trap that would have dropped a rate-limit
+/// message in `APIErrorBody`. Nothing native reads it, and an unmodeled key is
+/// simply ignored, so leaving it out is strictly safer than modeling it unused.
+struct ProMediaCreateResponse: Decodable, Sendable {
+    let media: ProMediaCreated
 }
 
 /// A session media row (`ProBookingMediaItemDTO`). Private bucket → `url`/`thumbUrl`

@@ -28,6 +28,7 @@ struct ProProfileTabView: View {
 
     @State private var phase: Phase = .loading
     @State private var tab: Tab = .portfolio
+    @State private var composing = false
     @State private var editing = false
     @State private var showPayment = false
     @State private var viewingMedia: FullscreenMedia?
@@ -67,6 +68,10 @@ struct ProProfileTabView: View {
                 }
             }
             .sheet(isPresented: $showPayment) { ProPaymentSettingsView() }
+            .sheet(isPresented: $composing) {
+                // Reload so a new post shows in the portfolio tab + the Looks stat.
+                ProNewMediaPostView { Task { await load() } }
+            }
             .tint(BrandColor.accent)
         }
     }
@@ -300,7 +305,11 @@ struct ProProfileTabView: View {
     private var quickActions: some View {
         HStack(spacing: 8) {
             quickAction("+ Add services", tone: BrandColor.accent) { tab = .services }
-            quickAction("+ Upload", tone: nil) { tab = .portfolio }
+            // Was `tab = .portfolio` — a button labelled "+ Upload" that only
+            // switched tabs, because there was nowhere to upload from. Web's
+            // counterpart (`ProHeader` uploadHref) opens /pro/media/new, so this
+            // now opens the native composer.
+            quickAction("+ Upload", tone: nil) { composing = true }
         }
     }
 

@@ -1,12 +1,18 @@
 import Foundation
 
-/// PRO session media — uploads before/after photos for a booking and lists them.
-/// Authenticated; PRO-only. Three-step pipeline, ported from the web
-/// `MediaUploader.tsx` + `lib/media/uploadWithProgress.ts`:
+/// PRO media — uploads photos and lists/edits the pro's library. Authenticated;
+/// PRO-only. Two upload pipelines, both presign → signed PUT → record, differing
+/// only in what they anchor to:
 ///
-///   1. `presign`  — POST /api/v1/pro/uploads (booking-scoped, media-private)
-///   2. `putBytes` — PUT the bytes straight to Supabase's signed-upload endpoint
-///   3. `confirm`  — POST /api/v1/pro/bookings/{id}/media (records the MediaAsset)
+///   • SESSION media (before/after for a booking), ported from the web
+///     `MediaUploader.tsx` + `lib/media/uploadWithProgress.ts`:
+///       1. `presign`  — POST /api/v1/pro/uploads (booking-scoped, media-private)
+///       2. `putBytes` — PUT the bytes straight to Supabase's signed-upload endpoint
+///       3. `confirm`  — POST /api/v1/pro/bookings/{id}/media (records the MediaAsset)
+///
+///   • A NEW POST from scratch (no booking), the counterpart of web's
+///     `/pro/media/new` — see `createPost`, which presigns by `kind`, PUTs, then
+///     POSTs /api/v1/pro/media.
 ///
 /// The PUT goes directly to Supabase (NOT through APIClient): it carries the
 /// signed token + the public `apikey`, and intentionally NO tovis bearer/cookie.
@@ -17,12 +23,20 @@ public final class ProMediaService: Sendable {
     private let supabaseKey: String?
     private let uploadSession: URLSession
 
-    public init(api: APIClient, supabaseURL: URL?, supabaseKey: String?) {
+    /// `uploadSession` defaults to a fresh ephemeral session (no cookie jar, so the
+    /// storage PUT stays clean). It's injectable only so tests can drive the full
+    /// presign → PUT → create pipeline through a `URLProtocol`; production always
+    /// takes the default.
+    public init(
+        api: APIClient,
+        supabaseURL: URL?,
+        supabaseKey: String?,
+        uploadSession: URLSession? = nil
+    ) {
         self.api = api
         self.supabaseURL = supabaseURL
         self.supabaseKey = supabaseKey
-        // Ephemeral (no cookie jar) so the storage PUT stays clean.
-        self.uploadSession = URLSession(configuration: .ephemeral)
+        self.uploadSession = uploadSession ?? URLSession(configuration: .ephemeral)
     }
 
     /// One-shot photo upload: presign → PUT → confirm. `imageData` is JPEG bytes.
@@ -202,7 +216,7 @@ public final class ProMediaService: Sendable {
         serviceId: String? = nil
     ) async throws -> String {
         let payload = try JSONEncoder.canonical.encode(
-            PublicUploadInitRequest(
+            KindUploadInitRequest(
                 kind: kind, contentType: contentType, size: imageData.count, serviceId: serviceId
             )
         )
@@ -228,6 +242,70 @@ public final class ProMediaService: Sendable {
     /// Convenience: upload a service offering image (`SERVICE_IMAGE_PUBLIC`).
     public func uploadServiceImage(serviceId: String, imageData: Data, contentType: String = "image/jpeg") async throws -> String {
         try await uploadPublicImage(kind: "SERVICE_IMAGE_PUBLIC", imageData: imageData, contentType: contentType, serviceId: serviceId)
+    }
+
+    // MARK: - New media post (from scratch)
+
+    /// Create a portfolio/Looks post from a picked photo — the native counterpart
+    /// of web's `/pro/media/new` submit. Three steps, in the same order web runs
+    /// them (upload first, then create):
+    ///   1. `presignPost` — POST /pro/uploads with the draft's `kind`
+    ///   2. signed PUT of the JPEG bytes
+    ///   3. POST /pro/media, which mints the MediaAsset (+ a LookPost, per §19b)
+    ///
+    /// The bytes land in the bucket BEFORE the create runs, so a create failure
+    /// leaves an orphaned object with an unconsumed UploadSession — the same
+    /// trade web makes, and the reason the draft's rules are validated up front
+    /// rather than discovered by a 400.
+    ///
+    /// `focal` is the subject's normalized center (from the same face detection
+    /// the camera uses). Pass nil for a photo with no detectable face: the server
+    /// stores no focal and cover-crops from the center, exactly as it always has.
+    @discardableResult
+    public func createPost(
+        draft: NewMediaPostDraft,
+        imageData: Data,
+        focal: MediaFocalPoint?,
+        contentType: String = "image/jpeg",
+        idempotencyKey: String? = nil
+    ) async throws -> ProMediaCreated {
+        let initData = try await presignPost(
+            kind: draft.uploadKind,
+            contentType: contentType,
+            size: imageData.count
+        )
+
+        try await putBytes(imageData, to: initData, contentType: contentType)
+
+        let payload = try JSONEncoder.canonical.encode(
+            draft.createRequest(uploadSessionId: initData.uploadSessionId, focal: focal)
+        )
+
+        // Key off the upload session like the booking-media confirm does — it's the
+        // server's own dedup anchor, so a retried create collapses onto one asset
+        // instead of double-attaching (which the route rolls back anyway).
+        let key = idempotencyKey ?? buildClientIdempotencyKey(
+            scope: "pro-media", entityId: initData.uploadSessionId, action: "create",
+            nonce: idempotencyNonce(payload))
+
+        let response: ProMediaCreateResponse = try await api.request(
+            "/pro/media",
+            method: .post,
+            body: payload,
+            headers: ["Idempotency-Key": key, "x-idempotency-key": key]
+        )
+        return response.media
+    }
+
+    /// Presign a bookingless portfolio/Looks upload. Unlike the stable-path public
+    /// kinds, these mint a dated unique path AND an UploadSession — which is the
+    /// handle `POST /pro/media` resolves the storage pointer from, so the client
+    /// never sends a bucket/path.
+    func presignPost(kind: String, contentType: String, size: Int) async throws -> MediaUploadInit {
+        let payload = try JSONEncoder.canonical.encode(
+            KindUploadInitRequest(kind: kind, contentType: contentType, size: size, serviceId: nil)
+        )
+        return try await api.request("/pro/uploads", method: .post, body: payload)
     }
 
     // MARK: - Steps
