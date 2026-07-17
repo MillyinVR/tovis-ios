@@ -221,6 +221,12 @@ struct ProMediaEditSheet: View {
     @State private var confirmingDelete = false
     @State private var viewingMedia: FullscreenMedia?
 
+    // §18d — creator-page cover banner. Optimistic so the label flips instantly;
+    // seeded from the item's server-truth flag. Images only (a video can't back a
+    // cover hero — the server 400s), so the section is hidden for videos.
+    @State private var isCover: Bool
+    @State private var updatingCover = false
+
     // Before/after pairing. `beforeAssetId` is the chosen "before" (nil = unpaired);
     // `pairingTouched` gates whether we send it at all, so a normal save never
     // clobbers the server's default-on auto-pairing (mirrors web `OwnerMediaMenu`).
@@ -240,6 +246,7 @@ struct ProMediaEditSheet: View {
         _isFeaturedInPortfolio = State(initialValue: item.isFeaturedInPortfolio)
         _selectedServiceIds = State(initialValue: item.serviceIds)
         _beforeAssetId = State(initialValue: item.beforeAssetId)
+        _isCover = State(initialValue: item.isCoverMedia)
     }
 
     /// Public when either surface is on — matches the server's
@@ -268,6 +275,7 @@ struct ProMediaEditSheet: View {
                     preview
                     captionField
                     visibilitySection
+                    if !item.isVideo { coverSection }
                     if !item.isVideo { pairingSection }
                     servicesSection
 
@@ -378,6 +386,46 @@ struct ProMediaEditSheet: View {
             Text("Turning either on makes this photo public; turning both off keeps it to you and the client.")
                 .font(BrandFont.body(11))
                 .foregroundStyle(BrandColor.textMuted)
+        }
+    }
+
+    /// §18d — set/clear this photo as the pro's public profile cover banner.
+    /// Mirrors the web `OwnerMediaMenu` "Set as cover" ↔ "Remove cover" action:
+    /// images only, and the server gates it (a private/unpromoted session photo
+    /// 403s, surfaced inline). Optimistic label; reloads the grid so a previously
+    /// -cover tile clears.
+    @ViewBuilder
+    private var coverSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            fieldLabel("Profile cover")
+            Text(isCover
+                 ? "This photo is the banner at the top of your public profile."
+                 : "Feature this photo as the banner at the top of your public profile.")
+                .font(BrandFont.body(11))
+                .foregroundStyle(BrandColor.textMuted)
+
+            Button {
+                Task { await toggleCover() }
+            } label: {
+                HStack(spacing: 8) {
+                    if updatingCover {
+                        ProgressView().tint(BrandColor.accent)
+                    } else {
+                        Image(systemName: isCover ? "checkmark.seal.fill" : "photo.on.rectangle")
+                    }
+                    Text(isCover ? "Remove as cover" : "Set as cover")
+                        .font(BrandFont.body(14, .semibold))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .foregroundStyle(isCover ? BrandColor.textPrimary : BrandColor.accent)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke((isCover ? BrandColor.textMuted : BrandColor.accent).opacity(0.4), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(saving || updatingCover)
         }
     }
 
@@ -595,6 +643,31 @@ struct ProMediaEditSheet: View {
             error = e.userMessage
         } catch {
             self.error = "Couldn’t delete this media. Try again."
+        }
+    }
+
+    /// Toggle this photo as the profile cover (§18d). Optimistic label flip on
+    /// success; reloads the grid (mirrors web's `router.refresh()`) so any tile
+    /// that was the cover clears. The sheet stays open. A server refusal (403
+    /// consent gate / 400 non-image) surfaces inline and the label doesn't flip.
+    private func toggleCover() async {
+        guard !updatingCover, !saving else { return }
+        updatingCover = true
+        error = nil
+        defer { updatingCover = false }
+        let next = !isCover
+        do {
+            if next {
+                try await session.client.proMedia.setCover(mediaId: item.id)
+            } else {
+                try await session.client.proMedia.removeCover(mediaId: item.id)
+            }
+            isCover = next
+            onSaved()
+        } catch let e as APIError {
+            error = e.userMessage
+        } catch {
+            self.error = "Couldn’t update your cover photo. Try again."
         }
     }
 }

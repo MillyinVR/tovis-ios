@@ -89,4 +89,17 @@ public final class ProVerificationService: Sendable {
     public func deleteDocument(id: String) async throws {
         try await api.requestVoid("/pro/verification-docs/\(id)", method: .delete)
     }
+
+    /// Resolve a short-lived signed URL for one of the pro's OWN verification-doc
+    /// images so it can be previewed natively. The web page renders the private
+    /// image straight from `GET /pro/verification-docs/{id}` — an authenticated
+    /// route that 302-redirects to a signed URL — but a cookieless native client
+    /// can't hand a bearer to `AsyncImage`. So this fetches the route with the
+    /// bearer, reads the redirect's `Location` (the signed URL) WITHOUT following
+    /// it, and returns that URL for `AsyncImage` to load directly. Owner-scoped
+    /// server-side (403 for someone else's doc); a non-image/unsupported pointer
+    /// 400s. A throw means "no preview" — the caller degrades gracefully.
+    public func documentPreviewURL(id: String) async throws -> URL {
+        try await api.resolveRedirect("/pro/verification-docs/\(id)")
+    }
 }

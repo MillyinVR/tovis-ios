@@ -87,6 +87,46 @@ public final class APIClient: Sendable {
         )
     }
 
+    /// Resolve the `Location` an authenticated 3xx redirect points to, WITHOUT
+    /// following it. A cookieless native client can't render a private image
+    /// straight from a route that authenticates and then 302-redirects to a
+    /// short-lived signed URL (`AsyncImage` can't carry the bearer) — e.g. the
+    /// verification-doc preview `GET /pro/verification-docs/{id}`. This sends the
+    /// bearer, stops at the redirect via a task delegate, and returns the signed
+    /// URL so `AsyncImage` can load it directly (the signed URL is self-authorizing).
+    /// A non-3xx (401/403/404/400) maps like `perform` — the caller treats a
+    /// failure as "no preview".
+    public func resolveRedirect(
+        _ path: String,
+        query: [URLQueryItem]? = nil
+    ) async throws -> URL {
+        let request = await buildRequest(
+            path, method: .get, query: query, body: nil, headers: nil, authenticated: true
+        )
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request, delegate: NoRedirectTaskDelegate.shared)
+        } catch {
+            throw APIError.transport(String(describing: error))
+        }
+
+        guard let http = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+
+        if (300..<400).contains(http.statusCode),
+           let location = http.value(forHTTPHeaderField: "Location"),
+           let url = URL(string: location) {
+            return url
+        }
+
+        if http.statusCode == 401 { throw APIError.unauthorized }
+        let parsed = try? JSONDecoder().decode(APIErrorBody.self, from: data)
+        throw APIError.server(status: http.statusCode, message: parsed?.error, code: parsed?.code)
+    }
+
     // MARK: - Core
 
     private func perform(
@@ -186,5 +226,22 @@ public final class APIClient: Sendable {
         }
 
         return request
+    }
+}
+
+/// A per-task delegate that refuses HTTP redirects, so `resolveRedirect` reads a
+/// 3xx's `Location` instead of transparently following it (URLSession follows
+/// redirects by default). Stateless → safe to share; `@unchecked Sendable`
+/// because `NSObject` isn't `Sendable` but this holds nothing mutable.
+private final class NoRedirectTaskDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    static let shared = NoRedirectTaskDelegate()
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest
+    ) async -> URLRequest? {
+        nil // don't follow — the caller wants the redirect response itself
     }
 }

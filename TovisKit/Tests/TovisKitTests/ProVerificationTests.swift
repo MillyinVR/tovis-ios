@@ -15,6 +15,8 @@ final class ProVerificationURLProtocol: URLProtocol {
     nonisolated(unsafe) static var capturedBody: Data?
     nonisolated(unsafe) static var status = 200
     nonisolated(unsafe) static var responseBody = Data("{\"ok\":true}".utf8)
+    /// Extra response headers (e.g. a redirect `Location`), merged over the base.
+    nonisolated(unsafe) static var responseHeaders: [String: String] = [:]
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -45,7 +47,7 @@ final class ProVerificationURLProtocol: URLProtocol {
             url: request.url!,
             statusCode: Self.status,
             httpVersion: nil,
-            headerFields: ["Content-Type": "application/json"]
+            headerFields: ["Content-Type": "application/json"].merging(Self.responseHeaders) { _, new in new }
         )!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Self.responseBody)
@@ -79,6 +81,7 @@ final class ProVerificationURLProtocol: URLProtocol {
         ProVerificationURLProtocol.capturedBody = nil
         ProVerificationURLProtocol.status = 200
         ProVerificationURLProtocol.responseBody = Data(body.utf8)
+        ProVerificationURLProtocol.responseHeaders = [:]
     }
 
     @Test func getsVerificationAsAuthenticatedNativeRequest() async throws {
@@ -162,6 +165,35 @@ final class ProVerificationURLProtocol: URLProtocol {
 
         #expect(ProVerificationURLProtocol.capturedPath == "/api/v1/pro/verification-docs/doc_42")
         #expect(ProVerificationURLProtocol.capturedMethod == "DELETE")
+    }
+
+    @Test func documentPreviewResolvesSignedRedirectLocation() async throws {
+        reset("")
+        // The doc route authenticates then 302-redirects to a short-lived signed
+        // URL; the native client reads the `Location` (not the image) and hands it
+        // to AsyncImage. Prove the authenticated GET returns that signed URL.
+        ProVerificationURLProtocol.status = 302
+        ProVerificationURLProtocol.responseHeaders = [
+            "Location": "https://signed.example/doc.jpg?token=abc",
+        ]
+
+        let url = try await makeService().documentPreviewURL(id: "doc_7")
+
+        #expect(ProVerificationURLProtocol.capturedPath == "/api/v1/pro/verification-docs/doc_7")
+        #expect(ProVerificationURLProtocol.capturedMethod == "GET")
+        #expect(ProVerificationURLProtocol.capturedAuthHeader == "Bearer session.token.value")
+        #expect(url.absoluteString == "https://signed.example/doc.jpg?token=abc")
+    }
+
+    @Test func documentPreviewThrowsWhenNotARedirect() async throws {
+        reset("{\"ok\":false,\"error\":\"Forbidden.\"}")
+        // Someone else's doc / an unsupported pointer isn't a 3xx — the caller must
+        // get a throw (→ "no preview"), never a bogus URL.
+        ProVerificationURLProtocol.status = 403
+
+        var threw = false
+        do { _ = try await makeService().documentPreviewURL(id: "doc_x") } catch { threw = true }
+        #expect(threw)
     }
 
     private struct LicenseBodyProbe: Decodable {
