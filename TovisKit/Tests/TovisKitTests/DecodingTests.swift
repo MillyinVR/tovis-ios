@@ -383,17 +383,6 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.thread?.counterpartyLastReadAt == "2026-06-27T18:35:00.000Z")
     }
 
-    // GET /api/v1/search — Fixtures/search.json (schema-validated, both tabs).
-    @Test func decodesSearch() throws {
-        let res = try JSONDecoder().decode(SearchResponse.self, from: fixture("search"))
-        let pro = try #require(res.pros.first)
-        #expect(pro.displayName == "Plume Studio")
-        #expect(pro.ratingAvg == 4.8)
-        #expect(pro.minPrice == 65)
-        #expect(pro.supportsMobile == true)
-        #expect(res.services.first?.categoryName == "Hair")
-    }
-
     // GET /api/v1/availability/bootstrap + /day — schema-validated fixtures.
     @Test func decodesAvailability() throws {
         let boot = try JSONDecoder().decode(AvailabilityBootstrap.self, from: fixture("availabilityBootstrap"))

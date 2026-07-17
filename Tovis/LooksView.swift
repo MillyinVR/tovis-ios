@@ -41,6 +41,13 @@ struct LooksView: View {
     @State private var nextCursor: String?
     @State private var loadingMore = false
 
+    /// Feed search (web `LooksTopBar`): collapsed behind a magnifier until tapped.
+    @State private var searchOpen = false
+    @State private var searchQuery = ""
+    @FocusState private var searchFocused: Bool
+    /// The pending debounced search; a new keystroke cancels it.
+    @State private var searchDebounce: Task<Void, Never>?
+
     // Optimistic overrides (the wire models are immutable outside TovisKit).
     @State private var likeOverrides: [String: Bool] = [:]      // by look id
     @State private var likeCounts: [String: Int] = [:]          // by look id
@@ -65,6 +72,12 @@ struct LooksView: View {
     /// pager's scroll position. Mute is shared so an unmute sticks while scrolling.
     @State private var activeId: String?
     @State private var muted = true
+
+    /// Re-entrancy guard for "Not for me" — a second tap on a slide already
+    /// mid-hide is a no-op (web keeps the same guard in a ref).
+    @State private var hideInFlight: Set<String> = []
+    /// The look a long press is proposing to hide, pending confirmation.
+    @State private var hideCandidate: LooksFeedItem?
 
     /// Session dedupe for view impressions (B2) — each look pings at most once
     /// so a scroll-up/scroll-down doesn't double-count. Web parity: web batches
@@ -115,6 +128,20 @@ struct LooksView: View {
             if case .loading = phase { await load() }
         }
         .onChange(of: tab) { Task { await load() } }
+        // Search-as-you-type, debounced. Web re-queries on EVERY keystroke and
+        // just aborts the in-flight fetch — acceptable in a tab, wasteful on
+        // cellular, and each `q` request costs a real query (a present `q` routes
+        // the server off the personalized feed onto the search path). Coalesce
+        // instead: a new keystroke cancels the pending task, so only the pause
+        // fires. `onChange` doesn't run on appear, so this can't race first load.
+        .onChange(of: searchQuery) {
+            searchDebounce?.cancel()
+            searchDebounce = Task {
+                try? await Task.sleep(for: .milliseconds(300))
+                guard !Task.isCancelled else { return }
+                await load(showSpinner: false)
+            }
+        }
         .onChange(of: session.refreshTick) { Task { await reloadKeepingPlace() } }
         .sheet(item: $commentsFor) { item in
             // TikTok-style: opens as a partial-height sheet (presentation detents
@@ -140,6 +167,27 @@ struct LooksView: View {
         .sheet(item: $tagWebFor) { link in
             SafariView(url: link.url)
         }
+        // The long press is invisible, so confirm before acting — and the action
+        // is worth confirming on its own terms: neither platform has an un-hide,
+        // so this is the one feed control a mis-tap can't take back.
+        .confirmationDialog(
+            "Stop seeing this look?",
+            isPresented: Binding(
+                get: { hideCandidate != nil },
+                set: { if !$0 { hideCandidate = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: hideCandidate
+        ) { item in
+            Button("Not for me", role: .destructive) {
+                Task { await hideLook(item) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            // Honest about both halves of what the server does: the look is gone
+            // for good, and its category is down-ranked (decaying, not forever).
+            Text("You won’t see this look again, and we’ll show you fewer like it.")
+        }
     }
 
     /// The web tag page for a chip tap. Mirrors `shareURL`'s origin convention.
@@ -153,18 +201,93 @@ struct LooksView: View {
     // MARK: - Header (Looks serif title + tab strip)
 
     private var header: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .firstTextBaseline, spacing: 18) {
-                tabButton(.all)
-                tabButton(.spotlight)
-                tabButton(.following)
-                ForEach(categories) { tabButton(.category($0)) }
+        VStack(spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .firstTextBaseline, spacing: 18) {
+                        tabButton(.all)
+                        tabButton(.spotlight)
+                        tabButton(.following)
+                        ForEach(categories) { tabButton(.category($0)) }
+                    }
+                    .padding(.horizontal, 16)
+                    // Room for the tab underline + its shadow, which the clip
+                    // below would otherwise cut off.
+                    .padding(.bottom, 4)
+                }
+                // The strip MUST clip: the tabs scroll horizontally, and without
+                // this they render straight through the magnifier (the original
+                // .scrollClipDisabled() was safe only while the row was the full
+                // width and had nothing beside it).
+                .clipped()
+
+                searchToggle
+                    .padding(.trailing, 16)
             }
-            .padding(.horizontal, 16)
             .padding(.top, 6)
+
+            if searchOpen { searchField.padding(.horizontal, 16) }
         }
-        .scrollClipDisabled()
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Magnifier that opens the field (web collapses its search the same way).
+    /// Closing also clears the query, which re-runs the unfiltered feed.
+    private var searchToggle: some View {
+        Button {
+            searchOpen.toggle()
+            if searchOpen {
+                searchFocused = true
+            } else if !searchQuery.isEmpty {
+                searchQuery = ""
+            }
+        } label: {
+            Image(systemName: searchOpen ? "xmark" : "magnifyingglass")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.white)
+                .shadow(color: .black.opacity(0.45), radius: 4, y: 1)
+                .frame(width: 30, height: 30)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(searchOpen ? "Close search" : "Open search")
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.7))
+
+            // Web's placeholder says "Search pros or services", but the server
+            // matches captions + pro + service names and always returns LOOKS.
+            // Name what comes back instead of repeating the copy's promise.
+            TextField("", text: $searchQuery, prompt: searchPrompt)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.search)
+                .focused($searchFocused)
+                .foregroundStyle(.white)
+                .font(BrandFont.body(15))
+
+            if !searchQuery.isEmpty {
+                Button { searchQuery = "" } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 15))
+                        .foregroundStyle(.white.opacity(0.7))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(Capsule().stroke(.white.opacity(0.18), lineWidth: 0.5))
+    }
+
+    private var searchPrompt: Text {
+        Text("Search looks, pros, or services")
+            .foregroundColor(.white.opacity(0.55))
     }
 
     @ViewBuilder
@@ -217,7 +340,8 @@ struct LooksView: View {
                         onToggleMute: { muted.toggle() },
                         onOpenTag: { tag in
                             if let url = tagURL(tag) { tagWebFor = TagWebLink(url: url) }
-                        }
+                        },
+                        onHide: { hideCandidate = item }
                     )
                     .containerRelativeFrame([.horizontal, .vertical])
                     .onAppear { Task { await loadMoreIfNeeded(at: index, total: items.count) } }
@@ -245,13 +369,23 @@ struct LooksView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 10) {
-            Image(systemName: tab == .following ? "person.2" : "sparkles")
+        // A search that matched nothing is a different dead end from an empty
+        // tab — "Check back soon" would be wrong advice for a typo.
+        let searching = !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
+        return VStack(spacing: 10) {
+            Image(systemName: searching ? "magnifyingglass" : (tab == .following ? "person.2" : "sparkles"))
                 .font(.system(size: 30)).foregroundStyle(BrandColor.accent)
-            Text(tab == .following ? "No looks from pros you follow yet" : "No looks here yet")
+            Text(searching
+                 ? "No looks match “\(searchQuery)”"
+                 : (tab == .following ? "No looks from pros you follow yet" : "No looks here yet"))
                 .font(BrandFont.body(15, .semibold)).foregroundStyle(BrandColor.textPrimary)
-            Text(tab == .following ? "Follow pros to see their latest work." : "Check back soon.")
+                .multilineTextAlignment(.center)
+            Text(searching
+                 ? "Try a different service, pro, or keyword."
+                 : (tab == .following ? "Follow pros to see their latest work." : "Check back soon."))
                 .font(BrandFont.body(13)).foregroundStyle(BrandColor.textMuted)
+                .multilineTextAlignment(.center)
         }
         .padding(40).frame(maxHeight: .infinity)
     }
@@ -277,14 +411,19 @@ struct LooksView: View {
         }
     }
 
-    private func load() async {
-        phase = .loading
+    /// `showSpinner: false` keeps whatever is on screen until the new page lands
+    /// — used for search-as-you-type, where blanking the feed to a spinner on
+    /// every debounced keystroke would strobe. The result still swaps to `.empty`
+    /// when a query matches nothing.
+    private func load(showSpinner: Bool = true) async {
+        if showSpinner { phase = .loading }
         likeOverrides = [:]; likeCounts = [:]; commentCounts = [:]; followOverrides = [:]
         savedOverrides = [:]
         let p = params()
         do {
             let page = try await session.client.looks.feed(
-                filter: p.filter, category: p.category, following: p.following
+                filter: p.filter, category: p.category, following: p.following,
+                query: searchQuery
             )
             nextCursor = page.nextCursor
             phase = page.items.isEmpty ? .empty : .loaded(page.items)
@@ -300,7 +439,8 @@ struct LooksView: View {
         let p = params()
         do {
             let page = try await session.client.looks.feed(
-                filter: p.filter, category: p.category, following: p.following
+                filter: p.filter, category: p.category, following: p.following,
+                query: searchQuery
             )
             nextCursor = page.nextCursor
             if !page.items.isEmpty { phase = .loaded(page.items) }
@@ -315,7 +455,8 @@ struct LooksView: View {
         let p = params()
         do {
             let page = try await session.client.looks.feed(
-                filter: p.filter, category: p.category, following: p.following, cursor: cursor
+                filter: p.filter, category: p.category, following: p.following,
+                query: searchQuery, cursor: cursor
             )
             nextCursor = page.nextCursor
             phase = .loaded(current + page.items)
@@ -395,6 +536,64 @@ struct LooksView: View {
         }
     }
 
+    /// "Not for me" — optimistically drop the slide, then tell the server. Mirrors
+    /// web `LooksFeed.hideLook`: re-entrancy-guarded, and on failure the look is
+    /// restored at the index it came from.
+    ///
+    /// Unlike web (a scrolling list) this feed is a pager bound to
+    /// `scrollPosition(id: $activeId)`, so removing the ACTIVE slide would leave
+    /// that binding pointing at an id no longer in the list — the pager would have
+    /// nothing to rest on. Hand it the slide that takes the removed one's place
+    /// (or the new last slide) BEFORE mutating the list.
+    private func hideLook(_ item: LooksFeedItem) async {
+        guard case let .loaded(current) = phase,
+              !hideInFlight.contains(item.id),
+              let removedIndex = current.firstIndex(where: { $0.id == item.id })
+        else { return }
+
+        hideInFlight.insert(item.id)
+        defer { hideInFlight.remove(item.id) }
+
+        var next = current
+        next.remove(at: removedIndex)
+
+        if activeId == item.id {
+            // The slide at removedIndex is now the one that slid up into view;
+            // past the end, fall back to the new last slide (nil when empty).
+            activeId = next.indices.contains(removedIndex)
+                ? next[removedIndex].id
+                : next.last?.id
+        }
+
+        phase = next.isEmpty ? .empty : .loaded(next)
+
+        do {
+            _ = try await session.client.looks.hide(lookId: item.id)
+        } catch {
+            restoreHidden(item, at: removedIndex)
+        }
+    }
+
+    /// Put a look back where it was after a failed hide. No-op if it already
+    /// reappeared (a reload can beat the failure back). Web parity: the index is
+    /// clamped, because the list may have grown or shrunk while the write was in
+    /// flight.
+    private func restoreHidden(_ item: LooksFeedItem, at index: Int) {
+        var list: [LooksFeedItem]
+        switch phase {
+        case let .loaded(current): list = current
+        case .empty: list = []
+        // .loading/.failed — a reload took over; it will re-fetch the truth
+        // (the server did NOT hide it), so there is nothing to restore into.
+        case .loading, .failed: return
+        }
+
+        guard !list.contains(where: { $0.id == item.id }) else { return }
+        list.insert(item, at: min(max(index, 0), list.count))
+        phase = .loaded(list)
+        if activeId == nil { activeId = item.id }
+    }
+
     private func toggleFollow(_ item: LooksFeedItem) async {
         guard let pro = item.professional else { return }
         let next = !following(item)
@@ -449,12 +648,20 @@ private struct LookSlide: View {
     let onToggleMute: () -> Void
     /// A tag chip tap → open its web tag page (social-first D1).
     let onOpenTag: (LooksTag) -> Void
+    /// "Not for me" — drops the slide and tells the server to stop showing it.
+    let onHide: () -> Void
 
     var body: some View {
         ZStack(alignment: .bottom) {
             Color.black
 
             media
+                // "Not for me" lives on a long press of the look itself (the
+                // TikTok/IG gesture) rather than a rail icon — web puts an EyeOff
+                // in its rail, but a 7th control isn't worth the room here.
+                // Scoped to the media so it can't fire from the rail's buttons,
+                // and a long press doesn't race the pager (that's a drag).
+                .onLongPressGesture { onHide() }
 
             LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .center, endPoint: .bottom)
                 .allowsHitTesting(false)

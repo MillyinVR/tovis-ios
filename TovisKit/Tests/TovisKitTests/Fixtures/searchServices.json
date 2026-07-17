@@ -1,0 +1,27 @@
+{
+  "ok": true,
+  "items": [
+    {
+      "id": "cmrbry494004lpo0d7s91lw1p",
+      "name": "60-Minute Deep Tissue",
+      "categoryId": "cmrbry47y000npo0dz6ddfy09",
+      "categoryName": "Massage",
+      "categorySlug": "massage"
+    },
+    {
+      "id": "cmrbry4860019po0dn31ywqaj",
+      "name": "60-Minute Swedish Massage",
+      "categoryId": "cmrbry47y000npo0dz6ddfy09",
+      "categoryName": "Massage",
+      "categorySlug": "massage"
+    },
+    {
+      "id": "svc_uncategorized",
+      "name": "Uncategorized Service",
+      "categoryId": null,
+      "categoryName": null,
+      "categorySlug": null
+    }
+  ],
+  "nextCursor": "eyJpZCI6ImNtcmJyeTQ4dDAwM2RwbzBkcDcyZzBob2cifQ"
+}
