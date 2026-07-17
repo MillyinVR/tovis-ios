@@ -19,6 +19,17 @@ public final class BoardsService: Sendable {
         self.api = api
     }
 
+    /// GET /api/v1/boards — the viewer's FULL board list, for a picker (each row's
+    /// id/name/visibility). This is the list the Save-to-board sheet must render.
+    /// ⚠️ It is NOT the same as `LooksService.saveState(lookId:).boards`, which is
+    /// only the boards that already CONTAIN a given look — web loads both (this for
+    /// the rows, the save-state for the checkmarks). Unknown board keys
+    /// (clientId/type/itemCount/items) are ignored by the `LooksBoard` decode.
+    public func list() async throws -> [LooksBoard] {
+        let response: BoardsListResponse = try await api.request("/boards")
+        return response.boards
+    }
+
     /// GET /api/v1/boards/{id} — the owner's board with its saved looks and the
     /// slug/visibility the share control needs. 403/404 surface as `APIError`.
     public func detail(id: String) async throws -> Board {

@@ -83,6 +83,14 @@ struct BoardDetailResponse: Decodable, Sendable {
     let board: Board
 }
 
+/// `GET /api/v1/boards` → `{ ok, boards: [...] }`. The list DTO carries no `slug`
+/// (unlike the detail/create `board`), so it can't decode into `Board`; the
+/// Save-to-board picker only needs each board's id/name/visibility, so it decodes
+/// into `LooksBoard` and ignores the rest.
+struct BoardsListResponse: Decodable, Sendable {
+    let boards: [LooksBoard]
+}
+
 // MARK: - Request bodies
 
 /// `POST /api/v1/boards` body. `visibility`/`type` are always sent; `eventDate`,
