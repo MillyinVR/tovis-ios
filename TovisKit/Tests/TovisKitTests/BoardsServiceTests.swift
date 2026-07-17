@@ -140,6 +140,37 @@ private extension URLRequest {
         }
     }
 
+    // MARK: - list()
+
+    @Test func listGetsFullBoardListForThePicker() async throws {
+        reset()
+        // The list DTO carries NO `slug` (unlike detail/create), so it can't decode
+        // into `Board`; the picker only needs id/name/visibility. itemCount/type/
+        // items ride along and are ignored. This is the Save-to-board picker source
+        // — distinct from a look's save-state boards.
+        BoardsURLProtocol.responseBody = Data("""
+        {"ok":true,"boards":[
+          {"id":"bd_1","clientId":"cl_1","name":"My Wedding","visibility":"PRIVATE","type":"BRIDAL","eventDate":"2026-09-01","itemCount":0,"items":[]},
+          {"id":"bd_2","clientId":"cl_1","name":"Everyday","visibility":"SHARED","type":"GENERAL","itemCount":3}
+        ]}
+        """.utf8)
+
+        let boards = try await makeService().list()
+
+        #expect(BoardsURLProtocol.capturedPath == "/api/v1/boards")
+        #expect(BoardsURLProtocol.capturedMethod == "GET")
+        #expect(boards.map(\.id) == ["bd_1", "bd_2"])
+        #expect(boards.first?.name == "My Wedding")
+        #expect(boards.first?.visibility == "PRIVATE")
+        #expect(boards.last?.visibility == "SHARED")
+    }
+
+    @Test func listDecodesEmpty() async throws {
+        reset()
+        BoardsURLProtocol.responseBody = Data("{\"ok\":true,\"boards\":[]}".utf8)
+        #expect(try await makeService().list().isEmpty)
+    }
+
     // MARK: - create(...)
 
     @Test func createPostsBodyAndDecodes() async throws {

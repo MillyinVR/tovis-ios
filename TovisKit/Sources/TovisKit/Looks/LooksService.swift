@@ -90,7 +90,10 @@ public final class LooksService: Sendable {
 
     // MARK: - Save to board
 
-    /// GET /api/v1/looks/{id}/save — current save state + the viewer's boards.
+    /// GET /api/v1/looks/{id}/save — this look's save state: `isSaved`, `saveCount`,
+    /// and the boards that ALREADY CONTAIN this look (`boards`/`boardIds`). It is
+    /// NOT the viewer's full board list — for a board picker, fetch
+    /// `BoardsService.list()` and use `boardIds` here only to mark which are saved.
     public func saveState(lookId: String) async throws -> LooksSaveState {
         try await api.request("/looks/\(lookId)/save")
     }

@@ -229,121 +229,6 @@ struct ProClientsView: View {
     }
 }
 
-// MARK: - Client detail
-
-struct ProClientDetailView: View {
-    @Environment(SessionModel.self) private var session
-    let client: ProClientSummary
-
-    @State private var addresses: [ProClientAddress] = []
-    @State private var loadingAddresses = true
-    @State private var showAddNote = false
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                header
-
-                if client.phone != nil || client.email != nil {
-                    BrandSection(title: "Contact") {
-                        VStack(spacing: 10) {
-                            if let phone = client.phone {
-                                contactRow("phone.fill", phone, URL(string: "tel:\(phone.filter { !$0.isWhitespace })"))
-                            }
-                            if let email = client.email {
-                                contactRow("envelope.fill", email, URL(string: "mailto:\(email)"))
-                            }
-                        }
-                    }
-                }
-
-                BrandSection(title: "Service addresses") {
-                    if loadingAddresses {
-                        HStack { Spacer(); ProgressView().tint(BrandColor.accent); Spacer() }.padding(.vertical, 8)
-                    } else if addresses.isEmpty {
-                        BrandSurface {
-                            Text("No saved service addresses.")
-                                .font(BrandFont.body(13)).foregroundStyle(BrandColor.textMuted)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    } else {
-                        VStack(spacing: 10) {
-                            ForEach(addresses) { addr in
-                                BrandSurface {
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        HStack {
-                                            Text(addr.label).font(BrandFont.body(14, .semibold))
-                                                .foregroundStyle(BrandColor.textPrimary)
-                                            if addr.isDefault { BrandPill(text: "Default", tint: BrandColor.accent) }
-                                        }
-                                        Text(addr.formattedAddress)
-                                            .font(BrandFont.body(13)).foregroundStyle(BrandColor.textSecondary)
-                                    }
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Button { showAddNote = true } label: {
-                    Label("Add a note", systemImage: "square.and.pencil")
-                        .font(BrandFont.body(16, .semibold))
-                        .frame(maxWidth: .infinity).padding(.vertical, 14)
-                        .foregroundStyle(BrandColor.textPrimary)
-                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(BrandColor.textMuted.opacity(0.3), lineWidth: 1))
-                }
-
-                Text("Full chart history (past notes, allergies, formulas) lives on the web for now.")
-                    .font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
-            }
-            .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 40)
-        }
-        .background(BrandColor.bgPrimary.ignoresSafeArea())
-        .navigationTitle(client.fullName)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
-        .task { await loadAddresses() }
-        .sheet(isPresented: $showAddNote) {
-            ProAddNoteSheet(clientId: client.id)
-        }
-        .tint(BrandColor.accent)
-    }
-
-    private var header: some View {
-        BrandSurface {
-            HStack(spacing: 14) {
-                BrandAvatar(name: client.fullName, size: 52)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(client.fullName)
-                        .font(BrandFont.display(20, .semibold))
-                        .foregroundStyle(BrandColor.textPrimary)
-                    Text("Client").font(BrandFont.mono(11)).foregroundStyle(BrandColor.textMuted)
-                }
-                Spacer()
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func contactRow(_ icon: String, _ label: String, _ url: URL?) -> some View {
-        let inner = BrandSurface {
-            HStack(spacing: 12) {
-                Image(systemName: icon).font(.system(size: 15)).foregroundStyle(BrandColor.accent).frame(width: 24)
-                Text(label).font(BrandFont.body(14)).foregroundStyle(url != nil ? BrandColor.accent : BrandColor.textSecondary)
-                Spacer()
-            }
-        }
-        if let url { Link(destination: url) { inner } } else { inner }
-    }
-
-    private func loadAddresses() async {
-        addresses = (try? await session.client.proClients.serviceAddresses(clientId: client.id)) ?? []
-        loadingAddresses = false
-    }
-}
-
 // MARK: - Add note
 
 struct ProAddNoteSheet: View {
@@ -351,7 +236,7 @@ struct ProAddNoteSheet: View {
     @Environment(\.dismiss) private var dismiss
     let clientId: String
     /// Optional — the chart passes a reload closure so a new note appears without
-    /// leaving the screen; the plain clients-detail caller leaves it nil.
+    /// leaving the screen. `ProClientChartView` is currently the only caller.
     var onSaved: (() -> Void)? = nil
 
     @State private var noteText = ""
