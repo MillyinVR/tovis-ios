@@ -46,17 +46,29 @@ public final class BookingsService: Sendable {
     /// POST /api/v1/client/bookings/{id}/consultation — approve or reject the
     /// pro's proposed consultation plan. The server is idempotent and a decision
     /// on an already-decided proposal still returns 200.
+    ///
+    /// The gated route **hard-requires** an `idempotency-key` header — without it
+    /// it 400s with `IDEMPOTENCY_KEY_REQUIRED` before doing anything — so, like
+    /// every other client mutation here (`respondToWaitlistOffer` / `decideRebook`),
+    /// we mint a deterministic key. `action` (APPROVE/REJECT) is the only body
+    /// field, so folding it into the key keeps approve and reject distinct (no
+    /// 409 `IDEMPOTENCY_KEY_CONFLICT`) while a double-tap of the same decision
+    /// inside one bucket dedupes.
     public func decideConsultation(
         bookingId: String,
-        _ decision: ConsultationDecision
+        _ decision: ConsultationDecision,
+        idempotencyKey: String? = nil
     ) async throws {
         let payload = try JSONEncoder.canonical.encode(
             ConsultationDecisionRequest(action: decision.wire)
         )
+        let key = idempotencyKey ?? buildClientIdempotencyKey(
+            scope: "client-consultation-decision", entityId: bookingId, action: decision.wire)
         try await api.requestVoid(
             "/client/bookings/\(bookingId)/consultation",
             method: .post,
-            body: payload
+            body: payload,
+            headers: ["idempotency-key": key]
         )
     }
 
