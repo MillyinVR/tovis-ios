@@ -41,6 +41,12 @@ public struct ClientPriorityOffer: Decodable, Sendable, Identifiable {
     /// The primary service + offering ids the claim books (flat, added web-side).
     public let serviceId: String?
     public let offeringId: String?
+    /// The `LastMinuteOpening.id` this offer is for, threaded into `finalize` so the
+    /// claim consumes the opening + applies its tier incentive (parity with the
+    /// openings feed / web's `claimHref`, which already carries `openingId`).
+    /// Optional — added to the priority-offer route DTO in a paired web change, so it
+    /// decodes to `nil` until that deploys.
+    public let openingId: String?
     public let startAt: String
     public let endAt: String?
     public let timeZone: String?

@@ -101,11 +101,13 @@ public final class BookingService: Sendable {
         locationType: String = "SALON",
         addOnIds: [String] = [],
         source: String = "REQUESTED",
+        openingId: String? = nil,
         idempotencyKey: String? = nil
     ) async throws -> FinalizedBooking {
         let payload = try JSONEncoder.canonical.encode(FinalizeBookingRequest(
             holdId: holdId, offeringId: offeringId,
-            locationType: locationType, addOnIds: addOnIds, source: source
+            locationType: locationType, addOnIds: addOnIds, source: source,
+            openingId: openingId
         ))
         let key = idempotencyKey ?? buildClientIdempotencyKey(
             scope: "booking", entityId: holdId, action: "finalize",

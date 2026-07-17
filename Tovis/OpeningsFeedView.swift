@@ -25,6 +25,9 @@ struct OpeningsFeedView: View {
         let proName: String
         let offering: ProOffering
         let preselectedSlot: String
+        /// The `LastMinuteOpening.id` (`ClientOpening.opening.id`) so finalize
+        /// consumes the opening + applies its incentive (web parity).
+        let openingId: String
         var id: String { offering.id + preselectedSlot }
     }
 
@@ -71,7 +74,8 @@ struct OpeningsFeedView: View {
                 professionalId: launch.professionalId,
                 proName: launch.proName,
                 offering: launch.offering,
-                preselectedSlot: launch.preselectedSlot
+                preselectedSlot: launch.preselectedSlot,
+                openingId: launch.openingId
             )
         }
         .refreshable { await load() }
@@ -233,7 +237,8 @@ struct OpeningsFeedView: View {
                     professionalId: opening.opening.professionalId,
                     proName: opening.proName,
                     offering: offering,
-                    preselectedSlot: opening.startAt
+                    preselectedSlot: opening.startAt,
+                    openingId: opening.opening.id
                 )
             } else {
                 proNav = ProNav(id: opening.opening.professionalId, name: opening.proName)
