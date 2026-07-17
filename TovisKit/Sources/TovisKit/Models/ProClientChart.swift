@@ -8,6 +8,11 @@ import Foundation
 /// `GET /api/v1/pro/clients/[id]/chart` → the full chart (envelope `ok` ignored).
 public struct ProClientChart: Decodable, Sendable {
     public let header: ProChartHeader
+    /// Derived "relationship intelligence" (LTV / cadence / lead time / pattern /
+    /// rebooking / smart flags). Formatted server-side so this decodes and renders
+    /// ready-made strings — the client carries no derivations of its own. Optional
+    /// so a pre-deploy backend that predates the field still decodes (card hidden).
+    public let relationshipIntelligence: ProChartRelationshipIntelligence?
     public let alertBanner: String?
     public let doNotRebook: ProChartDoNotRebook?
     public let allergies: [ProChartAllergy]
@@ -20,6 +25,34 @@ public struct ProClientChart: Decodable, Sendable {
     /// Whether the founder-gated technical record (formulas/consents) is enabled.
     /// Its encrypted free text stays web-only; native shows the gate + a pointer.
     public let technicalEnabled: Bool
+}
+
+/// The pro chart's relationship-intelligence zone, fully formatted by the backend
+/// (`formatRelationshipIntelligence`). Each `Tile` is a rendered value + optional
+/// sub-hint; every string is display-ready so web and native show identical copy.
+public struct ProChartRelationshipIntelligence: Decodable, Sendable {
+    public struct Tile: Decodable, Sendable {
+        public let value: String
+        public let hint: String?
+    }
+
+    public struct Flag: Decodable, Sendable, Identifiable {
+        public let key: String
+        public let label: String
+        /// "warn" | "info" | "success" — mapped to a tone color at the view layer.
+        public let tone: String
+        public var id: String { key }
+    }
+
+    public let lifetimeValue: Tile
+    public let visits: Tile
+    public let cadence: Tile
+    public let leadTime: Tile
+    public let pattern: Tile
+    public let rebooking: Tile
+    public let preferredContactMethod: String?
+    public let referralSource: String?
+    public let flags: [Flag]
 }
 
 public struct ProChartHeader: Decodable, Sendable {
