@@ -38,9 +38,23 @@ public struct HomeProfessional: Decodable, Sendable, Identifiable {
     public let location: String?
     public let timeZone: String?
 
-    /// Solo pros often have no `businessName` (see the name-starvation audit), so
-    /// fall back to the handle, then a neutral label — never an empty string.
+    /// Server-resolved public display name that honors the pro's `nameDisplay`
+    /// toggle (business name / real name / @handle). The web loader resolves it
+    /// once so every client renders the same string. Optional so a pre-deploy
+    /// backend or an older fixture falls back to the local rule below.
+    private let serverDisplayName: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, businessName, handle, avatarUrl, professionType, location, timeZone
+        case serverDisplayName = "displayName"
+    }
+
+    /// The server-resolved name when present; otherwise the legacy local rule —
+    /// solo pros often have no `businessName`, so fall back to the handle, then a
+    /// neutral label, never an empty string. (Legacy path is BUSINESS_NAME-biased
+    /// and can surface a handle; it's inert once the backend sends `displayName`.)
     public var displayName: String {
+        if let resolved = serverDisplayName?.trimmedOrNil { return resolved }
         if let name = businessName, !name.isEmpty { return name }
         if let handle, !handle.isEmpty { return "@\(handle)" }
         return "Your pro"

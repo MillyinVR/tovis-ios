@@ -140,7 +140,18 @@ public struct MessageProPreview: Decodable, Sendable, Identifiable {
     public let businessName: String?
     public let avatarUrl: String?
 
+    /// Server-resolved public display name honoring the pro's `nameDisplay` toggle
+    /// (business name / real name / @handle). Optional so a pre-deploy backend or
+    /// an older fixture falls back to `businessName` below.
+    private let serverDisplayName: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, businessName, avatarUrl
+        case serverDisplayName = "displayName"
+    }
+
     public var displayName: String {
+        if let resolved = serverDisplayName?.trimmedOrNil { return resolved }
         let name = businessName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return name.isEmpty ? "Your pro" : name
     }

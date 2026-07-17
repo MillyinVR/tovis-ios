@@ -27,7 +27,7 @@
       "locationAddressSnapshot": null,
       "service": { "id": "svc_1", "name": "Balayage" },
       "professional": {
-        "id": "pro_1", "businessName": "Plume Studio", "handle": "plume",
+        "id": "pro_1", "businessName": "Plume Studio", "displayName": "Plume Studio", "handle": "plume",
         "avatarUrl": null, "location": "Los Angeles, CA", "timeZone": "America/Los_Angeles"
       },
       "location": {
@@ -111,7 +111,7 @@
           "locationType": "SALON",
           "locationId": "loc_9",
           "professional": {
-            "id": "pro_9", "businessName": null, "handle": "alex", "avatarUrl": null,
+            "id": "pro_9", "businessName": null, "displayName": "Alex Rivera", "handle": "alex", "avatarUrl": null,
             "professionType": "HAIR", "location": "NYC", "timeZone": "America/New_York"
           },
           "location": null,
@@ -149,7 +149,7 @@
         "windowEndMin": null,
         "service": { "id": "svc_2", "name": "Cut" },
         "professional": {
-          "id": "pro_2", "businessName": "Snip", "handle": null, "avatarUrl": null,
+          "id": "pro_2", "businessName": "Snip", "displayName": "Snip", "handle": null, "avatarUrl": null,
           "location": null, "timeZone": null
         }
       }
@@ -157,7 +157,7 @@
     "favoritePros": [
       {
         "professional": {
-          "id": "pro_3", "businessName": "Gloss", "handle": "gloss", "avatarUrl": null,
+          "id": "pro_3", "businessName": "Gloss", "displayName": "Grace Kim", "handle": "gloss", "avatarUrl": null,
           "professionType": "NAILS", "location": "SF"
         }
       }
