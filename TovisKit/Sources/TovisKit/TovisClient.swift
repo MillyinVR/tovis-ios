@@ -41,6 +41,10 @@ public final class TovisClient: Sendable {
     /// (presign fresh photos + POST share-look). Not flag-gated; ships live.
     public let shareLook: ShareLookService
     public let notifications: NotificationsService
+    /// Client "Activity" — the creator-engagement feed behind the Me-header bell
+    /// (follows, comments, likes, saves, milestones). Distinct from the
+    /// transactional `notifications` centre.
+    public let activity: ActivityService
     /// Client reviews — create / edit / delete a completed appointment's text
     /// review (rating + headline + body). Media attachments are a later pass.
     public let reviews: ReviewsService
@@ -168,6 +172,7 @@ public final class TovisClient: Sendable {
             supabaseKey: config.supabaseAnonKey
         )
         self.notifications = NotificationsService(api: api)
+        self.activity = ActivityService(api: api)
         self.reviews = ReviewsService(
             api: api,
             supabaseURL: config.supabaseURL,
