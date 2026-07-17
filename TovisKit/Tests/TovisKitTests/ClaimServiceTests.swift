@@ -193,7 +193,7 @@ final class ClaimURLProtocol: URLProtocol {
     }
 
     @Test func acceptClaimMapsEveryDocumentedFailureToAnOutcome() async throws {
-        // Every body verbatim from the live route. Note three distinct 409s and
+        // Every body verbatim from the live route. Note FOUR distinct 409s and
         // two distinct 404s — proof the mapping cannot key on the status.
         #expect(
             try await outcome(
@@ -224,6 +224,19 @@ final class ClaimURLProtocol: URLProtocol {
                 status: 404,
                 body: "{\"ok\":false,\"error\":\"Client profile not found.\",\"code\":\"CLIENT_NOT_FOUND\"}"
             ) == .clientNotFound
+        )
+        // Driven live 2026-07-16 against a seeded shell holding a Board (an
+        // account-gated row a userId==null profile cannot have), which refuses the
+        // merge as `source_not_shell`. The reason stays server-side — the body
+        // carries only the code and the support-facing copy. Verified in the DB
+        // that the refusal wrote NOTHING: shell, its Board and the still-PENDING
+        // invite were all untouched, which is what the card's "nothing was lost"
+        // promises.
+        #expect(
+            try await outcome(
+                status: 409,
+                body: "{\"ok\":false,\"error\":\"This history needs a quick review before it can be added to your account. Contact support and we will finish it for you.\",\"code\":\"MERGE_REFUSED\"}"
+            ) == .mergeRefused
         )
         #expect(
             try await outcome(

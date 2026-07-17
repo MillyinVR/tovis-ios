@@ -51,8 +51,8 @@ public final class ClaimService: Sendable {
     ///
     /// ⚠️ Keyed on the body's top-level `code`, NOT the status — the statuses are
     /// ambiguous (404 = NOT_FOUND | CLIENT_NOT_FOUND; 409 = ALREADY_CLAIMED |
-    /// CLIENT_MISMATCH | CONFLICT). Pinned by `ClaimServiceTests` against bodies
-    /// captured verbatim from the live route.
+    /// CLIENT_MISMATCH | MERGE_REFUSED | CONFLICT). Pinned by `ClaimServiceTests`
+    /// against bodies captured verbatim from the live route.
     public func acceptClaim(token: String) async throws -> ClaimAcceptOutcome {
         do {
             let response: ClaimAcceptResponse = try await api.request(
@@ -69,6 +69,7 @@ public final class ClaimService: Sendable {
             case "ALREADY_CLAIMED": return .alreadyClaimed
             case "CLIENT_NOT_FOUND": return .clientNotFound
             case "CLIENT_MISMATCH": return .clientMismatch
+            case "MERGE_REFUSED": return .mergeRefused
             case "CONFLICT": return .conflict
             case "WORKSPACE_MISMATCH": return .notAClient
             default: throw error

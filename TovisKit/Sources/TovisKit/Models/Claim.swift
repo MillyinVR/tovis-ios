@@ -85,7 +85,8 @@ public struct ClaimAcceptResponse: Codable, Sendable {
 ///
 /// ⚠️ **Key on `code`, never on the status** — the status is ambiguous: 404 is
 /// `NOT_FOUND` *or* `CLIENT_NOT_FOUND`, and 409 is `ALREADY_CLAIMED` *or*
-/// `CLIENT_MISMATCH` *or* `CONFLICT`. Verified verbatim against the live route.
+/// `CLIENT_MISMATCH` *or* `MERGE_REFUSED` *or* `CONFLICT`. Verified verbatim
+/// against the live route.
 public enum ClaimAcceptOutcome: Equatable, Sendable {
     /// 200 — claimed. `bookingId` is nil for a booking-less claim.
     case claimed(bookingId: String?)
@@ -98,7 +99,20 @@ public enum ClaimAcceptOutcome: Equatable, Sendable {
     /// 404 `CLIENT_NOT_FOUND` — the acting client identity vanished mid-request.
     case clientNotFound
     /// 409 `CLIENT_MISMATCH` — the link belongs to a different client identity.
+    ///
+    /// ⚠️ Two very different situations arrive here, and neither is the viewer's
+    /// fault. Normally this is unreachable — the backend absorbs the pro's shell
+    /// into the acting identity instead of refusing (web #652), so a mismatch
+    /// means a caller bug. But it is ALSO what the merge's kill switch returns:
+    /// `DISABLE_CLAIM_MERGE=1` makes the backend fall straight back to this
+    /// pre-#652 refusal (web #653), so during that emergency EVERY signed-in
+    /// claim lands here. Keep the case; don't build the UI around it.
     case clientMismatch
+    /// 409 `MERGE_REFUSED` — absorbing the pro's history would have been unsafe,
+    /// so the backend wrote nothing and wants a human. The reason is deliberately
+    /// off the wire (every one means "our model of this data is wrong", which the
+    /// viewer cannot act on) — it is logged server-side for the people who can.
+    case mergeRefused
     /// 409 `CONFLICT` — a concurrent claim won the race; nothing was destroyed.
     case conflict
     /// 403 `WORKSPACE_MISMATCH` — a non-client session tried to claim.
@@ -144,6 +158,9 @@ public enum ClaimScreenState: Equatable, Sendable {
     case alreadyClaimed
     case revoked
     case clientMismatch
+    /// The history could not be absorbed safely; nothing was written and support
+    /// has to finish it by hand. Mirrors web's `merge-unavailable` card.
+    case mergeRefused
     case conflict
     case notFound
 
@@ -166,6 +183,7 @@ public enum ClaimScreenState: Equatable, Sendable {
             case .revoked: return .revoked
             case .alreadyClaimed: return .alreadyClaimed
             case .clientMismatch: return .clientMismatch
+            case .mergeRefused: return .mergeRefused
             case .conflict: return .conflict
             case .notAClient: return .notAClient
             // The acting client identity vanished mid-request, so there is

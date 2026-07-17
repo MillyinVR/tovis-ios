@@ -168,6 +168,23 @@ struct ClaimView: View {
                 message: "This claim link belongs to a different client identity than the one you’re signed in as. Sign in with the right client account to finish claiming this history."
             )
 
+        // Nothing was written, and the viewer cannot fix it themselves — the only
+        // honest action is the one web offers, so route to the native support form
+        // (step 5) rather than the web /support page this card mirrors.
+        case .mergeRefused:
+            statusCard(
+                title: "This history needs a quick review first",
+                message: "Something about this history has to be checked by a person before we can add it to your account. Nothing was changed, and nothing was lost. Contact support and we’ll finish it for you."
+            ) {
+                NavigationLink {
+                    ContactSupportView()
+                } label: {
+                    secondaryButtonLabel("Contact support")
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 6)
+            }
+
         case .conflict:
             statusCard(
                 title: "We couldn’t finish the claim",
@@ -342,20 +359,26 @@ struct ClaimView: View {
 
     // MARK: - Small building blocks
 
-    /// The screen's non-primary button chrome, shared by every branch.
+    /// The screen's non-primary button chrome, shared by every branch — split out
+    /// from `secondaryButton` so a `NavigationLink` can wear the same chrome
+    /// without restating it.
+    private func secondaryButtonLabel(_ title: String) -> some View {
+        Text(title)
+            .font(BrandFont.body(14))
+            .fontWeight(.semibold)
+            .foregroundStyle(BrandColor.textPrimary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(RoundedRectangle(cornerRadius: 14).fill(BrandColor.bgSurface))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(BrandColor.textMuted.opacity(0.15), lineWidth: 1))
+    }
+
     private func secondaryButton(
         _ title: String,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Text(title)
-                .font(BrandFont.body(14))
-                .fontWeight(.semibold)
-                .foregroundStyle(BrandColor.textPrimary)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(RoundedRectangle(cornerRadius: 14).fill(BrandColor.bgSurface))
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(BrandColor.textMuted.opacity(0.15), lineWidth: 1))
+            secondaryButtonLabel(title)
         }
         .buttonStyle(.plain)
     }

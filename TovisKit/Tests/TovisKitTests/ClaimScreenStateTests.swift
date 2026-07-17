@@ -110,6 +110,21 @@ import Testing
         )
     }
 
+    @Test func aRefusedMergeRendersItsOwnState() {
+        // NOT the mismatch card: a refusal is not "wrong account", it is "a person
+        // has to look at this". The viewer can do nothing but reach support, and
+        // nothing was written — so it gets its own state rather than being folded
+        // into the mismatch copy, which would send them hunting for another account
+        // that does not exist.
+        #expect(
+            ClaimScreenState.resolve(
+                contextState: ClaimContextState.ready,
+                viewer: .client,
+                outcome: .mergeRefused
+            ) == .mergeRefused
+        )
+    }
+
     @Test func conflictIsRenderedSoTheViewerCanRetry() {
         #expect(
             ClaimScreenState.resolve(
