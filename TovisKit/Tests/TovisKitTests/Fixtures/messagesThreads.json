@@ -13,7 +13,7 @@
       "lastMessagePreview": "See you at 2!",
       "updatedAt": "2026-06-27T18:30:00.000Z",
       "client": { "id": "cli_1", "firstName": "Amara", "lastName": "Reyes", "avatarUrl": null },
-      "professional": { "id": "pro_1", "businessName": "Plume Studio", "avatarUrl": null },
+      "professional": { "id": "pro_1", "businessName": "Plume Studio", "displayName": "Priya Nair", "avatarUrl": null },
       "participants": [ { "lastReadAt": "2026-06-27T18:00:00.000Z" } ],
       "isViewerPro": true,
       "eyebrow": "BOOKING CONFIRMED — Balayage — Sat 2:30 PM",

@@ -206,13 +206,14 @@ func fixture(_ name: String) throws -> Data {
             Issue.record("expected a pending-consultation action")
         }
 
-        // Solo pro with no businessName falls back to the handle.
-        #expect(home.invites.first?.opening.professional.displayName == "@alex")
+        // Server-resolved display name (honors the nameDisplay toggle) is rendered
+        // verbatim — here a real name for a pro who has no businessName.
+        #expect(home.invites.first?.opening.professional.displayName == "Alex Rivera")
         // Invite opening derives its title + starting price from services.
         #expect(home.invites.first?.opening.title == "Blowout")
         #expect(home.invites.first?.opening.startingPrice == "60.00")
         #expect(home.waitlists.first?.service?.name == "Cut")
-        #expect(home.favoritePros.first?.professional?.displayName == "Gloss")
+        #expect(home.favoritePros.first?.professional?.displayName == "Grace Kim")
         #expect(home.favoriteServices.first?.service?.minPrice == "45.00")
         #expect(home.favoriteServices.first?.service?.category?.name == "Nails")
         #expect(home.viralLive.first?.fanOutCount == 12)
@@ -359,7 +360,8 @@ func fixture(_ name: String) throws -> Data {
     @Test func decodesMessageThreads() throws {
         let res = try JSONDecoder().decode(MessageThreadsResponse.self, from: fixture("messagesThreads"))
         let thread = try #require(res.threads.first)
-        #expect(thread.professional.displayName == "Plume Studio")
+        // The pro preview renders the server-resolved displayName (honors nameDisplay).
+        #expect(thread.professional.displayName == "Priya Nair")
         #expect(thread.lastMessagePreview == "See you at 2!")
         // lastMessageAt (18:30) is newer than my lastReadAt (18:00) → unread.
         #expect(thread.isUnread == true)
@@ -1726,5 +1728,34 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.hasContent == false)
         // Falls back cleanly when a phase is absent.
         #expect(res.beforeAfter.beforePreferred == nil)
+    }
+
+    // MARK: - Pro display name (server-resolved, honoring nameDisplay)
+
+    // The backend now resolves the toggle-aware name once and sends `displayName`;
+    // the lean home/message pro refs render it verbatim. Absent (a pre-deploy
+    // backend or an old fixture) → the legacy local rule, so nothing breaks.
+    @Test func homeProfessionalPrefersServerDisplayName() throws {
+        func pro(_ json: String) throws -> HomeProfessional {
+            try JSONDecoder().decode(HomeProfessional.self, from: Data(json.utf8))
+        }
+        // Server value wins over businessName (this is how REAL_NAME/HANDLE reach us).
+        #expect(try pro(#"{"id":"p1","businessName":"Glow Studio","handle":"glow","displayName":"Ada Lovelace"}"#).displayName == "Ada Lovelace")
+        // Absent → legacy fallback: businessName, then @handle, then a neutral label.
+        #expect(try pro(#"{"id":"p2","businessName":"Glow Studio","handle":"glow"}"#).displayName == "Glow Studio")
+        #expect(try pro(#"{"id":"p3","handle":"solo"}"#).displayName == "@solo")
+        #expect(try pro(#"{"id":"p4"}"#).displayName == "Your pro")
+        // A blank server value is ignored, never rendered as an empty title.
+        #expect(try pro(#"{"id":"p5","businessName":"Glow Studio","displayName":"   "}"#).displayName == "Glow Studio")
+    }
+
+    @Test func messageProPreviewPrefersServerDisplayName() throws {
+        func pro(_ json: String) throws -> MessageProPreview {
+            try JSONDecoder().decode(MessageProPreview.self, from: Data(json.utf8))
+        }
+        #expect(try pro(#"{"id":"p1","businessName":"Glow Studio","displayName":"@grace"}"#).displayName == "@grace")
+        #expect(try pro(#"{"id":"p2","businessName":"Glow Studio"}"#).displayName == "Glow Studio")
+        #expect(try pro(#"{"id":"p3"}"#).displayName == "Your pro")
+        #expect(try pro(#"{"id":"p4","businessName":"Glow Studio","displayName":"   "}"#).displayName == "Glow Studio")
     }
 }
