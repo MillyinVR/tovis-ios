@@ -226,6 +226,18 @@ public struct LooksShareResponse: Decodable, Sendable {
     public let shareCount: Int
 }
 
+// MARK: - "Not for me" (POST /api/v1/looks/{id}/hide)
+
+/// ⚠️ Pinned to the route, NOT to codegen: `LooksHideResponseDto` exists in
+/// `lib/looks/types.ts` but is not re-exported from `lib/dto/index.ts`, so it
+/// never reaches `schema/api/tovis-api.schema.json` (every sibling toggle DTO
+/// is there — this reads as an oversight in the barrel). There is no fixture to
+/// contract-validate against; the decode test is the only coverage.
+public struct LooksHideResponse: Decodable, Sendable {
+    public let lookPostId: String
+    public let hidden: Bool
+}
+
 // MARK: - Comments (GET/POST /api/v1/looks/{id}/comments)
 
 struct LooksCommentsListResponse: Decodable, Sendable {

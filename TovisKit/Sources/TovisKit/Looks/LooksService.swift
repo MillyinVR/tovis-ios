@@ -22,22 +22,34 @@ public final class LooksService: Sendable {
     /// service category (`category` slug). `sort` selects the ordering
     /// (`"ranked"` for the Discover bookable grid, default recency). `cursor` is
     /// the prior page's `nextCursor`.
+    ///
+    /// `query` is the feed search (web's `LooksTopBar` field): the server matches
+    /// it against the look's caption, the pro's business name/handle, and the
+    /// service + category names — so results are always looks, never pros. A
+    /// blank/whitespace query omits `q` entirely (web parity: `if (query.trim())`),
+    /// which matters because a present `q` routes the server off the personalized
+    /// feed onto the chronological search path.
     public func feed(
         filter: String? = nil,
         category: String? = nil,
         following: Bool = false,
         sort: String? = nil,
+        query: String? = nil,
         cursor: String? = nil,
         limit: Int = 12
     ) async throws -> FeedPage {
-        var query = [URLQueryItem(name: "limit", value: String(limit))]
-        if following { query.append(URLQueryItem(name: "following", value: "true")) }
-        if let filter { query.append(URLQueryItem(name: "filter", value: filter)) }
-        if let category { query.append(URLQueryItem(name: "category", value: category)) }
-        if let sort { query.append(URLQueryItem(name: "sort", value: sort)) }
-        if let cursor { query.append(URLQueryItem(name: "cursor", value: cursor)) }
+        var items = [URLQueryItem(name: "limit", value: String(limit))]
+        if following { items.append(URLQueryItem(name: "following", value: "true")) }
+        if let filter { items.append(URLQueryItem(name: "filter", value: filter)) }
+        if let category { items.append(URLQueryItem(name: "category", value: category)) }
+        if let sort { items.append(URLQueryItem(name: "sort", value: sort)) }
+        if let trimmed = query?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !trimmed.isEmpty {
+            items.append(URLQueryItem(name: "q", value: trimmed))
+        }
+        if let cursor { items.append(URLQueryItem(name: "cursor", value: cursor)) }
 
-        let response: LooksFeedResponse = try await api.request("/looks", query: query)
+        let response: LooksFeedResponse = try await api.request("/looks", query: items)
         return FeedPage(items: response.items, nextCursor: response.nextCursor)
     }
 
@@ -88,6 +100,30 @@ public final class LooksService: Sendable {
     public func recordShare(lookId: String) async throws -> LooksShareResponse {
         try await api.request(
             "/looks/\(lookId)/share",
+            method: .post,
+            body: Data("{}".utf8)
+        )
+    }
+
+    // MARK: - "Not for me"
+
+    /// POST /api/v1/looks/{id}/hide — the feed's only negative signal.
+    ///
+    /// Private to the viewer (no counter, no author notification). The server
+    /// writes a `LookHide` keyed by USER id and then does two distinct things:
+    /// hard-excludes the look from every feed forever, and adds a *decaying*
+    /// suppression weight onto its service category (30-day half-life — faster
+    /// than the positive-affinity one, so a mis-tap fades sooner). Only the
+    /// exclusion is permanent.
+    ///
+    /// Idempotent: a duplicate hide swallows the unique violation server-side and
+    /// still reports `hidden: true`. The route reads no body — `{}` matches the
+    /// sibling toggles. There is a DELETE (un-hide), but no client calls it and
+    /// neither platform has an un-hide affordance, so it is deliberately unwrapped.
+    @discardableResult
+    public func hide(lookId: String) async throws -> LooksHideResponse {
+        try await api.request(
+            "/looks/\(lookId)/hide",
             method: .post,
             body: Data("{}".utf8)
         )

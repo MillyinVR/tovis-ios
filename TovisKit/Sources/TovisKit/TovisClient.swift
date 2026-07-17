@@ -31,7 +31,6 @@ public final class TovisClient: Sendable {
     /// The board LIST arrives in the `/me` payload; this covers everything else.
     public let boards: BoardsService
     public let messages: MessagesService
-    public let search: SearchService
     public let discover: DiscoverService
     public let booking: BookingService
     public let addresses: AddressesService
@@ -157,7 +156,6 @@ public final class TovisClient: Sendable {
             supabaseURL: config.supabaseURL,
             supabaseKey: config.supabaseAnonKey
         )
-        self.search = SearchService(api: api)
         self.discover = DiscoverService(api: api)
         self.booking = BookingService(api: api)
         self.addresses = AddressesService(api: api)

@@ -17,7 +17,21 @@ struct DiscoverView: View {
     /// look to book the pro who made it") vs. the geo pro-finder. Opens on looks.
     private enum DiscoverMode { case looks, pros }
 
+    /// Within the pro-finder: search pros by name/place, or search the SERVICE
+    /// catalog and let a pick narrow the pros. The search field's placeholder has
+    /// always promised "services"; this is the half that delivers it.
+    private enum ProSearchTab { case pros, services }
+
     @State private var discoverMode: DiscoverMode = .looks
+    @State private var proSearchTab: ProSearchTab = .pros
+
+    // Services tab. `selectedService` is the applied filter — once set, the pro
+    // search narrows to pros who actually offer that exact service.
+    @State private var services: [SearchServiceItem] = []
+    @State private var selectedService: SearchServiceItem?
+    @State private var servicesLoading = false
+    @State private var servicesError: String?
+    @State private var servicesToken = 0
 
     @State private var query = ""
     @State private var categories: [DiscoverCategory] = []
@@ -353,15 +367,148 @@ struct DiscoverView: View {
             }
             HStack(spacing: 10) {
                 searchField
-                filterButton
-                viewToggle
+                // Both act on the pro RESULTS — meaningless while browsing the
+                // service catalog, so they leave rather than sit there disabled.
+                if proSearchTab == .pros {
+                    filterButton
+                    viewToggle
+                }
             }
-            if !placeResults.isEmpty { placeSuggestions }
-            categoryRail
+            proSearchTabs
+            if proSearchTab == .pros {
+                if let selectedService { serviceFilterChip(selectedService) }
+                if !placeResults.isEmpty { placeSuggestions }
+                categoryRail
+            } else {
+                servicesList
+            }
             Spacer()
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
+    }
+
+    // MARK: - Pros ↔ Services tabs
+
+    private var proSearchTabs: some View {
+        HStack(spacing: 18) {
+            proSearchTabButton(.pros, label: "Pros")
+            proSearchTabButton(.services, label: "Services")
+            Spacer()
+        }
+    }
+
+    private func proSearchTabButton(_ t: ProSearchTab, label: String) -> some View {
+        let active = proSearchTab == t
+        return Button {
+            withAnimation(.easeInOut(duration: 0.18)) { proSearchTab = t }
+            if t == .services { Task { await runServicesSearch() } }
+        } label: {
+            VStack(spacing: 4) {
+                Text(label.uppercased())
+                    .font(BrandFont.mono(11)).tracking(1.2)
+                    .foregroundStyle(active ? BrandColor.textPrimary : BrandColor.textMuted)
+                Capsule()
+                    .fill(active ? BrandColor.accent : .clear)
+                    .frame(height: 2)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(active ? [.isSelected] : [])
+    }
+
+    /// The applied service filter, shown in the pros tab so the narrowed result
+    /// set is never unexplained.
+    private func serviceFilterChip(_ service: SearchServiceItem) -> some View {
+        HStack(spacing: 8) {
+            Text(service.name)
+                .font(BrandFont.body(13, .semibold))
+                .foregroundStyle(BrandColor.onAccent)
+            Button { Task { await clearSelectedService() } } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(BrandColor.onAccent)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Clear the \(service.name) filter")
+        }
+        .padding(.horizontal, 11).padding(.vertical, 7)
+        .background(BrandColor.accent, in: Capsule())
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: - Services results
+
+    @ViewBuilder
+    private var servicesList: some View {
+        if servicesLoading && services.isEmpty {
+            ProgressView().tint(BrandColor.accent)
+                .frame(maxWidth: .infinity).padding(.vertical, 24)
+        } else if let servicesError {
+            Text(servicesError)
+                .font(BrandFont.body(13)).foregroundStyle(BrandColor.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 16)
+        } else if services.isEmpty {
+            Text(query.isEmpty
+                 ? "No services to show yet."
+                 : "No services match “\(query)”.")
+                .font(BrandFont.body(13)).foregroundStyle(BrandColor.textMuted)
+                .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 16)
+        } else {
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(services.enumerated()), id: \.element.id) { index, service in
+                        Button { Task { await pickService(service) } } label: {
+                            serviceRow(service)
+                        }
+                        .buttonStyle(.plain)
+                        // No trailing rule under the last row — it was drawing a
+                        // divider against the container's own border.
+                        if index < services.count - 1 {
+                            Divider().overlay(BrandColor.textMuted.opacity(0.15))
+                        }
+                    }
+                }
+            }
+            // A ScrollView is greedy: `maxHeight` alone still renders the full 320
+            // and leaves dead space under a short list. Hug the rows instead, and
+            // only start scrolling once they'd exceed the cap. The estimate can
+            // drift under large Dynamic Type — that just makes it scroll a little
+            // early, which is harmless.
+            .frame(height: min(CGFloat(services.count) * Self.serviceRowHeight, 320))
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(BrandColor.textMuted.opacity(0.2), lineWidth: 1))
+        }
+    }
+
+    /// Row height used to size the results container to its content (name +
+    /// category + 11pt vertical padding either side).
+    private static let serviceRowHeight: CGFloat = 62
+
+    /// Name + category only — that is the whole `SearchServiceItemDto`. No price
+    /// or pro exists on this contract, which is why the row is a filter pick
+    /// rather than a destination.
+    private func serviceRow(_ service: SearchServiceItem) -> some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(service.name)
+                    .font(BrandFont.body(15, .semibold))
+                    .foregroundStyle(BrandColor.textPrimary)
+                if let category = service.categoryName {
+                    Text(category.uppercased())
+                        .font(BrandFont.mono(10)).tracking(0.8)
+                        .foregroundStyle(BrandColor.textMuted)
+                }
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(BrandColor.textMuted)
+        }
+        .padding(.horizontal, 13).padding(.vertical, 11)
+        .contentShape(Rectangle())
     }
 
     // MARK: - Mode toggle (Looks ↔ Find a pro) — web DiscoverModeToggle
@@ -578,19 +725,32 @@ struct DiscoverView: View {
     private var searchField: some View {
         HStack(spacing: 9) {
             Image(systemName: "magnifyingglass").foregroundStyle(BrandColor.textMuted)
-            TextField("Search pros, services, or a place", text: $query)
+            // The placeholder now tells the truth per tab: place autocomplete and
+            // pro text-matching only exist on the pros tab.
+            TextField(
+                proSearchTab == .services ? "Search services" : "Search pros or a place",
+                text: $query
+            )
                 .font(BrandFont.body(15)).foregroundStyle(BrandColor.textPrimary)
                 .autocorrectionDisabled().textInputAutocapitalization(.never)
                 .submitLabel(.search)
-                .onSubmit { Task { await runSearch() } }
-                .onChange(of: query) { debouncedSearch(); loadPlaceSuggestions() }
-            if loading {
+                .onSubmit { Task { await runActiveTabSearch() } }
+                .onChange(of: query) {
+                    if proSearchTab == .services {
+                        debouncedServicesSearch()
+                    } else {
+                        debouncedSearch()
+                        loadPlaceSuggestions()
+                    }
+                }
+            if proSearchTab == .services ? servicesLoading : loading {
                 ProgressView().controlSize(.mini).tint(BrandColor.accent)
             } else if !query.isEmpty {
-                Button { query = ""; Task { await runSearch() } } label: {
+                Button { query = ""; Task { await runActiveTabSearch() } } label: {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(BrandColor.textMuted)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
             }
         }
         .padding(.horizontal, 13).padding(.vertical, 11)
@@ -735,6 +895,7 @@ struct DiscoverView: View {
                 lng: origin.longitude,
                 radiusMiles: radiusMiles,
                 categoryId: selectedCategory?.id,
+                serviceId: selectedService?.id,
                 sort: sort,
                 mobileOnly: mobileOnly,
                 openNowOnly: openNowOnly,
@@ -755,6 +916,66 @@ struct DiscoverView: View {
 
     private func searchThisArea() async {
         searchedOrigin = mapCenter
+        await runSearch()
+    }
+
+    /// Submit/clear routes to whichever tab the field is currently driving.
+    private func runActiveTabSearch() async {
+        if proSearchTab == .services {
+            await runServicesSearch()
+        } else {
+            await runSearch()
+        }
+    }
+
+    // MARK: - Services search (pick a service → pros who offer it)
+
+    private func debouncedServicesSearch() {
+        servicesToken += 1
+        let token = servicesToken
+        Task {
+            try? await Task.sleep(for: .milliseconds(300))
+            if token == servicesToken { await runServicesSearch() }
+        }
+    }
+
+    /// GET /search/services. An empty query returns the browse list (the route
+    /// omits `q` and falls back to the active catalog ordered by name), so this
+    /// runs unconditionally — the tab is never blank.
+    private func runServicesSearch() async {
+        servicesLoading = true
+        servicesError = nil
+        do {
+            let page = try await session.client.discover.searchServices(q: query)
+            services = page.items
+        } catch let error as APIError {
+            servicesError = error.userMessage
+        } catch {
+            servicesError = "Couldn’t search services. Try again."
+        }
+        servicesLoading = false
+    }
+
+    /// Apply a picked service as the pro filter and hand back to the pros tab.
+    ///
+    /// ⚠️ Clearing `query` is load-bearing, not tidiness. `/search/pros`'s `q`
+    /// matches businessName / handle / city / state / address — **never service
+    /// names** — so keeping "balay" in the box while filtering serviceId=Balayage
+    /// would AND a text match no pro can satisfy and return an empty list for a
+    /// filter that has real results. Same reasoning for the category: a service is
+    /// strictly narrower than its category, and a stale unrelated category would
+    /// silently contradict the pick.
+    private func pickService(_ service: SearchServiceItem) async {
+        selectedService = service
+        query = ""
+        placeResults = []
+        selectedCategory = nil
+        withAnimation(.easeInOut(duration: 0.18)) { proSearchTab = .pros }
+        await runSearch()
+    }
+
+    private func clearSelectedService() async {
+        selectedService = nil
         await runSearch()
     }
 

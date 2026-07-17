@@ -57,6 +57,25 @@ public struct SearchProLocation: Decodable, Sendable, Identifiable {
     }
 }
 
+// MARK: - GET /api/v1/search/services
+
+struct SearchServicesResponse: Decodable, Sendable {
+    let items: [SearchServiceItem]
+    let nextCursor: String?
+}
+
+/// One row of the service catalog (`SearchServiceItemDto`). Deliberately thin —
+/// the route selects only `id`, `name` and the category, so there is **no price,
+/// pro, image or count** to render. That is why a picked service hands off to
+/// `searchPros(serviceId:)` rather than trying to stand on its own.
+public struct SearchServiceItem: Decodable, Sendable, Identifiable {
+    public let id: String
+    public let name: String
+    public let categoryId: String?
+    public let categoryName: String?
+    public let categorySlug: String?
+}
+
 // MARK: - GET /api/v1/discover/categories
 
 struct DiscoverCategoriesResponse: Decodable, Sendable {
