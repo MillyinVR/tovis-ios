@@ -244,6 +244,30 @@ public struct LooksHideResponse: Decodable, Sendable {
     public let hidden: Bool
 }
 
+// MARK: - Report a comment (POST /api/v1/looks/{id}/comments/{cid}/report)
+
+/// `status` is deliberately a `String`, not an enum. The server sends
+/// `"accepted"` (201, first report) or `"already_reported"` (200, duplicate),
+/// but a `Decodable` enum would THROW on any value added later — turning a
+/// report the server actually recorded into a client-side error that reverts
+/// the button to "Report". Both known values mean success; an unknown one
+/// still decodes and still means the write landed.
+///
+/// ⚠️ Same barrel gap as `LooksHideResponse`: `LooksCommentReportResponseDto`
+/// lives in `lib/looks/types.ts` but is not re-exported from `lib/dto/index.ts`,
+/// so it never reaches `schema/api/tovis-api.schema.json`. The decode tests pin
+/// a VERBATIM capture from driving the real route instead.
+public struct LooksCommentReportResponse: Decodable, Sendable {
+    public let lookPostId: String
+    public let commentId: String
+    public let status: String
+
+    /// True when this call created the report rather than matching an existing
+    /// one. Not currently branched on — reporting twice is a success either way —
+    /// but the distinction is on the wire, so it is not thrown away here.
+    public var wasAccepted: Bool { status == "accepted" }
+}
+
 // MARK: - Comments (GET/POST /api/v1/looks/{id}/comments)
 
 struct LooksCommentsListResponse: Decodable, Sendable {
