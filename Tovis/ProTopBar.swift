@@ -136,33 +136,7 @@ struct ProAccountMenuSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 14) {
-                    Button {
-                        Task { await session.switchWorkspace(to: .client) }
-                        dismiss()
-                    } label: {
-                        BrandSurface {
-                            HStack(spacing: 12) {
-                                Image(systemName: "person.2")
-                                    .font(.system(size: 18))
-                                    .foregroundStyle(BrandColor.accent)
-                                    .frame(width: 28)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Switch to client")
-                                        .font(BrandFont.body(15, .semibold))
-                                        .foregroundStyle(BrandColor.textPrimary)
-                                    Text("Browse & book as a client")
-                                        .font(BrandFont.body(12))
-                                        .foregroundStyle(BrandColor.textMuted)
-                                }
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(BrandColor.textMuted)
-                            }
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(session.isWorking)
+                    WorkspaceSwitchRow(target: .client) { dismiss() }
 
                     if let message = session.errorMessage {
                         Text(message)

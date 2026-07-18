@@ -20,6 +20,15 @@ struct ClientSettingsHubView: View {
     /// hub can show it without a second fetch.
     var email: String?
 
+    /// Whether this account may act as a pro (`ClientMeUser.canSwitchToPro`),
+    /// passed down the same way as `email`. Gates the Workspace section: without
+    /// it a client-only account would see a row that can only 403.
+    ///
+    /// This is the ONLY route back to the pro shell from the client side — a
+    /// dual-role account that switched pro → client previously had no call site
+    /// at all and had to reinstall the app.
+    var canSwitchToPro: Bool = false
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
@@ -32,6 +41,20 @@ struct ClientSettingsHubView: View {
                         .background(BrandColor.bgSurface)
                         .clipShape(Capsule())
                         .overlay(Capsule().stroke(BrandColor.textMuted.opacity(0.18), lineWidth: 1))
+                }
+
+                // Mirrors the pro hub, which puts Workspace above Account and
+                // renders the shared session error right beneath it.
+                if canSwitchToPro {
+                    BrandSection(title: "Workspace") {
+                        WorkspaceSwitchRow(target: .pro)
+                    }
+
+                    if let message = session.errorMessage {
+                        Text(message)
+                            .font(BrandFont.body(13))
+                            .foregroundStyle(BrandColor.ember)
+                    }
                 }
 
                 BrandSection(title: "Account") {

@@ -456,36 +456,7 @@ struct ProProfileTabView: View {
     private var accountSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             BrandSection(title: "Workspace") {
-                Button {
-                    Task { await session.switchWorkspace(to: .client) }
-                } label: {
-                    BrandSurface {
-                        HStack(spacing: 12) {
-                            Image(systemName: "person.2")
-                                .font(.system(size: 18))
-                                .foregroundStyle(BrandColor.accent)
-                                .frame(width: 28)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Switch to client")
-                                    .font(BrandFont.body(15, .semibold))
-                                    .foregroundStyle(BrandColor.textPrimary)
-                                Text("Browse & book as a client")
-                                    .font(BrandFont.body(12))
-                                    .foregroundStyle(BrandColor.textMuted)
-                            }
-                            Spacer()
-                            if session.isWorking {
-                                ProgressView().tint(BrandColor.accent)
-                            } else {
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(BrandColor.textMuted)
-                            }
-                        }
-                    }
-                }
-                .buttonStyle(.plain)
-                .disabled(session.isWorking)
+                WorkspaceSwitchRow(target: .client)
             }
 
             if let message = session.errorMessage {

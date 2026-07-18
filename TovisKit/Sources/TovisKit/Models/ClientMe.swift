@@ -28,6 +28,24 @@ public struct ClientMeUser: Decodable, Sendable {
     public let id: String
     public let email: String?
     public let createdAt: String
+
+    /// Every workspace this account may act in (web #669). The payload's own
+    /// `role` is useless as a capability signal — it is the ACTING role, always
+    /// `CLIENT` here — and the session JWT carries only that acting role too, so
+    /// this is the ONLY way native can tell a dual-role pro browsing as a client
+    /// from a client-only account.
+    ///
+    /// Optional because it is absent on any server older than that PR: an absent
+    /// key must degrade to "no switch offered", never to a decode failure that
+    /// would take the whole Me tab down. `Role` decodes unknown values to
+    /// `.unknown` rather than throwing, so a future workspace is safe too.
+    public let availableWorkspaces: [Role]?
+
+    /// Whether to offer the "Switch to pro" row. False while the field is absent
+    /// (pre-#669 servers) — the row simply doesn't appear until web deploys.
+    public var canSwitchToPro: Bool {
+        availableWorkspaces?.contains(.pro) ?? false
+    }
 }
 
 public struct ClientMeProfile: Decodable, Sendable {

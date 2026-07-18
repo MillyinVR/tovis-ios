@@ -2,15 +2,18 @@
 // (`ProProfileTabView.accountSection`) settings hubs, plus the Support and Legal
 // sections both of them render.
 import SwiftUI
+import TovisKit
 
-/// The chrome of a settings row — icon, title, optional subtitle, chevron.
-/// Factored out so a row can either push a destination (`SettingsLinkRow`, the
-/// pro `businessLink`) or run an action (the Legal rows below) without either
-/// side restating the layout.
+/// The chrome of a settings row — icon, title, optional subtitle, trailing
+/// accessory. Factored out so a row can either push a destination
+/// (`SettingsLinkRow`, the pro `businessLink`) or run an action (the Legal rows
+/// and `WorkspaceSwitchRow` below) without either side restating the layout.
 struct SettingsRowLabel: View {
     let icon: String
     let title: String
     var subtitle: String? = nil
+    /// Swaps the chevron for a spinner while the row's action is in flight.
+    var isWorking: Bool = false
 
     var body: some View {
         BrandSurface {
@@ -30,10 +33,88 @@ struct SettingsRowLabel: View {
                     }
                 }
                 Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(BrandColor.textMuted)
+                if isWorking {
+                    ProgressView().tint(BrandColor.accent)
+                } else {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(BrandColor.textMuted)
+                }
             }
+        }
+    }
+}
+
+/// The "switch workspace" row, shared by every shell that offers one.
+///
+/// Both pro call sites (`ProProfileTabView.accountSection`, the `ProTopBar`
+/// account sheet) had hand-copied this button, and the client shell — which had
+/// NO switch affordance at all — would have made a third copy. The copy for each
+/// destination lives in `WorkspaceSwitchCopy` below so the two directions can't
+/// drift the way the follow toggle did.
+///
+/// The caller decides *whether* to show this: `CLIENT` is always allowed
+/// server-side (anyone may act as a client), but `PRO` needs an APPROVED
+/// professional profile, so the client shell gates on
+/// `ClientMeUser.canSwitchToPro`. An ungated row would 403 with "Workspace not
+/// available" for every client-only account.
+///
+/// Errors are NOT rendered here: each host already renders `session.errorMessage`
+/// in its own layout, and doing it here too would double it up.
+struct WorkspaceSwitchRow: View {
+    @Environment(SessionModel.self) private var session
+
+    /// The workspace to switch INTO.
+    let target: Role
+    /// Runs immediately after the switch is kicked off — not after it lands.
+    /// The pro account sheet uses it to dismiss itself, which is the behaviour
+    /// it had before this was extracted.
+    var onSwitch: (() -> Void)? = nil
+
+    var body: some View {
+        if let copy = WorkspaceSwitchCopy.forTarget(target) {
+            Button {
+                Task { await session.switchWorkspace(to: target) }
+                onSwitch?()
+            } label: {
+                SettingsRowLabel(
+                    icon: copy.icon,
+                    title: copy.title,
+                    subtitle: copy.subtitle,
+                    isWorking: session.isWorking
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(session.isWorking)
+        }
+    }
+}
+
+/// Per-destination copy for `WorkspaceSwitchRow`. `nil` for workspaces the app
+/// has no shell for — ADMIN is web-only, and `.unknown` is the forward-compatible
+/// fallback `Role` decodes to — so a role we can't host renders nothing rather
+/// than a row that would strand the user.
+struct WorkspaceSwitchCopy {
+    let icon: String
+    let title: String
+    let subtitle: String
+
+    static func forTarget(_ target: Role) -> WorkspaceSwitchCopy? {
+        switch target {
+        case .client:
+            WorkspaceSwitchCopy(
+                icon: "person.2",
+                title: "Switch to client",
+                subtitle: "Browse & book as a client"
+            )
+        case .pro:
+            WorkspaceSwitchCopy(
+                icon: "briefcase",
+                title: "Switch to pro",
+                subtitle: "Manage your bookings & clients"
+            )
+        case .admin, .unknown:
+            nil
         }
     }
 }
