@@ -244,6 +244,35 @@ public final class ProBookingService: Sendable {
         )
     }
 
+    /// POST /api/v1/pro/bookings/{id}/no-show — mark an ACCEPTED booking as a
+    /// no-show (web "Mark no-show"). The booking moves to NO_SHOW and, if the pro
+    /// has fee protection on and the client has a saved card, a fee is charged
+    /// off-session; a charge failure never blocks the status change.
+    ///
+    /// Dark unless `ENABLE_NO_SHOW_PROTECTION` — the route answers **404 with no
+    /// `code`** while the flag is off (distinct from a genuine
+    /// `BOOKING_NOT_FOUND`, which carries one). Callers gate on
+    /// `ProBookingDetail.canMarkNoShow` so the action is never offered into that
+    /// 404. Driven against the real route: the handler reads **no request body**
+    /// (a bogus one still succeeds), so the key is stable per booking and a
+    /// double-tap replays the first response instead of re-running the charge.
+    /// Re-marking an already-NO_SHOW booking is a 200 no-op (`meta.noOp`), and
+    /// there is **no server-side rate limit** — the caller owns the debounce.
+    @discardableResult
+    public func markNoShow(
+        bookingId: String,
+        idempotencyKey: String? = nil
+    ) async throws -> ProNoShowMarkResult {
+        let key = idempotencyKey ?? buildClientIdempotencyKey(
+            scope: "pro-booking", entityId: bookingId, action: "no-show")
+        return try await api.request(
+            "/pro/bookings/\(bookingId)/no-show",
+            method: .post,
+            body: Data("{}".utf8),
+            headers: ["idempotency-key": key]
+        )
+    }
+
     /// POST /api/v1/bookings/{id}/refund — refund a captured Stripe payment. Omit
     /// `amountCents` to refund in full. Idempotent. (Note: this is the shared
     /// `/bookings` route, not a `/pro` route.)

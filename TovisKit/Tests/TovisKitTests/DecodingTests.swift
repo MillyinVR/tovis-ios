@@ -536,6 +536,48 @@ func fixture(_ name: String) throws -> Data {
         #expect(b.sessionStep == "NONE")
         #expect(b.aftercareSummary?.isSent == true)
         #expect(b.aftercareSummary?.version == 2)
+        // The fixture predates the no-show gate, which is exactly the shape today's
+        // production returns: absent ⇒ nil ⇒ the action stays hidden. A
+        // non-optional field here would have thrown and taken the whole booking
+        // detail down against the live server.
+        #expect(b.noShowFeatureEnabled == nil)
+        #expect(!b.canMarkNoShow)
+    }
+
+    // The "Mark no-show" gate — mirrors proActions in
+    // lib/booking/lifecycleActionViewModel.ts, which emits the NO_SHOW verb only
+    // from the ACCEPTED branch and only while the feature flag is on. Both halves
+    // are load-bearing: the route 404s with the flag off, and answers 409 for a
+    // booking that isn't ACCEPTED.
+    private func detail(status: String, noShowFeatureEnabled: Bool?) throws -> ProBookingDetail {
+        let flagField = noShowFeatureEnabled.map { ",\"noShowFeatureEnabled\":\($0)" } ?? ""
+        let json = """
+        {"booking":{"id":"bk_1","status":"\(status)"\(flagField),
+        "scheduledFor":"2026-03-17T13:00:00.000Z","endsAt":"2026-03-17T14:00:00.000Z",
+        "locationType":"SALON","bufferMinutes":0,"durationMinutes":60,
+        "totalDurationMinutes":60,"serviceItems":[],
+        "client":{"fullName":"Jordan Rivera"}}}
+        """
+        return try JSONDecoder().decode(
+            ProBookingDetailResponse.self, from: Data(json.utf8)
+        ).booking
+    }
+
+    @Test func markNoShowIsOfferedOnlyForAnAcceptedBookingWithTheFlagOn() throws {
+        #expect(try detail(status: "ACCEPTED", noShowFeatureEnabled: true).canMarkNoShow)
+
+        // Flag on, wrong status — the route would answer 409.
+        for status in ["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED", "NO_SHOW"] {
+            #expect(try !detail(status: status, noShowFeatureEnabled: true).canMarkNoShow)
+        }
+    }
+
+    @Test func markNoShowIsHiddenWhenTheGateIsOffOrAbsent() throws {
+        // Flag explicitly off — the route 404s.
+        #expect(try !detail(status: "ACCEPTED", noShowFeatureEnabled: false).canMarkNoShow)
+        // Field absent (pre-deploy / today's prod) — must default to hidden, never
+        // to "offer it and find out".
+        #expect(try !detail(status: "ACCEPTED", noShowFeatureEnabled: nil).canMarkNoShow)
     }
 
     // GET /api/v1/pro/bookings — Fixtures/proBookingsList.json. The native

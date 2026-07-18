@@ -40,6 +40,11 @@ struct ProBookingDetailView: View {
 
     @State private var showCancelConfirm = false
 
+    /// "Mark no-show" confirm. Web fires on a single click via `window.confirm`;
+    /// the native equivalent of that confirm is this dialog, carrying web's copy
+    /// verbatim — the action is terminal and may charge the client's card.
+    @State private var showNoShowConfirm = false
+
     // Edit-services sheet (mirrors the web calendar BookingModal service editor).
     @State private var showEditServices = false
 
@@ -99,6 +104,14 @@ struct ProBookingDetailView: View {
         }
         .confirmationDialog("Cancel this booking? This will notify the client.", isPresented: $showCancelConfirm, titleVisibility: .visible) {
             Button("Cancel booking", role: .destructive) { Task { await cancel() } }
+            Button("Keep it", role: .cancel) {}
+        }
+        .confirmationDialog(
+            "Mark this client as a no-show? This may charge their saved card a fee per your no-show policy.",
+            isPresented: $showNoShowConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Mark no-show", role: .destructive) { Task { await markNoShow() } }
             Button("Keep it", role: .cancel) {}
         }
         .tint(BrandColor.accent)
@@ -275,9 +288,27 @@ struct ProBookingDetailView: View {
                 cancelButton
             }
         } else if booking.isAccepted {
-            HStack(spacing: 10) {
-                actionButton("Start booking", primary: true, verb: "START") { await startSession() }
-                cancelButton
+            VStack(spacing: 10) {
+                HStack(spacing: 10) {
+                    actionButton("Start booking", primary: true, verb: "START") { await startSession() }
+                    cancelButton
+                }
+                // Web pushes NO_SHOW from the same ACCEPTED branch, but only while
+                // the feature flag is on (`canMarkNoShow`). Hidden — not disabled —
+                // because the route 404s when the flag is off, so there is nothing
+                // to explain to the pro.
+                if booking.canMarkNoShow {
+                    Button { showNoShowConfirm = true } label: {
+                        Text(pendingVerb == "NO_SHOW" ? "Mark no-show…" : "Mark no-show")
+                            .font(BrandFont.body(13, .semibold))
+                            .frame(maxWidth: .infinity).padding(.vertical, 12)
+                            .foregroundStyle(BrandColor.textPrimary).background(BrandColor.bgPrimary)
+                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(BrandColor.textMuted.opacity(0.2), lineWidth: 1))
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(pendingVerb != nil)
+                }
             }
         } else if booking.isInProgress && step != "DONE" {
             NavigationLink { ProSessionHubView(bookingId: booking.id) } label: {
@@ -616,6 +647,9 @@ struct ProBookingDetailView: View {
         case "COMPLETED": return "Completed"
         case "CANCELLED": return "Cancelled"
         case "IN_PROGRESS": return "In progress"
+        // Reachable from this screen since "Mark no-show" landed; without it the
+        // default arm renders the raw enum as "No_show".
+        case "NO_SHOW": return "No-show"
         default: return booking.status.capitalized
         }
     }
@@ -688,6 +722,23 @@ struct ProBookingDetailView: View {
             session.signalRefresh(); await load()
         } catch let error as APIError { actionError = error.userMessage }
         catch { actionError = "Couldn’t accept the request. Try again." }
+    }
+
+    /// Mark the booking a no-show. Stays on the detail and reloads (web calls
+    /// `router.refresh()` rather than navigating away) so the pro sees the new
+    /// status — and any fee the server assessed — in the Payment card's money
+    /// trail. `pendingVerb` guards the CALL, not just the button: the route has
+    /// no rate limit, and though the stable idempotency key makes a repeat replay
+    /// rather than re-charge, the guard keeps a double-tap from firing at all.
+    private func markNoShow() async {
+        guard pendingVerb == nil else { return }
+        pendingVerb = "NO_SHOW"; actionError = nil
+        defer { pendingVerb = nil }
+        do {
+            try await session.client.proBookings.markNoShow(bookingId: bookingId)
+            session.signalRefresh(); await load()
+        } catch let error as APIError { actionError = error.userMessage }
+        catch { actionError = "Couldn’t mark the no-show. Try again." }
     }
 
     private func startSession() async {
