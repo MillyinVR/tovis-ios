@@ -792,8 +792,11 @@ struct ProCalendarTimeGrid: View {
         // `TimelineMoveDrag`), which hit-tests the tile via its published frame and
         // survives the cross-week page turn. Only the bottom-edge RESIZE stays a
         // per-tile gesture (it never crosses columns). `.offset`/`.zIndex` are
-        // OUTERMOST so the whole tile moves as one unit; the frame is published AFTER
-        // `.offset` so the recognizer hit-tests the tile's real on-screen position.
+        // OUTERMOST so the whole tile moves as one unit; the frame publisher rides
+        // INSIDE `.offset` (like the tap + resize overlay) so it reports the tile's
+        // on-screen position — a modifier attached after `.offset` stays at the
+        // un-offset layout frame (column top-left, midnight), which left the
+        // recognizer's hit-test matching nothing and pickup never armed.
         if draggable {
             tile
                 .overlay(alignment: .bottom) {
@@ -802,14 +805,14 @@ struct ProCalendarTimeGrid: View {
                                      startMinutes: startMinutes, durationMinutes: duration)
                     }
                 }
-                .zIndex(lifted ? 2 : (pending ? 1 : 0))
-                .offset(x: colX, y: topPx)
                 .background(
                     GeometryReader { g in
                         Color.clear.preference(
                             key: EventTileFramesKey.self, value: [event.id: g.frame(in: .global)])
                     }
                 )
+                .zIndex(lifted ? 2 : (pending ? 1 : 0))
+                .offset(x: colX, y: topPx)
         } else {
             tile
                 .zIndex(lifted ? 2 : (pending ? 1 : 0))
