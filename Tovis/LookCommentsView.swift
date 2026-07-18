@@ -35,6 +35,12 @@ struct LookCommentsView: View {
     @State private var likeCounts: [String: Int] = [:]
     @State private var replyCountOverrides: [String: Int] = [:]
     @State private var removed: Set<String> = []
+    /// Reported comments stay VISIBLE (web does the same) — only the affordance
+    /// changes, so these track the button's state rather than the row's.
+    @State private var reported: Set<String> = []
+    @State private var reportInFlight: Set<String> = []
+    /// Non-nil while the confirm dialog is up.
+    @State private var reportCandidate: LooksComment?
 
     @FocusState private var composerFocused: Bool
 
@@ -57,6 +63,29 @@ struct LookCommentsView: View {
         .tint(BrandColor.accent)
         .onChange(of: composerFocused) { _, focused in
             if focused { withAnimation(.easeOut(duration: 0.2)) { detent = .large } }
+        }
+        // Web fires its report on a single click with no confirm, but a touch
+        // target 16pt from "Reply" is a lot easier to hit by accident — and this
+        // is the mis-tap you can't take back: one report per user per comment,
+        // forever, with no un-report route. Same reasoning as the feed's
+        // "Not for me" dialog, and the same shape.
+        .confirmationDialog(
+            "Report this comment?",
+            isPresented: Binding(
+                get: { reportCandidate != nil },
+                set: { if !$0 { reportCandidate = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: reportCandidate
+        ) { comment in
+            Button("Report comment", role: .destructive) {
+                Task { await report(comment) }
+            }
+            Button("Cancel", role: .cancel) { reportCandidate = nil }
+        } message: { _ in
+            // Honest about all three halves: a human reviews it, nothing
+            // disappears in the meantime, and it can't be undone.
+            Text("Our team will review it. The comment stays visible until then, and you can’t undo a report.")
         }
         .task {
             totalCount = commentsCount
@@ -121,7 +150,9 @@ struct LookCommentsView: View {
             isReply: false,
             onLike: { Task { await toggleLike(comment) } },
             onReply: { startReply(to: comment) },
-            onDelete: comment.viewerCanDelete ? { Task { await delete(comment) } } : nil
+            onDelete: comment.viewerCanDelete ? { Task { await delete(comment) } } : nil,
+            onReport: comment.viewerCanDelete ? nil : { reportCandidate = comment },
+            reportState: reportState(comment)
         )
 
         let count = replyCount(comment)
@@ -151,7 +182,9 @@ struct LookCommentsView: View {
                         isReply: true,
                         onLike: { Task { await toggleLike(reply) } },
                         onReply: { startReply(to: comment) },   // 1-level: re-root to parent
-                        onDelete: reply.viewerCanDelete ? { Task { await delete(reply) } } : nil
+                        onDelete: reply.viewerCanDelete ? { Task { await delete(reply) } } : nil,
+                        onReport: reply.viewerCanDelete ? nil : { reportCandidate = reply },
+                        reportState: reportState(reply)
                     )
                     .padding(.leading, 44)
                 }
@@ -216,6 +249,14 @@ struct LookCommentsView: View {
     private func liked(_ c: LooksComment) -> Bool { likeOverrides[c.id] ?? c.viewerLiked }
     private func likeCount(_ c: LooksComment) -> Int { likeCounts[c.id] ?? c.likeCount }
     private func replyCount(_ c: LooksComment) -> Int { replyCountOverrides[c.id] ?? c.replyCount }
+    /// Like web, this is session state only: the comments API exposes no
+    /// `viewerHasReported`, so reopening the sheet shows "Report" again. Tapping
+    /// it a second time is harmless — the server answers 200 `already_reported`.
+    private func reportState(_ c: LooksComment) -> CommentReportState {
+        if reported.contains(c.id) { return .done }
+        if reportInFlight.contains(c.id) { return .pending }
+        return .idle
+    }
 
     // MARK: - Actions
 
@@ -316,9 +357,40 @@ struct LookCommentsView: View {
             if !wasRemoved { removed.remove(comment.id) }   // revert
         }
     }
+
+    /// Fire-and-settle: the route is idempotent by unique constraint, so a repeat
+    /// is a 200 rather than an error — but there is no server-side rate limit, so
+    /// `reportInFlight` is the debounce (the button is also disabled while pending).
+    private func report(_ comment: LooksComment) async {
+        guard !reportInFlight.contains(comment.id), !reported.contains(comment.id) else { return }
+        reportInFlight.insert(comment.id)
+        defer { reportInFlight.remove(comment.id) }
+        do {
+            try await session.client.looks.reportComment(lookId: lookId, commentId: comment.id)
+            reported.insert(comment.id)
+        } catch {
+            // Same silent revert as like/delete: the button falls back to
+            // "Report" so the failure is visible without hijacking `loadError`,
+            // which the content view renders INSTEAD of the whole list.
+        }
+    }
 }
 
 // MARK: - One comment row (top-level or reply)
+
+/// The three states web's `CommentsDrawer` row carries, mirrored so the label
+/// reads the same on both platforms.
+private enum CommentReportState {
+    case idle, pending, done
+
+    var label: String {
+        switch self {
+        case .idle: return "Report"
+        case .pending: return "Reporting…"
+        case .done: return "Reported"
+        }
+    }
+}
 
 private struct CommentRow: View {
     let comment: LooksComment
@@ -328,6 +400,11 @@ private struct CommentRow: View {
     let onLike: () -> Void
     let onReply: () -> Void
     let onDelete: (() -> Void)?
+    /// Nil on your own comments and for admins — mirrors web, which shows Delete
+    /// OR Report, never both (`viewerCanDelete` is `isAuthor || viewerIsAdmin`).
+    /// That is also what stops a self-report: the SERVER happily accepts one.
+    let onReport: (() -> Void)?
+    let reportState: CommentReportState
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -363,6 +440,19 @@ private struct CommentRow: View {
                             Text("Delete").font(BrandFont.body(12, .semibold)).foregroundStyle(BrandColor.ember)
                         }
                         .buttonStyle(.plain)
+                    }
+                    if let onReport {
+                        // Muted like Reply, not ember like Delete: reporting isn't
+                        // destructive to anything of the viewer's, and the weight
+                        // of the action lives in the confirm dialog.
+                        Button(action: onReport) {
+                            Text(reportState.label)
+                                .font(BrandFont.body(12, .semibold))
+                                .foregroundStyle(BrandColor.textMuted)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(reportState != .idle)
+                        .opacity(reportState == .idle ? 1 : 0.6)
                     }
                 }
                 .padding(.top, 2)

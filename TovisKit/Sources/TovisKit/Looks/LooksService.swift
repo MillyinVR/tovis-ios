@@ -246,4 +246,49 @@ public final class LooksService: Sendable {
             body: Data("{}".utf8)
         )
     }
+
+    // MARK: - Report a comment
+
+    /// POST /api/v1/looks/{id}/comments/{commentId}/report — the UGC report path.
+    ///
+    /// Writes a `LookCommentReport` (reporter + target + timestamp) that surfaces
+    /// in the admin moderation queue, which counts the report ROWS
+    /// (`_count.reports`) — note the denormalized `LookComment.reportCount` column
+    /// is NOT incremented by this route and is vestigial; do not read it.
+    ///
+    /// ⚠️ **The route reads no body.** It was driven against the real endpoint:
+    /// `POST` with `{"reason":"SPAM"}` stores `reason = OTHER`, and an invalid
+    /// `{"reason":"NOT_A_REASON"}` returns 200 rather than 400 — the handler's
+    /// request parameter is literally `_req` and is never read. A
+    /// `ModerationReportReason` enum (SPAM / HATE_OR_HARASSMENT / …) exists in the
+    /// schema and is indexed, but NO route surfaces it, so every report is `OTHER`.
+    /// **A reason picker cannot be built until the web route accepts one** — do not
+    /// add UI that implies the choice reaches the server. `{}` matches the sibling
+    /// toggles (hide/like/delete).
+    ///
+    /// Idempotent by unique constraint `@@unique([lookCommentId, userId])`: a
+    /// duplicate is NOT an error but a 200 with `status: "already_reported"`
+    /// (a first report is 201 `"accepted"`). One report per user per comment,
+    /// forever — there is no un-report route and no re-report after resolution.
+    /// No `withRouteIdempotency` and **no rate limit** server-side, so the caller
+    /// owns debouncing.
+    ///
+    /// The server does NOT reject reporting your own comment (verified: 201). The
+    /// gate is client-side — mirror web and offer Report only when
+    /// `!viewerCanDelete` (that flag is `isAuthor || viewerIsAdmin`).
+    ///
+    /// 404s as `COMMENT_NOT_FOUND` when the comment is missing or not `APPROVED`,
+    /// and as `LOOK_NOT_FOUND` when the look is missing or not viewable — an
+    /// unviewable look 404s rather than 403s so it leaks no existence.
+    @discardableResult
+    public func reportComment(
+        lookId: String,
+        commentId: String
+    ) async throws -> LooksCommentReportResponse {
+        try await api.request(
+            "/looks/\(lookId)/comments/\(commentId)/report",
+            method: .post,
+            body: Data("{}".utf8)
+        )
+    }
 }

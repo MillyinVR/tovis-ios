@@ -120,6 +120,94 @@ final class FeedDiscoveryURLProtocol: URLProtocol {
         }
     }
 
+    // MARK: - Report a comment
+    //
+    // The bodies below are VERBATIM captures from driving the real route
+    // (local server, seeded look/comment) — not hand-written shapes. That
+    // matters here because the contract is easy to guess wrong: the route
+    // reads NO body and answers 201/200, not 200/409.
+
+    @Test func reportCommentPostsToTheCommentReportRoute() async throws {
+        reset()
+        FeedDiscoveryURLProtocol.status = 201
+        FeedDiscoveryURLProtocol.responseBody = Data("""
+        {"ok":true,"lookPostId":"cmrbry49n005vpo0df2x71ceu","commentId":"seed-comment-002","status":"accepted"}
+        """.utf8)
+
+        let res = try await LooksService(api: await makeAPI())
+            .reportComment(lookId: "cmrbry49n005vpo0df2x71ceu", commentId: "seed-comment-002")
+
+        #expect(FeedDiscoveryURLProtocol.capturedPath
+            == "/api/v1/looks/cmrbry49n005vpo0df2x71ceu/comments/seed-comment-002/report")
+        #expect(FeedDiscoveryURLProtocol.capturedMethod == "POST")
+        #expect(res.commentId == "seed-comment-002")
+        #expect(res.status == "accepted")
+        #expect(res.wasAccepted)
+    }
+
+    /// A first report is **201**, not 200. `APIClient` succeeds on `200..<300`,
+    /// so this pins that a brand-new report doesn't surface as an error and
+    /// leave the button stuck on "Report".
+    @Test func reportCommentTreatsThe201FirstReportAsSuccess() async throws {
+        reset()
+        FeedDiscoveryURLProtocol.status = 201
+        FeedDiscoveryURLProtocol.responseBody = Data("""
+        {"ok":true,"lookPostId":"look_1","commentId":"cmt_1","status":"accepted"}
+        """.utf8)
+
+        let res = try await LooksService(api: await makeAPI())
+            .reportComment(lookId: "look_1", commentId: "cmt_1")
+        #expect(res.wasAccepted)
+    }
+
+    /// A duplicate is swallowed by `@@unique([lookCommentId, userId])` and comes
+    /// back **200 `already_reported`** — a success, NOT a 409. The sheet forgets
+    /// its report state on close (no `viewerHasReported` on the wire), so this is
+    /// the ordinary second-tap path, not an edge case.
+    @Test func reportCommentTreatsADuplicateAsSuccessNotAnError() async throws {
+        reset()
+        FeedDiscoveryURLProtocol.status = 200
+        FeedDiscoveryURLProtocol.responseBody = Data("""
+        {"ok":true,"lookPostId":"cmrbry49n005vpo0df2x71ceu","commentId":"seed-comment-002","status":"already_reported"}
+        """.utf8)
+
+        let res = try await LooksService(api: await makeAPI())
+            .reportComment(lookId: "cmrbry49n005vpo0df2x71ceu", commentId: "seed-comment-002")
+        #expect(res.status == "already_reported")
+        #expect(!res.wasAccepted)
+    }
+
+    /// `status` is a String precisely so an unrecognized value still decodes.
+    /// If this ever becomes an enum, a server-side addition would throw and
+    /// revert a report the server actually recorded.
+    @Test func reportCommentStillDecodesAnUnknownStatus() async throws {
+        reset()
+        FeedDiscoveryURLProtocol.status = 200
+        FeedDiscoveryURLProtocol.responseBody = Data("""
+        {"ok":true,"lookPostId":"look_1","commentId":"cmt_1","status":"queued_for_review"}
+        """.utf8)
+
+        let res = try await LooksService(api: await makeAPI())
+            .reportComment(lookId: "look_1", commentId: "cmt_1")
+        #expect(res.status == "queued_for_review")
+        #expect(!res.wasAccepted)
+    }
+
+    @Test func reportCommentSurfacesTheServerErrorForAMissingComment() async throws {
+        reset()
+        FeedDiscoveryURLProtocol.status = 404
+        FeedDiscoveryURLProtocol.responseBody = Data("""
+        {"ok":false,"error":"Not found.","code":"COMMENT_NOT_FOUND"}
+        """.utf8)
+
+        let service = LooksService(api: await makeAPI())
+        await #expect(throws: APIError.server(
+            status: 404, message: "Not found.", code: "COMMENT_NOT_FOUND"
+        )) {
+            _ = try await service.reportComment(lookId: "look_1", commentId: "gone")
+        }
+    }
+
     // MARK: - Feed search
 
     @Test func feedSendsTheTrimmedSearchQuery() async throws {
