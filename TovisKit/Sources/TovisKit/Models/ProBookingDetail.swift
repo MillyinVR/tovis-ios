@@ -117,6 +117,11 @@ public struct ProBookingDetail: Decodable, Sendable, Identifiable {
     /// booking (a COMPLETED one answers 409 `BOOKING_CANNOT_EDIT_COMPLETED`).
     public var canMarkNoShow: Bool { (noShowFeatureEnabled ?? false) && isAccepted }
 
+    /// Whether to offer "Message client". Defaults to TRUE when the server
+    /// hasn't told us — see `ProBookingClient.canMessage` for why this default
+    /// runs the other way to the feature-flag gates.
+    public var canMessageClient: Bool { client.canMessage ?? true }
+
     /// Terminal states can't be managed.
     public var isTerminal: Bool {
         ["CANCELLED", "COMPLETED", "NO_SHOW", "DECLINED", "EXPIRED"].contains(statusUpper)
@@ -180,6 +185,19 @@ public struct ProBookingClient: Decodable, Sendable {
     public let fullName: String
     public let email: String?
     public let phone: String?
+
+    /// Whether a message thread can be opened with this client. A profile the
+    /// pro created or imported stays UNCLAIMED until the client signs up, and
+    /// `POST /messages/resolve` answers **409 CLIENT_UNCLAIMED** for it — so the
+    /// "Message client" action must not be offered.
+    ///
+    /// ⚠️ **Absent means SHOWN, not hidden** — the opposite default to
+    /// `noShowFeatureEnabled` / `availableWorkspaces`. Those gate a NEW
+    /// capability, so hiding until the server says otherwise costs nothing.
+    /// This one gates an action that already works today for every claimed
+    /// client, so defaulting to hidden would REMOVE a working button for
+    /// everyone until the web field deploys. Absent ⇒ behave exactly as before.
+    public let canMessage: Bool?
 }
 
 public struct ProBookingServiceItem: Decodable, Sendable, Identifiable {
