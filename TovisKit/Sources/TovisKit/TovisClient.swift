@@ -50,6 +50,9 @@ public final class TovisClient: Sendable {
     public let reviews: ReviewsService
     /// Client referrals — the shareable digital invite link (/c/{code}).
     public let referrals: ReferralsService
+    /// Client-submitted viral look requests — the write half of the Viral Looks
+    /// band on home (the band's reads come from `home`).
+    public let viralRequests: ViralRequestsService
     /// Client card-on-file — saved cards for no-show fees (Payment methods
     /// settings). Dark unless ENABLE_NO_SHOW_PROTECTION (routes 404 while off).
     public let paymentMethods: PaymentMethodsService
@@ -179,6 +182,7 @@ public final class TovisClient: Sendable {
             supabaseKey: config.supabaseAnonKey
         )
         self.referrals = ReferralsService(api: api)
+        self.viralRequests = ViralRequestsService(api: api)
         self.paymentMethods = PaymentMethodsService(api: api)
         self.publicClient = PublicClientService(api: api)
         self.publicBoard = PublicBoardService(api: api)

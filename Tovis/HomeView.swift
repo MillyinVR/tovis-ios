@@ -171,7 +171,8 @@ struct HomeView: View {
 
         ViralLooksBand(live: home.viralLive.first, pending: home.viralPending.first,
                        liveMore: max(0, home.viralLive.count - 1),
-                       pendingMore: max(0, home.viralPending.count - 1))
+                       pendingMore: max(0, home.viralPending.count - 1),
+                       onSubmitted: { await load() })
             .padding(.top, 6)
     }
 
@@ -891,6 +892,10 @@ private struct ViralLooksBand: View {
     let pending: HomeViral?
     let liveMore: Int
     let pendingMore: Int
+    /// Refreshes home after a submit so the new request appears in `pendingHero`.
+    var onSubmitted: () async -> Void = {}
+
+    @State private var showSubmit = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -907,8 +912,14 @@ private struct ViralLooksBand: View {
             .padding(.top, 24)
             .overlay(alignment: .top) { Rectangle().fill(BrandColor.textPrimary.opacity(0.10)).frame(height: 1) }
 
+            // Web's band is a three-cell grid: live, pending, submit — each cell
+            // always present, each with its own empty state.
             if let live { liveHero(live) } else { liveEmpty }
-            if let pending { pendingHero(pending) }
+            if let pending { pendingHero(pending) } else { pendingEmpty }
+            submitCard
+        }
+        .sheet(isPresented: $showSubmit) {
+            SubmitViralLookView(onSubmitted: onSubmitted)
         }
     }
 
@@ -989,6 +1000,51 @@ private struct ViralLooksBand: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(BrandColor.textPrimary.opacity(0.04))
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                if pendingMore > 0 {
+                    Text("\(pendingMore) more pending")
+                        .font(BrandFont.display(12, .semibold))
+                        .foregroundStyle(BrandColor.textMuted)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                }
+            }
+        }
+    }
+
+    /// Web's PendingLookEmpty — the third state the band needs, and the one every
+    /// client sees before their first submission.
+    private var pendingEmpty: some View {
+        HomeCard {
+            VStack(alignment: .leading, spacing: 8) {
+                Eyebrow(text: "Your requests")
+                Text("Nothing pending yet")
+                    .font(BrandFont.display(18, .semibold)).foregroundStyle(BrandColor.textPrimary)
+                Text("Submit a viral look and you’ll track its review — submitted, reviewed, shared, live — right here.")
+                    .font(BrandFont.body(12.5)).foregroundStyle(BrandColor.textSecondary)
+            }
+        }
+    }
+
+    /// Web's SubmitViralLookForm cell. On iOS the form itself lives in a sheet
+    /// (see SubmitViralLookView for why); this is the card that opens it.
+    private var submitCard: some View {
+        HomeCard {
+            VStack(alignment: .leading, spacing: 10) {
+                Eyebrow(text: "Spotted a new one?")
+                Text("Submit a viral look")
+                    .font(BrandFont.display(18, .semibold)).foregroundStyle(BrandColor.textPrimary)
+                Text("Paste the link and name it. Our team vets it and shares it with pros before it goes live.")
+                    .font(BrandFont.body(12.5)).foregroundStyle(BrandColor.textSecondary)
+                Button { showSubmit = true } label: {
+                    Text("Submit for review")
+                        .font(BrandFont.body(15, .semibold))
+                        .foregroundStyle(BrandColor.onAccent)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 13)
+                        .background(BrandColor.accent)
+                        .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 2)
             }
         }
     }
