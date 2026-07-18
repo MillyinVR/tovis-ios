@@ -399,7 +399,9 @@ struct ProVerificationView: View {
     private func applyLicense(_ license: ProVerificationLicense) {
         licenseState = license.state ?? ""
         licenseNumber = license.number ?? ""
-        if let expiry = license.expiry, let date = Self.dateFormatter.date(from: expiry) {
+        // Parse the stored calendar date in the device calendar so the (unpinned)
+        // picker opens on the stored day — the inverse of the save below.
+        if let expiry = license.expiry, let date = BoardEventDate.date(fromYmd: expiry) {
             licenseExpiry = date
             hasExpiry = true
         } else {
@@ -416,7 +418,9 @@ struct ProVerificationView: View {
             try await session.client.proVerification.saveLicense(
                 state: licenseState,
                 number: licenseNumber.trimmingCharacters(in: .whitespaces).uppercased(),
-                expiry: hasExpiry ? Self.dateFormatter.string(from: licenseExpiry) : ""
+                // Device calendar, matching the unpinned picker — a UTC formatter
+                // here persisted the NEXT day for evening picks west of UTC.
+                expiry: hasExpiry ? BoardEventDate.ymd(from: licenseExpiry) : ""
             )
             licenseSaved = true
             await load()
@@ -459,17 +463,6 @@ struct ProVerificationView: View {
             await load()
         }
     }
-
-    // Calendar-date formatter for the license expiry ("YYYY-MM-DD"), matching the
-    // web endpoint's date-only shape. Fixed UTC + POSIX locale so the day never
-    // shifts with the device zone.
-    private static let dateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.timeZone = TimeZone(identifier: "UTC")
-        f.dateFormat = "yyyy-MM-dd"
-        return f
-    }()
 
     private func shortDate(_ iso: String) -> String {
         let parser = ISO8601DateFormatter()

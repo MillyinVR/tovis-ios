@@ -474,6 +474,16 @@ private extension URLRequest {
         try #require(la.date(from: DateComponents(year: 2026, month: 6, day: 5, hour: 20)))
     }
 
+    /// The license-expiry forms' REMOVED serializer, verbatim (UTC + POSIX
+    /// "yyyy-MM-dd") — kept here only to pin what the bug produced.
+    private func legacyUTCSerializer() -> DateFormatter {
+        let old = DateFormatter()
+        old.locale = Locale(identifier: "en_US_POSIX")
+        old.timeZone = TimeZone(identifier: "UTC")
+        old.dateFormat = "yyyy-MM-dd"
+        return old
+    }
+
     @Test func ymdUsesTheViewersCalendarNotUTC() throws {
         let la = try calendar("America/Los_Angeles")
         let evening = try juneFifthEveningLA(la)
@@ -488,6 +498,42 @@ private extension URLRequest {
         // every evening pick west of UTC by a day, so the board counted down to
         // the wrong date.
         #expect(BoardEventDate.ymd(from: evening, calendar: try calendar("UTC")) == "2026-06-06")
+    }
+
+    /// Regression pin for the license-expiry forms (ProSignupView /
+    /// ProVerificationView): they serialize the picked expiry via
+    /// `BoardEventDate.ymd` in the device calendar. Their original UTC
+    /// DateFormatter persisted the NEXT day for an evening pick west of UTC —
+    /// both results are pinned so the shift can't come back silently.
+    @Test func licenseExpiryEveningPickInLosAngelesStaysOnThePickedDay() throws {
+        let la = try calendar("America/Los_Angeles")
+        // 8pm on 2027-03-31 in LA — already 2027-04-01 in UTC.
+        let evening = try #require(
+            la.date(from: DateComponents(year: 2027, month: 3, day: 31, hour: 20))
+        )
+
+        // What the forms send now.
+        #expect(BoardEventDate.ymd(from: evening, calendar: la) == "2027-03-31")
+
+        // What the removed UTC formatter produced — the bug.
+        #expect(legacyUTCSerializer().string(from: evening) == "2027-04-01")
+
+        // Prefill round trip (ProVerificationView.applyLicense): the stored
+        // day parses back to the day the picker then shows.
+        let prefilled = try #require(BoardEventDate.date(fromYmd: "2027-03-31", calendar: la))
+        #expect(BoardEventDate.ymd(from: prefilled, calendar: la) == "2027-03-31")
+    }
+
+    /// Same pin across the fall-back DST transition: 2026-11-01 is a 25-hour
+    /// day in Los Angeles, and an evening pick there still serializes to the
+    /// picked day (UTC would say 2026-11-02).
+    @Test func licenseExpiryEveningPickOnTheFallBackDayStaysPut() throws {
+        let la = try calendar("America/Los_Angeles")
+        let evening = try #require(
+            la.date(from: DateComponents(year: 2026, month: 11, day: 1, hour: 20))
+        )
+        #expect(BoardEventDate.ymd(from: evening, calendar: la) == "2026-11-01")
+        #expect(legacyUTCSerializer().string(from: evening) == "2026-11-02")
     }
 
     @Test func ymdRoundTripsThroughTheParser() throws {

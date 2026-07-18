@@ -58,14 +58,6 @@ struct ProSignupView: View {
     @State private var step = 0
     @State private var formError: String?
 
-    private static let expiryFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(identifier: "UTC")
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter
-    }()
-
     private var needsLicense: Bool { profession.requiresLicenseByDefault }
 
     private var isLocationConfirmed: Bool {
@@ -627,8 +619,12 @@ struct ProSignupView: View {
 
         let trimmedHandle = handle.trimmingCharacters(in: .whitespaces)
         let trimmedBusiness = businessName.trimmingCharacters(in: .whitespaces)
+        // Calendar-date serialization in the device calendar — the same calendar
+        // the (unpinned) picker displays, so the wire carries the day the user
+        // SAW. A UTC formatter here shifted every evening pick west of UTC to
+        // the next day (the BoardEventDate doc has the bug-class writeup).
         let expiry = (needsLicense && addExpiry)
-            ? Self.expiryFormatter.string(from: licenseExpiry)
+            ? BoardEventDate.ymd(from: licenseExpiry)
             : nil
 
         _ = await session.registerPro(
