@@ -38,12 +38,38 @@ struct ProBookingDetailView: View {
     /// control (§10 off-platform payment confirmation).
     @State private var confirmPaymentError: String?
 
-    @State private var showCancelConfirm = false
+    /// Which destructive action is awaiting confirmation, or nil for none.
+    ///
+    /// ⚠️ Deliberately ONE piece of state driving ONE `.confirmationDialog`.
+    /// Two `.confirmationDialog` modifiers chained onto the same view do NOT
+    /// both work — the later one silently shadows the earlier, so its button
+    /// sets its flag and no dialog ever appears. That regressed "Cancel" into a
+    /// dead button when the no-show dialog was added as a second modifier
+    /// (caught by driving the OTHER dialog on the previous build). Route any new
+    /// confirmation through this enum rather than adding a modifier.
+    private enum PendingConfirm {
+        case cancelBooking
+        case markNoShow
 
-    /// "Mark no-show" confirm. Web fires on a single click via `window.confirm`;
-    /// the native equivalent of that confirm is this dialog, carrying web's copy
-    /// verbatim — the action is terminal and may charge the client's card.
-    @State private var showNoShowConfirm = false
+        /// Web's confirm copy, verbatim.
+        var message: String {
+            switch self {
+            case .cancelBooking:
+                return "Cancel this booking? This will notify the client."
+            case .markNoShow:
+                return "Mark this client as a no-show? This may charge their saved card a fee per your no-show policy."
+            }
+        }
+
+        var confirmLabel: String {
+            switch self {
+            case .cancelBooking: return "Cancel booking"
+            case .markNoShow: return "Mark no-show"
+            }
+        }
+    }
+
+    @State private var pendingConfirm: PendingConfirm?
 
     // Edit-services sheet (mirrors the web calendar BookingModal service editor).
     @State private var showEditServices = false
@@ -102,16 +128,23 @@ struct ProBookingDetailView: View {
         .navigationDestination(item: $messageNav) { nav in
             ThreadView(thread: nav.thread)
         }
-        .confirmationDialog("Cancel this booking? This will notify the client.", isPresented: $showCancelConfirm, titleVisibility: .visible) {
-            Button("Cancel booking", role: .destructive) { Task { await cancel() } }
-            Button("Keep it", role: .cancel) {}
-        }
         .confirmationDialog(
-            "Mark this client as a no-show? This may charge their saved card a fee per your no-show policy.",
-            isPresented: $showNoShowConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("Mark no-show", role: .destructive) { Task { await markNoShow() } }
+            pendingConfirm?.message ?? "",
+            isPresented: Binding(
+                get: { pendingConfirm != nil },
+                set: { if !$0 { pendingConfirm = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingConfirm
+        ) { confirm in
+            Button(confirm.confirmLabel, role: .destructive) {
+                Task {
+                    switch confirm {
+                    case .cancelBooking: await cancel()
+                    case .markNoShow: await markNoShow()
+                    }
+                }
+            }
             Button("Keep it", role: .cancel) {}
         }
         .tint(BrandColor.accent)
@@ -298,7 +331,7 @@ struct ProBookingDetailView: View {
                 // because the route 404s when the flag is off, so there is nothing
                 // to explain to the pro.
                 if booking.canMarkNoShow {
-                    Button { showNoShowConfirm = true } label: {
+                    Button { pendingConfirm = .markNoShow } label: {
                         Text(pendingVerb == "NO_SHOW" ? "Mark no-show…" : "Mark no-show")
                             .font(BrandFont.body(13, .semibold))
                             .frame(maxWidth: .infinity).padding(.vertical, 12)
@@ -322,7 +355,7 @@ struct ProBookingDetailView: View {
     }
 
     private var cancelButton: some View {
-        Button { showCancelConfirm = true } label: {
+        Button { pendingConfirm = .cancelBooking } label: {
             Text(pendingVerb == "CANCEL" ? "Cancel…" : "Cancel")
                 .font(BrandFont.body(13, .semibold))
                 .frame(maxWidth: .infinity).padding(.vertical, 12)
