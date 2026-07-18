@@ -29,12 +29,22 @@ public final class LooksService: Sendable {
     /// blank/whitespace query omits `q` entirely (web parity: `if (query.trim())`),
     /// which matters because a present `q` routes the server off the personalized
     /// feed onto the chronological search path.
+    ///
+    /// `tag` restricts the feed to looks carrying that hashtag/style tag — the
+    /// native counterpart of the web `/looks/tags/{slug}` page. Send
+    /// `LooksTag.slug` (or `TrendingTag.slug`) as-is: the server normalizes
+    /// through the same slugifier the web tag page uses, and like `q` a present
+    /// `tag` routes off the personalized default. Blank/whitespace is omitted
+    /// entirely (the server 400s a sub-2-char tag rather than ignoring it).
+    /// Until the web param deploys the server ignores `tag` and returns the
+    /// unfiltered feed — the tag screen degrades to "all looks", not an error.
     public func feed(
         filter: String? = nil,
         category: String? = nil,
         following: Bool = false,
         sort: String? = nil,
         query: String? = nil,
+        tag: String? = nil,
         cursor: String? = nil,
         limit: Int = 12
     ) async throws -> FeedPage {
@@ -46,6 +56,10 @@ public final class LooksService: Sendable {
         if let trimmed = query?.trimmingCharacters(in: .whitespacesAndNewlines),
            !trimmed.isEmpty {
             items.append(URLQueryItem(name: "q", value: trimmed))
+        }
+        if let trimmedTag = tag?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !trimmedTag.isEmpty {
+            items.append(URLQueryItem(name: "tag", value: trimmedTag))
         }
         if let cursor { items.append(URLQueryItem(name: "cursor", value: cursor)) }
 

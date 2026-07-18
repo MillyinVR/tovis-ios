@@ -253,6 +253,50 @@ final class FeedDiscoveryURLProtocol: URLProtocol {
         #expect(items["cursor"] == "cur_1")
     }
 
+    // MARK: - Tag feed (GET /looks?tag=…)
+
+    /// The tag screen sends the DTO slug verbatim — no client-side re-slugging.
+    /// The server owns normalization (the same slugifyLookTag the web tag page
+    /// applies), so the two consumers of the filter can't drift.
+    @Test func feedSendsTheTagSlugVerbatim() async throws {
+        reset()
+        FeedDiscoveryURLProtocol.responseBody = emptyFeed
+
+        _ = try await LooksService(api: await makeAPI()).feed(tag: "balayage")
+
+        #expect(FeedDiscoveryURLProtocol.capturedPath == "/api/v1/looks")
+        #expect(queryItems()["tag"] == "balayage")
+    }
+
+    /// A blank tag must be omitted, not sent: the server 400s a tag that
+    /// normalizes below the 2-char slug minimum, which would take down the whole
+    /// feed request instead of quietly widening it.
+    @Test func feedOmitsTagEntirelyWhenBlankOrAbsent() async throws {
+        reset()
+        FeedDiscoveryURLProtocol.responseBody = emptyFeed
+        let service = LooksService(api: await makeAPI())
+
+        for blank in ["", "   ", "\n\t "] {
+            _ = try await service.feed(tag: blank)
+            #expect(queryItems()["tag"] == nil, "tag must be omitted for \(blank.debugDescription)")
+        }
+
+        // nil is the default for every existing caller.
+        _ = try await service.feed()
+        #expect(queryItems()["tag"] == nil)
+    }
+
+    @Test func feedKeepsTagAlongsideTheCursor() async throws {
+        reset()
+        FeedDiscoveryURLProtocol.responseBody = emptyFeed
+
+        _ = try await LooksService(api: await makeAPI()).feed(tag: "moneypiece", cursor: "cur_2")
+
+        let items = queryItems()
+        #expect(items["tag"] == "moneypiece")
+        #expect(items["cursor"] == "cur_2")
+    }
+
     // MARK: - Services search
 
     @Test func searchServicesHitsTheSiblingRouteAndDecodesTheCursor() async throws {

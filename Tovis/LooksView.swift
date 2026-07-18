@@ -57,8 +57,8 @@ struct LooksView: View {
 
     @State private var commentsFor: LooksFeedItem?
     @State private var saveFor: LooksFeedItem?
-    /// A tapped tag chip → opens its web tag page (/looks/tags/{slug}) in Safari.
-    @State private var tagWebFor: TagWebLink?
+    /// A tapped tag chip → the native tag feed (LookTagFeedView).
+    @State private var tagFeedFor: LooksTag?
 
     /// Programmatic navigation to a pro profile (avatar tap + the BOOK fallback
     /// when a look has no bookable service to preselect).
@@ -164,8 +164,19 @@ struct LooksView: View {
                 offering: launch.offering
             )
         }
-        .sheet(item: $tagWebFor) { link in
-            SafariView(url: link.url)
+        // Wrapped in its own stack + Done button, like the deep-link look sheets
+        // in MainTabView — the tag screen pushes look details inside it.
+        .sheet(item: $tagFeedFor) { tag in
+            NavigationStack {
+                LookTagFeedView(slug: tag.slug, display: tag.display)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Done") { tagFeedFor = nil }
+                                .tint(BrandColor.textSecondary)
+                        }
+                    }
+            }
+            .tint(BrandColor.accent)
         }
         // The long press is invisible, so confirm before acting — and the action
         // is worth confirming on its own terms: neither platform has an un-hide,
@@ -188,14 +199,6 @@ struct LooksView: View {
             // for good, and its category is down-ranked (decaying, not forever).
             Text("You won’t see this look again, and we’ll show you fewer like it.")
         }
-    }
-
-    /// The web tag page for a chip tap. Mirrors `shareURL`'s origin convention.
-    private func tagURL(_ tag: LooksTag) -> URL? {
-        guard let slug = tag.slug.addingPercentEncoding(
-            withAllowedCharacters: .urlPathAllowed
-        ) else { return nil }
-        return URL(string: "https://www.tovis.app/looks/tags/\(slug)")
     }
 
     // MARK: - Header (Looks serif title + tab strip)
@@ -355,9 +358,7 @@ struct LooksView: View {
                             onShared: { Task { await recordShare(item) } },
                             onBook: { Task { await startBooking(item) } },
                             onToggleMute: { muted.toggle() },
-                            onOpenTag: { tag in
-                                if let url = tagURL(tag) { tagWebFor = TagWebLink(url: url) }
-                            },
+                            onOpenTag: { tag in tagFeedFor = tag },
                             onHide: { hideCandidate = item }
                         )
                         .frame(width: geo.size.width, height: fullHeight)
@@ -630,12 +631,6 @@ private struct BookLaunch: Identifiable {
     let pro: LooksProfessional
     let offering: ProOffering
     var id: String { pro.id }
-}
-
-/// A tapped tag chip's web destination, wrapped so `.sheet(item:)` can present it.
-private struct TagWebLink: Identifiable {
-    let url: URL
-    var id: String { url.absoluteString }
 }
 
 // MARK: - One full-screen slide
