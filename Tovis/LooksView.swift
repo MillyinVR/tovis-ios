@@ -317,55 +317,72 @@ struct LooksView: View {
     // MARK: - Feed
 
     private func feed(_ items: [LooksFeedItem]) -> some View {
-        ScrollView(.vertical) {
-            LazyVStack(spacing: 0) {
-                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                    LookSlide(
-                        item: item,
-                        isActive: activeId == item.id,
-                        muted: muted,
-                        liked: liked(item),
-                        likeCount: likeCount(item),
-                        commentCount: commentCount(item),
-                        following: following(item),
-                        saved: saved(item),
-                        shareURL: shareURL(item),
-                        bookResolving: resolvingBookId == item.id,
-                        onLike: { Task { await toggleLike(item) } },
-                        onComment: { commentsFor = item },
-                        onSave: { saveFor = item },
-                        onFollow: { Task { await toggleFollow(item) } },
-                        onShared: { Task { await recordShare(item) } },
-                        onBook: { Task { await startBooking(item) } },
-                        onToggleMute: { muted.toggle() },
-                        onOpenTag: { tag in
-                            if let url = tagURL(tag) { tagWebFor = TagWebLink(url: url) }
-                        },
-                        onHide: { hideCandidate = item }
-                    )
-                    .containerRelativeFrame([.horizontal, .vertical])
-                    .onAppear { Task { await loadMoreIfNeeded(at: index, total: items.count) } }
-                }
+        // Full-bleed pager: each slide is the FULL screen, so it exactly equals the
+        // scroll viewport and `.paging` snaps every slide flush — no sliver of the
+        // previous slide peeking at the top. The predecessor sized slides to the safe
+        // (footer-excluded) height, which was shorter than the viewport the scroll
+        // view actually pages by, so the seam drifted. Slides now bleed under the
+        // status bar and behind the footer; each one lifts its own chrome above the
+        // footer with the footer inset. (The chrome was ALSO missing for a second,
+        // horizontal reason — see the `.scaledToFill()` fix in FocalCoverImage that
+        // stopped a landscape photo from widening the slide and pushing the overlays +
+        // rail off both edges.)
+        GeometryReader { geo in
+            // `geo` RESPECTS the safe area, so `geo.safeAreaInsets` is real; the
+            // ScrollView below ignores it to bleed full-screen. Add the insets back
+            // to get the full screen height for each slide, and hand the footer inset
+            // to the chrome so it clears the bar even though the slide bleeds behind it.
+            let fullHeight = geo.size.height + geo.safeAreaInsets.top + geo.safeAreaInsets.bottom
+            ScrollView(.vertical) {
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                        LookSlide(
+                            item: item,
+                            isActive: activeId == item.id,
+                            muted: muted,
+                            liked: liked(item),
+                            likeCount: likeCount(item),
+                            commentCount: commentCount(item),
+                            following: following(item),
+                            saved: saved(item),
+                            shareURL: shareURL(item),
+                            bookResolving: resolvingBookId == item.id,
+                            bottomInset: geo.safeAreaInsets.bottom,
+                            onLike: { Task { await toggleLike(item) } },
+                            onComment: { commentsFor = item },
+                            onSave: { saveFor = item },
+                            onFollow: { Task { await toggleFollow(item) } },
+                            onShared: { Task { await recordShare(item) } },
+                            onBook: { Task { await startBooking(item) } },
+                            onToggleMute: { muted.toggle() },
+                            onOpenTag: { tag in
+                                if let url = tagURL(tag) { tagWebFor = TagWebLink(url: url) }
+                            },
+                            onHide: { hideCandidate = item }
+                        )
+                        .frame(width: geo.size.width, height: fullHeight)
+                        .onAppear { Task { await loadMoreIfNeeded(at: index, total: items.count) } }
+                    }
 
-                if loadingMore {
-                    ProgressView().tint(BrandColor.accent)
-                        .frame(maxWidth: .infinity).padding(.vertical, 24)
+                    if loadingMore {
+                        ProgressView().tint(BrandColor.accent)
+                            .frame(maxWidth: .infinity).padding(.vertical, 24)
+                    }
                 }
+                .scrollTargetLayout()
             }
-            .scrollTargetLayout()
+            .scrollPosition(id: $activeId, anchor: .center)
+            .scrollTargetBehavior(.paging)
+            // Bleed full-screen so the full-height slides fill the paging viewport
+            // exactly — `.paging` then steps by the whole screen and every slide
+            // snaps flush, with no sliver of the previous slide left at the top.
+            .ignoresSafeArea()
+            // Record a sampled view impression for whichever slide snaps active (B2).
+            .onChange(of: activeId) { _, id in Task { await recordView(id) } }
+            // Start the first slide playing before any scroll happens.
+            .onAppear { if activeId == nil { activeId = items.first?.id } }
+            .onChange(of: items.first?.id) { _, first in if activeId == nil { activeId = first } }
         }
-        .scrollPosition(id: $activeId, anchor: .center)
-        .scrollTargetBehavior(.paging)
-        // Record a sampled view impression for whichever slide snaps active (B2).
-        .onChange(of: activeId) { _, id in Task { await recordView(id) } }
-        // Start the first slide playing before any scroll happens.
-        .onAppear { if activeId == nil { activeId = items.first?.id } }
-        .onChange(of: items.first?.id) { _, first in if activeId == nil { activeId = first } }
-        // Full-bleed up top, but RESPECT the bottom inset so the slide sits
-        // above the footer bar (was hidden behind it). The footer — including
-        // the center circle that pokes above it — is an overlay on top, so the
-        // circle still floats in front of the feed.
-        .ignoresSafeArea(edges: .top)
     }
 
     private var emptyState: some View {
@@ -637,6 +654,10 @@ private struct LookSlide: View {
     /// True while the pro profile is being fetched to preselect the look's
     /// service — the BOOK button shows a spinner instead of the calendar icon.
     let bookResolving: Bool
+    /// The footer's safe-area inset. The slide is full-bleed (it extends behind the
+    /// footer), so the bottom chrome adds this on top of its own padding to sit
+    /// above the bar instead of behind it.
+    let bottomInset: CGFloat
     let onLike: () -> Void
     let onComment: () -> Void
     let onSave: () -> Void
@@ -670,7 +691,8 @@ private struct LookSlide: View {
                 rail
             }
             .padding(.horizontal, 16)
-            .padding(.bottom, 30)
+            // 30 above the footer: the slide bleeds behind the bar, so add its inset.
+            .padding(.bottom, 30 + bottomInset)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black)

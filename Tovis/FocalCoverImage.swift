@@ -48,13 +48,24 @@ struct FocalCoverImage<Placeholder: View, Failure: View>: View {
             }
             .task(id: url) { await loadFocalImage() }
         } else {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case let .success(image): image.resizable().scaledToFill()
-                case .failure: failure()
-                default: placeholder()
+            // `Color.clear` anchors the layout to the PROPOSED size; the image fills
+            // it as an overlay so `.scaledToFill()`'s overflow is clipped instead of
+            // inflating the parent's layout. Without this, a landscape photo in a
+            // portrait full-bleed slot reports its scaled-up width (e.g. 972pt for a
+            // 402pt-wide slide) as its own width, widening the Looks slide's ZStack
+            // and shoving the leading overlays + trailing rail off both edges. Grids
+            // that pass a definite `.frame` were unaffected either way.
+            Color.clear
+                .overlay {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case let .success(image): image.resizable().scaledToFill()
+                        case .failure: failure()
+                        default: placeholder()
+                        }
+                    }
                 }
-            }
+                .clipped()
         }
     }
 
