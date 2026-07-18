@@ -179,7 +179,10 @@ struct MeView: View {
     /// the hub, matching the pro Profile tab's account section.
     private func settingsButton(_ me: ClientMe) -> some View {
         NavigationLink {
-            ClientSettingsHubView(email: me.user.email)
+            ClientSettingsHubView(
+                email: me.user.email,
+                canSwitchToPro: me.user.canSwitchToPro
+            )
         } label: {
             Image(systemName: "gearshape")
                 .font(.system(size: 24))
