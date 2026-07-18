@@ -41,7 +41,8 @@ struct LookDetailView: View {
 
     @State private var commentsOpen = false
     @State private var saveOpen = false
-    @State private var tagWebFor: TagWebLink?
+    /// A tapped tag chip → the native tag feed (LookTagFeedView).
+    @State private var tagFeedFor: LooksTag?
     @State private var bookLaunch: DetailBookLaunch?
     @State private var bookResolving = false
     @State private var proProfileFor: String?
@@ -72,7 +73,20 @@ struct LookDetailView: View {
                     .presentationDetents([.medium, .large])
                 }
             }
-            .sheet(item: $tagWebFor) { link in SafariView(url: link.url) }
+            // Its own stack + Done button (like MainTabView's deep-link look
+            // sheets) — the tag feed pushes sibling look details inside it.
+            .sheet(item: $tagFeedFor) { tag in
+                NavigationStack {
+                    LookTagFeedView(slug: tag.slug, display: tag.display)
+                        .toolbar {
+                            ToolbarItem(placement: .topBarLeading) {
+                                Button("Done") { tagFeedFor = nil }
+                                    .tint(BrandColor.textSecondary)
+                            }
+                        }
+                }
+                .tint(BrandColor.accent)
+            }
             .sheet(item: $bookLaunch) { launch in
                 BookingFlowView(
                     professionalId: launch.professionalId,
@@ -476,9 +490,7 @@ struct LookDetailView: View {
     }
 
     private func openTag(_ tag: LooksTag) {
-        guard let slug = tag.slug.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
-              let url = URL(string: "https://www.tovis.app/looks/tags/\(slug)") else { return }
-        tagWebFor = TagWebLink(url: url)
+        tagFeedFor = tag
     }
 
     // MARK: - Actions
@@ -577,11 +589,6 @@ struct LookDetailView: View {
 /// so the box is shared rather than restated in each.
 struct LookPresentation: Identifiable, Equatable {
     let id: String
-}
-
-private struct TagWebLink: Identifiable {
-    let url: URL
-    var id: String { url.absoluteString }
 }
 
 private struct DetailBookLaunch: Identifiable {

@@ -48,7 +48,7 @@ struct DiscoverView: View {
 
     // Looks-first grid (D2). Ranked + category-filtered, cursor-paginated, with
     // 1-tap Book (resolve the look's offering → BookingFlowView) and tag chips
-    // that open the web tag page in Safari — same conventions as the Looks feed.
+    // that open the native tag feed — same conventions as the Looks feed.
     @State private var looks: [LooksFeedItem] = []
     @State private var looksCursor: String?
     @State private var looksLoading = false
@@ -57,7 +57,8 @@ struct DiscoverView: View {
     @State private var trendingTags: [TrendingTag] = []
     @State private var bookLaunch: DiscoverBookLaunch?
     @State private var resolvingBookId: String?
-    @State private var tagWebFor: DiscoverTagLink?
+    /// A tapped trending-tag chip → the native tag feed (LookTagFeedView).
+    @State private var tagFeedFor: TrendingTag?
     /// Programmatic nav for the Book fallback (look has no bookable service) and
     /// look/pro card taps.
     @State private var navPath: [String] = []
@@ -146,8 +147,19 @@ struct DiscoverView: View {
                 offering: launch.offering
             )
         }
-        .sheet(item: $tagWebFor) { link in
-            SafariView(url: link.url)
+        // Wrapped in its own stack + Done button, like the deep-link look sheets
+        // in MainTabView — the tag screen pushes look details inside it.
+        .sheet(item: $tagFeedFor) { tag in
+            NavigationStack {
+                LookTagFeedView(slug: tag.slug, display: tag.display)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Done") { tagFeedFor = nil }
+                                .tint(BrandColor.textSecondary)
+                        }
+                    }
+            }
+            .tint(BrandColor.accent)
         }
     }
 
@@ -611,30 +623,14 @@ struct DiscoverView: View {
             }
             .frame(maxWidth: .infinity).padding(.top, 60).padding(.horizontal, 20)
         } else {
-            LazyVGrid(
-                columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
-                spacing: 10
-            ) {
-                ForEach(looks) { look in
-                    DiscoverLookCard(look: look, resolving: resolvingBookId == look.id) {
-                        Task { await startBooking(look) }
-                    }
-                }
-            }
-
-            if looksCursor != nil {
-                Button { Task { await loadMoreLooks() } } label: {
-                    Text(looksLoadingMore ? "Loading…" : "Load more")
-                        .font(BrandFont.mono(11)).tracking(0.8)
-                        .foregroundStyle(BrandColor.textPrimary)
-                        .frame(maxWidth: .infinity).frame(height: 44)
-                        .background(BrandColor.bgPrimary.opacity(0.25), in: Capsule())
-                        .overlay(Capsule().stroke(.white.opacity(0.15), lineWidth: 1))
-                }
-                .buttonStyle(.plain)
-                .disabled(looksLoadingMore)
-                .padding(.top, 8)
-            }
+            LooksGrid(
+                looks: looks,
+                cta: { .book(resolving: resolvingBookId == $0.id) },
+                action: { look in Task { await startBooking(look) } },
+                nextCursor: looksCursor,
+                loadingMore: looksLoadingMore,
+                onLoadMore: { Task { await loadMoreLooks() } }
+            )
         }
     }
 
@@ -653,11 +649,9 @@ struct DiscoverView: View {
         }
     }
 
-    /// The web tag page for a chip tap (mirrors the Looks feed's `tagURL`).
+    /// A trending-tag chip tap → the native tag feed.
     private func openTag(_ tag: TrendingTag) {
-        guard let slug = tag.slug.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
-              let url = URL(string: "https://www.tovis.app/looks/tags/\(slug)") else { return }
-        tagWebFor = DiscoverTagLink(url: url)
+        tagFeedFor = tag
     }
 
     private func loadLooks() async {
@@ -1121,24 +1115,6 @@ private struct ClusterPin: View {
     }
 }
 
-// Shared decorative box used as the card "image" area — a diagonal sheen over a
-// dark base (mirrors the web cards' gradient + texture placeholder).
-private struct CardSheen: View {
-    var body: some View {
-        ZStack {
-            BrandColor.bgPrimary.opacity(0.45)
-            LinearGradient(
-                stops: [
-                    .init(color: .white.opacity(0.08), location: 0.0),
-                    .init(color: .white.opacity(0.02), location: 0.35),
-                    .init(color: .black.opacity(0.24), location: 1.0),
-                ],
-                startPoint: .topLeading, endPoint: .bottomTrailing
-            )
-        }
-    }
-}
-
 private func roundedDollars(_ value: Double?) -> String? {
     guard let value, value > 0 else { return nil }
     return "$\(Int(value.rounded()))"
@@ -1298,102 +1274,4 @@ private struct DiscoverBookLaunch: Identifiable {
     let pro: LooksProfessional
     let offering: ProOffering
     var id: String { pro.id }
-}
-
-/// A tapped trending-tag chip's web destination, wrapped for `.sheet(item:)`.
-private struct DiscoverTagLink: Identifiable {
-    let url: URL
-    var id: String { url.absoluteString }
-}
-
-/// A bookable look tile — image, tag + price badges, pro name/service, and a
-/// tap-anywhere-to-book gesture ("Tap any look to book the pro who made it").
-/// Mirrors web LooksBookableGrid's card.
-private struct DiscoverLookCard: View {
-    let look: LooksFeedItem
-    let resolving: Bool
-    let onBook: () -> Void
-
-    private var proName: String { look.professional?.displayName ?? "Pro" }
-    private var tag: String? { look.category ?? look.serviceName }
-    private var serviceLabel: String? { look.serviceName ?? look.caption }
-
-    var body: some View {
-        Button(action: onBook) {
-            VStack(alignment: .leading, spacing: 0) {
-                ZStack(alignment: .topLeading) {
-                    Group {
-                        if let url = (look.thumbUrl ?? look.url).flatMap(URL.init(string:)) {
-                            // Focal-aware cover crop (camera C6c) — center the 3:4
-                            // tile on the subject; null focal → centered fill.
-                            FocalCoverImage(url: url, focal: look.focalPoint) { CardSheen() }
-                        } else {
-                            CardSheen()
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                    .aspectRatio(3.0 / 4.0, contentMode: .fill)
-                    .clipped()
-
-                    LinearGradient(colors: [.clear, BrandColor.bgPrimary.opacity(0.6)],
-                                   startPoint: .center, endPoint: .bottom)
-                        .allowsHitTesting(false)
-
-                    if let tag {
-                        Text(tag.uppercased())
-                            .font(BrandFont.mono(9)).tracking(1)
-                            .foregroundStyle(BrandColor.textPrimary)
-                            .padding(.vertical, 4).padding(.horizontal, 7)
-                            .background(BrandColor.bgPrimary.opacity(0.7),
-                                        in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                            .padding(6)
-                    }
-
-                    VStack {
-                        HStack {
-                            Spacer()
-                            if let price = look.priceLabel {
-                                Text("FROM \(price)")
-                                    .font(BrandFont.mono(9)).tracking(0.6)
-                                    .foregroundStyle(BrandColor.textPrimary)
-                                    .padding(.vertical, 4).padding(.horizontal, 7)
-                                    .background(BrandColor.bgPrimary.opacity(0.7), in: Capsule())
-                            }
-                        }
-                        Spacer()
-                        HStack {
-                            Spacer()
-                            HStack(spacing: 5) {
-                                if resolving {
-                                    ProgressView().controlSize(.mini).tint(BrandColor.onAccent)
-                                }
-                                Text("Book")
-                                    .font(BrandFont.mono(10)).tracking(0.6)
-                                    .foregroundStyle(BrandColor.onAccent)
-                            }
-                            .padding(.vertical, 6).padding(.horizontal, 12)
-                            .background(BrandColor.accent, in: Capsule())
-                        }
-                    }
-                    .padding(6)
-                }
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(proName)
-                        .font(BrandFont.body(12, .black)).foregroundStyle(BrandColor.textPrimary).lineLimit(1)
-                    if let serviceLabel {
-                        Text(serviceLabel)
-                            .font(BrandFont.body(11, .semibold)).foregroundStyle(BrandColor.textMuted).lineLimit(1)
-                    }
-                }
-                .padding(10)
-            }
-            .background(BrandColor.bgSecondary)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.white.opacity(0.1), lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Book \(serviceLabel ?? "this look") with \(proName)")
-    }
 }
