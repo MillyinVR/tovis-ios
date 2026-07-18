@@ -132,23 +132,25 @@ private struct PublicProfileStats: View {
     let mode: PublicProfileFollowMode
     let toggle: (() async throws -> FollowState)?
 
-    @State private var following: Bool
-    @State private var followerCount: Int
-    @State private var working = false
+    @State private var follow: FollowToggle
     @State private var errorText: String?
 
     init(counts: ProClientPublicCounts, mode: PublicProfileFollowMode, toggle: (() async throws -> FollowState)?) {
         self.counts = counts
         self.mode = mode
         self.toggle = toggle
-        _following = State(initialValue: mode.initialFollowing)
-        _followerCount = State(initialValue: max(0, counts.followers))
+        _follow = State(
+            initialValue: FollowToggle(
+                following: mode.initialFollowing,
+                followerCount: counts.followers
+            )
+        )
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                statTile("\(followerCount)", "Followers")
+                statTile("\(follow.followerCount)", "Followers")
                 statTile("\(counts.following)", "Following")
                 statTile("\(counts.looks)", "Looks")
             }
@@ -166,24 +168,24 @@ private struct PublicProfileStats: View {
         Button {
             Task { await performToggle() }
         } label: {
-            Text(following ? "Following" : "Follow")
+            Text(follow.following ? "Following" : "Follow")
                 .font(BrandFont.body(13, .semibold))
-                .foregroundStyle(following ? BrandColor.textPrimary : BrandColor.onAccent)
+                .foregroundStyle(follow.following ? BrandColor.textPrimary : BrandColor.onAccent)
                 .frame(minWidth: 120)
                 .padding(.vertical, 9).padding(.horizontal, 18)
                 .background(
-                    following ? AnyShapeStyle(BrandColor.bgPrimary) : AnyShapeStyle(BrandColor.accent),
+                    follow.following ? AnyShapeStyle(BrandColor.bgPrimary) : AnyShapeStyle(BrandColor.accent),
                     in: RoundedRectangle(cornerRadius: 12, style: .continuous)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(BrandColor.textMuted.opacity(following ? 0.3 : 0), lineWidth: 1)
+                        .stroke(BrandColor.textMuted.opacity(follow.following ? 0.3 : 0), lineWidth: 1)
                 )
         }
         .buttonStyle(.plain)
-        .disabled(working)
-        .opacity(working ? 0.7 : 1)
-        .accessibilityLabel(following ? "Unfollow" : "Follow")
+        .disabled(follow.isWorking)
+        .opacity(follow.isWorking ? 0.7 : 1)
+        .accessibilityLabel(follow.following ? "Unfollow" : "Follow")
     }
 
     private func statTile(_ value: String, _ label: String) -> some View {
@@ -196,24 +198,13 @@ private struct PublicProfileStats: View {
     }
 
     private func performToggle() async {
-        guard !working, let toggle else { return }
-        let next = !following
-        working = true
+        guard let toggle, follow.begin() != nil else { return }
         errorText = nil
-        // Optimistic: flip + nudge the visible follower count.
-        following = next
-        followerCount = max(0, followerCount + (next ? 1 : -1))
         do {
-            let state = try await toggle()
-            // Reconcile with server truth (authoritative count + state).
-            following = state.following
-            followerCount = max(0, state.followerCount)
+            follow.finish(try await toggle())
         } catch {
-            // Roll back the optimistic patch.
-            following = !next
-            followerCount = max(0, followerCount + (next ? -1 : 1))
+            follow.fail()
             errorText = "Couldn’t update follow."
         }
-        working = false
     }
 }

@@ -17,6 +17,9 @@ import Foundation
 ///   toggle (no desired-state body); it returns the authoritative
 ///   `{ following, followerCount }`. Only a signed-in CLIENT may follow — a
 ///   pro/guest caller gets 401/403 (the caller degrades gracefully).
+/// - `followSuggestions(limit:)` → GET /api/v1/client/follow-suggestions. The
+///   "creators to follow" payoff for the same client→client graph, so it lives
+///   beside the follow toggle it feeds rather than in its own service.
 public final class PublicClientService: Sendable {
     private let api: APIClient
 
@@ -48,5 +51,22 @@ public final class PublicClientService: Sendable {
             method: .post,
             body: Data("{}".utf8)
         )
+    }
+
+    /// Loads "creators to follow" for the signed-in client.
+    ///
+    /// The server owns the ranking *and* the exclusions (self, already-followed),
+    /// so this is a plain read with no client-side filtering — a followed creator
+    /// disappears from the next response on its own.
+    ///
+    /// - Parameter limit: optional page size. The route clamps to 1...20 and
+    ///   defaults to 8, so passing nothing is the normal call.
+    public func followSuggestions(limit: Int? = nil) async throws -> [ClientFollowSuggestion] {
+        let query = limit.map { [URLQueryItem(name: "limit", value: String($0))] }
+        let response: ClientFollowSuggestionsResponse = try await api.request(
+            "/client/follow-suggestions",
+            query: query
+        )
+        return response.items
     }
 }

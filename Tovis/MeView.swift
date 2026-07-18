@@ -406,6 +406,20 @@ struct MeView: View {
 
     @ViewBuilder
     private func followingTab(_ items: [ClientMeFollowingItem]) -> some View {
+        // spacing 0: the rail owns its own bottom gap, so when it has nothing to
+        // suggest it leaves no dead space above the list.
+        VStack(alignment: .leading, spacing: 0) {
+            // Above the list, exactly where web puts it (ClientMeDashboard:798) —
+            // and outside the isEmpty branch, so someone with no follows yet gets
+            // the suggestions that fix that.
+            FollowSuggestionsRail()
+
+            followingList(items)
+        }
+    }
+
+    @ViewBuilder
+    private func followingList(_ items: [ClientMeFollowingItem]) -> some View {
         if items.isEmpty {
             emptyState("No follows yet", "When you follow a pro, they’ll show up here.")
         } else {

@@ -262,53 +262,46 @@ private struct ActivityRow: View {
 
 /// The compact inline follow-back pill. Deliberately not the 120pt-wide button
 /// `PublicClientProfileContent` uses — that one also owns a follower count this
-/// row has no room (or data) for; only the optimistic toggle is common, and it is
-/// eight lines. See the handoff note about consolidating iOS's follow buttons.
+/// row has no room (or data) for. Only the *chrome* differs now: the optimistic
+/// toggle itself lives in `FollowToggle`, shared with that button and the
+/// suggestions rail on Me › Following.
 private struct ActivityFollowBackButton: View {
     let handle: String
 
     @Environment(SessionModel.self) private var session
-    @State private var following = false
-    @State private var working = false
+    @State private var follow = FollowToggle()
 
     var body: some View {
         Button {
             Task { await toggle() }
         } label: {
-            Text(following ? "Following" : "Follow")
+            Text(follow.following ? "Following" : "Follow")
                 .font(BrandFont.body(11.5, .bold))
-                .foregroundStyle(following ? BrandColor.textPrimary : BrandColor.onAccent)
+                .foregroundStyle(follow.following ? BrandColor.textPrimary : BrandColor.onAccent)
                 .padding(.vertical, 7).padding(.horizontal, 14)
                 .background(
-                    following ? AnyShapeStyle(BrandColor.bgPrimary) : AnyShapeStyle(BrandColor.accent),
+                    follow.following ? AnyShapeStyle(BrandColor.bgPrimary) : AnyShapeStyle(BrandColor.accent),
                     in: Capsule()
                 )
                 .overlay(
                     Capsule().stroke(
-                        BrandColor.textPrimary.opacity(following ? 0.15 : 0), lineWidth: 1
+                        BrandColor.textPrimary.opacity(follow.following ? 0.15 : 0), lineWidth: 1
                     )
                 )
         }
         .buttonStyle(.plain)
-        .disabled(working)
-        .opacity(working ? 0.7 : 1)
-        .accessibilityLabel(following ? "Following \(handle)" : "Follow \(handle)")
+        .disabled(follow.isWorking)
+        .opacity(follow.isWorking ? 0.7 : 1)
+        .accessibilityLabel(follow.following ? "Following \(handle)" : "Follow \(handle)")
     }
 
     private func toggle() async {
-        guard !working else { return }
-        let next = !following
-        working = true
-        following = next  // optimistic
+        guard follow.begin() != nil else { return }
         do {
-            // The backend route is a TOGGLE, so reconcile with what it reports
-            // rather than assuming our flip won.
-            let state = try await session.client.publicClient.toggleFollow(handle: handle)
-            following = state.following
+            follow.finish(try await session.client.publicClient.toggleFollow(handle: handle))
         } catch {
-            following = !next  // roll back
+            follow.fail()
         }
-        working = false
     }
 }
 
