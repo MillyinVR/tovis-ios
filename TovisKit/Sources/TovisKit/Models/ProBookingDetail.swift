@@ -62,6 +62,16 @@ public struct ProBookingDetail: Decodable, Sendable, Identifiable {
     /// Aftercare snapshot card (null until a summary exists).
     public let aftercareSummary: ProAftercareSnapshot?
 
+    /// Phase 2 revenue protection (`ENABLE_NO_SHOW_PROTECTION`), echoed by the
+    /// server so the client knows whether to offer "Mark no-show" — web resolves
+    /// the same flag in its RSC page and passes it to `BookingActions` as a prop.
+    /// **Optional on purpose**: absent from responses that predate the web field,
+    /// and there is no safe way to probe for it (the only endpoint is a POST that
+    /// marks the booking and may charge a card). Defaulting to `false` keeps the
+    /// action hidden — which is the correct behaviour against today's production,
+    /// where the flag is held off and the route 404s.
+    public let noShowFeatureEnabled: Bool?
+
     /// The displayed total — totalAmount, else the subtotal snapshot, else 0.
     public var totalLabel: String { totalAmount ?? subtotalSnapshot ?? "0.00" }
 
@@ -100,9 +110,59 @@ public struct ProBookingDetail: Decodable, Sendable, Identifiable {
     /// backend's `allowedStatuses` on the cancel route.
     public var isCancellable: Bool { isPending || isAccepted }
 
+    /// Whether to offer "Mark no-show", mirroring `proActions` in
+    /// `lib/booking/lifecycleActionViewModel.ts`: the verb is emitted only from
+    /// the ACCEPTED branch, and only while the feature flag is on. Both halves
+    /// matter — the route 404s when the flag is off, and rejects a non-ACCEPTED
+    /// booking (a COMPLETED one answers 409 `BOOKING_CANNOT_EDIT_COMPLETED`).
+    public var canMarkNoShow: Bool { (noShowFeatureEnabled ?? false) && isAccepted }
+
     /// Terminal states can't be managed.
     public var isTerminal: Bool {
         ["CANCELLED", "COMPLETED", "NO_SHOW", "DECLINED", "EXPIRED"].contains(statusUpper)
+    }
+}
+
+/// `POST /api/v1/pro/bookings/{id}/no-show` → the verbatim success shape captured
+/// against the running route:
+/// `{"ok":true,"booking":{"id":"…","status":"NO_SHOW"},"meta":{"mutated":true,
+///   "noOp":false},"fee":{"kind":"NOT_CHARGEABLE","status":null,"amount":null}}`
+///
+/// Everything is optional and every enum-ish value decodes as `String`: the fee
+/// outcome is a server-side union (`NOT_CHARGEABLE` / `ATTEMPTED` / `SKIPPED`)
+/// whose members can grow, and a strict enum would throw — discarding a no-show
+/// the server has already recorded. Same reasoning as the comment-report status.
+public struct ProNoShowMarkResult: Decodable, Sendable {
+    public let booking: ProNoShowMarkedBooking?
+    public let meta: ProNoShowMarkMeta?
+    public let fee: ProNoShowFeeOutcome?
+
+    /// True when this call actually moved the booking; false when it was already
+    /// a no-show (the route answers 200 with `noOp` rather than an error).
+    public var didMutate: Bool { meta?.mutated ?? false }
+}
+
+public struct ProNoShowMarkedBooking: Decodable, Sendable {
+    public let id: String?
+    public let status: String?
+}
+
+public struct ProNoShowMarkMeta: Decodable, Sendable {
+    public let mutated: Bool?
+    public let noOp: Bool?
+}
+
+/// The fee half of the response. `kind` is `NOT_CHARGEABLE` (flag/policy off, no
+/// card, outside window…), `ATTEMPTED` (`status` is CHARGED or FAILED) or
+/// `SKIPPED`. `amount` is a decimal string and is null unless a fee was assessed.
+public struct ProNoShowFeeOutcome: Decodable, Sendable {
+    public let kind: String?
+    public let status: String?
+    public let amount: String?
+
+    /// A fee that actually landed on the client's card.
+    public var wasCharged: Bool {
+        kind?.uppercased() == "ATTEMPTED" && status?.uppercased() == "CHARGED"
     }
 }
 

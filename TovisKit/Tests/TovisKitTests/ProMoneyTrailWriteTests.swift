@@ -12,6 +12,9 @@ import Testing
 //   • waive POSTs /bookings/{id}/no-show-fee/waive with an empty {} body and a
 //     STABLE key — there's no body to vary, and waive is a server-side no-op on
 //     repeat, so a double-tap dedupes rather than double-acting.
+// Plus the action that CREATES the fee the waive forgives — "Mark no-show" — which
+// is a /pro route and whose response shape is pinned against a verbatim capture
+// taken from the running server.
 
 /// Records the outgoing request and serves a canned envelope.
 final class ProMoneyTrailWriteURLProtocol: URLProtocol {
@@ -178,5 +181,127 @@ private extension URLRequest {
         reset()
         try await makeService().waiveNoShowFee(bookingId: "bkg_2")
         #expect(ProMoneyTrailWriteURLProtocol.capturedIdempotencyKey != firstKey)
+    }
+
+    // MARK: - Mark no-show
+
+    /// Verbatim success capture from the running route (pro JWT, flag on):
+    /// {"ok":true,"booking":{"id":"cmroch9if0003polvn0ahveub","status":"NO_SHOW"},
+    ///  "meta":{"mutated":true,"noOp":false},
+    ///  "fee":{"kind":"NOT_CHARGEABLE","status":null,"amount":null}}
+    private static let markCapture = """
+    {"ok":true,"booking":{"id":"cmroch9if0003polvn0ahveub","status":"NO_SHOW"},\
+    "meta":{"mutated":true,"noOp":false},\
+    "fee":{"kind":"NOT_CHARGEABLE","status":null,"amount":null}}
+    """
+
+    @Test func markNoShowPostsToProRouteAsAuthenticatedNativeRequest() async throws {
+        reset(Self.markCapture)
+
+        try await makeService().markNoShow(bookingId: "bkg_1")
+
+        // A /pro route — unlike refund and waive, which are the shared /bookings ones.
+        #expect(ProMoneyTrailWriteURLProtocol.capturedPath == "/api/v1/pro/bookings/bkg_1/no-show")
+        #expect(ProMoneyTrailWriteURLProtocol.capturedMethod == "POST")
+        #expect(ProMoneyTrailWriteURLProtocol.capturedAuthHeader == "Bearer session.token.value")
+        #expect(ProMoneyTrailWriteURLProtocol.capturedNativeHeader == "ios")
+        // The route runs withRouteIdempotency: no key ⇒ 400 IDEMPOTENCY_KEY_REQUIRED.
+        #expect((ProMoneyTrailWriteURLProtocol.capturedIdempotencyKey ?? "").isEmpty == false)
+
+        let body = try #require(ProMoneyTrailWriteURLProtocol.capturedBody)
+        let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        // The handler reads NO body (driven: a bogus one still succeeds), so we send none.
+        #expect(json.isEmpty)
+    }
+
+    @Test func markNoShowKeyIsStableAcrossRepeatTaps() async throws {
+        // Stable ⇒ a double-tap REPLAYS the first response server-side instead of
+        // re-running the charge. Proven against the route: same key ⇒ same body back.
+        reset(Self.markCapture)
+        try await makeService().markNoShow(bookingId: "bkg_1")
+        let firstKey = try #require(ProMoneyTrailWriteURLProtocol.capturedIdempotencyKey)
+
+        reset(Self.markCapture)
+        try await makeService().markNoShow(bookingId: "bkg_1")
+        #expect(ProMoneyTrailWriteURLProtocol.capturedIdempotencyKey == firstKey)
+    }
+
+    @Test func markNoShowKeyIsPerBooking() async throws {
+        // Not cosmetic: the server hashes {bookingId, professionalId, actorUserId},
+        // so reusing one key across two bookings is a 409 IDEMPOTENCY_KEY_CONFLICT
+        // (driven). The key must be namespaced to the booking.
+        reset(Self.markCapture)
+        try await makeService().markNoShow(bookingId: "bkg_1")
+        let firstKey = try #require(ProMoneyTrailWriteURLProtocol.capturedIdempotencyKey)
+
+        reset(Self.markCapture)
+        try await makeService().markNoShow(bookingId: "bkg_2")
+        #expect(ProMoneyTrailWriteURLProtocol.capturedIdempotencyKey != firstKey)
+    }
+
+    @Test func markNoShowDecodesTheVerbatimCapture() async throws {
+        reset(Self.markCapture)
+
+        let result = try await makeService().markNoShow(bookingId: "bkg_1")
+
+        #expect(result.booking?.status == "NO_SHOW")
+        #expect(result.meta?.mutated == true)
+        #expect(result.meta?.noOp == false)
+        #expect(result.didMutate)
+        #expect(result.fee?.kind == "NOT_CHARGEABLE")
+        // Nothing was charged: no policy row ⇒ no fee assessed.
+        #expect(result.fee?.amount == nil)
+        #expect(result.fee?.wasCharged == false)
+    }
+
+    @Test func markNoShowDecodesARepeatAsANoOp() async throws {
+        // Driven: a SECOND mark with a fresh key answers 200 with mutated:false —
+        // not an error. The UI must not read that as a failure.
+        reset("""
+        {"ok":true,"booking":{"id":"bkg_1","status":"NO_SHOW"},\
+        "meta":{"mutated":false,"noOp":true},\
+        "fee":{"kind":"NOT_CHARGEABLE","status":null,"amount":null}}
+        """)
+
+        let result = try await makeService().markNoShow(bookingId: "bkg_1")
+
+        #expect(result.didMutate == false)
+        #expect(result.meta?.noOp == true)
+        #expect(result.booking?.status == "NO_SHOW")
+    }
+
+    @Test func markNoShowDecodesAChargedFee() async throws {
+        reset("""
+        {"ok":true,"booking":{"id":"bkg_1","status":"NO_SHOW"},\
+        "meta":{"mutated":true,"noOp":false},\
+        "fee":{"kind":"ATTEMPTED","status":"CHARGED","amount":"45.00"}}
+        """)
+
+        let result = try await makeService().markNoShow(bookingId: "bkg_1")
+
+        #expect(result.fee?.wasCharged == true)
+        #expect(result.fee?.amount == "45.00")
+    }
+
+    @Test func markNoShowSurvivesAnUnknownFeeKindAndAMissingFee() async throws {
+        // The fee outcome is a server-side union that can grow, and `fee` is null
+        // when the charge attempt itself threw. Neither may throw away a no-show
+        // the server has already recorded.
+        reset("""
+        {"ok":true,"booking":{"id":"bkg_1","status":"NO_SHOW"},\
+        "meta":{"mutated":true,"noOp":false},\
+        "fee":{"kind":"SOME_FUTURE_OUTCOME","status":null,"amount":null}}
+        """)
+        let unknown = try await makeService().markNoShow(bookingId: "bkg_1")
+        #expect(unknown.didMutate)
+        #expect(unknown.fee?.wasCharged == false)
+
+        reset("""
+        {"ok":true,"booking":{"id":"bkg_1","status":"NO_SHOW"},\
+        "meta":{"mutated":true,"noOp":false},"fee":null}
+        """)
+        let noFee = try await makeService().markNoShow(bookingId: "bkg_1")
+        #expect(noFee.didMutate)
+        #expect(noFee.fee == nil)
     }
 }
