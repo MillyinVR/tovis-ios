@@ -140,7 +140,9 @@ struct UpdateBoardEventDateRequest: Encodable, Sendable {
 // MARK: - Event date
 
 /// Calendar-date helpers for a board's `eventDate` — the `YYYY-MM-DD` wire format
-/// shared by the create flow, the detail editor, and the countdown.
+/// shared by the create flow, the detail editor, and the countdown. Also the
+/// serializer for every other date-only pick sent from an unpinned picker
+/// (license expiry in ProSignupView/ProVerificationView).
 ///
 /// An event date is a CALENDAR date, not an instant: the wire string carries no
 /// timezone, and the backend stores it as a `@db.Date` (`parseBoardEventDateYmd`

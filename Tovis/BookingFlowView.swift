@@ -171,6 +171,11 @@ struct BookingFlowView: View {
                                displayedComponents: .date)
                         .datePickerStyle(.graphical)
                         .tint(BrandColor.accent)
+                        // Pinned to the LOCATION's zone — the availability `date`
+                        // param is serialized in it (ymdString), so an unpinned
+                        // picker fetches the wrong day whenever the device zone
+                        // straddles midnight against the location's.
+                        .environment(\.timeZone, TimeZone(identifier: boot.timeZone) ?? .current)
                         .onChange(of: selectedDate) { Task { await loadSlots(boot) } }
                 }
 

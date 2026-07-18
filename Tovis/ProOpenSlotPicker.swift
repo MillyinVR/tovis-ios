@@ -29,6 +29,12 @@ struct ProOpenSlotPicker: View {
     @State private var loadingSlots = false
     @State private var slotError: String?
 
+    /// The zone the availability `date` param is interpreted in. The picker is
+    /// pinned to it so the day the pro taps is the day fetched — unpinned, a
+    /// device zone straddling midnight against the location's fetches the
+    /// neighboring day.
+    private var dayZone: TimeZone { TimeZone(identifier: locationTimeZone ?? "") ?? .current }
+
     /// Re-fetch whenever the service/location/date inputs change.
     private var fetchKey: String {
         "\(professionalId)|\(serviceId)|\(offeringId)|\(locationId)|\(clientAddressId ?? "")|\(ymd(selectedDate))"
@@ -39,6 +45,7 @@ struct ProOpenSlotPicker: View {
             BrandSurface {
                 DatePicker("", selection: $selectedDate, in: Date()..., displayedComponents: [.date])
                     .labelsHidden().tint(BrandColor.accent)
+                    .environment(\.timeZone, dayZone)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             slotGrid
@@ -125,7 +132,7 @@ struct ProOpenSlotPicker: View {
     private func ymd(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.timeZone = TimeZone(identifier: locationTimeZone ?? "") ?? .current
+        formatter.timeZone = dayZone
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: date)
     }
