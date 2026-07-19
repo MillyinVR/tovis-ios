@@ -413,7 +413,6 @@ struct EditServiceAddressSheet: View {
         error = nil
         defer { saving = false }
 
-
         do {
             _ = try await session.client.addresses.updateServiceAddress(
                 id: address.id,
