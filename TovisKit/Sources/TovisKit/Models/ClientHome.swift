@@ -155,6 +155,12 @@ public struct HomeOpening: Decodable, Sendable, Identifiable {
     public let professional: HomeProfessional
     /// Services on this opening (drives the invite title + starting price).
     public let services: [HomeOpeningService]?
+    /// The incentive THIS client was matched on, already reduced to display copy
+    /// ("20% off", "$40 off", "Free service") by the server — the same block the
+    /// openings feed sends, so an offer can't be worded differently on the two
+    /// screens. Optional because it is added in a paired web change: absent
+    /// against current prod, which simply means no badge until that deploys.
+    public let publicIncentive: ClientOpeningIncentive?
 
     /// Title like the web `inviteTitle`: first service, "+ N more" when multiple.
     public var title: String {
@@ -169,6 +175,13 @@ public struct HomeOpening: Decodable, Sendable, Identifiable {
         return s.offering?.salonPriceStartingAt
             ?? s.offering?.mobilePriceStartingAt
             ?? s.service.minPrice
+    }
+
+    /// The offer, upper-cased for the badge that sits beside the service name on
+    /// the home card — the first place a client meets a last-minute opening, and
+    /// the place the deal has to be legible at a glance.
+    public var incentiveHeadline: String? {
+        publicIncentive?.label?.trimmedOrNil?.uppercased()
     }
 }
 

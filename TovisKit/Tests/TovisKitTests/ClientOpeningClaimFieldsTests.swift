@@ -232,3 +232,48 @@ import Testing
         #expect(opening.isBookable == false) // no offering → not claimable
     }
 }
+
+// The home card's incentive badge is fed by a field added in a paired web change,
+// so it MUST be optional: a non-optional one would throw and take the whole home
+// tab down against current production, where the key is absent.
+@Suite struct HomeInviteIncentiveTests {
+    private func decodeOpening(_ json: String) throws -> HomeOpening {
+        try JSONDecoder().decode(HomeOpening.self, from: Data(json.utf8))
+    }
+
+    @Test func headlineComesFromTheServerLabel() throws {
+        let opening = try decodeOpening("""
+        {"id":"o","startAt":"2026-07-22T18:00:00.000Z",
+         "professional":{"id":"p","displayName":"Kai"},
+         "publicIncentive":{"offerType":"AMOUNT_OFF","label":"$40 off"}}
+        """)
+        #expect(opening.incentiveHeadline == "$40 OFF")
+    }
+
+    @Test func absentIncentiveDecodesAndShowsNoBadge() throws {
+        // Exactly the payload today's production sends — no `publicIncentive` key.
+        let opening = try decodeOpening("""
+        {"id":"o","startAt":"2026-07-22T18:00:00.000Z",
+         "professional":{"id":"p","displayName":"Kai"}}
+        """)
+        #expect(opening.publicIncentive == nil)
+        #expect(opening.incentiveHeadline == nil)
+    }
+
+    @Test func explicitNullIncentiveShowsNoBadge() throws {
+        let opening = try decodeOpening("""
+        {"id":"o","startAt":"2026-07-22T18:00:00.000Z",
+         "professional":{"id":"p","displayName":"Kai"},"publicIncentive":null}
+        """)
+        #expect(opening.incentiveHeadline == nil)
+    }
+
+    @Test func blankLabelIsNotABadge() throws {
+        let opening = try decodeOpening("""
+        {"id":"o","startAt":"2026-07-22T18:00:00.000Z",
+         "professional":{"id":"p","displayName":"Kai"},
+         "publicIncentive":{"offerType":"PERCENT_OFF","label":"   "}}
+        """)
+        #expect(opening.incentiveHeadline == nil)
+    }
+}
