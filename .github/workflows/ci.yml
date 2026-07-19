@@ -19,7 +19,7 @@ jobs:
     name: Wire contract (fixtures vs backend schema)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The schema is GENERATED in tovis-app, where `check:api-schema` already
       # guarantees the committed copy matches lib/dto/index.ts. We read it live
@@ -29,7 +29,7 @@ jobs:
       # catch. Auth is a read-only deploy key (secret TOVIS_APP_DEPLOY_KEY);
       # both repos are private, so some credential is unavoidable.
       - name: Fetch backend API schema (read-only deploy key)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: MillyinVR/tovis-app
           ssh-key: ${{ secrets.TOVIS_APP_DEPLOY_KEY }}
@@ -37,7 +37,7 @@ jobs:
           sparse-checkout: schema/api
           persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -60,7 +60,7 @@ jobs:
     # and checkout for no extra signal.
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Show toolchain
         run: |
