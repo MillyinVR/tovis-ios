@@ -572,10 +572,27 @@ private struct InviteRow: View {
                 HStack(spacing: 12) {
                     GradientAvatar(name: pro.displayName, url: pro.avatarUrl, index: index, size: 38)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("\(pro.displayName.split(separator: " ").first.map(String.init) ?? pro.displayName) · \(invite.opening.title)")
-                            .font(BrandFont.body(13.5, .semibold))
-                            .foregroundStyle(BrandColor.textPrimary)
-                            .lineLimit(1)
+                        HStack(spacing: 8) {
+                            Text("\(pro.displayName.split(separator: " ").first.map(String.init) ?? pro.displayName) · \(invite.opening.title)")
+                                .font(BrandFont.body(13.5, .semibold))
+                                .foregroundStyle(BrandColor.textPrimary)
+                                .lineLimit(1)
+                            // The offer, right beside the service and bigger than
+                            // the line it sits on. This card is the FIRST place a
+                            // client sees a last-minute opening, and the incentive
+                            // — not a starting price the pro hasn't finalised — is
+                            // what makes it worth acting on.
+                            if let headline = invite.opening.incentiveHeadline {
+                                Text(headline)
+                                    .font(BrandFont.body(14, .bold))
+                                    .foregroundStyle(BrandColor.onAccent)
+                                    .lineLimit(1)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 2)
+                                    .background(BrandColor.accent)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            }
+                        }
                         Text(metaLine)
                             .font(BrandFont.body(11.5))
                             .foregroundStyle(BrandColor.textMuted)
@@ -614,7 +631,12 @@ private struct InviteRow: View {
 
     private var metaLine: String {
         let time = Wire.dateTime(invite.opening.startAt, timeZone: invite.opening.timeZone)
-        let parts = [time, pro.location, invite.opening.startingPrice.flatMap { Wire.money($0) }]
+        // "From", because the field is a STARTING price — the pro sets the final
+        // one at the consultation. (The wire even names it `startingPrice`.)
+        let price = invite.opening.startingPrice
+            .flatMap { Wire.money($0) }
+            .map { "From \($0)" }
+        let parts = [time, pro.location, price]
             .compactMap { $0 }.filter { !$0.isEmpty }
         return parts.joined(separator: " · ")
     }
