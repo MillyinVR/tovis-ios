@@ -128,6 +128,12 @@ public struct PairedBeforeMedia: Decodable, Sendable {
 
 public struct ProPortfolioTile: Decodable, Sendable, Identifiable {
     public let id: String
+    /// The backing `LookPost` id (web §19f). A portfolio tile IS a look, so the
+    /// tile opens the look detail — the same post web's grid links to. Optional
+    /// because the wire may omit it for a legacy tile with no backing look; the
+    /// caller then falls back to the plain fullscreen viewer, mirroring web's
+    /// `/media/[id]` fallback.
+    public let lookId: String?
     public let caption: String?
     public let src: String
     public let thumbUrl: String?
@@ -136,6 +142,10 @@ public struct ProPortfolioTile: Decodable, Sendable, Identifiable {
     public let isFeaturedInPortfolio: Bool
     /// Services tagged on this post — drives the "SERVICE" chip.
     public let serviceIds: [String]
+    /// Display names for `serviceIds`, in the same order. Absent on a server
+    /// that predates the field, so this is empty rather than optional — an empty
+    /// list simply renders no chips.
+    public let serviceNames: [String]
     /// Opt-in before/after pairing → render the comparison slider when present.
     public let before: PairedBeforeMedia?
 
@@ -143,18 +153,21 @@ public struct ProPortfolioTile: Decodable, Sendable, Identifiable {
     public var displayUrl: String { thumbUrl ?? src }
 
     private enum CodingKeys: String, CodingKey {
-        case id, caption, src, thumbUrl, isVideo, isFeaturedInPortfolio, serviceIds, before
+        case id, lookId, caption, src, thumbUrl, isVideo, isFeaturedInPortfolio
+        case serviceIds, serviceNames, before
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
+        lookId = try c.decodeIfPresent(String.self, forKey: .lookId)
         caption = try c.decodeIfPresent(String.self, forKey: .caption)
         src = try c.decode(String.self, forKey: .src)
         thumbUrl = try c.decodeIfPresent(String.self, forKey: .thumbUrl)
         isVideo = try c.decodeIfPresent(Bool.self, forKey: .isVideo) ?? false
         isFeaturedInPortfolio = try c.decodeIfPresent(Bool.self, forKey: .isFeaturedInPortfolio) ?? false
         serviceIds = try c.decodeIfPresent([String].self, forKey: .serviceIds) ?? []
+        serviceNames = try c.decodeIfPresent([String].self, forKey: .serviceNames) ?? []
         before = try c.decodeIfPresent(PairedBeforeMedia.self, forKey: .before)
     }
 }

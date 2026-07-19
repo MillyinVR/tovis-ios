@@ -19,6 +19,10 @@ import UIKit
 struct FullscreenMedia: Identifiable {
     let id: String
     let source: Source
+    /// Caption + service chips to overlay, mirroring web's `/media/[id]` panel.
+    /// `nil` on every surface that has no such metadata (message attachments,
+    /// chart photos, the capture strip) — those keep the bare viewer.
+    let overlay: MediaCaptionOverlay?
 
     enum Source {
         case remote(url: URL, isVideo: Bool)
@@ -26,15 +30,24 @@ struct FullscreenMedia: Identifiable {
     }
 
     /// Build from a remote URL string; `nil` when there's no usable URL.
-    static func remote(id: String, urlString: String?, isVideo: Bool) -> FullscreenMedia? {
+    static func remote(
+        id: String,
+        urlString: String?,
+        isVideo: Bool,
+        overlay: MediaCaptionOverlay? = nil
+    ) -> FullscreenMedia? {
         guard let raw = urlString?.trimmingCharacters(in: .whitespacesAndNewlines),
               !raw.isEmpty, let url = URL(string: raw) else { return nil }
-        return FullscreenMedia(id: id, source: .remote(url: url, isVideo: isVideo))
+        return FullscreenMedia(
+            id: id,
+            source: .remote(url: url, isVideo: isVideo),
+            overlay: overlay
+        )
     }
 
     /// A locally-held image (e.g. the in-camera captured strip).
     static func local(id: String, image: UIImage) -> FullscreenMedia {
-        FullscreenMedia(id: id, source: .localImage(image))
+        FullscreenMedia(id: id, source: .localImage(image), overlay: nil)
     }
 }
 
@@ -83,8 +96,82 @@ struct MediaFullscreenViewer: View {
             .padding(.leading, 16)
             .padding(.top, 8)
             .accessibilityLabel("Close")
+
+            if let overlay = media.overlay {
+                // Bottom-anchored inside the same ZStack so it sits above the
+                // zoomable image without intercepting its pinch/drag gestures.
+                VStack {
+                    Spacer()
+                    MediaCaptionPanel(overlay: overlay)
+                }
+                .allowsHitTesting(false)
+            }
         }
         .statusBarHidden(true)
+    }
+}
+
+// MARK: - Caption + services panel
+
+/// Web's `/media/[id]` bottom panel: the caption line, then a "Services" label
+/// above name chips. Rendered only when ``MediaCaptionOverlay`` has something.
+private struct MediaCaptionPanel: View {
+    let overlay: MediaCaptionOverlay
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let caption = overlay.caption {
+                Text(caption)
+                    .font(BrandFont.body(14, .semibold))
+                    .foregroundStyle(.white)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if !overlay.serviceNames.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("SERVICES")
+                        .font(BrandFont.body(11, .semibold))
+                        .kerning(0.8)
+                        .foregroundStyle(.white.opacity(0.7))
+
+                    FlowChips(names: overlay.serviceNames)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .padding(.horizontal, 16)
+        .padding(.bottom, 28)
+    }
+}
+
+/// Wrapping row of service chips. `LazyVGrid` would force equal columns and
+/// truncate a long service name, so the chips flow at their natural width.
+private struct FlowChips: View {
+    let names: [String]
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 6) { chips }
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(names, id: \.self) { chip($0) }
+            }
+        }
+    }
+
+    private var chips: some View {
+        ForEach(names, id: \.self) { chip($0) }
+    }
+
+    private func chip(_ name: String) -> some View {
+        Text(name)
+            .font(BrandFont.body(11, .semibold))
+            .foregroundStyle(.white)
+            .padding(.vertical, 5)
+            .padding(.horizontal, 10)
+            .background(.white.opacity(0.16), in: Capsule())
     }
 }
 
