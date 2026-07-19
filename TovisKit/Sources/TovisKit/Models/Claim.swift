@@ -100,19 +100,28 @@ public enum ClaimAcceptOutcome: Equatable, Sendable {
     case clientNotFound
     /// 409 `CLIENT_MISMATCH` — the link belongs to a different client identity.
     ///
-    /// ⚠️ Two very different situations arrive here, and neither is the viewer's
-    /// fault. Normally this is unreachable — the backend absorbs the pro's shell
-    /// into the acting identity instead of refusing (web #652), so a mismatch
-    /// means a caller bug. But it is ALSO what the merge's kill switch returns:
-    /// `DISABLE_CLAIM_MERGE=1` makes the backend fall straight back to this
-    /// pre-#652 refusal (web #653), so during that emergency EVERY signed-in
-    /// claim lands here. Keep the case; don't build the UI around it.
+    /// Normally unreachable: the backend absorbs the pro's shell into the acting
+    /// identity instead of refusing (web #652), so a mismatch means a caller bug.
+    ///
+    /// ⚠️ This case USED to double as the merge kill switch's answer, which is
+    /// why its card told a blameless viewer to go sign in with an account that
+    /// could not exist. The switch now has its own code — see `.claimPaused`, and
+    /// do not fold the two back together: one is permanent and the viewer's, the
+    /// other is temporary and ours.
     case clientMismatch
     /// 409 `MERGE_REFUSED` — absorbing the pro's history would have been unsafe,
     /// so the backend wrote nothing and wants a human. The reason is deliberately
     /// off the wire (every one means "our model of this data is wrong", which the
     /// viewer cannot act on) — it is logged server-side for the people who can.
     case mergeRefused
+    /// 503 `CLAIM_PAUSED` — an operator has the merge kill switch pulled
+    /// (`DISABLE_CLAIM_MERGE`), so the claim never ran and nothing was written.
+    ///
+    /// The only outcome here that is neither the viewer's fault nor permanent:
+    /// while the switch is pulled EVERY signed-in claim lands here, and every one
+    /// of them succeeds once it is flipped back. So the screen says wait and
+    /// keeps a retry, rather than sending anyone to fix an account that is fine.
+    case claimPaused
     /// 409 `CONFLICT` — a concurrent claim won the race; nothing was destroyed.
     case conflict
     /// 403 `WORKSPACE_MISMATCH` — a non-client session tried to claim.
@@ -161,6 +170,9 @@ public enum ClaimScreenState: Equatable, Sendable {
     /// The history could not be absorbed safely; nothing was written and support
     /// has to finish it by hand. Mirrors web's `merge-unavailable` card.
     case mergeRefused
+    /// Claiming is switched off server-side for the moment; nothing was written
+    /// and retrying later will work. Mirrors web's `claim-paused` card.
+    case claimPaused
     case conflict
     case notFound
 
@@ -184,6 +196,7 @@ public enum ClaimScreenState: Equatable, Sendable {
             case .alreadyClaimed: return .alreadyClaimed
             case .clientMismatch: return .clientMismatch
             case .mergeRefused: return .mergeRefused
+            case .claimPaused: return .claimPaused
             case .conflict: return .conflict
             case .notAClient: return .notAClient
             // The acting client identity vanished mid-request, so there is

@@ -125,6 +125,37 @@ import Testing
         )
     }
 
+    @Test func aPausedClaimRendersItsOwnStateRatherThanTheMismatchCard() {
+        // The state this whole change exists for. While the server's merge kill
+        // switch is pulled, EVERY signed-in claim refuses — so whatever renders
+        // here is what every claiming client sees, and it used to be the mismatch
+        // card telling them to sign in with an account that cannot exist.
+        //
+        // Nothing here is the viewer's doing and nothing is permanent, so it gets
+        // its own state, with copy that waits instead of blaming.
+        #expect(
+            ClaimScreenState.resolve(
+                contextState: ClaimContextState.ready,
+                viewer: .client,
+                outcome: .claimPaused
+            ) == .claimPaused
+        )
+
+        // The separation, asserted directly: the two refusals that used to share a
+        // code must never resolve to the same screen again.
+        #expect(
+            ClaimScreenState.resolve(
+                contextState: ClaimContextState.ready,
+                viewer: .client,
+                outcome: .claimPaused
+            ) != ClaimScreenState.resolve(
+                contextState: ClaimContextState.ready,
+                viewer: .client,
+                outcome: .clientMismatch
+            )
+        )
+    }
+
     @Test func conflictIsRenderedSoTheViewerCanRetry() {
         #expect(
             ClaimScreenState.resolve(
