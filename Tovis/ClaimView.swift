@@ -168,6 +168,20 @@ struct ClaimView: View {
                 message: "This claim link belongs to a different client identity than the one you’re signed in as. Sign in with the right client account to finish claiming this history."
             )
 
+        // The merge kill switch is pulled server-side. Deliberately its own card
+        // rather than the mismatch one above: nothing here is the viewer's doing,
+        // there is no other account for them to go and find, and it resolves on
+        // its own — so this owns the problem and keeps a retry, which is also the
+        // only honest primary action a temporary state can offer.
+        case .claimPaused:
+            statusCard(
+                title: "Claiming is paused right now",
+                message: "We’ve paused claiming for a moment while we sort something out on our end. Nothing changed on your account and nothing was lost — this history is still here. Try again shortly."
+            ) {
+                secondaryButton("Try again") { Task { await claim() } }
+                    .padding(.top, 6)
+            }
+
         // Nothing was written, and the viewer cannot fix it themselves — the only
         // honest action is the one web offers, so route to the native support form
         // (step 5) rather than the web /support page this card mirrors.

@@ -51,8 +51,14 @@ public final class ClaimService: Sendable {
     ///
     /// ⚠️ Keyed on the body's top-level `code`, NOT the status — the statuses are
     /// ambiguous (404 = NOT_FOUND | CLIENT_NOT_FOUND; 409 = ALREADY_CLAIMED |
-    /// CLIENT_MISMATCH | MERGE_REFUSED | CONFLICT). Pinned by `ClaimServiceTests`
-    /// against bodies captured verbatim from the live route.
+    /// CLIENT_MISMATCH | MERGE_REFUSED | CONFLICT). Only 410 REVOKED, 403
+    /// WORKSPACE_MISMATCH and 503 CLAIM_PAUSED map one-to-one. Pinned by
+    /// `ClaimServiceTests` against bodies captured verbatim from the live route.
+    ///
+    /// The `default: throw` is load-bearing for forward compatibility: a code
+    /// this build has never heard of surfaces the SERVER's message instead of
+    /// being mapped to the nearest-looking case, which is how a shipped build
+    /// degrades honestly rather than confidently rendering the wrong card.
     public func acceptClaim(token: String) async throws -> ClaimAcceptOutcome {
         do {
             let response: ClaimAcceptResponse = try await api.request(
@@ -70,6 +76,7 @@ public final class ClaimService: Sendable {
             case "CLIENT_NOT_FOUND": return .clientNotFound
             case "CLIENT_MISMATCH": return .clientMismatch
             case "MERGE_REFUSED": return .mergeRefused
+            case "CLAIM_PAUSED": return .claimPaused
             case "CONFLICT": return .conflict
             case "WORKSPACE_MISMATCH": return .notAClient
             default: throw error

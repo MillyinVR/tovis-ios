@@ -244,6 +244,19 @@ final class ClaimURLProtocol: URLProtocol {
                 body: "{\"ok\":false,\"error\":\"Invite could not be claimed.\",\"code\":\"CONFLICT\"}"
             ) == .conflict
         )
+        // Driven live 2026-07-19 against a seeded shell + a signed-in client with
+        // `DISABLE_CLAIM_MERGE=1` set on the server, and captured verbatim.
+        // Verified in the DB that the refusal wrote NOTHING — the shell was still
+        // UNCLAIMED with userId NULL afterwards.
+        //
+        // The ONLY 503 on this route, and deliberately not one of the 409s: this
+        // is the service being switched off, not a conflict with the request.
+        #expect(
+            try await outcome(
+                status: 503,
+                body: "{\"ok\":false,\"error\":\"Claiming is paused right now. Nothing changed on your account — please try again shortly.\",\"code\":\"CLAIM_PAUSED\"}"
+            ) == .claimPaused
+        )
         // A pro's bearer token reaching the client-only route.
         #expect(
             try await outcome(
@@ -251,6 +264,26 @@ final class ClaimURLProtocol: URLProtocol {
                 body: "{\"ok\":false,\"error\":\"Forbidden\",\"code\":\"WORKSPACE_MISMATCH\",\"requiredWorkspace\":\"CLIENT\"}"
             ) == .notAClient
         )
+    }
+
+    /// The kill switch and a genuine wrong-account claim are the same *refusal*
+    /// from the same branch of the same server function, and they used to be the
+    /// same `code` — which is how a blameless viewer got told to go sign in with
+    /// an account that cannot exist. Two codes in, two outcomes out: assert the
+    /// separation directly, so folding them back together fails here.
+    @Test func acceptClaimSeparatesThePausedSwitchFromAGenuineMismatch() async throws {
+        let paused = try await outcome(
+            status: 503,
+            body: "{\"ok\":false,\"error\":\"Claiming is paused right now. Nothing changed on your account — please try again shortly.\",\"code\":\"CLAIM_PAUSED\"}"
+        )
+        let mismatch = try await outcome(
+            status: 409,
+            body: "{\"ok\":false,\"error\":\"Invite does not belong to this client.\",\"code\":\"CLIENT_MISMATCH\"}"
+        )
+
+        #expect(paused == .claimPaused)
+        #expect(mismatch == .clientMismatch)
+        #expect(paused != mismatch)
     }
 
     @Test func acceptClaimThrowsOnAnUnknownCode() async throws {
