@@ -110,19 +110,26 @@ struct ProBookingDetailView: View {
         .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
         .onChange(of: session.refreshTick) { Task { await load() } }
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    Task { await openMessageThread() }
-                } label: {
-                    if messageWorking {
-                        ProgressView().tint(BrandColor.accent)
-                    } else {
-                        Image(systemName: "bubble.left.and.bubble.right")
+            // Only offered when a thread can actually be opened: an UNCLAIMED
+            // client (pro-created / imported, no account yet) has nobody to
+            // deliver to, and `/messages/resolve` answers 409 CLIENT_UNCLAIMED.
+            // Hidden rather than disabled — a disabled icon in a toolbar reads
+            // as a glitch, and there is no action the pro can take here.
+            if canMessageClient {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        Task { await openMessageThread() }
+                    } label: {
+                        if messageWorking {
+                            ProgressView().tint(BrandColor.accent)
+                        } else {
+                            Image(systemName: "bubble.left.and.bubble.right")
+                        }
                     }
+                    .tint(BrandColor.accent)
+                    .disabled(messageWorking)
+                    .accessibilityLabel("Message client")
                 }
-                .tint(BrandColor.accent)
-                .disabled(messageWorking)
-                .accessibilityLabel("Message client")
             }
         }
         .navigationDestination(item: $messageNav) { nav in
@@ -150,16 +157,41 @@ struct ProBookingDetailView: View {
         .tint(BrandColor.accent)
     }
 
+    /// Whether the loaded booking allows messaging. Unknown while loading, in
+    /// which case the toolbar keeps the button (the pre-field behaviour).
+    private var canMessageClient: Bool {
+        if case let .loaded(booking) = phase { return booking.canMessageClient }
+        return true
+    }
+
     /// Resolve-or-create this booking's thread and push the conversation.
-    /// Best-effort: on failure the pro stays on the booking detail.
+    ///
+    /// The failure is SURFACED, not swallowed. This used to be `try?` + `if
+    /// let`, which turned every error into a no-op: against an unclaimed client
+    /// the server answers 409 CLIENT_UNCLAIMED and the button did nothing at
+    /// all, with no way for the pro to tell a refusal from a dead tap. The gate
+    /// above should now prevent that specific case, but any other failure
+    /// (offline, 500, a thread that resolves yet isn't in the inbox page) must
+    /// still say so rather than look broken.
     private func openMessageThread() async {
         guard !messageWorking else { return }
         messageWorking = true
+        actionError = nil
         defer { messageWorking = false }
-        if let thread = try? await session.client.messages.openBookingThread(
-            bookingId: bookingId
-        ) {
+        do {
+            guard let thread = try await session.client.messages.openBookingThread(
+                bookingId: bookingId
+            ) else {
+                actionError = "Couldn’t open the conversation. Try again."
+                return
+            }
             messageNav = MessageThreadNav(thread: thread)
+        } catch let error as APIError {
+            // The server's copy is already pro-facing (e.g. "Client account has
+            // not been claimed yet."), so pass it straight through.
+            actionError = error.userMessage
+        } catch {
+            actionError = "Couldn’t open the conversation. Try again."
         }
     }
 

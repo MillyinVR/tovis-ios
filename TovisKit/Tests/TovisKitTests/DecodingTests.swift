@@ -542,6 +542,9 @@ func fixture(_ name: String) throws -> Data {
         // detail down against the live server.
         #expect(b.noShowFeatureEnabled == nil)
         #expect(!b.canMarkNoShow)
+        // Same fixture, opposite default: no canMessage field ⇒ still offered.
+        #expect(b.client.canMessage == nil)
+        #expect(b.canMessageClient)
     }
 
     // The "Mark no-show" gate — mirrors proActions in
@@ -570,6 +573,39 @@ func fixture(_ name: String) throws -> Data {
         for status in ["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED", "NO_SHOW"] {
             #expect(try !detail(status: status, noShowFeatureEnabled: true).canMarkNoShow)
         }
+    }
+
+    /// The "Message client" gate. Unlike the no-show flag, an ABSENT field must
+    /// mean SHOWN — the button already works for every claimed client today, so
+    /// defaulting to hidden would remove a working action for everyone until the
+    /// web field deploys.
+    private func detail(clientJSON: String) throws -> ProBookingDetail {
+        let json = """
+        {"booking":{"id":"bk_1","status":"ACCEPTED",
+        "scheduledFor":"2026-03-17T13:00:00.000Z","endsAt":"2026-03-17T14:00:00.000Z",
+        "locationType":"SALON","bufferMinutes":0,"durationMinutes":60,
+        "totalDurationMinutes":60,"serviceItems":[],
+        "client":\(clientJSON)}}
+        """
+        return try JSONDecoder().decode(
+            ProBookingDetailResponse.self, from: Data(json.utf8)
+        ).booking
+    }
+
+    @Test func messageClientIsHiddenOnlyWhenTheServerSaysTheClientIsUnclaimed() throws {
+        // Claimed → offered.
+        #expect(try detail(clientJSON: #"{"fullName":"Ada","canMessage":true}"#).canMessageClient)
+
+        // Unclaimed → hidden. /messages/resolve would answer 409 CLIENT_UNCLAIMED,
+        // and before this the button fired, failed, and showed nothing at all.
+        #expect(try !detail(clientJSON: #"{"fullName":"Ada","canMessage":false}"#).canMessageClient)
+    }
+
+    @Test func messageClientDefaultsToSHOWNWhenTheFieldIsAbsent() throws {
+        // ⚠️ The OPPOSITE default to canMarkNoShow. Today's production omits the
+        // field, and the button works there for claimed clients — defaulting to
+        // hidden would be a regression for every pro until the web PR deploys.
+        #expect(try detail(clientJSON: #"{"fullName":"Ada"}"#).canMessageClient)
     }
 
     @Test func markNoShowIsHiddenWhenTheGateIsOffOrAbsent() throws {
