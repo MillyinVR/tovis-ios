@@ -91,6 +91,28 @@ public extension ClientPriorityOffer {
         (serviceId?.trimmedOrNil ?? offeringId?.trimmedOrNil) != nil
     }
 
+    /// The claimable opening this offer refers to, found in the client's openings
+    /// feed by `openingId`.
+    ///
+    /// WHY THIS EXISTS. An opening is ONE time. Claiming used to hand the offer to
+    /// the generic booking flow, which builds its grid from GENERAL availability —
+    /// but `finalize` throws `OPENING_NOT_AVAILABLE` unless the booked minute equals
+    /// the opening's `startAt`, so every slot the picker offered was a guaranteed
+    /// failure, and the exclusive window had already been spent accepting. #180
+    /// fixed exactly this for the openings feed by routing to a single-slot claim
+    /// screen; this resolves the same `ClientOpening` that screen takes, so the
+    /// priority path reuses it rather than growing a second claim implementation.
+    ///
+    /// Only callable AFTER the offer is accepted: the openings feed excludes
+    /// `PRIORITY_OFFERED` rows and admits them once accept flips them to `CLICKED`.
+    /// Returns nil when the offer carries no `openingId`, when no row matches, or
+    /// when the matched row is not bookable — every one of which is a caller's cue
+    /// to fall back, never to reopen a free-choice picker.
+    func claimableOpening(in openings: [ClientOpening]) -> ClientOpening? {
+        guard let openingId = openingId?.trimmedOrNil else { return nil }
+        return openings.first { $0.opening.id == openingId && $0.isBookable }
+    }
+
     /// "m:ss" countdown for a remaining interval (e.g. 65s → "1:05", ≤0 → "0:00").
     /// Pure mirror of the web `formatCountdown`.
     static func countdownLabel(_ remaining: TimeInterval) -> String {
