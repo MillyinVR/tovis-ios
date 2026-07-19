@@ -46,6 +46,10 @@ struct ProClientChartView: View {
     // place for a general pro→client conversation).
     @State private var messageNav: MessageThreadNav?
     @State private var messageWorking = false
+    /// Why the last "Message client" tap failed, or nil. Surfaced in an alert:
+    /// this path answers 409 CLIENT_UNCLAIMED for a client who has never signed
+    /// in, and swallowing that leaves a button that spins and does nothing.
+    @State private var messageError: String?
 
     // Per-tab chart edits (increment 1 of the pro private-client-view parity):
     // alert banner, do-not-rebook flag, profile context (occupation + social
@@ -107,6 +111,20 @@ struct ProClientChartView: View {
         .navigationDestination(item: $messageNav) { nav in
             ThreadView(thread: nav.thread)
         }
+        // The Message button lives in the nav toolbar, so there is no inline
+        // slot to put a failure in — an alert is the only surface that reads.
+        .alert(
+            "Couldn’t open the conversation",
+            isPresented: Binding(
+                get: { messageError != nil },
+                set: { if !$0 { messageError = nil } }
+            ),
+            presenting: messageError
+        ) { _ in
+            Button("OK", role: .cancel) { messageError = nil }
+        } message: { detail in
+            Text(detail)
+        }
         .sheet(isPresented: $showAddNote) {
             ProAddNoteSheet(clientId: clientId, onSaved: reloadChart)
         }
@@ -139,18 +157,36 @@ struct ProClientChartView: View {
 
     /// Resolve-or-create the general pro↔client thread and push the conversation.
     /// Needs the pro's OWN professionalId (the PRO_PROFILE resolve requires
-    /// contextId == the viewer's profile id), fetched via myProfile(). Best-effort:
-    /// on failure the pro stays on the chart.
+    /// contextId == the viewer's profile id), fetched via myProfile().
+    ///
+    /// The failure is SURFACED, not swallowed. Both hops used to be `try?`, which
+    /// turned every error into a no-op. That was survivable only while the server
+    /// never refused: PRO_PROFILE resolution picked its branch on which profiles
+    /// the viewer HAD rather than which one owned the context, so a pro with a
+    /// client profile of their own silently got a thread with themselves and the
+    /// 409 CLIENT_UNCLAIMED below was unreachable. With that fixed server-side,
+    /// this call really does refuse for an unclaimed client — so it has to say so.
     private func openMessageThread() async {
         guard !messageWorking else { return }
         messageWorking = true
+        messageError = nil
         defer { messageWorking = false }
-        guard let myId = try? await session.client.proProfile.myProfile().id else { return }
-        if let thread = try? await session.client.messages.openClientThread(
-            professionalId: myId,
-            clientId: clientId
-        ) {
+        do {
+            let myId = try await session.client.proProfile.myProfile().id
+            guard let thread = try await session.client.messages.openClientThread(
+                professionalId: myId,
+                clientId: clientId
+            ) else {
+                messageError = "Couldn’t open the conversation. Try again."
+                return
+            }
             messageNav = MessageThreadNav(thread: thread)
+        } catch let error as APIError {
+            // The server's copy is already pro-facing (e.g. "Client account has
+            // not been claimed yet."), so pass it straight through.
+            messageError = error.userMessage
+        } catch {
+            messageError = "Couldn’t open the conversation. Try again."
         }
     }
 

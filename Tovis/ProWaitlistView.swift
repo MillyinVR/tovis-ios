@@ -32,6 +32,9 @@ struct ProWaitlistView: View {
     // brief "Offer sent to …" banner shown after a successful offer.
     @State private var offerTarget: OfferTarget?
     @State private var confirmation: String?
+    /// Why the last "Message" tap failed, or nil. Shares the banner slot with
+    /// `confirmation` and takes precedence over it.
+    @State private var messageError: String?
 
     /// One waitlist entry queued for the offer sheet, plus its service context.
     private struct OfferTarget: Identifiable {
@@ -80,33 +83,53 @@ struct ProWaitlistView: View {
         .safeAreaInset(edge: .top) { confirmationBanner }
     }
 
-    /// A brief "Offer sent to …" banner shown after a successful offer. The offer
-    /// leaves the entry ACTIVE (the client hasn't confirmed yet), so nothing in the
-    /// list visibly changes — this is the pro's only feedback that it went through.
+    /// The top banner slot, shared by the success and failure cases so there is
+    /// one banner rather than two stacked ones. Success: "Offer sent to …" after
+    /// an offer — the entry stays ACTIVE (the client hasn't confirmed yet), so
+    /// nothing in the list visibly changes and this is the pro's only feedback
+    /// that it went through. Failure: a refused "Message" tap, which the server
+    /// answers with 409 CLIENT_UNCLAIMED for a client who has never signed in.
+    ///
+    /// Whichever event happened last clears the other, so this ordering only
+    /// breaks a tie that cannot occur.
     @ViewBuilder
     private var confirmationBanner: some View {
-        if let confirmation {
-            HStack(spacing: 8) {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(BrandColor.accent)
-                Text(confirmation)
-                    .font(BrandFont.body(13, .semibold))
-                    .foregroundStyle(BrandColor.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(BrandColor.bgSurface)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(BrandColor.accent.opacity(0.3), lineWidth: 1)
+        if let messageError {
+            banner(
+                messageError,
+                icon: "exclamationmark.circle.fill",
+                tint: BrandColor.ember
             )
-            .padding(.horizontal, 20)
-            .padding(.top, 8)
-            .transition(.move(edge: .top).combined(with: .opacity))
+        } else if let confirmation {
+            banner(
+                confirmation,
+                icon: "checkmark.circle.fill",
+                tint: BrandColor.accent
+            )
         }
+    }
+
+    private func banner(_ text: String, icon: String, tint: Color) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .foregroundStyle(tint)
+            Text(text)
+                .font(BrandFont.body(13, .semibold))
+                .foregroundStyle(BrandColor.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(BrandColor.bgSurface)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(tint.opacity(0.3), lineWidth: 1)
+        )
+        .padding(.horizontal, 20)
+        .padding(.top, 8)
+        .transition(.move(edge: .top).combined(with: .opacity))
     }
 
     @ViewBuilder
@@ -271,21 +294,43 @@ struct ProWaitlistView: View {
     /// Show a brief "Offer sent to …" banner, auto-clearing after a few seconds.
     private func showConfirmation(_ clientName: String) {
         let name = clientName.isEmpty ? "the client" : clientName
-        withAnimation { confirmation = "Offer sent to \(name). They’ll confirm before it books." }
+        withAnimation {
+            // The two share one slot, so retire the older event rather than let
+            // a stale failure hide a fresh success.
+            messageError = nil
+            confirmation = "Offer sent to \(name). They’ll confirm before it books."
+        }
         Task {
             try? await Task.sleep(nanoseconds: 4_000_000_000)
             withAnimation { confirmation = nil }
         }
     }
 
+    /// Resolve-or-create this entry's thread and push the conversation. The
+    /// failure is SURFACED, not swallowed: this used to be `try?` + `if let`,
+    /// so a refusal — 409 CLIENT_UNCLAIMED against a client who has never
+    /// signed in — left a button that spun and then did nothing at all.
     private func openThread(for entry: ProWaitlistEntry) async {
         guard messageWorkingId == nil else { return }
         messageWorkingId = entry.waitlistEntryId
+        withAnimation {
+            messageError = nil
+            confirmation = nil
+        }
         defer { messageWorkingId = nil }
-        if let thread = try? await session.client.messages.openWaitlistThread(
-            waitlistEntryId: entry.waitlistEntryId
-        ) {
+        do {
+            guard let thread = try await session.client.messages.openWaitlistThread(
+                waitlistEntryId: entry.waitlistEntryId
+            ) else {
+                withAnimation { messageError = "Couldn’t open the conversation. Try again." }
+                return
+            }
             messageNav = MessageThreadNav(thread: thread)
+        } catch let error as APIError {
+            // The server's copy is already pro-facing, so pass it through.
+            withAnimation { messageError = error.userMessage }
+        } catch {
+            withAnimation { messageError = "Couldn’t open the conversation. Try again." }
         }
     }
 }

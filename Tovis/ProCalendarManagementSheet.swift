@@ -42,6 +42,9 @@ struct ProCalendarManagementSheet: View {
     @State var selectedTab: ProCalendarManagementTab
     @State private var pendingBusyId: String?
     @State private var pendingError: String?
+    /// Why the last "Message" tap failed, or nil. Kept separate from
+    /// `pendingError` because the two actions live on different tabs.
+    @State private var messageError: String?
 
     // Navigation targets pushed within this sheet's own stack.
     private struct ChartTarget: Identifiable, Hashable {
@@ -141,6 +144,10 @@ struct ProCalendarManagementSheet: View {
                     let active = selectedTab == tab
                     Button {
                         confirmDenyId = nil
+                        // The message error is not tab-gated (the action spans
+                        // tabs), so clear it on a switch or it reads as a
+                        // complaint about whichever rows you just landed on.
+                        messageError = nil
                         withAnimation(.easeOut(duration: 0.15)) { selectedTab = tab }
                     } label: {
                         Text("\(tab.shortTitle) (\(list(for: tab).count))")
@@ -182,6 +189,14 @@ struct ProCalendarManagementSheet: View {
 
                 if let pendingError, selectedTab == .pending {
                     Text(pendingError)
+                        .font(BrandFont.body(12))
+                        .foregroundStyle(BrandColor.ember)
+                }
+
+                // Not tab-gated, unlike `pendingError`: the Message action is on
+                // booking AND waitlist rows, so it can fail on more than one tab.
+                if let messageError {
+                    Text(messageError)
                         .font(BrandFont.body(12))
                         .foregroundStyle(BrandColor.ember)
                 }
@@ -441,21 +456,40 @@ struct ProCalendarManagementSheet: View {
     /// and push ThreadView — the native "Message" action (web
     /// `/messages/start?contextType=…`). Waitlist ids carry a "waitlist:" prefix;
     /// the raw entry id is what the WAITLIST resolve expects.
+    ///
+    /// The failure is SURFACED, not swallowed. Both hops used to be `try?`, so a
+    /// refusal — 409 CLIENT_UNCLAIMED against a client who has never signed in —
+    /// stopped the spinner and did nothing else, leaving no way to tell a refusal
+    /// from a dead button.
     private func openThread(for event: ProCalendarEvent) async {
         guard messageWorkingId == nil else { return }
         messageWorkingId = event.id
+        messageError = nil
         defer { messageWorkingId = nil }
 
-        let thread: MessageThread?
-        if event.isWaitlist {
-            let entryId = event.id.hasPrefix("waitlist:")
-                ? String(event.id.dropFirst("waitlist:".count))
-                : event.id
-            thread = try? await session.client.messages.openWaitlistThread(waitlistEntryId: entryId)
-        } else {
-            thread = try? await session.client.messages.openBookingThread(bookingId: event.id)
+        do {
+            let thread: MessageThread?
+            if event.isWaitlist {
+                let entryId = event.id.hasPrefix("waitlist:")
+                    ? String(event.id.dropFirst("waitlist:".count))
+                    : event.id
+                thread = try await session.client.messages.openWaitlistThread(
+                    waitlistEntryId: entryId
+                )
+            } else {
+                thread = try await session.client.messages.openBookingThread(bookingId: event.id)
+            }
+            guard let thread else {
+                messageError = "Couldn’t open the conversation. Try again."
+                return
+            }
+            messageNav = MessageThreadNav(thread: thread)
+        } catch let error as APIError {
+            // The server's copy is already pro-facing, so pass it through.
+            messageError = error.userMessage
+        } catch {
+            messageError = "Couldn’t open the conversation. Try again."
         }
-        if let thread { messageNav = MessageThreadNav(thread: thread) }
     }
 
     private func approve(_ event: ProCalendarEvent) {
