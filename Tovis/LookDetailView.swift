@@ -36,8 +36,9 @@ struct LookDetailView: View {
 
     // The detail DTO carries neither follow state nor a follower count — web
     // hydrates both client-side too (useProFollow → GET /pros/{id}/follow).
-    @State private var following: Bool?
-    @State private var followerCount: Int?
+    /// `nil` until hydrated — the button stays hidden rather than flashing the
+    /// wrong state. Shared with the other five follow controls (`FollowToggle`).
+    @State private var follow: FollowToggle?
 
     @State private var commentsOpen = false
     @State private var saveOpen = false
@@ -306,8 +307,9 @@ struct LookDetailView: View {
     @ViewBuilder
     private func followButton(_ look: LookDetail) -> some View {
         // Hidden until hydrated so it can't flash the wrong state — the detail
-        // payload has no follow flag, so `following` is unknown on first paint.
-        if let following {
+        // payload has no follow flag, so `follow` is nil on first paint.
+        if let follow {
+            let following = follow.following
             Button { Task { await toggleFollow(look) } } label: {
                 Text(following ? "Following" : "Follow")
                     .font(BrandFont.mono(11)).tracking(1.1)
@@ -514,10 +516,12 @@ struct LookDetailView: View {
     /// The detail DTO ships no follow state, so hydrate it like web does. Best
     /// effort: a signed-out viewer just never sees the button.
     private func hydrateFollow(professionalId: String) async {
-        guard let state = try? await session.client.looks.followState(professionalId: professionalId)
+        // Never over a call in flight — rebuilding the toggle would clear its busy
+        // flag, and a second tap on a BLIND toggle undoes the first.
+        guard !(follow?.isWorking ?? false),
+              let state = try? await session.client.looks.followState(professionalId: professionalId)
         else { return }
-        following = state.following
-        followerCount = state.followerCount
+        follow = FollowToggle(following: state.following, followerCount: state.followerCount)
     }
 
     private func toggleLike(_ look: LookDetail) async {
@@ -537,23 +541,21 @@ struct LookDetailView: View {
     }
 
     private func toggleFollow(_ look: LookDetail) async {
-        guard let current = following else { return }
-        let next = !current
-        let previousFollowing = following
-        let previousCount = followerCount
-        following = next
-        if let count = followerCount { followerCount = count + (next ? 1 : -1) }
+        // Not hydrated, or a call is already in flight. The guard is load-bearing:
+        // the route is a blind toggle, so a second call would undo the first.
+        guard var toggle = follow, toggle.begin() != nil else { return }
+        follow = toggle
+
         do {
-            let state = try await session.client.looks.setFollow(
-                professionalId: look.professional.id,
-                following: next
+            let state = try await session.client.looks.toggleFollow(
+                professionalId: look.professional.id
             )
-            following = state.following
-            followerCount = state.followerCount
+            toggle.finish(state)
         } catch {
-            following = previousFollowing
-            followerCount = previousCount
+            toggle.fail()
+            Haptics.failure()
         }
+        follow = toggle
     }
 
     private func recordShare(_ look: LookDetail) async {

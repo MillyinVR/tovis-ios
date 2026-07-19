@@ -88,11 +88,24 @@ public final class LooksService: Sendable {
 
     // MARK: - Follow a pro (from the overlay)
 
-    /// POST/DELETE /api/v1/pros/{id}/follow.
-    public func setFollow(professionalId: String, following: Bool) async throws -> FollowState {
+    /// POST /api/v1/pros/{id}/follow — a **blind toggle**, not a desired-state
+    /// write: the route runs `toggleProFollow`, flipping whatever the server
+    /// currently holds, and answers with the resulting `{ following,
+    /// followerCount }`. Web posts for both directions for the same reason.
+    ///
+    /// This used to be `setFollow(professionalId:following:)` and sent DELETE to
+    /// unfollow. The route has no DELETE handler, so **every unfollow 405'd** —
+    /// a client could follow a pro from the feed, the look detail or the pro
+    /// profile and then never undo it. Nothing pinned the method, so it built,
+    /// typechecked and passed 795 tests.
+    ///
+    /// Because it is blind, callers MUST NOT fire a second call while one is in
+    /// flight — the second would undo the first. `FollowToggle.begin()` is the
+    /// guard for that.
+    public func toggleFollow(professionalId: String) async throws -> FollowState {
         try await api.request(
             "/pros/\(professionalId)/follow",
-            method: following ? .post : .delete,
+            method: .post,
             body: Data("{}".utf8)
         )
     }

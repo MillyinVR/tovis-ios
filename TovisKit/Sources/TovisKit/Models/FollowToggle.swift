@@ -1,18 +1,21 @@
 import Foundation
 
-/// The optimistic state machine behind every **handle-addressed** (client→client)
-/// follow control: the compact pill in the activity feed, the wide button on a
-/// public creator profile, and the "Creators to follow" rail on Me › Following.
+/// The optimistic state machine behind every follow control in the app — both
+/// the **handle-addressed** (client→client) family (the compact pill in the
+/// activity feed, the wide button on a public creator profile, and the "Creators
+/// to follow" rail on Me › Following) and the **id-addressed** (client→pro)
+/// family (the looks feed's FOLLOW pill, the look detail button, and the pro
+/// profile hero pill).
 ///
-/// Those controls look nothing alike — different sizes, and only one of them has
+/// Those controls look nothing alike — different sizes, and not all of them have
 /// a follower count to show — so the *chrome* stays in each view. What they had
-/// hand-copied three times, and what lives here instead, is the decision-making:
+/// hand-copied six times, and what lives here instead, is the decision-making:
 ///
-/// 1. **A re-entrancy guard.** `POST /api/v1/client/follow/{handle}` is a blind
-///    TOGGLE — it carries no desired state, so it flips whatever the server
-///    currently holds. A second tap while the first is in flight therefore
-///    *undoes* the follow rather than being a harmless duplicate. `begin()`
-///    returns `nil` in that window and the caller must not fire.
+/// 1. **A re-entrancy guard.** Both routes are blind TOGGLES — neither carries a
+///    desired state, so each flips whatever the server currently holds. A second
+///    tap while the first is in flight therefore *undoes* the follow rather than
+///    being a harmless duplicate. `begin()` returns `nil` in that window and the
+///    caller must not fire.
 /// 2. **The optimistic flip** (plus the follower-count nudge) so the tap feels
 ///    instant.
 /// 3. **Reconciling against the server's authoritative answer** rather than
@@ -26,13 +29,24 @@ import Foundation
 /// hold it in `@State`, and `swift test` — the only gate this repo has — can
 /// drive every transition without a running app.
 ///
-/// The pro-side follow (`LooksService.setFollow(professionalId:following:)`) is
-/// **not** modelled here yet: it is keyed by id, not handle, and its route takes
-/// an explicit desired state (POST/DELETE), so "reconcile because we don't know
-/// what we flipped" doesn't apply the same way. `perform`-style callers can still
-/// adopt this later — `begin()` hands back the desired next state precisely so a
-/// desired-state route has something to send. Merging those three sites is queue
-/// item 13.
+/// The two families keep their **own routes** (`/client/follow/{handle}` vs
+/// `/pros/{id}/follow`), and that difference stays where it belongs, at the call
+/// site. But the *contract* is the same on both: POST, no body that matters, and
+/// a `{ following, followerCount }` answer that is the authority. That is why one
+/// type backs all six — and why `begin()`'s return value is only a convenience
+/// (a caller can act on it, or ignore it and just fire).
+///
+/// None of the six copies had all of it. Before consolidating: only the pro
+/// profile guarded re-entrancy; only the look detail restored both fields from a
+/// snapshot; the look detail never clamped, so an unfollow against a stale count
+/// of 0 could render **-1 followers**; and the looks feed rolled back by
+/// re-deriving into its override dictionary, pinning an override where there had
+/// been none and shadowing the next feed refresh.
+///
+/// The id-addressed three shared a worse defect underneath all of that: their
+/// service sent **DELETE** to unfollow against a route that has no DELETE
+/// handler, so every unfollow 405'd and the rollback dutifully restored the pill
+/// to "Following". See `LooksService.toggleFollow(professionalId:)`.
 public struct FollowToggle: Equatable, Sendable {
     /// Whether the viewer currently follows the target.
     public private(set) var following: Bool

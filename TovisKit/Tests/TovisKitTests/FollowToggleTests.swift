@@ -1,13 +1,15 @@
 import Testing
 @testable import TovisKit
 
-// The optimistic follow state machine shared by the activity follow-back pill,
-// the public creator profile button, and the Me › Following suggestions rail.
+// The optimistic follow state machine shared by all six follow controls — the
+// handle-addressed three (activity follow-back pill, public creator profile
+// button, Me › Following suggestions rail) and the id-addressed three (looks feed
+// pill, look detail button, pro profile hero pill).
 //
-// These transitions were hand-copied per view before this, and the copies had
-// already drifted — `rollbackRestoresZeroCountExactly` pins a bug one of them
-// shipped. Living in TovisKit is what puts them under `swift test`, which is the
-// only gate this repo has.
+// These transitions were hand-copied per view before this, and every copy had
+// drifted somewhere different — the tests named for a surface each pin a bug that
+// surface actually shipped. Living in TovisKit is what puts them under
+// `swift test`, which is the only gate this repo has.
 
 struct FollowToggleTests {
 
@@ -18,8 +20,9 @@ struct FollowToggleTests {
 
         let next = toggle.begin()
 
-        // begin() hands back the desired state so a desired-state route (the pro
-        // side, queue item 13) has something to send.
+        // begin() hands back the state it optimistically moved to. Both routes are
+        // blind toggles, so no caller has to *send* this — it is there for callers
+        // that want to branch on it.
         #expect(next == true)
         #expect(toggle.following == true)
         #expect(toggle.followerCount == 8)  // the visible count moves immediately
@@ -135,5 +138,79 @@ struct FollowToggleTests {
     @Test func initClampsNegativeSeedCount() {
         let toggle = FollowToggle(following: false, followerCount: -2)
         #expect(toggle.followerCount == 0)
+    }
+
+    // MARK: - The id-addressed (client→pro) family
+    //
+    // Same state machine, and — contrary to what the queue card assumed —
+    // the same *contract*: POST /pros/{id}/follow runs `toggleProFollow`, so it
+    // blind-toggles exactly like the handle route. The three copies that backed
+    // it each got a different part of this wrong.
+
+    /// `LookDetailView` nudged with a bare `count + (next ? 1 : -1)` and no clamp.
+    /// An unfollow against a stale count of 0 therefore produced **-1**. (It never
+    /// rendered its count, so this was latent there — but the same unclamped shape
+    /// on a surface that *does* render one is a visible "-1 followers".)
+    @Test func proUnfollowAtZeroNeverGoesNegative() {
+        var toggle = FollowToggle(following: true, followerCount: 0)
+
+        #expect(toggle.begin() == false)
+        #expect(toggle.followerCount == 0)  // not -1
+    }
+
+    /// Rolling back returns the seed exactly, which is what lets a call site that
+    /// seeds from a payload decide the toggle is back to its default.
+    ///
+    /// ⚠️ Scope, stated honestly: re-deriving (`!next`) and snapshot-restoring
+    /// produce the *same value* everywhere except the clamp edge — which is why
+    /// this test passes against both, and why `rollbackRestoresZeroCountExactly`
+    /// is the one that actually discriminates. `LooksView`'s real defect was not
+    /// the value at all but that it *wrote a dictionary entry* for a follow that
+    /// never happened, shadowing `viewerFollows` across `reloadKeepingPlace()`.
+    /// That lives in the view's dictionary, which `swift test` cannot reach —
+    /// it is fixed by restoring the entry (including absence) at the call site,
+    /// and verified on the simulator, not here.
+    @Test func proRollbackRestoresTheSeedExactly() {
+        // Seeded from a feed payload that says "not following, 42 followers".
+        var toggle = FollowToggle(following: false, followerCount: 42)
+
+        #expect(toggle.begin() == true)
+        #expect(toggle.followerCount == 43)  // optimistic
+
+        toggle.fail()
+
+        #expect(toggle.following == false)
+        #expect(toggle.followerCount == 42)  // exactly the seed, not a re-derivation
+        #expect(toggle.isWorking == false)
+    }
+
+    /// The round trip end to end: flip optimistically, POST, then settle on the
+    /// server's echo rather than on the optimistic guess.
+    @Test func proToggleRoundTrip() {
+        var toggle = FollowToggle(following: false, followerCount: 11)
+
+        guard let optimistic = toggle.begin() else {
+            Issue.record("begin() refused on an idle toggle")
+            return
+        }
+        #expect(optimistic == true)
+
+        toggle.finish(FollowState(following: true, followerCount: 12))
+
+        #expect(toggle.following == true)
+        #expect(toggle.followerCount == 12)
+        #expect(toggle.isWorking == false)
+    }
+
+    /// Only `ProProfileView` had a re-entrancy guard — and because this route
+    /// blind-toggles too, its absence on the other two was a correctness bug, not
+    /// just a redundant request: the second call would have undone the first.
+    @Test func proSecondTapDoesNotFireASecondRequest() {
+        var toggle = FollowToggle(following: false, followerCount: 3)
+
+        #expect(toggle.begin() == true)
+        #expect(toggle.begin() == nil)      // no second request
+        #expect(toggle.following == true)   // and the refused tap changes nothing
+        #expect(toggle.followerCount == 4)
     }
 }
