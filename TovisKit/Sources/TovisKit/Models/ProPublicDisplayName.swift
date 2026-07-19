@@ -17,9 +17,29 @@ import Foundation
 extension String {
     /// Trimmed, or nil when the string is blank — the single "a blank token is
     /// no token" guard, mirroring the web `str()` helpers.
-    var trimmedOrNil: String? {
-        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
+    ///
+    /// ⚠️ **`public` on purpose.** This was `internal`, which is precisely why
+    /// the app target re-rolled it 30-odd times under five different names
+    /// (`trimOrNil`, `emptyToNil`, `nilIfBlank`, a private `trimmedOrNil(_:)`,
+    /// plus inline pairs) — none of those files could see it. Two of the
+    /// re-rolls even diverged from each other: `nilIfBlank` was declared twice
+    /// with OPPOSITE semantics, one returning the trimmed value and one the
+    /// untrimmed receiver. Round-3 queue item 15 collapsed them. Keep it public.
+    ///
+    /// Trims `.whitespacesAndNewlines`, so a newline-only string is nil. The
+    /// `.whitespaces`-only variants it replaced did not do that — see
+    /// `TrimmedOrNilTests` for the cases where that mattered.
+    public var trimmedOrNil: String? {
+        let value = trimmed
+        return value.isEmpty ? nil : value
+    }
+
+    /// Edge-trimmed, keeping blanks as `""` — the half of the guard that callers
+    /// doing their own `.isEmpty` check or `Int(…)` parse actually want. Three
+    /// files re-rolled this one too (two as a `trimmed(_:)` method, one as a
+    /// private property), all with the same `.whitespacesAndNewlines` set.
+    public var trimmed: String {
+        trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 

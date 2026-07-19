@@ -58,10 +58,7 @@ public struct BoardItem: Decodable, Sendable, Identifiable {
     }
 
     /// A short display caption; falls back to nil so the board name can stand in.
-    public var caption: String? {
-        let trimmed = lookPost?.caption?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return (trimmed?.isEmpty ?? true) ? nil : trimmed
-    }
+    public var caption: String? { lookPost?.caption?.trimmedOrNil }
 }
 
 public struct BoardLookPost: Decodable, Sendable {

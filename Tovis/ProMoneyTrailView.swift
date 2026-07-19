@@ -344,7 +344,7 @@ struct ProMoneyTrailView: View {
             try await session.client.proBookings.refund(
                 bookingId: bookingId,
                 amountCents: parseRefundCents(),
-                reason: refundReason.trimmingCharacters(in: .whitespaces).nilIfBlank
+                reason: refundReason.trimmedOrNil
             )
             flash = "Refund issued."
             refundOpen = false
@@ -424,7 +424,7 @@ struct ProMoneyTrailView: View {
         }
         func joined(_ detail: String?, _ iso: String?) -> String? {
             let age = iso.map { Wire.relativeAgo($0) }
-            return [detail, age?.isEmpty == false ? age : nil].compactMap { $0 }.joined(separator: " · ").nilIfBlank
+            return [detail, age?.isEmpty == false ? age : nil].compactMap { $0 }.joined(separator: " · ").trimmedOrNil
         }
 
         if let d = trail.deposit {
@@ -519,8 +519,4 @@ struct ProMoneyTrailView: View {
         default: return "No-show"
         }
     }
-}
-
-private extension String {
-    var nilIfBlank: String? { trimmingCharacters(in: .whitespaces).isEmpty ? nil : self }
 }

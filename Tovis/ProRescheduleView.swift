@@ -318,8 +318,8 @@ struct ProRescheduleView: View {
                 allowOutsideWorkingHours: outsideHours,
                 allowShortNotice: shortNotice,
                 allowFarFuture: farFuture,
-                overrideReason: appliedOverrides.isEmpty || trimmed(overrideReason).isEmpty
-                    ? nil : trimmed(overrideReason),
+                overrideReason: appliedOverrides.isEmpty || overrideReason.trimmed.isEmpty
+                    ? nil : overrideReason.trimmed,
                 idempotencyKey: key,
             )
             attemptKey = nil
@@ -339,9 +339,5 @@ struct ProRescheduleView: View {
             attemptKey = nil
             errorText = "Couldn’t reschedule the booking. Check your connection and try again."
         }
-    }
-
-    private func trimmed(_ value: String) -> String {
-        value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

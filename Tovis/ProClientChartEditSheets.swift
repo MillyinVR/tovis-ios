@@ -371,12 +371,11 @@ struct ProAddAllergySheet: View {
         saving = true
         error = nil
         defer { saving = false }
-        let trimmedDescription = description.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
             try await session.client.proClients.addAllergy(
                 clientId: clientId,
                 label: label.trimmingCharacters(in: .whitespacesAndNewlines),
-                description: trimmedDescription.isEmpty ? nil : trimmedDescription,
+                description: description.trimmedOrNil,
                 severity: severity
             )
             onSaved()

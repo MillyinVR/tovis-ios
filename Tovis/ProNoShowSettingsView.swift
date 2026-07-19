@@ -167,7 +167,7 @@ struct ProNoShowSettingsView: View {
         let update = ProNoShowSettingsUpdate(
             enabled: enabled,
             feeType: isPercent ? "PERCENT" : "FLAT",
-            feeFlatAmount: isPercent ? nil : (flatAmount.trimmingCharacters(in: .whitespaces).isEmpty ? nil : flatAmount),
+            feeFlatAmount: isPercent ? nil : flatAmount.trimmedOrNil,
             feePercent: isPercent ? Int(percent.trimmingCharacters(in: .whitespaces)) : nil,
             cancelWindowHours: cancelWindowHours,
             chargeNoShow: chargeNoShow,

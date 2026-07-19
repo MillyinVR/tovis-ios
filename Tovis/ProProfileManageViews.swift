@@ -790,13 +790,13 @@ struct ProAddServiceSheet: View {
         do {
             _ = try await session.client.proProfile.createOffering(
                 serviceId: service.id,
-                description: description.trimmingCharacters(in: .whitespaces).isEmpty ? nil : description,
+                description: description.trimmedOrNil,
                 customImageUrl: imageUrl,
                 offersInSalon: offersInSalon,
                 offersMobile: offersMobile,
-                salonPriceStartingAt: offersInSalon ? trimOrNil(salonPrice) : nil,
+                salonPriceStartingAt: offersInSalon ? salonPrice.trimmedOrNil : nil,
                 salonDurationMinutes: offersInSalon ? Int(salonDuration) : nil,
-                mobilePriceStartingAt: offersMobile ? trimOrNil(mobilePrice) : nil,
+                mobilePriceStartingAt: offersMobile ? mobilePrice.trimmedOrNil : nil,
                 mobileDurationMinutes: offersMobile ? Int(mobileDuration) : nil
             )
             success = "Service added to your menu."
@@ -808,10 +808,6 @@ struct ProAddServiceSheet: View {
         } catch {
             self.error = "Something went wrong while saving this service."
         }
-    }
-
-    private func trimOrNil(_ s: String) -> String? {
-        let t = s.trimmingCharacters(in: .whitespaces); return t.isEmpty ? nil : t
     }
 }
 
@@ -1049,11 +1045,11 @@ struct ProEditOfferingSheet: View {
                 id: offering.id,
                 offersInSalon: salonOn,
                 offersMobile: mobileOn,
-                salonPriceStartingAt: .some(salonOn ? emptyToNil(salonPrice) : nil),
+                salonPriceStartingAt: .some(salonOn ? salonPrice.trimmedOrNil : nil),
                 salonDurationMinutes: .some(salonOn ? Int(salonMinutes) : nil),
-                mobilePriceStartingAt: .some(mobileOn ? emptyToNil(mobilePrice) : nil),
+                mobilePriceStartingAt: .some(mobileOn ? mobilePrice.trimmedOrNil : nil),
                 mobileDurationMinutes: .some(mobileOn ? Int(mobileMinutes) : nil),
-                rebookIntervalDays: .some(emptyToNil(rebookInterval).flatMap(Int.init))
+                rebookIntervalDays: .some(rebookInterval.trimmedOrNil.flatMap(Int.init))
             )
             onSaved()
             session.signalRefresh()
@@ -1063,10 +1059,5 @@ struct ProEditOfferingSheet: View {
         } catch {
             self.error = "Couldn’t save. Try again."
         }
-    }
-
-    private func emptyToNil(_ s: String) -> String? {
-        let t = s.trimmingCharacters(in: .whitespaces)
-        return t.isEmpty ? nil : t
     }
 }

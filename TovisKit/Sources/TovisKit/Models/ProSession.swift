@@ -115,6 +115,34 @@ public struct ProSessionState: Decodable, Sendable {
     public var isConsultationRejected: Bool {
         consultation?.status?.uppercased() == "REJECTED"
     }
+
+    /// The consultation status as the pro reads it — "Pending" / "Approved" /
+    /// "Rejected", and "None" when the booking has no consultation yet.
+    ///
+    /// Lived in `ProSessionHubView` as a private `consultationStatusLabel(_:)`.
+    /// It is on the model so `swift test` can reach it: the default arm is the
+    /// interesting one, because an unrecognized server status renders "None"
+    /// (i.e. "no consultation") rather than the raw enum.
+    public var consultationStatusLabel: String {
+        switch consultation?.status?.uppercased() {
+        case "PENDING": return "Pending"
+        case "APPROVED": return "Approved"
+        case "REJECTED": return "Rejected"
+        default: return "None"
+        }
+    }
+
+    /// Whether the pro may leave the consultation screen for before-photos.
+    ///
+    /// ⚠️ **A business rule, not formatting** — this gates what a pro is allowed
+    /// to do. It mirrors web's `canProceedToBefore`
+    /// (`app/pro/bookings/[id]/session/page.tsx:743`) exactly: an ACCEPTED or
+    /// IN_PROGRESS booking whose consultation is approved. Both halves matter —
+    /// approval alone is not enough on a booking that is still PENDING.
+    public var canProceedToBeforePhotos: Bool {
+        let status = status?.uppercased()
+        return (status == "ACCEPTED" || status == "IN_PROGRESS") && isConsultationApproved
+    }
 }
 
 public struct ProSessionStateConsultation: Decodable, Sendable {

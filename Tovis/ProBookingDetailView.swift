@@ -380,7 +380,7 @@ struct ProBookingDetailView: View {
                 primaryLabel("Continue session")
             }
         } else {
-            Text("Status: \(statusDisplayLabel(booking))")
+            Text("Status: \(booking.statusLabel)")
                 .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -703,20 +703,6 @@ struct ProBookingDetailView: View {
         }
         if ac?.isDraft == true { return "Draft saved" }
         return "Snapshot saved on the booking (if provided)."
-    }
-
-    private func statusDisplayLabel(_ booking: ProBookingDetail) -> String {
-        switch booking.status.uppercased() {
-        case "PENDING": return "Pending"
-        case "ACCEPTED": return "Confirmed"
-        case "COMPLETED": return "Completed"
-        case "CANCELLED": return "Cancelled"
-        case "IN_PROGRESS": return "In progress"
-        // Reachable from this screen since "Mark no-show" landed; without it the
-        // default arm renders the raw enum as "No_show".
-        case "NO_SHOW": return "No-show"
-        default: return booking.status.capitalized
-        }
     }
 
     private func mapsURL(address: String, lat: Double?, lng: Double?) -> URL? {

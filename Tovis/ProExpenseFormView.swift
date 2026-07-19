@@ -197,8 +197,7 @@ struct ProExpenseFormView: View {
         submitting = true
         errorText = nil
 
-        let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
-        let notesValue = trimmedNotes.isEmpty ? nil : trimmedNotes
+        let notesValue = notes.trimmedOrNil
         let request = isMileage
             ? ProExpenseWriteRequest(
                 category: category,

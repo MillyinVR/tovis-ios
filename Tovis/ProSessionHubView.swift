@@ -196,7 +196,7 @@ struct ProSessionHubView: View {
 
         ProConsultationFormView(
             bookingId: bookingId,
-            initialItems: initialConsultationItems(),
+            initialItems: detail?.initialConsultationItems ?? [],
             suggestedTotal: suggestedTotal,
             onSent: { Task { await load() } },
         )
@@ -204,9 +204,7 @@ struct ProSessionHubView: View {
         Text("After you submit, it moves to Waiting on client.")
             .font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
 
-        let canProceed = (state.status?.uppercased() == "ACCEPTED" || state.status?.uppercased() == "IN_PROGRESS")
-            && state.isConsultationApproved
-        if canProceed {
+        if state.canProceedToBeforePhotos {
             primaryButton("Proceed to before photos") { await transition(to: .beforePhotos) }
         }
         if state.status?.uppercased() == "PENDING" {
@@ -253,7 +251,7 @@ struct ProSessionHubView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     BrandPill(
-                        text: consultationStatusLabel(state),
+                        text: state.consultationStatusLabel,
                         tint: approved ? BrandColor.emerald : BrandColor.gold,
                     )
                     Text(approved ? "Consultation approved" : "Waiting on client")
@@ -957,41 +955,9 @@ struct ProSessionHubView: View {
         durationMinutes > 0 ? "\(durationMinutes) min" : "Duration TBD"
     }
 
-    private func consultationStatusLabel(_ state: ProSessionState) -> String {
-        switch state.consultation?.status?.uppercased() {
-        case "PENDING": return "Pending"
-        case "APPROVED": return "Approved"
-        case "REJECTED": return "Rejected"
-        default: return "None"
-        }
-    }
-
     private func startedTimeLabel(_ iso: String?) -> String {
         guard let iso else { return "—" }
         return Wire.dateTime(iso, timeZone: detail?.timeZone)
-    }
-
-    /// Initial consultation line items from the booking's services (web
-    /// `buildInitialConsultationItems`).
-    private func initialConsultationItems() -> [ProConsultationLineItem] {
-        guard let detail else { return [] }
-        return detail.serviceItems.enumerated().map { index, item in
-            let itemType = item.itemType.uppercased() == "ADD_ON"
-                ? "ADD_ON" : (index == 0 ? "BASE" : (item.isAddOn ? "ADD_ON" : "BASE"))
-            return ProConsultationLineItem(
-                bookingServiceItemId: item.id,
-                offeringId: item.offeringId,
-                serviceId: item.serviceId,
-                itemType: itemType,
-                label: item.serviceName.isEmpty ? "Service" : item.serviceName,
-                categoryName: nil,
-                price: item.priceSnapshot ?? "",
-                durationMinutes: item.durationMinutesSnapshot > 0 ? String(item.durationMinutesSnapshot) : "",
-                notes: "",
-                sortOrder: item.sortOrder,
-                source: "BOOKING",
-            )
-        }
     }
 
     private func closeoutInput(_ state: ProSessionState) -> ProSessionCloseoutInput {

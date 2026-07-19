@@ -609,11 +609,10 @@ struct ProMediaEditSheet: View {
         saving = true
         error = nil
         defer { saving = false }
-        let trimmed = caption.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
             try await session.client.proMedia.updateMedia(
                 mediaId: item.id,
-                caption: trimmed.isEmpty ? nil : trimmed,
+                caption: caption.trimmedOrNil,
                 isEligibleForLooks: isEligibleForLooks,
                 isFeaturedInPortfolio: isFeaturedInPortfolio,
                 serviceIds: selectedServiceIds,

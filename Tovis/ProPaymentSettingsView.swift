@@ -455,8 +455,8 @@ struct ProPaymentSettingsView: View {
             depositEnabled: depositEnabled,
             depositType: depositType,
             depositScope: depositScope,
-            depositFlatAmount: depositEnabled && depositType == "FLAT" ? trimmedOrNil(depositFlatAmount) : nil,
-            depositPercent: depositEnabled && depositType == "PERCENT" ? trimmedOrNil(depositPercent) : nil,
+            depositFlatAmount: depositEnabled && depositType == "FLAT" ? depositFlatAmount.trimmedOrNil : nil,
+            depositPercent: depositEnabled && depositType == "PERCENT" ? depositPercent.trimmedOrNil : nil,
             acceptCash: acceptCash,
             acceptCardOnFile: acceptCardOnFile,
             acceptTapToPay: acceptTapToPay,
@@ -468,11 +468,11 @@ struct ProPaymentSettingsView: View {
             tipsEnabled: tipsEnabled,
             allowCustomTip: allowCustomTip,
             tipSuggestions: parsedTips,
-            venmoHandle: acceptVenmo ? trimmedOrNil(venmoHandle) : nil,
-            zelleHandle: acceptZelle ? trimmedOrNil(zelleHandle) : nil,
-            appleCashHandle: acceptAppleCash ? trimmedOrNil(appleCashHandle) : nil,
-            paypalHandle: acceptPaypal ? trimmedOrNil(paypalHandle) : nil,
-            paymentNote: trimmedOrNil(paymentNote)
+            venmoHandle: acceptVenmo ? venmoHandle.trimmedOrNil : nil,
+            zelleHandle: acceptZelle ? zelleHandle.trimmedOrNil : nil,
+            appleCashHandle: acceptAppleCash ? appleCashHandle.trimmedOrNil : nil,
+            paypalHandle: acceptPaypal ? paypalHandle.trimmedOrNil : nil,
+            paymentNote: paymentNote.trimmedOrNil
         )
 
         do {
@@ -488,10 +488,5 @@ struct ProPaymentSettingsView: View {
         } catch {
             self.error = "Failed to save payment settings."
         }
-    }
-
-    private func trimmedOrNil(_ s: String) -> String? {
-        let t = s.trimmingCharacters(in: .whitespaces)
-        return t.isEmpty ? nil : t
     }
 }

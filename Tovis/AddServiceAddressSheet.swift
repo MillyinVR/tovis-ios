@@ -90,12 +90,10 @@ struct AddServiceAddressSheet: View {
         error = nil
         defer { saving = false }
         do {
-            let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
-            let trimmedApt = apt.trimmingCharacters(in: .whitespacesAndNewlines)
             let address = try await session.client.addresses.createServiceAddress(
                 from: place,
-                label: trimmedLabel.isEmpty ? nil : trimmedLabel,
-                apt: trimmedApt.isEmpty ? nil : trimmedApt
+                label: label.trimmedOrNil,
+                apt: apt.trimmedOrNil
             )
             onSaved(address)
             dismiss()

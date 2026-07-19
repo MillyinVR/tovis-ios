@@ -91,7 +91,7 @@ public final class ShareLookService: Sendable {
         let payload = try JSONEncoder.canonical.encode(
             ShareLookRequest(
                 name: name.trimmingCharacters(in: .whitespacesAndNewlines),
-                caption: Self.normalizeCaption(caption),
+                caption: caption?.trimmedOrNil,
                 isPublic: isPublic,
                 after: after,
                 before: before))
@@ -106,13 +106,6 @@ public final class ShareLookService: Sendable {
         return response.look
     }
 
-    /// Trim the caption; empty → nil so the key is omitted (`encodeIfPresent`). The
-    /// server treats an absent caption as none, matching the web sheet's
-    /// `caption.trim() || null`.
-    private static func normalizeCaption(_ value: String?) -> String? {
-        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmed.isEmpty ? nil : trimmed
-    }
 }
 
 // MARK: - Wire models

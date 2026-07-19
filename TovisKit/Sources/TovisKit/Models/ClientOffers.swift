@@ -88,7 +88,7 @@ public extension ClientPriorityOffer {
     /// to). The card still renders without it, but "Claim it" falls back to the
     /// pro's profile — mirroring the openings feed's non-bookable handling.
     var isBookable: Bool {
-        (serviceId?.trimmedOffersValue ?? offeringId?.trimmedOffersValue) != nil
+        (serviceId?.trimmedOrNil ?? offeringId?.trimmedOrNil) != nil
     }
 
     /// "m:ss" countdown for a remaining interval (e.g. 65s → "1:05", ≤0 → "0:00").
@@ -140,12 +140,4 @@ struct WaitlistOfferActionRequest: Encodable, Sendable {
 /// same shape the aftercare-rebook confirm returns.
 struct WaitlistOfferRespondResponse: Decodable, Sendable {
     let booking: RebookedBooking?
-}
-
-private extension String {
-    /// Trimmed, or nil when blank — the offers models' local `str()` guard.
-    var trimmedOffersValue: String? {
-        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
-    }
 }
