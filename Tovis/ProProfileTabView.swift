@@ -239,13 +239,25 @@ struct ProProfileTabView: View {
         }
     }
 
+    /// Web's YourLinkCard renders this as a `Link` to `/pro/membership`; the native
+    /// counterpart of that page is `ProMembershipView`, so this pushes it rather than
+    /// opening a web view. Membership there is deliberately display-only (Apple IAP —
+    /// see the note at the top of that file), which matches web: `/pro/membership` is
+    /// a plan page, not a checkout. Same destination as the Growth → Membership row
+    /// in `accountSection`, so the two entry points cannot drift apart.
     private var upgradeButton: some View {
-        Text("Upgrade to activate ›")
-            .font(BrandFont.body(12, .semibold))
-            .foregroundStyle(BrandColor.onAccent)
-            .padding(.vertical, 9).padding(.horizontal, 14)
-            .background(BrandColor.accent)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        NavigationLink {
+            ProMembershipView()
+        } label: {
+            Text("Upgrade to activate ›")
+                .font(BrandFont.body(12, .semibold))
+                .foregroundStyle(BrandColor.onAccent)
+                .padding(.vertical, 9).padding(.horizontal, 14)
+                .background(BrandColor.accent)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        // Without .plain the NavigationLink tints the label and overrides onAccent.
+        .buttonStyle(.plain)
     }
 
     private func linkPill(_ title: String) -> some View {
