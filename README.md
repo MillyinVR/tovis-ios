@@ -99,10 +99,14 @@ both proves the check can fail).
 
 ## Build / verify
 
-**CI runs all of this on every push + PR** (`.github/workflows/ci.yml`) — a `contract` job on
-Linux and an `ios` job on macOS. Before #189 the repo had no CI at all, which is why the
-contract test only ran when someone remembered and six fixture drifts accumulated. The commands
-below are the same ones CI runs, for reproducing a failure locally.
+**CI runs the first two of these on every push + PR** (`.github/workflows/ci.yml`) — a `contract`
+job on Linux and a `swift test` job on macOS. Before #189 the repo had no CI at all, which is why
+the contract test only ran when someone remembered and six fixture drifts accumulated.
+
+🔴 **The `xcodebuild` line is NOT run by CI** — it was removed when the macOS bill (10x multiplier
+on a private repo) exhausted the account's Actions allowance and refused every workflow across both
+repos. So **nothing in CI compiles `Tovis/`**: a Swift error in the app target ships green. Run it
+yourself before pushing app-target changes.
 
 ```bash
 # iOS unit + contract
