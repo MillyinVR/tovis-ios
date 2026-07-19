@@ -53,6 +53,10 @@ struct BookingFlowView: View {
     /// Guards the one-time preselect so a later date change / manual pick wins.
     @State private var didApplyPreselect = false
 
+    /// Presence chips, already reduced to what's honest to show. Starts empty,
+    /// so the screen says nothing until the server justifies a number.
+    @State private var presence: PresenceDisplay = .empty
+
     // Add-ons (new bookings only — reschedule keeps the original add-ons).
     @State private var addOns: [BookingAddOn] = []
     @State private var selectedAddOnIds: Set<String> = []
@@ -123,6 +127,13 @@ struct BookingFlowView: View {
                 }
             }
             .task { if case .loading = phase { await loadBootstrap() } }
+            // Both presence loops hang off the NavigationStack content, which
+            // ALWAYS exists — never off the chips, which render nothing until
+            // there is something honest to say. A `.task` on a view that
+            // resolves to empty never installs, and the loop that fills it
+            // would never run (the dead-but-green failure from #173).
+            .task { await runPresenceHeartbeat() }
+            .task { await runPresencePoll() }
         }
         .tint(BrandColor.accent)
     }
@@ -146,6 +157,10 @@ struct BookingFlowView: View {
                             }
                         }
                         .padding(.top, 2)
+
+                        // Web renders these directly under the price block on
+                        // the claim page, above the claim CTA.
+                        PresenceSignalsBadges(display: presence)
                     }
                 }
 
@@ -242,6 +257,72 @@ struct BookingFlowView: View {
 
     private var bookDisabled: Bool {
         selectedSlot == nil || booking || addressRequiredButMissing
+    }
+
+    // MARK: - Presence (claim path only)
+
+    /// Presence is a CLAIM-path signal. Web renders it only on the opening claim
+    /// page, so this flow reads and heartbeats only when it is actually claiming
+    /// an opening. An ordinary booking from a look, a profile or a rebook has no
+    /// opening, sends nothing and shows nothing — which is exactly what web does
+    /// on those surfaces too. (Six of this view's eight call sites pass no
+    /// `openingId`; only the openings feed and priority offers do.)
+    private var presenceOpeningId: String? { openingId }
+
+    /// Puts this viewer INTO the watching count, every 30s while the claim
+    /// screen is on screen.
+    ///
+    /// Shipping the write half is not optional garnish: web's `watching >= 2`
+    /// threshold is written for a viewer who counts themselves. Reading without
+    /// heartbeating would silently reinterpret the same number as "two OTHER
+    /// people", and iOS viewers would stay invisible to everyone else's count —
+    /// the gap this step exists to close.
+    ///
+    /// Fires immediately, then sleeps — a viewer should be counted the moment
+    /// they arrive, not 30s in. The loop is bounded by `.task`, which cancels on
+    /// disappear; a cancel during the sleep exits at the `while` on the next
+    /// pass without firing a stray request.
+    private func runPresenceHeartbeat() async {
+        guard let openingId = presenceOpeningId else { return }
+        while !Task.isCancelled {
+            _ = try? await session.client.presence.heartbeat(
+                resourceType: .opening,
+                resourceId: openingId
+            )
+            try? await Task.sleep(for: PresenceHeartbeat.interval)
+        }
+    }
+
+    /// Re-reads the counts on web's cadence: 15s while they move, 30s once
+    /// they've been still for 3 rounds.
+    ///
+    /// Failures are deliberately silent. Presence is ambient — the user never
+    /// asked for it and there is no action to retry — and the honest-threshold
+    /// contract already renders nothing for below-threshold, unknown and empty,
+    /// so a failed poll has nothing distinct to say. It keeps the last known
+    /// counts rather than blanking them, matching web's hook. This is NOT the
+    /// silent-`try?`-on-a-tapped-button shape from #177: no control here appears
+    /// to do anything.
+    private func runPresencePoll() async {
+        guard let openingId = presenceOpeningId else { return }
+        var schedule = PresencePollSchedule()
+        var previous: PresenceSignals?
+
+        while !Task.isCancelled {
+            let signals = try? await session.client.presence.signals(
+                resourceType: .opening,
+                resourceId: openingId,
+                professionalId: professionalId,
+                serviceId: offering.serviceId
+            )
+            if let signals {
+                // Only a round that actually answered can count as "unchanged".
+                schedule.record(unchanged: signals == previous)
+                previous = signals
+                presence = PresenceDisplay(signals: signals)
+            }
+            try? await Task.sleep(for: schedule.nextInterval)
+        }
     }
 
     // MARK: - Address picker (mobile)

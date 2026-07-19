@@ -53,6 +53,9 @@ public final class TovisClient: Sendable {
     /// Client-submitted viral look requests — the write half of the Viral Looks
     /// band on home (the band's reads come from `home`).
     public let viralRequests: ViralRequestsService
+    /// "N watching now" / "N on the waitlist" on the opening claim path — both
+    /// the read and the heartbeat that puts this viewer into the count.
+    public let presence: PresenceService
     /// Client card-on-file — saved cards for no-show fees (Payment methods
     /// settings). Dark unless ENABLE_NO_SHOW_PROTECTION (routes 404 while off).
     public let paymentMethods: PaymentMethodsService
@@ -183,6 +186,7 @@ public final class TovisClient: Sendable {
         )
         self.referrals = ReferralsService(api: api)
         self.viralRequests = ViralRequestsService(api: api)
+        self.presence = PresenceService(api: api)
         self.paymentMethods = PaymentMethodsService(api: api)
         self.publicClient = PublicClientService(api: api)
         self.publicBoard = PublicBoardService(api: api)
