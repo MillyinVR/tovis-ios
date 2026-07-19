@@ -118,7 +118,7 @@ struct ProNewBookingView: View {
     private var hasTime: Bool { manualMode ? true : selectedSlot != nil }
     /// New client needs first + last name + email (server contract); phone optional.
     private var newClientReady: Bool {
-        !trimmed(newFirstName).isEmpty && !trimmed(newLastName).isEmpty && !trimmed(newEmail).isEmpty
+        !newFirstName.trimmed.isEmpty && !newLastName.trimmed.isEmpty && !newEmail.trimmed.isEmpty
     }
     private var hasClient: Bool {
         clientMode == .existing ? !clientId.isEmpty : newClientReady
@@ -245,7 +245,7 @@ struct ProNewBookingView: View {
     /// the picked existing client's name.
     private var createdClientName: String {
         if clientMode == .new {
-            let name = "\(trimmed(newFirstName)) \(trimmed(newLastName))"
+            let name = "\(newFirstName.trimmed) \(newLastName.trimmed)"
                 .trimmingCharacters(in: .whitespaces)
             return name.isEmpty ? "your client" : name
         }
@@ -639,10 +639,6 @@ struct ProNewBookingView: View {
         Text(text).font(BrandFont.body(13)).foregroundStyle(BrandColor.textMuted)
     }
 
-    private func trimmed(_ value: String) -> String {
-        value.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
     /// A bordered menu picker over (id, label) options.
     private func menu(selection: Binding<String>, options: [(String, String)], placeholder: String) -> some View {
         Menu {
@@ -826,13 +822,12 @@ struct ProNewBookingView: View {
             return
         }
 
-        let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
         // Existing client → clientId; new client → an inline client to create.
         let newClient: ProNewBookingClient? = clientMode == .new
             ? ProNewBookingClient(
-                firstName: trimmed(newFirstName), lastName: trimmed(newLastName),
-                email: trimmed(newEmail),
-                phone: trimmed(newPhone).isEmpty ? nil : trimmed(newPhone),
+                firstName: newFirstName.trimmed, lastName: newLastName.trimmed,
+                email: newEmail.trimmed,
+                phone: newPhone.trimmedOrNil,
             )
             : nil
 
@@ -858,12 +853,12 @@ struct ProNewBookingView: View {
                 scheduledFor: scheduledISO,
                 clientAddressId: useExistingAddress ? clientAddressId : nil,
                 serviceAddress: serviceAddress,
-                internalNotes: trimmedNotes.isEmpty ? nil : trimmedNotes,
+                internalNotes: notes.trimmedOrNil,
                 allowOutsideWorkingHours: outsideHours,
                 allowShortNotice: shortNotice,
                 allowFarFuture: farFuture,
-                overrideReason: appliedOverrides.isEmpty || trimmed(overrideReason).isEmpty
-                    ? nil : trimmed(overrideReason),
+                overrideReason: appliedOverrides.isEmpty || overrideReason.trimmed.isEmpty
+                    ? nil : overrideReason.trimmed,
                 idempotencyKey: key,
             )
             attemptKey = nil
@@ -898,9 +893,9 @@ struct ProNewBookingView: View {
     private func buildServiceAddress() -> ProServiceAddressInput? {
         guard let place = pickedPlace else { return nil }
         return ProServiceAddressInput(
-            label: trimmed(newAddressLabel).isEmpty ? nil : trimmed(newAddressLabel),
+            label: newAddressLabel.trimmedOrNil,
             formattedAddress: place.formattedAddress,
-            addressLine2: trimmed(newAddressApt).isEmpty ? nil : trimmed(newAddressApt),
+            addressLine2: newAddressApt.trimmedOrNil,
             city: place.city,
             state: place.state,
             postalCode: place.postalCode,

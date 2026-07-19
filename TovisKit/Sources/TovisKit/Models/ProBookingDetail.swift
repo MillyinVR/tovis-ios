@@ -126,6 +126,66 @@ public struct ProBookingDetail: Decodable, Sendable, Identifiable {
     public var isTerminal: Bool {
         ["CANCELLED", "COMPLETED", "NO_SHOW", "DECLINED", "EXPIRED"].contains(statusUpper)
     }
+
+    /// The booking status as a pro reads it — web's `labelForBookingStatus`.
+    ///
+    /// Lived in `ProBookingDetailView` as a private `statusDisplayLabel(_:)`.
+    /// The two arms that are not mere capitalization are the ones worth pinning:
+    /// ACCEPTED reads **"Confirmed"** (the pro-facing word for the state the
+    /// wire calls ACCEPTED), and NO_SHOW reads **"No-show"** — without that arm
+    /// the default renders the raw enum as "No_show", which is what this screen
+    /// did until "Mark no-show" landed and first made the state reachable.
+    public var statusLabel: String {
+        switch statusUpper {
+        case "PENDING": return "Pending"
+        case "ACCEPTED": return "Confirmed"
+        case "IN_PROGRESS": return "In progress"
+        case "COMPLETED": return "Completed"
+        case "CANCELLED": return "Cancelled"
+        case "NO_SHOW": return "No-show"
+        default: return status.capitalized
+        }
+    }
+
+    /// The consultation form's initial line items, built from the booking's own
+    /// services — web's `buildInitialConsultationItems`.
+    ///
+    /// Lived in `ProSessionHubView` as a private `initialConsultationItems()`.
+    ///
+    /// ⚠️ Two things the view's version got wrong, both preserved-by-intent here
+    /// rather than silently changed:
+    ///
+    ///  - Its `itemType` expression read
+    ///    `isAddOn ? "ADD_ON" : (index == 0 ? "BASE" : (isAddOn ? "ADD_ON" : "BASE"))`,
+    ///    whose inner ternary tests a condition already known false — so BOTH
+    ///    index branches yielded "BASE" and the `index` was never actually
+    ///    consulted. It reduces exactly to the passthrough below.
+    ///  - The label fell back to "Service" on `isEmpty` WITHOUT trimming, where
+    ///    web uses `item.service?.name?.trim() || 'Service'`, so a
+    ///    whitespace-only service name rendered as blank on iOS and "Service" on
+    ///    web. `trimmedOrNil` closes that.
+    ///
+    /// ⚠️ `notes` is always `""` because `ProBookingServiceItem` carries no
+    /// `notes` field — web prefills `item.notes ?? ''`. Closing that needs a
+    /// paired web DTO field, so it is a recorded gap, not something this can fix.
+    public var initialConsultationItems: [ProConsultationLineItem] {
+        serviceItems.map { item in
+            ProConsultationLineItem(
+                bookingServiceItemId: item.id,
+                offeringId: item.offeringId,
+                serviceId: item.serviceId,
+                itemType: item.isAddOn ? "ADD_ON" : "BASE",
+                label: item.serviceName.trimmedOrNil ?? "Service",
+                categoryName: nil,
+                price: item.priceSnapshot ?? "",
+                durationMinutes: item.durationMinutesSnapshot > 0
+                    ? String(item.durationMinutesSnapshot) : "",
+                notes: "",
+                sortOrder: item.sortOrder,
+                source: "BOOKING",
+            )
+        }
+    }
 }
 
 /// `POST /api/v1/pro/bookings/{id}/no-show` → the verbatim success shape captured

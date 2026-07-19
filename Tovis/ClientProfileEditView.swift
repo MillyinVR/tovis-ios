@@ -243,15 +243,13 @@ struct ClientProfileEditView: View {
         banner = nil
         defer { saving = false }
 
-        let trimmedPhone = phone.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedAvatar = avatarUrl.trimmingCharacters(in: .whitespacesAndNewlines)
 
         do {
             let updated = try await session.client.clientSettings.updateProfile(
                 firstName: firstName,
                 lastName: lastName,
-                phone: trimmedPhone.isEmpty ? nil : trimmedPhone,
-                avatarUrl: trimmedAvatar.isEmpty ? nil : trimmedAvatar,
+                phone: phone.trimmedOrNil,
+                avatarUrl: avatarUrl.trimmedOrNil,
                 dateOfBirth: hasBirthday ? Self.dateFormatter.string(from: birthday) : nil
             )
             apply(updated)

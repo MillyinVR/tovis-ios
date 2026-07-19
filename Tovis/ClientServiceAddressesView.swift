@@ -413,14 +413,12 @@ struct EditServiceAddressSheet: View {
         error = nil
         defer { saving = false }
 
-        let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedApt = apt.trimmingCharacters(in: .whitespacesAndNewlines)
 
         do {
             _ = try await session.client.addresses.updateServiceAddress(
                 id: address.id,
-                label: trimmedLabel.isEmpty ? nil : trimmedLabel,
-                apt: trimmedApt.isEmpty ? nil : trimmedApt,
+                label: label.trimmedOrNil,
+                apt: apt.trimmedOrNil,
                 isDefault: address.isDefault ? true : makeDefault,
                 place: picked
             )

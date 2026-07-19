@@ -16,11 +16,6 @@ private func isoDay(_ date: Date) -> String {
     return f.string(from: date)
 }
 
-private extension String {
-    var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
-    var nilIfBlank: String? { trimmed.isEmpty ? nil : trimmed }
-}
-
 private extension View {
     /// Bordered box matching the other chart sheets' editor treatment.
     func chartFieldBackground() -> some View {
@@ -117,11 +112,11 @@ struct ProAddFormulaSheet: View {
         do {
             try await session.client.proClients.addFormula(
                 clientId: clientId,
-                brand: brand.nilIfBlank,
-                developer: developer.nilIfBlank,
-                ratio: ratio.nilIfBlank,
+                brand: brand.trimmedOrNil,
+                developer: developer.trimmedOrNil,
+                ratio: ratio.trimmedOrNil,
                 processingTimeMinutes: Int(processing.trimmed),
-                resultNotes: resultNotes.nilIfBlank
+                resultNotes: resultNotes.trimmedOrNil
             )
             onSaved()
             dismiss()
@@ -263,11 +258,11 @@ struct ProAddConsentSheet: View {
             try await session.client.proClients.addConsent(
                 clientId: clientId,
                 kind: kind,
-                serviceScope: serviceScope.nilIfBlank,
+                serviceScope: serviceScope.trimmedOrNil,
                 proofMethod: proofMethod.isEmpty ? nil : proofMethod,
                 proofRef: nil,
                 signedAt: hasSignedAt ? isoDay(signedAt) : nil,
-                notes: notes.nilIfBlank,
+                notes: notes.trimmedOrNil,
                 patchTestResult: isPatch && !patchResult.isEmpty ? patchResult : nil,
                 validUntil: isPatch && hasValidUntil ? isoDay(validUntil) : nil
             )

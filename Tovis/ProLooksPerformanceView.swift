@@ -65,7 +65,7 @@ struct ProLooksPerformanceView: View {
                 BrandSurface {
                     VStack(alignment: .leading, spacing: 6) {
                         Image(systemName: tile.2).font(.system(size: 14)).foregroundStyle(BrandColor.accent)
-                        Text(Self.compact(tile.1)).font(BrandFont.display(20, .semibold)).foregroundStyle(BrandColor.textPrimary)
+                        Text(CompactCount.label(tile.1)).font(BrandFont.display(20, .semibold)).foregroundStyle(BrandColor.textPrimary)
                         Text(tile.0).font(BrandFont.mono(9)).tracking(0.5).foregroundStyle(BrandColor.textMuted)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -80,7 +80,7 @@ struct ProLooksPerformanceView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(alignment: .firstTextBaseline, spacing: 12) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(Self.compact(f.total)).font(BrandFont.display(24, .semibold)).foregroundStyle(BrandColor.textPrimary)
+                            Text(CompactCount.label(f.total)).font(BrandFont.display(24, .semibold)).foregroundStyle(BrandColor.textPrimary)
                             Text("Total").font(BrandFont.mono(9)).tracking(0.5).foregroundStyle(BrandColor.textMuted)
                         }
                         Spacer()
@@ -176,14 +176,8 @@ struct ProLooksPerformanceView: View {
     // MARK: - Helpers
 
     private static func statLine(_ l: ProLooksAnalytics.LookStats) -> String {
-        "\(compact(l.views)) views · \(compact(l.likes)) likes · \(compact(l.saves)) saves · \(compact(l.bookings)) booked"
-    }
-
-    /// 1234 → "1.2k".
-    private static func compact(_ n: Int) -> String {
-        if n < 1000 { return "\(n)" }
-        let k = Double(n) / 1000
-        return String(format: k < 10 ? "%.1fk" : "%.0fk", k)
+        "\(CompactCount.label(l.views)) views · \(CompactCount.label(l.likes)) likes"
+            + " · \(CompactCount.label(l.saves)) saves · \(CompactCount.label(l.bookings)) booked"
     }
 
     private func load() async {

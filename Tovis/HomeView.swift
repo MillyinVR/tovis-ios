@@ -6,6 +6,12 @@
 import SwiftUI
 import TovisKit
 
+/// The copy the home surface falls back to when a booking carries no pro, or the
+/// pro has no usable name token. Per-SURFACE by convention (see
+/// `ProPublicDisplayName.publicDisplayName(fallback:)`) — but written once here
+/// rather than welded into three separate expressions across two views.
+private let homeProFallbackName = "Your pro"
+
 struct HomeView: View {
     @Environment(SessionModel.self) private var session
     /// Two columns at regular width (iPad), single column on iPhone — mirrors the
@@ -374,7 +380,9 @@ private struct ActionCard: View {
     }
 
     private func pendingConsultation(_ booking: HomeBooking) -> some View {
-        let proFirst = (booking.professional?.displayName ?? "Your pro").split(separator: " ").first.map(String.init) ?? "Your pro"
+        let proName = booking.professional?.displayName ?? homeProFallbackName
+        let proFirst = proName.split(separator: " ").first.map(String.init)
+            ?? homeProFallbackName
         let proposed = Wire.money(booking.consultationApproval?.proposedTotal)
         let was = Wire.money(booking.totalAmount)
         let notes = booking.consultationApproval?.notes?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -698,7 +706,7 @@ private struct UpcomingCard: View {
                 HStack(spacing: 12) {
                     GradientAvatar(name: pro?.displayName ?? "Pro", url: pro?.avatarUrl, size: 44, corner: 22)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(pro?.displayName ?? "Your pro")
+                        Text(pro?.displayName ?? homeProFallbackName)
                             .font(BrandFont.body(17, .semibold)).foregroundStyle(BrandColor.textPrimary)
                             .lineLimit(1)
                         if let location {

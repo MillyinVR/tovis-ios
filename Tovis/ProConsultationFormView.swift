@@ -465,30 +465,6 @@ struct ProConsultationFormView: View {
 }
 
 /// A consultation form line item — native counterpart of the web `LineItem`.
-struct ProConsultationLineItem: Identifiable {
-    let id = UUID()
-    var bookingServiceItemId: String?
-    var offeringId: String?
-    var serviceId: String
-    var itemType: String
-    var label: String
-    var categoryName: String?
-    var price: String
-    var durationMinutes: String
-    var notes: String
-    var sortOrder: Int
-    var source: String
-
-    /// Port of `sortLineItems` — by sortOrder, then BOOKING before PROPOSAL, then label.
-    static func sorted(_ items: [ProConsultationLineItem]) -> [ProConsultationLineItem] {
-        items.sorted { a, b in
-            if a.sortOrder != b.sortOrder { return a.sortOrder < b.sortOrder }
-            if a.source != b.source { return a.source == "BOOKING" }
-            return a.label < b.label
-        }
-    }
-}
-
 /// Money/duration parsing + formatting, ported from ConsultationForm's
 /// `normalizeMoneyInput` / `normalizeDurationInput` / `sumMoneyStrings`.
 enum ProConsultationMoney {

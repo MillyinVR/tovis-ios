@@ -440,14 +440,13 @@ struct ProOpeningCreateSheet: View {
             return
         }
 
-        let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
         let request = ProOpeningCreateRequest(
             offeringIds: offeringIds,
             startAt: ProCalendarGrid.iso(start),
             endAt: useEndAt ? ProCalendarGrid.iso(end) : nil,
             locationType: locationType,
             visibilityMode: visibility.rawValue,
-            note: trimmedNote.isEmpty ? nil : trimmedNote,
+            note: note.trimmedOrNil,
             tierPlans: tierRequests
         )
 
