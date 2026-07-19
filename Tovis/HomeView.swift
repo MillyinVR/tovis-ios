@@ -614,7 +614,12 @@ private struct InviteRow: View {
 
     private var metaLine: String {
         let time = Wire.dateTime(invite.opening.startAt, timeZone: invite.opening.timeZone)
-        let parts = [time, pro.location, invite.opening.startingPrice.flatMap { Wire.money($0) }]
+        // "From", because the field is a STARTING price — the pro sets the final
+        // one at the consultation. (The wire even names it `startingPrice`.)
+        let price = invite.opening.startingPrice
+            .flatMap { Wire.money($0) }
+            .map { "From \($0)" }
+        let parts = [time, pro.location, price]
             .compactMap { $0 }.filter { !$0.isEmpty }
         return parts.joined(separator: " · ")
     }

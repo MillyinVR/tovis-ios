@@ -2,9 +2,9 @@
 // /client/openings page (app/client/(gated)/openings/OpeningsFeedClient.tsx),
 // backed by GET /api/v1/client/openings. A list of freed-up slots the client is a
 // recipient of; each card shows the service, pro, time, and a discounted price, and
-// tapping it resolves the offering and opens the booking flow pre-seeded to that
-// slot — the same destination as the web "Grab it →" link
-// (/offerings/{id}?scheduledFor=…&openingId=…). Pushed inside the host tab's
+// tapping it opens the dedicated claim sheet for that exact time — the same
+// destination as the web "Grab it →" link (/offerings/{id}?scheduledFor=…&openingId=…),
+// which is a one-button claim page with no picker on it. Pushed inside the host tab's
 // NavigationStack (from the Home "Last-minute openings" card), so it owns no stack.
 import SwiftUI
 import TovisKit
@@ -18,17 +18,12 @@ struct OpeningsFeedView: View {
         case failed(String)
     }
 
-    /// Booking-flow launch for a resolved offering (mirrors LooksView's `BookLaunch`),
-    /// carrying the opening's slot so the sheet opens pre-seeded to that time.
-    private struct BookLaunch: Identifiable {
-        let professionalId: String
-        let proName: String
-        let offering: ProOffering
-        let preselectedSlot: String
-        /// The `LastMinuteOpening.id` (`ClientOpening.opening.id`) so finalize
-        /// consumes the opening + applies its incentive (web parity).
-        let openingId: String
-        var id: String { offering.id + preselectedSlot }
+    /// The opening whose claim sheet is open. The sheet renders from this row
+    /// alone — no profile or availability fetch stands between "Grab it" and a
+    /// working claim button.
+    private struct ClaimTarget: Identifiable {
+        let opening: ClientOpening
+        var id: String { opening.opening.id }
     }
 
     /// Pro-profile fallback push when an opening's offering can't be resolved
@@ -39,11 +34,14 @@ struct OpeningsFeedView: View {
     }
 
     @State private var phase: Phase = .loading
-    @State private var bookLaunch: BookLaunch?
+    @State private var claimTarget: ClaimTarget?
     @State private var proNav: ProNav?
-    /// The opening (recipient id) currently resolving its offering, for a spinner.
-    @State private var resolving: String?
-    @State private var resolveError: String?
+    /// The booking a completed claim produced, pushed once the sheet dismisses —
+    /// web's `router.push('/booking/{id}')` after finalize.
+    @State private var claimedBooking: ClientBookingNav?
+    /// Non-nil when the claim succeeded but its booking could not be loaded for
+    /// the push; the claim itself still landed, so this is informational.
+    @State private var claimNoticeShown = false
 
     var body: some View {
         ScrollView {
@@ -69,27 +67,22 @@ struct OpeningsFeedView: View {
         .navigationDestination(item: $proNav) { nav in
             ProProfileView(professionalId: nav.id, fallbackName: nav.name)
         }
-        .sheet(item: $bookLaunch) { launch in
-            BookingFlowView(
-                professionalId: launch.professionalId,
-                proName: launch.proName,
-                offering: launch.offering,
-                preselectedSlot: launch.preselectedSlot,
-                openingId: launch.openingId
-            )
+        .navigationDestination(item: $claimedBooking) { nav in
+            BookingDetailView(booking: nav.booking, onDecision: { session.signalRefresh() })
+        }
+        .sheet(item: $claimTarget) { target in
+            ClaimOpeningView(opening: target.opening) { bookingId in
+                Task { await openClaimedBooking(bookingId) }
+            }
         }
         .refreshable { await load() }
         .task { if case .loading = phase { await load() } }
         .onChange(of: session.refreshTick) { Task { await load() } }
-        .alert("Couldn’t open that opening", isPresented: resolveErrorBinding) {
+        .alert("You’re booked", isPresented: $claimNoticeShown) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text("Please try again in a moment.")
+            Text("The opening is yours. You’ll find it in Appointments.")
         }
-    }
-
-    private var resolveErrorBinding: Binding<Bool> {
-        Binding(get: { resolveError != nil }, set: { if !$0 { resolveError = nil } })
     }
 
     // MARK: - Content
@@ -129,20 +122,32 @@ struct OpeningsFeedView: View {
     @ViewBuilder
     private func card(_ opening: ClientOpening) -> some View {
         Button {
-            Task { await open(opening) }
+            open(opening)
         } label: {
             BrandSurface(tint: BrandColor.bgSecondary) {
                 cardBody(opening)
             }
         }
         .buttonStyle(.plain)
-        .disabled(resolving != nil)
     }
 
     private func cardBody(_ opening: ClientOpening) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             if opening.matchedWaitlist {
                 BrandPill(text: "✦ Matches your waitlist", tint: BrandColor.accent)
+            }
+
+            // The incentive leads the card. It used to sit under the price at 9pt
+            // in gold — the single most persuasive thing on a last-minute opening,
+            // rendered smaller than everything around it.
+            if let headline = opening.incentiveHeadline {
+                Text("✦ \(headline)")
+                    .font(BrandFont.body(17, .bold))
+                    .foregroundStyle(BrandColor.onAccent)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(BrandColor.accent)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
 
             HStack(alignment: .top, spacing: 12) {
@@ -168,13 +173,9 @@ struct OpeningsFeedView: View {
 
             HStack {
                 Spacer()
-                if resolving == opening.id {
-                    ProgressView().tint(BrandColor.accent).scaleEffect(0.8)
-                } else {
-                    Text("Grab it →")
-                        .font(BrandFont.body(13, .bold))
-                        .foregroundStyle(BrandColor.accent)
-                }
+                Text("Grab it →")
+                    .font(BrandFont.body(13, .bold))
+                    .foregroundStyle(BrandColor.accent)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -204,48 +205,51 @@ struct OpeningsFeedView: View {
                     .foregroundStyle(BrandColor.textMuted)
                     .strikethrough()
             }
+            // "From", because these are STARTING prices — the pro sets the final
+            // one at the consultation. The underlying fields say so
+            // (salonPriceStartingAt / minPrice); the card shouldn't quote them as
+            // if they were settled.
             if let price = Wire.moneyDecimal(opening.finalPrice) {
-                Text(price)
+                Text("From \(price)")
                     .font(BrandFont.body(18, .bold))
                     .foregroundStyle(BrandColor.accent)
-            }
-            if opening.hasDiscount, let label = opening.incentiveLabel {
-                Text(label)
-                    .font(BrandFont.body(9, .bold))
-                    .foregroundStyle(BrandColor.gold)
             }
         }
     }
 
     // MARK: - Actions
 
-    /// Resolve the opening's offering on the pro's profile, then open the booking
-    /// flow pre-seeded to the slot. Falls back to the pro's profile when the offering
-    /// can't be resolved (no service id / no longer offered), mirroring LooksView.
-    private func open(_ opening: ClientOpening) async {
-        guard resolving == nil else { return }
-        guard let serviceId = opening.serviceId else {
+    /// Open the claim sheet for this exact opening.
+    ///
+    /// This used to resolve the pro's profile, find the offering and open the
+    /// generic BookingFlowView — a calendar plus a slot grid built from GENERAL
+    /// availability. That was a trap: `finalize` refuses any time that isn't the
+    /// opening's own, so the picker invited a choice the server would reject. The
+    /// row already carries everything a claim needs, so there is nothing to
+    /// resolve and nothing to pick.
+    ///
+    /// An opening with no offering isn't claimable at all (`isBookable` already
+    /// filters those out of the feed); route those to the pro instead.
+    private func open(_ opening: ClientOpening) {
+        guard opening.isBookable else {
             proNav = ProNav(id: opening.opening.professionalId, name: opening.proName)
             return
         }
-        resolving = opening.id
-        defer { resolving = nil }
-        do {
-            let profile = try await session.client.profiles.professional(id: opening.opening.professionalId)
-            if let offering = profile.offerings.first(where: { $0.serviceId == serviceId }) {
-                bookLaunch = BookLaunch(
-                    professionalId: opening.opening.professionalId,
-                    proName: opening.proName,
-                    offering: offering,
-                    preselectedSlot: opening.startAt,
-                    openingId: opening.opening.id
-                )
-            } else {
-                proNav = ProNav(id: opening.opening.professionalId, name: opening.proName)
-            }
-        } catch {
-            resolveError = "failed"
+        claimTarget = ClaimTarget(opening: opening)
+    }
+
+    /// After a successful claim, land the client on their new booking — web's
+    /// `router.push('/booking/{id}')`. The claim has already succeeded by the time
+    /// this runs, so a failed lookup is a navigation miss, not a booking failure,
+    /// and says so rather than implying the claim didn't land.
+    private func openClaimedBooking(_ bookingId: String) async {
+        session.signalRefresh()
+        if let booking = try? await session.client.bookings.booking(id: bookingId) {
+            claimedBooking = ClientBookingNav(booking: booking)
+        } else {
+            claimNoticeShown = true
         }
+        await load()
     }
 
     private func load() async {

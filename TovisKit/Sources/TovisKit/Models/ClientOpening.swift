@@ -32,10 +32,23 @@ public struct ClientOpeningDetail: Decodable, Sendable, Identifiable {
     public let locationType: String?
     public let timeZone: String?
     public let professional: ClientOpeningPro
+    /// The opening's bookable location. Nullable on the recipient feed (a MOBILE
+    /// opening has no salon row to point at), which is why the claim path sends
+    /// `locationId` only when it is present and lets the server pick otherwise.
+    public let location: ClientOpeningLocation?
     /// Active services on this opening (drives the title + starting price). Optional
     /// so a sparse payload still decodes; an opening with none is not bookable.
     public let services: [ClientOpeningServiceItem]?
     public let publicIncentive: ClientOpeningIncentive?
+}
+
+public struct ClientOpeningLocation: Decodable, Sendable, Identifiable {
+    public let id: String?
+    public let type: String?
+    public let timeZone: String?
+    public let city: String?
+    public let state: String?
+    public let formattedAddress: String?
 }
 
 public struct ClientOpeningPro: Decodable, Sendable, Identifiable {
@@ -134,11 +147,78 @@ public extension ClientOpening {
     var startAt: String { opening.startAt }
     var timeZone: String? { opening.timeZone }
 
+    /// SALON / MOBILE, upper-cased, defaulting to SALON exactly as the booking
+    /// endpoints do when a caller omits `locationType`.
+    var claimLocationType: String {
+        let raw = opening.locationType?.trimmedOrNil?.uppercased()
+        return raw == "MOBILE" ? "MOBILE" : "SALON"
+    }
+
+    var isMobile: Bool { claimLocationType == "MOBILE" }
+
+    /// The location the hold should be pinned to. Nil is fine — `POST /holds`
+    /// treats `locationId` as a HINT and falls back to the pro's bookable
+    /// location, which is what a MOBILE opening (no salon row) relies on.
+    var claimLocationId: String? { opening.location?.id?.trimmedOrNil }
+
+    /// "Where" line on the claim sheet, mirroring the web claim page's `place`:
+    /// the street address when there is one, else "City, ST", else nil so the
+    /// row can render an em dash rather than an empty string.
+    var placeLine: String? {
+        if let address = opening.location?.formattedAddress?.trimmedOrNil { return address }
+        let cityState = [opening.location?.city?.trimmedOrNil, opening.location?.state?.trimmedOrNil]
+            .compactMap { $0 }
+            .joined(separator: ", ")
+        return cityState.trimmedOrNil ?? opening.professional.locationLabel?.trimmedOrNil
+    }
+
+    /// Duration for the "Duration" row — the offering's mode duration, falling
+    /// back to the service default (same precedence as the price).
+    var durationMinutes: Int? {
+        let modeDuration = isMobile
+            ? primaryService?.offering?.mobileDurationMinutes
+            : primaryService?.offering?.salonDurationMinutes
+        return modeDuration ?? primaryService?.service?.defaultDurationMinutes
+    }
+
+    /// The pro's profession label, shown beside the name on the claim sheet the
+    /// same way the web claim page does.
+    var professionLabel: String? {
+        opening.professional.professionType?.trimmedOrNil?
+            .replacingOccurrences(of: "_", with: " ")
+            .capitalized
+    }
+
     /// True when this opening matched one of the client's waitlists.
     var matchedWaitlist: Bool { (tier?.uppercased() ?? "") == "WAITLIST" }
 
-    /// Human incentive copy ("20% off", "$15 off", …) when the opening carries one.
+    /// Human incentive copy ("20% off", "$15 off", "Free service", …) when the
+    /// opening carries one. Built server-side by `incentiveLabel` in
+    /// lib/lastMinute/openingDto.ts, so both platforms say the same thing.
     var incentiveLabel: String? { opening.publicIncentive?.label?.trimmedOrNil }
+
+    /// The deal, sized to matter. A pro creating a last-minute opening picks ONE
+    /// of percent-off / amount-off / free service / free add-on, and that choice
+    /// — not the starting price, which the pro re-quotes at the appointment
+    /// anyway — is the reason to drop everything and claim the slot. So the
+    /// headline is the incentive, upper-cased, and the price sits under it.
+    var incentiveHeadline: String? { incentiveLabel?.uppercased() }
+
+    /// One line of context under the headline, so "FREE SERVICE" and "20% OFF"
+    /// both read as something concrete rather than a floating badge.
+    var incentiveSubline: String? {
+        guard incentiveLabel != nil else { return nil }
+        switch opening.publicIncentive?.offerType?.uppercased() {
+        case "PERCENT_OFF", "AMOUNT_OFF":
+            return "Off this last-minute opening"
+        case "FREE_SERVICE":
+            return "This last-minute opening is on your pro"
+        case "FREE_ADD_ON":
+            return "Free add-on with this last-minute opening"
+        default:
+            return "On this last-minute opening"
+        }
+    }
 
     /// Base "starting at" price for the opening's location mode, before any incentive
     /// (mobile → mobile offering price; else salon; falling back to the service min).

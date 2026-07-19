@@ -74,7 +74,7 @@ public final class BookingService: Sendable {
     /// POST /api/v1/holds — reserve a slot briefly before finalizing.
     public func createHold(
         offeringId: String,
-        locationId: String,
+        locationId: String?,
         scheduledFor: String,
         locationType: String = "SALON",
         clientAddressId: String? = nil,

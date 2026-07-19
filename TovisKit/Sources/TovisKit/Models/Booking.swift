@@ -79,7 +79,11 @@ public struct BookingAddOn: Decodable, Sendable, Identifiable, Hashable {
 struct CreateHoldRequest: Encodable, Sendable {
     let offeringId: String
     let locationType: String
-    let locationId: String
+    /// A HINT, not a requirement: `POST /holds` reads it with `pickString` and
+    /// falls back to the pro's bookable location when it is absent. Omitted
+    /// rather than sent blank when the caller has no id — the claim sheet has one
+    /// only for SALON openings, since a MOBILE opening has no salon row.
+    let locationId: String?
     let scheduledFor: String
     let source: String
     /// Required by the backend when locationType == MOBILE (the service address
