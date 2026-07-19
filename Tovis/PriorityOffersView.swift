@@ -7,9 +7,10 @@
 //     Decline frees the pro to offer another. Mirrors WaitlistOfferCards.
 //   • "Your priority offers"  — last-minute openings this client is first in line
 //     for (GET /client/priority-offer), each with a live countdown. Claim accepts
-//     the priority window and opens the offering's booking flow pre-seeded to the
-//     slot (the same destination the web "Claim it" routes to); Pass gives it to
-//     the next person. Mirrors OffersListClient.
+//     the priority window and opens ClaimOpeningView on the opening's own instant
+//     — a single-slot claim, the same shape web routes to (/offerings/{id}?
+//     scheduledFor=…, a page with no picker); Pass gives it to the next person.
+//     Mirrors OffersListClient.
 //
 // Reached from a tapped last-minute-offer push (`.offers` deep link, which the
 // backend sends as `/client/offers?accept={recipientId}`) and from the Home
@@ -32,19 +33,13 @@ struct PriorityOffersView: View {
         case failed(String)
     }
 
-    /// Booking-flow launch for a resolved offering (mirrors OpeningsFeedView),
-    /// carrying the offer's slot so the sheet opens pre-seeded to that time.
-    private struct BookLaunch: Identifiable {
-        let professionalId: String
-        let proName: String
-        let offering: ProOffering
-        let preselectedSlot: String
-        /// The `LastMinuteOpening.id` so finalize consumes the opening + applies its
-        /// incentive (web parity). Optional: the priority-offer DTO gains this field
-        /// in a paired web change, so it's `nil` until that deploys — inert-safe (the
-        /// booking still succeeds, just without server-side opening consumption).
-        let openingId: String?
-        var id: String { offering.id + preselectedSlot }
+    /// The accepted offer's opening, claimed on its own instant via
+    /// ClaimOpeningView — the same sheet the openings feed uses (#180), so there is
+    /// exactly one claim implementation and it can never offer a time the server
+    /// will refuse. Resolution lives in `ClientPriorityOffer.claimableOpening`.
+    private struct ClaimTarget: Identifiable {
+        let opening: ClientOpening
+        var id: String { opening.opening.id }
     }
 
     /// Pro-profile fallback push when a claimed offer's offering can't be resolved
@@ -59,7 +54,7 @@ struct PriorityOffersView: View {
     @State private var now = Date()
     /// The offer/recipient id currently mid-action, for a spinner + disable.
     @State private var busy: String?
-    @State private var bookLaunch: BookLaunch?
+    @State private var claimTarget: ClaimTarget?
     @State private var proNav: ProNav?
     @State private var bookingNav: ClientBookingNav?
     @State private var actionError: String?
@@ -93,14 +88,10 @@ struct PriorityOffersView: View {
         .navigationDestination(item: $bookingNav) { nav in
             BookingDetailView(booking: nav.booking, onDecision: { session.signalRefresh() })
         }
-        .sheet(item: $bookLaunch) { launch in
-            BookingFlowView(
-                professionalId: launch.professionalId,
-                proName: launch.proName,
-                offering: launch.offering,
-                preselectedSlot: launch.preselectedSlot,
-                openingId: launch.openingId
-            )
+        .sheet(item: $claimTarget) { target in
+            ClaimOpeningView(opening: target.opening) { bookingId in
+                Task { await openClaimedBooking(bookingId) }
+            }
         }
         .refreshable { await load() }
         .task { if case .loading = phase { await load() } }
@@ -308,10 +299,16 @@ struct PriorityOffersView: View {
 
     // MARK: - Actions
 
-    /// Claim: accept the priority window, then resolve the offering and open its
-    /// booking flow pre-seeded to the slot — the same two-step the web "Claim it"
-    /// does (accept → route to /offerings/{id}?scheduledFor=…). Falls back to the
-    /// pro's profile when the offering can't be resolved (mirrors OpeningsFeedView).
+    /// Claim: accept the priority window, then open the opening's own claim sheet —
+    /// the same two-step the web "Claim it" does (accept → route to
+    /// /offerings/{id}?scheduledFor=…, which is a fixed one-button page, NOT a
+    /// picker). Falls back to the pro's profile when the opening can't be resolved.
+    ///
+    /// This deliberately never opens BookingFlowView. An opening is ONE time and
+    /// `finalize` refuses any other minute with OPENING_NOT_AVAILABLE, so a picker
+    /// here offers a choice that cannot succeed — and the accept above has already
+    /// spent the exclusive window by the time it appears. See
+    /// `ClientPriorityOffer.claimableOpening` and ClaimOpeningView's header (#180).
     private func claim(_ offer: ClientPriorityOffer) async {
         guard busy == nil else { return }
         busy = offer.recipientId
@@ -330,27 +327,40 @@ struct PriorityOffersView: View {
         }
 
         guard let professionalId = offer.professionalId else { await load(); return }
-        guard let serviceId = offer.serviceId else {
-            proNav = ProNav(id: professionalId, name: offer.proName)
-            return
-        }
+
+        // Accepting flipped the row PRIORITY_OFFERED → CLICKED, which is exactly
+        // what admits it to the openings feed (that feed excludes PRIORITY_OFFERED),
+        // so the full opening — its instant, price, place and incentive — is
+        // readable now and was not a moment ago. Scoped to this pro to keep the
+        // list small.
         do {
-            let profile = try await session.client.profiles.professional(id: professionalId)
-            if let offering = profile.offerings.first(where: { $0.serviceId == serviceId }) {
-                bookLaunch = BookLaunch(
-                    professionalId: professionalId,
-                    proName: offer.proName,
-                    offering: offering,
-                    preselectedSlot: offer.startAt,
-                    openingId: offer.openingId
-                )
-            } else {
-                proNav = ProNav(id: professionalId, name: offer.proName)
+            let openings = try await session.client.home.openings(professionalId: professionalId)
+            if let opening = offer.claimableOpening(in: openings) {
+                claimTarget = ClaimTarget(opening: opening)
+                return
             }
         } catch {
-            // Accepted, but couldn't resolve the offering — send them to the pro.
-            proNav = ProNav(id: professionalId, name: offer.proName)
+            // Fall through — an unresolvable opening lands on the pro, never on a
+            // picker that cannot succeed.
         }
+        proNav = ProNav(id: professionalId, name: offer.proName)
+    }
+
+    /// Land the client on the booking their claim just created (mirrors
+    /// OpeningsFeedView), and refresh so the claimed offer leaves the list.
+    ///
+    /// If the booking read fails the claim has still SUCCEEDED, so this must not
+    /// report an error. OpeningsFeedView shows a "You're booked" alert here; this
+    /// screen deliberately does not, because it already owns one `.alert` and a
+    /// second presentation modifier on the same view shadows the first — the
+    /// regression #175 shipped and #176 fixed. The reload is the feedback: the
+    /// claimed offer leaves the list because the server marked it BOOKED.
+    private func openClaimedBooking(_ bookingId: String) async {
+        session.signalRefresh()
+        if let booking = try? await session.client.bookings.booking(id: bookingId) {
+            bookingNav = ClientBookingNav(booking: booking)
+        }
+        await load()
     }
 
     private func pass(_ offer: ClientPriorityOffer) async {
