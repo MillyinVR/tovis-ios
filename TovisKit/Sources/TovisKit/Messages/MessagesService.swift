@@ -119,6 +119,10 @@ public final class MessagesService: Sendable {
     /// POST /api/v1/messages/resolve → find-or-create the thread for a context
     /// (e.g. a pro's profile) and return its id, or nil if none resolved. The
     /// same endpoint the web "Message" button uses.
+    ///
+    /// Prefer `openProfileThread` / `openBookingThread` / `openClientThread` /
+    /// `openWaitlistThread` when you need the thread itself — they keep the row
+    /// the same call already returned instead of looking it up again.
     public func resolveThread(
         contextType: String,
         contextId: String,
@@ -126,6 +130,22 @@ public final class MessagesService: Sendable {
         clientId: String? = nil,
         createIfMissing: Bool = true
     ) async throws -> String? {
+        try await resolveThreadRef(
+            contextType: contextType,
+            contextId: contextId,
+            professionalId: professionalId,
+            clientId: clientId,
+            createIfMissing: createIfMissing
+        )?.id
+    }
+
+    private func resolveThreadRef(
+        contextType: String,
+        contextId: String,
+        professionalId: String?,
+        clientId: String?,
+        createIfMissing: Bool
+    ) async throws -> ResolveThreadResponse.ResolvedThread? {
         var fields: [String: JSONValue] = [
             "contextType": .string(contextType),
             "contextId": .string(contextId),
@@ -138,45 +158,69 @@ public final class MessagesService: Sendable {
         let response: ResolveThreadResponse = try await api.request(
             "/messages/resolve", method: .post, body: payload
         )
-        return response.thread?.id
+        return response.thread
+    }
+
+    /// Resolve-or-create a thread and return the full `MessageThread` to push
+    /// into `ThreadView`. Shared by every `open*Thread` entry point below so the
+    /// resolve → open sequence exists once.
+    ///
+    /// The row comes back on the resolve response itself. That matters most for
+    /// a thread being created right now: it has no messages yet, and the inbox
+    /// deliberately hides message-less threads, so the `thread(id:)` fallback
+    /// below CANNOT find it — which is exactly why the first message to a client
+    /// used to open nothing at all.
+    private func openThread(
+        contextType: String,
+        contextId: String,
+        professionalId: String? = nil,
+        clientId: String? = nil
+    ) async throws -> MessageThread? {
+        guard let resolved = try await resolveThreadRef(
+            contextType: contextType,
+            contextId: contextId,
+            professionalId: professionalId,
+            clientId: clientId,
+            createIfMissing: true
+        ) else { return nil }
+
+        if let row = resolved.row { return row }
+
+        // Backend that predates the row on this response: fall back to the inbox
+        // scan. Same behaviour as before — including its blind spot for a
+        // brand-new thread, which no client-side workaround can close.
+        return try await thread(id: resolved.id)
     }
 
     /// Look up a thread the viewer participates in by id, from the inbox list.
-    /// A deep-linked / just-resolved thread is always in the viewer's inbox (they
-    /// participate) and bubbles to the top by `lastMessageAt`, so the first page
-    /// finds it — the same "find in the list" approach `openProfileThread` uses
-    /// (there's no standalone GET thread-metadata endpoint).
+    ///
+    /// ⚠️ Finds only threads that HAVE messages: the backend's inbox filter
+    /// requires `lastMessageAt != null`, so a thread nobody has written in is
+    /// absent from the list and this returns nil. Callers opening a thread they
+    /// just resolved should use the `open*Thread` helpers, which take the row
+    /// straight off the resolve response instead.
     public func thread(id: String) async throws -> MessageThread? {
         let all = try await threads()
         return all.first(where: { $0.id == id })
     }
 
     /// Resolve-or-create the thread for a pro's profile and return the full
-    /// `MessageThread` (found in the inbox list) so it can be pushed into
-    /// `ThreadView`. Returns nil when no thread could be resolved. This is the
-    /// CLIENT→pro direction (the client views a pro's profile).
+    /// `MessageThread` so it can be pushed into `ThreadView`. Returns nil when no
+    /// thread could be resolved. This is the CLIENT→pro direction (the client
+    /// views a pro's profile).
     public func openProfileThread(professionalId: String) async throws -> MessageThread? {
-        guard let threadId = try await resolveThread(
+        try await openThread(
             contextType: "PRO_PROFILE",
             contextId: professionalId,
-            professionalId: professionalId,
-            createIfMissing: true
-        ) else { return nil }
-
-        return try await thread(id: threadId)
+            professionalId: professionalId
+        )
     }
 
     /// Resolve-or-create the BOOKING-context thread and return the full
     /// `MessageThread`. Either party may open it (the backend authorizes the
     /// booking's client or pro); the pro booking-detail "Message" action uses it.
     public func openBookingThread(bookingId: String) async throws -> MessageThread? {
-        guard let threadId = try await resolveThread(
-            contextType: "BOOKING",
-            contextId: bookingId,
-            createIfMissing: true
-        ) else { return nil }
-
-        return try await thread(id: threadId)
+        try await openThread(contextType: "BOOKING", contextId: bookingId)
     }
 
     /// Resolve-or-create the general pro↔client thread (PRO_PROFILE context, from
@@ -189,37 +233,46 @@ public final class MessagesService: Sendable {
         professionalId: String,
         clientId: String
     ) async throws -> MessageThread? {
-        guard let threadId = try await resolveThread(
+        try await openThread(
             contextType: "PRO_PROFILE",
             contextId: professionalId,
-            clientId: clientId,
-            createIfMissing: true
-        ) else { return nil }
-
-        return try await thread(id: threadId)
+            clientId: clientId
+        )
     }
 
     /// Resolve-or-create the WAITLIST-context thread for a waitlist entry and
-    /// return the full `MessageThread` (found in the inbox list) so it can be
-    /// pushed into `ThreadView`. The backend derives the client & pro from the
-    /// entry (viewer must be its pro or client), so only the entry id is needed —
-    /// mirrors web's `/messages/start?contextType=WAITLIST&contextId=…`. Used by
-    /// the pro waitlist-outreach "Message" action.
+    /// return the full `MessageThread` so it can be pushed into `ThreadView`. The
+    /// backend derives the client & pro from the entry (viewer must be its pro or
+    /// client), so only the entry id is needed — mirrors web's
+    /// `/messages/start?contextType=WAITLIST&contextId=…`. Used by the pro
+    /// waitlist-outreach "Message" action.
     public func openWaitlistThread(waitlistEntryId: String) async throws -> MessageThread? {
-        guard let threadId = try await resolveThread(
-            contextType: "WAITLIST",
-            contextId: waitlistEntryId,
-            createIfMissing: true
-        ) else { return nil }
-
-        return try await thread(id: threadId)
+        try await openThread(contextType: "WAITLIST", contextId: waitlistEntryId)
     }
 }
 
-private struct ResolveThreadResponse: Decodable, Sendable {
-    let thread: ThreadRef?
+struct ResolveThreadResponse: Decodable, Sendable {
+    let thread: ResolvedThread?
 
-    struct ThreadRef: Decodable, Sendable {
+    /// The `thread` object on a resolve response. Always carries `id`; carries
+    /// the whole inbox row too once the backend serializes it.
+    struct ResolvedThread: Decodable, Sendable {
         let id: String
+        /// The full row, or nil against a backend that answers `{"id":"…"}`
+        /// alone. Absent means "look it up the old way", never a decode failure —
+        /// the app must keep working against the currently deployed API.
+        let row: MessageThread?
+
+        private enum CodingKeys: String, CodingKey { case id }
+
+        init(from decoder: any Decoder) throws {
+            // `id` is the contract and must decode; the row is probed off the
+            // SAME object. `try?` is a shape test on a body already in hand, not
+            // a swallowed network error — a failure here means "older backend".
+            id = try decoder.container(keyedBy: CodingKeys.self).decode(
+                String.self, forKey: .id
+            )
+            row = try? MessageThread(from: decoder)
+        }
     }
 }
