@@ -1,5 +1,7 @@
 // Pro profile management — the edit sheet (PATCH /pro/profile) and the services
-// manager (GET /pro/offerings + toggle active / edit price+duration / remove).
+// manager (GET /pro/offerings + edit price+duration / add-ons / remove). There is
+// deliberately NO active/inactive toggle: it set the same `isActive: false` that
+// remove does, without saying so, and the GET filters inactive rows out.
 // Ports the web `/pro/profile/public-profile` edit affordances + the services
 // manager section. Reached from `ProProfileTabView`.
 import SwiftUI
