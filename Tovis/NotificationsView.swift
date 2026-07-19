@@ -363,7 +363,16 @@ struct NotificationsView: View {
         }
         if let bookingId = item.bookingId {
             await openBooking(bookingId)
+            return
         }
+        // No booking to push, but the row still carries a destination (a look, an
+        // offer, referrals, a message thread). Hand the href to the same channel a
+        // tapped push uses and let the shell beneath route it — `ClaimView` does
+        // this too. Unroutable paths fall through so the tap stays a mark-read
+        // rather than dismissing this sheet onto nothing.
+        guard item.deepLink != nil else { return }
+        session.handlePushDeepLink(href: item.href)
+        dismiss()
     }
 
     /// Resolve a booking id to its full ClientBooking (cached) and push detail.

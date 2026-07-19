@@ -197,8 +197,22 @@ struct ProNotificationsView: View {
                 .buttonStyle(.plain)
                 .simultaneousGesture(TapGesture().onEnded { Task { await markRead(item) } })
         } else {
-            Button { Task { await markRead(item) } } label: { content }.buttonStyle(.plain)
+            Button { tap(item) } label: { content }.buttonStyle(.plain)
         }
+    }
+
+    /// A row with no booking still carries a destination (a review, the public
+    /// profile, services). Mark it read, then hand its href to the same channel a
+    /// tapped push uses and let the pro shell beneath route it. Unroutable paths
+    /// fall through so the tap stays a mark-read rather than dismissing this sheet
+    /// onto nothing.
+    private func tap(_ item: ProNotification) {
+        // Unstructured so navigation isn't gated on the mark-read round trip, and
+        // so the call still lands after this sheet dismisses.
+        Task { await markRead(item) }
+        guard item.deepLink != nil else { return }
+        session.handlePushDeepLink(href: item.href)
+        dismiss()
     }
 
     private func rowBody(_ item: ProNotification) -> some View {
