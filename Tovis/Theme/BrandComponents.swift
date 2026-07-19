@@ -21,6 +21,24 @@ struct BrandSurface<Content: View>: View {
     }
 }
 
+/// An inline error banner for a failed ACTION — the write-error channel for
+/// screens whose `phase` only models load failures. Inline rather than an
+/// alert/sheet on purpose: it keeps the list on screen, and several of these
+/// views already carry `.sheet` modifiers that a second presentation would
+/// contend with.
+struct BrandErrorBanner: View {
+    let message: String
+
+    var body: some View {
+        Text(message)
+            .font(BrandFont.body(13)).foregroundStyle(BrandColor.ember)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(BrandColor.ember.opacity(0.1))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
 /// A small capsule label (duration, price, status …).
 struct BrandPill: View {
     let text: String

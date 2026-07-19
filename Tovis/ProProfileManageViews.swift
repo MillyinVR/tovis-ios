@@ -398,11 +398,19 @@ struct ProOfferingsView: View {
     @State private var editing: ProOfferingAdmin?
     @State private var busyId: String?
     @State private var showAdd = false
+    /// Write failures. `phase.failed` only covers LOAD errors — a rejected
+    /// PATCH/DELETE still has to reload (the server is the truth about the row),
+    /// so without this the row just snaps back with no explanation.
+    @State private var actionError: String?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 addServiceCard
+
+                if let actionError {
+                    BrandErrorBanner(message: actionError)
+                }
 
                 Text("Your current offerings")
                     .font(BrandFont.body(14, .semibold)).foregroundStyle(BrandColor.textPrimary)
@@ -432,11 +440,14 @@ struct ProOfferingsView: View {
         .navigationBarTitleDisplayMode(.large)
         .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
         .task { if case .loading = phase { await load() } }
+        // A successful save through either sheet clears a stale write error —
+        // otherwise a banner from an earlier failed toggle sits there
+        // contradicting the edit the pro just watched succeed.
         .sheet(item: $editing) { offering in
-            ProEditOfferingSheet(offering: offering) { Task { await load() } }
+            ProEditOfferingSheet(offering: offering) { actionError = nil; Task { await load() } }
         }
         .sheet(isPresented: $showAdd) {
-            ProAddServiceSheet { Task { await load() } }
+            ProAddServiceSheet { actionError = nil; Task { await load() } }
         }
         .tint(BrandColor.accent)
     }
@@ -534,15 +545,33 @@ struct ProOfferingsView: View {
 
     private func toggle(_ o: ProOfferingAdmin, active: Bool) async {
         busyId = o.id
+        actionError = nil
         defer { busyId = nil }
-        _ = try? await session.client.proProfile.updateOffering(id: o.id, isActive: active)
+        do {
+            _ = try await session.client.proProfile.updateOffering(id: o.id, isActive: active)
+        } catch let e as APIError {
+            actionError = e.userMessage
+        } catch {
+            actionError = active
+                ? "Couldn’t turn that service on. Try again."
+                : "Couldn’t turn that service off. Try again."
+        }
+        // Reload either way: the server is the truth about the row, so a failed
+        // write must snap back. The banner is what makes the snap-back legible.
         await load()
     }
 
     private func remove(_ o: ProOfferingAdmin) async {
         busyId = o.id
+        actionError = nil
         defer { busyId = nil }
-        try? await session.client.proProfile.deleteOffering(id: o.id)
+        do {
+            try await session.client.proProfile.deleteOffering(id: o.id)
+        } catch let e as APIError {
+            actionError = e.userMessage
+        } catch {
+            actionError = "Couldn’t remove that service. Try again."
+        }
         await load()
     }
 }

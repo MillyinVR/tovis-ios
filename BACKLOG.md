@@ -117,11 +117,26 @@ Source: `docs/PRO-WEB-PARITY.md` (all 5 pages parity-complete; these are the tai
   always writes them, coercing an absent field → null). No web/server change, no
   migration. **SHIPPED (PR #31)**
 - [ ] In-app Message deep-link from the clients list.
+- [ ] **The contract gate only fires on a tovis-ios push** (gap in #189, found reviewing my own
+  design — not yet decided). The `contract` job reads tovis-app's schema live, so it catches
+  backend DTO drift correctly — but only when something pushes to *this* repo. A tovis-app DTO
+  change can therefore sit undetected until the next iOS PR, which may be weeks. Two fixes, both
+  cheap, both with a cost worth Tori's call: (a) add a `schedule:` trigger to the contract job
+  only — ubuntu, 1x billing, ~15s per run, but a failing cron emails with no PR attached to fix;
+  (b) have tovis-app's CI `repository_dispatch` to tovis-ios when `schema/api/` changes — precise,
+  no idle runs, but needs a WRITE-scoped credential pointing the other way, which is broader than
+  the read-only deploy key this repo uses today. **Not a defect in the gate — it gates exactly
+  what it claims to. This is about latency of detection.**
+- [ ] **Audit the app's other `try?` write sites.** #190 fixed the two logged in `ProOfferingsView`,
+  but that was one logged instance of a general shape (`try?` on a write, then reload → the
+  failure is indistinguishable from a no-op). Nothing has swept the rest. ⚠️ A code read is not
+  enough to close one of these — #190's premise only became a finding once the failure was forced
+  on the sim and watched.
 - [x] Per-tab chart write forms + technical-record decryption. ✅ #31 (write forms) + #48 (technical record).
 - [ ] Looks/followers profile stat tiles.
 - [x] ~~Orphaned `ProClientDetailView` — re-link or delete.~~ **DONE — removed (parity-gaps step 18).** The clients list navigates to `ProClientChartView`; the old detail view had no caller anywhere in the repo.
 - [x] ~~Pro sub-screens: locations editor (create/edit/set-primary/publish), payment-settings/membership, offering CREATE/DELETE (only toggle/edit shipped).~~ **DONE — the line was stale in ALL THREE claims; verified against the code in round-3 step 18 (doc-only change, no code shipped).** Locations: `ProLocationsView` + `ProLocationSheets` cover create (`createFixed`/`createMobileBase` :252/:259), edit (`update`/`updateMobileBase` :483/:490), set-primary (the "Make this my primary location" toggle :168 → `makePrimary`), publish (`ProLocationsView:245` → `POST /pro/schedule/publish`) and remove (:513) — reachable from `ProOverviewHomeView:62` and the onboarding checklist. Payment settings: `ProPaymentSettingsView` (sheet from `ProProfileTabView:70`, plus `ProOnboardingChecklistView:209`) → `PATCH /api/v1/pro/payment-settings`, driven live from the server log in round-3 step 15. Offerings: `ProOfferingsView` ships CREATE via `ProAddServiceSheet` (:439 → `POST /pro/offerings`, a 1:1 port of web's ServicePicker) and DELETE via the destructive row button (:507 → `deleteOffering`, a soft-delete) — reachable from `ProProfileTabView:404`. ⚠️ **Membership is display-only BY DESIGN** (`ProMembershipView`): purchase stays web-only under the Apple IAP restriction, so it is not a gap.
-- [ ] **Offering toggle/delete failures are silent** (found round-3 step 18, not fixed). `ProOfferingsView.toggle` and `.remove` (`ProProfileManageViews.swift:535-547`) both call the service with `try?` and then `await load()`, so a rejected PATCH/DELETE is swallowed and the row simply reloads unchanged — the pro sees the switch flip back with no explanation. The view has a `.failed` phase for LOAD errors only; write errors have no channel. Same shape as the `try?` dead-button fixed in #177. Not verified against web's behaviour. **This is the best-evidenced item left from round 3 — but it needs a sim drive with a FORCED server failure, not a code read.**
+- [x] ~~**Offering toggle/delete failures are silent**~~ **FIXED — iOS #190.** Premise held exactly. Reproduced before fixing, on the sim signed in as a pro, against a forced server failure (a local proxy on `:3000` forwarding to the dev server but returning 500 for `PATCH`/`DELETE` on `/api/v1/pro/offerings/<id>`): toggling Balayage off sent the PATCH, the proxy rejected it, and the row silently returned to ON with **no error anywhere on screen**. Both writes now catch, surface `APIError.userMessage`, and still reload — the reload was always right (the server is the truth about the row); what was missing is anything making the snap-back legible. Used an inline banner, NOT `.alert`: the view already carries two `.sheet`s and a third presentation is the shape that silently shadowed in #175→#176. Also extracted `BrandErrorBanner` instead of adding a fourth copy of the same seven lines — `PaymentMethodsView` and `ClientReferralsView` had byte-identical helpers and now share it (`ProMoneyTrailView`'s tone variant deliberately left alone; different font/padding/stroke). ⚠️ **No unit test** — both methods are private to a SwiftUI View with no seam to drive them without a refactor larger than the fix; the evidence is the device drive. **The other `try?` write sites in the app remain unaudited.**
 - [ ] **Fixture contract validation has drifted and nothing gates it** (found round-3 step 19).
   `tovis-ios` has **no CI at all** — no `.github/` directory — so
   `scripts/contract/validate-fixtures.mjs` (which validates every test fixture against
