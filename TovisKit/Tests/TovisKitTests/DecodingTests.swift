@@ -1341,6 +1341,12 @@ func fixture(_ name: String) throws -> Data {
         #expect(p.header.websiteUrl == "https://plumestudio.com/")
         #expect(p.offerings.first?.pricingLines.count == 2)
         #expect(p.portfolioTiles.first?.displayUrl == "https://x/1t.jpg")
+        // §19f — the tile carries its backing look id, so tapping it can open the
+        // look post the way web's grid links to /looks/[lookId].
+        #expect(p.portfolioTiles.first?.lookId == "lp_1")
+        // Service chips need names, not just ids (the ids alone can't be rendered).
+        #expect(p.portfolioTiles.first?.serviceIds == ["svc_1"])
+        #expect(p.portfolioTiles.first?.serviceNames == ["Balayage"])
         #expect(p.reviews.first?.rating == 5)
         #expect(p.stats.averageRatingLabel == "4.9")
         #expect(p.stats.followerCount == 45)

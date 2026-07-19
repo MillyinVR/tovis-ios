@@ -363,7 +363,18 @@ struct ProProfileTabView: View {
                         BeforeAfterCompareView(beforeURL: beforeURL, afterURL: afterURL, height: 120, cornerRadius: 12)
                     } else {
                         Button {
-                            viewingMedia = FullscreenMedia.remote(id: tile.id, urlString: tile.src, isVideo: tile.isVideo)
+                            // The pro's own portfolio tile mirrors web's
+                            // `/media/[id]`: the asset full-screen with its
+                            // caption and service chips overlaid.
+                            viewingMedia = FullscreenMedia.remote(
+                                id: tile.id,
+                                urlString: tile.src,
+                                isVideo: tile.isVideo,
+                                overlay: MediaCaptionOverlay.make(
+                                    caption: tile.caption,
+                                    serviceNames: tile.serviceNames
+                                )
+                            )
                         } label: {
                             ZStack {
                                 BrandColor.bgSecondary

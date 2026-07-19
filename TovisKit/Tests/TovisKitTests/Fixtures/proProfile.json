@@ -55,6 +55,7 @@
     "portfolioTiles": [
       {
         "id": "pt_1",
+        "lookId": "lp_1",
         "caption": "Sunkissed",
         "src": "https://x/1.jpg",
         "thumbUrl": "https://x/1t.jpg",
@@ -65,6 +66,9 @@
         "isFeaturedInPortfolio": true,
         "serviceIds": [
           "svc_1"
+        ],
+        "serviceNames": [
+          "Balayage"
         ],
         "before": null
       }

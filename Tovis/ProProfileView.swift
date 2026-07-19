@@ -552,41 +552,68 @@ struct ProProfileView: View {
         }
     }
 
+    // §19f — a portfolio tile IS a look, so tapping it opens the look post
+    // (caption, service, tags, engagement), exactly as web's `PortfolioGrid`
+    // links to `/looks/[lookId]`. The bare fullscreen viewer stays as the
+    // fallback for a legacy tile with no backing look, mirroring web's own
+    // fallback to `/media/[id]`.
+    @ViewBuilder
     private func standardPortfolioTile(_ tile: ProPortfolioTile, isFirst: Bool) -> some View {
-        Button {
-            fullscreenMedia = FullscreenMedia.remote(id: tile.id, urlString: tile.src, isVideo: tile.isVideo)
-        } label: {
-            Rectangle()
-                .fill(BrandColor.bgSecondary)
-                .aspectRatio(3.0 / 4.0, contentMode: .fit)
-                .overlay {
-                    if let url = URL(string: tile.displayUrl) {
-                        AsyncImage(url: url) { image in
-                            image.resizable().scaledToFill()
-                        } placeholder: {
-                            BrandColor.bgSecondary
-                        }
-                    }
-                }
-                .clipped()
-                .overlay(alignment: .topLeading) {
-                    if isFirst && tile.isFeaturedInPortfolio {
-                        chip("★ FEAT", tint: BrandColor.iris).padding(6)
-                    }
-                }
-                .overlay(alignment: .topTrailing) {
-                    if tile.isVideo {
-                        chip("VIDEO", tint: .white).padding(6)
-                    }
-                }
-                .overlay(alignment: .bottomLeading) {
-                    if !tile.serviceIds.isEmpty {
-                        chip("SERVICE", tint: .white).padding(6)
-                    }
-                }
-                .contentShape(Rectangle())
+        if let lookId = tile.lookId {
+            NavigationLink {
+                LookDetailView(lookId: lookId)
+            } label: {
+                portfolioTileFace(tile, isFirst: isFirst)
+            }
+            .buttonStyle(.plain)
+        } else {
+            Button {
+                fullscreenMedia = FullscreenMedia.remote(
+                    id: tile.id,
+                    urlString: tile.src,
+                    isVideo: tile.isVideo,
+                    overlay: MediaCaptionOverlay.make(
+                        caption: tile.caption,
+                        serviceNames: tile.serviceNames
+                    )
+                )
+            } label: {
+                portfolioTileFace(tile, isFirst: isFirst)
+            }
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
+    }
+
+    private func portfolioTileFace(_ tile: ProPortfolioTile, isFirst: Bool) -> some View {
+        Rectangle()
+            .fill(BrandColor.bgSecondary)
+            .aspectRatio(3.0 / 4.0, contentMode: .fit)
+            .overlay {
+                if let url = URL(string: tile.displayUrl) {
+                    AsyncImage(url: url) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        BrandColor.bgSecondary
+                    }
+                }
+            }
+            .clipped()
+            .overlay(alignment: .topLeading) {
+                if isFirst && tile.isFeaturedInPortfolio {
+                    chip("★ FEAT", tint: BrandColor.iris).padding(6)
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                if tile.isVideo {
+                    chip("VIDEO", tint: .white).padding(6)
+                }
+            }
+            .overlay(alignment: .bottomLeading) {
+                if !tile.serviceIds.isEmpty {
+                    chip("SERVICE", tint: .white).padding(6)
+                }
+            }
+            .contentShape(Rectangle())
     }
 
     private func chip(_ text: String, tint: Color) -> some View {
