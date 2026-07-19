@@ -117,6 +117,21 @@ Source: `docs/PRO-WEB-PARITY.md` (all 5 pages parity-complete; these are the tai
   always writes them, coercing an absent field → null). No web/server change, no
   migration. **SHIPPED (PR #31)**
 - [ ] In-app Message deep-link from the clients list.
+- [ ] **The contract gate only fires on a tovis-ios push** (gap in #189, found reviewing my own
+  design — not yet decided). The `contract` job reads tovis-app's schema live, so it catches
+  backend DTO drift correctly — but only when something pushes to *this* repo. A tovis-app DTO
+  change can therefore sit undetected until the next iOS PR, which may be weeks. Two fixes, both
+  cheap, both with a cost worth Tori's call: (a) add a `schedule:` trigger to the contract job
+  only — ubuntu, 1x billing, ~15s per run, but a failing cron emails with no PR attached to fix;
+  (b) have tovis-app's CI `repository_dispatch` to tovis-ios when `schema/api/` changes — precise,
+  no idle runs, but needs a WRITE-scoped credential pointing the other way, which is broader than
+  the read-only deploy key this repo uses today. **Not a defect in the gate — it gates exactly
+  what it claims to. This is about latency of detection.**
+- [ ] **Audit the app's other `try?` write sites.** #190 fixed the two logged in `ProOfferingsView`,
+  but that was one logged instance of a general shape (`try?` on a write, then reload → the
+  failure is indistinguishable from a no-op). Nothing has swept the rest. ⚠️ A code read is not
+  enough to close one of these — #190's premise only became a finding once the failure was forced
+  on the sim and watched.
 - [x] Per-tab chart write forms + technical-record decryption. ✅ #31 (write forms) + #48 (technical record).
 - [ ] Looks/followers profile stat tiles.
 - [x] ~~Orphaned `ProClientDetailView` — re-link or delete.~~ **DONE — removed (parity-gaps step 18).** The clients list navigates to `ProClientChartView`; the old detail view had no caller anywhere in the repo.
