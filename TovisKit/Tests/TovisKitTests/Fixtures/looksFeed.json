@@ -8,6 +8,8 @@
       "mediaType": "IMAGE",
       "caption": "Soft money-piece balayage ✨",
       "createdAt": "2026-06-26T18:30:00.000Z",
+      "focalX": null,
+      "focalY": null,
       "professional": {
         "id": "pro_1",
         "businessName": "Studio Lumière",
@@ -52,6 +54,8 @@
       "mediaType": "IMAGE",
       "caption": null,
       "createdAt": "2026-06-25T14:05:00.000Z",
+      "focalX": null,
+      "focalY": null,
       "professional": null,
       "clientAuthor": {
         "handle": "noellestyles",
