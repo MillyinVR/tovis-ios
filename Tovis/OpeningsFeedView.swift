@@ -26,21 +26,13 @@ struct OpeningsFeedView: View {
         var id: String { opening.opening.id }
     }
 
-    /// Pro-profile fallback push when an opening's offering can't be resolved
-    /// (inactive / no longer on the profile) — the client can still reach the pro.
-    private struct ProNav: Identifiable, Hashable {
-        let id: String
-        let name: String
-    }
-
     @State private var phase: Phase = .loading
     @State private var claimTarget: ClaimTarget?
-    @State private var proNav: ProNav?
     /// The booking a completed claim produced, pushed once the sheet dismisses —
     /// web's `router.push('/booking/{id}')` after finalize.
     @State private var claimedBooking: ClientBookingNav?
-    /// Non-nil when the claim succeeded but its booking could not be loaded for
-    /// the push; the claim itself still landed, so this is informational.
+    /// True when the claim succeeded but its booking could not be loaded for the
+    /// push; the claim itself still landed, so this is informational, not an error.
     @State private var claimNoticeShown = false
 
     var body: some View {
@@ -64,9 +56,6 @@ struct OpeningsFeedView: View {
         .navigationTitle("Openings")
         .navigationBarTitleDisplayMode(.large)
         .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
-        .navigationDestination(item: $proNav) { nav in
-            ProProfileView(professionalId: nav.id, fallbackName: nav.name)
-        }
         .navigationDestination(item: $claimedBooking) { nav in
             BookingDetailView(booking: nav.booking, onDecision: { session.signalRefresh() })
         }
@@ -228,13 +217,11 @@ struct OpeningsFeedView: View {
     /// row already carries everything a claim needs, so there is nothing to
     /// resolve and nothing to pick.
     ///
-    /// An opening with no offering isn't claimable at all (`isBookable` already
-    /// filters those out of the feed); route those to the pro instead.
+    /// `load()` already filters the feed to bookable openings, so the guard is
+    /// belt-and-braces: an opening with no offering has nothing to claim, and the
+    /// sheet would open on a dead button.
     private func open(_ opening: ClientOpening) {
-        guard opening.isBookable else {
-            proNav = ProNav(id: opening.opening.professionalId, name: opening.proName)
-            return
-        }
+        guard opening.isBookable else { return }
         claimTarget = ClaimTarget(opening: opening)
     }
 
