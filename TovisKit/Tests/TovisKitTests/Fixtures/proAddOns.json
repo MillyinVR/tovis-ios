@@ -17,6 +17,19 @@
       "priceOverride": null,
       "durationOverrideMinutes": null,
       "defaults": { "minPrice": "40.00", "defaultDurationMinutes": 30 }
+    },
+    {
+      "id": "addon_2",
+      "addOnServiceId": "svc_gloss",
+      "title": "Gloss",
+      "group": "COLOR",
+      "isActive": true,
+      "isRecommended": true,
+      "sortOrder": 10,
+      "locationType": "SALON",
+      "priceOverride": "45.00",
+      "durationOverrideMinutes": 25,
+      "defaults": { "minPrice": "35.00", "defaultDurationMinutes": 20 }
     }
   ]
 }

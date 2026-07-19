@@ -1164,12 +1164,23 @@ func fixture(_ name: String) throws -> Data {
     }
 
     // GET /api/v1/pro/offerings/{id}/add-ons — Fixtures/proAddOns.json.
+    // The second attached row carries the non-default settings web can produce
+    // (isRecommended + the three overrides). It is pinned because the PUT is a
+    // REPLACE: anything the client fails to echo back is reset server-side.
     @Test func decodesProAddOns() throws {
         let res = try JSONDecoder().decode(ProAddOns.self, from: fixture("proAddOns"))
         #expect(res.eligible.count == 2)
-        #expect(res.attached.count == 1)
+        #expect(res.attached.count == 2)
         #expect(res.attached.first?.addOnServiceId == "svc_toner")
         #expect(res.attached.first?.isActive == true)
+
+        let recommended = try #require(res.attached.last)
+        #expect(recommended.addOnServiceId == "svc_gloss")
+        #expect(recommended.isRecommended == true)
+        #expect(recommended.sortOrder == 10)
+        #expect(recommended.locationType == "SALON")
+        #expect(recommended.priceOverride == "45.00")
+        #expect(recommended.durationOverrideMinutes == 25)
     }
 
     // GET /api/v1/pro/notifications — Fixtures/proNotifications.json. The pro

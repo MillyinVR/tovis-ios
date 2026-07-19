@@ -853,12 +853,23 @@ struct ProAddOnsView: View {
     @State private var phase: Phase = .loading
     @State private var eligible: [ProAddOnEligible] = []
     @State private var attached: Set<String> = []   // addOnServiceIds currently attached
+    /// The server's row for each attached service, kept whole so a save can echo
+    /// it back untouched. One row per service: the DB's unique index is
+    /// `(offeringId, addOnServiceId)`, so a service cannot be attached twice.
+    @State private var attachedRows: [String: ProAddOnAttached] = [:]
     @State private var saving = false
     @State private var banner: String?
+    /// Write failures. `phase.failed` only covers LOAD errors — a rejected PUT
+    /// still has to reload (the server is the truth about the set), so without
+    /// this the toggles just snap back with no explanation.
+    @State private var actionError: String?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                if let actionError {
+                    BrandErrorBanner(message: actionError)
+                }
                 switch phase {
                 case .loading: HStack { Spacer(); ProgressView().tint(BrandColor.accent); Spacer() }.padding(.top, 60)
                 case let .failed(message): Text(message).font(BrandFont.body(15)).foregroundStyle(BrandColor.textSecondary).frame(maxWidth: .infinity).padding(.top, 60)
@@ -908,7 +919,13 @@ struct ProAddOnsView: View {
                 Spacer()
                 Toggle("", isOn: Binding(
                     get: { attached.contains(s.id) },
-                    set: { on in if on { attached.insert(s.id) } else { attached.remove(s.id) }; banner = nil }
+                    // Both banners describe the last save of a selection the pro
+                    // has now changed, so editing clears them together.
+                    set: { on in
+                        if on { attached.insert(s.id) } else { attached.remove(s.id) }
+                        banner = nil
+                        actionError = nil
+                    }
                 ))
                 .labelsHidden().tint(BrandColor.accent)
             }
@@ -919,6 +936,12 @@ struct ProAddOnsView: View {
         do {
             let result = try await session.client.proProfile.addOns(offeringId: offering.id)
             eligible = result.eligible
+            // `uniquingKeysWith` only so malformed server data degrades instead of
+            // trapping — the unique index above means a collision cannot happen.
+            attachedRows = Dictionary(
+                result.attached.map { ($0.addOnServiceId, $0) },
+                uniquingKeysWith: { first, _ in first }
+            )
             attached = Set(result.attached.map(\.addOnServiceId))
             phase = .ready
         } catch let e as APIError { phase = .failed(e.userMessage) }
@@ -928,17 +951,38 @@ struct ProAddOnsView: View {
     private func save() async {
         guard !saving else { return }
         saving = true
+        actionError = nil
         defer { saving = false }
-        // Preserve a stable order from the eligible list.
-        let items = eligible.enumerated()
-            .filter { attached.contains($0.element.id) }
-            .map { ProAddOnInput(addOnServiceId: $0.element.id, sortOrder: $0.offset) }
+
+        // This screen owns MEMBERSHIP only, and the route replaces the whole set,
+        // so an already-attached row goes back exactly as the server sent it —
+        // anything not echoed is reset to a route default. `isRecommended` is the
+        // field that matters in practice: web sets it from a per-add-on pill and
+        // clients see it as a "Recommended" badge AND as their default selection,
+        // so re-saving here used to quietly un-recommend every add-on. Web
+        // hardcodes null for the three overrides today, so echoing them is
+        // currently a no-op that stops being one the moment anything sets them.
+        // New rows sort after the existing ones rather than renumbering the
+        // pro's chosen order (web preserves sortOrder the same way).
+        let items = ProAddOnInput.replacementSet(
+            eligibleOrder: eligible.map(\.id),
+            attached: attached,
+            existing: attachedRows
+        )
+
         do {
             try await session.client.proProfile.saveAddOns(offeringId: offering.id, items: items)
             banner = "Add-ons saved."
+        } catch let e as APIError {
+            banner = nil
+            actionError = e.userMessage
         } catch {
             banner = nil
+            actionError = "Couldn’t save your add-ons. Try again."
         }
+        // Reload either way: the server is the truth about the set, so a rejected
+        // save has to snap the toggles back. The banner is what makes it legible.
+        await load()
     }
 }
 
