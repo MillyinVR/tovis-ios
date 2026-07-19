@@ -440,11 +440,14 @@ struct ProOfferingsView: View {
         .navigationBarTitleDisplayMode(.large)
         .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
         .task { if case .loading = phase { await load() } }
+        // A successful save through either sheet clears a stale write error —
+        // otherwise a banner from an earlier failed toggle sits there
+        // contradicting the edit the pro just watched succeed.
         .sheet(item: $editing) { offering in
-            ProEditOfferingSheet(offering: offering) { Task { await load() } }
+            ProEditOfferingSheet(offering: offering) { actionError = nil; Task { await load() } }
         }
         .sheet(isPresented: $showAdd) {
-            ProAddServiceSheet { Task { await load() } }
+            ProAddServiceSheet { actionError = nil; Task { await load() } }
         }
         .tint(BrandColor.accent)
     }
