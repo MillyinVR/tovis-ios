@@ -22,3 +22,7 @@ AuthKey_*.p8
 # Node (contract-test tooling only)
 node_modules/
 package-lock.json
+# ...except the contract test's own lock. CI runs `npm ci`, which REQUIRES a
+# committed lock file, and an unpinned ajv means the gate's validation
+# behaviour could change under us without any commit saying so.
+!scripts/contract/package-lock.json

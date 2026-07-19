@@ -9,6 +9,7 @@
       "createdAt": "2025-11-02T18:30:00.000Z",
       "phoneVerifiedAt": "2025-11-02T18:31:00.000Z",
       "emailVerifiedAt": null,
+      "availableWorkspaces": ["CLIENT"],
       "clientProfile": {
         "id": "cli_1",
         "firstName": "Amara",

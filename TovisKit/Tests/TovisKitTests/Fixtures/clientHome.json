@@ -131,7 +131,11 @@
               }
             }
           ],
-          "tierPlans": []
+          "tierPlans": [],
+          "publicIncentive": {
+            "tier": "WAITLIST", "offerType": "PERCENT_OFF", "label": "30% off",
+            "percentOff": 30, "amountOff": null, "freeAddOnService": null
+          }
         }
       }
     ],

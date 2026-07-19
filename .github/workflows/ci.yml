@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The wire-contract gate. Validates every fixture in
+  # TovisKit/Tests/TovisKitTests/Fixtures against tovis-app's generated API
+  # schema, so a backend DTO change fails HERE instead of silently breaking
+  # decode at runtime. Runs on Linux — it is just node+ajv — so it stays on the
+  # 1x billing multiplier.
+  contract:
+    name: Wire contract (fixtures vs backend schema)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # The schema is GENERATED in tovis-app, where `check:api-schema` already
+      # guarantees the committed copy matches lib/dto/index.ts. We read it live
+      # from that repo rather than vendoring a snapshot here: a vendored copy
+      # would drift the moment a DTO changed, and this job would stay GREEN
+      # while the wire contract rotted — the exact failure the gate exists to
+      # catch. Auth is a read-only deploy key (secret TOVIS_APP_DEPLOY_KEY);
+      # both repos are private, so some credential is unavoidable.
+      - name: Fetch backend API schema (read-only deploy key)
+        uses: actions/checkout@v7
+        with:
+          repository: MillyinVR/tovis-app
+          ssh-key: ${{ secrets.TOVIS_APP_DEPLOY_KEY }}
+          path: .tovis-app
+          sparse-checkout: schema/api
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: scripts/contract/package-lock.json
+
+      - name: Install ajv
+        working-directory: scripts/contract
+        run: npm ci
+
+      - name: Validate fixtures against the backend schema
+        working-directory: scripts/contract
+        env:
+          TOVIS_API_SCHEMA: ${{ github.workspace }}/.tovis-app/schema/api/tovis-api.schema.json
+        run: npm run validate
+
+  ios:
+    name: Swift tests + app build
+    # Both Swift steps share one macOS runner deliberately: macOS minutes bill
+    # at 10x on private repos, and splitting them would double runner spin-up
+    # and checkout for no extra signal.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      # TovisKit has no external SPM dependencies, so this needs no network and
+      # no simulator — it is the cheapest real signal in the repo. It also
+      # decodes the same Fixtures/*.json the contract job validates, so the two
+      # jobs check the fixtures from both sides: shape (ajv) and decode (Swift).
+      - name: TovisKit — swift test
+        working-directory: TovisKit
+        run: |
+          set -o pipefail
+          log="$RUNNER_TEMP/swift-test.log"
+          swift test 2>&1 | tee "$log"
+          # A misconfigured or undiscovered test target reports SUCCESS having
+          # run nothing. Assert the run was non-empty so a silently-empty gate
+          # cannot pass as green.
+          count=$(grep -oE 'Test run with [0-9]+ test' "$log" \
+            | grep -oE '[0-9]+' | tail -1)
+          if [ -z "$count" ] || [ "$count" -lt 1 ]; then
+            echo "::error::TovisKit reported success but ran no tests"
+            exit 1
+          fi
+          echo "TovisKit tests executed: $count" >> "$GITHUB_STEP_SUMMARY"
+
+      # Pick whatever iPhone the runner image actually ships. Hardcoding a
+      # device name breaks every time GitHub rolls the Xcode version.
+      - name: Pick a simulator
+        id: sim
+        run: |
+          udid=$(xcrun simctl list devices available -j \
+            | jq -r '[.devices[][] | select(.name | startswith("iPhone"))][0].udid')
+          if [ -z "$udid" ] || [ "$udid" = "null" ]; then
+            echo "::error::no iPhone simulator available on this runner"
+            exit 1
+          fi
+          xcrun simctl list devices available | grep -F "$udid"
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+
+      - name: App — xcodebuild test
+        run: |
+          set -o pipefail
+          log="$RUNNER_TEMP/xcodebuild-test.log"
+          xcodebuild test \
+            -scheme Tovis \
+            -project tovis-ios.xcodeproj \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$log"
+          # Same empty-run guard as above. Note the legacy XCTest summary always
+          # prints "Executed 0 tests" here because TovisTests uses Swift Testing
+          # (`import Testing`), so that line is NOT a usable signal — count the
+          # Swift Testing summary instead.
+          count=$(grep -oE 'Test run with [0-9]+ test' "$log" \
+            | grep -oE '[0-9]+' | tail -1)
+          if [ -z "$count" ] || [ "$count" -lt 1 ]; then
+            echo "::error::app test run reported success but ran no tests"
+            exit 1
+          fi
+          echo "App tests executed: $count" >> "$GITHUB_STEP_SUMMARY"
