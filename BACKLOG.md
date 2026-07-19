@@ -117,6 +117,38 @@ Source: `docs/PRO-WEB-PARITY.md` (all 5 pages parity-complete; these are the tai
   always writes them, coercing an absent field → null). No web/server change, no
   migration. **SHIPPED (PR #31)**
 - [ ] In-app Message deep-link from the clients list.
+- [ ] 🔴 **The contract gate covers 27 of 53 fixtures — and the 26 it still misses are ALL pro-side**
+  (measured 2026-07-19, right after #189 shipped). `validate-fixtures.mjs` only validates what is
+  listed in its `CHECKS` array, so a fixture with no entry is silently unguarded while the job
+  prints `Contract OK — N object(s) validated`, which reads as complete regardless of how many
+  fixtures it never looked at. The client wire contract
+  is well covered; **the pro side, which is the active track, is barely covered at all.** Unwired:
+  `proAddOns proAftercareDetail proAftercareList proBookingDetail proBookingsList proCalendarBlock
+  proClientChart proClientsDirectory proClientsSearch proConsultationServices
+  proLastMinute proLocations proLookBrief proMyProfile proNotifications proOfferings
+  proPaymentSettings proReviewsList proServicesCatalog proSession proSessionState proSetCritique
+  proSettings proShotPacks proWorkingHours` + `discoverTrendingTags`.
+
+  It splits into two different jobs, and they must not be conflated:
+  - ~~**Wirable today, no backend work**~~ ✅ **DONE in this PR — 2 of 28 closed, gate now validates
+    39 objects (was 37).** `proOverview.json` → `ProOverviewPageData` (the route does
+    `jsonOk(overview)`, so the payload is at the ROOT alongside `ok`, not nested) and
+    `proCameraUsage.json` → `ProCameraUsage` (`jsonOk({ usage })`, so nested). Both routes read
+    before wiring, both DTOs confirmed to match on required properties rather than by coincidence,
+    and **both proved to discriminate** — dropping `revenue` and retyping `quota` each turn the
+    gate red. **26 remain.**
+  - **Cannot be gated at all yet** — the response type was never exported through
+    `lib/dto/index.ts`, so it is not in the generated schema. Confirmed by name: the schema has
+    **no** `WorkingHours`, `ServicesCatalog`, `ClientsDirectory`, `ReviewsList` or `PaymentSettings`
+    definition, and no `ProOfferingAdmin` (only `AvailabilityOffering`, a different type). Closing
+    these needs a paired **tovis-app** PR exporting the DTOs + `npm run gen:api-schema` — the
+    `pro-facing read pattern` convention, which these routes predate.
+
+  ⚠️ **Do NOT bulk-generate the `CHECKS` entries by matching fixtures against every definition.**
+  Tried it: an automated sweep happily matched `proBookingDetail`, `proBookingsList` and
+  `proClientChart` to `ClientAftercareNextBookingDTO` purely on structural coincidence. Wiring a
+  fixture to the WRONG DTO is worse than leaving it unwired — it produces a confident green against
+  a contract nobody meant. Each entry needs the route read and the DTO chosen deliberately.
 - [ ] **The contract gate only fires on a tovis-ios push** (gap in #189, found reviewing my own
   design — not yet decided). The `contract` job reads tovis-app's schema live, so it catches
   backend DTO drift correctly — but only when something pushes to *this* repo. A tovis-app DTO
