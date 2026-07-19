@@ -176,7 +176,7 @@ struct ClaimView: View {
         case .claimPaused:
             statusCard(
                 title: "Claiming is paused right now",
-                message: "We’ve paused claiming for a moment while we sort something out on our end. Nothing changed on your account and nothing was lost — this history is still here. Try again shortly."
+                message: "We’ve paused claiming for a moment while we sort something out on our end. Nothing changed on your account and nothing was lost — this history is still here, and your professional still has it. Try again shortly."
             ) {
                 secondaryButton("Try again") { Task { await claim() } }
                     .padding(.top, 6)
