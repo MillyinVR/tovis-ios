@@ -52,7 +52,7 @@ struct LooksView: View {
     @State private var likeOverrides: [String: Bool] = [:]      // by look id
     @State private var likeCounts: [String: Int] = [:]          // by look id
     @State private var commentCounts: [String: Int] = [:]       // by look id
-    @State private var followOverrides: [String: Bool] = [:]    // by professional id
+    @State private var followByPro: [String: FollowToggle] = [:]    // by professional id
     @State private var savedOverrides: [String: Bool] = [:]      // by look id
 
     @State private var commentsFor: LooksFeedItem?
@@ -347,6 +347,7 @@ struct LooksView: View {
                             likeCount: likeCount(item),
                             commentCount: commentCount(item),
                             following: following(item),
+                            followerCount: followerCount(item),
                             saved: saved(item),
                             shareURL: shareURL(item),
                             bookResolving: resolvingBookId == item.id,
@@ -435,7 +436,7 @@ struct LooksView: View {
     /// when a query matches nothing.
     private func load(showSpinner: Bool = true) async {
         if showSpinner { phase = .loading }
-        likeOverrides = [:]; likeCounts = [:]; commentCounts = [:]; followOverrides = [:]
+        likeOverrides = [:]; likeCounts = [:]; commentCounts = [:]; followByPro = [:]
         savedOverrides = [:]
         let p = params()
         do {
@@ -487,8 +488,16 @@ struct LooksView: View {
     private func likeCount(_ i: LooksFeedItem) -> Int { likeCounts[i.id] ?? i.count.likes }
     private func commentCount(_ i: LooksFeedItem) -> Int { commentCounts[i.id] ?? i.count.comments }
     private func following(_ i: LooksFeedItem) -> Bool {
-        guard let proId = i.professional?.id else { return false }
-        return followOverrides[proId] ?? i.viewerFollows
+        guard let pro = i.professional else { return false }
+        return followByPro[pro.id]?.following ?? i.viewerFollows
+    }
+
+    /// The count beside the FOLLOW pill. Reads through the live toggle once the
+    /// viewer has tapped, so it moves with the pill instead of staying frozen at
+    /// whatever the feed payload happened to carry.
+    private func followerCount(_ i: LooksFeedItem) -> Int {
+        guard let pro = i.professional else { return 0 }
+        return followByPro[pro.id]?.followerCount ?? pro.followerCount
     }
     private func saved(_ i: LooksFeedItem) -> Bool { savedOverrides[i.id] ?? i.viewerSaved }
 
@@ -612,13 +621,29 @@ struct LooksView: View {
 
     private func toggleFollow(_ item: LooksFeedItem) async {
         guard let pro = item.professional else { return }
-        let next = !following(item)
-        followOverrides[pro.id] = next
+
+        // Snapshot the *entry*, not just its value — it may legitimately be
+        // absent, meaning "no local opinion yet, defer to the payload".
+        let previousEntry = followByPro[pro.id]
+        var toggle = previousEntry
+            ?? FollowToggle(following: item.viewerFollows, followerCount: pro.followerCount)
+        // Load-bearing guard: the route is a blind toggle, so a second call in
+        // flight would undo the first.
+        guard toggle.begin() != nil else { return }
+        followByPro[pro.id] = toggle
+
         do {
-            let res = try await session.client.looks.setFollow(professionalId: pro.id, following: next)
-            followOverrides[pro.id] = res.following
+            let res = try await session.client.looks.toggleFollow(professionalId: pro.id)
+            toggle.finish(res)
+            followByPro[pro.id] = toggle
         } catch {
-            followOverrides[pro.id] = !next
+            // Restore the dictionary exactly as it was — including *absent*.
+            // `toggle.fail()` would restore the right value but still leave an
+            // entry behind, and `reloadKeepingPlace()` swaps in fresh feed items
+            // without clearing this dict, so a pinned entry from a follow that
+            // never happened would shadow the server's own `viewerFollows`.
+            followByPro[pro.id] = previousEntry
+            Haptics.failure()
         }
     }
 }
@@ -644,6 +669,10 @@ private struct LookSlide: View {
     let likeCount: Int
     let commentCount: Int
     let following: Bool
+    /// Tracked alongside `following` so the count beside the pill moves with it —
+    /// it used to read straight off the (immutable) feed payload and sit frozen
+    /// while the pill flipped inches away.
+    let followerCount: Int
     let saved: Bool
     let shareURL: URL?
     /// True while the pro profile is being fetched to preselect the look's
@@ -849,8 +878,8 @@ private struct LookSlide: View {
                 }
                 .buttonStyle(.plain)
                 followPill
-                if pro.followerCount > 0 {
-                    Text(followerLabel(pro.followerCount))
+                if followerCount > 0 {
+                    Text(followerLabel(followerCount))
                         .font(BrandFont.mono(11)).foregroundStyle(.white.opacity(0.7))
                 }
             } else if let author = item.clientAuthor {

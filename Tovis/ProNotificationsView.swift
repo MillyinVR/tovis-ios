@@ -158,8 +158,8 @@ struct ProNotificationsView: View {
         } else {
             ScrollView {
                 LazyVStack(spacing: 0, pinnedViews: []) {
-                    ForEach(groupedByDay(visible), id: \.key) { group in
-                        sectionHeader(group.key, count: group.items.count)
+                    ForEach(DayGrouping.byDay(visible, date: createdAt), id: \.key) { group in
+                        sectionHeader(group.day, count: group.items.count)
                         ForEach(group.items) { item in
                             row(item)
                             Divider().overlay(BrandColor.textMuted.opacity(0.1)).padding(.leading, 18)
@@ -176,9 +176,9 @@ struct ProNotificationsView: View {
         }
     }
 
-    private func sectionHeader(_ key: String, count: Int) -> some View {
+    private func sectionHeader(_ day: Date, count: Int) -> some View {
         HStack {
-            Text(dayHeading(key))
+            Text(DayGrouping.heading(for: day))
                 .font(BrandFont.mono(11)).tracking(0.5)
                 .foregroundStyle(BrandColor.textMuted)
             Spacer()
@@ -288,36 +288,10 @@ struct ProNotificationsView: View {
 
     // MARK: - Date grouping
 
-    private struct DayGroup { let key: String; let items: [ProNotification] }
-
-    private func groupedByDay(_ list: [ProNotification]) -> [DayGroup] {
-        let cal = Calendar.current
-        var order: [String] = []
-        var byDay: [String: [ProNotification]] = [:]
-        let keyFmt = DateFormatter()
-        keyFmt.locale = Locale(identifier: "en_US_POSIX")
-        keyFmt.dateFormat = "yyyy-MM-dd"
-        for n in list {
-            let day = Wire.date(n.createdAt) ?? Date()
-            let key = keyFmt.string(from: cal.startOfDay(for: day))
-            if byDay[key] == nil { order.append(key) }
-            byDay[key, default: []].append(n)
-        }
-        return order.map { DayGroup(key: $0, items: byDay[$0] ?? []) }
-    }
-
-    private func dayHeading(_ key: String) -> String {
-        let parser = DateFormatter()
-        parser.locale = Locale(identifier: "en_US_POSIX")
-        parser.dateFormat = "yyyy-MM-dd"
-        guard let date = parser.date(from: key) else { return key }
-        let cal = Calendar.current
-        if cal.isDateInToday(date) { return "Today" }
-        if cal.isDateInYesterday(date) { return "Yesterday" }
-        let out = DateFormatter()
-        out.locale = Locale(identifier: "en_US")
-        out.dateFormat = "EEE, MMM d"
-        return out.string(from: date)
+    /// The one thing the shared grouper can't know: where the timestamp lives on
+    /// this screen's element, and what an unparseable one should fall back to.
+    private func createdAt(_ item: ProNotification) -> Date {
+        Wire.date(item.createdAt) ?? Date()
     }
 
     // MARK: - Actions

@@ -44,9 +44,7 @@ struct ProProfileView: View {
 
     // Follow (the hero pill) — hydrated via GET /pros/{id}/follow after the
     // profile loads; guests / pro viewers just keep the stats count.
-    @State private var isFollowing = false
-    @State private var followWorking = false
-    @State private var followerCount: Int?
+    @State private var follow = FollowToggle()
 
     // Per-service "Save" state, seeded from the offerings' isFavorited flags.
     @State private var savedServiceIds: Set<String> = []
@@ -328,6 +326,7 @@ struct ProProfileView: View {
     /// same /pros/{id}/follow endpoint as the feed's FOLLOW pill.
     private var followRow: some View {
         HStack(spacing: 8) {
+            let isFollowing = follow.following
             Button {
                 Task { await toggleFollow() }
             } label: {
@@ -343,11 +342,11 @@ struct ProProfileView: View {
                     .overlay(Capsule().stroke(isFollowing ? .white.opacity(0.35) : BrandColor.accent.opacity(0.6), lineWidth: 1))
             }
             .buttonStyle(.plain)
-            .disabled(followWorking)
+            .disabled(follow.isWorking)
             .accessibilityLabel(isFollowing ? "Unfollow" : "Follow")
 
-            if let count = followerCount, count > 0 {
-                Text(count == 1 ? "1 follower" : "\(count) followers")
+            if follow.followerCount > 0 {
+                Text(follow.followerCount == 1 ? "1 follower" : "\(follow.followerCount) followers")
                     .font(BrandFont.mono(11))
                     .foregroundStyle(.white.opacity(0.75))
             }
@@ -775,7 +774,24 @@ struct ProProfileView: View {
         do {
             let profile = try await session.client.profiles.professional(id: professionalId)
             isFavorited = profile.isFavoritedByMe
-            followerCount = profile.stats.followerCount
+            // Seed the count from the profile stats; the follow flag itself is
+            // only known after the hydrate below, so a refresh must not clear it.
+            // `stats.followerCount` is optional on the wire and an absent count
+            // renders as no count either way (the label is gated on `> 0`), so
+            // collapsing nil to 0 here is not a visible change: the one case it
+            // would differ — an optimistic nudge off an unknown count — needs the
+            // hydrate below to have failed while the follow POST succeeds, which
+            // can't happen, since both require the same client session.
+            //
+            // Never over a call in flight: rebuilding the toggle would clear its
+            // busy flag, and a second tap on a BLIND toggle undoes the first. The
+            // in-flight `finish()` lands the authoritative count moments later.
+            if !follow.isWorking {
+                follow = FollowToggle(
+                    following: follow.following,
+                    followerCount: profile.stats.followerCount ?? 0
+                )
+            }
             savedServiceIds = Set(profile.offerings.filter { $0.isFavorited }.map { $0.serviceId })
             helpfulByReview = Dictionary(
                 profile.reviews.map { ($0.id, $0.viewerHelpful) },
@@ -789,9 +805,9 @@ struct ProProfileView: View {
 
             // Best-effort follow-state hydrate: clients get their real state; a
             // guest or pro viewer errors (401/403) and keeps the defaults.
-            if let state = try? await session.client.looks.followState(professionalId: professionalId) {
-                isFollowing = state.following
-                followerCount = state.followerCount
+            if !follow.isWorking,
+               let state = try? await session.client.looks.followState(professionalId: professionalId) {
+                follow = FollowToggle(following: state.following, followerCount: state.followerCount)
             }
         } catch let error as APIError {
             phase = .failed(error.userMessage)
@@ -801,25 +817,23 @@ struct ProProfileView: View {
     }
 
     private func toggleFollow() async {
-        guard !followWorking else { return }
-        followWorking = true
-        defer { followWorking = false }
-
-        let next = !isFollowing
-        let base = followerCount
-        isFollowing = next
-        if let base { followerCount = max(0, base + (next ? 1 : -1)) }
+        // `begin()` carries the re-entrancy guard this used to hand-roll — and it
+        // is load-bearing, not just tidy: the route is a blind toggle, so a second
+        // call in flight would undo the first.
+        var toggle = follow
+        guard toggle.begin() != nil else { return }
+        follow = toggle
 
         do {
-            let state = try await session.client.looks.setFollow(
-                professionalId: professionalId, following: next
+            let state = try await session.client.looks.toggleFollow(
+                professionalId: professionalId
             )
-            isFollowing = state.following
-            followerCount = state.followerCount
+            toggle.finish(state)
         } catch {
-            isFollowing = !next
-            followerCount = base
+            toggle.fail()
+            Haptics.failure()
         }
+        follow = toggle
     }
 
     private func toggleFavorite() async {
