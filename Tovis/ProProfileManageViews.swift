@@ -487,13 +487,6 @@ struct ProOfferingsView: View {
                         }
                     }
                     Spacer()
-                    Toggle("", isOn: Binding(
-                        get: { o.isActive },
-                        set: { newValue in Task { await toggle(o, active: newValue) } }
-                    ))
-                    .labelsHidden()
-                    .tint(BrandColor.accent)
-                    .disabled(busyId == o.id)
                 }
 
                 HStack(spacing: 8) {
@@ -522,7 +515,9 @@ struct ProOfferingsView: View {
                 }
             }
         }
-        .opacity(o.isActive ? 1 : 0.55)   // inactive services read as dimmed
+        // No dimmed-inactive state: GET /pro/offerings filters `isActive: true`,
+        // so every row this list can render is active. The dimming that used to
+        // live here was unreachable for the same reason.
     }
 
     private func priceChip(icon: String, price: String, minutes: Int?) -> some View {
@@ -541,24 +536,6 @@ struct ProOfferingsView: View {
         do { phase = .loaded(try await session.client.proProfile.offerings()) }
         catch let e as APIError { phase = .failed(e.userMessage) }
         catch { phase = .failed("Couldn’t load your services.") }
-    }
-
-    private func toggle(_ o: ProOfferingAdmin, active: Bool) async {
-        busyId = o.id
-        actionError = nil
-        defer { busyId = nil }
-        do {
-            _ = try await session.client.proProfile.updateOffering(id: o.id, isActive: active)
-        } catch let e as APIError {
-            actionError = e.userMessage
-        } catch {
-            actionError = active
-                ? "Couldn’t turn that service on. Try again."
-                : "Couldn’t turn that service off. Try again."
-        }
-        // Reload either way: the server is the truth about the row, so a failed
-        // write must snap back. The banner is what makes the snap-back legible.
-        await load()
     }
 
     private func remove(_ o: ProOfferingAdmin) async {
