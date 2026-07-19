@@ -243,7 +243,6 @@ struct ClientProfileEditView: View {
         banner = nil
         defer { saving = false }
 
-
         do {
             let updated = try await session.client.clientSettings.updateProfile(
                 firstName: firstName,
