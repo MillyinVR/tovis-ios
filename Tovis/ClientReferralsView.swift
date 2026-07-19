@@ -25,7 +25,7 @@ struct ClientReferralsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 if let actionError {
-                    banner(actionError)
+                    BrandErrorBanner(message: actionError)
                 }
 
                 switch phase {
@@ -161,15 +161,6 @@ struct ClientReferralsView: View {
             }
         }
         .frame(maxWidth: .infinity).padding(.top, 60)
-    }
-
-    private func banner(_ message: String) -> some View {
-        Text(message)
-            .font(BrandFont.body(13)).foregroundStyle(BrandColor.ember)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(BrandColor.ember.opacity(0.1))
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     // MARK: - Actions

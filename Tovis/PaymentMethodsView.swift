@@ -45,7 +45,7 @@ struct PaymentMethodsView: View {
                 intro
 
                 if let actionError {
-                    banner(actionError)
+                    BrandErrorBanner(message: actionError)
                 }
 
                 switch phase {
@@ -211,15 +211,6 @@ struct PaymentMethodsView: View {
             }
         }
         .frame(maxWidth: .infinity).padding(.top, 48)
-    }
-
-    private func banner(_ message: String) -> some View {
-        Text(message)
-            .font(BrandFont.body(13)).foregroundStyle(BrandColor.ember)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(BrandColor.ember.opacity(0.1))
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     // MARK: - Actions
