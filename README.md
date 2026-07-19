@@ -99,10 +99,15 @@ both proves the check can fail).
 
 ## Build / verify
 
+**CI runs all of this on every push + PR** (`.github/workflows/ci.yml`) — a `contract` job on
+Linux and an `ios` job on macOS. Before #189 the repo had no CI at all, which is why the
+contract test only ran when someone remembered and six fixture drifts accumulated. The commands
+below are the same ones CI runs, for reproducing a failure locally.
+
 ```bash
 # iOS unit + contract
 cd ~/Dev/tovis-ios/TovisKit   && swift test
-cd ~/Dev/tovis-ios/scripts/contract && npm install && npm run validate   # fixtures vs backend schema
+cd ~/Dev/tovis-ios/scripts/contract && npm ci && npm run validate   # fixtures vs backend schema
 
 # iOS app build (real toolchain, unsigned)
 cd ~/Dev/tovis-ios && xcodebuild build -scheme Tovis -project tovis-ios.xcodeproj \
@@ -126,6 +131,19 @@ against it (`arm64-apple-ios17.0-simulator`).
   fixtures against tovis-app's generated schema; the same fixtures are decoded by `swift test`.
   A backend DTO change fails loudly in one of the two. ⚠️ A DTO **JSDoc-comment edit** changes the
   generated schema — the backend must re-run `npm run gen:api-schema` after any DTO edit.
+- **CI reads tovis-app's schema LIVE, via a read-only deploy key** (`secrets.TOVIS_APP_DEPLOY_KEY`,
+  sparse-checkout of `schema/api/`). Both repos are private, so some credential is unavoidable.
+  🔴 **Do NOT "simplify" this by vendoring a schema snapshot into this repo** — a snapshot drifts
+  the moment a DTO changes and the job would stay GREEN while the wire contract rotted, which is
+  worse than no gate. If the contract job starts failing to fetch, the key was revoked or rotated;
+  regenerate it rather than switching to a copy.
+- **`.gitignore` ignores `package-lock.json` globally**, with one negation for
+  `scripts/contract/package-lock.json`. That lock MUST stay committed — CI runs `npm ci`, which
+  requires it, and an unpinned ajv would let the gate's validation behaviour change silently.
+- **The fixtures are hand-crafted to carry edge cases the dev DB does not contain** (a
+  BUSINESS_NAME-mode pro look, a client-authored look with `professional == nil`, a claim with a
+  populated booking). Take the SHAPE of a new field from a real capture — never invent it — but do
+  not replace a whole fixture with a dev-DB capture, or you delete the case it existed to cover.
 - **Xcode synchronized folder:** new files in `Tovis/` join `xcodebuild` immediately, but open the
   project once so Xcode itself registers them.
 - **Push/APNs** is app-wired + backend-built but needs the Xcode Push capability + operator APNs
