@@ -94,6 +94,20 @@ const CHECKS = [
     def: 'SupportTicketDTO',
     pick: (d) => [d],
   },
+  // GET /api/v1/pro/overview returns `jsonOk(overview)` where overview is
+  // `loadProOverviewPage(): Promise<ProOverviewPageData>` — so the payload is
+  // spread at the ROOT (alongside `ok`), not nested under a key.
+  {
+    file: 'proOverview.json',
+    def: 'ProOverviewPageData',
+    pick: (d) => [d],
+  },
+  // GET /api/v1/pro/camera/usage returns `jsonOk({ usage })`.
+  {
+    file: 'proCameraUsage.json',
+    def: 'ProCameraUsage',
+    pick: (d) => [d.usage],
+  },
 ]
 
 function fail(msg) {
