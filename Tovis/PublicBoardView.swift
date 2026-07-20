@@ -9,7 +9,7 @@
 //
 // Renders a read-only board: owner @handle + avatar (linking back to the public
 // creator profile when it's public), the board name + look count, and a grid of
-// the board's published looks (tap → fullscreen). A 404 (board isn't shared / was
+// the board's published looks (tap → the look post). A 404 (board isn't shared / was
 // hidden / doesn't resolve) is a plain "not found" empty state, not an error.
 import SwiftUI
 import TovisKit
@@ -28,7 +28,6 @@ struct PublicBoardView: View {
         case failed(String)
     }
     @State private var phase: Phase = .loading
-    @State private var viewingMedia: FullscreenMedia?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -54,7 +53,6 @@ struct PublicBoardView: View {
         }
         .background(BrandColor.bgPrimary)
         .toolbar(.hidden, for: .navigationBar)
-        .mediaFullscreenCover($viewingMedia)
         .task { if case .loading = phase { await load() } }
     }
 
@@ -182,14 +180,18 @@ struct PublicBoardView: View {
                 spacing: 10
             ) {
                 ForEach(board.looks) { look in
-                    Button {
-                        guard let url = look.imageUrl else { return }
-                        viewingMedia = FullscreenMedia.remote(id: look.id, urlString: url, isVideo: false)
+                    // §19f — a board tile IS a look, so tapping it opens the look
+                    // post (the pro, tags, stats and BOOK affordance), exactly as
+                    // web's tile links to `look.href`. `id` is the look-post id the
+                    // server builds that href from, so no parse is needed.
+                    // A tile with no image still navigates: web links it too, and
+                    // the post carries far more than its photo.
+                    NavigationLink {
+                        LookDetailView(lookId: look.id)
                     } label: {
                         lookTile(look)
                     }
                     .buttonStyle(.plain)
-                    .disabled(look.imageUrl == nil)
                 }
             }
         }
