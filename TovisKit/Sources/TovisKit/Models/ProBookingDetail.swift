@@ -242,6 +242,10 @@ public struct ProAftercareSnapshot: Decodable, Sendable {
 }
 
 public struct ProBookingClient: Decodable, Sendable {
+    /// The ClientProfile id — feeds client-scoped reads like
+    /// GET /pro/clients/{id}/service-addresses (aftercare rebook address
+    /// picker). Optional so older backends still decode.
+    public let id: String?
     public let fullName: String
     public let email: String?
     public let phone: String?
