@@ -149,6 +149,19 @@ Source: `docs/PRO-WEB-PARITY.md` (all 5 pages parity-complete; these are the tai
   `proClientChart` to `ClientAftercareNextBookingDTO` purely on structural coincidence. Wiring a
   fixture to the WRONG DTO is worse than leaving it unwired — it produces a confident green against
   a contract nobody meant. Each entry needs the route read and the DTO chosen deliberately.
+- [ ] 🔴 **CI no longer compiles the app target, or runs the 42 app-level tests.** The `ios` job ran
+  `xcodebuild test` until the macOS bill forced it out: ~9 of its ~11 minutes, ≈110 billable
+  minutes per run at the 10x private-repo multiplier, and a handful of runs in one day exhausted
+  the account's Actions allowance and **refused every workflow across BOTH repos**. `swift test`
+  stays and still covers 832 TovisKit tests including fixture decode, but **nothing in CI now
+  builds `Tovis/`** — a Swift compile error in the app target ships green. Run
+  `xcodebuild test -scheme Tovis -destination 'platform=iOS Simulator,name=<device>'` locally
+  before pushing app-target changes; the README's Build/verify block has the full command.
+  Cheapest way to restore it: cache SPM `SourcePackages` + DerivedData keyed on
+  `project.pbxproj` (Package.resolved is gitignored, so the pins live there) and run
+  `xcodebuild build` with a `generic/platform=iOS Simulator` destination — no simulator boot, and a
+  warm cache should cut the bulk of those 9 minutes. Not attempted; the cache hit rate is the
+  unknown.
 - [ ] **The contract gate only fires on a tovis-ios push** (gap in #189, found reviewing my own
   design — not yet decided). The `contract` job reads tovis-app's schema live, so it catches
   backend DTO drift correctly — but only when something pushes to *this* repo. A tovis-app DTO

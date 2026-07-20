@@ -54,18 +54,21 @@ jobs:
         run: npm run validate
 
   ios:
-    name: Swift tests + app build
-    # Both Swift steps share one macOS runner deliberately: macOS minutes bill
-    # at 10x on private repos, and splitting them would double runner spin-up
-    # and checkout for no extra signal.
+    name: TovisKit tests
+    # macOS bills at 10x on private repos. This job used to also run
+    # `xcodebuild test`, which was ~9 of its ~11 minutes — about 110 billable
+    # minutes per run, and several runs in one day were enough to exhaust the
+    # account's Actions allowance and refuse EVERY workflow across both repos.
+    # `swift test` needs no simulator and no network (TovisKit has no external
+    # SPM dependencies), so it keeps the signal that matters here — including
+    # decode of the same fixtures the contract job validates — at ~a fifth of
+    # the cost. See the app-target compile gap noted in BACKLOG.md.
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
 
       - name: Show toolchain
-        run: |
-          xcodebuild -version
-          swift --version
+        run: swift --version
 
       # TovisKit has no external SPM dependencies, so this needs no network and
       # no simulator — it is the cheapest real signal in the repo. It also
@@ -87,39 +90,3 @@ jobs:
             exit 1
           fi
           echo "TovisKit tests executed: $count" >> "$GITHUB_STEP_SUMMARY"
-
-      # Pick whatever iPhone the runner image actually ships. Hardcoding a
-      # device name breaks every time GitHub rolls the Xcode version.
-      - name: Pick a simulator
-        id: sim
-        run: |
-          udid=$(xcrun simctl list devices available -j \
-            | jq -r '[.devices[][] | select(.name | startswith("iPhone"))][0].udid')
-          if [ -z "$udid" ] || [ "$udid" = "null" ]; then
-            echo "::error::no iPhone simulator available on this runner"
-            exit 1
-          fi
-          xcrun simctl list devices available | grep -F "$udid"
-          echo "udid=$udid" >> "$GITHUB_OUTPUT"
-
-      - name: App — xcodebuild test
-        run: |
-          set -o pipefail
-          log="$RUNNER_TEMP/xcodebuild-test.log"
-          xcodebuild test \
-            -scheme Tovis \
-            -project tovis-ios.xcodeproj \
-            -destination "id=${{ steps.sim.outputs.udid }}" \
-            -configuration Debug \
-            CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$log"
-          # Same empty-run guard as above. Note the legacy XCTest summary always
-          # prints "Executed 0 tests" here because TovisTests uses Swift Testing
-          # (`import Testing`), so that line is NOT a usable signal — count the
-          # Swift Testing summary instead.
-          count=$(grep -oE 'Test run with [0-9]+ test' "$log" \
-            | grep -oE '[0-9]+' | tail -1)
-          if [ -z "$count" ] || [ "$count" -lt 1 ]; then
-            echo "::error::app test run reported success but ran no tests"
-            exit 1
-          fi
-          echo "App tests executed: $count" >> "$GITHUB_STEP_SUMMARY"
