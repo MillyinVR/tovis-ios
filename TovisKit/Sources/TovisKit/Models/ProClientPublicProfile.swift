@@ -73,8 +73,9 @@ public struct ProClientPublicLook: Decodable, Sendable, Identifiable {
     public let name: String
     public let imageUrl: String?
     public let saveCount: Int
-    /// The web look-detail path (`/looks/{id}`). Carried for parity / future
-    /// native routing; the pro view opens the image fullscreen for now.
+    /// The web look-detail path (`/looks/{id}`). Carried for parity; the native
+    /// grid navigates with `id` directly (the same value the server builds this
+    /// href from), so no parse is needed.
     public let href: String
 
     public init(from decoder: Decoder) throws {

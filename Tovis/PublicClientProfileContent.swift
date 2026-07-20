@@ -41,14 +41,11 @@ struct PublicClientProfileContent: View {
     /// hosts (the pro chart).
     var toggleFollow: (() async throws -> FollowState)? = nil
 
-    @State private var viewingMedia: FullscreenMedia?
-
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             header
             looksSection(profile.looks)
         }
-        .mediaFullscreenCover($viewingMedia)
     }
 
     // MARK: - Header
@@ -90,14 +87,15 @@ struct PublicClientProfileContent: View {
                     spacing: 10
                 ) {
                     ForEach(looks) { look in
-                        Button {
-                            guard let url = look.imageUrl else { return }
-                            viewingMedia = FullscreenMedia.remote(id: look.id, urlString: url, isVideo: false)
+                        // §19f — a public-looks tile IS a look, so tapping it opens
+                        // the look post rather than a bare image, matching web and
+                        // the pro portfolio grid. `id` is the look-post id.
+                        NavigationLink {
+                            LookDetailView(lookId: look.id)
                         } label: {
                             lookTile(look)
                         }
                         .buttonStyle(.plain)
-                        .disabled(look.imageUrl == nil)
                     }
                 }
             }

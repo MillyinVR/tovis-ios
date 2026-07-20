@@ -48,8 +48,9 @@ public struct PublicBoardLook: Decodable, Sendable, Identifiable {
     public let id: String
     public let name: String
     public let imageUrl: String?
-    /// The web look-detail path (`/looks/{id}`). Carried for parity / future native
-    /// routing; the viewer opens the image fullscreen for now.
+    /// The web look-detail path (`/looks/{id}`). Carried for parity; the native
+    /// grid navigates with `id` directly (the same value the server builds this
+    /// href from), so no parse is needed.
     public let href: String
     /// Normalized subject focal point (camera C6), [0,1] top-left. The board grid's
     /// cover-cropped tiles center here; nil → center (`focalPoint`). Decoded
