@@ -246,7 +246,7 @@ struct ProAftercareAuthorView: View {
     }
 
     private var rebookSection: some View {
-        BrandSection(title: "Rebook recommendation") {
+        BrandSection(title: "Rebook") {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {
                     modeChip("None", mode: .none)
@@ -283,10 +283,10 @@ struct ProAftercareAuthorView: View {
     private var bookedModeBody: some View {
         BrandSurface {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Propose an exact next appointment from your open times (same service + location as this booking).")
+                Text("Book the exact next appointment from your open times (same service + location as this booking). Saving books it on your calendar right away and notifies the client — nothing for them to confirm.")
                     .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
                 if rebookOfferingId.isEmpty || professionalId.isEmpty {
-                    Text("This booking has no service offering set, so an exact next appointment can’t be proposed. Use “Booking window” instead.")
+                    Text("This booking has no service offering set, so an exact next appointment can’t be booked. Use “Booking window” instead.")
                         .font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
                 } else if rebookLocationType == "MOBILE" && effectiveRebookClientAddressId == nil {
                     // No source address AND no saved address to choose from —
@@ -810,7 +810,7 @@ struct ProAftercareAuthorView: View {
     private func validate(sendToClient: Bool) -> String? {
         if rebookMode == .booked {
             if rebookOfferingId.isEmpty {
-                return "This booking has no service offering set, so an exact next appointment can’t be proposed. Use “Booking window” instead."
+                return "This booking has no service offering set, so an exact next appointment can’t be booked. Use “Booking window” instead."
             }
             if rebookLocationType == "MOBILE" && effectiveRebookClientAddressId == nil {
                 return "This client has no saved service address, so a mobile next appointment can’t be proposed. Use “Booking window” instead."
