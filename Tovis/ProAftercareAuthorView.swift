@@ -56,6 +56,16 @@ struct ProAftercareAuthorView: View {
     /// MOBILE source bookings: the client's saved service address, reused so
     /// the slot picker can query mobile availability (nil for SALON).
     @State private var rebookClientAddressId: String?
+    /// MOBILE: the booking client's ClientProfile id — keys the saved-address
+    /// list so the pro can pick WHERE the next appointment happens.
+    @State private var rebookClientProfileId: String?
+    /// MOBILE: the client's saved service addresses (nil = not loaded/failed —
+    /// the picker then falls back to the source booking's address).
+    @State private var clientAddresses: [ProClientAddress]?
+    /// MOBILE: the pro-picked destination for the proposed next appointment.
+    /// Rides the availability query AND the saved proposal, so the two can
+    /// never disagree.
+    @State private var selectedClientAddressId: String?
     @State private var rebookDurationMinutes = 60
     @State private var selectedSlot: String?   // chosen ISO start instant
 
@@ -264,6 +274,11 @@ struct ProAftercareAuthorView: View {
         }
     }
 
+    /// The address the availability query and the saved proposal will use.
+    private var effectiveRebookClientAddressId: String? {
+        selectedClientAddressId ?? rebookClientAddressId
+    }
+
     @ViewBuilder
     private var bookedModeBody: some View {
         BrandSurface {
@@ -273,12 +288,13 @@ struct ProAftercareAuthorView: View {
                 if rebookOfferingId.isEmpty || professionalId.isEmpty {
                     Text("This booking has no service offering set, so an exact next appointment can’t be proposed. Use “Booking window” instead.")
                         .font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
-                } else if rebookLocationType == "MOBILE" && rebookClientAddressId == nil {
-                    // Mobile availability is checked against the client's saved
-                    // service address; without one the picker would only error.
-                    Text("This mobile booking has no saved client service address, so open times can’t be checked. Use “Booking window” instead.")
+                } else if rebookLocationType == "MOBILE" && effectiveRebookClientAddressId == nil {
+                    // No source address AND no saved address to choose from —
+                    // mobile availability can't be checked for anywhere.
+                    Text("This client has no saved service address, so a mobile next appointment can’t be proposed. Use “Booking window” instead.")
                         .font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
                 } else {
+                    if rebookLocationType == "MOBILE" { addressPickerRow }
                     ProOpenSlotPicker(
                         professionalId: professionalId,
                         serviceId: rebookServiceId,
@@ -287,12 +303,73 @@ struct ProAftercareAuthorView: View {
                         locationType: rebookLocationType,
                         locationTimeZone: timeZone,
                         durationMinutes: rebookDurationMinutes,
-                        clientAddressId: rebookClientAddressId,
+                        clientAddressId: effectiveRebookClientAddressId,
                         selectedSlot: $selectedSlot,
                     )
                 }
             }
         }
+    }
+
+    /// MOBILE: pick which of the client's saved service addresses the next
+    /// appointment is at. With no loaded list (older backend / fetch failure)
+    /// the row is informational and the source booking's address is used.
+    @ViewBuilder
+    private var addressPickerRow: some View {
+        let addresses = clientAddresses ?? []
+        HStack(alignment: .firstTextBaseline) {
+            Text("Service address")
+                .font(BrandFont.body(13)).foregroundStyle(BrandColor.textSecondary)
+            Spacer()
+            if addresses.count > 1 {
+                Menu {
+                    ForEach(addresses) { address in
+                        Button {
+                            guard selectedClientAddressId != address.id else { return }
+                            selectedClientAddressId = address.id
+                            // The picked slot came from the previous address's
+                            // travel-aware availability — re-pick for the new one.
+                            selectedSlot = nil
+                        } label: {
+                            if effectiveRebookClientAddressId == address.id {
+                                Label(addressMenuLabel(address), systemImage: "checkmark")
+                            } else {
+                                Text(addressMenuLabel(address))
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(selectedAddressDisplayLabel)
+                            .font(BrandFont.body(12, .semibold))
+                            .lineLimit(1)
+                        Image(systemName: "chevron.up.chevron.down").font(.system(size: 10))
+                    }
+                    .foregroundStyle(BrandColor.accent)
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .background(BrandColor.accent.opacity(0.12)).clipShape(Capsule())
+                }
+                .disabled(saving)
+            } else {
+                Text(selectedAddressDisplayLabel)
+                    .font(BrandFont.body(12, .semibold))
+                    .foregroundStyle(BrandColor.textPrimary)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    private func addressMenuLabel(_ address: ProClientAddress) -> String {
+        address.formattedAddress.isEmpty
+            ? address.label
+            : "\(address.label) — \(address.formattedAddress)"
+    }
+
+    private var selectedAddressDisplayLabel: String {
+        if let selected = clientAddresses?.first(where: { $0.id == effectiveRebookClientAddressId }) {
+            return addressMenuLabel(selected)
+        }
+        return "This appointment’s address"
     }
 
     private func modeChip(_ label: String, mode: RebookMode) -> some View {
@@ -326,6 +403,11 @@ struct ProAftercareAuthorView: View {
                 }
             }
             .labelsHidden().tint(BrandColor.accent)
+            // Pin to the appointment's zone — same as ProOpenSlotPicker's day
+            // stepper — so the day the pro SEES is the day that's encoded.
+            // (Unpinned, a device east/west of the location can shift the
+            // window a calendar day at the isoStartOfDay conversion.)
+            .environment(\.timeZone, apptZone)
             .onChange(of: date.wrappedValue) {
                 has.wrappedValue = true
                 onDateChange?()
@@ -333,11 +415,23 @@ struct ProAftercareAuthorView: View {
         }
     }
 
+    /// The appointment's zone (the location's, falling back to the device's) —
+    /// every window-day computation must use this one zone.
+    private var apptZone: TimeZone {
+        TimeZone(identifier: timeZone ?? "") ?? .current
+    }
+
+    private var apptCalendar: Calendar {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = apptZone
+        return cal
+    }
+
     /// The window end can never be picked earlier than the day after the start —
     /// mirrors web's end `<input min={start + 1 day}>` and reuses the same
     /// `in: start...`-style bound already used in `ProBlockTimeSheet`.
     private var windowEndLowerBound: Date {
-        let cal = Calendar.current
+        let cal = apptCalendar
         return cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: windowStart))
             ?? windowStart
     }
@@ -349,7 +443,7 @@ struct ProAftercareAuthorView: View {
     /// (decided w/ Tori 2026-07-09). The floor stays "end after start"; only this
     /// automatic advance lands on the span.
     private func bumpWindowEndAfterStart() {
-        let cal = Calendar.current
+        let cal = apptCalendar
         guard cal.startOfDay(for: windowEnd) <= cal.startOfDay(for: windowStart) else { return }
         windowEnd = cal.date(
             byAdding: .day, value: Self.suggestedWindowSpanDays,
@@ -543,8 +637,20 @@ struct ProAftercareAuthorView: View {
                 rebookLocationType = detail.locationType.uppercased() == "SALON" ? "SALON" : "MOBILE"
                 rebookClientAddressId =
                     rebookLocationType == "MOBILE" ? detail.clientAddressId : nil
+                rebookClientProfileId = detail.client.id
                 rebookDurationMinutes = detail.totalDurationMinutes > 0 ? detail.totalDurationMinutes : 60
             }
+
+            // MOBILE: the pro picks WHICH saved client address the next
+            // appointment is at. Best-effort — with no list the picker simply
+            // reuses the source booking's address as before.
+            if rebookLocationType == "MOBILE", let clientProfileId = rebookClientProfileId {
+                clientAddresses = try? await session.client.proClients
+                    .serviceAddresses(clientId: clientProfileId)
+            }
+            selectedClientAddressId = rebookClientAddressId
+                ?? clientAddresses?.first(where: \.isDefault)?.id
+                ?? clientAddresses?.first?.id
 
             // Media exists independently of any aftercare draft (captured during
             // the session), so set it before the summary guard returns early.
@@ -584,6 +690,12 @@ struct ProAftercareAuthorView: View {
             }
             if summary.rebookMode == RebookMode.booked.rawValue {
                 rebookMode = .booked   // the slot picker prompts a fresh pick
+                // Keep the address the saved proposal was made for (when it is
+                // still one of the client's saved addresses).
+                if let savedAddressId = summary.rebookSlot?.clientAddressId,
+                   clientAddresses?.contains(where: { $0.id == savedAddressId }) ?? true {
+                    selectedClientAddressId = savedAddressId
+                }
             } else if summary.rebookMode == RebookMode.window.rawValue {
                 rebookMode = .window
                 if let start = summary.rebookWindowStart.flatMap(Wire.date) {
@@ -622,7 +734,12 @@ struct ProAftercareAuthorView: View {
             let end = startDate.addingTimeInterval(TimeInterval(rebookDurationMinutes * 60))
             return .init(
                 offeringId: rebookOfferingId, locationId: rebookLocationId,
-                locationType: rebookLocationType, startsAt: start, endsAt: iso(end),
+                locationType: rebookLocationType,
+                // MOBILE: where the next appointment happens — the same address
+                // the availability was computed for. The confirm clones it.
+                clientAddressId: rebookLocationType == "MOBILE"
+                    ? effectiveRebookClientAddressId : nil,
+                startsAt: start, endsAt: iso(end),
             )
         }()
 
@@ -695,6 +812,9 @@ struct ProAftercareAuthorView: View {
             if rebookOfferingId.isEmpty {
                 return "This booking has no service offering set, so an exact next appointment can’t be proposed. Use “Booking window” instead."
             }
+            if rebookLocationType == "MOBILE" && effectiveRebookClientAddressId == nil {
+                return "This client has no saved service address, so a mobile next appointment can’t be proposed. Use “Booking window” instead."
+            }
             guard let slot = selectedSlot, let date = Wire.date(slot), date > Date() else {
                 return "Pick an available next-appointment time, or change rebook mode to “None”."
             }
@@ -703,7 +823,9 @@ struct ProAftercareAuthorView: View {
             guard hasWindowStart, hasWindowEnd else {
                 return "Pick both a start and end date for the recommended booking window."
             }
-            let cal = Calendar.current
+            // Same zone the pickers display in — device-zone day math here can
+            // disagree with what the pro just picked near midnight.
+            let cal = apptCalendar
             if cal.startOfDay(for: windowStart) <= cal.startOfDay(for: Date()) {
                 return "Recommended booking window must start in the future."
             }

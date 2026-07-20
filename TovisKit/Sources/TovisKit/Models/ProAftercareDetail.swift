@@ -69,6 +69,9 @@ public struct ProAftercareRebookSlot: Decodable, Sendable {
     public let offeringId: String?
     public let locationId: String?
     public let locationType: String?
+    /// MOBILE proposals: the client service address the pro picked. Optional so
+    /// older backends (before the address-pick pass) still decode.
+    public let clientAddressId: String?
     public let startsAt: String
     public let endsAt: String
 }
@@ -139,13 +142,25 @@ public struct ProAftercareSaveRequest: Encodable, Sendable {
         public let offeringId: String
         public let locationId: String
         public let locationType: String
+        /// MOBILE slots: the client service address the pro picked for the
+        /// next appointment (the same address the availability was computed
+        /// for). Always nil for SALON; the server also strips it defensively.
+        public let clientAddressId: String?
         public let startsAt: String
         public let endsAt: String
 
-        public init(offeringId: String, locationId: String, locationType: String, startsAt: String, endsAt: String) {
+        public init(
+            offeringId: String,
+            locationId: String,
+            locationType: String,
+            clientAddressId: String? = nil,
+            startsAt: String,
+            endsAt: String
+        ) {
             self.offeringId = offeringId
             self.locationId = locationId
             self.locationType = locationType
+            self.clientAddressId = clientAddressId
             self.startsAt = startsAt
             self.endsAt = endsAt
         }
