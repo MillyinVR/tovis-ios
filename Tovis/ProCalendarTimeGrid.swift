@@ -3,8 +3,8 @@
 // 24-hour timeline at `PX_PER_MINUTE` with a time gutter, one column per visible
 // day, hour rules, a now-line on today, and event tiles positioned by their
 // minutes-since-midnight window (`ProCalendarGrid.eventDayMinutes`). Tapping a
-// tile opens the booking detail or the block editor; tapping empty space starts
-// a new booking (the FAB also blocks personal time).
+// tile opens the booking detail or the block editor; tapping empty space opens
+// the add-appointment / block-personal-time chooser pinned to that instant.
 //
 // Drag-to-reschedule (native port of the web `useDragDrop` + `useConfirmChange`
 // move flow): press-and-hold a booking tile to lift it, then drag vertically to a
@@ -321,8 +321,9 @@ struct ProCalendarTimeGrid: View {
     let events: [ProCalendarEvent]
     let onTapBooking: (String) -> Void
     let onTapBlock: (ProCalendarEvent) -> Void
-    /// Tapping empty grid space → start a new booking prefilled to that instant
-    /// (the tapped column's day + y-position, snapped to the 15-min step).
+    /// Tapping empty grid space → the parent's add-appointment / block-time
+    /// chooser, pinned to that instant (the tapped column's day + y-position,
+    /// snapped to the 15-min step).
     var onTapEmptySlot: ((Date) -> Void)? = nil
     /// Flips when the chrome collapses/expands — re-snaps the timeline to "now"
     /// after the height change.
