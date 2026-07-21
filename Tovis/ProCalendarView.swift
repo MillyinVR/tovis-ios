@@ -22,7 +22,8 @@ struct ProCalendarView: View {
     }
 
     private enum BlockSheetTarget: Identifiable {
-        case create
+        /// `start` pins the sheet to a tapped empty slot; nil = defaultBlockStart.
+        case create(start: Date?)
         case edit(ProCalendarBlock)
         var id: String {
             switch self {
@@ -35,6 +36,10 @@ struct ProCalendarView: View {
             case .create: return .create
             case let .edit(block): return .edit(block)
             }
+        }
+        var createStart: Date? {
+            if case let .create(start) = self { return start }
+            return nil
         }
     }
 
@@ -60,6 +65,9 @@ struct ProCalendarView: View {
     // The "+" FAB opens this chooser: add an appointment or block personal time
     // (web MobileCalendarFab + CalendarCreateSheet).
     @State private var showCreateChooser = false
+    // Tapping an empty grid slot opens the same chooser pinned to that instant
+    // (web click-to-create CalendarCreateSheet). Non-nil = chooser presented.
+    @State private var emptySlotChoice: Date?
     @State private var editorErrorMessage: String?
 
     // Auto-accept toggle + active-location filter + pending-request quick actions
@@ -234,7 +242,7 @@ struct ProCalendarView: View {
                 ProBlockTimeSheet(
                     mode: target.sheetMode,
                     locations: locations,
-                    defaultStart: defaultBlockStart,
+                    defaultStart: target.createStart ?? defaultBlockStart,
                     timeZone: calendarTimeZone,
                     onSaved: { Task { await load() } }
                 )
@@ -271,7 +279,26 @@ struct ProCalendarView: View {
                     newBookingNav = NewBookingNav(date: defaultBlockStart)
                 }
                 Button("Block personal time") {
-                    blockSheet = .create
+                    blockSheet = .create(start: nil)
+                }
+                Button("Cancel", role: .cancel) {}
+            }
+            // Empty-slot tap chooser: same two branches, pinned to the tapped
+            // instant so both the booking form and the block sheet open there.
+            .confirmationDialog(
+                emptySlotChoiceTitle,
+                isPresented: Binding(
+                    get: { emptySlotChoice != nil },
+                    set: { if !$0 { emptySlotChoice = nil } }
+                ),
+                titleVisibility: .visible,
+                presenting: emptySlotChoice
+            ) { date in
+                Button("Add appointment") {
+                    newBookingNav = NewBookingNav(date: date)
+                }
+                Button("Block personal time") {
+                    blockSheet = .create(start: date)
                 }
                 Button("Cancel", role: .cancel) {}
             }
@@ -340,6 +367,17 @@ struct ProCalendarView: View {
         workingWeeks = weeks
     }
 
+    // Chooser title for a tapped empty slot, e.g.
+    // "Add to your calendar · Tue, Jul 21, 2:30 PM" (in the calendar's zone).
+    private var emptySlotChoiceTitle: String {
+        guard let date = emptySlotChoice else { return "Add to your calendar" }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US")
+        f.timeZone = calendarTimeZone
+        f.dateFormat = "EEE, MMM d, h:mm a"
+        return "Add to your calendar · " + f.string(from: date)
+    }
+
     // Default start for a new block: the selected day, bumped to the next 15-min
     // slot when that day is today (so it isn't already in the past).
     private var defaultBlockStart: Date {
@@ -388,7 +426,7 @@ struct ProCalendarView: View {
         pendingManagementAction = nil
         switch action {
         case .addBlock:
-            blockSheet = .create
+            blockSheet = .create(start: nil)
         case let .editBlock(block):
             blockSheet = .edit(block)
         case .none:
@@ -434,7 +472,7 @@ struct ProCalendarView: View {
                     events: data.events,
                     onTapBooking: { id in bookingNav = BookingNav(id: id) },
                     onTapBlock: { event in openBlockEditor(event) },
-                    onTapEmptySlot: { date in newBookingNav = NewBookingNav(date: date) },
+                    onTapEmptySlot: { date in emptySlotChoice = date },
                     collapseToggle: chromeCollapsed,
                     workingWeeks: workingWeeks,
                     pendingMove: $pendingMove,
