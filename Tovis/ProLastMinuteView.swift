@@ -261,6 +261,10 @@ struct ProLastMinuteView: View {
                     }
                 }
 
+                if let notice = opening.visibility.noticeText {
+                    visibilityNotice(notice, isFault: opening.visibility.isFault)
+                }
+
                 if let note = opening.note, !note.isEmpty {
                     Text(note)
                         .font(BrandFont.body(12))
@@ -288,6 +292,28 @@ struct ProLastMinuteView: View {
                 }
             }
         }
+    }
+
+    /// tovis-app F16: the opening row is alive but no client can see its time.
+    /// Amber is for something the pro has to fix; the accent is for the one
+    /// state that resolves itself — a claim already in flight.
+    private func visibilityNotice(_ text: String, isFault: Bool) -> some View {
+        let tint = isFault ? BrandColor.amber : BrandColor.accent
+
+        return HStack(alignment: .top, spacing: 7) {
+            Image(systemName: isFault ? "eye.slash.fill" : "clock.fill")
+                .font(BrandFont.body(11, .semibold))
+            Text(text)
+                .font(BrandFont.body(12, .semibold))
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .foregroundStyle(tint)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(tint.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private func tierPlanRow(_ plan: ProOpeningDto.TierPlan, timeZone: String) -> some View {
