@@ -73,7 +73,8 @@ struct ProWaitlistView: View {
         }
         .sheet(item: $offerTarget) { target in
             ProWaitlistOfferSheet(
-                entry: target.entry,
+                waitlistEntryId: target.entry.waitlistEntryId,
+                clientName: target.entry.clientName,
                 serviceId: target.serviceId,
                 serviceName: target.serviceName
             ) { clientName in

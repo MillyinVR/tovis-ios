@@ -11,9 +11,10 @@
 //   • in-salon location ← proCalendar.locations() (bookable SALON/SUITE, primary
 //     first — mirrors web's `offerSalonLocation`)
 //   • offeringId + duration ← proBookings.sellableServices("SALON") matched on the
-//     waitlist group's serviceId (absent ⇒ no active in-salon offering ⇒ blocked,
-//     matching web's `offeringId === null` empty state)
-// so it can be reached straight from a waitlist row.
+//     row's serviceId (absent ⇒ no active in-salon offering ⇒ blocked, matching
+//     web's `offeringId === null` empty state)
+// so it can be reached straight from a waitlist row — the outreach workspace's
+// (`ProWaitlistView`) and the pro calendar's management sheet's alike.
 import SwiftUI
 import TovisKit
 
@@ -21,7 +22,12 @@ struct ProWaitlistOfferSheet: View {
     @Environment(SessionModel.self) private var session
     @Environment(\.dismiss) private var dismiss
 
-    let entry: ProWaitlistEntry
+    // Identified by the bare entry id + the client's name rather than a whole
+    // `ProWaitlistEntry`, because the pro calendar reaches this sheet too and its
+    // waitlist rows are `ProCalendarEvent`s, not outreach entries. These are the
+    // same four props web's `WaitlistOfferModal` takes.
+    let waitlistEntryId: String
+    let clientName: String
     let serviceId: String
     let serviceName: String
     /// Called on a successful offer with the client's name so the caller can
@@ -59,7 +65,7 @@ struct ProWaitlistOfferSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("Propose a time to \(clientName) for \(serviceName). They’ll confirm before it books.")
+                    Text("Propose a time to \(displayClientName) for \(serviceName). They’ll confirm before it books.")
                         .font(BrandFont.body(13))
                         .foregroundStyle(BrandColor.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -153,8 +159,9 @@ struct ProWaitlistOfferSheet: View {
         }
     }
 
-    private var clientName: String {
-        entry.clientName.isEmpty ? "this client" : entry.clientName
+    /// The name as the sentence reads it — a waitlist row can arrive without one.
+    private var displayClientName: String {
+        clientName.isEmpty ? "this client" : clientName
     }
 
     // MARK: - Data
@@ -224,13 +231,13 @@ struct ProWaitlistOfferSheet: View {
 
         do {
             _ = try await session.client.proSchedule.offerWaitlistSlot(
-                waitlistEntryId: entry.waitlistEntryId,
+                waitlistEntryId: waitlistEntryId,
                 scheduledFor: slot,
                 endsAt: endIso,
                 locationId: ctx.locationId,
                 durationMinutes: ctx.durationMinutes
             )
-            onOffered(entry.clientName)
+            onOffered(displayClientName)
             dismiss()
         } catch let error as APIError {
             sendError = error.userMessage

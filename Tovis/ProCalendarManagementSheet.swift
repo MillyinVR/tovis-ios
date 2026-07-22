@@ -5,7 +5,8 @@
 //   • Pending  — every pending request, with approve / deny + a link to the client
 //   • Blocked  — personal blocked time for the timeframe (tap to edit, + to add)
 //   • Waitlist — the full active waitlist with each client's service + preferred
-//                time, and "Offer a time" to book them a matching slot
+//                time, and "Offer a time" to propose them a matching slot (the
+//                client confirms before it books, and the slot is held meanwhile)
 // Booked / Blocked are derived from the fetched range events (so they follow the
 // day/week/month view); Pending / Waitlist come from the management buckets.
 import SwiftUI
@@ -53,14 +54,29 @@ struct ProCalendarManagementSheet: View {
         let fullName: String
     }
     private struct BookingTarget: Identifiable, Hashable { let id: String }
+    /// The new-booking deep-link fallback: books the appointment outright, with no
+    /// offer for the client to confirm. Only used for rows the offer flow can't
+    /// take (see `offerSheetTarget`).
     private struct OfferTarget: Identifiable, Hashable {
         let id = UUID()
         let clientId: String
         let offeringId: String
     }
+    /// A waitlist row queued for the real offer flow — propose a time, the client
+    /// confirms, and the slot is held meanwhile.
+    private struct OfferSheetTarget: Identifiable {
+        let waitlistEntryId: String
+        let clientName: String
+        let serviceId: String
+        let serviceName: String
+        var id: String { waitlistEntryId }
+    }
     @State private var chartTarget: ChartTarget?
     @State private var bookingTarget: BookingTarget?
     @State private var offerTarget: OfferTarget?
+    @State private var offerSheetTarget: OfferSheetTarget?
+    /// "Offer sent to …" after a successful offer, mirroring the outreach workspace.
+    @State private var offerConfirmation: String?
     // Message a client from a row → resolve-or-create the BOOKING/WAITLIST thread
     // and push ThreadView (web parity: the "Message" action). `messageWorkingId`
     // is the row currently resolving (drives its spinner + disables the others).
@@ -131,6 +147,17 @@ struct ProCalendarManagementSheet: View {
             .navigationDestination(item: $messageNav) { nav in
                 ThreadView(thread: nav.thread)
             }
+            .sheet(item: $offerSheetTarget) { target in
+                ProWaitlistOfferSheet(
+                    waitlistEntryId: target.waitlistEntryId,
+                    clientName: target.clientName,
+                    serviceId: target.serviceId,
+                    serviceName: target.serviceName
+                ) { name in
+                    offerConfirmation = "Offer sent to \(name)."
+                    Task { await onReload() }
+                }
+            }
             .tint(BrandColor.accent)
         }
     }
@@ -148,6 +175,7 @@ struct ProCalendarManagementSheet: View {
                         // tabs), so clear it on a switch or it reads as a
                         // complaint about whichever rows you just landed on.
                         messageError = nil
+                        offerConfirmation = nil
                         withAnimation(.easeOut(duration: 0.15)) { selectedTab = tab }
                     } label: {
                         Text("\(tab.shortTitle) (\(list(for: tab).count))")
@@ -199,6 +227,15 @@ struct ProCalendarManagementSheet: View {
                     Text(messageError)
                         .font(BrandFont.body(12))
                         .foregroundStyle(BrandColor.ember)
+                }
+
+                // Sending an offer is silent otherwise: the reload moves the row
+                // to its "Offered ·" state, which is easy to miss on a list you
+                // were already looking at.
+                if let offerConfirmation, selectedTab == .waitlist {
+                    Text(offerConfirmation)
+                        .font(BrandFont.body(12, .semibold))
+                        .foregroundStyle(BrandColor.accent)
                 }
 
                 let rows = list(for: selectedTab)
@@ -328,13 +365,35 @@ struct ProCalendarManagementSheet: View {
                         .font(BrandFont.body(12))
                         .foregroundStyle(BrandColor.textMuted)
                         .lineLimit(1)
+
+                    // Two lines rather than one: on the outreach row a single line
+                    // truncated the TIME itself ("1:00…"), which is the only part
+                    // worth reading. Same rule here.
+                    if let offer = event.pendingOffer {
+                        Text("Offered · \(Wire.dateTime(offer.startsAt, timeZone: event.timeZone ?? timeZone)) · slot held")
+                            .font(BrandFont.body(12, .semibold))
+                            .foregroundStyle(BrandColor.accent)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 2)
+                    }
                 }
                 Spacer()
             }
 
             HStack(spacing: 10) {
-                if let target = offerTarget(from: event.offerHref) {
-                    primaryButton("Offer a time") { offerTarget = target }
+                // Same precedence as web's ManagementModal:
+                //   1. a live offer ⇒ no offer action at all (it is promised and,
+                //      since F14, the slot is reserved — the next move is to wait
+                //      or message, not to stack a second offer);
+                //   2. the real offer flow, which the client confirms;
+                //   3. only then the new-booking deep-link, which books outright.
+                if event.pendingOffer == nil {
+                    if let target = offerSheetTarget(for: event) {
+                        primaryButton("Offer a time") { offerSheetTarget = target }
+                    } else if let target = offerTarget(from: event.offerHref) {
+                        primaryButton("Book a time") { offerTarget = target }
+                    }
                 }
                 messageButton(event)
                 Spacer(minLength: 0)
@@ -441,6 +500,26 @@ struct ProCalendarManagementSheet: View {
     }
 
     // MARK: - Actions
+
+    /// The real offer flow for a waitlist row — propose a time the client
+    /// confirms. Requires the ids `POST /pro/waitlist/{entryId}/offer` and the
+    /// sheet's own offering lookup need; a row without them falls back to the
+    /// new-booking deep-link, exactly as web's ManagementModal does.
+    private func offerSheetTarget(for event: ProCalendarEvent) -> OfferSheetTarget? {
+        guard event.canOfferWaitlistTime,
+              let waitlistEntryId = event.waitlistEntryId,
+              let serviceId = event.serviceId
+        else { return nil }
+
+        return OfferSheetTarget(
+            waitlistEntryId: waitlistEntryId,
+            clientName: event.clientName,
+            serviceId: serviceId,
+            // The row's title IS the service name (`toWaitlistEvent` sets both
+            // from the same value); `details.serviceName` is not modeled here.
+            serviceName: event.title.isEmpty ? "this service" : event.title
+        )
+    }
 
     private func offerTarget(from href: String?) -> OfferTarget? {
         guard let href, let comps = URLComponents(string: href) else { return nil }

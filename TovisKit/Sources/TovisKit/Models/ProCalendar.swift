@@ -61,7 +61,24 @@ public struct ProCalendarEvent: Decodable, Sendable, Identifiable {
     /// Waitlist rows only: web deep-link (`/pro/bookings/new?...`) carrying the
     /// client + offering the pro can offer a matching slot for. nil when the pro
     /// has no active offering for the requested service.
+    ///
+    /// ⚠️ This is the *fallback* action, not the primary one — following it books
+    /// the appointment outright. Prefer `canOfferWaitlistTime` + the offer sheet,
+    /// which proposes a time the client confirms (and which reserves the slot
+    /// meanwhile). Web's `ManagementModal` orders the two the same way.
     public let offerHref: String?
+    /// Waitlist rows only: the bare waitlist entry id (the row's `id` is namespaced
+    /// `waitlist:{id}`), which `POST /pro/waitlist/{entryId}/offer` expects.
+    public let waitlistEntryId: String?
+    /// Waitlist rows only: the service the client is waiting for.
+    public let serviceId: String?
+    /// Waitlist rows only: the pro's active offering for `serviceId`, or nil when
+    /// they have none — in which case there is nothing to offer at all.
+    public let offeringId: String?
+    /// Waitlist rows only: a time already offered to this client and still
+    /// awaiting their answer. Present ⇒ show it instead of an offer action, so the
+    /// pro can't quietly stack a second offer on the same entry.
+    public let pendingOffer: ProWaitlistPendingOffer?
 
     public var isBooking: Bool { kind == "BOOKING" }
     public var isBlock: Bool { kind == "BLOCK" }
@@ -75,6 +92,17 @@ public struct ProCalendarEvent: Decodable, Sendable, Identifiable {
         let prefix = "block:"
         if id.hasPrefix(prefix) { return String(id.dropFirst(prefix.count)) }
         return id
+    }
+
+    /// Whether this row can be offered a concrete time the client then confirms.
+    /// Mirrors web `ManagementModal`'s `canOfferTime`: a waitlist row that carries
+    /// both an entry id and an active offering. A row without an offering has
+    /// nothing bookable behind it, so neither platform offers an action for it.
+    public var canOfferWaitlistTime: Bool {
+        isWaitlist
+            && !(waitlistEntryId?.isEmpty ?? true)
+            && !(serviceId?.isEmpty ?? true)
+            && !(offeringId?.isEmpty ?? true)
     }
 }
 
