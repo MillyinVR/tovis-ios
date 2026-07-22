@@ -195,6 +195,89 @@ private extension URLRequest {
         #expect(json["locationType"] as? String == "MOBILE")
     }
 
+    // MARK: - Client visibility (tovis-app F16)
+
+    /// The same opening, plus the server's verdict on whether clients can still
+    /// see its time.
+    private static func openingJSON(visibility: String) -> String {
+        """
+        {
+          "id":"op_1","status":"ACTIVE","visibilityMode":"PUBLIC_AT_DISCOVERY",
+          "startAt":"2026-07-11T18:00:00Z","endAt":null,"note":null,
+          "locationType":"SALON","timeZone":"America/New_York","recipientCount":3,
+          "clientVisibility":"\(visibility)",
+          "location":null,"services":[],"tierPlans":[]
+        }
+        """
+    }
+
+    private func firstOpening(visibility: String) async throws -> ProOpeningDto {
+        reset(response: "{\"ok\":true,\"openings\":[\(Self.openingJSON(visibility: visibility))]}")
+        return try #require(try await makeService().listOpenings().first)
+    }
+
+    @Test func decodesTheVisibilityVerdictAndItsCopy() async throws {
+        let opening = try await firstOpening(visibility: "TIME_BOOKED")
+
+        #expect(opening.visibility == .timeBooked)
+        #expect(opening.visibility.isFault)
+        #expect(opening.visibility.noticeText
+            == "Not visible to clients — that time is already booked.")
+    }
+
+    /// A hold on the slot is usually a client mid-claim on THIS opening — the
+    /// feature working. It gets copy, but must not be dressed up as a fault.
+    @Test func aClaimInFlightIsSaidWithoutBeingCalledAFault() async throws {
+        let opening = try await firstOpening(visibility: "BEING_CLAIMED")
+
+        #expect(opening.visibility == .beingClaimed)
+        #expect(opening.visibility.isFault == false)
+        #expect(opening.visibility.noticeText
+            == "On hold — a booking for this time is in progress.")
+    }
+
+    // ALLOW CASE ×3. A card that badges everything would satisfy every
+    // assertion above; these are what pin it to silence when there is nothing
+    // to say — including against a server older or newer than this build.
+    @Test func saysNothingWhenThereIsNothingToSay() async throws {
+        let live = try await firstOpening(visibility: "VISIBLE")
+        #expect(live.visibility == .visible)
+        #expect(live.visibility.noticeText == nil)
+        #expect(live.visibility.isFault == false)
+
+        // A server that grew a state this build has never heard of.
+        let unknown = try await firstOpening(visibility: "SOMETHING_NEW")
+        #expect(unknown.visibility == .notChecked)
+        #expect(unknown.visibility.noticeText == nil)
+
+        // An older server, which sends no such key at all — the original
+        // fixture, decoded by the same path.
+        reset(response: "{\"ok\":true,\"openings\":[\(Self.openingJSON)]}")
+        let legacy = try #require(try await makeService().listOpenings().first)
+        #expect(legacy.clientVisibility == nil)
+        #expect(legacy.visibility == .notChecked)
+        #expect(legacy.visibility.noticeText == nil)
+    }
+
+    /// Exactly the two silent states are silent, and every other state both
+    /// says something and is a fault. Pins the table against a case added later
+    /// with a nil `noticeText` — which would render as no badge at all.
+    @Test func everyStateIsEitherSilentOrExplained() {
+        for state in ProOpeningClientVisibility.allCases {
+            switch state {
+            case .visible, .notChecked:
+                #expect(state.noticeText == nil)
+                #expect(state.isFault == false)
+            case .beingClaimed:
+                #expect(state.noticeText != nil)
+                #expect(state.isFault == false)
+            default:
+                #expect(state.noticeText != nil, "\(state.rawValue) says nothing")
+                #expect(state.isFault, "\(state.rawValue) is not flagged")
+            }
+        }
+    }
+
     @Test func cancelOpeningSendsIdQuery() async throws {
         reset(response: "{\"ok\":true,\"id\":\"op_1\",\"alreadyCancelled\":false}")
 
