@@ -55,9 +55,19 @@ struct ProProfileView: View {
     @State private var helpfulCountByReview: [String: Int] = [:]
     @State private var helpfulBusy: Set<String> = []
 
+    /// The offering to book plus the pro's display name, carried together. The
+    /// name used to live in a parallel `@State` written in the same action that
+    /// presents the sheet; the sheet did not see it, so the booking flow rendered
+    /// "with" and no pro. Every other launch site already passes a composite item
+    /// (`DetailBookLaunch`, `RescheduleContext`) — this one was the outlier.
+    private struct BookLaunch: Identifiable {
+        let proName: String
+        let offering: ProOffering
+        var id: String { offering.id }
+    }
+
     // Booking / messaging / lightbox presentation.
-    @State private var bookingOffering: ProOffering?
-    @State private var bookingProName = ""
+    @State private var bookLaunch: BookLaunch?
     @State private var messageNav: MessageThreadNav?
     @State private var messageWorking = false
     @State private var fullscreenMedia: FullscreenMedia?
@@ -95,8 +105,12 @@ struct ProProfileView: View {
         .task {
             if case .loading = phase { await load() }
         }
-        .sheet(item: $bookingOffering) { offering in
-            BookingFlowView(professionalId: professionalId, proName: bookingProName, offering: offering)
+        .sheet(item: $bookLaunch) { launch in
+            BookingFlowView(
+                professionalId: professionalId,
+                proName: launch.proName,
+                offering: launch.offering
+            )
         }
         .navigationDestination(item: $messageNav) { nav in
             ThreadView(thread: nav.thread)
@@ -639,8 +653,10 @@ struct ProProfileView: View {
                         saved: savedServiceIds.contains(offering.serviceId),
                         busy: savingServiceIds.contains(offering.serviceId),
                         onBook: {
-                            bookingProName = profile.header.displayName
-                            bookingOffering = offering
+                            bookLaunch = BookLaunch(
+                                proName: profile.header.displayName,
+                                offering: offering
+                            )
                         },
                         onToggleSave: {
                             Task { await toggleServiceSave(offering.serviceId) }
