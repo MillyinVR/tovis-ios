@@ -92,6 +92,27 @@ public enum Wire {
         isoWithFraction.string(from: Date())
     }
 
+    /// The zone a free wall-clock entry is **interpreted in** when a pro types a
+    /// custom appointment time — the booking location's zone, or UTC.
+    ///
+    /// ⚠️ Deliberately does NOT fall back to `.current` like the formatters above.
+    /// Those render an instant the server already fixed; this one *creates* the
+    /// instant from wall-clock components, so the zone decides which moment gets
+    /// booked. Device-zone fallback is the travelling-pro bug: "2:00 PM" typed in
+    /// Tokyo would book a different moment than the same entry made on web, which
+    /// resolves this field as `isValidIanaTimeZone(location.timeZone) ? tz : 'UTC'`
+    /// (`app/pro/bookings/new/NewBookingForm.tsx` `bookingTimeZone`).
+    ///
+    /// Trims first, matching the server's own `cleanIana`
+    /// (`lib/booking/timeZoneTruth.ts`) — the arbiter of what zone a booking is
+    /// actually in. Callers should show the resolved `identifier` next to the
+    /// picker so the pro can see what their entry means (Darwin spells UTC "GMT").
+    public static func bookingZone(_ timeZone: String?) -> TimeZone {
+        let raw = timeZone?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !raw.isEmpty, let zone = TimeZone(identifier: raw) { return zone }
+        return TimeZone(identifier: "UTC") ?? TimeZone(secondsFromGMT: 0) ?? .current
+    }
+
     /// Format a decimal-string amount (e.g. "120.00") as USD currency: "$120".
     public static func money(_ amount: String?) -> String? {
         guard let amount else { return nil }

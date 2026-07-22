@@ -437,9 +437,15 @@ struct ProNewBookingView: View {
                         DatePicker("", selection: $manualTime, displayedComponents: [.date, .hourAndMinute])
                             .labelsHidden().tint(BrandColor.accent)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            // Read the typed wall time in the BOOKING location's
+                            // zone, not the device's — this picker creates the
+                            // instant, so unpinned a travelling pro's "2:00 PM"
+                            // books a different moment than the same entry on web.
+                            .environment(\.timeZone, bookingZone)
                     }
-                    Text("Off-grid times may need the scheduling overrides below.")
+                    Text("Interpreted in \(bookingZone.identifier) (the selected booking location), then stored as UTC. Off-grid times may need the scheduling overrides below.")
                         .font(BrandFont.body(11)).foregroundStyle(BrandColor.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
                 } else if let offering = selectedOffering, let location = selectedLocation {
                     ProOpenSlotPicker(
                         professionalId: professionalId,
@@ -609,6 +615,10 @@ struct ProNewBookingView: View {
     private var selectedLocation: ProLocationSummary? {
         modeLocations.first { $0.id == locationId }
     }
+    /// The zone a custom-time entry is read in — the booking location's, falling
+    /// back to UTC (never the device's). Mirrors web `NewBookingForm`'s
+    /// `bookingTimeZone`; see `Wire.bookingZone`.
+    private var bookingZone: TimeZone { Wire.bookingZone(selectedLocation?.timeZone) }
     /// The duration to schedule against for the chosen mode.
     private func durationMinutes(_ offering: ProOfferingAdmin) -> Int {
         (bookingMode == .mobile ? offering.mobileDurationMinutes : offering.salonDurationMinutes) ?? 60
@@ -810,12 +820,12 @@ struct ProNewBookingView: View {
         defer { creating = false }
 
         // Slot mode uses the chosen instant directly; custom mode formats the
-        // free date/time.
+        // free date/time. `manualTime` is an absolute instant either way — the
+        // picker's pinned zone is what decided WHICH instant the typed wall time
+        // meant, so this serialization stays plain UTC.
         let scheduledISO: String
         if manualMode {
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime]
-            scheduledISO = formatter.string(from: manualTime)
+            scheduledISO = ProCalendarGrid.iso(manualTime)
         } else if let slot = selectedSlot {
             scheduledISO = slot
         } else {
