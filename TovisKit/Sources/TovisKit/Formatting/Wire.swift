@@ -32,6 +32,18 @@ public enum Wire {
         return f.string(from: date)
     }
 
+    /// e.g. "6:15 PM" rendered in `timeZone` (or the device zone). Time only —
+    /// mirrors web's `{ hour: 'numeric', minute: '2-digit' }`. Returns "" for an
+    /// unparseable value.
+    public static func timeOnly(_ iso: String, timeZone: String? = nil) -> String {
+        guard let date = date(iso) else { return "" }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US")
+        f.timeZone = timeZone.flatMap(TimeZone.init(identifier:)) ?? .current
+        f.dateFormat = "h:mm a"
+        return f.string(from: date)
+    }
+
     /// e.g. "Jul 1, 2026" rendered in `timeZone` (or the device zone). Date only.
     public static func dateOnly(_ iso: String, timeZone: String? = nil) -> String {
         guard let date = date(iso) else { return "" }
