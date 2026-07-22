@@ -36,6 +36,11 @@ struct ProConsultationFormView: View {
     @State private var loadingServices = true
     @State private var errorText: String?
     @State private var message: String?
+    // F12 — a caution about the appointment's new end time. Separate from
+    // `message` because the send SUCCEEDED: emerald would read "all good" about
+    // the one thing the pro needs to notice, and ember would read "fix this".
+    // Gold is the same pair of values as web's `--tone-warn`.
+    @State private var scheduleNotice: String?
 
     private var total: Double {
         ProConsultationMoney.sum(items.map(\.price))
@@ -112,6 +117,11 @@ struct ProConsultationFormView: View {
                     Text(message)
                         .font(BrandFont.body(13, .semibold))
                         .foregroundStyle(BrandColor.emerald)
+                }
+                if let scheduleNotice {
+                    Text(scheduleNotice)
+                        .font(BrandFont.body(13, .semibold))
+                        .foregroundStyle(BrandColor.gold)
                 }
                 if let errorText {
                     Text(errorText)
@@ -411,6 +421,7 @@ struct ProConsultationFormView: View {
     private func submit() async {
         errorText = nil
         message = nil
+        scheduleNotice = nil
         guard !items.isEmpty else { errorText = "Add at least one service."; return }
         guard itemsValid else {
             errorText = "Fix line items before sending. Price must be valid and duration must be whole minutes."
@@ -452,6 +463,13 @@ struct ProConsultationFormView: View {
             if result.undeliverable {
                 errorText = "Consultation saved, but we couldn’t send the secure link — this client has no email or phone on file (or delivery failed). Add a contact method and resend."
                 onSent()
+                return
+            }
+            // F12 — the send worked, and the new end time is worth a word.
+            // `onSent()` reloads the hub, which flips to "Waiting on client" and
+            // takes this view (and the notice) with it, so hold here instead.
+            if let notice = result.scheduleNotice {
+                scheduleNotice = notice
                 return
             }
             message = "Sent to client for approval."

@@ -125,7 +125,11 @@ public final class ProSessionService: Sendable {
 
         let delivery = response.consultationActionDelivery
         let undeliverable = delivery?.attempted == true && delivery?.queued != true
-        return ProConsultationProposalResult(undeliverable: undeliverable)
+        return ProConsultationProposalResult(
+            undeliverable: undeliverable,
+            // F12 — nil unless the new end time is worth a word.
+            scheduleNotice: response.schedule?.notice,
+        )
     }
 
     /// POST /api/v1/pro/bookings/{id}/consultation/in-person-decision — record the
@@ -158,6 +162,15 @@ public final class ProSessionService: Sendable {
 /// 200; `undeliverable` flags that the secure link couldn't be sent.
 public struct ProConsultationProposalResult: Sendable {
     public let undeliverable: Bool
+    /// F12 — what these services did to the appointment's end time, already
+    /// turned into a sentence, or nil when there is nothing to say. See
+    /// `ConsultationScheduleOutlook`.
+    public let scheduleNotice: String?
+
+    public init(undeliverable: Bool, scheduleNotice: String? = nil) {
+        self.undeliverable = undeliverable
+        self.scheduleNotice = scheduleNotice
+    }
 }
 
 // Request/response shapes local to the proposal POST.
@@ -174,6 +187,8 @@ private struct ConsultationProposalBody: Encodable {
 
 private struct ConsultationProposalResponse: Decodable {
     let consultationActionDelivery: ConsultationActionDelivery?
+    /// Optional so an OLDER server (which does not send it) still decodes.
+    let schedule: ConsultationProposalSchedule?
 
     struct ConsultationActionDelivery: Decodable {
         let attempted: Bool?
