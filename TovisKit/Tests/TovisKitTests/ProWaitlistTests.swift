@@ -147,6 +147,47 @@ private extension URLRequest {
         #expect(balayage.entries.last?.avatarUrl == nil)
     }
 
+    // A VERBATIM capture of GET /api/v1/pro/waitlist after the pro offered a
+    // time (real route over HTTP, 2026-07-21). tovis-app F14 made the offer
+    // RESERVE the slot with a BookingHold, so the row now stays listed —
+    // NOTIFIED entries used to be filtered out and the client silently vanished
+    // — and carries the offer the badge renders. If the server ever renames or
+    // drops `pendingOffer`, the pro loses the only surface explaining why that
+    // time is missing from their availability, and this goes red.
+    private static let offeredFeedJSON = """
+    {"ok":true,"services":[{"serviceId":"cmrvgv4m50009poa15mc0qw8t",\
+    "serviceName":"Balayage","entries":[{"rank":1,\
+    "waitlistEntryId":"cmrvgv4m9000fpoa13x7fbjj4","clientName":"Hetty Client",\
+    "avatarUrl":null,"preferenceLabel":"Any time",\
+    "joinedAt":"2026-07-22T02:31:50.817Z",\
+    "pendingOffer":{"id":"cmrvgvvx70003po2tjp8znkox",\
+    "startsAt":"2026-07-31T20:00:00.000Z","locationType":"SALON"}}]}],"total":1}
+    """
+
+    @Test func waitlistOutreachDecodesTheLiveOfferOnARow() async throws {
+        reset(response: Self.offeredFeedJSON)
+
+        let outreach = try await makeService().waitlistOutreach()
+        let entry = try #require(outreach.services.first?.entries.first)
+
+        let offer = try #require(entry.pendingOffer)
+        #expect(offer.id == "cmrvgvvx70003po2tjp8znkox")
+        #expect(offer.startsAt == "2026-07-31T20:00:00.000Z")
+        #expect(offer.locationType == "SALON")
+    }
+
+    // The other half: a row with no live offer decodes to nil rather than
+    // failing, so the "Offer a time" button is what renders. The base fixture
+    // omits the key entirely, which is also what a pre-F14 server sends.
+    @Test func waitlistOutreachDecodesAMissingOfferAsNil() async throws {
+        reset(response: Self.feedJSON)
+
+        let outreach = try await makeService().waitlistOutreach()
+        let entry = try #require(outreach.services.first?.entries.first)
+
+        #expect(entry.pendingOffer == nil)
+    }
+
     @Test func waitlistOutreachDecodesEmptyFeed() async throws {
         reset(response: "{\"ok\":true,\"total\":0,\"services\":[]}")
 
