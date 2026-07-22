@@ -19,6 +19,7 @@ final class ProWaitlistURLProtocol: URLProtocol {
     nonisolated(unsafe) static var capturedBody: Data?
     nonisolated(unsafe) static var capturedIdempotencyKey: String?
     nonisolated(unsafe) static var responseBody = Data("{\"ok\":true}".utf8)
+    nonisolated(unsafe) static var responseStatus = 200
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -30,7 +31,7 @@ final class ProWaitlistURLProtocol: URLProtocol {
         Self.capturedIdempotencyKey = request.value(forHTTPHeaderField: "idempotency-key")
 
         let response = HTTPURLResponse(
-            url: request.url!, statusCode: 200, httpVersion: nil,
+            url: request.url!, statusCode: Self.responseStatus, httpVersion: nil,
             headerFields: ["Content-Type": "application/json"]
         )!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
@@ -104,12 +105,13 @@ private extension URLRequest {
         return ProScheduleService(api: api)
     }
 
-    private func reset(response: String) {
+    private func reset(response: String, status: Int = 200) {
         ProWaitlistURLProtocol.capturedPath = nil
         ProWaitlistURLProtocol.capturedMethod = nil
         ProWaitlistURLProtocol.capturedBody = nil
         ProWaitlistURLProtocol.capturedIdempotencyKey = nil
         ProWaitlistURLProtocol.responseBody = Data(response.utf8)
+        ProWaitlistURLProtocol.responseStatus = status
     }
 
     private func bodyJSON() throws -> [String: Any] {
@@ -153,6 +155,57 @@ private extension URLRequest {
         #expect(outreach.total == 0)
         #expect(outreach.isEmpty)
         #expect(outreach.services.isEmpty)
+    }
+
+    // The web server now refuses an off-hours offer at OFFER time rather than
+    // letting the client hit it at Confirm (tovis-app F5). Nothing in the app
+    // changed for it — but `ProWaitlistOfferSheet` renders `APIError.userMessage`
+    // and nothing was watching that the pro's own words survive the wire, so the
+    // refusal body below is a VERBATIM capture from the real route
+    // (POST /api/v1/pro/waitlist/{id}/offer over HTTP, 2026-07-21). If the
+    // server's error envelope ever moves the copy off `error`, the sheet would
+    // silently fall back to "Something went wrong" and this goes red.
+    @Test func offerWaitlistSlotSurfacesTheOffHoursRefusal() async throws {
+        reset(
+            response: """
+            {"ok":false,"error":"That time is outside working hours.",\
+            "code":"OUTSIDE_WORKING_HOURS","retryable":true,\
+            "uiAction":"PICK_NEW_SLOT",\
+            "message":"That time is outside working hours."}
+            """,
+            status: 400
+        )
+
+        await #expect(throws: APIError.self) {
+            try await makeService().offerWaitlistSlot(
+                waitlistEntryId: "wle_1",
+                scheduledFor: "2026-07-15T04:00:00.000Z",
+                endsAt: "2026-07-15T05:00:00.000Z",
+                locationId: "loc_1",
+                durationMinutes: 60
+            )
+        }
+
+        do {
+            _ = try await makeService().offerWaitlistSlot(
+                waitlistEntryId: "wle_1",
+                scheduledFor: "2026-07-15T04:00:00.000Z",
+                endsAt: "2026-07-15T05:00:00.000Z",
+                locationId: "loc_1",
+                durationMinutes: 60
+            )
+            Issue.record("expected the off-hours offer to throw")
+        } catch let error as APIError {
+            // This exact string is what the sheet paints in ember, inline, with
+            // the slot picker still live behind it.
+            #expect(error.userMessage == "That time is outside working hours.")
+            guard case let .server(status, _, code) = error else {
+                Issue.record("expected APIError.server, got \(error)")
+                return
+            }
+            #expect(status == 400)
+            #expect(code == "OUTSIDE_WORKING_HOURS")
+        }
     }
 
     @Test func offerWaitlistSlotPostsSlotAndDecodesOffer() async throws {
