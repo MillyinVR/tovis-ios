@@ -35,6 +35,9 @@ struct BookingFlowView: View {
     private enum Phase {
         case loading
         case ready(AvailabilityBootstrap)
+        /// MOBILE with no service address yet — availability can't even be asked
+        /// for until the client picks one, so the flow gates on it.
+        case needsAddress
         case failed(String)
         /// Carries the (re)scheduled instant ISO — works for finalize + reschedule.
         case success(String)
@@ -63,6 +66,9 @@ struct BookingFlowView: View {
     @State private var addresses: [ClientAddress] = []
     @State private var selectedAddressId: String?
     @State private var loadingAddresses = false
+    /// Set when the address fetch itself failed (vs. the client genuinely having
+    /// none) — surfaced with a retry, like `slotError` does for a failed day.
+    @State private var addressLoadFailed = false
     @State private var showAddAddress = false
 
     private var duration: Int { offering.durationMinutes ?? 60 }
@@ -109,8 +115,21 @@ struct BookingFlowView: View {
                     failure(message)
                 case let .success(scheduledFor):
                     success(scheduledFor)
+                case .needsAddress:
+                    addressGate
                 case let .ready(boot):
                     form(boot)
+                }
+            }
+            // Attached above the phase switch so the "add an address" route works
+            // from the gate screen too, not just the loaded form.
+            .sheet(isPresented: $showAddAddress) {
+                AddServiceAddressSheet { newAddress in
+                    addresses.insert(newAddress, at: 0)
+                    // We hold an address again, so a stale fetch failure must not
+                    // keep showing "couldn't load" over a list that now has one.
+                    addressLoadFailed = false
+                    selectAddress(newAddress.id)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -129,42 +148,69 @@ struct BookingFlowView: View {
 
     // MARK: - Form
 
+    /// Offering summary + mode switch + address picker — the part of the flow that
+    /// must render BEFORE availability is known, because on MOBILE the address is
+    /// an INPUT to the availability request rather than a later step.
+    @ViewBuilder
+    private var placementHeader: some View {
+        // Offering summary
+        BrandSurface {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(offering.name)
+                    .font(BrandFont.body(17, .semibold)).foregroundStyle(BrandColor.textPrimary)
+                Text("with \(proName)")
+                    .font(BrandFont.body(13)).foregroundStyle(BrandColor.textSecondary)
+                HStack(spacing: 10) {
+                    BrandPill(text: "\(totalDuration) min")
+                    if let price = offering.priceFromLabel {
+                        BrandPill(text: "from \(price)", tint: BrandColor.accent)
+                    }
+                }
+                .padding(.top, 2)
+            }
+        }
+
+        if canChooseMode {
+            BrandSection(title: "Where") {
+                Picker("Where", selection: $mode) {
+                    Text("At the salon").tag("SALON")
+                    Text("Mobile (they come to you)").tag("MOBILE")
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: mode) { Task { await loadBootstrap() } }
+            }
+        }
+
+        if isMobile {
+            BrandSection(title: "Service address", trailing: "Required") {
+                addressSection
+            }
+        }
+    }
+
+    /// Shown when a MOBILE booking has no service address to compute availability
+    /// against. The server refuses the availability request outright without one,
+    /// so the flow asks here instead of dead-ending on a full-screen error.
+    private var addressGate: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                placementHeader
+
+                if !addressLoadFailed {
+                    // No pro-name interpolation — some entry points open this flow
+                    // without one, which would read "…you’d like  to come to".
+                    Text("Add the address you’d like to be seen at, and we’ll show the times that work for it.")
+                        .font(BrandFont.body(13)).foregroundStyle(BrandColor.textMuted)
+                }
+            }
+            .padding(20)
+        }
+    }
+
     private func form(_ boot: AvailabilityBootstrap) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                // Offering summary
-                BrandSurface {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(offering.name)
-                            .font(BrandFont.body(17, .semibold)).foregroundStyle(BrandColor.textPrimary)
-                        Text("with \(proName)")
-                            .font(BrandFont.body(13)).foregroundStyle(BrandColor.textSecondary)
-                        HStack(spacing: 10) {
-                            BrandPill(text: "\(totalDuration) min")
-                            if let price = offering.priceFromLabel {
-                                BrandPill(text: "from \(price)", tint: BrandColor.accent)
-                            }
-                        }
-                        .padding(.top, 2)
-                    }
-                }
-
-                if canChooseMode {
-                    BrandSection(title: "Where") {
-                        Picker("Where", selection: $mode) {
-                            Text("At the salon").tag("SALON")
-                            Text("Mobile (they come to you)").tag("MOBILE")
-                        }
-                        .pickerStyle(.segmented)
-                        .onChange(of: mode) { Task { await loadBootstrap() } }
-                    }
-                }
-
-                if isMobile {
-                    BrandSection(title: "Service address", trailing: "Required") {
-                        addressSection
-                    }
-                }
+                placementHeader
 
                 BrandSection(title: "Pick a date") {
                     DatePicker("", selection: $selectedDate, in: Date()...maxDate(boot),
@@ -232,12 +278,6 @@ struct BookingFlowView: View {
             .padding(20)
         }
         .task { if slots.isEmpty { await loadSlots(boot) } }
-        .sheet(isPresented: $showAddAddress) {
-            AddServiceAddressSheet { newAddress in
-                addresses.insert(newAddress, at: 0)
-                selectedAddressId = newAddress.id
-            }
-        }
     }
 
     private var bookDisabled: Bool {
@@ -250,6 +290,14 @@ struct BookingFlowView: View {
     private var addressSection: some View {
         if loadingAddresses {
             ProgressView().tint(BrandColor.accent).frame(maxWidth: .infinity).padding(.vertical, 16)
+        } else if addressLoadFailed {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Couldn’t load your saved addresses.")
+                    .font(BrandFont.body(13)).foregroundStyle(BrandColor.ember)
+                Button("Try again") { Task { await loadBootstrap() } }
+                    .font(BrandFont.body(13, .semibold)).tint(BrandColor.accent)
+            }
+            .padding(.vertical, 8)
         } else {
             VStack(spacing: 10) {
                 ForEach(addresses) { address in
@@ -272,7 +320,7 @@ struct BookingFlowView: View {
 
     private func addressRow(_ address: ClientAddress) -> some View {
         let isSelected = selectedAddressId == address.id
-        return Button { selectedAddressId = address.id } label: {
+        return Button { selectAddress(address.id) } label: {
             HStack(spacing: 12) {
                 Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
                     .font(.system(size: 20))
@@ -399,11 +447,30 @@ struct BookingFlowView: View {
     private func loadBootstrap() async {
         phase = .loading
         if mode.isEmpty { mode = initialMode }
+        // Every reload means the PLACEMENT changed (mode, or the address it's
+        // measured from), so the times on screen belong to the old one. Without
+        // this the form's `if slots.isEmpty` guard sees a full list and keeps it —
+        // e.g. salon's 15-minute grid rendered under Mobile, whose slots the hold
+        // would then refuse.
+        slots = []
+        selectedSlot = nil
+        // MOBILE availability is computed against the CLIENT's address (the pro's
+        // travel radius from it), so the address has to be resolved BEFORE the
+        // request — without it the server refuses bootstrap AND day outright with
+        // CLIENT_SERVICE_ADDRESS_REQUIRED. Mirrors web's `canFetch` gate.
+        if isMobile {
+            await loadAddresses()
+            guard selectedAddressId != nil else {
+                phase = .needsAddress
+                return
+            }
+        }
         do {
             let boot = try await session.client.booking.bootstrap(
                 professionalId: professionalId, serviceId: offering.serviceId,
                 offeringId: offering.id, durationMinutes: duration,
-                locationType: mode
+                locationType: mode,
+                clientAddressId: isMobile ? selectedAddressId : nil
             )
             // Open on the preselected slot's day when the feed handed us one, else
             // the server's suggested first day.
@@ -415,7 +482,6 @@ struct BookingFlowView: View {
             }
             phase = .ready(boot)
             await loadAddOns()
-            if isMobile { await loadAddresses() }
         } catch let error as APIError {
             phase = .failed(error.userMessage)
         } catch {
@@ -432,13 +498,30 @@ struct BookingFlowView: View {
         )) ?? []
     }
 
+    /// Pick a service address and re-ask availability against it — a different
+    /// address is a different travel-radius answer, so the days and slots on
+    /// screen are no longer the right ones for it.
+    private func selectAddress(_ addressId: String) {
+        guard selectedAddressId != addressId else { return }
+        selectedAddressId = addressId
+        Task { await loadBootstrap() }
+    }
+
     /// Load the client's saved service addresses for a mobile booking, defaulting
     /// the selection to their default (or first) address.
     private func loadAddresses() async {
         guard addresses.isEmpty else { return }
         loadingAddresses = true
         defer { loadingAddresses = false }
-        addresses = (try? await session.client.addresses.serviceAddresses()) ?? []
+        do {
+            addresses = try await session.client.addresses.serviceAddresses()
+            addressLoadFailed = false
+        } catch {
+            // A failed fetch is not an empty address book — saying "add one" to a
+            // client who already has one would send them to make a duplicate.
+            addresses = []
+            addressLoadFailed = true
+        }
         if selectedAddressId == nil {
             selectedAddressId = (addresses.first { $0.isDefault } ?? addresses.first)?.id
         }
@@ -453,7 +536,8 @@ struct BookingFlowView: View {
             let day = try await session.client.booking.day(
                 professionalId: professionalId, serviceId: offering.serviceId,
                 offeringId: offering.id, locationId: boot.request.locationId,
-                durationMinutes: duration, date: date, locationType: mode
+                durationMinutes: duration, date: date, locationType: mode,
+                clientAddressId: isMobile ? selectedAddressId : nil
             )
             slots = day.slots
         } catch let error as APIError {

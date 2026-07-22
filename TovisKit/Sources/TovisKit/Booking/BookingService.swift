@@ -13,25 +13,34 @@ public final class BookingService: Sendable {
 
     /// GET /api/v1/availability/bootstrap — opening window for an offering.
     /// `locationId` is resolved server-side; we read it back from `request`.
+    /// A MOBILE placement REQUIRES `clientAddressId` — the server refuses the
+    /// whole request with `CLIENT_SERVICE_ADDRESS_REQUIRED` (400) without it, so
+    /// callers must resolve the client's service address before asking.
     public func bootstrap(
         professionalId: String,
         serviceId: String,
         offeringId: String,
         durationMinutes: Int,
-        locationType: String = "SALON"
+        locationType: String = "SALON",
+        clientAddressId: String? = nil
     ) async throws -> AvailabilityBootstrap {
-        try await api.request("/availability/bootstrap", query: [
+        var query = [
             URLQueryItem(name: "professionalId", value: professionalId),
             URLQueryItem(name: "serviceId", value: serviceId),
             URLQueryItem(name: "offeringId", value: offeringId),
             URLQueryItem(name: "locationType", value: locationType),
             URLQueryItem(name: "durationMinutes", value: String(durationMinutes)),
-        ])
+        ]
+        if let clientAddressId, !clientAddressId.isEmpty {
+            query.append(URLQueryItem(name: "clientAddressId", value: clientAddressId))
+        }
+        return try await api.request("/availability/bootstrap", query: query)
     }
 
-    /// GET /api/v1/availability/day — exact slots for one date (YYYY-MM-DD). For a
-    /// MOBILE booking pass `clientAddressId` (the client's saved service address)
-    /// so the slots respect the pro's travel radius for that location.
+    /// GET /api/v1/availability/day — exact slots for one date (YYYY-MM-DD). A
+    /// MOBILE booking MUST pass `clientAddressId` (the client's saved service
+    /// address) so the slots respect the pro's travel radius for that location —
+    /// omitting it is a 400 `CLIENT_SERVICE_ADDRESS_REQUIRED`, not a fallback.
     public func day(
         professionalId: String,
         serviceId: String,
