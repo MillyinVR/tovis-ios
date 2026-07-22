@@ -85,10 +85,12 @@ struct ProWaitlistView: View {
 
     /// The top banner slot, shared by the success and failure cases so there is
     /// one banner rather than two stacked ones. Success: "Offer sent to …" after
-    /// an offer — the entry stays ACTIVE (the client hasn't confirmed yet), so
-    /// nothing in the list visibly changes and this is the pro's only feedback
-    /// that it went through. Failure: a refused "Message" tap, which the server
-    /// answers with 409 CLIENT_UNCLAIMED for a client who has never signed in.
+    /// an offer — the row then reloads carrying its `pendingOffer`, so it swaps
+    /// the offer action for an "Offered · <time>" badge. (It used to be the only
+    /// feedback at all: sending an offer moves the entry to NOTIFIED, and the
+    /// route listed ACTIVE entries only, so the client silently disappeared.)
+    /// Failure: a refused "Message" tap, which the server answers with 409
+    /// CLIENT_UNCLAIMED for a client who has never signed in.
     ///
     /// Whichever event happened last clears the other, so this ordering only
     /// breaks a tie that cannot occur.
@@ -186,6 +188,22 @@ struct ProWaitlistView: View {
                     .font(BrandFont.body(12))
                     .foregroundStyle(BrandColor.textMuted)
                     .lineLimit(1)
+
+                // Under the name, not beside it. As a trailing pill this line is
+                // wide enough to squeeze the name column down to "Hett…" on a
+                // phone — seen on device, not guessed. Web's outreach row puts it
+                // in the same place.
+                //
+                // Two lines, because one truncated the TIME itself ("1:00…"),
+                // which is the only part of this line worth reading.
+                if let offer = entry.pendingOffer {
+                    Text("Offered · \(Wire.dateTime(offer.startsAt, timeZone: nil)) · slot held")
+                        .font(BrandFont.body(12, .semibold))
+                        .foregroundStyle(BrandColor.accent)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 2)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -196,24 +214,30 @@ struct ProWaitlistView: View {
 
     /// The two ways to fill a spot from a row: offer a concrete time (primary) or
     /// open a message thread (secondary). Stacked so both stay legible on a phone.
+    ///
+    /// A row that already has a live offer drops the offer action — the time is
+    /// promised and (since F14) reserved, so the next move is to wait or message.
+    /// The offer itself is shown under the client's name in `entryRow`.
     private func rowActions(_ entry: ProWaitlistEntry, in group: ProWaitlistServiceGroup) -> some View {
         VStack(alignment: .trailing, spacing: 6) {
-            Button {
-                offerTarget = OfferTarget(
-                    entry: entry,
-                    serviceId: group.serviceId,
-                    serviceName: group.serviceName
-                )
-            } label: {
-                Text("Offer a time")
-                    .font(BrandFont.body(12, .semibold))
-                    .foregroundStyle(BrandColor.onAccent)
-                    .padding(.vertical, 7)
-                    .padding(.horizontal, 14)
-                    .background(BrandColor.accent)
-                    .clipShape(Capsule())
+            if entry.pendingOffer == nil {
+                Button {
+                    offerTarget = OfferTarget(
+                        entry: entry,
+                        serviceId: group.serviceId,
+                        serviceName: group.serviceName
+                    )
+                } label: {
+                    Text("Offer a time")
+                        .font(BrandFont.body(12, .semibold))
+                        .foregroundStyle(BrandColor.onAccent)
+                        .padding(.vertical, 7)
+                        .padding(.horizontal, 14)
+                        .background(BrandColor.accent)
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
 
             Button {
                 Task { await openThread(for: entry) }

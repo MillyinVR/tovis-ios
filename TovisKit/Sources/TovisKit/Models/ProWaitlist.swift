@@ -42,6 +42,26 @@ public struct ProWaitlistServiceGroup: Decodable, Sendable, Identifiable {
     }
 }
 
+/// A time already offered to this client that they can still confirm. The server
+/// filters it by the same rule the confirm applies (PENDING and not expired), so
+/// a value here always means "outstanding right now".
+///
+/// Since F14 an offer also places a BookingHold over the slot, so a row carrying
+/// one is the pro's explanation for that time being missing from their own
+/// availability. Optional on the wire: a build talking to a server from before
+/// F14 simply sees `nil`.
+public struct ProWaitlistPendingOffer: Decodable, Sendable, Identifiable {
+    public let id: String
+    public let startsAt: String
+    public let locationType: String
+
+    public init(id: String, startsAt: String, locationType: String) {
+        self.id = id
+        self.startsAt = startsAt
+        self.locationType = locationType
+    }
+}
+
 /// A single waiting client. `rank` is the honest position within the service group
 /// (who has waited longest), `preferenceLabel` is server-formatted, `joinedAt` is
 /// an ISO-8601 UTC instant.
@@ -52,6 +72,8 @@ public struct ProWaitlistEntry: Decodable, Sendable, Identifiable {
     public let avatarUrl: String?
     public let preferenceLabel: String
     public let joinedAt: String
+    /// A still-confirmable time already offered to this client, or nil.
+    public let pendingOffer: ProWaitlistPendingOffer?
 
     public var id: String { waitlistEntryId }
 
@@ -61,7 +83,8 @@ public struct ProWaitlistEntry: Decodable, Sendable, Identifiable {
         clientName: String,
         avatarUrl: String?,
         preferenceLabel: String,
-        joinedAt: String
+        joinedAt: String,
+        pendingOffer: ProWaitlistPendingOffer? = nil
     ) {
         self.rank = rank
         self.waitlistEntryId = waitlistEntryId
@@ -69,6 +92,7 @@ public struct ProWaitlistEntry: Decodable, Sendable, Identifiable {
         self.avatarUrl = avatarUrl
         self.preferenceLabel = preferenceLabel
         self.joinedAt = joinedAt
+        self.pendingOffer = pendingOffer
     }
 }
 
