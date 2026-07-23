@@ -41,6 +41,44 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.nextUrl == "/client")
     }
 
+    // M6: the cancel response now carries an honest `refund` summary. Pin the
+    // exact wire shape the backend emits (POST /api/v1/bookings/[id]/cancel).
+    @Test func decodesCancelResponseWithRefundSummary() throws {
+        let json = """
+        {
+          "ok": true,
+          "id": "bk_1",
+          "status": "CANCELLED",
+          "sessionStep": "NONE",
+          "meta": { "mutated": true, "noOp": false },
+          "refund": {
+            "status": "REFUND_ISSUED",
+            "refundedAmountCents": 4000,
+            "message": "Your booking is cancelled. A refund of $40.00 is on its way — expect it in 5–10 business days."
+          }
+        }
+        """.data(using: .utf8)!
+
+        let res = try JSONDecoder().decode(CancelBookingResponse.self, from: json)
+        #expect(res.id == "bk_1")
+        #expect(res.status == "CANCELLED")
+        #expect(res.refund?.status == "REFUND_ISSUED")
+        #expect(res.refund?.refundedAmountCents == 4000)
+        #expect(res.refund?.message.contains("$40.00") == true)
+    }
+
+    // Older servers (pre-M6) omit `refund`; the optional decodes to nil, never a
+    // crash — and the unknown `ok`/`sessionStep`/`meta` keys are ignored.
+    @Test func cancelResponseToleratesMissingRefund() throws {
+        let json = """
+        { "ok": true, "id": "bk_2", "status": "CANCELLED", "sessionStep": "NONE", "meta": {} }
+        """.data(using: .utf8)!
+
+        let res = try JSONDecoder().decode(CancelBookingResponse.self, from: json)
+        #expect(res.status == "CANCELLED")
+        #expect(res.refund == nil)
+    }
+
     @Test func decodesTechnicalRecord() throws {
         // GET /pro/clients/{id}/technical — a formula, a full-scope consent (notes
         // travel), a safety-scope patch test (notes redacted, byName present), and
