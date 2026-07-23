@@ -539,6 +539,30 @@ public final class ProBookingService: Sendable {
             headers: ["idempotency-key": key]
         )
     }
+
+    /// POST /api/v1/pro/bookings/{id}/checkout/reopen — UNDO a mistaken manual
+    /// mark-paid / waive on a still-in-progress booking (the M9 follow-up):
+    /// checkoutStatus PAID/WAIVED → READY, clearing the collected/authorized
+    /// timestamps so the pro can re-collect. The server refuses a booking paid by
+    /// Stripe card (that reverses via a refund — `CHECKOUT_REOPEN_STRIPE_REQUIRES_REFUND`)
+    /// and one already completed (`CHECKOUT_REOPEN_COMPLETED_UNSUPPORTED`); both
+    /// surface as `APIError.server(userMessage:)`. No body; idempotent (a replay or
+    /// an already-reopened booking is a no-op). The route rejects a missing
+    /// idempotency-key header, so one is always minted.
+    public func reopenCheckout(
+        bookingId: String,
+        idempotencyKey: String? = nil
+    ) async throws {
+        // No body ⇒ no nonce; the scope+entity+action key stays stable across a
+        // double-tap so the server replays instead of re-running the reversal.
+        let key = idempotencyKey ?? buildClientIdempotencyKey(
+            scope: "pro-booking", entityId: bookingId, action: "reopen-checkout")
+        try await api.requestVoid(
+            "/pro/bookings/\(bookingId)/checkout/reopen",
+            method: .post,
+            headers: ["idempotency-key": key]
+        )
+    }
 }
 
 public enum ProRebookMode: String, Sendable {
