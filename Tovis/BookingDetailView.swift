@@ -119,6 +119,11 @@ struct BookingDetailView: View {
     @State private var cancelling = false
     @State private var cancelledLocally = false
     @State private var manageError: String?
+    // Honest cancel-time refund outcome (M6): shown in a confirmation alert after a
+    // successful cancel so the client learns what happened to their money before we
+    // dismiss. Nil until a cancel resolves with money news (a plain "nothing to
+    // refund" outcome dismisses silently).
+    @State private var cancelRefund: CancelRefundSummary?
 
     // Add-to-calendar (native share sheet of a generated .ics; no backend).
     @State private var calendarFile: CalendarFile?
@@ -369,7 +374,20 @@ struct BookingDetailView: View {
             }
             Button("Keep it", role: .cancel) {}
         } message: {
-            Text("Cancelling within 24 hours of the appointment may not be refunded.")
+            // Disclose the refund policy before the client commits (M6): the deposit
+            // and any payment are non-refundable within 24h of the appointment.
+            Text("Cancelling within 24 hours of your appointment means your deposit and any payment may not be refunded.")
+        }
+        .alert(
+            cancelRefundTitle(cancelRefund?.status),
+            isPresented: Binding(
+                get: { cancelRefund != nil },
+                set: { if !$0 { cancelRefund = nil } }
+            )
+        ) {
+            Button("OK") { dismiss() }
+        } message: {
+            Text(cancelRefund?.message ?? "")
         }
         .onChange(of: session.checkoutReturn) { _, ret in
             guard let ret, ret.bookingId == booking.id else { return }
@@ -2291,17 +2309,35 @@ struct BookingDetailView: View {
         manageError = nil
         defer { cancelling = false }
         do {
-            _ = try await session.client.booking.cancel(
+            let response = try await session.client.booking.cancel(
                 bookingId: booking.id
             )
             cancelledLocally = true
             session.signalRefresh()
             await onDecision()
-            dismiss()
+            // Surface the honest refund outcome (M6). When there's money news
+            // (refund issued / forfeited / processing) hold the view to show it,
+            // then dismiss on OK; a plain "nothing to refund" outcome dismisses now.
+            if let refund = response.refund, refund.status != "NONE" {
+                cancelRefund = refund
+            } else {
+                dismiss()
+            }
         } catch let error as APIError {
             manageError = error.userMessage
         } catch {
             manageError = "Couldn’t cancel the appointment. Try again."
+        }
+    }
+
+    /// Short alert title for the cancel-refund outcome (M6); the body carries the
+    /// full server message.
+    private func cancelRefundTitle(_ status: String?) -> String {
+        switch status {
+        case "REFUND_ISSUED": return "Refund on its way"
+        case "FORFEITED": return "Deposit not refundable"
+        case "PROCESSING": return "Refund processing"
+        default: return "Booking cancelled"
         }
     }
 

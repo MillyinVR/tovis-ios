@@ -158,12 +158,14 @@ public final class BookingService: Sendable {
     /// POST /api/v1/bookings/{id}/cancel — cancel a booking. No body; the server
     /// applies its own refund policy (a client cancelling ≥24h out is refunded).
     /// Idempotent: omit `idempotencyKey` to derive a stable per-booking key so a
-    /// retry can't double-cancel. Returns the booking's new status.
+    /// retry can't double-cancel. Returns the full response, incl. the honest
+    /// `refund` summary (M6) so the caller can tell the client what happened to
+    /// their money.
     @discardableResult
     public func cancel(
         bookingId: String,
         idempotencyKey: String? = nil
-    ) async throws -> String {
+    ) async throws -> CancelBookingResponse {
         let key = idempotencyKey ?? buildClientIdempotencyKey(
             scope: "booking", entityId: bookingId, action: "cancel")
         let response: CancelBookingResponse = try await api.request(
@@ -172,6 +174,6 @@ public final class BookingService: Sendable {
             body: Data("{}".utf8),
             headers: ["idempotency-key": key]
         )
-        return response.status
+        return response
     }
 }

@@ -152,9 +152,23 @@ public struct RescheduledBooking: Decodable, Sendable, Identifiable {
 
 // MARK: - Cancel (POST /api/v1/bookings/[id]/cancel)
 
+/// Honest, client-facing summary of what happened to the client's money on a
+/// cancel (M6). Mirrors the server's `CancelRefundSummary`.
+/// `status` ∈ `REFUND_ISSUED | FORFEITED | PROCESSING | NONE`; `message` is the
+/// ready-to-show sentence; `refundedAmountCents` is present only when a refund
+/// was actually issued.
+public struct CancelRefundSummary: Decodable, Sendable {
+    public let status: String
+    public let message: String
+    public let refundedAmountCents: Int?
+}
+
 /// The cancel route returns the fields at the top level (no `booking` wrapper):
-/// `{ ok, id, status, sessionStep, meta }`.
-struct CancelBookingResponse: Decodable, Sendable {
-    let id: String
-    let status: String
+/// `{ ok, id, status, sessionStep, meta, refund }`. Unknown keys (`ok`,
+/// `sessionStep`, `meta`) are ignored by the synthesized decoder; `refund` is
+/// optional so older servers that omit it still decode.
+public struct CancelBookingResponse: Decodable, Sendable {
+    public let id: String
+    public let status: String
+    public let refund: CancelRefundSummary?
 }
