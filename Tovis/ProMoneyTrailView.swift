@@ -428,19 +428,34 @@ struct ProMoneyTrailView: View {
         }
 
         if let d = trail.deposit {
+            let depositStatus = d.status.uppercased()
+            // Money is only "in" once the deposit was actually captured (PAID, or
+            // PAID then refunded). A PENDING deposit whose checkout was never
+            // completed has collected nothing — it must not render as green money-in.
+            let captured = depositStatus == "PAID" || depositStatus == "REFUNDED"
             let detail: String?
             if d.refundedCents > 0 {
                 detail = "\(money(d.refundedCents) ?? "—") refunded"
             } else if d.creditedAt != nil {
                 detail = "Credited to the final total"
+            } else if depositStatus == "PENDING" {
+                detail = "Unpaid — deposit checkout not completed"
             } else {
                 detail = nil
+            }
+            let depositTone: Tone
+            switch depositStatus {
+            case "PAID": depositTone = .success
+            case "REFUNDED": depositTone = .muted
+            case "PENDING": depositTone = .warn
+            case "FAILED": depositTone = .danger
+            default: depositTone = .muted
             }
             entries.append(TrailEntry(
                 key: "deposit", label: "Deposit",
                 subtitle: joined(detail, d.paidAt),
-                amount: money(d.amountCents), flow: .in,
-                tone: d.status.uppercased() == "REFUNDED" ? .muted : .success,
+                amount: money(d.amountCents), flow: captured ? .in : .none,
+                tone: depositTone,
                 status: d.status
             ))
         }
