@@ -42,6 +42,9 @@ struct ProSessionHubView: View {
     @State private var selectedMethod: String = ""
     @State private var markPaidError: String?
     @State private var confirmPaymentError: String?
+    /// Undo (reopen) of a mistaken manual mark-paid / waive — M9 follow-up.
+    @State private var reopenError: String?
+    @State private var showReopenConfirm = false
     /// Phase D: the wrap-up "photographer's review" of the before/after set
     /// (Claude vision via POST /pro/camera/set-critique; consent-gated).
     @State private var critique: ProSetCritique?
@@ -361,11 +364,18 @@ struct ProSessionHubView: View {
                             // Record an in-person payment when nothing's collected yet —
                             // unless the client already attested an off-platform payment
                             // (AWAITING_CONFIRMATION), in which case the pro confirms receipt.
-                            if item.key == .payment && !item.done {
-                                if state.checkout?.isAwaitingConfirmation == true {
-                                    confirmPaymentControl()
-                                } else {
-                                    markPaidControl()
+                            if item.key == .payment {
+                                if !item.done {
+                                    if state.checkout?.isAwaitingConfirmation == true {
+                                        confirmPaymentControl()
+                                    } else {
+                                        markPaidControl()
+                                    }
+                                } else if state.checkout?.isManuallyClosed == true {
+                                    // Fat-fingered a mark-paid / waive? Undo it (M9
+                                    // follow-up). Only shown for a manual close-out; a
+                                    // card capture reverses via a refund.
+                                    reopenControl()
                                 }
                             }
                         }
@@ -759,6 +769,38 @@ struct ProSessionHubView: View {
         }
     }
 
+    /// Undo a mistaken manual mark-paid / waive (web `ReopenCheckoutButton`).
+    /// Reverses the checkout record back to READY so the pro can re-collect. A
+    /// confirmation dialog guards against an accidental un-collection; a live
+    /// card capture never reaches here (hidden by `isManuallyClosed`) and is
+    /// refused server-side regardless.
+    @ViewBuilder
+    private func reopenControl() -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button { showReopenConfirm = true } label: {
+                Text(working ? "Reopening…" : "Recorded by mistake? Undo & reopen")
+                    .font(BrandFont.body(12, .semibold))
+                    .foregroundStyle(BrandColor.textSecondary)
+                    .underline()
+            }
+            .disabled(working)
+            .confirmationDialog(
+                "Reopen checkout?",
+                isPresented: $showReopenConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("Reopen checkout", role: .destructive) { Task { await reopenCheckout() } }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This undoes the recorded payment so you can collect it again.")
+            }
+
+            if let reopenError {
+                Text(reopenError).font(BrandFont.body(11)).foregroundStyle(BrandColor.ember)
+            }
+        }
+    }
+
     // MARK: - Done / Terminal
 
     @ViewBuilder
@@ -1059,6 +1101,22 @@ struct ProSessionHubView: View {
             confirmPaymentError = error.userMessage
         } catch {
             confirmPaymentError = "Could not confirm payment. Check your connection and try again."
+        }
+    }
+
+    private func reopenCheckout() async {
+        guard !working else { return }
+        reopenError = nil
+        working = true
+        defer { working = false }
+        do {
+            try await session.client.proBookings.reopenCheckout(bookingId: bookingId)
+            session.signalRefresh()
+            await load()
+        } catch let error as APIError {
+            reopenError = error.userMessage
+        } catch {
+            reopenError = "Could not reopen checkout. Check your connection and try again."
         }
     }
 

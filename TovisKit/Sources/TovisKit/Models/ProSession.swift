@@ -191,6 +191,17 @@ public struct ProSessionStateCheckout: Decodable, Sendable {
         return s == "PAID" || s == "WAIVED"
     }
 
+    /// Closed by a MANUAL close-out (cash / Venmo / Zelle / … / waive) rather than
+    /// a Stripe-card capture. Only a manual close-out can be undone in-app via the
+    /// reopen route; a card capture reverses via a refund, so the undo affordance
+    /// hides for it (the server also refuses it with
+    /// `CHECKOUT_REOPEN_STRIPE_REQUIRES_REFUND`). A completed booking never shows
+    /// the wrap-up checklist, so this is implicitly a non-completed booking.
+    public var isManuallyClosed: Bool {
+        guard isClosed else { return false }
+        return (selectedPaymentMethod ?? "").uppercased() != "STRIPE_CARD"
+    }
+
     /// The client marked an off-platform payment (Venmo / Zelle / Cash / Apple
     /// Cash / PayPal) as sent; it's authorized on their word and the pro must
     /// confirm receipt to close it out (web `AWAITING_CONFIRMATION`). While in this
