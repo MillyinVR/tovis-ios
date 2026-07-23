@@ -209,15 +209,20 @@ struct BookingDetailView: View {
         booking.hasPendingRebookConfirmation && !rebookDecidedLocally
     }
 
-    /// Reschedule/cancel are offered for an active, still-upcoming booking. Past,
-    /// cancelled, or completed bookings can't be changed.
+    /// Reschedule/cancel are offered ONLY before the session starts — a booking
+    /// that is still PENDING or ACCEPTED and still upcoming. This mirrors web
+    /// (`lifecycleActionViewModel` gates both on `cancellable = PENDING ||
+    /// ACCEPTED`) and the server lifecycle contract: once a booking is IN_PROGRESS
+    /// (a live session) the client may not cancel it — only ADMIN can — so the
+    /// server now refuses that transition. Offering the button here would just
+    /// produce a rejection, so we hide it. Terminal statuses were already excluded.
     private var isManageable: Bool {
         if cancelledLocally { return false }
         switch (booking.status ?? "").uppercased() {
-        case "CANCELLED", "COMPLETED", "NO_SHOW", "DECLINED", "EXPIRED":
-            return false
-        default:
+        case "PENDING", "ACCEPTED":
             break
+        default:
+            return false
         }
         guard let when = Wire.date(booking.scheduledFor) else { return true }
         return when > Date()
