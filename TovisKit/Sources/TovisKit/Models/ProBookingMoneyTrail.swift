@@ -81,13 +81,22 @@ public struct ProBookingMoneyTrail: Decodable, Sendable {
     }
 
     public struct NoShowFee: Decodable, Sendable {
-        /// "SKIPPED" | "CHARGED" | "FAILED" | "WAIVED".
+        /// "SKIPPED" | "CHARGED" | "FAILED" | "WAIVED" | "REFUNDED".
         public let status: String
         /// "NO_SHOW" | "LATE_CANCEL" — nil defensively.
         public let reason: String?
         public let amountCents: Int?
         public let chargedAt: String?
         public let markedAt: String?
+        /// Stripe's cumulative refund on the fee's OWN PaymentIntent (integer cents).
+        /// A FULL refund also flips `status` to REFUNDED; a sub-fee partial stays
+        /// CHARGED and only accumulates here. See web M15 GAP B.
+        public let refundedCents: Int
+        /// Set while the fee charge is under (or lost) a Stripe dispute — the fee
+        /// rides its own PI, so a chargeback never touches the booking's payment
+        /// status. Cleared if the dispute is WON. A disputed fee must not render as
+        /// money safely collected.
+        public let disputedAt: String?
     }
 
     public struct Refund: Decodable, Sendable, Identifiable {

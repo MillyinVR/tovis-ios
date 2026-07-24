@@ -495,25 +495,42 @@ struct ProMoneyTrailView: View {
 
         if let n = trail.noShowFee {
             let status = n.status.uppercased()
+            // A disputed fee has had its funds pulled by Stripe even though the fee
+            // still reads CHARGED (it rides its own PaymentIntent) — it must read as
+            // money at risk, not money safely collected, mirroring the deposit row.
+            let disputed = n.disputedAt != nil
             let detail: String?
-            switch status {
-            case "FAILED": detail = "Charge failed — card declined"
-            case "WAIVED": detail = "Waived"
-            case "SKIPPED": detail = "Not charged"
-            default: detail = nil
+            if disputed {
+                detail = "Payment disputed"
+            } else if status == "REFUNDED" {
+                detail = "Refunded"
+            } else if n.refundedCents > 0 {
+                detail = "\(money(n.refundedCents) ?? "—") refunded"
+            } else {
+                switch status {
+                case "FAILED": detail = "Charge failed — card declined"
+                case "WAIVED": detail = "Waived"
+                case "SKIPPED": detail = "Not charged"
+                default: detail = nil
+                }
             }
             let tone: Tone
-            switch status {
-            case "CHARGED": tone = .success
-            case "FAILED": tone = .danger
-            default: tone = .muted   // WAIVED / SKIPPED
+            if disputed {
+                tone = .danger
+            } else {
+                switch status {
+                case "CHARGED": tone = .success
+                case "FAILED": tone = .danger
+                default: tone = .muted   // WAIVED / SKIPPED / REFUNDED
+                }
             }
             entries.append(TrailEntry(
                 key: "no-show-fee", label: "\(noShowReasonWord(n.reason)) fee",
                 subtitle: joined(detail, n.chargedAt ?? n.markedAt),
                 amount: money(n.amountCents),
-                flow: status == "CHARGED" ? .in : .none,
-                tone: tone, status: n.status
+                // Money is only "in" once the fee was CHARGED and is not disputed.
+                flow: (!disputed && status == "CHARGED") ? .in : .none,
+                tone: tone, status: disputed ? "DISPUTED" : n.status
             ))
         }
 
