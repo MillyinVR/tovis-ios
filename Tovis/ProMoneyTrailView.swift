@@ -36,6 +36,7 @@ struct ProMoneyTrailView: View {
     @State private var flash: String?
     @State private var showRefundConfirm = false
     @State private var showWaiveConfirm = false
+    @State private var showRefundNoShowConfirm = false
 
     var body: some View {
         ScrollView {
@@ -85,7 +86,9 @@ struct ProMoneyTrailView: View {
             banner(actionError, tone: .danger)
         }
 
-        if trail.capabilities.canRefund || trail.capabilities.canWaiveNoShowFee {
+        if trail.capabilities.canRefund
+            || trail.capabilities.canWaiveNoShowFee
+            || trail.capabilities.canRefundNoShowFee {
             actionsSection(trail)
         }
     }
@@ -109,6 +112,12 @@ struct ProMoneyTrailView: View {
                         }
                         .buttonStyle(.plain).disabled(actionPending)
                     }
+                    if trail.capabilities.canRefundNoShowFee {
+                        Button { showRefundNoShowConfirm = true } label: {
+                            ghostLabel(actionPending ? "Refunding…" : "Refund no-show fee")
+                        }
+                        .buttonStyle(.plain).disabled(actionPending)
+                    }
                 }
             }
         }
@@ -121,6 +130,13 @@ struct ProMoneyTrailView: View {
             isPresented: $showWaiveConfirm, titleVisibility: .visible
         ) {
             Button("Waive fee") { Task { await waive() } }
+            Button("Cancel", role: .cancel) {}
+        }
+        .confirmationDialog(
+            "Refund this no-show fee to the client? This returns the full fee and cannot be undone.",
+            isPresented: $showRefundNoShowConfirm, titleVisibility: .visible
+        ) {
+            Button("Refund fee", role: .destructive) { Task { await refundNoShow() } }
             Button("Cancel", role: .cancel) {}
         }
     }
@@ -372,6 +388,22 @@ struct ProMoneyTrailView: View {
             actionError = error.userMessage
         } catch {
             actionError = "Network error while waiving the fee."
+        }
+    }
+
+    private func refundNoShow() async {
+        guard !actionPending else { return }
+        actionPending = true; actionError = nil
+        defer { actionPending = false }
+        do {
+            try await session.client.proBookings.refundNoShowFee(bookingId: bookingId)
+            flash = "No-show fee refunded."
+            session.signalRefresh()
+            await load()
+        } catch let error as APIError {
+            actionError = error.userMessage
+        } catch {
+            actionError = "Network error while refunding the fee."
         }
     }
 

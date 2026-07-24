@@ -78,7 +78,7 @@ final class ProMoneyTrailURLProtocol: URLProtocol {
           "noShowFee":{"status":"FAILED","reason":"NO_SHOW","amountCents":2500,"chargedAt":null,"markedAt":"2026-07-02T09:00:00.000Z","refundedCents":0,"disputedAt":null},
           "refunds":[{"id":"ref_1","amountCents":2000,"currency":"usd","status":"SUCCEEDED","trigger":"DISCRETIONARY","reason":"service issue","initiatedByRole":"PRO","failureMessage":null,"createdAt":"2026-07-09T10:00:00.000Z"}],
           "summary":{"capturedCents":12000,"refundedCents":2000,"pendingRefundCents":0,"netCents":10000},
-          "capabilities":{"canRefund":true,"refundableRemainingCents":10000,"canWaiveNoShowFee":true}
+          "capabilities":{"canRefund":true,"refundableRemainingCents":10000,"canWaiveNoShowFee":true,"canRefundNoShowFee":false}
         }}
         """)
 
@@ -114,6 +114,7 @@ final class ProMoneyTrailURLProtocol: URLProtocol {
         #expect(trail.capabilities.canRefund)
         #expect(trail.capabilities.refundableRemainingCents == 10000)
         #expect(trail.capabilities.canWaiveNoShowFee)
+        #expect(trail.capabilities.canRefundNoShowFee == false)
     }
 
     @Test func decodesMinimalAllNullTrail() async throws {
@@ -124,7 +125,7 @@ final class ProMoneyTrailURLProtocol: URLProtocol {
           "finalCharge":null,"deposit":null,"discoveryFee":null,"noShowFee":null,
           "refunds":[],
           "summary":{"capturedCents":0,"refundedCents":0,"pendingRefundCents":0,"netCents":0},
-          "capabilities":{"canRefund":false,"refundableRemainingCents":0,"canWaiveNoShowFee":false}
+          "capabilities":{"canRefund":false,"refundableRemainingCents":0,"canWaiveNoShowFee":false,"canRefundNoShowFee":false}
         }}
         """)
 
@@ -155,7 +156,7 @@ final class ProMoneyTrailURLProtocol: URLProtocol {
           "noShowFee":{"status":"REFUNDED","reason":"LATE_CANCEL","amountCents":2500,"chargedAt":"2026-07-02T09:00:00.000Z","markedAt":"2026-07-02T09:00:00.000Z","refundedCents":2500,"disputedAt":null},
           "refunds":[],
           "summary":{"capturedCents":0,"refundedCents":0,"pendingRefundCents":0,"netCents":0},
-          "capabilities":{"canRefund":false,"refundableRemainingCents":0,"canWaiveNoShowFee":false}
+          "capabilities":{"canRefund":false,"refundableRemainingCents":0,"canWaiveNoShowFee":false,"canRefundNoShowFee":false}
         }}
         """)
 
@@ -164,6 +165,8 @@ final class ProMoneyTrailURLProtocol: URLProtocol {
         #expect(refunded.noShowFee?.refundedCents == 2500)
         #expect(refunded.noShowFee?.disputedAt == nil)
         #expect(refunded.capabilities.canWaiveNoShowFee == false)
+        // A fully refunded fee has nothing left to refund.
+        #expect(refunded.capabilities.canRefundNoShowFee == false)
 
         reset("""
         {"ok":true,"trail":{
@@ -173,7 +176,7 @@ final class ProMoneyTrailURLProtocol: URLProtocol {
           "noShowFee":{"status":"CHARGED","reason":"NO_SHOW","amountCents":2500,"chargedAt":"2026-07-02T09:00:00.000Z","markedAt":"2026-07-02T09:00:00.000Z","refundedCents":0,"disputedAt":"2026-07-05T09:00:00.000Z"},
           "refunds":[],
           "summary":{"capturedCents":0,"refundedCents":0,"pendingRefundCents":0,"netCents":0},
-          "capabilities":{"canRefund":false,"refundableRemainingCents":0,"canWaiveNoShowFee":false}
+          "capabilities":{"canRefund":false,"refundableRemainingCents":0,"canWaiveNoShowFee":false,"canRefundNoShowFee":false}
         }}
         """)
 
@@ -181,5 +184,30 @@ final class ProMoneyTrailURLProtocol: URLProtocol {
         #expect(disputed.noShowFee?.status == "CHARGED")
         #expect(disputed.noShowFee?.disputedAt == "2026-07-05T09:00:00.000Z")
         #expect(disputed.noShowFee?.refundedCents == 0)
+        // A disputed fee is frozen — never invite an in-app refund the server rejects.
+        #expect(disputed.capabilities.canRefundNoShowFee == false)
+    }
+
+    // M15 GAP A — a CHARGED, non-disputed fee with an unrefunded balance decodes as
+    // refundable, so the inspector shows the "Refund no-show fee" action.
+    @Test func decodesRefundableChargedNoShowFee() async throws {
+        reset("""
+        {"ok":true,"trail":{
+          "bookingId":"bkg_5","currency":"usd","paymentProvider":"STRIPE",
+          "bill":{"totalCents":10000,"serviceSubtotalCents":10000,"tipCents":null,"taxCents":null,"discountCents":null,"checkoutStatus":"PAID","selectedPaymentMethod":"STRIPE_CARD","collectedAt":null},
+          "finalCharge":null,"deposit":null,"discoveryFee":null,
+          "noShowFee":{"status":"CHARGED","reason":"NO_SHOW","amountCents":2500,"chargedAt":"2026-07-02T09:00:00.000Z","markedAt":"2026-07-02T09:00:00.000Z","refundedCents":0,"disputedAt":null},
+          "refunds":[],
+          "summary":{"capturedCents":0,"refundedCents":0,"pendingRefundCents":0,"netCents":0},
+          "capabilities":{"canRefund":false,"refundableRemainingCents":0,"canWaiveNoShowFee":false,"canRefundNoShowFee":true}
+        }}
+        """)
+
+        let trail = try await makeService().moneyTrail(bookingId: "bkg_5")
+        #expect(trail.noShowFee?.status == "CHARGED")
+        #expect(trail.noShowFee?.disputedAt == nil)
+        // A CHARGED fee moved money and is not waivable, but IS refundable.
+        #expect(trail.capabilities.canWaiveNoShowFee == false)
+        #expect(trail.capabilities.canRefundNoShowFee)
     }
 }

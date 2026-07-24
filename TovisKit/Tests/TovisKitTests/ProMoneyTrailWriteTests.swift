@@ -183,6 +183,47 @@ private extension URLRequest {
         #expect(ProMoneyTrailWriteURLProtocol.capturedIdempotencyKey != firstKey)
     }
 
+    // MARK: - Refund no-show fee (M15 GAP A)
+
+    @Test func refundNoShowFeePostsEmptyBodyAsAuthenticatedNativeRequest() async throws {
+        reset()
+
+        try await makeService().refundNoShowFee(bookingId: "bkg_1")
+
+        #expect(ProMoneyTrailWriteURLProtocol.capturedPath == "/api/v1/bookings/bkg_1/no-show-fee/refund")
+        #expect(ProMoneyTrailWriteURLProtocol.capturedMethod == "POST")
+        #expect(ProMoneyTrailWriteURLProtocol.capturedAuthHeader == "Bearer session.token.value")
+        #expect(ProMoneyTrailWriteURLProtocol.capturedNativeHeader == "ios")
+        #expect((ProMoneyTrailWriteURLProtocol.capturedIdempotencyKey ?? "").isEmpty == false)
+
+        let body = try #require(ProMoneyTrailWriteURLProtocol.capturedBody)
+        let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        // Full-refund-only ⇒ no body fields; the server derives the amount from the fee.
+        #expect(json.isEmpty)
+    }
+
+    @Test func refundNoShowFeeKeyIsStableAcrossRepeatTaps() async throws {
+        // Full-refund-only with no body to vary ⇒ two taps in the same bucket dedupe
+        // on an identical key rather than double-refunding.
+        reset()
+        try await makeService().refundNoShowFee(bookingId: "bkg_1")
+        let firstKey = try #require(ProMoneyTrailWriteURLProtocol.capturedIdempotencyKey)
+
+        reset()
+        try await makeService().refundNoShowFee(bookingId: "bkg_1")
+        #expect(ProMoneyTrailWriteURLProtocol.capturedIdempotencyKey == firstKey)
+
+        // A different booking ⇒ a different key (namespaced to the target).
+        reset()
+        try await makeService().refundNoShowFee(bookingId: "bkg_2")
+        #expect(ProMoneyTrailWriteURLProtocol.capturedIdempotencyKey != firstKey)
+
+        // And a distinct key from the waive on the same booking (different action).
+        reset()
+        try await makeService().waiveNoShowFee(bookingId: "bkg_1")
+        #expect(ProMoneyTrailWriteURLProtocol.capturedIdempotencyKey != firstKey)
+    }
+
     // MARK: - Mark no-show
 
     /// Verbatim success capture from the running route (pro JWT, flag on):

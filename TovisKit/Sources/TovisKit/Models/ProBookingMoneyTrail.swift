@@ -126,5 +126,9 @@ public struct ProBookingMoneyTrail: Decodable, Sendable {
         public let canRefund: Bool
         public let refundableRemainingCents: Int
         public let canWaiveNoShowFee: Bool
+        /// A CHARGED fee (its own PaymentIntent) can be refunded in-app — full
+        /// remaining balance only, and never while frozen by a Stripe dispute.
+        /// See web M15 GAP A.
+        public let canRefundNoShowFee: Bool
     }
 }
