@@ -530,6 +530,8 @@ func fixture(_ name: String) throws -> Data {
         #expect(first.minutes == 30)
         #expect(first.isRecommended)
         #expect(res.addOns[1].group == nil)        // nullable group decodes
+        // M15: the pro's cancellation-policy disclosure rides the add-ons call.
+        #expect(res.cancellationPolicy?.contains("$25.00") == true)
     }
 
     // GET /api/v1/pro/session — Fixtures/proSession.json. The PRO footer's live-
@@ -1330,6 +1332,8 @@ func fixture(_ name: String) throws -> Data {
         #expect(booking.hasPendingRebookConfirmation == false)
         #expect(booking.rebookProposedFor == nil)
         #expect(booking.mediaUseConsent == false)
+        // M15: the agreed cancellation policy decodes for display on the detail.
+        #expect(booking.cancellationPolicy?.contains("$25.00") == true)
         // A standalone booking is not a coupled aftercare rebook.
         #expect(booking.rebookOfBookingId == nil)
         #expect(!booking.isCoupledRebookAwaitingPaymentConfirmation)

@@ -60,6 +60,11 @@ struct BookingFlowView: View {
     @State private var addOns: [BookingAddOn] = []
     @State private var selectedAddOnIds: Set<String> = []
 
+    // M15: the pro's no-show/late-cancel fee policy the client must agree to
+    // before booking. nil → the pro charges no fees → no gate.
+    @State private var cancellationPolicy: String?
+    @State private var policyAccepted = false
+
     // Location mode (SALON / MOBILE). New bookings can choose when the offering
     // offers both; reschedule keeps the original. MOBILE needs a service address.
     @State private var mode = ""
@@ -256,6 +261,22 @@ struct BookingFlowView: View {
                     }
                 }
 
+                if let cancellationPolicy {
+                    BrandSection(title: "Cancellation policy") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(cancellationPolicy)
+                                .font(BrandFont.body(13))
+                                .foregroundStyle(BrandColor.textSecondary)
+                            Toggle(isOn: $policyAccepted) {
+                                Text("I agree to this cancellation policy")
+                                    .font(BrandFont.body(13, .semibold))
+                                    .foregroundStyle(BrandColor.textPrimary)
+                            }
+                            .tint(BrandColor.accent)
+                        }
+                    }
+                }
+
                 if let bookError {
                     Text(bookError).font(BrandFont.body(13)).foregroundStyle(BrandColor.ember)
                 }
@@ -282,6 +303,7 @@ struct BookingFlowView: View {
 
     private var bookDisabled: Bool {
         selectedSlot == nil || booking || addressRequiredButMissing
+            || (cancellationPolicy != nil && !policyAccepted)
     }
 
     // MARK: - Address picker (mobile)
@@ -490,12 +512,15 @@ struct BookingFlowView: View {
     }
 
     /// Add-ons apply to new bookings only (a reschedule keeps the original ones).
-    /// Best-effort: a failure just hides the section, never blocks booking.
+    /// Best-effort: a failure just hides the section, never blocks booking. The
+    /// same call carries the pro's cancellation-policy disclosure (M15).
     private func loadAddOns() async {
         guard !isReschedule else { return }
-        addOns = (try? await session.client.booking.addOns(
+        let result = try? await session.client.booking.addOns(
             offeringId: offering.id, locationType: mode
-        )) ?? []
+        )
+        addOns = result?.addOns ?? []
+        cancellationPolicy = result?.cancellationPolicy
     }
 
     /// Pick a service address and re-ask availability against it — a different
@@ -579,7 +604,8 @@ struct BookingFlowView: View {
             } else {
                 let result = try await session.client.booking.finalize(
                     holdId: hold.id, offeringId: offering.id, locationType: mode,
-                    addOnIds: Array(selectedAddOnIds), openingId: openingId
+                    addOnIds: Array(selectedAddOnIds), openingId: openingId,
+                    cancellationPolicyAccepted: policyAccepted
                 )
                 scheduledFor = result.scheduledFor
             }

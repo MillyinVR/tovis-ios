@@ -315,6 +315,15 @@ struct BookingDetailView: View {
 
                 depositCard
 
+                if let cancellationPolicy = booking.cancellationPolicy {
+                    BrandSection(title: "Cancellation policy") {
+                        Text(cancellationPolicy)
+                            .font(BrandFont.body(13))
+                            .foregroundStyle(BrandColor.textSecondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+
                 payCard
 
                 aftercareCard

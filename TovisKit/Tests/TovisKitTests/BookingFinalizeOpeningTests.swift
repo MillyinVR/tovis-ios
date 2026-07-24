@@ -109,7 +109,7 @@ private extension URLRequest {
         let expectedBody = try JSONEncoder.canonical.encode(FinalizeBookingRequest(
             holdId: "hold_1", offeringId: "off_1",
             locationType: "SALON", addOnIds: [], source: "REQUESTED",
-            openingId: nil))
+            openingId: nil, cancellationPolicyAccepted: false))
         let expectedKey = buildClientIdempotencyKey(
             scope: "booking", entityId: "hold_1", action: "finalize",
             nonce: idempotencyNonce(expectedBody))

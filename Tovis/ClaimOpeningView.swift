@@ -61,6 +61,11 @@ struct ClaimOpeningView: View {
     @State private var addresses: [ClientAddress] = []
     @State private var addressesLoaded = false
 
+    // M15: the pro's no-show/late-cancel fee policy the client must agree to
+    // before claiming. nil → no fee → no gate.
+    @State private var cancellationPolicy: String?
+    @State private var policyAccepted = false
+
     /// Resolving the offering for the "pick another time" fallback — deliberately
     /// lazy, so the ordinary claim never pays for it.
     @State private var resolvingFallback = false
@@ -106,6 +111,7 @@ struct ClaimOpeningView: View {
             .task { await runPresenceHeartbeat() }
             .task { await runPresencePoll() }
             .task { await loadAddressesIfMobile() }
+            .task { await loadCancellationPolicy() }
             .sheet(item: $sheet) { which in
                 switch which {
                 case .addAddress:
@@ -194,6 +200,21 @@ struct ClaimOpeningView: View {
             noticeCard(claimError, actionTitle: nil, action: nil)
         }
 
+        if let cancellationPolicy {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(cancellationPolicy)
+                    .font(BrandFont.body(13))
+                    .foregroundStyle(BrandColor.textSecondary)
+                Toggle(isOn: $policyAccepted) {
+                    Text("I agree to this cancellation policy")
+                        .font(BrandFont.body(13, .semibold))
+                        .foregroundStyle(BrandColor.textPrimary)
+                }
+                .tint(BrandColor.accent)
+            }
+            .padding(.top, 16)
+        }
+
         Button { Task { await claim() } } label: {
             Group {
                 if claiming {
@@ -205,10 +226,12 @@ struct ClaimOpeningView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 16)
             .foregroundStyle(BrandColor.onAccent)
-            .background(claiming ? BrandColor.textMuted.opacity(0.4) : BrandColor.accent)
+            .background(
+                claimDisabled ? BrandColor.textMuted.opacity(0.4) : BrandColor.accent
+            )
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
-        .disabled(claiming)
+        .disabled(claimDisabled)
         .padding(.top, 20)
 
         Text("PAY AT YOUR BOOKING · FIRST TO CLAIM GETS IT")
@@ -382,11 +405,30 @@ struct ClaimOpeningView: View {
     ///
     /// `finalize` builds its own deterministic idempotency key from the hold id +
     /// payload (BookingService), so a double tap replays instead of double-booking.
+    private var claimDisabled: Bool {
+        claiming || (cancellationPolicy != nil && !policyAccepted)
+    }
+
+    /// The pro's fee policy the client must agree to (M15). Best-effort: reuses the
+    /// add-ons endpoint (which carries the disclosure); a failure just hides it.
+    private func loadCancellationPolicy() async {
+        guard let offeringId = opening.offeringId else { return }
+        let result = try? await session.client.booking.addOns(
+            offeringId: offeringId, locationType: opening.claimLocationType
+        )
+        cancellationPolicy = result?.cancellationPolicy
+    }
+
     private func claim() async {
         guard !claiming else { return }
 
         guard let offeringId = opening.offeringId else {
             claimError = "This opening is no longer bookable."
+            return
+        }
+
+        if cancellationPolicy != nil && !policyAccepted {
+            claimError = "Please agree to the cancellation policy to book."
             return
         }
 
@@ -417,7 +459,8 @@ struct ClaimOpeningView: View {
                 offeringId: offeringId,
                 locationType: opening.claimLocationType,
                 addOnIds: [],
-                openingId: opening.opening.id
+                openingId: opening.opening.id,
+                cancellationPolicyAccepted: policyAccepted
             )
             session.signalRefresh()
             dismiss()
