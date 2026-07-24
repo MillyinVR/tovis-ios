@@ -2403,6 +2403,7 @@ struct BookingDetailView: View {
         case "REFUND_ISSUED": return "Refund on its way"
         case "FORFEITED": return "Deposit not refundable"
         case "PROCESSING": return "Refund processing"
+        case "FEE_CHARGED": return "Late-cancellation fee charged"
         default: return "Booking cancelled"
         }
     }
