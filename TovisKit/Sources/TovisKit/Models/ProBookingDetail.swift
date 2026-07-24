@@ -50,6 +50,10 @@ public struct ProBookingDetail: Decodable, Sendable, Identifiable {
     public let selectedPaymentMethod: String?
     public let stripePaymentStatus: String?
     public let stripeAmountTotal: Int?
+    /// Stripe's authoritative cumulative refund total (cents). Lets the Payment
+    /// card read "Refunded"/"Partially refunded" instead of a green "Paid" once
+    /// money has gone back. Optional so older fixtures/pre-deploy responses decode.
+    public let stripeAmountRefunded: Int?
     public let stripeCurrency: String?
     /// Checkout lifecycle (tovis-app §10 follow-up). AWAITING_CONFIRMATION means
     /// the client attested an off-platform payment and the pro must confirm
@@ -79,6 +83,28 @@ public struct ProBookingDetail: Decodable, Sendable, Identifiable {
     public var isPaid: Bool {
         paymentCollectedAt != nil || stripePaymentStatus?.uppercased() == "SUCCEEDED"
     }
+
+    /// The final-bill payment is under (or lost) a Stripe dispute — Stripe has held
+    /// the funds. Must not read as a clean "Paid" (M11 display-truth).
+    public var isPaymentDisputed: Bool {
+        stripePaymentStatus?.uppercased() == "DISPUTED"
+    }
+
+    private var capturedCents: Int { stripeAmountTotal ?? 0 }
+    private var refundedCents: Int { stripeAmountRefunded ?? 0 }
+
+    /// Captured, then the whole amount refunded — money is back with the client.
+    public var isFullyRefunded: Bool {
+        isPaid && !isPaymentDisputed && capturedCents > 0 && refundedCents >= capturedCents
+    }
+
+    /// Captured, then partially refunded.
+    public var isPartiallyRefunded: Bool {
+        isPaid && !isPaymentDisputed && refundedCents > 0 && refundedCents < capturedCents
+    }
+
+    /// Cumulative refund total (cents), for the "· $X refunded" subtitle.
+    public var refundedTotalCents: Int { refundedCents }
 
     /// Refund is offered while a captured Stripe payment exists (web canRefund).
     public var canRefund: Bool { stripePaymentStatus?.uppercased() == "SUCCEEDED" }

@@ -139,6 +139,15 @@ public struct ClientBookingCheckout: Decodable, Sendable {
     public let depositStatus: String?
     /// Formatted deposit amount (e.g. "$25"), or null when no deposit applies.
     public let depositAmount: String?
+    /// Final-bill refund/dispute truth (server-computed). `paymentCollectedAt` /
+    /// `checkoutStatus` are monotonic and never reverse on a refund/dispute, so a
+    /// card must consult these before showing a green "paid" (M11 display-truth).
+    /// Optional so older responses/fixtures still decode (default false / 0).
+    public let paymentDisputed: Bool?
+    public let paymentRefundedCents: Int?
+    public let paymentFullyRefunded: Bool?
+    /// The discovery deposit charge is under (or lost) a Stripe dispute.
+    public let depositDisputed: Bool?
 }
 
 // MARK: - Client checkout payment options

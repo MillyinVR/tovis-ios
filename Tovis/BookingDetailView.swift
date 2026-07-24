@@ -166,6 +166,18 @@ struct BookingDetailView: View {
             (booking.checkout.checkoutStatus ?? "").uppercased() == "PAID"
     }
 
+    // Refund/dispute truth (M11): `paymentCollectedAt` / `checkoutStatus` are
+    // monotonic and never reverse when Stripe refunds or disputes the charge, so
+    // the "paid" cards below must consult these before reading as money received.
+    private var paymentDisputed: Bool { booking.checkout.paymentDisputed ?? false }
+    private var paymentFullyRefunded: Bool { booking.checkout.paymentFullyRefunded ?? false }
+    private var paymentPartiallyRefunded: Bool {
+        !paymentFullyRefunded && (booking.checkout.paymentRefundedCents ?? 0) > 0
+    }
+    /// The discovery deposit charge is under (or lost) a Stripe dispute — its funds
+    /// have been pulled even though depositStatus still reads PAID.
+    private var depositDisputed: Bool { booking.checkout.depositDisputed ?? false }
+
     /// The client already marked an off-platform payment (cash / Venmo / Zelle /
     /// Apple Cash / PayPal) as sent; it's authorized on their word and closes out
     /// only once the pro confirms receipt (web `AWAITING_CONFIRMATION`). There's
@@ -433,17 +445,32 @@ struct BookingDetailView: View {
 
     @ViewBuilder
     private var payCard: some View {
-        if isPaid {
-            BrandSurface(tint: BrandColor.emerald.opacity(0.14)) {
-                HStack(spacing: 10) {
-                    Image(systemName: "checkmark.seal.fill")
-                        .foregroundStyle(BrandColor.emerald)
-                    Text("Payment received")
-                        .font(BrandFont.body(15, .semibold))
-                        .foregroundStyle(BrandColor.textPrimary)
-                    Spacer()
-                }
-            }
+        // A captured payment Stripe later disputed or refunded must not keep
+        // reading as a green "Payment received" (M11 display-truth).
+        if paymentDisputed {
+            payStatusCard(
+                icon: "exclamationmark.triangle.fill",
+                tint: BrandColor.ember,
+                title: "Payment disputed"
+            )
+        } else if paymentFullyRefunded {
+            payStatusCard(
+                icon: "arrow.uturn.backward.circle.fill",
+                tint: BrandColor.textMuted,
+                title: "Refunded"
+            )
+        } else if paymentPartiallyRefunded {
+            payStatusCard(
+                icon: "arrow.uturn.backward.circle",
+                tint: BrandColor.gold,
+                title: "Partially refunded"
+            )
+        } else if isPaid {
+            payStatusCard(
+                icon: "checkmark.seal.fill",
+                tint: BrandColor.emerald,
+                title: "Payment received"
+            )
         } else if awaitingConfirmation {
             BrandSurface(tint: BrandColor.gold.opacity(0.12)) {
                 HStack(alignment: .top, spacing: 10) {
@@ -468,6 +495,20 @@ struct BookingDetailView: View {
                 tipCard
                 methodCard
                 payActionCard
+            }
+        }
+    }
+
+    /// One-line payment status banner (received / refunded / disputed) — a tinted
+    /// surface with an icon + title, matching the web client's payment states.
+    private func payStatusCard(icon: String, tint: Color, title: String) -> some View {
+        BrandSurface(tint: tint.opacity(0.14)) {
+            HStack(spacing: 10) {
+                Image(systemName: icon).foregroundStyle(tint)
+                Text(title)
+                    .font(BrandFont.body(15, .semibold))
+                    .foregroundStyle(BrandColor.textPrimary)
+                Spacer()
             }
         }
     }
@@ -948,13 +989,33 @@ struct BookingDetailView: View {
     @ViewBuilder
     private var depositCard: some View {
         if depositPaid {
-            BrandSurface(tint: BrandColor.emerald.opacity(0.14)) {
-                HStack(spacing: 10) {
-                    Image(systemName: "lock.shield.fill").foregroundStyle(BrandColor.emerald)
-                    Text("Deposit paid")
-                        .font(BrandFont.body(15, .semibold))
-                        .foregroundStyle(BrandColor.textPrimary)
-                    Spacer()
+            // A disputed deposit stays PAID locally while the bank pulls the funds
+            // — it must not read as money safely held (M11 display-truth).
+            if depositDisputed {
+                BrandSurface(tint: BrandColor.ember.opacity(0.14)) {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(BrandColor.ember)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Deposit disputed")
+                                .font(BrandFont.body(15, .semibold))
+                                .foregroundStyle(BrandColor.textPrimary)
+                            Text("Your deposit is under dispute with your bank and is on hold until it’s resolved.")
+                                .font(BrandFont.body(13))
+                                .foregroundStyle(BrandColor.textSecondary)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                }
+            } else {
+                BrandSurface(tint: BrandColor.emerald.opacity(0.14)) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "lock.shield.fill").foregroundStyle(BrandColor.emerald)
+                        Text("Deposit paid")
+                            .font(BrandFont.body(15, .semibold))
+                            .foregroundStyle(BrandColor.textPrimary)
+                        Spacer()
+                    }
                 }
             }
         } else if depositDue {
@@ -2654,10 +2715,10 @@ struct BookingDetailView: View {
                             .font(BrandFont.body(16, .semibold))
                             .foregroundStyle(BrandColor.textPrimary)
                     }
-                    if let paid = paidLine {
-                        Text(paid)
+                    if let paid = paidLineInfo {
+                        Text(paid.text)
                             .font(BrandFont.body(12))
-                            .foregroundStyle(BrandColor.emerald)
+                            .foregroundStyle(paid.tone)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
@@ -2718,9 +2779,14 @@ struct BookingDetailView: View {
         }
     }
 
-    private var paidLine: String? {
+    /// The one-line payment note under the total. A refunded/disputed charge must
+    /// not keep reading a green "Paid" — reflect the DB's refund/dispute truth (M11).
+    private var paidLineInfo: (text: String, tone: Color)? {
+        if paymentDisputed { return ("Payment disputed", BrandColor.ember) }
+        if paymentFullyRefunded { return ("Refunded", BrandColor.textMuted) }
+        if paymentPartiallyRefunded { return ("Partially refunded", BrandColor.gold) }
         guard booking.checkout.paymentCollectedAt != nil else { return nil }
-        return "Paid"
+        return ("Paid", BrandColor.emerald)
     }
 
     private func itemName(_ item: ClientBookingItem) -> String {

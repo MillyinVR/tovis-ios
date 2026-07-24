@@ -33,6 +33,7 @@
     "selectedPaymentMethod": null,
     "stripePaymentStatus": null,
     "stripeAmountTotal": null,
+    "stripeAmountRefunded": 0,
     "stripeCurrency": null,
     "checkoutStatus": "AWAITING_CONFIRMATION",
     "rebookOfBookingId": null,
