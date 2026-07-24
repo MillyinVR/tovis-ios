@@ -153,14 +153,19 @@ public struct RescheduledBooking: Decodable, Sendable, Identifiable {
 // MARK: - Cancel (POST /api/v1/bookings/[id]/cancel)
 
 /// Honest, client-facing summary of what happened to the client's money on a
-/// cancel (M6). Mirrors the server's `CancelRefundSummary`.
-/// `status` ∈ `REFUND_ISSUED | FORFEITED | PROCESSING | NONE`; `message` is the
-/// ready-to-show sentence; `refundedAmountCents` is present only when a refund
-/// was actually issued.
+/// cancel (M6 / M15). Mirrors the server's `CancelRefundSummary`.
+/// `status` ∈ `REFUND_ISSUED | FORFEITED | PROCESSING | FEE_CHARGED | NONE`;
+/// `message` is the ready-to-show sentence; `refundedAmountCents` is present only
+/// when a refund was actually issued; `lateCancelFeeChargedCents` is present only
+/// when a late-cancellation fee was charged to the client's card (M15). The
+/// `message` already names any fee, so a client can render it verbatim; the cents
+/// field is there for richer surfaces. `FEE_CHARGED` means a fee was charged with
+/// no refund/forfeiture — a non-`NONE` status so the alert surfaces it.
 public struct CancelRefundSummary: Decodable, Sendable {
     public let status: String
     public let message: String
     public let refundedAmountCents: Int?
+    public let lateCancelFeeChargedCents: Int?
 }
 
 /// The cancel route returns the fields at the top level (no `booking` wrapper):

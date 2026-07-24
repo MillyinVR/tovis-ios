@@ -67,6 +67,44 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.refund?.message.contains("$40.00") == true)
     }
 
+    // M15: a client cancel inside the pro's window (no deposit forfeited) charges
+    // a late-cancellation fee. It rides the SAME `refund` summary with a non-NONE
+    // status (FEE_CHARGED) so the app surfaces it, plus `lateCancelFeeChargedCents`.
+    @Test func decodesCancelResponseWithLateCancelFee() throws {
+        let json = """
+        {
+          "ok": true,
+          "id": "bk_fee",
+          "status": "CANCELLED",
+          "sessionStep": "NONE",
+          "meta": { "mutated": true, "noOp": false },
+          "refund": {
+            "status": "FEE_CHARGED",
+            "lateCancelFeeChargedCents": 1500,
+            "message": "Your booking is cancelled. A $15.00 late-cancellation fee was charged to your card."
+          }
+        }
+        """.data(using: .utf8)!
+
+        let res = try JSONDecoder().decode(CancelBookingResponse.self, from: json)
+        #expect(res.refund?.status == "FEE_CHARGED")
+        #expect(res.refund?.lateCancelFeeChargedCents == 1500)
+        #expect(res.refund?.refundedAmountCents == nil)
+        #expect(res.refund?.message.contains("$15.00") == true)
+    }
+
+    // The pre-M15 refund summary omits `lateCancelFeeChargedCents`; the optional
+    // decodes to nil, and a refund summary still decodes cleanly.
+    @Test func cancelRefundToleratesMissingLateCancelFee() throws {
+        let json = """
+        { "status": "REFUND_ISSUED", "refundedAmountCents": 4000, "message": "ok" }
+        """.data(using: .utf8)!
+
+        let summary = try JSONDecoder().decode(CancelRefundSummary.self, from: json)
+        #expect(summary.refundedAmountCents == 4000)
+        #expect(summary.lateCancelFeeChargedCents == nil)
+    }
+
     // Older servers (pre-M6) omit `refund`; the optional decodes to nil, never a
     // crash — and the unknown `ok`/`sessionStep`/`meta` keys are ignored.
     @Test func cancelResponseToleratesMissingRefund() throws {
