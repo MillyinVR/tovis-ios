@@ -327,6 +327,27 @@ public final class ProBookingService: Sendable {
         )
     }
 
+    /// POST /api/v1/bookings/{id}/no-show-fee/refund — refund a CHARGED no-show /
+    /// late-cancel fee. Full-refund-only: the whole remaining fee is returned to the
+    /// client (the server refuses a fee that never charged, is already refunded, or
+    /// is frozen under a Stripe dispute). Like `waiveNoShowFee`, the body carries
+    /// nothing, so the idempotency key is stable (a double-tap dedupes the refund).
+    /// Like `refund` / `moneyTrail` / `waiveNoShowFee`, this is the shared `/bookings`
+    /// route, not a `/pro` one.
+    public func refundNoShowFee(
+        bookingId: String,
+        idempotencyKey: String? = nil
+    ) async throws {
+        let key = idempotencyKey ?? buildClientIdempotencyKey(
+            scope: "booking", entityId: bookingId, action: "no-show-refund")
+        try await api.requestVoid(
+            "/bookings/\(bookingId)/no-show-fee/refund",
+            method: .post,
+            body: Data("{}".utf8),
+            headers: ["idempotency-key": key]
+        )
+    }
+
     /// POST /api/v1/pro/bookings/{id}/rebook — propose the client's next
     /// appointment. `BOOK` schedules it (needs `scheduledFor`); `RECOMMEND_WINDOW`
     /// suggests a date range; `CLEAR` removes a prior proposal. Idempotent.
