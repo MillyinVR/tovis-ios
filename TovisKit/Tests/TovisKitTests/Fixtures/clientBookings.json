@@ -55,6 +55,7 @@
         "hasPendingRebookConfirmation": false,
         "rebookProposedFor": null,
         "mediaUseConsent": false,
+        "cancellationPolicy": "A cancellation fee ($25.00) applies if you cancel within 24 hours of your appointment or don’t show up.",
         "consultation": null,
         "paymentOptions": {
           "methods": [
@@ -123,6 +124,7 @@
         "hasPendingRebookConfirmation": false,
         "rebookProposedFor": null,
         "mediaUseConsent": false,
+        "cancellationPolicy": "A cancellation fee ($25.00) applies if you cancel within 24 hours of your appointment or don’t show up.",
         "consultation": {
           "consultationNotes": "Going lighter than last time — adding a gloss.",
           "consultationPrice": null,
@@ -220,6 +222,7 @@
         "hasPendingRebookConfirmation": false,
         "rebookProposedFor": null,
         "mediaUseConsent": false,
+        "cancellationPolicy": "A cancellation fee ($25.00) applies if you cancel within 24 hours of your appointment or don’t show up.",
         "consultation": null,
         "paymentOptions": null
       }

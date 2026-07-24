@@ -72,12 +72,15 @@ public final class BookingService: Sendable {
     public func addOns(
         offeringId: String,
         locationType: String = "SALON"
-    ) async throws -> [BookingAddOn] {
+    ) async throws -> OfferingAddOnsResult {
         let response: OfferingAddOnsResponse = try await api.request("/offerings/add-ons", query: [
             URLQueryItem(name: "offeringId", value: offeringId),
             URLQueryItem(name: "locationType", value: locationType),
         ])
-        return response.addOns.sorted { $0.sortOrder < $1.sortOrder }
+        return OfferingAddOnsResult(
+            addOns: response.addOns.sorted { $0.sortOrder < $1.sortOrder },
+            cancellationPolicy: response.cancellationPolicy
+        )
     }
 
     /// POST /api/v1/holds — reserve a slot briefly before finalizing.
@@ -111,12 +114,14 @@ public final class BookingService: Sendable {
         addOnIds: [String] = [],
         source: String = "REQUESTED",
         openingId: String? = nil,
+        cancellationPolicyAccepted: Bool = false,
         idempotencyKey: String? = nil
     ) async throws -> FinalizedBooking {
         let payload = try JSONEncoder.canonical.encode(FinalizeBookingRequest(
             holdId: holdId, offeringId: offeringId,
             locationType: locationType, addOnIds: addOnIds, source: source,
-            openingId: openingId
+            openingId: openingId,
+            cancellationPolicyAccepted: cancellationPolicyAccepted
         ))
         let key = idempotencyKey ?? buildClientIdempotencyKey(
             scope: "booking", entityId: holdId, action: "finalize",

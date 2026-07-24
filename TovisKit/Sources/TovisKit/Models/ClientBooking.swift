@@ -90,6 +90,12 @@ public struct ClientBooking: Decodable, Sendable, Identifiable {
     /// publicly (portfolio/Looks). Toggle via POST /client/bookings/{id}/media-consent.
     public let mediaUseConsent: Bool
 
+    /// The no-show / late-cancel fee policy the client AGREED to at booking (M15),
+    /// formatted for display, or nil if none applied. This is what they agreed to
+    /// (the booking's own snapshot), not the pro's possibly-since-edited settings.
+    /// Optional so pre-field responses still decode.
+    public let cancellationPolicy: String?
+
     /// The pro's accepted payment methods (with off-platform handles) + tip config
     /// + payment note for this booking's native checkout. Optional so pre-field
     /// responses still decode; nil is treated as "no options loaded" by the checkout.

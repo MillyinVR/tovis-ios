@@ -57,6 +57,17 @@ public struct AvailabilityDay: Decodable, Sendable {
 
 struct OfferingAddOnsResponse: Decodable, Sendable {
     let addOns: [BookingAddOn]
+    /// The pro's no-show / late-cancel fee policy the client must agree to before
+    /// booking (M15), formatted for display, or null when the pro charges no fees.
+    /// Optional so older servers that omit it still decode. When present, the
+    /// confirm flow shows it + requires the agreement toggle.
+    let cancellationPolicy: String?
+}
+
+/// The confirm-flow needs both the add-ons and the pro's fee policy from one call.
+public struct OfferingAddOnsResult: Sendable {
+    public let addOns: [BookingAddOn]
+    public let cancellationPolicy: String?
 }
 
 /// A selectable add-on for an offering in a given location mode. The `id` is the
@@ -119,6 +130,9 @@ struct FinalizeBookingRequest: Encodable, Sendable {
     /// booking — and, being optional, it's omitted from the encoded body then, so the
     /// finalize idempotency nonce (derived from the body) is unchanged for those.
     let openingId: String?
+    /// The client ticked "I agree to the cancellation policy" at the confirm step
+    /// (M15). Required by the server when the pro charges no-show/late-cancel fees.
+    let cancellationPolicyAccepted: Bool
 }
 
 struct FinalizeBookingResponse: Decodable, Sendable {
