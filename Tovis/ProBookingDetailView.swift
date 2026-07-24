@@ -523,28 +523,65 @@ struct ProBookingDetailView: View {
 
     // MARK: - Payment
 
+    /// Payment card display state — the DB's opinion, not just "was it collected".
+    /// A captured payment Stripe later DISPUTED or refunded must not read as a
+    /// green "Paid" (matches the web pro detail + the money trail). M11.
+    private struct PaymentView {
+        let tone: Color
+        let header: String
+        let title: String
+        let subtitle: String
+    }
+
+    private func paymentView(_ b: ProBookingDetail, total: String) -> PaymentView {
+        let collected = "\(total) collected"
+        let refunded = b.refundedTotalCents > 0
+            ? Wire.moneyCents(b.refundedTotalCents, currency: b.stripeCurrency ?? "usd")
+            : nil
+        let withRefund = refunded.map { "\(collected) · \($0) refunded" } ?? collected
+        if b.isPaymentDisputed {
+            return PaymentView(tone: BrandColor.ember, header: "Under dispute — Stripe has held these funds.",
+                               title: "Payment disputed", subtitle: collected)
+        }
+        if b.isFullyRefunded {
+            return PaymentView(tone: BrandColor.textMuted, header: "Refunded to the client.",
+                               title: "Refunded", subtitle: withRefund)
+        }
+        if b.isPartiallyRefunded {
+            return PaymentView(tone: BrandColor.gold, header: "Partially refunded to the client.",
+                               title: "Partially refunded\(methodSuffix(b))", subtitle: withRefund)
+        }
+        if b.isPaid {
+            return PaymentView(tone: BrandColor.accent, header: "Collected and reconciled.",
+                               title: "Paid\(methodSuffix(b))", subtitle: collected)
+        }
+        return PaymentView(tone: BrandColor.gold, header: "Not collected yet.",
+                           title: "Awaiting payment", subtitle: "\(total) due")
+    }
+
     private func paymentCard(_ booking: ProBookingDetail) -> some View {
         let total = Wire.money(booking.totalLabel) ?? "—"
+        let pay = paymentView(booking, total: total)
         return BrandSurface {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Payment").font(BrandFont.body(14, .semibold)).foregroundStyle(BrandColor.textPrimary)
-                Text(booking.isPaid ? "Collected and reconciled." : "Not collected yet.")
+                Text(pay.header)
                     .font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
 
                 HStack(spacing: 10) {
                     Image(systemName: "creditcard")
-                        .font(.system(size: 16)).foregroundStyle(booking.isPaid ? BrandColor.accent : BrandColor.gold)
+                        .font(.system(size: 16)).foregroundStyle(pay.tone)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(booking.isPaid ? "Paid\(methodSuffix(booking))" : "Awaiting payment")
+                        Text(pay.title)
                             .font(BrandFont.body(13, .semibold)).foregroundStyle(BrandColor.textPrimary)
-                        Text(booking.isPaid ? "\(total) collected" : "\(total) due")
+                        Text(pay.subtitle)
                             .font(BrandFont.body(11)).foregroundStyle(BrandColor.textMuted)
                     }
                     Spacer()
                 }
                 .padding(10)
-                .background((booking.isPaid ? BrandColor.accent : BrandColor.gold).opacity(0.10))
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke((booking.isPaid ? BrandColor.accent : BrandColor.gold).opacity(0.3), lineWidth: 1))
+                .background(pay.tone.opacity(0.10))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(pay.tone.opacity(0.3), lineWidth: 1))
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
                 // Off-platform payment the client attested to (AWAITING_CONFIRMATION):

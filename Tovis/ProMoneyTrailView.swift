@@ -429,12 +429,19 @@ struct ProMoneyTrailView: View {
 
         if let d = trail.deposit {
             let depositStatus = d.status.uppercased()
+            // A disputed deposit has had its funds pulled by Stripe even though
+            // depositStatus still reads PAID (the deposit rides its own
+            // PaymentIntent). It must read as money at risk, not money safely
+            // received — mirroring the final-bill DISPUTED row below.
+            let disputed = d.disputedAt != nil
             // Money is only "in" once the deposit was actually captured (PAID, or
-            // PAID then refunded). A PENDING deposit whose checkout was never
-            // completed has collected nothing — it must not render as green money-in.
-            let captured = depositStatus == "PAID" || depositStatus == "REFUNDED"
+            // PAID then refunded) AND is not under dispute. A PENDING deposit whose
+            // checkout was never completed has collected nothing either.
+            let captured = !disputed && (depositStatus == "PAID" || depositStatus == "REFUNDED")
             let detail: String?
-            if d.refundedCents > 0 {
+            if disputed {
+                detail = "Payment disputed"
+            } else if d.refundedCents > 0 {
                 detail = "\(money(d.refundedCents) ?? "—") refunded"
             } else if d.creditedAt != nil {
                 detail = "Credited to the final total"
@@ -444,19 +451,23 @@ struct ProMoneyTrailView: View {
                 detail = nil
             }
             let depositTone: Tone
-            switch depositStatus {
-            case "PAID": depositTone = .success
-            case "REFUNDED": depositTone = .muted
-            case "PENDING": depositTone = .warn
-            case "FAILED": depositTone = .danger
-            default: depositTone = .muted
+            if disputed {
+                depositTone = .danger
+            } else {
+                switch depositStatus {
+                case "PAID": depositTone = .success
+                case "REFUNDED": depositTone = .muted
+                case "PENDING": depositTone = .warn
+                case "FAILED": depositTone = .danger
+                default: depositTone = .muted
+                }
             }
             entries.append(TrailEntry(
                 key: "deposit", label: "Deposit",
                 subtitle: joined(detail, d.paidAt),
                 amount: money(d.amountCents), flow: captured ? .in : .none,
                 tone: depositTone,
-                status: d.status
+                status: disputed ? "DISPUTED" : d.status
             ))
         }
 
@@ -514,7 +525,16 @@ struct ProMoneyTrailView: View {
             case "FAILED", "CANCELED": tone = .danger
             default: tone = .warn   // PENDING
             }
-            let detail = r.reason ?? (r.trigger.uppercased() == "AUTO_CANCELLATION" ? "Automatic (cancellation)" : nil)
+            // A FAILED refund's most important fact is WHY it failed — the money
+            // never reached the client and someone must act. Surface the Stripe
+            // failure message (falling back to the request reason, then a generic
+            // label) rather than the request reason alone, which reads as success.
+            let detail: String?
+            if status == "FAILED" {
+                detail = r.failureMessage ?? r.reason ?? "Refund failed"
+            } else {
+                detail = r.reason ?? (r.trigger.uppercased() == "AUTO_CANCELLATION" ? "Automatic (cancellation)" : nil)
+            }
             entries.append(TrailEntry(
                 key: "refund-\(r.id)", label: "Refund",
                 subtitle: joined(detail, r.createdAt),

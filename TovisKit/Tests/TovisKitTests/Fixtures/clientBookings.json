@@ -25,7 +25,11 @@
           "paymentAuthorizedAt": null,
           "paymentCollectedAt": null,
           "depositStatus": "PENDING",
-          "depositAmount": "25.00"
+          "depositAmount": "25.00",
+          "paymentDisputed": false,
+          "paymentRefundedCents": 0,
+          "paymentFullyRefunded": false,
+          "depositDisputed": false
         },
         "locationType": "SALON",
         "locationId": "loc_1",
@@ -90,7 +94,11 @@
           "paymentAuthorizedAt": null,
           "paymentCollectedAt": null,
           "depositStatus": null,
-          "depositAmount": null
+          "depositAmount": null,
+          "paymentDisputed": false,
+          "paymentRefundedCents": 0,
+          "paymentFullyRefunded": false,
+          "depositDisputed": false
         },
         "locationType": "SALON",
         "locationId": "loc_1",
@@ -183,7 +191,11 @@
           "paymentAuthorizedAt": null,
           "paymentCollectedAt": null,
           "depositStatus": null,
-          "depositAmount": null
+          "depositAmount": null,
+          "paymentDisputed": false,
+          "paymentRefundedCents": 0,
+          "paymentFullyRefunded": false,
+          "depositDisputed": false
         },
         "locationType": "SALON",
         "locationId": "loc_1",

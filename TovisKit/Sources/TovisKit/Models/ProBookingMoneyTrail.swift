@@ -68,6 +68,11 @@ public struct ProBookingMoneyTrail: Decodable, Sendable {
         public let paidAt: String?
         public let creditedAt: String?
         public let refundedCents: Int
+        /// Set when the deposit charge is under (or lost) a Stripe dispute — Stripe
+        /// has pulled the funds even though `status` still reads PAID (the deposit
+        /// rides its own PaymentIntent). Cleared if the dispute is WON. A disputed
+        /// deposit must not render as money safely received. See web M4.
+        public let disputedAt: String?
     }
 
     public struct DiscoveryFee: Decodable, Sendable {
