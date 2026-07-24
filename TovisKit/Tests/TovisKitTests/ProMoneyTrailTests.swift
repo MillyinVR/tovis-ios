@@ -75,7 +75,7 @@ final class ProMoneyTrailURLProtocol: URLProtocol {
           "finalCharge":{"status":"SUCCEEDED","capturedCents":12000,"applicationFeeCents":360,"paidAt":"2026-07-08T18:00:00.000Z"},
           "deposit":{"status":"PAID","amountCents":3000,"paidAt":"2026-07-01T12:00:00.000Z","creditedAt":"2026-07-08T18:00:00.000Z","refundedCents":0},
           "discoveryFee":{"amountCents":500,"refundedAt":null},
-          "noShowFee":{"status":"FAILED","reason":"NO_SHOW","amountCents":2500,"chargedAt":null,"markedAt":"2026-07-02T09:00:00.000Z"},
+          "noShowFee":{"status":"FAILED","reason":"NO_SHOW","amountCents":2500,"chargedAt":null,"markedAt":"2026-07-02T09:00:00.000Z","refundedCents":0,"disputedAt":null},
           "refunds":[{"id":"ref_1","amountCents":2000,"currency":"usd","status":"SUCCEEDED","trigger":"DISCRETIONARY","reason":"service issue","initiatedByRole":"PRO","failureMessage":null,"createdAt":"2026-07-09T10:00:00.000Z"}],
           "summary":{"capturedCents":12000,"refundedCents":2000,"pendingRefundCents":0,"netCents":10000},
           "capabilities":{"canRefund":true,"refundableRemainingCents":10000,"canWaiveNoShowFee":true}
@@ -104,6 +104,8 @@ final class ProMoneyTrailURLProtocol: URLProtocol {
         #expect(trail.discoveryFee?.refundedAt == nil)
         #expect(trail.noShowFee?.status == "FAILED")
         #expect(trail.noShowFee?.reason == "NO_SHOW")
+        #expect(trail.noShowFee?.refundedCents == 0)
+        #expect(trail.noShowFee?.disputedAt == nil)
         #expect(trail.refunds.count == 1)
         #expect(trail.refunds.first?.id == "ref_1")
         #expect(trail.refunds.first?.trigger == "DISCRETIONARY")
@@ -138,5 +140,46 @@ final class ProMoneyTrailURLProtocol: URLProtocol {
         #expect(trail.refunds.isEmpty)
         #expect(trail.summary.capturedCents == 0)
         #expect(trail.capabilities.canRefund == false)
+    }
+
+    // M15 GAP B — a Stripe-side refund / dispute of the fee's OWN PaymentIntent
+    // now reads honestly: a FULLY refunded fee decodes as REFUNDED with the
+    // cumulative cents, and a disputed CHARGED fee carries disputedAt so the view
+    // renders it as money at risk rather than safely collected.
+    @Test func decodesRefundedAndDisputedNoShowFee() async throws {
+        reset("""
+        {"ok":true,"trail":{
+          "bookingId":"bkg_3","currency":"usd","paymentProvider":"STRIPE",
+          "bill":{"totalCents":10000,"serviceSubtotalCents":10000,"tipCents":null,"taxCents":null,"discountCents":null,"checkoutStatus":"PAID","selectedPaymentMethod":"STRIPE_CARD","collectedAt":null},
+          "finalCharge":null,"deposit":null,"discoveryFee":null,
+          "noShowFee":{"status":"REFUNDED","reason":"LATE_CANCEL","amountCents":2500,"chargedAt":"2026-07-02T09:00:00.000Z","markedAt":"2026-07-02T09:00:00.000Z","refundedCents":2500,"disputedAt":null},
+          "refunds":[],
+          "summary":{"capturedCents":0,"refundedCents":0,"pendingRefundCents":0,"netCents":0},
+          "capabilities":{"canRefund":false,"refundableRemainingCents":0,"canWaiveNoShowFee":false}
+        }}
+        """)
+
+        let refunded = try await makeService().moneyTrail(bookingId: "bkg_3")
+        #expect(refunded.noShowFee?.status == "REFUNDED")
+        #expect(refunded.noShowFee?.refundedCents == 2500)
+        #expect(refunded.noShowFee?.disputedAt == nil)
+        #expect(refunded.capabilities.canWaiveNoShowFee == false)
+
+        reset("""
+        {"ok":true,"trail":{
+          "bookingId":"bkg_4","currency":"usd","paymentProvider":"STRIPE",
+          "bill":{"totalCents":10000,"serviceSubtotalCents":10000,"tipCents":null,"taxCents":null,"discountCents":null,"checkoutStatus":"PAID","selectedPaymentMethod":"STRIPE_CARD","collectedAt":null},
+          "finalCharge":null,"deposit":null,"discoveryFee":null,
+          "noShowFee":{"status":"CHARGED","reason":"NO_SHOW","amountCents":2500,"chargedAt":"2026-07-02T09:00:00.000Z","markedAt":"2026-07-02T09:00:00.000Z","refundedCents":0,"disputedAt":"2026-07-05T09:00:00.000Z"},
+          "refunds":[],
+          "summary":{"capturedCents":0,"refundedCents":0,"pendingRefundCents":0,"netCents":0},
+          "capabilities":{"canRefund":false,"refundableRemainingCents":0,"canWaiveNoShowFee":false}
+        }}
+        """)
+
+        let disputed = try await makeService().moneyTrail(bookingId: "bkg_4")
+        #expect(disputed.noShowFee?.status == "CHARGED")
+        #expect(disputed.noShowFee?.disputedAt == "2026-07-05T09:00:00.000Z")
+        #expect(disputed.noShowFee?.refundedCents == 0)
     }
 }
