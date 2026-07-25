@@ -41,6 +41,11 @@ public final class BookingService: Sendable {
     /// MOBILE booking MUST pass `clientAddressId` (the client's saved service
     /// address) so the slots respect the pro's travel radius for that location —
     /// omitting it is a 400 `CLIENT_SERVICE_ADDRESS_REQUIRED`, not a fallback.
+    ///
+    /// `addOnIds` sizes the OFFER: the server folds each add-on's duration into
+    /// the slot length, so a day asked without them offers starts that only fit
+    /// the base service. This flow knows the selection before the time is
+    /// picked, so it always sends what the client has ticked (B1-A).
     public func day(
         professionalId: String,
         serviceId: String,
@@ -49,7 +54,8 @@ public final class BookingService: Sendable {
         durationMinutes: Int,
         date: String,
         locationType: String = "SALON",
-        clientAddressId: String? = nil
+        clientAddressId: String? = nil,
+        addOnIds: [String] = []
     ) async throws -> AvailabilityDay {
         var query = [
             URLQueryItem(name: "professionalId", value: professionalId),
@@ -63,12 +69,16 @@ public final class BookingService: Sendable {
         if let clientAddressId, !clientAddressId.isEmpty {
             query.append(URLQueryItem(name: "clientAddressId", value: clientAddressId))
         }
+        if !addOnIds.isEmpty {
+            query.append(URLQueryItem(name: "addOnIds", value: addOnIds.sorted().joined(separator: ",")))
+        }
         return try await api.request("/availability/day", query: query)
     }
 
     /// GET /api/v1/offerings/add-ons — selectable add-ons for an offering in a
     /// given location mode. Each returned `id` is the link id to pass back in
-    /// finalize's `addOnIds`. Add-ons don't affect the hold (matches web).
+    /// the availability query, the hold and finalize — all three size their
+    /// window on the same selection.
     public func addOns(
         offeringId: String,
         locationType: String = "SALON"
@@ -84,18 +94,23 @@ public final class BookingService: Sendable {
     }
 
     /// POST /api/v1/holds — reserve a slot briefly before finalizing.
+    ///
+    /// The reservation is sized `base + addOnIds`, matching what finalize will
+    /// enforce. Pass the client's current selection: a base-sized hold leaves
+    /// the add-on tail unreserved for someone else to take (B1-A).
     public func createHold(
         offeringId: String,
         locationId: String?,
         scheduledFor: String,
         locationType: String = "SALON",
         clientAddressId: String? = nil,
-        source: String = "REQUESTED"
+        source: String = "REQUESTED",
+        addOnIds: [String] = []
     ) async throws -> BookingHold {
         let payload = try JSONEncoder.canonical.encode(CreateHoldRequest(
             offeringId: offeringId, locationType: locationType,
             locationId: locationId, scheduledFor: scheduledFor, source: source,
-            clientAddressId: clientAddressId
+            clientAddressId: clientAddressId, addOnIds: addOnIds
         ))
         let response: CreateHoldResponse = try await api.request(
             "/holds", method: .post, body: payload

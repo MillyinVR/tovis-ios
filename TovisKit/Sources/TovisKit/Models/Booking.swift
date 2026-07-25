@@ -100,6 +100,11 @@ struct CreateHoldRequest: Encodable, Sendable {
     /// Required by the backend when locationType == MOBILE (the service address
     /// the pro travels to); omitted for SALON.
     let clientAddressId: String?
+    /// OfferingAddOn link ids already chosen. The hold RESERVES `base +
+    /// add-ons`, so sending them here is what makes the held window the window
+    /// finalize will take — omitting them reserves the base service alone and
+    /// the booking can be refused for time that was never held (B1-A).
+    let addOnIds: [String]
 }
 
 struct CreateHoldResponse: Decodable, Sendable {
@@ -112,6 +117,10 @@ public struct BookingHold: Decodable, Sendable, Identifiable {
     public let scheduledFor: String
     public let locationType: String
     public let locationId: String?
+    /// Minutes actually reserved (base + any add-ons sent with the create),
+    /// excluding the location buffer. Optional so an older server that predates
+    /// the field still decodes.
+    public let durationMinutes: Int?
 }
 
 // MARK: - Finalize (POST /api/v1/bookings/finalize)
