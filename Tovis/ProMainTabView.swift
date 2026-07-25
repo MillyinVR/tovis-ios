@@ -31,6 +31,9 @@ struct ProMainTabView: View {
     @State private var reviewsLink: ReviewsDeepLink?
     /// The membership screen surfaced by a `/pro/membership` push (handle-expiry).
     @State private var showMembership = false
+    /// Set while a pushed screen asks for the footer to be hidden (a full-screen
+    /// form whose own bottom action bar the footer would sit on top of).
+    @State private var footerHidden = false
 
     var body: some View {
         Group {
@@ -64,8 +67,17 @@ struct ProMainTabView: View {
                 .tag(ProTab.ID.profile)
         }
         .toolbar(.hidden, for: .tabBar)
+        // A pushed full-screen form (e.g. New booking) pins its own primary action
+        // to the bottom, which the footer would otherwise cover — see
+        // `ProFooterVisibility`. Read the request before installing the bar so the
+        // inset collapses to zero while such a screen is up.
+        .onPreferenceChange(HidesProFooterKey.self) { hidden in
+            footerHidden = hidden
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            ProTabBar(selected: $tab, session: proSession, messagesBadge: messagesBadge)
+            if !footerHidden {
+                ProTabBar(selected: $tab, session: proSession, messagesBadge: messagesBadge)
+            }
         }
         .tint(BrandColor.accent)
         // Keep the live-session state + Messages badge fresh: load on appear, on

@@ -169,6 +169,9 @@ struct ProNewBookingView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
         .tint(BrandColor.accent)
+        // `createBar` above is pinned to the bottom; the pro footer would cover it
+        // (entirely, with the keyboard up). Give the form the screen instead.
+        .hidesProFooter()
         .task {
             await load()
             // Seed a tapped calendar slot into the custom-time picker.
