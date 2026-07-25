@@ -68,6 +68,10 @@ struct ProAftercareAuthorView: View {
     @State private var selectedClientAddressId: String?
     @State private var rebookDurationMinutes = 60
     @State private var selectedSlot: String?   // chosen ISO start instant
+    /// The day the open-slot picker is showing. Owned here (not by the picker)
+    /// so the "My calendar" month sheet can drive it.
+    @State private var slotDay = Date()
+    @State private var calendarSheetOpen = false
 
     // Custom-time mode for the BOOKED slot: any time on the pro's authority —
     // an off day, before opening, after closing — mirroring ProNewBookingView's
@@ -149,6 +153,18 @@ struct ProAftercareAuthorView: View {
             Button("Cancel", role: .cancel) { overrideReason = "" }
         } message: { prompt in
             Text("\(prompt.question) The override is recorded on the booking.")
+        }
+        .sheet(isPresented: $calendarSheetOpen) {
+            ProRebookCalendarSheet(
+                timeZone: apptZone,
+                offWeekdays: offWeekdays,
+                selectedDay: rebookCalendarDay,
+                // Today, in the appointment's zone — the same floor the slot
+                // picker's stepper (`in: Date()...`) and the custom-time picker
+                // already use. A pro may book same-day on their own authority.
+                earliest: Date(),
+                onPick: applyCalendarDay,
+            )
         }
         .mediaFullscreenCover($viewingMedia)
     }
@@ -373,6 +389,8 @@ struct ProAftercareAuthorView: View {
                 } else {
                     if rebookLocationType == "MOBILE" { addressPickerRow }
 
+                    myCalendarButton
+
                     Toggle(isOn: $customTimeMode.animation()) {
                         Text("Enter a custom time").font(BrandFont.body(13))
                             .foregroundStyle(BrandColor.textSecondary)
@@ -409,11 +427,47 @@ struct ProAftercareAuthorView: View {
                             offWeekdays: offWeekdays,
                             offDayHint: "This day is outside your working hours — switch to “Enter a custom time” to book it anyway.",
                             selectedSlot: $selectedSlot,
+                            selectedDate: $slotDay,
                         )
                     }
                 }
             }
         }
+    }
+
+    /// Opens the pro's own month over the picker — booked/blocked days and
+    /// off-day shading — so the next appointment is placed around what they
+    /// already have (web parity: the popup behind "📅 My calendar").
+    private var myCalendarButton: some View {
+        Button { calendarSheetOpen = true } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "calendar").font(.system(size: 12, weight: .semibold))
+                Text("My calendar").font(BrandFont.body(13, .semibold))
+            }
+            .foregroundStyle(BrandColor.accent)
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(BrandColor.accent.opacity(0.12))
+            .clipShape(Capsule())
+        }
+        .disabled(saving)
+    }
+
+    /// The day the month sheet should outline, and the day a pick lands on:
+    /// custom-time mode owns its own instant, slot mode the picker's day.
+    private var rebookCalendarDay: Date { customTimeMode ? customTime : slotDay }
+
+    /// A day picked off the month sheet. In custom-time mode only the DAY moves
+    /// — the time of day the pro typed is theirs and must survive the pick.
+    private func applyCalendarDay(_ day: Date) {
+        guard customTimeMode else {
+            slotDay = day
+            return
+        }
+        let cal = apptCalendar
+        let time = cal.dateComponents([.hour, .minute], from: customTime)
+        customTime = cal.date(
+            bySettingHour: time.hour ?? 0, minute: time.minute ?? 0, second: 0, of: day
+        ) ?? day
     }
 
     /// Whether the custom time's calendar day (in the appointment's zone) falls

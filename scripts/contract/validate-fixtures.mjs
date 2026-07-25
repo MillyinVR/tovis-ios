@@ -117,6 +117,15 @@ const CHECKS = [
     def: 'BookingHoldCreateDTO',
     pick: (d) => [d.hold],
   },
+  // GET /api/v1/pro/availability/busy-days returns the payload at the ROOT
+  // (`jsonOk({ tz, from, to, days })`), so the whole document is the DTO —
+  // including `days`, whose per-day `{ bookings, blocked }` shape is what the
+  // rebook month sheet's overlay draws.
+  {
+    file: 'proBusyDays.json',
+    def: 'ProAvailabilityBusyDaysOk',
+    pick: (d) => [d],
+  },
 ]
 
 function fail(msg) {

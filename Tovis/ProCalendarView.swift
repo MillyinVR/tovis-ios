@@ -499,11 +499,16 @@ struct ProCalendarView: View {
     private func monthBody(_ data: ProCalendarResponse) -> some View {
         let cells = ProCalendarGrid.monthCells(
             reference: currentDate, timeZone: calendarTimeZone, today: Date())
-        let eventsByDay = Dictionary(grouping: data.events, by: \.localDateKey)
+        // One dot per event, in feed order — the same grouping as before, now
+        // expressed in the grid's source-agnostic mark vocabulary.
+        let marksByDay = data.events.reduce(into: [String: ProMonthDayMarks]()) { acc, event in
+            acc[event.localDateKey, default: ProMonthDayMarks()].dots.append(
+                event.isBlock ? .block : .booking(status: event.status))
+        }
 
         ProCalendarMonthGrid(
             cells: cells,
-            eventsByDay: eventsByDay,
+            marksByDay: marksByDay,
             onPickDay: { cell in
                 currentDate = ProCalendarGrid.anchorNoon(cell.startOfDay, timeZone: calendarTimeZone)
                 withAnimation(.easeOut(duration: 0.15)) { view = .day }
