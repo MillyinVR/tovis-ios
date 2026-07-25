@@ -69,6 +69,22 @@ struct ProAftercareAuthorView: View {
     @State private var rebookDurationMinutes = 60
     @State private var selectedSlot: String?   // chosen ISO start instant
 
+    // Custom-time mode for the BOOKED slot: any time on the pro's authority —
+    // an off day, before opening, after closing — mirroring ProNewBookingView's
+    // manual mode. The server still checks the pro's scheduling rules; a gated
+    // refusal surfaces the override confirm alert instead of dead-ending.
+    @State private var customTimeMode = false
+    @State private var customTime = Date().addingTimeInterval(24 * 3600)
+    @State private var overridePrompt: BookingOverridePrompt?
+    @State private var appliedOverrides: Set<BookingOverrideFlag> = []
+    @State private var overrideReason = ""
+    /// Which save (draft vs send) the override prompt interrupted, so the
+    /// confirmed retry repeats the same action.
+    @State private var pendingSendToClient = false
+    /// Weekday indexes (0=Sun … 6=Sat) the rebook location's schedule disables
+    /// — drives the picker's off-day guidance. Empty until (unless) loaded.
+    @State private var offWeekdays: Set<Int> = []
+
     // Smart reminders (web "Smart reminders" section).
     @State private var createRebookReminder = false
     @State private var rebookReminderDaysBefore = 2
@@ -110,7 +126,68 @@ struct ProAftercareAuthorView: View {
         .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
         .tint(BrandColor.accent)
         .task { await load() }
+        // The rebook location's weekly schedule, for off-day guidance in the
+        // picker. Best-effort: a failure just skips the hint.
+        .task(id: "\(rebookLocationType)|\(rebookLocationId)") { await loadOffWeekdays() }
+        // A different time (or mode) is a different scheduling question — drop
+        // any pending override confirmation so a stale authorization can't
+        // carry over to a time the pro never confirmed.
+        .onChange(of: selectedSlot) { _, _ in resetOverrideState() }
+        .onChange(of: customTime) { _, _ in resetOverrideState() }
+        .onChange(of: customTimeMode) { _, _ in
+            selectedSlot = nil
+            resetOverrideState()
+        }
+        .onChange(of: rebookMode) { _, _ in resetOverrideState() }
+        .alert(
+            "Confirm booking",
+            isPresented: overrideAlertBinding,
+            presenting: overridePrompt,
+        ) { prompt in
+            TextField(prompt.reasonPlaceholder, text: $overrideReason)
+            Button("Book anyway") { Task { await confirmOverride(prompt) } }
+            Button("Cancel", role: .cancel) { overrideReason = "" }
+        } message: { prompt in
+            Text("\(prompt.question) The override is recorded on the booking.")
+        }
         .mediaFullscreenCover($viewingMedia)
+    }
+
+    /// Drives the override confirm alert off the optional `overridePrompt`.
+    private var overrideAlertBinding: Binding<Bool> {
+        Binding(get: { overridePrompt != nil }, set: { if !$0 { overridePrompt = nil } })
+    }
+
+    private func resetOverrideState() {
+        overridePrompt = nil
+        appliedOverrides = []
+        overrideReason = ""
+    }
+
+    /// Load the rebook location's weekly schedule and derive which weekdays are
+    /// disabled (0=Sun … 6=Sat) — the picker's "this is an off day" signal.
+    private func loadOffWeekdays() async {
+        guard !rebookLocationId.isEmpty else { return }
+        do {
+            let response = try await session.client.proSchedule.workingHours(
+                locationType: rebookLocationType,
+                locationId: rebookLocationId,
+            )
+            let week = response.workingHours
+            let days = [week.sun, week.mon, week.tue, week.wed, week.thu, week.fri, week.sat]
+            offWeekdays = Set(days.enumerated().compactMap { $0.element.enabled ? nil : $0.offset })
+        } catch {
+            // Off-day guidance is optional — the save-side confirm still covers it.
+        }
+    }
+
+    /// The pro confirmed an override-gated prompt — apply the flag and repeat
+    /// the interrupted save. The idempotency key is a payload-hash nonce, so
+    /// the flagged body mints a fresh key on its own.
+    private func confirmOverride(_ prompt: BookingOverridePrompt) async {
+        appliedOverrides.insert(prompt.flag)
+        overridePrompt = nil
+        await save(sendToClient: pendingSendToClient)
     }
 
     // Before/after IMAGE candidates offered by the featured-pair picker, each
@@ -283,7 +360,7 @@ struct ProAftercareAuthorView: View {
     private var bookedModeBody: some View {
         BrandSurface {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Book the exact next appointment from your open times (same service + location as this booking). Saving books it on your calendar right away and notifies the client — nothing for them to confirm.")
+                Text("Book the exact next appointment (same service + location as this booking) — an open time, or any custom time on your authority, even a day your public calendar shows as off. Saving books it on your calendar right away and notifies the client — nothing for them to confirm.")
                     .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
                 if rebookOfferingId.isEmpty || professionalId.isEmpty {
                     Text("This booking has no service offering set, so an exact next appointment can’t be booked. Use “Booking window” instead.")
@@ -295,20 +372,56 @@ struct ProAftercareAuthorView: View {
                         .font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
                 } else {
                     if rebookLocationType == "MOBILE" { addressPickerRow }
-                    ProOpenSlotPicker(
-                        professionalId: professionalId,
-                        serviceId: rebookServiceId,
-                        offeringId: rebookOfferingId,
-                        locationId: rebookLocationId,
-                        locationType: rebookLocationType,
-                        locationTimeZone: timeZone,
-                        durationMinutes: rebookDurationMinutes,
-                        clientAddressId: effectiveRebookClientAddressId,
-                        selectedSlot: $selectedSlot,
-                    )
+
+                    Toggle(isOn: $customTimeMode.animation()) {
+                        Text("Enter a custom time").font(BrandFont.body(13))
+                            .foregroundStyle(BrandColor.textSecondary)
+                    }
+                    .tint(BrandColor.accent)
+                    .disabled(saving)
+
+                    if customTimeMode {
+                        DatePicker(
+                            "", selection: $customTime, in: Date()...,
+                            displayedComponents: [.date, .hourAndMinute],
+                        )
+                        .labelsHidden().tint(BrandColor.accent)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        // Read the typed wall time in the appointment's zone,
+                        // not the device's — this picker creates the instant
+                        // (same pinning as ProNewBookingView's manual mode).
+                        .environment(\.timeZone, apptZone)
+                        Text(customDayIsOff
+                            ? "Any time, on your authority — this day is outside your working hours, so saving will ask you to confirm."
+                            : "Any time, on your authority — it doesn’t need to be an open slot.")
+                            .font(BrandFont.body(11)).foregroundStyle(BrandColor.textMuted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        ProOpenSlotPicker(
+                            professionalId: professionalId,
+                            serviceId: rebookServiceId,
+                            offeringId: rebookOfferingId,
+                            locationId: rebookLocationId,
+                            locationType: rebookLocationType,
+                            locationTimeZone: timeZone,
+                            durationMinutes: rebookDurationMinutes,
+                            clientAddressId: effectiveRebookClientAddressId,
+                            offWeekdays: offWeekdays,
+                            offDayHint: "This day is outside your working hours — switch to “Enter a custom time” to book it anyway.",
+                            selectedSlot: $selectedSlot,
+                        )
+                    }
                 }
             }
         }
+    }
+
+    /// Whether the custom time's calendar day (in the appointment's zone) falls
+    /// on a weekday the schedule disables.
+    private var customDayIsOff: Bool {
+        guard !offWeekdays.isEmpty else { return false }
+        // Calendar.weekday is 1-based (1 = Sunday).
+        return offWeekdays.contains(apptCalendar.component(.weekday, from: customTime) - 1)
     }
 
     /// MOBILE: pick which of the client's saved service addresses the next
@@ -712,9 +825,17 @@ struct ProAftercareAuthorView: View {
         }
     }
 
+    /// The BOOKED start as an ISO instant: a picked open slot, or — in custom
+    /// mode — the typed wall time, whose meaning the zone-pinned picker already
+    /// resolved to an absolute instant (same as ProNewBookingView's manual mode).
+    private var resolvedBookedStartIso: String? {
+        customTimeMode ? iso(customTime) : selectedSlot
+    }
+
     private func save(sendToClient: Bool) async {
         errorText = nil
         message = nil
+        pendingSendToClient = sendToClient
         if let validation = validate(sendToClient: sendToClient) {
             errorText = validation
             return
@@ -729,7 +850,8 @@ struct ProAftercareAuthorView: View {
         // The picked next appointment (BOOKED mode): its start is the canonical
         // rebookedFor; endsAt = start + the booking's duration.
         let bookedSlot: ProAftercareSaveRequest.RebookSlot? = {
-            guard rebookMode == .booked, let start = selectedSlot, let startDate = Wire.date(start)
+            guard rebookMode == .booked, let start = resolvedBookedStartIso,
+                  let startDate = Wire.date(start)
             else { return nil }
             let end = startDate.addingTimeInterval(TimeInterval(rebookDurationMinutes * 60))
             return .init(
@@ -770,6 +892,15 @@ struct ProAftercareAuthorView: View {
             sendToClient: sendToClient,
             timeZone: timeZone,
             version: version,
+            // nil (omitted) unless the pro explicitly confirmed the override —
+            // the server refuses first, and the alert's confirm retries.
+            allowOutsideWorkingHours:
+                appliedOverrides.contains(.allowOutsideWorkingHours) ? true : nil,
+            allowShortNotice: appliedOverrides.contains(.allowShortNotice) ? true : nil,
+            allowFarFuture: appliedOverrides.contains(.allowFarFuture) ? true : nil,
+            overrideReason: appliedOverrides.isEmpty
+                || overrideReason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? nil : overrideReason.trimmingCharacters(in: .whitespacesAndNewlines),
         )
 
         do {
@@ -783,7 +914,17 @@ struct ProAftercareAuthorView: View {
                 await load()
             }
         } catch let error as APIError {
-            errorText = error.userMessage
+            // Override-gated scheduling refusal (outside working hours / short
+            // notice / far future)? Offer "book it anyway?" instead of
+            // dead-ending — unless that flag was already applied, in which case
+            // it's a genuine failure (don't loop). Intent: the mirrored booking
+            // is created fresh or rescheduled, both authored by the pro.
+            if let prompt = error.bookingOverridePrompt(intent: .create),
+               !appliedOverrides.contains(prompt.flag) {
+                overridePrompt = prompt
+            } else {
+                errorText = error.userMessage
+            }
         } catch {
             errorText = "Couldn’t save aftercare. Check your connection and try again."
         }
@@ -815,8 +956,14 @@ struct ProAftercareAuthorView: View {
             if rebookLocationType == "MOBILE" && effectiveRebookClientAddressId == nil {
                 return "This client has no saved service address, so a mobile next appointment can’t be proposed. Use “Booking window” instead."
             }
-            guard let slot = selectedSlot, let date = Wire.date(slot), date > Date() else {
-                return "Pick an available next-appointment time, or change rebook mode to “None”."
+            if customTimeMode {
+                if customTime <= Date() {
+                    return "The next appointment must be in the future."
+                }
+            } else {
+                guard let slot = selectedSlot, let date = Wire.date(slot), date > Date() else {
+                    return "Pick an available next-appointment time, or change rebook mode to “None”."
+                }
             }
         }
         if rebookMode == .window {

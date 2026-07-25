@@ -122,6 +122,16 @@ public struct ProAftercareSaveRequest: Encodable, Sendable {
     public let sendToClient: Bool
     public let timeZone: String?
     public let version: Int?
+    /// Scheduling overrides for the BOOKED slot, mirroring `POST /pro/bookings`:
+    /// the pro may deliberately book the next appointment outside their public
+    /// working hours (an off day), on short notice, or past their booking
+    /// horizon. The server refuses first with a gated code (e.g.
+    /// OUTSIDE_WORKING_HOURS); the UI confirms and retries with the flag. nil
+    /// omits the key, keeping pre-override payloads byte-identical.
+    public let allowOutsideWorkingHours: Bool?
+    public let allowShortNotice: Bool?
+    public let allowFarFuture: Bool?
+    public let overrideReason: String?
 
     public struct Product: Encodable, Sendable {
         public let productId: String?
@@ -182,7 +192,11 @@ public struct ProAftercareSaveRequest: Encodable, Sendable {
         featuredAfterAssetId: String?,
         sendToClient: Bool,
         timeZone: String?,
-        version: Int?
+        version: Int?,
+        allowOutsideWorkingHours: Bool? = nil,
+        allowShortNotice: Bool? = nil,
+        allowFarFuture: Bool? = nil,
+        overrideReason: String? = nil
     ) {
         self.notes = notes
         self.recommendedProducts = recommendedProducts
@@ -200,5 +214,9 @@ public struct ProAftercareSaveRequest: Encodable, Sendable {
         self.sendToClient = sendToClient
         self.timeZone = timeZone
         self.version = version
+        self.allowOutsideWorkingHours = allowOutsideWorkingHours
+        self.allowShortNotice = allowShortNotice
+        self.allowFarFuture = allowFarFuture
+        self.overrideReason = overrideReason
     }
 }
