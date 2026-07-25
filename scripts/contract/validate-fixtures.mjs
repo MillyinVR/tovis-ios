@@ -108,6 +108,15 @@ const CHECKS = [
     def: 'ProCameraUsage',
     pick: (d) => [d.usage],
   },
+  // POST /api/v1/holds returns `jsonOk({ hold, meta })`. `durationMinutes` is
+  // what the slot is actually RESERVED for — base + the add-ons sent with the
+  // create (B1-A) — so this fixture is the wire proof that the hold and
+  // finalize size the same window.
+  {
+    file: 'bookingHoldCreate.json',
+    def: 'BookingHoldCreateDTO',
+    pick: (d) => [d.hold],
+  },
 ]
 
 function fail(msg) {

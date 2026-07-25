@@ -1,0 +1,18 @@
+{
+  "ok": true,
+  "hold": {
+    "id": "hold_b1a_1",
+    "expiresAt": "2026-08-04T20:15:00.000Z",
+    "scheduledFor": "2026-08-04T20:00:00.000Z",
+    "locationType": "SALON",
+    "locationId": "loc_1",
+    "locationTimeZone": "America/Los_Angeles",
+    "clientAddressId": null,
+    "clientAddressSnapshot": null,
+    "durationMinutes": 90
+  },
+  "meta": {
+    "mutated": true,
+    "noOp": false
+  }
+}

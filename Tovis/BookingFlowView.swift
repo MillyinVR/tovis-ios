@@ -103,8 +103,10 @@ struct BookingFlowView: View {
     /// A mobile booking can't proceed until a service address is chosen.
     private var addressRequiredButMissing: Bool { isMobile && selectedAddressId == nil }
 
-    /// Base duration + the minutes of every selected add-on (display only — the
-    /// server is the source of truth and the hold isn't extended, matching web).
+    /// Base duration + the minutes of every selected add-on. The server is the
+    /// source of truth for the number; availability and the hold are both asked
+    /// for this same window, so the times on screen are the times that can
+    /// actually be booked with these add-ons (B1-A).
     private var totalDuration: Int {
         duration + addOns.filter { selectedAddOnIds.contains($0.id) }.reduce(0) { $0 + $1.minutes }
     }
@@ -392,6 +394,10 @@ struct BookingFlowView: View {
             if isSelected { selectedAddOnIds.remove(addOn.id) }
             else { selectedAddOnIds.insert(addOn.id) }
             bookError = nil
+            // The add-on changes how long the appointment runs, so the offered
+            // times are no longer the right ones — re-ask for the new window
+            // rather than letting the client pick a start that no longer fits.
+            if case let .ready(boot) = phase { Task { await loadSlots(boot) } }
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
@@ -555,6 +561,9 @@ struct BookingFlowView: View {
     private func loadSlots(_ boot: AvailabilityBootstrap) async {
         loadingSlots = true
         slotError = nil
+        // Keep the client's choice across an add-on toggle when it still fits;
+        // clear it when it doesn't, because that start is no longer bookable.
+        let previouslySelected = selectedSlot
         selectedSlot = nil
         let date = ymdString(selectedDate, tz: boot.timeZone)
         do {
@@ -562,9 +571,13 @@ struct BookingFlowView: View {
                 professionalId: professionalId, serviceId: offering.serviceId,
                 offeringId: offering.id, locationId: boot.request.locationId,
                 durationMinutes: duration, date: date, locationType: mode,
-                clientAddressId: isMobile ? selectedAddressId : nil
+                clientAddressId: isMobile ? selectedAddressId : nil,
+                addOnIds: Array(selectedAddOnIds)
             )
             slots = day.slots
+            if let previouslySelected, day.slots.contains(previouslySelected) {
+                selectedSlot = previouslySelected
+            }
         } catch let error as APIError {
             slots = []
             slotError = error.userMessage
@@ -592,7 +605,8 @@ struct BookingFlowView: View {
             let hold = try await session.client.booking.createHold(
                 offeringId: offering.id, locationId: boot.request.locationId,
                 scheduledFor: slot, locationType: mode,
-                clientAddressId: isMobile ? selectedAddressId : nil
+                clientAddressId: isMobile ? selectedAddressId : nil,
+                addOnIds: Array(selectedAddOnIds)
             )
             let scheduledFor: String
             if let rescheduleBookingId {

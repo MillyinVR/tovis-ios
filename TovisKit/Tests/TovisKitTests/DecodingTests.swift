@@ -534,6 +534,34 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.cancellationPolicy?.contains("$25.00") == true)
     }
 
+    // POST /api/v1/holds — Fixtures/bookingHoldCreate.json, validated against
+    // BookingHoldCreateDTO by the contract job.
+    //
+    // B1-A: `durationMinutes` is what the slot is RESERVED for — base service
+    // plus the `addOnIds` sent with the create. A 60-minute service with a
+    // 30-minute add-on reserves 90, which is exactly what finalize enforces.
+    @Test func decodesCreatedHoldWithReservedDuration() throws {
+        let res = try JSONDecoder().decode(CreateHoldResponse.self, from: fixture("bookingHoldCreate"))
+        #expect(res.hold.id == "hold_b1a_1")
+        #expect(res.hold.durationMinutes == 90)
+    }
+
+    // An older server that predates the field must still decode.
+    @Test func decodesCreatedHoldWithoutReservedDuration() throws {
+        let json = """
+        {
+          "id": "hold_legacy",
+          "expiresAt": "2026-08-04T20:15:00.000Z",
+          "scheduledFor": "2026-08-04T20:00:00.000Z",
+          "locationType": "SALON",
+          "locationId": "loc_1"
+        }
+        """.data(using: .utf8)!
+
+        let hold = try JSONDecoder().decode(BookingHold.self, from: json)
+        #expect(hold.durationMinutes == nil)
+    }
+
     // GET /api/v1/pro/session — Fixtures/proSession.json. The PRO footer's live-
     // session state machine (mirrors lib/proSession/types.ts). Envelope is spread,
     // so the payload fields sit at the top level.
