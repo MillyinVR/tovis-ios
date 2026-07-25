@@ -138,4 +138,33 @@ struct AddOnWindowWireTests {
         let body = try capturedJSONBody()
         #expect(body["addOnIds"] as? [String] == [])
     }
+
+    // B3 — a reschedule commits the BOOKING's duration, so the hold must be
+    // sized from the booking. The id has to reach the wire for that to happen.
+    @Test("a reschedule hold names the booking it is moving")
+    func createHoldSendsRescheduleBookingId() async throws {
+        AddOnWireURLProtocol.body = try fixture("bookingHoldCreate")
+        _ = try await makeService().createHold(
+            offeringId: "off_1", locationId: "loc_1",
+            scheduledFor: "2026-08-04T20:00:00.000Z", locationType: "SALON",
+            clientAddressId: nil, source: "REQUESTED",
+            addOnIds: [], rescheduleBookingId: "booking_9"
+        )
+
+        let body = try capturedJSONBody()
+        #expect(body["rescheduleBookingId"] as? String == "booking_9")
+    }
+
+    @Test("an ordinary hold omits the key entirely rather than sending null")
+    func createHoldOmitsRescheduleBookingId() async throws {
+        AddOnWireURLProtocol.body = try fixture("bookingHoldCreate")
+        _ = try await makeService().createHold(
+            offeringId: "off_1", locationId: "loc_1",
+            scheduledFor: "2026-08-04T20:00:00.000Z"
+        )
+
+        // `pickString(undefined)` and `pickString(null)` both read as absent on
+        // the server, but omitting keeps the ordinary booking body unchanged.
+        #expect(try capturedJSONBody()["rescheduleBookingId"] == nil)
+    }
 }

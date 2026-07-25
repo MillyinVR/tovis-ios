@@ -98,6 +98,11 @@ public final class BookingService: Sendable {
     /// The reservation is sized `base + addOnIds`, matching what finalize will
     /// enforce. Pass the client's current selection: a base-sized hold leaves
     /// the add-on tail unreserved for someone else to take (B1-A).
+    ///
+    /// Pass `rescheduleBookingId` when the hold is moving an existing booking:
+    /// the reschedule commits that booking's duration, not the offering's, so
+    /// without it the reservation is short by however much the two have drifted
+    /// (B3).
     public func createHold(
         offeringId: String,
         locationId: String?,
@@ -105,12 +110,14 @@ public final class BookingService: Sendable {
         locationType: String = "SALON",
         clientAddressId: String? = nil,
         source: String = "REQUESTED",
-        addOnIds: [String] = []
+        addOnIds: [String] = [],
+        rescheduleBookingId: String? = nil
     ) async throws -> BookingHold {
         let payload = try JSONEncoder.canonical.encode(CreateHoldRequest(
             offeringId: offeringId, locationType: locationType,
             locationId: locationId, scheduledFor: scheduledFor, source: source,
-            clientAddressId: clientAddressId, addOnIds: addOnIds
+            clientAddressId: clientAddressId, addOnIds: addOnIds,
+            rescheduleBookingId: rescheduleBookingId
         ))
         let response: CreateHoldResponse = try await api.request(
             "/holds", method: .post, body: payload

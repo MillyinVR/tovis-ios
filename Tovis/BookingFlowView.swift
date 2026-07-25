@@ -602,11 +602,17 @@ struct BookingFlowView: View {
         booking = true
         bookError = nil
         do {
+            // A reschedule commits the BOOKING's duration, not the offering's,
+            // and the two drift whenever a duration is edited — so the hold has
+            // to be sized from the booking or it reserves less than the move
+            // will take (B3). `selectedAddOnIds` is empty on this path (add-ons
+            // are not offered for a reschedule), which the server requires.
             let hold = try await session.client.booking.createHold(
                 offeringId: offering.id, locationId: boot.request.locationId,
                 scheduledFor: slot, locationType: mode,
                 clientAddressId: isMobile ? selectedAddressId : nil,
-                addOnIds: Array(selectedAddOnIds)
+                addOnIds: Array(selectedAddOnIds),
+                rescheduleBookingId: rescheduleBookingId
             )
             let scheduledFor: String
             if let rescheduleBookingId {
