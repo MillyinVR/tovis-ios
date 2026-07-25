@@ -105,6 +105,14 @@ struct CreateHoldRequest: Encodable, Sendable {
     /// finalize will take — omitting them reserves the base service alone and
     /// the booking can be refused for time that was never held (B1-A).
     let addOnIds: [String]
+    /// Set when this hold is picking a new time for an EXISTING booking. The
+    /// server then sizes the reservation from that booking's committed
+    /// `totalDurationMinutes` instead of the offering's current base, because
+    /// that is what the reschedule will take — the two drift apart whenever a
+    /// duration is edited (B3). Mutually exclusive with `addOnIds`: a
+    /// reschedule keeps the booking's original add-ons. Omitted (not sent
+    /// blank) for an ordinary booking.
+    let rescheduleBookingId: String?
 }
 
 struct CreateHoldResponse: Decodable, Sendable {
