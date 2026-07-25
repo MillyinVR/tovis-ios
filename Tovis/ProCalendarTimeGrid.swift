@@ -781,11 +781,16 @@ struct ProCalendarTimeGrid: View {
         .frame(width: colWidth, alignment: .leading)
         .contentShape(Rectangle())
         .onTapGesture {
+            // A hold is read-only occupancy: nothing to open, and it must NOT
+            // fall into the block branch (there is no block behind it) (B5).
+            if event.isHold { return }
             if event.isBooking { onTapBooking(event.id) } else { onTapBlock(event) }
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(tileAccessibilityLabel(event, conflict: conflict))
-        .accessibilityAddTraits(.isButton)
+        // A hold does nothing when activated, so it must not announce itself as
+        // a button — same call as web's role/tabIndex (B5).
+        .accessibilityAddTraits(event.isHold ? [] : .isButton)
         .animation(.easeOut(duration: 0.16), value: pending)
         .opacity(isActive ? 0 : 1)
 
@@ -843,7 +848,7 @@ struct ProCalendarTimeGrid: View {
         return HStack(spacing: 0) {
             Rectangle().fill(tone).frame(width: 3)
             VStack(alignment: .leading, spacing: 1) {
-                Text(event.isBlock ? (event.title.isEmpty ? "Blocked" : event.title) : event.clientName)
+                Text(tileTitle(event))
                     .font(BrandFont.body(micro ? 10 : 12, .semibold))
                     .foregroundStyle(BrandColor.textPrimary)
                     .lineLimit(1)
@@ -1128,10 +1133,24 @@ struct ProCalendarTimeGrid: View {
         ProCalendarGrid.minuteOfDayLabel(minutes)
     }
 
+    /// The anonymous label for a client's live checkout reservation (B5). The
+    /// server sends the copy; this only supplies a floor if it ever arrives blank.
+    private func holdTitle(_ event: ProCalendarEvent) -> String {
+        event.title.isEmpty ? "Booking in progress" : event.title
+    }
+
+    /// What a tile is called. A HOLD shows its anonymous title, NEVER
+    /// `clientName` — mirrors web's `buildEventCardCopy` (B5).
+    private func tileTitle(_ event: ProCalendarEvent) -> String {
+        if event.isBlock { return event.title.isEmpty ? "Blocked" : event.title }
+        if event.isHold { return holdTitle(event) }
+        return event.clientName
+    }
+
     private func tileAccessibilityLabel(_ event: ProCalendarEvent, conflict: Bool) -> String {
         let name = event.isBlock
             ? (event.title.isEmpty ? "Blocked time" : event.title)
-            : event.clientName
+            : (event.isHold ? holdTitle(event) : event.clientName)
         let base = "\(name), \(timeLabel(event.startsAt))"
         return conflict ? "\(base), overlaps another appointment" : base
     }

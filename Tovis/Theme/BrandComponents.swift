@@ -174,6 +174,10 @@ func statusTone(_ status: String?) -> Color {
     switch (status ?? "").uppercased() {
     case "ACCEPTED", "CONFIRMED", "COMPLETED": return BrandColor.emerald
     case "PENDING", "CONSULTATION": return BrandColor.gold
+    // A client's live checkout reservation on the pro calendar (B5). Shares the
+    // provisional tone with PENDING — it is in-flight, not committed — and must
+    // NOT fall through to `textMuted`, which is the pro's own blocked time.
+    case "HELD": return BrandColor.gold
     case "CANCELLED": return BrandColor.ember
     default: return BrandColor.textMuted
     }

@@ -31,8 +31,9 @@ struct ProSettingsUpdateRequest: Encodable {
     let autoAcceptBookings: Bool
 }
 
-/// One calendar occupancy — a booking or a personal block. The discriminator is
-/// `kind` ("BOOKING" | "BLOCK").
+/// One calendar occupancy — a booking, a personal block, or a client's live
+/// checkout reservation. The discriminator is `kind`
+/// ("BOOKING" | "BLOCK" | "HOLD").
 public struct ProCalendarEvent: Decodable, Sendable, Identifiable {
     public let id: String
     /// BLOCK events only: the bare block id. The calendar API namespaces a block
@@ -83,6 +84,19 @@ public struct ProCalendarEvent: Decodable, Sendable, Identifiable {
     public var isBooking: Bool { kind == "BOOKING" }
     public var isBlock: Bool { kind == "BLOCK" }
     public var isWaitlist: Bool { status == "WAITLIST" }
+
+    /// A client's LIVE checkout reservation (B5) — read-only occupancy, so the
+    /// pro's day tells the truth about what their time is doing.
+    ///
+    /// Deliberately anonymous server-side: `clientName` is a fixed label and no
+    /// `clientProfileId` is sent, because a hold means somebody is mid-checkout
+    /// this minute and the pro is told the slot is spoken for, not who is
+    /// hesitating over it. It cannot be opened, dragged or resized — there is no
+    /// pro-facing endpoint that takes a hold id, and it expires on its own.
+    ///
+    /// ⚠️ A hold is NOT a block. It must never fall into an `isBlock ? … : …`
+    /// else-branch that assumes "booking", nor into a block's tap/edit path.
+    public var isHold: Bool { kind == "HOLD" }
 
     /// The bare block id for block operations (`GET`/`PATCH`/`DELETE …/blocked/{id}`),
     /// which expect the un-namespaced id. Prefers the API's `blockId`, else strips a
