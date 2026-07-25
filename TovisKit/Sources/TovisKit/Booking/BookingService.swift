@@ -16,13 +16,23 @@ public final class BookingService: Sendable {
     /// A MOBILE placement REQUIRES `clientAddressId` — the server refuses the
     /// whole request with `CLIENT_SERVICE_ADDRESS_REQUIRED` (400) without it, so
     /// callers must resolve the client's service address before asking.
+    ///
+    /// Pass `rescheduleBookingId` when the flow is MOVING a booking: the server
+    /// then sizes the window from that booking's committed duration instead of
+    /// the offering's base, so the days marked bookable are the ones the
+    /// reschedule can actually fit into (B3-A). It authenticates and checks
+    /// ownership for that branch.
+    ///
+    /// NOTE `durationMinutes` is echoed back in `request` but is NOT an input —
+    /// the server resolves the width itself and ignores the query value.
     public func bootstrap(
         professionalId: String,
         serviceId: String,
         offeringId: String,
         durationMinutes: Int,
         locationType: String = "SALON",
-        clientAddressId: String? = nil
+        clientAddressId: String? = nil,
+        rescheduleBookingId: String? = nil
     ) async throws -> AvailabilityBootstrap {
         var query = [
             URLQueryItem(name: "professionalId", value: professionalId),
@@ -33,6 +43,9 @@ public final class BookingService: Sendable {
         ]
         if let clientAddressId, !clientAddressId.isEmpty {
             query.append(URLQueryItem(name: "clientAddressId", value: clientAddressId))
+        }
+        if let rescheduleBookingId, !rescheduleBookingId.isEmpty {
+            query.append(URLQueryItem(name: "rescheduleBookingId", value: rescheduleBookingId))
         }
         return try await api.request("/availability/bootstrap", query: query)
     }
@@ -46,6 +59,15 @@ public final class BookingService: Sendable {
     /// the slot length, so a day asked without them offers starts that only fit
     /// the base service. This flow knows the selection before the time is
     /// picked, so it always sends what the client has ticked (B1-A).
+    ///
+    /// `rescheduleBookingId` sizes it the other way, for a MOVE: the reschedule
+    /// commits the BOOKING's duration, which drifts from the offering's base
+    /// whenever the pro edits a service. Without it the grid offers starts the
+    /// reschedule refuses at the pick (B3-A). The two are mutually exclusive —
+    /// a reschedule keeps its original add-ons — and sending both is refused.
+    ///
+    /// NOTE `durationMinutes` is echoed back but is NOT an input; the server
+    /// resolves the width from the offering, the add-ons, or the booking.
     public func day(
         professionalId: String,
         serviceId: String,
@@ -55,7 +77,8 @@ public final class BookingService: Sendable {
         date: String,
         locationType: String = "SALON",
         clientAddressId: String? = nil,
-        addOnIds: [String] = []
+        addOnIds: [String] = [],
+        rescheduleBookingId: String? = nil
     ) async throws -> AvailabilityDay {
         var query = [
             URLQueryItem(name: "professionalId", value: professionalId),
@@ -71,6 +94,9 @@ public final class BookingService: Sendable {
         }
         if !addOnIds.isEmpty {
             query.append(URLQueryItem(name: "addOnIds", value: addOnIds.sorted().joined(separator: ",")))
+        }
+        if let rescheduleBookingId, !rescheduleBookingId.isEmpty {
+            query.append(URLQueryItem(name: "rescheduleBookingId", value: rescheduleBookingId))
         }
         return try await api.request("/availability/day", query: query)
     }

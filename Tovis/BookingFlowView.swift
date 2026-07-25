@@ -111,6 +111,19 @@ struct BookingFlowView: View {
         duration + addOns.filter { selectedAddOnIds.contains($0.id) }.reduce(0) { $0 + $1.minutes }
     }
 
+    /// The width to SHOW. A reschedule commits the booking's own duration, which
+    /// drifts from the offering's base whenever the pro edits the service — so
+    /// showing the base put "60 min" above a 90-minute appointment and made the
+    /// (correctly narrowed) grid look wrong (B3-A). The server echoes the width
+    /// it actually sized the offer with, so read that once it has answered.
+    ///
+    /// Only on a reschedule: a NEW booking's add-ons are ticked after bootstrap,
+    /// and `totalDuration` is what keeps the pill live as they are toggled.
+    private var displayDuration: Int {
+        guard isReschedule, case let .ready(boot) = phase else { return totalDuration }
+        return boot.request.durationMinutes
+    }
+
     var body: some View {
         NavigationStack {
             Group {
@@ -168,7 +181,7 @@ struct BookingFlowView: View {
                 Text("with \(proName)")
                     .font(BrandFont.body(13)).foregroundStyle(BrandColor.textSecondary)
                 HStack(spacing: 10) {
-                    BrandPill(text: "\(totalDuration) min")
+                    BrandPill(text: "\(displayDuration) min")
                     if let price = offering.priceFromLabel {
                         BrandPill(text: "from \(price)", tint: BrandColor.accent)
                     }
@@ -498,7 +511,8 @@ struct BookingFlowView: View {
                 professionalId: professionalId, serviceId: offering.serviceId,
                 offeringId: offering.id, durationMinutes: duration,
                 locationType: mode,
-                clientAddressId: isMobile ? selectedAddressId : nil
+                clientAddressId: isMobile ? selectedAddressId : nil,
+                rescheduleBookingId: rescheduleBookingId
             )
             // Open on the preselected slot's day when the feed handed us one, else
             // the server's suggested first day.
@@ -572,7 +586,8 @@ struct BookingFlowView: View {
                 offeringId: offering.id, locationId: boot.request.locationId,
                 durationMinutes: duration, date: date, locationType: mode,
                 clientAddressId: isMobile ? selectedAddressId : nil,
-                addOnIds: Array(selectedAddOnIds)
+                addOnIds: Array(selectedAddOnIds),
+                rescheduleBookingId: rescheduleBookingId
             )
             slots = day.slots
             if let previouslySelected, day.slots.contains(previouslySelected) {

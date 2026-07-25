@@ -167,4 +167,46 @@ struct AddOnWindowWireTests {
         // the server, but omitting keeps the ordinary booking body unchanged.
         #expect(try capturedJSONBody()["rescheduleBookingId"] == nil)
     }
+
+    // B3-A — B3 sized the RESERVATION from the booking; the OFFER was still
+    // sized from the offering, so the grid kept showing starts the reschedule
+    // would refuse. The id has to reach the availability calls for the server to
+    // size them, and nothing else on this flow can tell it to.
+    @Test("the day grid is asked for the booking's width when moving a booking")
+    func daySendsRescheduleBookingId() async throws {
+        AddOnWireURLProtocol.body = try fixture("availabilityDay")
+        _ = try await makeService().day(
+            professionalId: "pro_1", serviceId: "svc_1", offeringId: "off_1",
+            locationId: "loc_1", durationMinutes: 60,
+            date: "2026-08-04", locationType: "SALON",
+            clientAddressId: nil, addOnIds: [],
+            rescheduleBookingId: "booking_9"
+        )
+
+        #expect(try capturedQuery()["rescheduleBookingId"] == "booking_9")
+    }
+
+    @Test("the day scroller is sized the same way, so no empty day is offered")
+    func bootstrapSendsRescheduleBookingId() async throws {
+        AddOnWireURLProtocol.body = try fixture("availabilityBootstrap")
+        _ = try await makeService().bootstrap(
+            professionalId: "pro_1", serviceId: "svc_1", offeringId: "off_1",
+            durationMinutes: 60, locationType: "SALON",
+            clientAddressId: nil, rescheduleBookingId: "booking_9"
+        )
+
+        #expect(try capturedQuery()["rescheduleBookingId"] == "booking_9")
+    }
+
+    @Test("a plain booking flow leaves the grid public")
+    func dayOmitsRescheduleBookingId() async throws {
+        AddOnWireURLProtocol.body = try fixture("availabilityDay")
+        _ = try await makeService().day(
+            professionalId: "pro_1", serviceId: "svc_1", offeringId: "off_1",
+            locationId: "loc_1", durationMinutes: 60, date: "2026-08-04"
+        )
+
+        // Sending it would make an otherwise anonymous request authenticated.
+        #expect(try capturedQuery()["rescheduleBookingId"] == nil)
+    }
 }
