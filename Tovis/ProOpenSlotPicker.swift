@@ -20,6 +20,13 @@ struct ProOpenSlotPicker: View {
     /// For a MOBILE booking, the client's saved service-address id so slots respect
     /// the pro's travel radius. nil for SALON (or an as-yet-unsaved MOBILE address).
     var clientAddressId: String? = nil
+    /// Weekday indexes (0=Sun … 6=Sat) the pro's weekly schedule marks disabled.
+    /// An off day legitimately has zero open times — with this set, the empty
+    /// state says WHY (and `offDayHint` can point at the surface's escape
+    /// hatch, e.g. the aftercare form's "Custom time"). Default empty keeps the
+    /// other call sites unchanged.
+    var offWeekdays: Set<Int> = []
+    var offDayHint: String? = nil
     /// The chosen slot's ISO start instant.
     @Binding var selectedSlot: String?
 
@@ -65,7 +72,11 @@ struct ProOpenSlotPicker: View {
         } else if let slotError {
             Text(slotError).font(BrandFont.body(13)).foregroundStyle(BrandColor.ember)
         } else if slots.isEmpty {
-            hint("No open times on this day. Try another date.")
+            if selectedDayIsOff {
+                hint(offDayHint ?? "This day is outside your working hours.")
+            } else {
+                hint("No open times on this day. Try another date.")
+            }
         } else {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 84), spacing: 8)], spacing: 8) {
                 ForEach(slots, id: \.self) { slot in
@@ -84,6 +95,16 @@ struct ProOpenSlotPicker: View {
 
     private func hint(_ text: String) -> some View {
         Text(text).font(BrandFont.body(13)).foregroundStyle(BrandColor.textMuted)
+    }
+
+    /// Whether the picked day falls on a weekday the schedule disables —
+    /// judged in the location's zone, matching how the day was fetched.
+    private var selectedDayIsOff: Bool {
+        guard !offWeekdays.isEmpty else { return false }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = dayZone
+        // Calendar.weekday is 1-based (1 = Sunday).
+        return offWeekdays.contains(cal.component(.weekday, from: selectedDate) - 1)
     }
 
     private func fetchSlots() async {
