@@ -42,6 +42,11 @@ struct ProRebookCalendarSheet: View {
     @State private var busy: [String: ProBusyDay] = [:]
     @State private var loading = false
 
+    /// Ceiling on synthesized dots per day. Comfortably above the cell's own
+    /// 4-dot cap, so "5 bookings" and "500" render identically ("+"), while a
+    /// nonsense count off the wire can't turn into a nonsense allocation.
+    private static let maxRenderedDots = 24
+
     init(
         timeZone: TimeZone,
         offWeekdays: Set<Int>,
@@ -85,7 +90,11 @@ struct ProRebookCalendarSheet: View {
         for cell in cells {
             let day = busy[cell.dayYmd]
             var entry = ProMonthDayMarks()
-            entry.dots = Array(repeating: .busy, count: max(0, day?.bookings ?? 0))
+            // Clamped: the cell draws 4 dots and a "+" for anything beyond, so a
+            // decoded count only has to survive the comparison — never allocate
+            // per booking on a number the wire supplied.
+            let bookings = min(max(0, day?.bookings ?? 0), Self.maxRenderedDots)
+            entry.dots = Array(repeating: .busy, count: bookings)
             if day?.blocked == true { entry.dots.append(.block) }
             entry.isOffDay = isOffDay(cell)
             if entry != ProMonthDayMarks() { marks[cell.dayYmd] = entry }
