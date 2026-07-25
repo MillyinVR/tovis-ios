@@ -29,8 +29,13 @@ struct ProOpenSlotPicker: View {
     var offDayHint: String? = nil
     /// The chosen slot's ISO start instant.
     @Binding var selectedSlot: String?
+    /// The day whose open times are shown. Owned by the caller so another
+    /// surface can drive it — the aftercare rebook sheet picks a day off the
+    /// pro's own month calendar and the stepper follows. ⚠️ Hoisting this out
+    /// of the picker means the day now SURVIVES the picker being swapped out
+    /// (e.g. toggling a manual/custom-time mode) instead of resetting to today.
+    @Binding var selectedDate: Date
 
-    @State private var selectedDate = Date()
     @State private var slots: [String] = []
     @State private var slotTimeZone: String?
     @State private var loadingSlots = false

@@ -26,6 +26,29 @@ public final class ProCalendarService: Sendable {
         return try await api.request("/pro/calendar", query: query.isEmpty ? nil : query)
     }
 
+    /// GET /api/v1/pro/availability/busy-days — the pro's OWN commitments per
+    /// calendar day (`{ bookings, blocked }`), for a date-picker overlay. Range
+    /// is inclusive "yyyy-MM-dd"; `tz` picks the zone the days are bucketed in
+    /// (omit to use the pro profile's). The server clamps an over-long range and
+    /// echoes what it actually answered for.
+    ///
+    /// Not a substitute for `calendar(from:to:locationId:)`: this is
+    /// cross-location and carries only counts (no names, ids, or times), which
+    /// is exactly what a "which days am I busy" overlay needs and all it should
+    /// see. The full feed is location-scoped and per-event.
+    public func busyDays(
+        from: String,
+        to: String,
+        tz: String? = nil
+    ) async throws -> ProBusyDaysResponse {
+        var query = [
+            URLQueryItem(name: "from", value: from),
+            URLQueryItem(name: "to", value: to),
+        ]
+        if let tz, !tz.isEmpty { query.append(URLQueryItem(name: "tz", value: tz)) }
+        return try await api.request("/pro/availability/busy-days", query: query)
+    }
+
     // MARK: - Blocked time (web BlockTimeModal / EditBlockModal)
 
     /// GET /api/v1/pro/locations — the pro's locations. Block creation must pin to

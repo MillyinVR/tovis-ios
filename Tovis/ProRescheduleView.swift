@@ -24,9 +24,11 @@ struct ProRescheduleView: View {
     @State private var professionalId = ""
     @State private var loading = true
 
-    // Slot-picker time selection (ProOpenSlotPicker owns the date); the custom-time
-    // fallback is seeded to the booking's current start.
+    // Slot-picker time selection; this screen owns the picker's DAY (see slotDay).
+    // The custom-time fallback is seeded to the booking's current start.
     @State private var selectedSlot: String?
+    /// The open-slot picker's day (see ProOpenSlotPicker.selectedDate).
+    @State private var slotDay = Date()
     @State private var manualMode = false
     @State private var manualTime = Date().addingTimeInterval(3600)
 
@@ -165,6 +167,7 @@ struct ProRescheduleView: View {
                         locationTimeZone: booking.timeZone,
                         durationMinutes: slotDurationMinutes,
                         selectedSlot: $selectedSlot,
+                        selectedDate: $slotDay,
                     )
                 }
             }

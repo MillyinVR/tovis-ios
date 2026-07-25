@@ -53,6 +53,8 @@ struct ProWaitlistOfferSheet: View {
 
     @State private var phase: Phase = .loading
     @State private var selectedSlot: String?
+    /// The open-slot picker's day (see ProOpenSlotPicker.selectedDate).
+    @State private var slotDay = Date()
     @State private var sending = false
     @State private var sendError: String?
 
@@ -125,7 +127,8 @@ struct ProWaitlistOfferSheet: View {
             locationType: "SALON",
             locationTimeZone: ctx.locationTimeZone,
             durationMinutes: ctx.durationMinutes,
-            selectedSlot: $selectedSlot
+            selectedSlot: $selectedSlot,
+            selectedDate: $slotDay
         )
 
         if let sendError {

@@ -1318,6 +1318,27 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.workingHours.thu.end == "20:00")
     }
 
+    // GET /api/v1/pro/availability/busy-days — Fixtures/proBusyDays.json, a
+    // VERBATIM capture off the running route (2026-07-25), schema-validated
+    // against the backend's `ProAvailabilityBusyDaysOk`. Feeds the aftercare
+    // rebook month sheet's occupancy overlay.
+    @Test func decodesProBusyDays() throws {
+        let res = try JSONDecoder().decode(ProBusyDaysResponse.self, from: fixture("proBusyDays"))
+        #expect(res.tz == "America/Los_Angeles")
+        #expect(res.from == "2026-06-29")
+        #expect(res.to == "2026-08-09")
+
+        // A booked day and a BLOCKED day are different signals — the grid draws
+        // them in different tones, so decode must keep them apart.
+        #expect(res.days["2026-07-19"] == ProBusyDay(bookings: 1, blocked: false))
+        #expect(res.days["2026-08-01"] == ProBusyDay(bookings: 0, blocked: true))
+
+        // A free day is OMITTED from the map, never sent as zeros — the sheet
+        // reads a missing key as "nothing on".
+        #expect(res.days["2026-07-22"] == nil)
+        #expect(res.days.count == 5)
+    }
+
     // GET /api/v1/pro/clients — Fixtures/proClientsDirectory.json. The visible
     // client directory (web `/pro/clients` parity). Inline shape; decode-only.
     @Test func decodesProClientsDirectory() throws {

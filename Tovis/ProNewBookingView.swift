@@ -65,8 +65,11 @@ struct ProNewBookingView: View {
     private enum BookingMode: String, CaseIterable { case salon, mobile }
     private enum AddressMode: String, CaseIterable { case existing, new }
 
-    // Slot-picker time selection (the shared ProOpenSlotPicker owns the date).
+    // Slot-picker time selection; this screen owns the picker's DAY (see slotDay).
     @State private var selectedSlot: String?         // chosen ISO instant
+    /// The open-slot picker's day. Hoisted out of the picker so a caller can
+    /// drive it (the aftercare rebook sheet does); this screen just owns it.
+    @State private var slotDay = Date()
 
     // Custom-time fallback.
     @State private var manualMode = false
@@ -460,6 +463,7 @@ struct ProNewBookingView: View {
                         durationMinutes: durationMinutes(offering),
                         clientAddressId: slotClientAddressId,
                         selectedSlot: $selectedSlot,
+                        selectedDate: $slotDay,
                     )
                 } else {
                     emptyHint("Choose a service to see open times.")
