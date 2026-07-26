@@ -153,24 +153,15 @@ public struct ProBookingDetail: Decodable, Sendable, Identifiable {
         ["CANCELLED", "COMPLETED", "NO_SHOW", "DECLINED", "EXPIRED"].contains(statusUpper)
     }
 
-    /// The booking status as a pro reads it — web's `labelForBookingStatus`.
+    /// The booking status as a pro reads it — one table with every other
+    /// screen on both platforms (`BookingStatusPresentation`, B10).
     ///
-    /// Lived in `ProBookingDetailView` as a private `statusDisplayLabel(_:)`.
-    /// The two arms that are not mere capitalization are the ones worth pinning:
-    /// ACCEPTED reads **"Confirmed"** (the pro-facing word for the state the
-    /// wire calls ACCEPTED), and NO_SHOW reads **"No-show"** — without that arm
-    /// the default renders the raw enum as "No_show", which is what this screen
-    /// did until "Mark no-show" landed and first made the state reachable.
+    /// Lived in `ProBookingDetailView` as a private `statusDisplayLabel(_:)`,
+    /// then here as a private table of its own — which is how this screen came
+    /// to say "Confirmed" while the pro bookings LIST, whose label is computed
+    /// server-side, said "Accepted" for the very same booking.
     public var statusLabel: String {
-        switch statusUpper {
-        case "PENDING": return "Pending"
-        case "ACCEPTED": return "Confirmed"
-        case "IN_PROGRESS": return "In progress"
-        case "COMPLETED": return "Completed"
-        case "CANCELLED": return "Cancelled"
-        case "NO_SHOW": return "No-show"
-        default: return status.capitalized
-        }
+        BookingStatusPresentation.label(status)
     }
 
     /// The consultation form's initial line items, built from the booking's own

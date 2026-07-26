@@ -2,6 +2,7 @@
 // (home, appointments, detail). Keeping them here avoids re-implementing the
 // same surface/pill/avatar/section in every view.
 import SwiftUI
+import TovisKit
 
 /// A rounded surface — the standard card/row container.
 struct BrandSurface<Content: View>: View {
@@ -170,15 +171,25 @@ struct FlowLayout: Layout {
 }
 
 /// Tone for a booking status chip — keeps status coloring consistent everywhere.
+///
+/// The booking states themselves come from `BookingStatusPresentation.tone`, the
+/// same table web tones from (B10): IN_PROGRESS and NO_SHOW used to miss every
+/// arm here and render in `textMuted`, so a live session and a missed
+/// appointment were the same grey as the pro's own blocked time.
 func statusTone(_ status: String?) -> Color {
     switch (status ?? "").uppercased() {
-    case "ACCEPTED", "CONFIRMED", "COMPLETED": return BrandColor.emerald
-    case "PENDING", "CONSULTATION": return BrandColor.gold
-    // A client's live checkout reservation on the pro calendar (B5). Shares the
-    // provisional tone with PENDING — it is in-flight, not committed — and must
-    // NOT fall through to `textMuted`, which is the pro's own blocked time.
-    case "HELD": return BrandColor.gold
-    case "CANCELLED": return BrandColor.ember
-    default: return BrandColor.textMuted
+    // Not booking statuses: a session STEP, and a client's live checkout
+    // reservation on the pro calendar (B5). The hold shares the provisional
+    // tone with PENDING — it is in-flight, not committed — and must NOT fall
+    // through to `textMuted`, which is the pro's own blocked time.
+    case "CONSULTATION", "HELD": return BrandColor.gold
+    default: break
+    }
+
+    switch BookingStatusPresentation.tone(status) {
+    case .pending: return BrandColor.gold
+    case .active, .done: return BrandColor.emerald
+    case .ended: return BrandColor.ember
+    case .unknown: return BrandColor.textMuted
     }
 }

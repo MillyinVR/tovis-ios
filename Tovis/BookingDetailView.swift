@@ -221,28 +221,36 @@ struct BookingDetailView: View {
         booking.hasPendingRebookConfirmation && !rebookDecidedLocally
     }
 
-    /// Reschedule/cancel are offered ONLY before the session starts — a booking
-    /// that is still PENDING or ACCEPTED and still upcoming. This mirrors web
-    /// (`lifecycleActionViewModel` gates both on `cancellable = PENDING ||
-    /// ACCEPTED`) and the server lifecycle contract: once a booking is IN_PROGRESS
-    /// (a live session) the client may not cancel it — only ADMIN can — so the
-    /// server now refuses that transition. Offering the button here would just
-    /// produce a rejection, so we hide it. Terminal statuses were already excluded.
+    /// Reschedule/cancel are offered while the booking is still PENDING or
+    /// ACCEPTED. This mirrors web (`lifecycleActionViewModel` gates both on
+    /// `cancellable = PENDING || ACCEPTED`) and the server lifecycle contract:
+    /// once a booking is IN_PROGRESS (a live session) the client may not cancel
+    /// it — only ADMIN can — so the server refuses that transition. Offering the
+    /// button then would just produce a rejection. Terminal statuses are
+    /// excluded by the same switch.
+    ///
+    /// It deliberately does NOT check that the appointment is still upcoming
+    /// (B10, Tori's call 2026-07-26). It used to, and the comment claimed parity
+    /// with web while web had no such gate — so a booking the pro never started
+    /// or cancelled (prod had one 24 days stale) offered the client Cancel and
+    /// Reschedule on the web page and NOTHING here. The server allows both: the
+    /// contract gates on status alone, and a reschedule validates the NEW slot,
+    /// never the old one. Cancelling is the only way a client can clear a stale
+    /// booking themselves.
     private var isManageable: Bool {
         if cancelledLocally { return false }
         switch (booking.status ?? "").uppercased() {
         case "PENDING", "ACCEPTED":
-            break
+            return true
         default:
             return false
         }
-        guard let when = Wire.date(booking.scheduledFor) else { return true }
-        return when > Date()
     }
 
     /// Offer "Add to Calendar" only for an upcoming, non-terminal appointment —
-    /// the same window as reschedule/cancel; a past or cancelled booking has
-    /// nothing useful to add. Mirrors web's overview add-to-calendar link.
+    /// a past or cancelled booking has nothing useful to add. Narrower than
+    /// `isManageable` on purpose: a stale booking is still worth CANCELLING,
+    /// but never worth adding to a calendar. Mirrors web's overview link.
     private var canAddToCalendar: Bool {
         guard let when = Wire.date(booking.scheduledFor) else { return false }
         switch (booking.status ?? "").uppercased() {
@@ -2694,7 +2702,10 @@ struct BookingDetailView: View {
 
                 HStack(spacing: 10) {
                     if let status = booking.status {
-                        BrandPill(text: status.capitalized, tint: statusTone(status))
+                        // `.capitalized` rendered "In_Progress" / "No_Show" (B10).
+                        BrandPill(
+                            text: BookingStatusPresentation.label(status),
+                            tint: statusTone(status))
                     }
                     if let source = bookingSource {
                         BrandPill(text: source)

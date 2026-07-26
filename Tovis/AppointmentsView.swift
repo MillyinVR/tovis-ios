@@ -189,7 +189,10 @@ private struct BookingRow: View {
                     if booking.hasPendingConsultationApproval {
                         BrandPill(text: "Review", tint: BrandColor.gold)
                     } else if let status = booking.status {
-                        BrandPill(text: status.capitalized, tint: statusTone(status))
+                        // `.capitalized` rendered "In_Progress" / "No_Show" (B10).
+                        BrandPill(
+                            text: BookingStatusPresentation.label(status),
+                            tint: statusTone(status))
                     }
                     Image(systemName: "chevron.right")
                         .font(.system(size: 12, weight: .semibold))
