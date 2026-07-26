@@ -38,6 +38,19 @@ struct ProWorkingHoursView: View {
     @State private var saving = false
     @State private var savedTick = false
     @State private var error: String?
+    /// B8 — the bookings the last save put outside these hours. Web parity
+    /// (`WorkingHoursForm`'s notice). Informational only: the save succeeded and
+    /// nothing was cancelled or moved. Cleared at the start of every save, and
+    /// left nil when the server omits the field (nothing changed) or reports
+    /// `null` (it could not tell) — a warning nobody computed is not a "0".
+    @State private var stranded: ProStrandedBookings?
+    /// Push targets for the notice's two actions (web parity: Reschedule /
+    /// Message). The booking detail owns rescheduling; the thread is resolved
+    /// from the BOOKING context, the same anchor web's link uses.
+    @State private var strandedBookingNav: String?
+    @State private var messageNav: MessageThreadNav?
+    @State private var messageWorkingId: String?
+    @State private var messageError: String?
 
     /// This pro's bookable locations (from GET /pro/locations, minus archived).
     @State private var bookableLocations: [ProLocationSummary] = []
@@ -51,6 +64,7 @@ struct ProWorkingHoursView: View {
     ]
 
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 switch phase {
@@ -74,17 +88,50 @@ struct ProWorkingHoursView: View {
                     if let error {
                         Text(error).font(BrandFont.body(13)).foregroundStyle(BrandColor.ember)
                     }
+                    if let stranded, stranded.total > 0 {
+                        strandedNotice(stranded)
+                            .id(strandedNoticeAnchor)
+                    }
                 }
             }
-            .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 40)
+            .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 24)
+        }
+        // The pro tab bar is installed as a `.safeAreaInset` on the TabView and
+        // does NOT inset this scroll view by its full height
+        // ([[custom-tab-bar-underreports-safe-area]]), so the viewport runs
+        // under it. Bottom PADDING alone does not fix that: `scrollTo(anchor:
+        // .bottom)` aligns the notice with the VIEWPORT's bottom edge, which is
+        // the part hidden behind the bar — driven twice, clipped mid-sentence
+        // both times. Insetting the scroll view moves that edge above the bar,
+        // so the auto-scroll lands the whole warning in view.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            Color.clear.frame(height: 72)
+        }
+        // The notice lands BELOW the save button on a screen that is already
+        // taller than the phone, so without this the pro taps Save, sees
+        // "Saved", and never learns anything was stranded. Driven, not guessed —
+        // web's `StrandedBookingsNotice` needed the same nudge.
+        .onChange(of: stranded) { _, value in
+            guard value != nil else { return }
+            withAnimation { proxy.scrollTo(strandedNoticeAnchor, anchor: .bottom) }
         }
         .background(BrandColor.bgPrimary.ignoresSafeArea())
         .navigationTitle("Working hours")
         .navigationBarTitleDisplayMode(.large)
         .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
+        .navigationDestination(item: $strandedBookingNav) { bookingId in
+            ProBookingDetailView(bookingId: bookingId)
+        }
+        .navigationDestination(item: $messageNav) { nav in
+            ThreadView(thread: nav.thread)
+        }
         .task { if case .loading = phase { await load() } }
         .tint(BrandColor.accent)
+        }
     }
+
+    /// Scroll anchor for the stranded-bookings notice.
+    private var strandedNoticeAnchor: String { "stranded-notice" }
 
     private var daysOn: Int {
         days.filter { week[keyPath: $0.key].enabled }.count
@@ -225,6 +272,109 @@ struct ProWorkingHoursView: View {
         .padding(.top, 6)
     }
 
+    /// The bookings this save just put outside the pro's published hours.
+    /// Mirrors web's `StrandedBookingsNotice` — warn tone, not danger: the save
+    /// succeeded and the bookings are untouched.
+    private func strandedNotice(_ stranded: ProStrandedBookings) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(stranded.total == 1
+                 ? "1 booking now falls outside these hours"
+                 : "\(stranded.total) bookings now fall outside these hours")
+                .font(BrandFont.mono(11)).tracking(0.6)
+                .foregroundStyle(BrandColor.amber)
+
+            ForEach(stranded.items) { booking in
+                VStack(alignment: .leading, spacing: 6) {
+                    // Each row carries its OWN zone — a multi-location save can
+                    // strand bookings in different ones, so this is never the
+                    // device's.
+                    Text(Wire.dateTime(booking.scheduledFor, timeZone: booking.timeZone))
+                        .font(BrandFont.body(14, .semibold))
+                        .foregroundStyle(BrandColor.textPrimary)
+                    Text(booking.serviceName.map { "\(booking.clientName) · \($0)" }
+                         ?? booking.clientName)
+                        .font(BrandFont.body(13))
+                        .foregroundStyle(BrandColor.textSecondary)
+
+                    HStack(spacing: 8) {
+                        strandedActionButton("Reschedule") {
+                            strandedBookingNav = booking.id
+                        }
+                        strandedActionButton(
+                            messageWorkingId == booking.id ? "Opening…" : "Message"
+                        ) {
+                            Task { await openThread(bookingId: booking.id) }
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            if let messageError {
+                Text(messageError)
+                    .font(BrandFont.body(12))
+                    .foregroundStyle(BrandColor.ember)
+            }
+
+            if stranded.total > stranded.items.count {
+                Text("+\(stranded.total - stranded.items.count) more")
+                    .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
+            }
+
+            Text("They are unchanged and still on your calendar — nothing was cancelled or moved.")
+                .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(BrandColor.amber.opacity(0.08))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(BrandColor.amber.opacity(0.35), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(.top, 4)
+    }
+
+    private func strandedActionButton(
+        _ title: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(BrandFont.mono(10)).tracking(0.6)
+                .foregroundStyle(BrandColor.amber)
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .overlay(
+                    Capsule().stroke(BrandColor.amber.opacity(0.4), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Resolve-or-create the BOOKING thread and push it. The failure is
+    /// SURFACED, not swallowed — a `try?` here would look exactly like a dead
+    /// button (the lesson `ProCalendarManagementSheet.openThread` records).
+    private func openThread(bookingId: String) async {
+        guard messageWorkingId == nil else { return }
+        messageWorkingId = bookingId
+        messageError = nil
+        defer { messageWorkingId = nil }
+
+        do {
+            guard let thread = try await session.client.messages
+                .openBookingThread(bookingId: bookingId)
+            else {
+                messageError = "Couldn’t open the conversation. Try again."
+                return
+            }
+            messageNav = MessageThreadNav(thread: thread)
+        } catch let error as APIError {
+            messageError = error.userMessage
+        } catch {
+            messageError = "Couldn’t open the conversation. Try again."
+        }
+    }
+
     // MARK: - Time helpers ("HH:MM" ⇄ Date)
 
     private static func date(from hhmm: String) -> Date {
@@ -320,12 +470,14 @@ struct ProWorkingHoursView: View {
         saving = true
         error = nil
         savedTick = false
+        stranded = nil
         defer { saving = false }
         do {
             let res = try await session.client.proSchedule.updateWorkingHours(
                 week, locationType: target.mode, locationId: target.locationId)
             week = res.workingHours
             savedTick = true
+            stranded = res.strandedBookings
             session.signalRefresh()
         } catch let e as APIError {
             error = e.userMessage
