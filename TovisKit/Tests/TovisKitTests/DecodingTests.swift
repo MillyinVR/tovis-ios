@@ -1318,6 +1318,41 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.workingHours.thu.end == "20:00")
     }
 
+    // POST /api/v1/pro/working-hours — Fixtures/proWorkingHoursSave.json, a
+    // VERBATIM capture off the running route (2026-07-25) of a save that
+    // narrowed Thursday over an existing 11:00 booking. Schema-validated
+    // against the backend's `ProWorkingHoursSaveOk`.
+    @Test func decodesProWorkingHoursSaveWithStrandedBookings() throws {
+        let res = try JSONDecoder().decode(
+            ProWorkingHoursResponse.self, from: fixture("proWorkingHoursSave"))
+
+        #expect(res.workingHours.thu.start == "13:00")
+
+        let stranded = try #require(res.strandedBookings)
+        #expect(stranded.total == 1)
+        #expect(stranded.items.count == 1)
+
+        let first = try #require(stranded.items.first)
+        #expect(first.id == "cmrr6vdjg0033po3nn4o0s6dv")
+        #expect(first.scheduledFor == "2026-08-06T18:00:00.000Z")
+        #expect(first.durationMinutes == 180)
+        // The zone travels WITH the booking — a multi-location save can strand
+        // bookings in different zones, so the row is never rendered in the
+        // device's.
+        #expect(first.timeZone == "America/Los_Angeles")
+        #expect(first.clientName == "Test Client")
+        #expect(first.serviceName == "Balayage")
+    }
+
+    // The GET twin carries no `strandedBookings` at all — the server OMITS the
+    // field when a save changed nothing, and never sends it on a read. Decoding
+    // must survive its absence, or every hours load breaks.
+    @Test func decodesProWorkingHoursWithoutStrandedBookings() throws {
+        let res = try JSONDecoder().decode(
+            ProWorkingHoursResponse.self, from: fixture("proWorkingHours"))
+        #expect(res.strandedBookings == nil)
+    }
+
     // GET /api/v1/pro/availability/busy-days — Fixtures/proBusyDays.json, a
     // VERBATIM capture off the running route (2026-07-25), schema-validated
     // against the backend's `ProAvailabilityBusyDaysOk`. Feeds the aftercare

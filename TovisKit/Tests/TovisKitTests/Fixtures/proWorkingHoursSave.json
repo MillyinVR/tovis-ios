@@ -1,0 +1,36 @@
+{
+  "ok": true,
+  "locationType": "SALON",
+  "locationId": "cmrbry47t000fpo0dz0kdy80z",
+  "location": {
+    "id": "cmrbry47t000fpo0dz0kdy80z",
+    "type": "SALON",
+    "isPrimary": true
+  },
+  "workingHours": {
+    "sun": { "enabled": false, "start": "09:00", "end": "17:00" },
+    "mon": { "enabled": true, "start": "09:00", "end": "17:00" },
+    "tue": { "enabled": true, "start": "09:00", "end": "17:00" },
+    "wed": { "enabled": true, "start": "09:00", "end": "17:00" },
+    "thu": { "enabled": true, "start": "13:00", "end": "17:00" },
+    "fri": { "enabled": true, "start": "09:00", "end": "17:00" },
+    "sat": { "enabled": true, "start": "09:00", "end": "15:00" }
+  },
+  "usedDefault": false,
+  "updatedCount": 1,
+  "updatedLocationIds": ["cmrbry47t000fpo0dz0kdy80z"],
+  "strandedBookings": {
+    "total": 1,
+    "items": [
+      {
+        "id": "cmrr6vdjg0033po3nn4o0s6dv",
+        "scheduledFor": "2026-08-06T18:00:00.000Z",
+        "durationMinutes": 180,
+        "locationId": "cmrbry47t000fpo0dz0kdy80z",
+        "timeZone": "America/Los_Angeles",
+        "clientName": "Test Client",
+        "serviceName": "Balayage"
+      }
+    ]
+  }
+}

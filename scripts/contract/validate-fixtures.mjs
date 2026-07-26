@@ -126,6 +126,17 @@ const CHECKS = [
     def: 'ProAvailabilityBusyDaysOk',
     pick: (d) => [d],
   },
+  // POST /api/v1/pro/working-hours returns the payload at the ROOT. A VERBATIM
+  // capture off the running route (2026-07-25) of the B8 case that matters:
+  // a save that narrowed Thursday over an existing 11:00 booking, so
+  // `strandedBookings` is populated rather than absent. The GET twin
+  // (proWorkingHours.json) deliberately has no such field — the server omits it
+  // entirely when nothing changed, and iOS must keep decoding both.
+  {
+    file: 'proWorkingHoursSave.json',
+    def: 'ProWorkingHoursSaveOk',
+    pick: (d) => [d],
+  },
 ]
 
 function fail(msg) {
