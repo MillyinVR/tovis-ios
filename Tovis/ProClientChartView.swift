@@ -509,7 +509,9 @@ struct ProClientChartView: View {
                                 if let total = b.total { Text(Wire.money(total) ?? total).font(BrandFont.body(13, .semibold)).foregroundStyle(BrandColor.textSecondary) }
                             }
                             HStack(spacing: 6) {
-                                BrandPill(text: b.status.capitalized, tint: statusTone(b.status))
+                                BrandPill(
+                                    text: BookingStatusPresentation.label(b.status),
+                                    tint: statusTone(b.status))
                                 if !b.isMine { Text("with \(b.proName)").font(BrandFont.body(11)).foregroundStyle(BrandColor.textMuted) }
                             }
                             Text(Wire.dateTime(b.scheduledFor, timeZone: b.timeZone)).font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
