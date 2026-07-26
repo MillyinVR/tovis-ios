@@ -42,6 +42,13 @@ struct ProAftercareAuthorView: View {
     @State private var featuredAfterId: String?
     @State private var viewingMedia: FullscreenMedia?
     @State private var isFinalized = false
+    /// Server-resolved edit window. A completed booking stays correctable for a
+    /// bounded period and then locks; `nil` means an older backend that doesn't
+    /// report one, which we treat as editable (the save is still the authority).
+    @State private var editWindow: ProAftercareBooking.AftercareEditWindow?
+    /// The booked next appointment moved after this aftercare was written, so
+    /// the prefilled date is the calendar's, not the one the pro saved.
+    @State private var rebookRescheduledSinceSaved = false
     @State private var saving = false
     @State private var errorText: String?
     @State private var message: String?
@@ -108,6 +115,7 @@ struct ProAftercareAuthorView: View {
                 HStack { Spacer(); ProgressView().tint(BrandColor.accent); Spacer() }.padding(.top, 80)
             } else {
                 VStack(alignment: .leading, spacing: 18) {
+                    completionBanner
                     photosSection
                     notesSection
                     rebookSection
@@ -119,9 +127,14 @@ struct ProAftercareAuthorView: View {
                     if let message {
                         Text(message).font(BrandFont.body(13, .semibold)).foregroundStyle(BrandColor.emerald)
                     }
-                    actions
+                    // A locked aftercare is a record, not a form: no save
+                    // affordance at all, rather than a button that only 403s.
+                    if !locked { actions }
                 }
                 .padding(.horizontal, 20).padding(.vertical, 12)
+                // One switch for the whole editor — every field, picker and
+                // toggle below goes inert once the window has closed.
+                .disabled(locked)
             }
         }
         .background(BrandColor.bgPrimary.ignoresSafeArea())
@@ -322,6 +335,65 @@ struct ProAftercareAuthorView: View {
             .disabled(saving)
             .padding(4)
         }
+    }
+
+    /// The correction window has closed — this aftercare is a read-only record.
+    /// `nil` (an older backend that doesn't report a window) stays editable and
+    /// lets the save be the authority, rather than locking on a guess.
+    private var locked: Bool {
+        guard let editWindow else { return false }
+        return !editWindow.editable
+    }
+
+    /// Shown only once the booking is completed: either the remaining
+    /// correction window or the fact that it has closed. Mirrors the web
+    /// editor's completed-booking card.
+    @ViewBuilder
+    private var completionBanner: some View {
+        if let editWindow, editWindow.isPostCompletion {
+            BrandSurface {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("This booking is completed.")
+                        .font(BrandFont.body(14, .semibold))
+                        .foregroundStyle(BrandColor.textPrimary)
+
+                    Text(completionBannerDetail(editWindow))
+                        .font(BrandFont.body(13))
+                        .foregroundStyle(BrandColor.textSecondary)
+
+                    if rebookRescheduledSinceSaved {
+                        Text(
+                            "Heads up: the next appointment has been rescheduled since you wrote this, so the date below is the one on the calendar now — not the one you originally saved."
+                        )
+                        .font(BrandFont.body(13))
+                        .foregroundStyle(BrandColor.textSecondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private func completionBannerDetail(
+        _ window: ProAftercareBooking.AftercareEditWindow
+    ) -> String {
+        if !window.editable {
+            return "Corrections closed \(window.windowDays) days after the session, so this is read-only now."
+        }
+
+        guard let closesAt = window.closesAt else {
+            return "The session is closed out, but you can still correct this aftercare. Saving a change the client has already seen updates what their aftercare link shows."
+        }
+
+        // `Wire` resolves the zone from its identifier; `apptZone` is the
+        // already-resolved TimeZone, so pass the identifier the state holds.
+        let label = Wire.dateTime(closesAt, timeZone: timeZone)
+
+        guard !label.isEmpty else {
+            return "The session is closed out, but you can still correct this aftercare. Saving a change the client has already seen updates what their aftercare link shows."
+        }
+
+        return "The session is closed out, but you can still correct this aftercare until \(label). Saving a change the client has already seen updates what their aftercare link shows."
     }
 
     private var notesSection: some View {
@@ -797,6 +869,11 @@ struct ProAftercareAuthorView: View {
             professionalId = await profileTask?.id ?? ""
 
             timeZone = detail?.timeZone ?? booking.locationTimeZone
+            // Whether this is still writable is the server's call, not ours —
+            // the same resolver the save refuses on.
+            editWindow = booking.aftercareEditWindow
+            rebookRescheduledSinceSaved =
+                booking.aftercareSummary?.rebookRescheduledSinceSaved ?? false
             if let detail {
                 rebookServiceId = detail.baseItem?.serviceId ?? ""
                 rebookOfferingId = detail.baseItem?.offeringId ?? ""

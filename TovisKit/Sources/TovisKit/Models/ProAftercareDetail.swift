@@ -17,6 +17,11 @@ public struct ProAftercareBooking: Decodable, Sendable {
     public let scheduledFor: String
     public let finishedAt: String?
     public let locationTimeZone: String?
+    /// Whether the pro may still write to this aftercare. A completed booking
+    /// stays editable for a bounded correction window and then locks for good;
+    /// a live booking has no deadline at all. Optional so older backends (before
+    /// the window shipped) still decode — treat `nil` as "no deadline known".
+    public let aftercareEditWindow: AftercareEditWindow?
     public let aftercareSummary: ProAftercareSummaryDetail?
     /// Auto-suggested recommended-window rebook dates for a fresh wrap-up
     /// (service date + the offering's typical rebook interval). The backend
@@ -31,6 +36,18 @@ public struct ProAftercareBooking: Decodable, Sendable {
     public struct RebookSuggestion: Decodable, Sendable {
         public let windowStart: String
         public let windowEnd: String
+    }
+
+    /// Server-resolved answer to "can this still be edited, and until when?".
+    /// Mirrors `lib/aftercare/aftercareEditWindow.ts` — never re-derived here,
+    /// so the editor locks at exactly the moment a save would start failing.
+    public struct AftercareEditWindow: Decodable, Sendable {
+        public let editable: Bool
+        /// True once the booking is completed — i.e. a deadline exists.
+        public let isPostCompletion: Bool
+        /// ISO instant editing shuts. Null while the booking isn't completed.
+        public let closesAt: String?
+        public let windowDays: Int
     }
 
     public struct Media: Decodable, Sendable {
@@ -49,6 +66,11 @@ public struct ProAftercareSummaryDetail: Decodable, Sendable {
     public let rebookWindowStart: String?
     public let rebookWindowEnd: String?
     public let rebookDeclinedAt: String?
+    /// True when the booked next appointment has been rescheduled since this
+    /// aftercare was last saved. `rebookedFor`/`rebookSlot` above already carry
+    /// the CURRENT time in that case — this only says the pro should be told
+    /// why it differs from what they wrote. Optional for older backends.
+    public let rebookRescheduledSinceSaved: Bool?
     public let rebookSlot: ProAftercareRebookSlot?
     /// Pro-chosen "featured pair" — the before/after asset ids the client sees as
     /// the primary comparison (every other before/after shows as a flat
