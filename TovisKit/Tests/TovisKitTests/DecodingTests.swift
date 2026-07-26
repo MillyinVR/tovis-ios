@@ -865,10 +865,18 @@ func fixture(_ name: String) throws -> Data {
         #expect(media.beforeFullUrl == "https://cdn.example.com/bk_1-before-full.jpg")
         #expect(media.afterFullUrl == "https://cdn.example.com/bk_1-after-full.jpg")
 
+        // A live booking has no correction deadline; the editor stays open.
+        let editWindow = try #require(booking.aftercareEditWindow)
+        #expect(editWindow.editable == true)
+        #expect(editWindow.isPostCompletion == false)
+        #expect(editWindow.closesAt == nil)
+        #expect(editWindow.windowDays == 30)
+
         let summary = try #require(booking.aftercareSummary)
         #expect(summary.rebookMode == "RECOMMENDED_WINDOW")
         #expect(summary.version == 2)
         #expect(summary.isFinalized == false)
+        #expect(summary.rebookRescheduledSinceSaved == false)
         #expect(summary.rebookWindowStart == "2026-07-20T07:00:00.000Z")
         #expect(summary.recommendedProducts.count == 2)
 

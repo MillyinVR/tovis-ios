@@ -6,6 +6,12 @@
     "scheduledFor": "2026-07-01T17:00:00.000Z",
     "finishedAt": null,
     "locationTimeZone": "America/Los_Angeles",
+    "aftercareEditWindow": {
+      "editable": true,
+      "isPostCompletion": false,
+      "closesAt": null,
+      "windowDays": 30
+    },
     "aftercareSummary": {
       "id": "ac_1",
       "notes": "Use a sulfate-free shampoo twice a week.",
@@ -14,6 +20,7 @@
       "rebookWindowStart": "2026-07-20T07:00:00.000Z",
       "rebookWindowEnd": "2026-08-03T06:59:59.999Z",
       "rebookDeclinedAt": null,
+      "rebookRescheduledSinceSaved": false,
       "rebookSlot": null,
       "featuredBeforeAssetId": "media_1",
       "featuredAfterAssetId": "media_2",
