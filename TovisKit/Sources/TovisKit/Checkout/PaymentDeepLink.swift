@@ -64,13 +64,15 @@ public enum CheckoutMoney {
 
 /// The off-platform pay affordance for a selected method — the native mirror of
 /// web's `PaymentDeepLink`. Two shapes, because not every app exposes a deep link:
-///   • `.link`  — Venmo / PayPal open pre-filled via a universal https URL.
+///   • `.link`  — Venmo / PayPal open pre-filled. `href` is the https URL (valid
+///                everywhere); `appHref` is a custom-scheme URL to prefer when
+///                the provider's https URL cannot itself reach the app.
 ///   • `.copy`  — Zelle / Apple Cash have no public deep link, so we surface the
 ///                handle + amount to copy plus a one-line instruction.
 /// Cash, card-on-file, tap-to-pay, Apple Pay and Stripe card have no off-platform
 /// action → this returns nil.
 public enum PaymentDeepLink: Sendable, Equatable {
-    case link(href: URL, label: String)
+    case link(href: URL, appHref: URL?, label: String)
     case copy(handle: String, amount: String, instruction: String)
 }
 
@@ -94,6 +96,8 @@ public func buildPaymentDeepLink(
         let user = cleanHandle(rawHandle)
         guard !user.isEmpty else { return nil }
 
+        let trimmedNote = note?.trimmingCharacters(in: .whitespacesAndNewlines)
+
         var components = URLComponents()
         components.scheme = "https"
         components.host = "venmo.com"
@@ -102,12 +106,34 @@ public func buildPaymentDeepLink(
             URLQueryItem(name: "txn", value: "pay"),
             URLQueryItem(name: "amount", value: amount),
         ]
-        if let note = note?.trimmingCharacters(in: .whitespacesAndNewlines), !note.isEmpty {
-            items.append(URLQueryItem(name: "note", value: note))
+        if let trimmedNote, !trimmedNote.isEmpty {
+            items.append(URLQueryItem(name: "note", value: trimmedNote))
         }
         components.queryItems = items
         guard let url = components.url else { return nil }
-        return .link(href: url, label: "Pay $\(amount) with Venmo")
+
+        // The https URL does NOT open the Venmo app. venmo.com's
+        // apple-app-site-association claims /u/*, /payment/, /complete_payment
+        // and /code — but not a bare /<username> — so iOS never hands the tap
+        // over. Venmo's own servers answer that URL with a 302→307 chain ending
+        // at venmo://paycharge, but a redirect into a custom scheme is not a
+        // hand-off iOS will perform. So we build that scheme URL ourselves and
+        // open it directly; the https URL stays as the fallback for a device
+        // without Venmo installed.
+        var appComponents = URLComponents()
+        appComponents.scheme = "venmo"
+        appComponents.host = "paycharge"
+        var appItems = [
+            URLQueryItem(name: "txn", value: "pay"),
+            URLQueryItem(name: "recipients", value: user),
+            URLQueryItem(name: "amount", value: amount),
+        ]
+        if let trimmedNote, !trimmedNote.isEmpty {
+            appItems.append(URLQueryItem(name: "note", value: trimmedNote))
+        }
+        appComponents.queryItems = appItems
+
+        return .link(href: url, appHref: appComponents.url, label: "Pay $\(amount) with Venmo")
 
     case "paypal":
         guard let user = paypalUsername(rawHandle) else { return nil }
@@ -118,7 +144,9 @@ public func buildPaymentDeepLink(
         // PayPal.Me locks the amount into the URL path; currency is inferred.
         components.path = "/\(user)/\(amount)"
         guard let url = components.url else { return nil }
-        return .link(href: url, label: "Pay $\(amount) with PayPal")
+        // No appHref: paypal.me's apple-app-site-association claims "/*", so this
+        // really is a universal link and the PayPal app opens on it.
+        return .link(href: url, appHref: nil, label: "Pay $\(amount) with PayPal")
 
     case "zelle":
         return .copy(
