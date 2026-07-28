@@ -14,7 +14,7 @@ import Testing
         let action = try #require(
             buildPaymentDeepLink(methodKey: "venmo", handle: "@amara", amountDue: 72, note: "Tovis")
         )
-        guard case let .link(href, label) = action else {
+        guard case let .link(href, _, label) = action else {
             Issue.record("expected a link")
             return
         }
@@ -30,18 +30,68 @@ import Testing
         let action = try #require(
             buildPaymentDeepLink(methodKey: "venmo", handle: "@amara", amountDue: Decimal(string: "97.00")!, note: nil)
         )
-        guard case let .link(href, _) = action else {
+        guard case let .link(href, _, _) = action else {
             Issue.record("expected a link")
             return
         }
         #expect(href.absoluteString == "https://venmo.com/amara?txn=pay&amount=97.00")
     }
 
+    /// The https URL never opens the Venmo app: venmo.com's
+    /// apple-app-site-association does not claim a bare /<username>, and the
+    /// 302→307 chain it serves ends at venmo://paycharge — a redirect into a
+    /// custom scheme, which iOS will not follow. We must emit that scheme URL
+    /// ourselves and open it directly.
+    @Test func venmoEmitsAnAppSchemeUrlAlongsideTheWebUrl() throws {
+        let action = try #require(
+            buildPaymentDeepLink(methodKey: "venmo", handle: "@amara", amountDue: 72, note: "Tovis")
+        )
+        guard case let .link(_, appHref, _) = action else {
+            Issue.record("expected a link")
+            return
+        }
+        let app = try #require(appHref)
+        #expect(app.scheme == "venmo")
+
+        let components = try #require(URLComponents(url: app, resolvingAgainstBaseURL: false))
+        #expect(components.host == "paycharge")
+        let items = components.queryItems ?? []
+        #expect(items.contains(URLQueryItem(name: "txn", value: "pay")))
+        #expect(items.contains(URLQueryItem(name: "recipients", value: "amara")))
+        #expect(items.contains(URLQueryItem(name: "amount", value: "72.00")))
+        #expect(items.contains(URLQueryItem(name: "note", value: "Tovis")))
+    }
+
+    @Test func venmoOmitsTheNoteFromTheAppUrlWhenAbsent() throws {
+        let action = try #require(
+            buildPaymentDeepLink(methodKey: "venmo", handle: "amara", amountDue: 12, note: nil)
+        )
+        guard case let .link(_, appHref, _) = action else {
+            Issue.record("expected a link")
+            return
+        }
+        let app = try #require(appHref)
+        #expect(app.absoluteString == "venmo://paycharge?txn=pay&recipients=amara&amount=12.00")
+    }
+
+    /// paypal.me's apple-app-site-association claims "/*", so the https URL is a
+    /// genuine universal link — no custom-scheme escape hatch needed.
+    @Test func paypalNeedsNoAppSchemeUrl() throws {
+        let action = try #require(
+            buildPaymentDeepLink(methodKey: "paypal", handle: "amara", amountDue: 72, note: nil)
+        )
+        guard case let .link(_, appHref, _) = action else {
+            Issue.record("expected a link")
+            return
+        }
+        #expect(appHref == nil)
+    }
+
     @Test func paypalLocksAmountIntoThePath() throws {
         let action = try #require(
             buildPaymentDeepLink(methodKey: "paypal", handle: "amara", amountDue: 72, note: nil)
         )
-        guard case let .link(href, label) = action else {
+        guard case let .link(href, _, label) = action else {
             Issue.record("expected a link")
             return
         }
@@ -53,7 +103,7 @@ import Testing
         let action = try #require(
             buildPaymentDeepLink(methodKey: "paypal", handle: "https://paypal.me/amara", amountDue: 50, note: nil)
         )
-        guard case let .link(href, _) = action else {
+        guard case let .link(href, _, _) = action else {
             Issue.record("expected a link")
             return
         }

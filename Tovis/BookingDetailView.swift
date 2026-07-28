@@ -10,6 +10,7 @@ import TovisKit
 struct BookingDetailView: View {
     @Environment(SessionModel.self) private var session
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
 
     let booking: ClientBooking
     /// Called after a successful decision so the list behind can refresh.
@@ -793,9 +794,14 @@ struct BookingDetailView: View {
     @ViewBuilder
     private func payAffordance(_ action: PaymentDeepLink) -> some View {
         switch action {
-        case let .link(href, label):
+        case let .link(href, appHref, label):
             VStack(alignment: .leading, spacing: 6) {
-                Link(destination: href) {
+                // Not a `Link`: when the provider needs a custom-scheme hand-off
+                // (Venmo), we must try that first and fall back to the https URL
+                // if the app isn't installed — `Link` can't observe that.
+                Button {
+                    openPayLink(href: href, appHref: appHref)
+                } label: {
                     Text(label)
                         .font(BrandFont.body(14, .semibold))
                         .foregroundStyle(BrandColor.accent)
@@ -815,6 +821,22 @@ struct BookingDetailView: View {
                 Text("\(instruction) Then tap the confirm button below to close out.")
                     .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
             }
+        }
+    }
+
+    /// Open the provider's app via its custom scheme when it has one, falling
+    /// back to the https URL if that app isn't installed. `openURL`'s completion
+    /// reports whether the scheme was actually handled, which is the only way to
+    /// tell — `canOpenURL` would need the scheme declared in
+    /// LSApplicationQueriesSchemes, and silently returns false without it.
+    private func openPayLink(href: URL, appHref: URL?) {
+        guard let appHref else {
+            openURL(href)
+            return
+        }
+
+        openURL(appHref) { opened in
+            if !opened { openURL(href) }
         }
     }
 
@@ -865,35 +887,19 @@ struct BookingDetailView: View {
     }
 
     /// Map a checkout method key to the Prisma PaymentMethod the confirm route
-    /// accepts. PayPal / Apple Pay have no on-platform confirm (the route excludes
-    /// them) → nil, mirroring web methodKeyToRequestValue.
+    /// accepts. The two differ only by case, so this derives rather than keeping
+    /// a hand-written list: the old switch silently dropped PAYPAL, so a client
+    /// could follow the (working) paypal.me link, really pay, and then be stuck
+    /// on "Choose a payment method" forever. The server decides what's allowed —
+    /// it only offers methods a client may actually self-serve.
     private func methodRequestValue(_ key: String) -> String? {
-        switch key {
-        case "cash": return "CASH"
-        case "card_on_file": return "CARD_ON_FILE"
-        case "tap_to_pay": return "TAP_TO_PAY"
-        case "venmo": return "VENMO"
-        case "zelle": return "ZELLE"
-        case "apple_cash": return "APPLE_CASH"
-        case "stripe_card": return "STRIPE_CARD"
-        default: return nil
-        }
+        let normalized = key.trimmingCharacters(in: .whitespaces).uppercased()
+        return normalized.isEmpty ? nil : normalized
     }
 
     private func normalizeMethodKey(_ value: String?) -> String {
         guard let v = value?.trimmingCharacters(in: .whitespaces), !v.isEmpty else { return "" }
-        switch v.uppercased() {
-        case "CASH": return "cash"
-        case "CARD_ON_FILE": return "card_on_file"
-        case "TAP_TO_PAY": return "tap_to_pay"
-        case "VENMO": return "venmo"
-        case "ZELLE": return "zelle"
-        case "APPLE_CASH": return "apple_cash"
-        case "PAYPAL": return "paypal"
-        case "APPLE_PAY": return "apple_pay"
-        case "STRIPE_CARD": return "stripe_card"
-        default: return v.lowercased()
-        }
+        return v.lowercased()
     }
 
     /// Confirm the payment. Card → hosted Stripe (carries the tip). Off-platform →
