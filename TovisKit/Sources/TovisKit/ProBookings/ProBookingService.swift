@@ -348,36 +348,6 @@ public final class ProBookingService: Sendable {
         )
     }
 
-    /// POST /api/v1/pro/bookings/{id}/rebook — propose the client's next
-    /// appointment. `BOOK` schedules it (needs `scheduledFor`); `RECOMMEND_WINDOW`
-    /// suggests a date range; `CLEAR` removes a prior proposal. Idempotent.
-    public func rebook(
-        bookingId: String,
-        mode: ProRebookMode,
-        scheduledFor: String? = nil,
-        windowStart: String? = nil,
-        windowEnd: String? = nil,
-        idempotencyKey: String? = nil
-    ) async throws {
-        let payload = try JSONEncoder.canonical.encode(
-            ProRebookRequest(
-                mode: mode.rawValue,
-                scheduledFor: scheduledFor,
-                windowStart: windowStart,
-                windowEnd: windowEnd
-            )
-        )
-        let key = idempotencyKey ?? buildClientIdempotencyKey(
-            scope: "pro-booking", entityId: bookingId, action: "rebook",
-            nonce: idempotencyNonce(payload))
-        try await api.requestVoid(
-            "/pro/bookings/\(bookingId)/rebook",
-            method: .post,
-            body: payload,
-            headers: ["idempotency-key": key]
-        )
-    }
-
     /// POST /api/v1/pro/bookings/{id}/checkout/mark-paid — record that the client
     /// paid in person (for clients who never self-checkout). The chosen method is
     /// stored on the booking and closes checkout. Idempotent.
@@ -586,12 +556,6 @@ public final class ProBookingService: Sendable {
     }
 }
 
-public enum ProRebookMode: String, Sendable {
-    case book = "BOOK"
-    case recommendWindow = "RECOMMEND_WINDOW"
-    case clear = "CLEAR"
-}
-
 struct ProBookingStatusRequest: Encodable {
     let status: String
     let notifyClient: Bool
@@ -648,13 +612,6 @@ public struct ProBookingServiceItemInput: Encodable, Sendable {
         self.offeringId = offeringId
         self.sortOrder = sortOrder
     }
-}
-
-struct ProRebookRequest: Encodable {
-    let mode: String
-    let scheduledFor: String?
-    let windowStart: String?
-    let windowEnd: String?
 }
 
 /// Refund body. Optionals are dropped from the JSON when nil (synthesized
