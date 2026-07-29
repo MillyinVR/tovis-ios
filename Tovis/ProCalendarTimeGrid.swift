@@ -762,6 +762,17 @@ struct ProCalendarTimeGrid: View {
             return timeLabel(event.startsAt)
         }()
 
+        // Payment chip (K2): the server-derived badge, rendered verbatim. Web
+        // shows it only where the card has room (≥768px, like the pending badge);
+        // here that's a wide column — the day view — on a non-micro tile.
+        // `significant` gating mirrors web EventCard (UNPAID stays quiet).
+        let paymentBadge: ProPaymentBadge.Display? = {
+            guard event.isBooking, colWidth >= 150,
+                  let display = event.paymentBadge?.display, display.significant
+            else { return nil }
+            return display
+        }()
+
         // Build the fully-interactive tile at its NATURAL (un-offset) position:
         // content shape, tap, and the resize-handle overlay all attach here. `.offset`
         // is applied LAST (below) so the touch target travels with the visual. (A
@@ -775,7 +786,8 @@ struct ProCalendarTimeGrid: View {
             timeText: timeText,
             lifted: lifted,
             pending: pending,
-            conflict: conflict
+            conflict: conflict,
+            paymentBadge: paymentBadge
         )
         .padding(.horizontal, 1.5)
         .frame(width: colWidth, alignment: .leading)
@@ -837,7 +849,8 @@ struct ProCalendarTimeGrid: View {
         timeText: String,
         lifted: Bool,
         pending: Bool,
-        conflict: Bool
+        conflict: Bool,
+        paymentBadge: ProPaymentBadge.Display? = nil
     ) -> some View {
         // Drag states own the ring; otherwise a conflict paints it amber.
         let ringColor: Color = (lifted || pending)
@@ -853,10 +866,22 @@ struct ProCalendarTimeGrid: View {
                     .foregroundStyle(BrandColor.textPrimary)
                     .lineLimit(1)
                 if !micro {
-                    Text(timeText)
-                        .font(BrandFont.mono(9))
-                        .foregroundStyle(lifted ? BrandColor.accent : BrandColor.textSecondary)
-                        .lineLimit(1)
+                    HStack(spacing: 5) {
+                        Text(timeText)
+                            .font(BrandFont.mono(9))
+                            .foregroundStyle(lifted ? BrandColor.accent : BrandColor.textSecondary)
+                            .lineLimit(1)
+                        if let payment = paymentBadge {
+                            Text(payment.label)
+                                .font(BrandFont.mono(9))
+                                .foregroundStyle(paymentBadgeTone(payment.tone))
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background(paymentBadgeTone(payment.tone).opacity(0.14))
+                                .clipShape(Capsule())
+                                .lineLimit(1)
+                        }
+                    }
                 }
             }
             .padding(.leading, 6)
@@ -1151,7 +1176,12 @@ struct ProCalendarTimeGrid: View {
         let name = event.isBlock
             ? (event.title.isEmpty ? "Blocked time" : event.title)
             : (event.isHold ? holdTitle(event) : event.clientName)
-        let base = "\(name), \(timeLabel(event.startsAt))"
+        var base = "\(name), \(timeLabel(event.startsAt))"
+        // Payment state joins the spoken label whenever it's significant — like
+        // web's card aria label, NOT gated on the visual chip having room.
+        if event.isBooking, let payment = event.paymentBadge?.display, payment.significant {
+            base += ", \(payment.label)"
+        }
         return conflict ? "\(base), overlaps another appointment" : base
     }
 

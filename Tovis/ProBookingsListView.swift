@@ -176,6 +176,12 @@ struct ProBookingsListView: View {
                         .foregroundStyle(BrandColor.textPrimary)
                         .lineLimit(1)
                     BrandPill(text: booking.statusLabel, tint: statusTone(booking.status))
+                    // Payment state (K2) — web PaymentPill parity: the server-derived
+                    // badge rendered verbatim, `significant` gating it so upcoming
+                    // rows aren't a wall of "Unpaid" (the helper owns that call).
+                    if let payment = booking.paymentBadge?.display, payment.significant {
+                        BrandPill(text: payment.label, tint: paymentBadgeTone(payment.tone))
+                    }
                     if booking.needsCloseout {
                         BrandPill(text: "Payment due", tint: BrandColor.gold)
                     }

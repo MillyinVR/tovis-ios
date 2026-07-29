@@ -193,3 +193,19 @@ func statusTone(_ status: String?) -> Color {
     case .unknown: return BrandColor.textMuted
     }
 }
+
+/// Color for a payment badge's wire tone — the web `Badge` tone vocabulary
+/// (K1's `paymentBadge.tone`, consumed verbatim; the state is never recomputed
+/// on device). Lives here next to `statusTone` (the B10 seam) so no screen
+/// grows its own payment palette. An unrecognized tone reads muted, never loud.
+func paymentBadgeTone(_ tone: String?) -> Color {
+    switch tone {
+    case "danger": return BrandColor.ember
+    case "success": return BrandColor.emerald
+    case "warn": return BrandColor.amber
+    case "pending": return BrandColor.gold
+    case "info": return BrandColor.iris
+    case "accent": return BrandColor.accent
+    default: return BrandColor.textMuted  // "neutral" + anything unknown
+    }
+}

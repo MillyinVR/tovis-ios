@@ -80,6 +80,10 @@ public struct ProCalendarEvent: Decodable, Sendable, Identifiable {
     /// awaiting their answer. Present ⇒ show it instead of an offer action, so the
     /// pro can't quietly stack a second offer on the same entry.
     public let pendingOffer: ProWaitlistPendingOffer?
+    /// BOOKING events only (K1/K2): the at-a-glance payment state, derived by
+    /// web's ONE helper and rendered verbatim (`display` hides unknown kinds).
+    /// Absent on blocks, holds and waitlist rows.
+    public let paymentBadge: ProPaymentBadge?
 
     public var isBooking: Bool { kind == "BOOKING" }
     public var isBlock: Bool { kind == "BLOCK" }
