@@ -30,9 +30,10 @@
   overrideReason? }`. **Idempotency-Key header REQUIRED.** Returns normalized result.
 - `PATCH /pro/bookings/[id]/cancel` — body `{ reason? }`; Idempotency-Key required;
   → `{ booking:{ id, status, sessionStep }, meta:{ mutated } }`.
-- `POST /pro/bookings/[id]/rebook` — body `{ mode:"BOOK"|"RECOMMEND_WINDOW"|"CLEAR",
-  scheduledFor?(BOOK), windowStart?/windowEnd?(RECOMMEND_WINDOW) }`; Idempotency-Key;
-  → `{ ok, mode, nextBookingId?, aftercare:{…} }`.
+- ~~`POST /pro/bookings/[id]/rebook`~~ — **RETIRED 2026-07-28** (tovis-app #785; iOS
+  client dropped in #232). It was a duplicate front door onto the aftercare rebook
+  plan — the aftercare save (`final-review` / aftercare endpoints below, `rebookMode`
+  fields) writes the same `AftercareSummary` columns and is the one true path.
 - `POST /pro/bookings/[id]/consultation-proposal` — body `{ proposedServicesJson:{items:
   [{serviceId, offeringId?, itemType:"BASE"|"ADD_ON", label, price, durationMinutes,
   notes?, sortOrder?, source:"BOOKING"|"PROPOSAL"}]}, proposedTotal, notes? }`.
