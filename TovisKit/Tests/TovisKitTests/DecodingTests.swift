@@ -755,6 +755,25 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.today[1].client.email == nil)
         #expect(res.cancelled[0].total == nil)
         #expect(res.cancelled[0].sessionStep == nil)
+
+        // Payment badge (K2) — consumed VERBATIM off the wire, identical
+        // vocabulary to web's lib/booking/paymentBadge.ts.
+        let deposit = try #require(first.paymentBadge?.display)
+        #expect(deposit.kind == "DEPOSIT_PAID")
+        #expect(deposit.label == "Deposit paid $40.00")
+        #expect(deposit.tone == "info")
+        #expect(deposit.significant)
+
+        // UNPAID is the one non-significant state — the list row hides it.
+        let unpaid = try #require(res.today[1].paymentBadge?.display)
+        #expect(unpaid.kind == "UNPAID")
+        #expect(!unpaid.significant)
+
+        #expect(res.upcoming[0].paymentBadge?.display?.label == "Deposit due")
+
+        // The field is absent on today's prod payloads (pre-#787-deploy) and
+        // must stay optional — the cancelled row pins that path.
+        #expect(res.cancelled[0].paymentBadge == nil)
     }
 
     // POST /api/v1/pro/bookings — the create response. When the booking creates

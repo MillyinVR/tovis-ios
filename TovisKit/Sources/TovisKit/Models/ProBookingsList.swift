@@ -44,6 +44,10 @@ public struct ProBookingListItem: Decodable, Sendable, Identifiable {
     public let needsCloseout: Bool
     public let startedAt: String?
     public let finishedAt: String?
+    /// The at-a-glance payment state (K1/K2), derived by web's ONE helper and
+    /// rendered verbatim (`display` hides unknown kinds). Optional so the app
+    /// keeps decoding today's prod payloads until web #787 deploys.
+    public let paymentBadge: ProPaymentBadge?
 
     public var isInProgress: Bool { status.uppercased() == "IN_PROGRESS" }
 }
