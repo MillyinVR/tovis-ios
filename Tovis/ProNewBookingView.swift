@@ -460,7 +460,6 @@ struct ProNewBookingView: View {
                         locationId: location.id,
                         locationType: bookingMode == .mobile ? "MOBILE" : "SALON",
                         locationTimeZone: location.timeZone,
-                        durationMinutes: durationMinutes(offering),
                         clientAddressId: slotClientAddressId,
                         selectedSlot: $selectedSlot,
                         selectedDate: $slotDay,

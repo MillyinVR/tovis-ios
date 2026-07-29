@@ -72,6 +72,14 @@ public struct ProWeekHours: Codable, Sendable, Equatable {
         self.sun = sun; self.mon = mon; self.tue = tue; self.wed = wed
         self.thu = thu; self.fri = fri; self.sat = sat
     }
+
+    /// Weekday indexes (0=Sun … 6=Sat) the schedule marks disabled — the day
+    /// pickers' "off day" shading signal. Single home for the mapping so no
+    /// surface re-derives it from the seven fields by hand.
+    public var disabledWeekdayIndexes: Set<Int> {
+        let days = [sun, mon, tue, wed, thu, fri, sat]
+        return Set(days.enumerated().compactMap { $0.element.enabled ? nil : $0.offset })
+    }
 }
 
 /// POST body — `{ workingHours }`.

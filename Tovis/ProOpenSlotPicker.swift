@@ -22,15 +22,15 @@ struct ProOpenSlotPicker: View {
     let locationType: String
     /// Timezone the availability `date` param is interpreted in (location zone).
     let locationTimeZone: String?
-    let durationMinutes: Int
     /// For a MOBILE booking, the client's saved service-address id so slots respect
     /// the pro's travel radius. nil for SALON (or an as-yet-unsaved MOBILE address).
     var clientAddressId: String? = nil
     /// Weekday indexes (0=Sun … 6=Sat) the pro's weekly schedule marks disabled.
     /// An off day legitimately has zero open times — with this set, the empty
     /// state says WHY (and `offDayHint` can point at the surface's escape
-    /// hatch, e.g. the aftercare form's "Custom time"). Default empty keeps the
-    /// other call sites unchanged.
+    /// hatch, e.g. the aftercare form's "Custom time"). When the caller passes
+    /// nothing the picker loads the location's week itself (best-effort), so
+    /// every surface gets the dashed off-day shading, not just aftercare.
     var offWeekdays: Set<Int> = []
     var offDayHint: String? = nil
     /// Whether this picker owns the inline availability calendar (R3). Default
@@ -44,6 +44,12 @@ struct ProOpenSlotPicker: View {
     /// booking's committed width, and it stops blocking its own day — without
     /// it the day the appointment already sits on counts as fuller than it is.
     var rescheduleBookingId: String? = nil
+    /// Set when this picker books the NEXT appointment from a booking's
+    /// aftercare. The rebook commit CLONES that booking (base + add-ons at
+    /// snapshot durations), so both the day's open times and the calendar's
+    /// counts are sized from the clone width — offering-base sizing advertises
+    /// starts the save doesn't fit.
+    var rebookOfBookingId: String? = nil
     /// The chosen slot's ISO start instant.
     @Binding var selectedSlot: String?
     /// The day whose open times are shown. Owned by the caller so another
@@ -57,6 +63,9 @@ struct ProOpenSlotPicker: View {
     @State private var slotTimeZone: String?
     @State private var loadingSlots = false
     @State private var slotError: String?
+    /// The location's disabled weekdays, self-loaded when the caller passed
+    /// none. Best-effort — a failure just skips the shading, same as aftercare.
+    @State private var loadedOffWeekdays: Set<Int> = []
 
     /// The zone the availability `date` param is interpreted in. The picker is
     /// pinned to it so the day the pro taps is the day fetched — unpinned, a
@@ -67,18 +76,28 @@ struct ProOpenSlotPicker: View {
     /// What the inline calendar counts open slots FOR (R4) — the same service
     /// and location this picker is already fetching day slots for, so the grid
     /// and the chips below it can never be answering different questions.
-    private var slotContext: ProBusyDaysSlotContext {
-        ProBusyDaysSlotContext(
+    /// nil until the service is known: an empty `serviceId` must not ship
+    /// `serviceId=` to the server (same guard the aftercare surface applies).
+    private var slotContext: ProBusyDaysSlotContext? {
+        guard !serviceId.isEmpty else { return nil }
+        return ProBusyDaysSlotContext(
             serviceId: serviceId,
             locationType: locationType,
             locationId: locationId,
-            rescheduleBookingId: rescheduleBookingId
+            rescheduleBookingId: rescheduleBookingId,
+            rebookOfBookingId: rebookOfBookingId
         )
     }
 
-    /// Re-fetch whenever the service/location/date inputs change.
+    /// The caller's off-day set when it has one, else the self-loaded one.
+    private var effectiveOffWeekdays: Set<Int> {
+        offWeekdays.isEmpty ? loadedOffWeekdays : offWeekdays
+    }
+
+    /// Re-fetch whenever the service/location/date inputs change. The rebook
+    /// source is part of the key — it changes the width the day is computed for.
     private var fetchKey: String {
-        "\(professionalId)|\(serviceId)|\(offeringId)|\(locationId)|\(clientAddressId ?? "")|\(ymd(selectedDate))"
+        "\(professionalId)|\(serviceId)|\(offeringId)|\(locationId)|\(clientAddressId ?? "")|\(rebookOfBookingId ?? "")|\(ymd(selectedDate))"
     }
 
     var body: some View {
@@ -86,7 +105,7 @@ struct ProOpenSlotPicker: View {
             if showCalendar {
                 ProRebookCalendarView(
                     timeZone: dayZone,
-                    offWeekdays: offWeekdays,
+                    offWeekdays: effectiveOffWeekdays,
                     selectedDay: selectedDate,
                     // Today — the same floor the date stepper below is pinned to
                     // (`in: Date()...`). The calendar clamps its own pick to it,
@@ -109,6 +128,7 @@ struct ProOpenSlotPicker: View {
             slotGrid
         }
         .task(id: fetchKey) { await fetchSlots() }
+        .task(id: "\(locationType)|\(locationId)") { await loadOffWeekdaysIfNeeded() }
     }
 
     @ViewBuilder
@@ -151,11 +171,29 @@ struct ProOpenSlotPicker: View {
     /// Whether the picked day falls on a weekday the schedule disables —
     /// judged in the location's zone, matching how the day was fetched.
     private var selectedDayIsOff: Bool {
-        guard !offWeekdays.isEmpty else { return false }
+        let off = effectiveOffWeekdays
+        guard !off.isEmpty else { return false }
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = dayZone
         // Calendar.weekday is 1-based (1 = Sunday).
-        return offWeekdays.contains(cal.component(.weekday, from: selectedDate) - 1)
+        return off.contains(cal.component(.weekday, from: selectedDate) - 1)
+    }
+
+    /// Load the location's weekly schedule for off-day shading when the caller
+    /// didn't supply one (new booking, reschedule, waitlist offer). Aftercare
+    /// keeps passing its own set — it also shades its hoisted calendar with it.
+    private func loadOffWeekdaysIfNeeded() async {
+        guard offWeekdays.isEmpty, !locationId.isEmpty else { return }
+        do {
+            let response = try await session.client.proSchedule.workingHours(
+                locationType: locationType,
+                locationId: locationId,
+            )
+            loadedOffWeekdays = response.workingHours.disabledWeekdayIndexes
+        } catch {
+            // Off-day shading is optional guidance — the save-side checks still
+            // cover an off-day pick.
+        }
     }
 
     private func fetchSlots() async {
@@ -174,10 +212,10 @@ struct ProOpenSlotPicker: View {
                 serviceId: serviceId,
                 offeringId: offeringId,
                 locationId: locationId,
-                durationMinutes: durationMinutes,
                 date: ymd(selectedDate),
                 locationType: locationType,
                 clientAddressId: clientAddressId,
+                rebookOfBookingId: rebookOfBookingId,
             )
             slots = day.slots
             slotTimeZone = day.timeZone

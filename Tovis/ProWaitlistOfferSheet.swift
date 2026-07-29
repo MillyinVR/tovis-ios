@@ -126,7 +126,6 @@ struct ProWaitlistOfferSheet: View {
             locationId: ctx.locationId,
             locationType: "SALON",
             locationTimeZone: ctx.locationTimeZone,
-            durationMinutes: ctx.durationMinutes,
             selectedSlot: $selectedSlot,
             selectedDate: $slotDay
         )
