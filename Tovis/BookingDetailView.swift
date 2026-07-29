@@ -2867,7 +2867,14 @@ private struct ConsultationCard: View {
         BrandSurface {
             VStack(alignment: .leading, spacing: 8) {
                 if let status = consultation.approvalStatus {
-                    BrandPill(text: status.capitalized, tint: statusTone(status))
+                    // Not `.capitalized` on the raw wire string — today's values
+                    // (PENDING/APPROVED/REJECTED) survive it, but a multi-word
+                    // value would render "Changes_Requested". The presentation
+                    // helper humanizes any SCREAMING_SNAKE value.
+                    BrandPill(
+                        text: BookingStatusPresentation.label(status),
+                        tint: statusTone(status)
+                    )
                 }
                 if let notes = consultation.consultationNotes, !notes.isEmpty {
                     Text(notes)
