@@ -260,6 +260,13 @@ struct ProRescheduleView: View {
         defer { loading = false }
         // Seed the custom-time picker to the booking's current start.
         manualTime = Wire.date(booking.scheduledFor) ?? manualTime
+        // …and the slot picker's day with it, so the availability calendar (R3)
+        // opens on the appointment BEING MOVED rather than on today. Floored at
+        // now: a past booking's day is below the picker's own `in: Date()...`
+        // range, which would fight it.
+        if let current = Wire.date(booking.scheduledFor) {
+            slotDay = max(current, Date())
+        }
         // Slots need the pro's professionalId; if it can't be resolved, fall back to
         // a custom time rather than dead-ending the reschedule.
         do {

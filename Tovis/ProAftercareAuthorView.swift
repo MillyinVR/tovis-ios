@@ -557,6 +557,10 @@ struct ProAftercareAuthorView: View {
                             clientAddressId: effectiveRebookClientAddressId,
                             offWeekdays: offWeekdays,
                             offDayHint: "This day is outside your working hours — switch to “Enter a custom time” to book it anyway.",
+                            // `bookedCalendar` above already draws the calendar,
+                            // outside the custom-time toggle so it survives the
+                            // mode switch (R2). Don't draw a second one here.
+                            showCalendar: false,
                             selectedSlot: $selectedSlot,
                             selectedDate: $slotDay,
                         )

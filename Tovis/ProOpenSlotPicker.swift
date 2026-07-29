@@ -1,8 +1,14 @@
-// A reusable open-appointment-slot picker — a date stepper + the pro's real
-// available start times for a service + location, fetched from
-// GET /api/v1/availability/day (via the shared BookingService.day). Used by the
-// new-booking form and the aftercare "Next booking date" rebook mode. The
-// binding holds the chosen ISO start instant (nil = nothing picked).
+// A reusable open-appointment-slot picker — the pro's own availability calendar
+// + a date stepper + their real available start times for a service + location,
+// fetched from GET /api/v1/availability/day (via the shared BookingService.day).
+// Used by the new-booking form, the reschedule screen, the waitlist offer sheet
+// and the aftercare "Next booking date" rebook mode. The binding holds the
+// chosen ISO start instant (nil = nothing picked).
+//
+// R3: the day is picked on `ProRebookCalendarView`, so every pro-facing time
+// picker shows where they are ALREADY booked or blocked before they choose —
+// web parity with `app/pro/_components/AvailabilityCalendar`. The compact date
+// stepper below it stays as the typed fallback.
 import SwiftUI
 import TovisKit
 
@@ -27,6 +33,12 @@ struct ProOpenSlotPicker: View {
     /// other call sites unchanged.
     var offWeekdays: Set<Int> = []
     var offDayHint: String? = nil
+    /// Whether this picker owns the inline availability calendar (R3). Default
+    /// on: every surface wants it. The aftercare rebook passes `false` because
+    /// it hoists the SAME calendar above its "Enter a custom time" toggle, so
+    /// the day stays pickable in custom mode too — letting the picker draw a
+    /// second one there would show two calendars in slot mode.
+    var showCalendar = true
     /// The chosen slot's ISO start instant.
     @Binding var selectedSlot: String?
     /// The day whose open times are shown. Owned by the caller so another
@@ -54,6 +66,19 @@ struct ProOpenSlotPicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            if showCalendar {
+                ProRebookCalendarView(
+                    timeZone: dayZone,
+                    offWeekdays: offWeekdays,
+                    selectedDay: selectedDate,
+                    // Today — the same floor the date stepper below is pinned to
+                    // (`in: Date()...`). The calendar clamps its own pick to it,
+                    // so a tap on today hands back "now", not this morning's
+                    // midnight, which the stepper's range would refuse.
+                    earliest: Date(),
+                    onPick: { selectedDate = $0 },
+                )
+            }
             BrandSurface {
                 DatePicker("", selection: $selectedDate, in: Date()..., displayedComponents: [.date])
                     .labelsHidden().tint(BrandColor.accent)
