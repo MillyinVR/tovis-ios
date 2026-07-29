@@ -73,7 +73,7 @@ public final class TovisClient: Sendable {
     public let proSession: ProSessionService
     /// PRO workspace — the calendar/agenda (bookings + blocks + management).
     public let proCalendar: ProCalendarService
-    /// PRO workspace — one booking's detail + management (accept/cancel/rebook).
+    /// PRO workspace — one booking's detail + management (accept/cancel).
     public let proBookings: ProBookingService
     /// PRO workspace — the pro's own profile + offerings management.
     public let proProfile: ProProfileService

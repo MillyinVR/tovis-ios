@@ -2,9 +2,10 @@ import Foundation
 
 /// PRO workspace — the bookings *list* (`GET /pro/bookings`, tovis-app PR #435)
 /// plus one booking's detail and the management actions the web `/pro/bookings`
-/// surfaces offer: **accept** a pending request, **cancel**, and **rebook**
-/// (propose the client's next appointment). Authenticated; PRO-only (CLIENT
-/// tokens 403). See docs/PRO-BACKEND-CONTRACTS.md.
+/// surfaces offer: **accept** a pending request and **cancel**. (Rebooking a
+/// client's next appointment goes through the aftercare save, not this service —
+/// the dedicated rebook endpoint was retired 2026-07-28, tovis-app #785.)
+/// Authenticated; PRO-only (CLIENT tokens 403). See docs/PRO-BACKEND-CONTRACTS.md.
 public final class ProBookingService: Sendable {
     private let api: APIClient
 
