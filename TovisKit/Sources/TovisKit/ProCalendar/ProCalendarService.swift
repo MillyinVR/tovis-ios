@@ -36,16 +36,26 @@ public final class ProCalendarService: Sendable {
     /// cross-location and carries only counts (no names, ids, or times), which
     /// is exactly what a "which days am I busy" overlay needs and all it should
     /// see. The full feed is location-scoped and per-event.
+    /// Pass `slotContext` to additionally get a per-day count of BOOKABLE start
+    /// times for that service (R4) — "where can I still fit someone", rather
+    /// than only where the day is already full. Omit it and the response keeps
+    /// its original busy-only shape.
+    ///
+    /// Note the zone: when counts ARE computed the server buckets every day in
+    /// the OFFERING's location zone and echoes it in `tz`, which may differ from
+    /// the one requested. Read `response.tz` back rather than assuming.
     public func busyDays(
         from: String,
         to: String,
-        tz: String? = nil
+        tz: String? = nil,
+        slotContext: ProBusyDaysSlotContext? = nil
     ) async throws -> ProBusyDaysResponse {
         var query = [
             URLQueryItem(name: "from", value: from),
             URLQueryItem(name: "to", value: to),
         ]
         if let tz, !tz.isEmpty { query.append(URLQueryItem(name: "tz", value: tz)) }
+        if let slotContext { query.append(contentsOf: slotContext.queryItems) }
         return try await api.request("/pro/availability/busy-days", query: query)
     }
 

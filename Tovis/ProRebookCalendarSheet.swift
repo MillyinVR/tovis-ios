@@ -53,9 +53,17 @@ struct ProRebookCalendarView: View {
     /// (`in: Date()...`) and would fight a value below their own range. For
     /// today that means "now", for any later day its local midnight.
     let onPick: (Date) -> Void
+    /// What to count OPEN slots for (R4). `nil` keeps the original busy-only
+    /// overlay, so a surface that doesn't know the service yet degrades instead
+    /// of breaking.
+    var slotContext: ProBusyDaysSlotContext? = nil
 
     @State private var month: Date
     @State private var busy: [String: ProBusyDay] = [:]
+    /// Whether the response actually CARRIED counts. Asking for them is not the
+    /// same as getting them (an unbookable service/location resolves to none),
+    /// and a day must never render as "0 open" when it was simply never counted.
+    @State private var openSlotsComputed = false
     @State private var loading = false
 
     /// Ceiling on synthesized dots per day. Comfortably above the cell's own
@@ -76,7 +84,8 @@ struct ProRebookCalendarView: View {
         selectedDay: Date,
         earliest: Date,
         suggestedDay: Date? = nil,
-        onPick: @escaping (Date) -> Void
+        onPick: @escaping (Date) -> Void,
+        slotContext: ProBusyDaysSlotContext? = nil
     ) {
         self.timeZone = timeZone
         self.offWeekdays = offWeekdays
@@ -84,6 +93,7 @@ struct ProRebookCalendarView: View {
         self.earliest = earliest
         self.suggestedDay = suggestedDay
         self.onPick = onPick
+        self.slotContext = slotContext
         // Open on the month of the current pick (never before the floor's
         // month), anchored at local noon so month stepping is DST-safe.
         let anchor = max(selectedDay, earliest)
@@ -130,9 +140,30 @@ struct ProRebookCalendarView: View {
             entry.dots = Array(repeating: .busy, count: bookings)
             if day?.blocked == true { entry.dots.append(.block) }
             entry.isOffDay = isOffDay(cell)
+            // Only when the server SAID it counted. A past day is left uncounted
+            // too: the grid dims those anyway, and "0 open" on yesterday reads
+            // as a refusal rather than as history.
+            if openSlotsComputed, cell.dayYmd >= earliestYmd {
+                entry.openSlots = max(0, day?.openSlots ?? 0)
+            }
             if entry != ProMonthDayMarks() { marks[cell.dayYmd] = entry }
         }
         return marks
+    }
+
+    /// Month + service context, as one stable string. A new `slotContext` value
+    /// with identical contents must NOT retrigger the fetch, which is why this
+    /// is composed from its fields rather than from object identity.
+    private var fetchKey: String {
+        let ctx = slotContext
+        return [
+            String(ProCalendarGrid.ymd(month, timeZone).prefix(7)),
+            ctx?.serviceId ?? "",
+            ctx?.locationType ?? "",
+            ctx?.locationId ?? "",
+            ctx?.addOnIds.joined(separator: ",") ?? "",
+            ctx?.rescheduleBookingId ?? "",
+        ].joined(separator: "|")
     }
 
     private func isOffDay(_ cell: ProMonthCell) -> Bool {
@@ -157,8 +188,10 @@ struct ProRebookCalendarView: View {
             legend
         }
         // Re-fetch per displayed month; the grid spans 42 days, so ask for the
-        // whole window rather than the calendar month.
-        .task(id: ProCalendarGrid.ymd(month, timeZone).prefix(7)) { await loadBusy() }
+        // whole window rather than the calendar month. The slot context is part
+        // of the id because changing the service or location changes the COUNTS,
+        // not just the month.
+        .task(id: fetchKey) { await loadBusy() }
         // Follow the selection: a chip jump — or the compact date picker below
         // the grid — moves the month into view. Paging ‹/› by hand never snaps
         // back, because only a CHANGED selection runs this.
@@ -266,7 +299,11 @@ struct ProRebookCalendarView: View {
     private var legend: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 14) {
-                legendItem(color: BrandColor.accent, label: "Booked")
+                if openSlotsComputed {
+                    legendItem(color: BrandColor.emerald, label: "Open times")
+                } else {
+                    legendItem(color: BrandColor.accent, label: "Booked")
+                }
                 legendItem(color: BrandColor.textMuted, label: "Blocked")
                 Spacer()
             }
@@ -294,12 +331,15 @@ struct ProRebookCalendarView: View {
         defer { loading = false }
         do {
             let response = try await session.client.proCalendar.busyDays(
-                from: first.dayYmd, to: last.dayYmd, tz: timeZone.identifier)
+                from: first.dayYmd, to: last.dayYmd, tz: timeZone.identifier,
+                slotContext: slotContext)
             busy = response.days
+            openSlotsComputed = response.openSlots?.computed == true
         } catch {
             // The overlay is optional — a failure leaves the grid usable, which
             // is exactly what the web popup does on a non-OK response.
             busy = [:]
+            openSlotsComputed = false
         }
     }
 }
@@ -317,6 +357,7 @@ struct ProRebookCalendarSheet: View {
     var suggestedDay: Date? = nil
     var title = "My calendar"
     let onPick: (Date) -> Void
+    var slotContext: ProBusyDaysSlotContext? = nil
 
     var body: some View {
         NavigationStack {
@@ -330,7 +371,8 @@ struct ProRebookCalendarSheet: View {
                     onPick: { day in
                         onPick(day)
                         dismiss()
-                    }
+                    },
+                    slotContext: slotContext
                 )
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)

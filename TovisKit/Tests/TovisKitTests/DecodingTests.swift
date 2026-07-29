@@ -1382,6 +1382,67 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.days.count == 5)
     }
 
+    // R4 — the same route WITH a service context. VERBATIM capture off the
+    // running route (2026-07-29) for a 60-minute service.
+    @Test func decodesProBusyDaysWithOpenSlotCounts() throws {
+        let res = try JSONDecoder().decode(
+            ProBusyDaysResponse.self, from: fixture("proBusyDaysOpenSlots"))
+
+        // The envelope is what says the counts MEAN anything. Without reading it
+        // a client can't tell "fully booked" from "never counted".
+        #expect(res.openSlots?.computed == true)
+        #expect(res.openSlots?.durationMinutes == 60)
+        #expect(res.openSlots?.reason == nil)
+
+        // Counted mode is DENSE: every day in range is present, zeroes included.
+        #expect(res.days.count == 9)
+        #expect(res.days["2026-08-03"]?.openSlots == 28)
+
+        // Aug 2 2026 is a Sunday — a real zero, and it must survive decode as 0
+        // rather than collapsing to nil and reading as "unknown".
+        #expect(res.days["2026-08-02"]?.openSlots == 0)
+        #expect(res.days["2026-08-02"]?.bookings == 0)
+
+        // A day carrying a booking has fewer openings than an empty weekday.
+        let booked = try #require(res.days["2026-08-06"])
+        #expect(booked.bookings == 1)
+        #expect((booked.openSlots ?? 0) < 28)
+    }
+
+    // Backward compatibility: the ORIGINAL busy-only capture must still decode
+    // against the R4 model, with the new fields absent rather than defaulted to
+    // something that would render as "0 open" on every day.
+    @Test func decodesProBusyDaysWithoutOpenSlotsField() throws {
+        let res = try JSONDecoder().decode(ProBusyDaysResponse.self, from: fixture("proBusyDays"))
+        #expect(res.openSlots == nil)
+        #expect(res.days["2026-07-19"]?.openSlots == nil)
+    }
+
+    // The request half: the params the counts are asked for with. A typo here
+    // degrades silently to the busy-only overlay with no error anywhere.
+    @Test func buildsBusyDaysSlotContextQuery() {
+        let ctx = ProBusyDaysSlotContext(
+            serviceId: "svc_1",
+            locationType: "MOBILE",
+            locationId: "loc_2",
+            addOnIds: ["a1", "a2"],
+            rescheduleBookingId: "bk_3"
+        )
+        let pairs = ctx.queryItems.map { "\($0.name)=\($0.value ?? "")" }
+        #expect(pairs == [
+            "serviceId=svc_1",
+            "locationType=MOBILE",
+            "locationId=loc_2",
+            "addOnIds=a1,a2",
+            "rescheduleBookingId=bk_3",
+        ])
+
+        // Everything but the service id is optional, and an empty add-on list
+        // must not send a stray blank param.
+        let minimal = ProBusyDaysSlotContext(serviceId: "svc_only")
+        #expect(minimal.queryItems.map(\.name) == ["serviceId"])
+    }
+
     // GET /api/v1/pro/clients — Fixtures/proClientsDirectory.json. The visible
     // client directory (web `/pro/clients` parity). Inline shape; decode-only.
     @Test func decodesProClientsDirectory() throws {
