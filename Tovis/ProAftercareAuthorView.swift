@@ -76,9 +76,16 @@ struct ProAftercareAuthorView: View {
     @State private var rebookDurationMinutes = 60
     @State private var selectedSlot: String?   // chosen ISO start instant
     /// The day the open-slot picker is showing. Owned here (not by the picker)
-    /// so the "My calendar" month sheet can drive it.
+    /// so the inline "My calendar" month grid can drive it.
     @State private var slotDay = Date()
-    @State private var calendarSheetOpen = false
+    /// The recommended window's END field opens the calendar as a sheet — the
+    /// start (and booked mode's day) render it inline instead.
+    @State private var windowEndCalendarOpen = false
+    /// The offering's suggested rebook day (service date + its usual rebook
+    /// interval), computed locally so the calendar's "Suggested" chip works on
+    /// every edit — the backend only sends `rebookSuggestion` on a fresh
+    /// wrap-up. nil = this offering has no interval set.
+    @State private var rebookSuggestedDay: Date?
 
     // Custom-time mode for the BOOKED slot: any time on the pro's authority —
     // an off day, before opening, after closing — mirroring ProNewBookingView's
@@ -167,16 +174,22 @@ struct ProAftercareAuthorView: View {
         } message: { prompt in
             Text("\(prompt.question) The override is recorded on the booking.")
         }
-        .sheet(isPresented: $calendarSheetOpen) {
+        .sheet(isPresented: $windowEndCalendarOpen) {
             ProRebookCalendarSheet(
                 timeZone: apptZone,
                 offWeekdays: offWeekdays,
-                selectedDay: rebookCalendarDay,
-                // Today, in the appointment's zone — the same floor the slot
-                // picker's stepper (`in: Date()...`) and the custom-time picker
-                // already use. A pro may book same-day on their own authority.
-                earliest: Date(),
-                onPick: applyCalendarDay,
+                // Never outline (or open on) a day the sheet's own floor
+                // forbids — a saved window whose end trails a just-moved start
+                // would otherwise anchor the grid below `earliest`.
+                selectedDay: max(windowEnd, windowEndLowerBound),
+                // The end must land after the start — the same bound the end's
+                // date row is already clamped to.
+                earliest: windowEndLowerBound,
+                title: "Window end",
+                onPick: { day in
+                    windowEnd = apptCalendar.startOfDay(for: day)
+                    hasWindowEnd = true
+                },
             )
         }
         .mediaFullscreenCover($viewingMedia)
@@ -419,24 +432,70 @@ struct ProAftercareAuthorView: View {
                     modeChip("Booking window", mode: .window)
                 }
                 if rebookMode == .booked { bookedModeBody }
-                if rebookMode == .window {
-                    BrandSurface {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Recommend a date range the client should book within.")
-                                .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
-                            dateRow(
-                                "Window start", date: $windowStart, has: $hasWindowStart,
-                                onDateChange: bumpWindowEndAfterStart,
-                            )
-                            dateRow(
-                                "Window end", date: $windowEnd, has: $hasWindowEnd,
-                                in: windowEndLowerBound...,
-                            )
-                        }
+                if rebookMode == .window { windowModeBody }
+            }
+        }
+    }
+
+    /// "Booking window" mode — a date RANGE the client books within. The pro's
+    /// own calendar picks the start (inline, same as booked mode); the end
+    /// keeps its date row plus a calendar sheet, mirroring web's end field.
+    private var windowModeBody: some View {
+        BrandSurface {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Recommend a date range the client should book within.")
+                    .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
+
+                Text("WINDOW START")
+                    .font(BrandFont.mono(10)).tracking(0.8)
+                    .foregroundStyle(BrandColor.textMuted)
+                ProRebookCalendarView(
+                    timeZone: apptZone,
+                    offWeekdays: offWeekdays,
+                    selectedDay: windowStart,
+                    // A recommended window must start in the FUTURE (see
+                    // `validate`), so the floor is tomorrow — not today, the way
+                    // booked mode's floor is. Mirrors web's `minYmd={tomorrowYmd}`
+                    // on this same calendar.
+                    earliest: earliestWindowStart,
+                    suggestedDay: rebookSuggestedDay,
+                    onPick: applyWindowStart,
+                )
+                .disabled(saving)
+
+                // The typed fallback for the start the calendar above already
+                // picks (web: "Window start (or type it)").
+                dateRow(
+                    "Or type it", date: $windowStart, has: $hasWindowStart,
+                    onDateChange: bumpWindowEndAfterStart,
+                )
+                dateRow(
+                    "Window end", date: $windowEnd, has: $hasWindowEnd,
+                    in: windowEndLowerBound...,
+                )
+                HStack {
+                    Spacer()
+                    calendarButton("Pick end on my calendar") {
+                        windowEndCalendarOpen = true
                     }
                 }
             }
         }
+    }
+
+    /// The earliest day a recommended window may start — tomorrow in the
+    /// appointment's zone, the same floor `validate` refuses below.
+    private var earliestWindowStart: Date {
+        let cal = apptCalendar
+        return cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: Date())) ?? Date()
+    }
+
+    /// A day picked off the window-start calendar. Keeps the end a full
+    /// suggested span ahead whenever the new start would collapse the range.
+    private func applyWindowStart(_ day: Date) {
+        windowStart = apptCalendar.startOfDay(for: day)
+        hasWindowStart = true
+        bumpWindowEndAfterStart()
     }
 
     /// The address the availability query and the saved proposal will use.
@@ -461,7 +520,7 @@ struct ProAftercareAuthorView: View {
                 } else {
                     if rebookLocationType == "MOBILE" { addressPickerRow }
 
-                    myCalendarButton
+                    bookedCalendar
 
                     Toggle(isOn: $customTimeMode.animation()) {
                         Text("Enter a custom time").font(BrandFont.body(13))
@@ -507,14 +566,31 @@ struct ProAftercareAuthorView: View {
         }
     }
 
-    /// Opens the pro's own month over the picker — booked/blocked days and
-    /// off-day shading — so the next appointment is placed around what they
-    /// already have (web parity: the popup behind "📅 My calendar").
-    private var myCalendarButton: some View {
-        Button { calendarSheetOpen = true } label: {
+    /// The pro's own month — booked/blocked days, off-day shading, skip-ahead
+    /// chips — INLINE and always visible, so the next appointment is placed
+    /// around what they already have without opening anything (web R1 parity:
+    /// picking the day is the task, so the calendar is the control). The
+    /// compact date picker below it stays as the typed fallback.
+    private var bookedCalendar: some View {
+        ProRebookCalendarView(
+            timeZone: apptZone,
+            offWeekdays: offWeekdays,
+            selectedDay: rebookCalendarDay,
+            // Today, in the appointment's zone — the same floor the slot
+            // picker's stepper (`in: Date()...`) and the custom-time picker
+            // already use. A pro may book same-day on their own authority.
+            earliest: Date(),
+            suggestedDay: rebookSuggestedDay,
+            onPick: applyCalendarDay,
+        )
+        .disabled(saving)
+    }
+
+    private func calendarButton(_ label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             HStack(spacing: 6) {
                 Image(systemName: "calendar").font(.system(size: 12, weight: .semibold))
-                Text("My calendar").font(BrandFont.body(13, .semibold))
+                Text(label).font(BrandFont.body(13, .semibold))
             }
             .foregroundStyle(BrandColor.accent)
             .padding(.horizontal, 12).padding(.vertical, 8)
@@ -675,20 +751,28 @@ struct ProAftercareAuthorView: View {
             ?? windowStart
     }
 
-    /// Keep the window end a full suggested span past the start whenever moving
-    /// the start would collapse the range to/before the end — mirrors web
-    /// `AftercareForm.applyWindowStart`. Bumps to the 7-day suggested span (not
-    /// just +1 day) so an auto-advanced window matches the fresh suggested width
-    /// (decided w/ Tori 2026-07-09). The floor stays "end after start"; only this
-    /// automatic advance lands on the span.
+    /// Settle the window END after the pro has chosen a START: keep it a full
+    /// suggested span past the start whenever moving the start would collapse
+    /// the range — mirrors web `AftercareForm.applyWindowStart`. Bumps to the
+    /// 7-day suggested span (not just +1 day) so an auto-advanced window matches
+    /// the fresh suggested width (decided w/ Tori 2026-07-09). The floor stays
+    /// "end after start"; only this automatic advance lands on the span.
+    ///
+    /// Choosing a start also ACCEPTS the end that is showing, bumped or not.
+    /// Web's end is an empty string until something fills it, so applying a start
+    /// there always leaves a real end and the save passes; iOS pre-fills a real
+    /// default date and tracks "chosen" separately, so without this a pro who
+    /// picked a start off the calendar and hit Save was refused "Pick both a
+    /// start and end date" while both dates sat filled in on screen. (Caught on
+    /// the simulator — the save never fired.)
     private func bumpWindowEndAfterStart() {
         let cal = apptCalendar
+        hasWindowEnd = true
         guard cal.startOfDay(for: windowEnd) <= cal.startOfDay(for: windowStart) else { return }
         windowEnd = cal.date(
             byAdding: .day, value: Self.suggestedWindowSpanDays,
             to: cal.startOfDay(for: windowStart),
         ) ?? windowStart
-        hasWindowEnd = true
     }
 
     private var productsSection: some View {
@@ -722,9 +806,13 @@ struct ProAftercareAuthorView: View {
     }
 
     /// Whether a rebook reminder can be set — only for an exact picked next
-    /// appointment (web: `BOOKED_NEXT_APPOINTMENT && hasBookedDate`).
+    /// appointment (web: `BOOKED_NEXT_APPOINTMENT && hasBookedDate`, where the
+    /// booked date is an open slot OR a typed custom time). Keyed on the
+    /// RESOLVED start rather than `selectedSlot`, which custom-time mode never
+    /// sets: gating on the slot hid the toggle for a time the save would have
+    /// happily booked a reminder against.
     private var rebookReminderAvailable: Bool {
-        rebookMode == .booked && selectedSlot != nil
+        rebookMode == .booked && resolvedBookedStartIso != nil
     }
 
     private var remindersSection: some View {
@@ -749,8 +837,15 @@ struct ProAftercareAuthorView: View {
                                                 options: [1, 2, 3, 7], suffix: "before the recommended date")
                                 }
                             } else {
-                                Text("Rebook reminders only apply to a single recommended date (Next booking date).")
+                                // Say WHICH of the two gates is closed — the old
+                                // single sentence blamed window mode even when
+                                // the pro was in booked mode and had simply not
+                                // picked a time yet (web fixed the same copy).
+                                Text(rebookMode == .booked
+                                    ? "Pick a next-appointment time first — the reminder is anchored to the booked date."
+                                    : "Rebook reminders need a booked next appointment (they don’t apply to a booking window). Choose “Next booking date” and pick a time.")
                                     .font(BrandFont.body(11)).foregroundStyle(BrandColor.textMuted)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
                         }
 
@@ -864,6 +959,10 @@ struct ProAftercareAuthorView: View {
             // aftercare GET returns only the single resolved pair, not every
             // candidate). Best-effort: a failure just leaves the picker empty.
             async let mediaTask = try? session.client.proMedia.list(bookingId: bookingId)
+            // The pro's own services — read only for this booking's offering's
+            // `rebookIntervalDays`, which drives the calendar's "Suggested"
+            // chip. Best-effort: without it the chip simply doesn't appear.
+            async let offeringsTask = try? session.client.proProfile.offerings()
             let booking = try await bookingTask
             let detail = await detailTask
             professionalId = await profileTask?.id ?? ""
@@ -899,6 +998,15 @@ struct ProAftercareAuthorView: View {
             // Media exists independently of any aftercare draft (captured during
             // the session), so set it before the summary guard returns early.
             mediaItems = await mediaTask ?? []
+
+            // Same for the suggested rebook day — it must be set before the
+            // guard below returns, because the "Suggested" chip exists for the
+            // SAVED case the backend's own suggestion stops covering.
+            rebookSuggestedDay = suggestedRebookDay(
+                scheduledFor: booking.scheduledFor,
+                offerings: await offeringsTask,
+                fallbackIso: booking.rebookSuggestion?.windowStart,
+            )
 
             guard let summary = booking.aftercareSummary else {
                 // Fresh wrap-up: pre-select the recommended window from the
@@ -954,6 +1062,29 @@ struct ProAftercareAuthorView: View {
         } catch {
             errorText = "Couldn’t load aftercare."
         }
+    }
+
+    /// The offering's suggested rebook DAY: the service date plus its usual
+    /// `rebookIntervalDays`, in the appointment's zone. The same math as web
+    /// `computeSuggestedRebookStartYmd`, done locally because the backend sends
+    /// `rebookSuggestion` only on a FRESH wrap-up while the "Suggested" chip has
+    /// to work on every edit. Falls back to that suggestion's start when the
+    /// offerings list didn't load; nil when there is no interval to suggest.
+    private func suggestedRebookDay(
+        scheduledFor: String,
+        offerings: [ProOfferingAdmin]?,
+        fallbackIso: String?
+    ) -> Date? {
+        let fallback = fallbackIso.flatMap(Wire.date)
+        guard let anchor = Wire.date(scheduledFor) else { return fallback }
+        guard let interval = offerings?
+            .first(where: { $0.id == rebookOfferingId })?
+            .rebookIntervalDays, interval > 0
+        else { return fallback }
+        // Calendar-day arithmetic, never interval * 24h — a DST change between
+        // the service and the suggestion would otherwise shift the day.
+        let cal = apptCalendar
+        return cal.date(byAdding: .day, value: interval, to: cal.startOfDay(for: anchor))
     }
 
     /// The BOOKED start as an ISO instant: a picked open slot, or — in custom

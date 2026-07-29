@@ -1,8 +1,21 @@
-// "My calendar" — a month overlay of the PRO's own commitments, shown beside
-// the aftercare rebook picker so they can place the next appointment around
-// what they already have. Native counterpart of web's
+// "My calendar" — a month view of the PRO's own commitments that IS the
+// aftercare rebook picker (R2), not a secondary affordance behind a button.
+// Native counterpart of web's
 // `app/pro/bookings/[id]/aftercare/AvailabilityCalendarPopup`: booked-day dots,
-// blocked days, off-day shading, and a tap that drives the picker's day.
+// blocked days, off-day shading, skip-ahead chips, and a tap that drives the
+// picker's day.
+//
+// Two shapes, one body — mirroring web's `variant` prop:
+//  - `ProRebookCalendarView` (inline): always visible, the selection stays put.
+//    Booked mode's day picker and window mode's START picker.
+//  - `ProRebookCalendarSheet` (modal): the original sheet; picking also closes
+//    it. Kept for the window END field, whose own row owns the value.
+//
+// The skip-ahead chips (+1w / +2w / +4w / Suggested) step the SELECTION forward
+// from the selected day — tapping "+1w" repeatedly skips ahead a week at a time
+// — and the month view follows. There is deliberately NO separate week pager:
+// on a month-aligned grid a "week" view has nothing to page (web R1 dropped it
+// for the same reason); the chips ARE the week stepping.
 //
 // Data: GET /api/v1/pro/availability/busy-days (`ProCalendarService.busyDays`),
 // the SAME endpoint the web popup reads — and the reason it exists. The other
@@ -18,20 +31,23 @@
 import SwiftUI
 import TovisKit
 
-struct ProRebookCalendarSheet: View {
+struct ProRebookCalendarView: View {
     @Environment(SessionModel.self) private var session
-    @Environment(\.dismiss) private var dismiss
 
     /// The zone the days are bucketed in — the appointment's location zone, the
     /// same one the picker's day stepper is pinned to.
     let timeZone: TimeZone
     /// Weekday indexes (0=Sun … 6=Sat) the pro's weekly schedule disables.
     let offWeekdays: Set<Int>
-    /// The day currently chosen in the picker, outlined in the grid.
+    /// The day currently chosen in the picker, outlined in the grid — and the
+    /// day the skip-ahead chips step FORWARD from.
     let selectedDay: Date
-    /// Earliest selectable day — today in `timeZone`, matching the picker's
-    /// `in: Date()...` floor.
+    /// Earliest selectable day — today in `timeZone` for a booked appointment,
+    /// tomorrow for a recommended window (whose save refuses today).
     let earliest: Date
+    /// The offering's suggested rebook day (service date + its usual rebook
+    /// interval). `nil`, or a day already past `earliest`, hides the chip.
+    var suggestedDay: Date? = nil
     /// The pro picked a day, as an instant inside it in `timeZone` — never
     /// before `earliest`, because the pickers it drives are floored there
     /// (`in: Date()...`) and would fight a value below their own range. For
@@ -47,17 +63,26 @@ struct ProRebookCalendarSheet: View {
     /// nonsense count off the wire can't turn into a nonsense allocation.
     private static let maxRenderedDots = 24
 
+    /// Skip-ahead steps, in WEEKS — the same set web R1 shipped (+1w/+2w/+4w).
+    private static let jumpChips: [(weeks: Int, label: String, hint: String)] = [
+        (1, "+1w", "Skip ahead 1 week"),
+        (2, "+2w", "Skip ahead 2 weeks"),
+        (4, "+4w", "Skip ahead 4 weeks"),
+    ]
+
     init(
         timeZone: TimeZone,
         offWeekdays: Set<Int>,
         selectedDay: Date,
         earliest: Date,
+        suggestedDay: Date? = nil,
         onPick: @escaping (Date) -> Void
     ) {
         self.timeZone = timeZone
         self.offWeekdays = offWeekdays
         self.selectedDay = selectedDay
         self.earliest = earliest
+        self.suggestedDay = suggestedDay
         self.onPick = onPick
         // Open on the month of the current pick (never before the floor's
         // month), anchored at local noon so month stepping is DST-safe.
@@ -80,6 +105,14 @@ struct ProRebookCalendarSheet: View {
             view: .month, reference: month, by: -1, timeZone: timeZone)
         return ProCalendarGrid.ymd(previous, timeZone).prefix(7)
             >= earliestYmd.prefix(7)
+    }
+
+    /// The suggested day, only while it's still selectable — a rebook interval
+    /// that lands in the past (an old booking being corrected) offers nothing.
+    private var selectableSuggestedDay: Date? {
+        guard let suggestedDay else { return nil }
+        guard ProCalendarGrid.ymd(suggestedDay, timeZone) >= earliestYmd else { return nil }
+        return suggestedDay
     }
 
     /// One dot per commitment: the day's bookings (status unknown — this feed
@@ -111,38 +144,33 @@ struct ProRebookCalendarSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    header
-                    ProCalendarMonthGrid(
-                        cells: cells,
-                        marksByDay: marksByDay,
-                        selectedYmd: selectedYmd,
-                        minYmd: earliestYmd,
-                        onPickDay: { cell in
-                            onPick(max(cell.startOfDay, earliest))
-                            dismiss()
-                        }
-                    )
-                    legend
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
-            }
-            .background(BrandColor.bgPrimary.ignoresSafeArea())
-            .navigationTitle("My calendar")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { dismiss() }.tint(BrandColor.accent)
-                }
-            }
+        VStack(alignment: .leading, spacing: 14) {
+            header
+            skipAhead
+            ProCalendarMonthGrid(
+                cells: cells,
+                marksByDay: marksByDay,
+                selectedYmd: selectedYmd,
+                minYmd: earliestYmd,
+                onPickDay: { pick($0.startOfDay) }
+            )
+            legend
         }
         // Re-fetch per displayed month; the grid spans 42 days, so ask for the
         // whole window rather than the calendar month.
         .task(id: ProCalendarGrid.ymd(month, timeZone).prefix(7)) { await loadBusy() }
+        // Follow the selection: a chip jump — or the compact date picker below
+        // the grid — moves the month into view. Paging ‹/› by hand never snaps
+        // back, because only a CHANGED selection runs this.
+        .onChange(of: selectedYmd) { _, _ in
+            month = ProCalendarGrid.anchorNoon(max(selectedDay, earliest), timeZone: timeZone)
+        }
+    }
+
+    /// Hand a picked day up, never below the floor — the pickers it drives are
+    /// themselves floored at `earliest` and would fight a lower value.
+    private func pick(_ day: Date) {
+        onPick(max(day, earliest))
     }
 
     private var header: some View {
@@ -167,6 +195,56 @@ struct ProRebookCalendarSheet: View {
                     view: .month, reference: month, by: 1, timeZone: timeZone)
             }
         }
+    }
+
+    /// Skip ahead a week at a time from the DAY THAT IS SELECTED (Tori's ask) —
+    /// tap +1w four times and you have stepped a month, one week per tap, with
+    /// the month view following each step.
+    private var skipAhead: some View {
+        HStack(spacing: 6) {
+            Text("SKIP AHEAD")
+                .font(BrandFont.mono(9)).tracking(0.8)
+                .foregroundStyle(BrandColor.textMuted)
+            ForEach(Self.jumpChips, id: \.weeks) { chip in
+                Button {
+                    // Week stepping via the calendar's own step function, so a
+                    // chip can never disagree with the grid about where a week
+                    // lands (DST-safe: it re-anchors to local noon).
+                    pick(ProCalendarGrid.step(
+                        view: .week,
+                        reference: max(selectedDay, earliest),
+                        by: chip.weeks,
+                        timeZone: timeZone,
+                    ))
+                } label: {
+                    chipLabel(chip.label)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(chip.hint)
+            }
+            if let suggested = selectableSuggestedDay {
+                Button {
+                    var cal = Calendar(identifier: .gregorian)
+                    cal.timeZone = timeZone
+                    pick(cal.startOfDay(for: suggested))
+                } label: {
+                    chipLabel("Suggested")
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Jump to the suggested rebook date")
+                .accessibilityHint("The service date plus this offering’s usual rebook interval")
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func chipLabel(_ text: String) -> some View {
+        Text(text)
+            .font(BrandFont.body(12, .semibold))
+            .foregroundStyle(BrandColor.accent)
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(BrandColor.accent.opacity(0.12))
+            .clipShape(Capsule())
     }
 
     private func navButton(
@@ -222,6 +300,50 @@ struct ProRebookCalendarSheet: View {
             // The overlay is optional — a failure leaves the grid usable, which
             // is exactly what the web popup does on a non-OK response.
             busy = [:]
+        }
+    }
+}
+
+/// The same calendar as a presented sheet: picking a day also dismisses it.
+/// Used where the value lives in a row of its own (the recommended window's END
+/// date), matching web's modal `AvailabilityCalendarPopup` on that field.
+struct ProRebookCalendarSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let timeZone: TimeZone
+    let offWeekdays: Set<Int>
+    let selectedDay: Date
+    let earliest: Date
+    var suggestedDay: Date? = nil
+    var title = "My calendar"
+    let onPick: (Date) -> Void
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                ProRebookCalendarView(
+                    timeZone: timeZone,
+                    offWeekdays: offWeekdays,
+                    selectedDay: selectedDay,
+                    earliest: earliest,
+                    suggestedDay: suggestedDay,
+                    onPick: { day in
+                        onPick(day)
+                        dismiss()
+                    }
+                )
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+            }
+            .background(BrandColor.bgPrimary.ignoresSafeArea())
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }.tint(BrandColor.accent)
+                }
+            }
         }
     }
 }
