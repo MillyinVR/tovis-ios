@@ -1361,15 +1361,22 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.strandedBookings == nil)
     }
 
-    // GET /api/v1/pro/availability/busy-days — Fixtures/proBusyDays.json, a
-    // VERBATIM capture off the running route (2026-07-25), schema-validated
-    // against the backend's `ProAvailabilityBusyDaysOk`. Feeds the aftercare
-    // rebook month sheet's occupancy overlay.
+    // GET /api/v1/pro/availability/busy-days — Fixtures/proBusyDays.json.
+    // Originally a VERBATIM capture off the running route (2026-07-25);
+    // `"openSlots": null` added 2026-07-29 because R4 (web #791) made the field
+    // REQUIRED on the wire even without a service context — the contract job
+    // caught the pre-R4 capture drifting from the schema after that merge.
+    // Schema-validated against the backend's `ProAvailabilityBusyDaysOk`.
+    // Feeds the aftercare rebook month sheet's occupancy overlay.
     @Test func decodesProBusyDays() throws {
         let res = try JSONDecoder().decode(ProBusyDaysResponse.self, from: fixture("proBusyDays"))
         #expect(res.tz == "America/Los_Angeles")
         #expect(res.from == "2026-06-29")
         #expect(res.to == "2026-08-09")
+
+        // The classic busy-only call: `openSlots` present on the wire, null in
+        // value — decoded as nil, which keeps the grid on its busy overlay.
+        #expect(res.openSlots == nil)
 
         // A booked day and a BLOCKED day are different signals — the grid draws
         // them in different tones, so decode must keep them apart.

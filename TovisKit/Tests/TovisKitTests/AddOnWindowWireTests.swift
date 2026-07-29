@@ -89,7 +89,7 @@ struct AddOnWindowWireTests {
         AddOnWireURLProtocol.body = try fixture("availabilityDay")
         _ = try await makeService().day(
             professionalId: "pro_1", serviceId: "svc_1", offeringId: "off_1",
-            locationId: "loc_1", durationMinutes: 60, date: "2026-08-04",
+            locationId: "loc_1", date: "2026-08-04",
             locationType: "SALON", clientAddressId: nil,
             addOnIds: ["addon_2", "addon_1"]
         )
@@ -104,7 +104,7 @@ struct AddOnWindowWireTests {
         AddOnWireURLProtocol.body = try fixture("availabilityDay")
         _ = try await makeService().day(
             professionalId: "pro_1", serviceId: "svc_1", offeringId: "off_1",
-            locationId: "loc_1", durationMinutes: 60, date: "2026-08-04"
+            locationId: "loc_1", date: "2026-08-04"
         )
 
         #expect(try capturedQuery()["addOnIds"] == nil)
@@ -177,7 +177,7 @@ struct AddOnWindowWireTests {
         AddOnWireURLProtocol.body = try fixture("availabilityDay")
         _ = try await makeService().day(
             professionalId: "pro_1", serviceId: "svc_1", offeringId: "off_1",
-            locationId: "loc_1", durationMinutes: 60,
+            locationId: "loc_1",
             date: "2026-08-04", locationType: "SALON",
             clientAddressId: nil, addOnIds: [],
             rescheduleBookingId: "booking_9"
@@ -191,7 +191,7 @@ struct AddOnWindowWireTests {
         AddOnWireURLProtocol.body = try fixture("availabilityBootstrap")
         _ = try await makeService().bootstrap(
             professionalId: "pro_1", serviceId: "svc_1", offeringId: "off_1",
-            durationMinutes: 60, locationType: "SALON",
+            locationType: "SALON",
             clientAddressId: nil, rescheduleBookingId: "booking_9"
         )
 
@@ -203,7 +203,7 @@ struct AddOnWindowWireTests {
         AddOnWireURLProtocol.body = try fixture("availabilityDay")
         _ = try await makeService().day(
             professionalId: "pro_1", serviceId: "svc_1", offeringId: "off_1",
-            locationId: "loc_1", durationMinutes: 60, date: "2026-08-04"
+            locationId: "loc_1", date: "2026-08-04"
         )
 
         // Sending it would make an otherwise anonymous request authenticated.

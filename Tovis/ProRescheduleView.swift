@@ -165,7 +165,6 @@ struct ProRescheduleView: View {
                         locationId: locationId,
                         locationType: booking.locationType,
                         locationTimeZone: booking.timeZone,
-                        durationMinutes: slotDurationMinutes,
                         // R4: this booking is being MOVED, so the calendar's
                         // open-slot counts are sized from its committed width
                         // and it stops blocking its own day — otherwise the date

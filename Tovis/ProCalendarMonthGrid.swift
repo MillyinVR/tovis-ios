@@ -189,6 +189,10 @@ private struct MonthDayCell: View {
         if cell.isToday { return BrandColor.onAccent }
         if isPast { return BrandColor.textMuted.opacity(0.5) }
         guard cell.isInCurrentMonth else { return BrandColor.textMuted }
+        // A counted day with ZERO openings is "full" — dimmed like web's
+        // text-textSecondary/60 cell, so it can't be mistaken for a day the
+        // counts simply never covered (a blank and a zero are different facts).
+        if marks.openSlots == 0 { return BrandColor.textMuted }
         // Off days read as "closed, but yours to book" — web shades them
         // textSecondary behind a dashed edge.
         return marks.isOffDay ? BrandColor.textSecondary : BrandColor.textPrimary
@@ -269,8 +273,18 @@ private struct MonthDayCell: View {
     }
 
     private var accessibilityLabel: String {
-        let count = marks.dots.count
-        var label = "\(cell.dayYmd), \(count) calendar item\(count == 1 ? "" : "s")"
+        var label: String
+        if let openSlots = marks.openSlots {
+            // Counted mode: say what the cell SHOWS — the openings — instead of
+            // the commitments the visual no longer leads with.
+            label =
+                openSlots > 0
+                ? "\(cell.dayYmd), \(openSlots) open time\(openSlots == 1 ? "" : "s")"
+                : "\(cell.dayYmd), no open times"
+        } else {
+            let count = marks.dots.count
+            label = "\(cell.dayYmd), \(count) calendar item\(count == 1 ? "" : "s")"
+        }
         if marks.isOffDay { label += ", off day" }
         if isSelected { label += ", selected" }
         return label

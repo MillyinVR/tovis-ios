@@ -64,7 +64,14 @@ struct ProRebookCalendarView: View {
     /// same as getting them (an unbookable service/location resolves to none),
     /// and a day must never render as "0 open" when it was simply never counted.
     @State private var openSlotsComputed = false
+    /// Counts were ASKED for and the server declined (`openSlots.computed`
+    /// false). Shown under the legend so the busy-only fallback is visible
+    /// rather than masquerading as "counts don't exist here" — web parity.
+    @State private var countsUnavailable = false
     @State private var loading = false
+    /// The context the currently shown `busy` data was loaded for. A changed
+    /// context clears the overlay before refetching (see `contextKey`).
+    @State private var loadedContextKey = ""
 
     /// Ceiling on synthesized dots per day. Comfortably above the cell's own
     /// 4-dot cap, so "5 bookings" and "500" render identically ("+"), while a
@@ -155,14 +162,23 @@ struct ProRebookCalendarView: View {
     /// with identical contents must NOT retrigger the fetch, which is why this
     /// is composed from its fields rather than from object identity.
     private var fetchKey: String {
+        "\(String(ProCalendarGrid.ymd(month, timeZone).prefix(7)))|\(contextKey)"
+    }
+
+    /// The service-context half of `fetchKey` on its own: when THIS part
+    /// changes the previous counts describe a different question and must be
+    /// cleared rather than shown while the new request is in flight — month
+    /// paging alone keeps them (stale-while-revalidate is fine within one
+    /// context).
+    private var contextKey: String {
         let ctx = slotContext
         return [
-            String(ProCalendarGrid.ymd(month, timeZone).prefix(7)),
             ctx?.serviceId ?? "",
             ctx?.locationType ?? "",
             ctx?.locationId ?? "",
             ctx?.addOnIds.joined(separator: ",") ?? "",
             ctx?.rescheduleBookingId ?? "",
+            ctx?.rebookOfBookingId ?? "",
         ].joined(separator: "|")
     }
 
@@ -312,6 +328,11 @@ struct ProRebookCalendarView: View {
                     .font(BrandFont.body(11)).foregroundStyle(BrandColor.textMuted)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            if countsUnavailable, !loading {
+                Text("Open-time counts aren’t available for this service right now — showing your booked days instead.")
+                    .font(BrandFont.body(11)).foregroundStyle(BrandColor.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Text("Times in \(timeZone.identifier).")
                 .font(BrandFont.body(11)).foregroundStyle(BrandColor.textMuted)
         }
@@ -327,6 +348,16 @@ struct ProRebookCalendarView: View {
 
     private func loadBusy() async {
         guard let first = cells.first, let last = cells.last else { return }
+        // A changed CONTEXT means the shown counts answer a different question
+        // (another service, another width) — clear them rather than let them
+        // stand in for the new request while it's in flight. Month paging
+        // within one context keeps the previous overlay (harmless, same data
+        // domain, no flash of wrong numbers).
+        if contextKey != loadedContextKey {
+            busy = [:]
+            openSlotsComputed = false
+            countsUnavailable = false
+        }
         loading = true
         defer { loading = false }
         do {
@@ -334,12 +365,16 @@ struct ProRebookCalendarView: View {
                 from: first.dayYmd, to: last.dayYmd, tz: timeZone.identifier,
                 slotContext: slotContext)
             busy = response.days
-            openSlotsComputed = response.openSlots?.computed == true
+            let computed = response.openSlots?.computed == true
+            openSlotsComputed = computed
+            countsUnavailable = slotContext != nil && !computed
+            loadedContextKey = contextKey
         } catch {
             // The overlay is optional — a failure leaves the grid usable, which
             // is exactly what the web popup does on a non-OK response.
             busy = [:]
             openSlotsComputed = false
+            countsUnavailable = false
         }
     }
 }

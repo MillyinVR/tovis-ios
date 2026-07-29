@@ -190,7 +190,7 @@ struct ProAftercareAuthorView: View {
                     windowEnd = apptCalendar.startOfDay(for: day)
                     hasWindowEnd = true
                 },
-                slotContext: rebookSlotContext
+                slotContext: windowSlotContext
             )
         }
         .mediaFullscreenCover($viewingMedia)
@@ -461,7 +461,7 @@ struct ProAftercareAuthorView: View {
                     earliest: earliestWindowStart,
                     suggestedDay: rebookSuggestedDay,
                     onPick: applyWindowStart,
-                    slotContext: rebookSlotContext
+                    slotContext: windowSlotContext
                 )
                 .disabled(saving)
 
@@ -555,7 +555,6 @@ struct ProAftercareAuthorView: View {
                             locationId: rebookLocationId,
                             locationType: rebookLocationType,
                             locationTimeZone: timeZone,
-                            durationMinutes: rebookDurationMinutes,
                             clientAddressId: effectiveRebookClientAddressId,
                             offWeekdays: offWeekdays,
                             offDayHint: "This day is outside your working hours — switch to “Enter a custom time” to book it anyway.",
@@ -563,6 +562,9 @@ struct ProAftercareAuthorView: View {
                             // outside the custom-time toggle so it survives the
                             // mode switch (R2). Don't draw a second one here.
                             showCalendar: false,
+                            // The save CLONES this booking (base + add-ons), so
+                            // the open times are sized from its clone width.
+                            rebookOfBookingId: bookingId,
                             selectedSlot: $selectedSlot,
                             selectedDate: $slotDay,
                         )
@@ -572,17 +574,13 @@ struct ProAftercareAuthorView: View {
         }
     }
 
-    /// The pro's own month — booked/blocked days, off-day shading, skip-ahead
-    /// chips — INLINE and always visible, so the next appointment is placed
-    /// around what they already have without opening anything (web R1 parity:
-    /// picking the day is the task, so the calendar is the control). The
-    /// compact date picker below it stays as the typed fallback.
-    /// What every calendar on this form counts open slots for (R4): the rebook
-    /// is a NEW booking of the same service, so it is sized from the offering —
-    /// no reschedule context. nil until the booking detail has loaded, which
-    /// keeps the grid on its busy-only overlay rather than counting for a
-    /// service id that isn't known yet.
-    private var rebookSlotContext: ProBusyDaysSlotContext? {
+    /// What the WINDOW-mode calendars count open slots for (R4): the window is
+    /// a recommendation the CLIENT books inside later — through the normal
+    /// client flow, choosing their own add-ons — so it is sized from the
+    /// offering. nil until the booking detail has loaded, which keeps the grid
+    /// on its busy-only overlay rather than counting for a service id that
+    /// isn't known yet.
+    private var windowSlotContext: ProBusyDaysSlotContext? {
         guard !rebookServiceId.isEmpty else { return nil }
         return ProBusyDaysSlotContext(
             serviceId: rebookServiceId,
@@ -591,6 +589,25 @@ struct ProAftercareAuthorView: View {
         )
     }
 
+    /// What the BOOKED-mode calendar counts for: the save CLONES this booking
+    /// (base + add-ons at snapshot durations), so the server sizes the count
+    /// from the source booking's clone width via `rebookOfBookingId` —
+    /// offering-base counting lights up days the save doesn't fit.
+    private var bookedSlotContext: ProBusyDaysSlotContext? {
+        guard !rebookServiceId.isEmpty else { return nil }
+        return ProBusyDaysSlotContext(
+            serviceId: rebookServiceId,
+            locationType: rebookLocationType,
+            locationId: rebookLocationId.isEmpty ? nil : rebookLocationId,
+            rebookOfBookingId: bookingId
+        )
+    }
+
+    /// The pro's own month — booked/blocked days, off-day shading, skip-ahead
+    /// chips — INLINE and always visible, so the next appointment is placed
+    /// around what they already have without opening anything (web R1 parity:
+    /// picking the day is the task, so the calendar is the control). The
+    /// compact date picker below it stays as the typed fallback.
     private var bookedCalendar: some View {
         ProRebookCalendarView(
             timeZone: apptZone,
@@ -602,7 +619,7 @@ struct ProAftercareAuthorView: View {
             earliest: Date(),
             suggestedDay: rebookSuggestedDay,
             onPick: applyCalendarDay,
-            slotContext: rebookSlotContext
+            slotContext: bookedSlotContext
         )
         .disabled(saving)
     }

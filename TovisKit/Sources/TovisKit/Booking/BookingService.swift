@@ -25,11 +25,12 @@ public final class BookingService: Sendable {
     ///
     /// NOTE `durationMinutes` is echoed back in `request` but is NOT an input —
     /// the server resolves the width itself and ignores the query value.
+    // ⚠️ No `durationMinutes` param — same story as `day()` below: the route
+    // derives the width itself and never read it.
     public func bootstrap(
         professionalId: String,
         serviceId: String,
         offeringId: String,
-        durationMinutes: Int,
         locationType: String = "SALON",
         clientAddressId: String? = nil,
         rescheduleBookingId: String? = nil
@@ -39,7 +40,6 @@ public final class BookingService: Sendable {
             URLQueryItem(name: "serviceId", value: serviceId),
             URLQueryItem(name: "offeringId", value: offeringId),
             URLQueryItem(name: "locationType", value: locationType),
-            URLQueryItem(name: "durationMinutes", value: String(durationMinutes)),
         ]
         if let clientAddressId, !clientAddressId.isEmpty {
             query.append(URLQueryItem(name: "clientAddressId", value: clientAddressId))
@@ -68,17 +68,21 @@ public final class BookingService: Sendable {
     ///
     /// NOTE `durationMinutes` is echoed back but is NOT an input; the server
     /// resolves the width from the offering, the add-ons, or the booking.
+    // ⚠️ No `durationMinutes` param: the route derives the width itself (from
+    // the offering + add-ons, the reschedule booking, or the rebook source) and
+    // never reads such a param — it was dead on the wire and was dropped in the
+    // 2026-07-29 audit rather than left looking load-bearing.
     public func day(
         professionalId: String,
         serviceId: String,
         offeringId: String,
         locationId: String,
-        durationMinutes: Int,
         date: String,
         locationType: String = "SALON",
         clientAddressId: String? = nil,
         addOnIds: [String] = [],
-        rescheduleBookingId: String? = nil
+        rescheduleBookingId: String? = nil,
+        rebookOfBookingId: String? = nil
     ) async throws -> AvailabilityDay {
         var query = [
             URLQueryItem(name: "professionalId", value: professionalId),
@@ -86,7 +90,6 @@ public final class BookingService: Sendable {
             URLQueryItem(name: "offeringId", value: offeringId),
             URLQueryItem(name: "locationType", value: locationType),
             URLQueryItem(name: "locationId", value: locationId),
-            URLQueryItem(name: "durationMinutes", value: String(durationMinutes)),
             URLQueryItem(name: "date", value: date),
         ]
         if let clientAddressId, !clientAddressId.isEmpty {
@@ -97,6 +100,9 @@ public final class BookingService: Sendable {
         }
         if let rescheduleBookingId, !rescheduleBookingId.isEmpty {
             query.append(URLQueryItem(name: "rescheduleBookingId", value: rescheduleBookingId))
+        }
+        if let rebookOfBookingId, !rebookOfBookingId.isEmpty {
+            query.append(URLQueryItem(name: "rebookOfBookingId", value: rebookOfBookingId))
         }
         return try await api.request("/availability/day", query: query)
     }

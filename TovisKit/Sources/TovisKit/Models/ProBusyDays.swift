@@ -53,19 +53,27 @@ public struct ProBusyDaysSlotContext: Sendable, Equatable {
     /// stops the booking blocking its own day — without it the day the
     /// appointment already sits on reads as fuller than it is.
     public let rescheduleBookingId: String?
+    /// Set when the pro is booking the NEXT appointment from this booking's
+    /// aftercare. The rebook commit CLONES the source booking (base + add-ons
+    /// at snapshot durations), so the server sizes the count from that clone
+    /// width — offering-base counting lights up days the save doesn't fit.
+    /// Unlike a reschedule, the source booking keeps its own (past) occupancy.
+    public let rebookOfBookingId: String?
 
     public init(
         serviceId: String,
         locationType: String? = nil,
         locationId: String? = nil,
         addOnIds: [String] = [],
-        rescheduleBookingId: String? = nil
+        rescheduleBookingId: String? = nil,
+        rebookOfBookingId: String? = nil
     ) {
         self.serviceId = serviceId
         self.locationType = locationType
         self.locationId = locationId
         self.addOnIds = addOnIds
         self.rescheduleBookingId = rescheduleBookingId
+        self.rebookOfBookingId = rebookOfBookingId
     }
 
     public var queryItems: [URLQueryItem] {
@@ -82,6 +90,10 @@ public struct ProBusyDaysSlotContext: Sendable, Equatable {
         if let rescheduleBookingId, !rescheduleBookingId.isEmpty {
             items.append(
                 URLQueryItem(name: "rescheduleBookingId", value: rescheduleBookingId))
+        }
+        if let rebookOfBookingId, !rebookOfBookingId.isEmpty {
+            items.append(
+                URLQueryItem(name: "rebookOfBookingId", value: rebookOfBookingId))
         }
         return items
     }

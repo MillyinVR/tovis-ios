@@ -509,7 +509,7 @@ struct BookingFlowView: View {
         do {
             let boot = try await session.client.booking.bootstrap(
                 professionalId: professionalId, serviceId: offering.serviceId,
-                offeringId: offering.id, durationMinutes: duration,
+                offeringId: offering.id,
                 locationType: mode,
                 clientAddressId: isMobile ? selectedAddressId : nil,
                 rescheduleBookingId: rescheduleBookingId
@@ -584,7 +584,7 @@ struct BookingFlowView: View {
             let day = try await session.client.booking.day(
                 professionalId: professionalId, serviceId: offering.serviceId,
                 offeringId: offering.id, locationId: boot.request.locationId,
-                durationMinutes: duration, date: date, locationType: mode,
+                date: date, locationType: mode,
                 clientAddressId: isMobile ? selectedAddressId : nil,
                 addOnIds: Array(selectedAddOnIds),
                 rescheduleBookingId: rescheduleBookingId

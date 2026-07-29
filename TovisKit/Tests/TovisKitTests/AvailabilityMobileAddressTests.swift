@@ -62,7 +62,7 @@ struct AvailabilityMobileAddressTests {
         AvailabilityURLProtocol.body = try fixture("availabilityBootstrap")
         _ = try await makeService().bootstrap(
             professionalId: "pro_1", serviceId: "svc_1", offeringId: "off_1",
-            durationMinutes: 75, locationType: "MOBILE", clientAddressId: "addr_1"
+            locationType: "MOBILE", clientAddressId: "addr_1"
         )
 
         let query = try capturedQuery()
@@ -75,7 +75,7 @@ struct AvailabilityMobileAddressTests {
         AvailabilityURLProtocol.body = try fixture("availabilityBootstrap")
         _ = try await makeService().bootstrap(
             professionalId: "pro_1", serviceId: "svc_1", offeringId: "off_1",
-            durationMinutes: 60, locationType: "SALON"
+            locationType: "SALON"
         )
 
         let query = try capturedQuery()
@@ -90,7 +90,7 @@ struct AvailabilityMobileAddressTests {
         AvailabilityURLProtocol.body = try fixture("availabilityBootstrap")
         _ = try await makeService().bootstrap(
             professionalId: "pro_1", serviceId: "svc_1", offeringId: "off_1",
-            durationMinutes: 75, locationType: "MOBILE", clientAddressId: ""
+            locationType: "MOBILE", clientAddressId: ""
         )
 
         #expect(try capturedQuery()["clientAddressId"] == nil)
@@ -101,7 +101,7 @@ struct AvailabilityMobileAddressTests {
         AvailabilityURLProtocol.body = try fixture("availabilityDay")
         _ = try await makeService().day(
             professionalId: "pro_1", serviceId: "svc_1", offeringId: "off_1",
-            locationId: "loc_1", durationMinutes: 75, date: "2026-07-22",
+            locationId: "loc_1", date: "2026-07-22",
             locationType: "MOBILE", clientAddressId: "addr_1"
         )
 
