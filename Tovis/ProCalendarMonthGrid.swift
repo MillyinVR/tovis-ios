@@ -99,6 +99,13 @@ struct ProMonthDayMarks: Equatable {
     /// TAPPABLE: a pro may deliberately book a client on a day their public
     /// calendar shows as off (the save asks them to confirm the override).
     var isOffDay = false
+    /// Bookable start times left on this day for the service in context (R4).
+    ///
+    /// `nil` means NOT COUNTED and is the default, so the pro calendar screen —
+    /// which browses events rather than picking a slot — renders exactly as
+    /// before. When non-nil the cell shows the count INSTEAD of the busy dots,
+    /// because "3 open" is what the pro came to find out; `0` reads as full.
+    var openSlots: Int? = nil
 
     /// A booking's status tone, or the pro's own blocked time. `.busy` is a
     /// booking whose status the feed didn't carry (busy-days sends counts).
@@ -208,16 +215,32 @@ private struct MonthDayCell: View {
                     .clipShape(Circle())
 
                 HStack(spacing: 3) {
-                    let visible = marks.dots.prefix(maxDots)
-                    ForEach(Array(visible.enumerated()), id: \.offset) { _, dot in
-                        Circle()
-                            .fill(dotTone(dot))
-                            .frame(width: 5, height: 5)
-                    }
-                    if marks.dots.count > maxDots {
-                        Text("+")
-                            .font(BrandFont.mono(9))
-                            .foregroundStyle(BrandColor.textMuted)
+                    if let openSlots = marks.openSlots {
+                        // R4: the count REPLACES the busy dots. Both at once
+                        // would say the same thing twice and crowd a 26pt cell,
+                        // and the count is the stronger signal — it already
+                        // accounts for the bookings the dots stood for.
+                        if openSlots > 0 {
+                            Text("\(openSlots)")
+                                .font(BrandFont.mono(9))
+                                .foregroundStyle(BrandColor.emerald)
+                        } else if marks.dots.contains(.block) {
+                            Circle()
+                                .fill(BrandColor.textMuted)
+                                .frame(width: 5, height: 5)
+                        }
+                    } else {
+                        let visible = marks.dots.prefix(maxDots)
+                        ForEach(Array(visible.enumerated()), id: \.offset) { _, dot in
+                            Circle()
+                                .fill(dotTone(dot))
+                                .frame(width: 5, height: 5)
+                        }
+                        if marks.dots.count > maxDots {
+                            Text("+")
+                                .font(BrandFont.mono(9))
+                                .foregroundStyle(BrandColor.textMuted)
+                        }
                     }
                 }
                 .frame(height: 6)

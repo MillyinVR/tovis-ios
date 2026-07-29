@@ -190,6 +190,7 @@ struct ProAftercareAuthorView: View {
                     windowEnd = apptCalendar.startOfDay(for: day)
                     hasWindowEnd = true
                 },
+                slotContext: rebookSlotContext
             )
         }
         .mediaFullscreenCover($viewingMedia)
@@ -460,6 +461,7 @@ struct ProAftercareAuthorView: View {
                     earliest: earliestWindowStart,
                     suggestedDay: rebookSuggestedDay,
                     onPick: applyWindowStart,
+                    slotContext: rebookSlotContext
                 )
                 .disabled(saving)
 
@@ -575,6 +577,20 @@ struct ProAftercareAuthorView: View {
     /// around what they already have without opening anything (web R1 parity:
     /// picking the day is the task, so the calendar is the control). The
     /// compact date picker below it stays as the typed fallback.
+    /// What every calendar on this form counts open slots for (R4): the rebook
+    /// is a NEW booking of the same service, so it is sized from the offering —
+    /// no reschedule context. nil until the booking detail has loaded, which
+    /// keeps the grid on its busy-only overlay rather than counting for a
+    /// service id that isn't known yet.
+    private var rebookSlotContext: ProBusyDaysSlotContext? {
+        guard !rebookServiceId.isEmpty else { return nil }
+        return ProBusyDaysSlotContext(
+            serviceId: rebookServiceId,
+            locationType: rebookLocationType,
+            locationId: rebookLocationId.isEmpty ? nil : rebookLocationId
+        )
+    }
+
     private var bookedCalendar: some View {
         ProRebookCalendarView(
             timeZone: apptZone,
@@ -586,6 +602,7 @@ struct ProAftercareAuthorView: View {
             earliest: Date(),
             suggestedDay: rebookSuggestedDay,
             onPick: applyCalendarDay,
+            slotContext: rebookSlotContext
         )
         .disabled(saving)
     }

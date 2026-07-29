@@ -39,6 +39,11 @@ struct ProOpenSlotPicker: View {
     /// the day stays pickable in custom mode too — letting the picker draw a
     /// second one there would show two calendars in slot mode.
     var showCalendar = true
+    /// Set when this picker is MOVING an existing booking (the reschedule
+    /// screen). The calendar's open-slot counts are then sized from that
+    /// booking's committed width, and it stops blocking its own day — without
+    /// it the day the appointment already sits on counts as fuller than it is.
+    var rescheduleBookingId: String? = nil
     /// The chosen slot's ISO start instant.
     @Binding var selectedSlot: String?
     /// The day whose open times are shown. Owned by the caller so another
@@ -59,6 +64,18 @@ struct ProOpenSlotPicker: View {
     /// neighboring day.
     private var dayZone: TimeZone { TimeZone(identifier: locationTimeZone ?? "") ?? .current }
 
+    /// What the inline calendar counts open slots FOR (R4) — the same service
+    /// and location this picker is already fetching day slots for, so the grid
+    /// and the chips below it can never be answering different questions.
+    private var slotContext: ProBusyDaysSlotContext {
+        ProBusyDaysSlotContext(
+            serviceId: serviceId,
+            locationType: locationType,
+            locationId: locationId,
+            rescheduleBookingId: rescheduleBookingId
+        )
+    }
+
     /// Re-fetch whenever the service/location/date inputs change.
     private var fetchKey: String {
         "\(professionalId)|\(serviceId)|\(offeringId)|\(locationId)|\(clientAddressId ?? "")|\(ymd(selectedDate))"
@@ -77,6 +94,10 @@ struct ProOpenSlotPicker: View {
                     // midnight, which the stepper's range would refuse.
                     earliest: Date(),
                     onPick: { selectedDate = $0 },
+                    // R4: count the bookable starts for THIS service+location,
+                    // so the grid shows where the appointment actually fits
+                    // rather than only where the day is already busy.
+                    slotContext: slotContext
                 )
             }
             BrandSurface {
