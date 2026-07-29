@@ -213,7 +213,11 @@ struct ProBookingDetailView: View {
             Spacer()
             HStack(spacing: 6) {
                 Circle().fill(statusTone(booking.status)).frame(width: 6, height: 6)
-                Text(booking.status.uppercased())
+                // The LABEL uppercased, never the raw enum — `status.uppercased()`
+                // printed "IN_PROGRESS"/"NO_SHOW" here while line ~383 of this
+                // same screen said "In progress" (B10's defect class; found by
+                // the 2026-07-28 verification pass).
+                Text(booking.statusLabel.uppercased())
                     .font(BrandFont.mono(9)).tracking(1.2)
                     .foregroundStyle(statusTone(booking.status))
             }
