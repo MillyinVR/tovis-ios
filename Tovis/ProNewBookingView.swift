@@ -750,7 +750,7 @@ struct ProNewBookingView: View {
         try? await Task.sleep(nanoseconds: 300_000_000)
         if Task.isCancelled { return }
 
-        guard let location = selectedLocation,
+        guard selectedLocation != nil,
               let offering = selectedOffering,
               let start = proposedStartDate else {
             overlapNames = []
@@ -768,8 +768,15 @@ struct ProNewBookingView: View {
         let to = iso.string(from: start.addingTimeInterval(86_400))
 
         do {
+            // 🔴 ALL locations, not the one being booked. The overlap this warns
+            // about is enforced on `professionalId` ALONE
+            // (`Booking_no_active_professional_overlap` has no location term), so
+            // asking only about the selected location meant a pro booking a salon
+            // slot got no warning at all about the mobile job sitting in it — and
+            // then a hard refusal on submit. A warning has to ask about the same
+            // resource the write is checked against.
             let response = try await session.client.proCalendar.calendar(
-                from: from, to: to, locationId: location.id)
+                from: from, to: to, scope: .allLocations)
             if Task.isCancelled { return }
 
             let events: [(id: String, clientName: String, start: Date, end: Date)] =

@@ -475,6 +475,7 @@ struct ProCalendarView: View {
                     onTapEmptySlot: { date in emptySlotChoice = date },
                     collapseToggle: chromeCollapsed,
                     workingWeeks: workingWeeks,
+                    eventLocationLabels: eventLocationLabels(data),
                     pendingMove: $pendingMove,
                     pendingResize: $pendingResize,
                     // Cross-week drag: dwelling a lifted tile at the grid's edge pages
@@ -678,6 +679,35 @@ struct ProCalendarView: View {
 
     // MARK: - Load
 
+    /// What the feed is asked to cover: every location unless the pro has filtered
+    /// to one. Defaulting to ALL is the whole point of K4 — the DB's overlap
+    /// constraint has no location term, so a one-location feed shows the pro free
+    /// space that a job elsewhere already owns. (Web's calendar defaults the same
+    /// way; the WIRE default stayed narrow on purpose, so an un-updated device
+    /// kept its old behaviour until this build.)
+    private var calendarScope: ProCalendarScope {
+        guard let activeLocationId else { return .allLocations }
+        return .location(activeLocationId)
+    }
+
+    /// Short label per location id for the chip on a tile — populated ONLY when
+    /// the SERVER says the feed spans locations and there is more than one to tell
+    /// apart. An empty map is the signal "don't mark locations", so a
+    /// single-location pro's tiles stay exactly as they were and a filtered view
+    /// doesn't repeat the filter on every tile. Mirrors web's
+    /// `useCalendarLocations.eventLocationLabels`.
+    ///
+    /// Gated on `data.isAllLocations` — the response — not on `activeLocationId`
+    /// being nil: against a server that predates the `scope` contract, asking for
+    /// ALL still returns ONE location, and chips would then label a narrow feed as
+    /// if it were the whole picture.
+    private func eventLocationLabels(_ data: ProCalendarResponse) -> [String: String] {
+        guard data.isAllLocations, locations.count > 1 else { return [:] }
+        return Dictionary(
+            locations.map { ($0.id, proLocationShortLabel($0)) },
+            uniquingKeysWith: { first, _ in first })
+    }
+
     private func poll() async {
         while !Task.isCancelled {
             try? await Task.sleep(for: .seconds(60))
@@ -692,7 +722,7 @@ struct ProCalendarView: View {
             let data = try await session.client.proCalendar.calendar(
                 from: ProCalendarGrid.iso(range.from),
                 to: ProCalendarGrid.iso(range.to),
-                locationId: activeLocationId)
+                scope: calendarScope)
             // Refine the working zone from the server's viewport (no re-fetch:
             // events carry `localDateKey`, so grouping/dots stay correct).
             if let id = data.viewportTimeZone ?? data.timeZone,
