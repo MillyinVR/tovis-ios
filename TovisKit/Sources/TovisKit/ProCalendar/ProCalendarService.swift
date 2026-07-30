@@ -1,5 +1,30 @@
 import Foundation
 
+/// Which locations a pro-calendar read covers — the `?scope=` contract (K3).
+///
+/// 🔴 The database treats a professional as ONE resource: the overlap constraint
+/// `Booking_no_active_professional_overlap` excludes on `professionalId` alone,
+/// with **no location term**. So a feed filtered to one location renders free
+/// space that a job somewhere else already owns, and the pro is shown time they
+/// do not have. `.allLocations` is the scope that matches what the DB enforces —
+/// prefer it for anything that DISPLAYS a day or WARNS about a collision, and
+/// keep `.location` for a deliberate, pro-chosen filter.
+public enum ProCalendarScope: Sendable, Equatable {
+    /// Every location the pro has. What the overlap constraint means by "busy".
+    case allLocations
+    /// One location, because the pro asked to look at just that one.
+    case location(String)
+
+    /// The `?scope=` value. The route accepts `ALL` or a bare location id, and
+    /// prefers `scope` over the older `locationId` param when both are sent.
+    var queryValue: String {
+        switch self {
+        case .allLocations: return "ALL"
+        case let .location(id): return id
+        }
+    }
+}
+
 /// Reads the PRO calendar — bookings, blocks, and the management buckets
 /// (`GET /api/v1/pro/calendar`). Authenticated; PRO-only. The web page renders
 /// the same payload server-side; this is the native client's only schedule
@@ -12,18 +37,23 @@ public final class ProCalendarService: Sendable {
     }
 
     /// GET /api/v1/pro/calendar. With no range the server returns its default
-    /// window; pass `from`/`to` (ISO-8601) to scope it. `locationId` selects a
-    /// specific location when the pro has more than one.
+    /// window; pass `from`/`to` (ISO-8601) to scope it.
+    ///
+    /// `scope` is REQUIRED, and deliberately has no default. Sending nothing is
+    /// what iOS used to do, and the server reads that as "the primary location" —
+    /// which is why a mobile job was invisible on the salon day for as long as it
+    /// was. Every caller has to say out loud which resource it means; see
+    /// `ProCalendarScope` for why `.allLocations` is usually the honest answer.
     public func calendar(
         from: String? = nil,
         to: String? = nil,
-        locationId: String? = nil
+        scope: ProCalendarScope
     ) async throws -> ProCalendarResponse {
         var query: [URLQueryItem] = []
         if let from { query.append(URLQueryItem(name: "from", value: from)) }
         if let to { query.append(URLQueryItem(name: "to", value: to)) }
-        if let locationId { query.append(URLQueryItem(name: "locationId", value: locationId)) }
-        return try await api.request("/pro/calendar", query: query.isEmpty ? nil : query)
+        query.append(URLQueryItem(name: "scope", value: scope.queryValue))
+        return try await api.request("/pro/calendar", query: query)
     }
 
     /// GET /api/v1/pro/availability/busy-days — the pro's OWN commitments per
@@ -32,10 +62,11 @@ public final class ProCalendarService: Sendable {
     /// (omit to use the pro profile's). The server clamps an over-long range and
     /// echoes what it actually answered for.
     ///
-    /// Not a substitute for `calendar(from:to:locationId:)`: this is
-    /// cross-location and carries only counts (no names, ids, or times), which
-    /// is exactly what a "which days am I busy" overlay needs and all it should
-    /// see. The full feed is location-scoped and per-event.
+    /// Not a substitute for `calendar(from:to:scope:)`: this carries only counts
+    /// (no names, ids, or times), which is exactly what a "which days am I busy"
+    /// overlay needs and all it should see. The full feed is per-event. Note this
+    /// one has always been cross-location — it never had the narrow-scope bug the
+    /// full feed did.
     /// Pass `slotContext` to additionally get a per-day count of BOOKABLE start
     /// times for that service (R4) — "where can I still fit someone", rather
     /// than only where the day is already full. Omit it and the response keeps

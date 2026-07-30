@@ -16,6 +16,22 @@ public struct ProCalendarResponse: Decodable, Sendable {
     public let management: ProCalendarManagement
     /// Whether new bookings auto-accept (drives the calendar's auto-accept bar).
     public let autoAcceptBookings: Bool?
+    /// Which locations these events were drawn from — `"ALL"` or `"LOCATION"`
+    /// (K3). **ABSENT on a pre-K3 server**, which always filtered to exactly one
+    /// location, so read it through `isAllLocations`: anything that is not
+    /// literally `ALL` — including nothing at all — is a FILTERED feed. Taking an
+    /// old server's one-location answer for "everything" would tell the pro their
+    /// day is empty at a location the request never asked about, which is the bug
+    /// this scope exists to fix, inverted.
+    public let scope: String?
+
+    /// True only when the server CONFIRMS it answered for every location.
+    ///
+    /// Read this — never the client's own "I asked for all" flag — before
+    /// claiming a mixed feed on screen (e.g. the per-location chips): what the
+    /// request wanted and what the server did are two different facts, and only
+    /// the second one is on the wire. [[two-states-owning-one-selection]]
+    public var isAllLocations: Bool { scope?.uppercased() == "ALL" }
 }
 
 /// `PATCH /api/v1/pro/settings` → `{ professionalProfile: { autoAcceptBookings } }`.
@@ -51,6 +67,11 @@ public struct ProCalendarEvent: Decodable, Sendable, Identifiable {
     /// Booking events carry the resolved viewport timezone; blocks don't.
     public let timeZone: String?
     public let locationType: String?
+    /// WHICH location this occupancy is at. Always present on a booking; nullable
+    /// on a block (a null block is the pro's time at EVERY location) and on a
+    /// hold; absent entirely on a synthetic waitlist row. Needed once the feed can
+    /// span locations (K3/K4) — that is the only way a tile can say where it is.
+    public let locationId: String?
     /// The event's local date in the viewport zone — used to group the agenda.
     public let localDateKey: String
     /// ClientProfile id — present only when the pro may open this client's chart

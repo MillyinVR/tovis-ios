@@ -5,10 +5,41 @@
 import SwiftUI
 import TovisKit
 
-/// Display label for a pro location (name → address → type). Shared by the
-/// location bar and the block-time sheet's picker.
+// MARK: - Location naming
+//
+// The native counterpart of web `app/pro/calendar/_utils/locationLabels.ts`: ONE
+// type→word map, two forms built on it. Web consolidated these for the same
+// reason — the picker and the event chip each wanting their own copy is how the
+// two web tables drifted apart in their fallback word before K3.
+
+/// What KIND of place a location is: "Salon" / "Suite" / "Mobile base".
+///
+/// Not `type.capitalized` — that renders `MOBILE_BASE` as "Mobile_base", which is
+/// what the picker used to say.
+func proLocationTypeLabel(_ type: String?) -> String {
+    switch (type ?? "").uppercased() {
+    case "SALON": return "Salon"
+    case "SUITE": return "Suite"
+    case "MOBILE_BASE": return "Mobile base"
+    default: return "Location"
+    }
+}
+
+/// The compact form, for a chip on a calendar tile where an address would not
+/// fit: the pro's own name for the place, else what kind of place it is. Mirrors
+/// web `locationShortLabel`.
+func proLocationShortLabel(_ location: ProLocationSummary) -> String {
+    let name = (location.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    return name.isEmpty ? proLocationTypeLabel(location.type) : name
+}
+
+/// The picker/selector form (name → address → type). Shared by the location bar
+/// and the block-time sheet's picker, where there IS room for a street address.
 func proLocationDisplayLabel(_ location: ProLocationSummary) -> String {
-    location.name ?? location.formattedAddress ?? location.type?.capitalized ?? "Location"
+    let address = (location.formattedAddress ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    let name = (location.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    if !name.isEmpty { return name }
+    return address.isEmpty ? proLocationTypeLabel(location.type) : address
 }
 
 // MARK: - Auto-accept
@@ -162,6 +193,13 @@ struct ProPendingRequestBar: View {
 
 // MARK: - Location selector (multi-location pros)
 
+/// Which location the calendar is FILTERED to — `nil` meaning all of them.
+///
+/// The "All locations" row has been here since the bar shipped, but until K4 a nil
+/// selection sent no scope at all and the server answered with the PRIMARY
+/// location, so choosing it quietly showed one location's day under an
+/// all-locations label. nil is now a real ALL request (`scope=ALL`), which is what
+/// this control always claimed.
 struct ProLocationBar: View {
     let locations: [ProLocationSummary]
     let activeLocationId: String?

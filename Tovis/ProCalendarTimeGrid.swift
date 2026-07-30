@@ -333,6 +333,10 @@ struct ProCalendarTimeGrid: View {
     /// windows (web `DayColumn` merges salon + mobile before shading). Empty until
     /// loaded → no shading; usually one entry (single-location pro).
     var workingWeeks: [ProWeekHours] = []
+    /// Short label per location id, for the chip that says WHERE a job is on a
+    /// grid that mixes locations (K4). Empty = don't mark locations at all, which
+    /// is the single-location and filtered-to-one case; the parent owns that call.
+    var eventLocationLabels: [String: String] = [:]
 
     /// Set by a drag-drop when a booking is moved to a new time; the parent shows
     /// the confirm prompt + submits the reschedule. Bound so the tile can render
@@ -773,6 +777,18 @@ struct ProCalendarTimeGrid: View {
             return display
         }()
 
+        // Location chip (K4): WHERE this job is, on a grid that mixes locations.
+        // Deliberately a WORD, not a colour — status owns the tile's fill and D2
+        // gave the accent stripe to service, so a location hue would be a fourth
+        // meaning fighting for the same channel. Same room test as the payment
+        // chip: a wide column (day view) and a non-micro tile. A phone's week
+        // column is ~45pt, which fits neither chip — the accessible name carries
+        // it there instead (see `tileAccessibilityLabel`).
+        let locationLabel: String? = {
+            guard colWidth >= 150, !micro, let id = event.locationId else { return nil }
+            return eventLocationLabels[id]
+        }()
+
         // Build the fully-interactive tile at its NATURAL (un-offset) position:
         // content shape, tap, and the resize-handle overlay all attach here. `.offset`
         // is applied LAST (below) so the touch target travels with the visual. (A
@@ -787,7 +803,8 @@ struct ProCalendarTimeGrid: View {
             lifted: lifted,
             pending: pending,
             conflict: conflict,
-            paymentBadge: paymentBadge
+            paymentBadge: paymentBadge,
+            locationLabel: locationLabel
         )
         .padding(.horizontal, 1.5)
         .frame(width: colWidth, alignment: .leading)
@@ -850,7 +867,8 @@ struct ProCalendarTimeGrid: View {
         lifted: Bool,
         pending: Bool,
         conflict: Bool,
-        paymentBadge: ProPaymentBadge.Display? = nil
+        paymentBadge: ProPaymentBadge.Display? = nil,
+        locationLabel: String? = nil
     ) -> some View {
         // Drag states own the ring; otherwise a conflict paints it amber.
         let ringColor: Color = (lifted || pending)
@@ -871,6 +889,21 @@ struct ProCalendarTimeGrid: View {
                             .font(BrandFont.mono(9))
                             .foregroundStyle(lifted ? BrandColor.accent : BrandColor.textSecondary)
                             .lineLimit(1)
+                        // Location before payment: when the row runs out of width
+                        // it is the shorter chip, and on a mixed-location grid it
+                        // is the thing the pro opened this view to see. (Web puts
+                        // the payment chip on the title row instead, so the two
+                        // never compete for the same line there.)
+                        if let locationLabel {
+                            Text(locationLabel)
+                                .font(BrandFont.mono(9))
+                                .foregroundStyle(BrandColor.textSecondary)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background(BrandColor.textSecondary.opacity(0.14))
+                                .clipShape(Capsule())
+                                .lineLimit(1)
+                        }
                         if let payment = paymentBadge {
                             Text(payment.label)
                                 .font(BrandFont.mono(9))
@@ -1181,6 +1214,11 @@ struct ProCalendarTimeGrid: View {
         // web's card aria label, NOT gated on the visual chip having room.
         if event.isBooking, let payment = event.paymentBadge?.display, payment.significant {
             base += ", \(payment.label)"
+        }
+        // Same for the location: on a grid that mixes them, WHERE a job is isn't
+        // decoration, so it is spoken even in week view where no chip fits.
+        if let id = event.locationId, let location = eventLocationLabels[id] {
+            base += ", \(location)"
         }
         return conflict ? "\(base), overlaps another appointment" : base
     }
