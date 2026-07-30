@@ -101,12 +101,16 @@ private extension URLRequest {
         // The header is the whole point of this test — a dropped key 400s the tap.
         let key = try #require(ConsultationURLProtocol.capturedIdempotencyKey)
         #expect(key.split(separator: ":").count == 5)
-        // Reconstruct it (same ~60s bucket): the decision is folded into the key's
-        // action so APPROVE and REJECT never collide (409) while a double-tap dedupes.
-        #expect(key == buildClientIdempotencyKey(
+        // Reconstruct it PINNED to the bucket the sent key used: the decision is
+        // folded into the key's action so APPROVE and REJECT never collide (409)
+        // while a double-tap dedupes. Rebuilding against the live clock instead is
+        // what made this test flaky — see IdempotencyKeyTestSupport.
+        #expect(key == rebuiltIdempotencyKey(
+            matchingBucketOf: key,
             scope: "client-consultation-decision",
             entityId: "bk_1",
             action: "APPROVE"))
+        #expect(idempotencyKeyBucketIsCurrent(key))
 
         let json = try bodyJSON()
         #expect(json["action"] as? String == "APPROVE")
@@ -164,12 +168,17 @@ private extension URLRequest {
         #expect(json["action"] as? String == "REJECT")
 
         let key = try #require(ConsultationURLProtocol.capturedIdempotencyKey)
-        #expect(key == buildClientIdempotencyKey(
+        #expect(key == rebuiltIdempotencyKey(
+            matchingBucketOf: key,
             scope: "client-consultation-decision", entityId: "bk_1", action: "REJECT"))
+        #expect(idempotencyKeyBucketIsCurrent(key))
 
         // Same booking + same bucket, but a different decision → a different key,
         // so approve and reject can't be dropped as duplicates of each other.
-        let approveKey = buildClientIdempotencyKey(
+        // Built in the SENT key's bucket, so this compares the action and nothing
+        // else — across a rollover the two would differ for the wrong reason.
+        let approveKey = rebuiltIdempotencyKey(
+            matchingBucketOf: key,
             scope: "client-consultation-decision", entityId: "bk_1", action: "APPROVE")
         #expect(key != approveKey)
     }

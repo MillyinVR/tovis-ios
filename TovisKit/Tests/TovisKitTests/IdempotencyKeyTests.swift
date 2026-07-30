@@ -20,6 +20,80 @@ import Testing
         #expect(a == b)
     }
 
+    // MARK: - The bucket is a clock, and assertions must not race it
+
+    /// The instant the real CI failure's key was minted (tovis-ios #242): its
+    /// bucket segment was `29756502`, and the assertion that compared against it
+    /// ran at 05:43:00.07Z — 70ms into the next bucket. Long past, so the
+    /// live-clock comparison below can never coincidentally agree with it again.
+    private let sentAt = Date(timeIntervalSince1970: 1_785_390_120)  // 2026-07-30T05:42:00Z
+
+    @Test func bucketSegmentIsTheWallClockMinute() {
+        // Confirms the diagnosis in code, not just in a commit message: a 60s
+        // bucket is floor(epoch_ms / 60_000), so 05:42:00Z really is 29756502.
+        let key = buildClientIdempotencyKey(
+            scope: "s", entityId: "e", action: "a", now: sentAt)
+        #expect(idempotencyKeyBucket(of: key) == 29_756_502)
+    }
+
+    @Test func pinnedRebuildReproducesAKeyMintedInAnotherBucket() {
+        // A key sent at 05:42:00Z — the same relationship a captured header has to
+        // an assertion running after the minute rolled over.
+        let sent = buildClientIdempotencyKey(
+            scope: "client-consultation-decision", entityId: "bk_1",
+            action: "APPROVE", now: sentAt)
+
+        // Pinning to the captured bucket reproduces it exactly, whenever this runs…
+        #expect(rebuiltIdempotencyKey(
+            matchingBucketOf: sent,
+            scope: "client-consultation-decision", entityId: "bk_1",
+            action: "APPROVE") == sent)
+
+        // …whereas rebuilding against the LIVE clock — what these tests used to do
+        // — does not. That gap IS the flake, and it is only ever visible when the
+        // boundary falls between the send and the assertion. This is the control:
+        // without it, the test above could pass for the wrong reason.
+        #expect(buildClientIdempotencyKey(
+            scope: "client-consultation-decision", entityId: "bk_1",
+            action: "APPROVE") != sent)
+
+        // A wrong action still fails the pinned compare — pinning removes the
+        // clock from the comparison, not the wiring.
+        #expect(rebuiltIdempotencyKey(
+            matchingBucketOf: sent,
+            scope: "client-consultation-decision", entityId: "bk_1",
+            action: "REJECT") != sent)
+
+        // A malformed header is a failure, never a silent match.
+        #expect(rebuiltIdempotencyKey(
+            matchingBucketOf: "not-a-key", scope: "s", entityId: "e") == nil)
+    }
+
+    @Test func bucketFreshnessToleratesExactlyOneRollover() {
+        // Pinning gives up "is the bucket NOW?"; this is what covers it. One bucket
+        // back must pass — a send moments before a boundary is correct — while two
+        // back is stale.
+        //
+        // Both the key and the check are pinned to the same `now`, and the offsets
+        // are measured from the bucket's own start. Writing this the obvious way
+        // (`Date() - 61`) crosses TWO boundaries whenever the current instant is
+        // within a second of one, so it fails about 1 run in 60 — a second flake,
+        // introduced while fixing the first. It failed that way once here before
+        // this rewrite.
+        let now = Date()
+        let start = idempotencyBucketStart(containing: now)
+        func key(at instant: Date) -> String {
+            buildClientIdempotencyKey(scope: "s", entityId: "e", now: instant)
+        }
+
+        #expect(idempotencyKeyBucketIsCurrent(key(at: now), now: now))
+        #expect(idempotencyKeyBucketIsCurrent(
+            key(at: start.addingTimeInterval(-0.5)), now: now))          // one back
+        #expect(idempotencyKeyBucketIsCurrent(
+            key(at: start.addingTimeInterval(-60.5)), now: now) == false)  // two back
+        #expect(idempotencyKeyBucketIsCurrent(key(at: sentAt), now: now) == false)
+    }
+
     @Test func changedBodyProducesDifferentKey() {
         let full = buildClientIdempotencyKey(
             scope: "booking", entityId: "bk_1", action: "refund",

@@ -110,9 +110,14 @@ private extension URLRequest {
             holdId: "hold_1", offeringId: "off_1",
             locationType: "SALON", addOnIds: [], source: "REQUESTED",
             openingId: nil, cancellationPolicyAccepted: false))
-        let expectedKey = buildClientIdempotencyKey(
+        // Pinned to the bucket the sent key used — the body nonce is still compared
+        // exactly; only the 60s clock rollover is taken out of it.
+        let capturedKey = try #require(FinalizeURLProtocol.capturedIdempotencyKey)
+        let expectedKey = rebuiltIdempotencyKey(
+            matchingBucketOf: capturedKey,
             scope: "booking", entityId: "hold_1", action: "finalize",
             nonce: idempotencyNonce(expectedBody))
-        #expect(FinalizeURLProtocol.capturedIdempotencyKey == expectedKey)
+        #expect(capturedKey == expectedKey)
+        #expect(idempotencyKeyBucketIsCurrent(capturedKey))
     }
 }
