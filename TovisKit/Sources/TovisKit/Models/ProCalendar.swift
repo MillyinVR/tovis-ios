@@ -105,6 +105,10 @@ public struct ProCalendarEvent: Decodable, Sendable, Identifiable {
     /// web's ONE helper and rendered verbatim (`display` hides unknown kinds).
     /// Absent on blocks, holds and waitlist rows.
     public let paymentBadge: ProPaymentBadge?
+    /// BOOKING events only (K5/K6): the NR/NNR/RR/RNR client-relationship mark,
+    /// a per-booking SNAPSHOT mapped server-side and rendered verbatim.
+    /// Absent on blocks, holds and waitlist rows.
+    public let relationshipBadge: ProRelationshipBadge?
 
     public var isBooking: Bool { kind == "BOOKING" }
     public var isBlock: Bool { kind == "BLOCK" }

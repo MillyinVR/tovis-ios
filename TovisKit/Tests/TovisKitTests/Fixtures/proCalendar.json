@@ -1,0 +1,209 @@
+{
+  "ok": true,
+  "professionalId": "cmrbry44b0003po0d5f1fcs2u",
+  "scope": "ALL",
+  "location": {
+    "id": "cmrbry47t000fpo0dz0kdy80z",
+    "type": "SALON",
+    "timeZone": "America/Los_Angeles",
+    "timeZoneValid": true
+  },
+  "timeZone": "America/Los_Angeles",
+  "viewportTimeZone": "America/Los_Angeles",
+  "needsTimeZoneSetup": false,
+  "range": {
+    "from": "2026-07-29T00:00:00.000Z",
+    "requestedTo": "2026-07-30T00:00:00.000Z",
+    "effectiveTo": "2026-07-30T00:00:00.000Z",
+    "clamped": false,
+    "maxDays": 42
+  },
+  "events": [
+    {
+      "id": "cmrr6vdjg0033po3nn4o0s6dv",
+      "kind": "BOOKING",
+      "startsAt": "2026-07-29T16:15:00.000Z",
+      "endsAt": "2026-07-29T17:00:00.000Z",
+      "title": "Balayage",
+      "clientName": "Test Client",
+      "clientProfileId": null,
+      "status": "ACCEPTED",
+      "locationType": "SALON",
+      "locationId": "cmrbry47t000fpo0dz0kdy80z",
+      "durationMinutes": 30,
+      "timeZone": "America/Los_Angeles",
+      "timeZoneSource": "BOOKING_SNAPSHOT",
+      "localDateKey": "2026-07-29",
+      "viewLocalDateKey": "2026-07-29",
+      "paymentBadge": {
+        "kind": "DEPOSIT_PAID",
+        "label": "Deposit paid $40.00",
+        "tone": "info",
+        "significant": true
+      },
+      "relationshipBadge": {
+        "kind": "NR",
+        "label": "NR",
+        "description": "New client · requested you",
+        "tone": "accent",
+        "significant": true
+      },
+      "details": {
+        "serviceName": "Balayage",
+        "bufferMinutes": 15,
+        "serviceItems": [
+          {
+            "id": "cmrzyjcqe0007polv8x9lka6b",
+            "name": "Balayage",
+            "durationMinutes": 180,
+            "price": "180",
+            "sortOrder": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "cmrobpmp70003poyqsuts9v4v",
+      "kind": "BOOKING",
+      "startsAt": "2026-07-29T17:00:00.000Z",
+      "endsAt": "2026-07-29T17:45:00.000Z",
+      "title": "Balayage",
+      "clientName": "DriveTest Shell",
+      "clientProfileId": "cmrobpmp40001poyqx5glt0fe",
+      "status": "COMPLETED",
+      "locationType": "SALON",
+      "locationId": "cmrbry47t000fpo0dz0kdy80z",
+      "durationMinutes": 30,
+      "timeZone": "America/Los_Angeles",
+      "timeZoneSource": "BOOKING_SNAPSHOT",
+      "localDateKey": "2026-07-29",
+      "viewLocalDateKey": "2026-07-29",
+      "paymentBadge": {
+        "kind": "DISPUTED",
+        "label": "⚠ Disputed",
+        "tone": "danger",
+        "significant": true
+      },
+      "relationshipBadge": {
+        "kind": "RNR",
+        "label": "RNR",
+        "description": "Returning client · via discovery",
+        "tone": "info",
+        "significant": true
+      },
+      "details": {
+        "serviceName": "Balayage",
+        "bufferMinutes": 15,
+        "serviceItems": []
+      }
+    },
+    {
+      "id": "cmrr5vuca0017po3n02mc7t6e",
+      "kind": "BOOKING",
+      "startsAt": "2026-07-29T17:45:00.000Z",
+      "endsAt": "2026-07-29T18:30:00.000Z",
+      "title": "Balayage",
+      "clientName": "Test Client",
+      "clientProfileId": null,
+      "status": "ACCEPTED",
+      "locationType": "SALON",
+      "locationId": "cmrbry47t000fpo0dz0kdy80z",
+      "durationMinutes": 30,
+      "timeZone": "America/Los_Angeles",
+      "timeZoneSource": "BOOKING_SNAPSHOT",
+      "localDateKey": "2026-07-29",
+      "viewLocalDateKey": "2026-07-29",
+      "paymentBadge": {
+        "kind": "DEPOSIT_DUE",
+        "label": "Deposit due",
+        "tone": "pending",
+        "significant": true
+      },
+      "relationshipBadge": {
+        "kind": "RR",
+        "label": "RR",
+        "description": "Returning client · requested you",
+        "tone": "neutral",
+        "significant": true
+      },
+      "details": {
+        "serviceName": "Balayage",
+        "bufferMinutes": 15,
+        "serviceItems": []
+      }
+    }
+  ],
+  "canSalon": true,
+  "canMobile": true,
+  "stats": {
+    "todaysBookings": 0,
+    "availableHours": null,
+    "pendingRequests": 0,
+    "blockedHours": 0
+  },
+  "blockedMinutesToday": 0,
+  "autoAcceptBookings": false,
+  "management": {
+    "todaysBookings": [],
+    "pendingRequests": [],
+    "waitlistToday": [
+      {
+        "id": "waitlist:cmrr3m7kl0003poai8vxy1mou",
+        "kind": "BOOKING",
+        "startsAt": "2026-07-19T01:09:55.030Z",
+        "endsAt": "2026-07-19T01:09:55.030Z",
+        "title": "Balayage",
+        "clientName": "Email Only",
+        "clientProfileId": null,
+        "status": "WAITLIST",
+        "locationType": null,
+        "locationId": null,
+        "durationMinutes": 0,
+        "timeZone": "America/Los_Angeles",
+        "timeZoneSource": "PROFESSIONAL",
+        "localDateKey": "2026-07-18",
+        "viewLocalDateKey": "2026-07-30",
+        "preferenceLabel": "Any time",
+        "offerHref": "/pro/bookings/new?clientId=cmrbry47n000bpo0dhw9pdc8b&offeringId=cmrbry49b0055po0dbbtbpp35",
+        "waitlistEntryId": "cmrr3m7kl0003poai8vxy1mou",
+        "serviceId": "cmrbry482000xpo0di0hbjtni",
+        "offeringId": "cmrbry49b0055po0dbbtbpp35",
+        "pendingOffer": null,
+        "details": {
+          "serviceName": "Balayage",
+          "bufferMinutes": 0,
+          "serviceItems": []
+        }
+      },
+      {
+        "id": "waitlist:cmrr3m7kn0005poaixg0l2jt3",
+        "kind": "BOOKING",
+        "startsAt": "2026-07-19T01:09:55.032Z",
+        "endsAt": "2026-07-19T01:09:55.032Z",
+        "title": "Balayage",
+        "clientName": "Phone Only",
+        "clientProfileId": null,
+        "status": "WAITLIST",
+        "locationType": null,
+        "locationId": null,
+        "durationMinutes": 0,
+        "timeZone": "America/Los_Angeles",
+        "timeZoneSource": "PROFESSIONAL",
+        "localDateKey": "2026-07-18",
+        "viewLocalDateKey": "2026-07-30",
+        "preferenceLabel": "Any time",
+        "offerHref": "/pro/bookings/new?clientId=cmrbry47p000dpo0dcsf18d0l&offeringId=cmrbry49b0055po0dbbtbpp35",
+        "waitlistEntryId": "cmrr3m7kn0005poaixg0l2jt3",
+        "serviceId": "cmrbry482000xpo0di0hbjtni",
+        "offeringId": "cmrbry49b0055po0dbbtbpp35",
+        "pendingOffer": null,
+        "details": {
+          "serviceName": "Balayage",
+          "bufferMinutes": 0,
+          "serviceItems": []
+        }
+      }
+    ],
+    "blockedToday": []
+  }
+}

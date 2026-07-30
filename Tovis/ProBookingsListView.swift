@@ -176,11 +176,20 @@ struct ProBookingsListView: View {
                         .foregroundStyle(BrandColor.textPrimary)
                         .lineLimit(1)
                     BrandPill(text: booking.statusLabel, tint: statusTone(booking.status))
+                    // Relationship mark (K5/K6) — web RelationshipBadgePill parity.
+                    // Rendered before payment, like web. `significant` is what
+                    // keeps UNKNOWN (imported / pro-created / legacy) rows blank:
+                    // absence is the honest display for "nobody recorded this".
+                    if let relationship = booking.relationshipBadge?.display,
+                       relationship.significant {
+                        BrandPill(text: relationship.label, tint: wireBadgeTone(relationship.tone))
+                            .accessibilityLabel(relationship.description)
+                    }
                     // Payment state (K2) — web PaymentPill parity: the server-derived
                     // badge rendered verbatim, `significant` gating it so upcoming
                     // rows aren't a wall of "Unpaid" (the helper owns that call).
                     if let payment = booking.paymentBadge?.display, payment.significant {
-                        BrandPill(text: payment.label, tint: paymentBadgeTone(payment.tone))
+                        BrandPill(text: payment.label, tint: wireBadgeTone(payment.tone))
                     }
                     if booking.needsCloseout {
                         BrandPill(text: "Payment due", tint: BrandColor.gold)

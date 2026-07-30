@@ -512,6 +512,19 @@ struct ProClientChartView: View {
                                 BrandPill(
                                     text: BookingStatusPresentation.label(b.status),
                                     tint: statusTone(b.status))
+                                // The NR/NNR/RR/RNR mark (K6), on the viewing
+                                // pro's OWN rows only — the mark answers "did
+                                // this client request ME", so on another pro's
+                                // booking it would misread. The server already
+                                // sends nil there; the `isMine` check is the
+                                // belt to that braces, so a future server that
+                                // sent one anyway still couldn't render it here.
+                                if b.isMine, let relationship = b.relationshipBadge?.display,
+                                   relationship.significant {
+                                    BrandPill(text: relationship.label,
+                                              tint: wireBadgeTone(relationship.tone))
+                                        .accessibilityLabel(relationship.description)
+                                }
                                 if !b.isMine { Text("with \(b.proName)").font(BrandFont.body(11)).foregroundStyle(BrandColor.textMuted) }
                             }
                             Text(Wire.dateTime(b.scheduledFor, timeZone: b.timeZone)).font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)

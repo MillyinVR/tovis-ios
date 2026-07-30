@@ -777,6 +777,18 @@ struct ProCalendarTimeGrid: View {
             return display
         }()
 
+        // Relationship mark (K6): the NR/NNR/RR/RNR salon-book shorthand, a
+        // per-booking snapshot mapped server-side. Same room test as the payment
+        // chip — and the same `significant` gate, which is what keeps UNKNOWN
+        // (imported / pro-created / legacy) rows showing NOTHING rather than a
+        // wall of "Unknown". The helper owns that call, not this view.
+        let relationshipBadge: ProRelationshipBadge.Display? = {
+            guard event.isBooking, colWidth >= 150,
+                  let display = event.relationshipBadge?.display, display.significant
+            else { return nil }
+            return display
+        }()
+
         // Location chip (K4): WHERE this job is, on a grid that mixes locations.
         // Deliberately a WORD, not a colour — status owns the tile's fill and D2
         // gave the accent stripe to service, so a location hue would be a fourth
@@ -804,6 +816,7 @@ struct ProCalendarTimeGrid: View {
             pending: pending,
             conflict: conflict,
             paymentBadge: paymentBadge,
+            relationshipBadge: relationshipBadge,
             locationLabel: locationLabel
         )
         .padding(.horizontal, 1.5)
@@ -855,6 +868,20 @@ struct ProCalendarTimeGrid: View {
         }
     }
 
+    /// One capsule chip on a tile's time line — location (K4), relationship mark
+    /// (K6) and payment state (K2) are the same visual object in three tints, so
+    /// they share one builder rather than three copies of the same modifier stack.
+    private func tileChip(_ text: String, tint: Color) -> some View {
+        Text(text)
+            .font(BrandFont.mono(9))
+            .foregroundStyle(tint)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(tint.opacity(0.14))
+            .clipShape(Capsule())
+            .lineLimit(1)
+    }
+
     /// The tile's visual body (shared by draggable + static tiles). `lifted` adds a
     /// shadow/scale while dragging; `pending` outlines a dropped-but-unconfirmed move;
     /// `conflict` is the passive double-book signal (amber ring + corner glyph).
@@ -868,6 +895,7 @@ struct ProCalendarTimeGrid: View {
         pending: Bool,
         conflict: Bool,
         paymentBadge: ProPaymentBadge.Display? = nil,
+        relationshipBadge: ProRelationshipBadge.Display? = nil,
         locationLabel: String? = nil
     ) -> some View {
         // Drag states own the ring; otherwise a conflict paints it amber.
@@ -895,24 +923,16 @@ struct ProCalendarTimeGrid: View {
                         // the payment chip on the title row instead, so the two
                         // never compete for the same line there.)
                         if let locationLabel {
-                            Text(locationLabel)
-                                .font(BrandFont.mono(9))
-                                .foregroundStyle(BrandColor.textSecondary)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 1)
-                                .background(BrandColor.textSecondary.opacity(0.14))
-                                .clipShape(Capsule())
-                                .lineLimit(1)
+                            tileChip(locationLabel, tint: BrandColor.textSecondary)
+                        }
+                        // Relationship before payment, mirroring web's reading
+                        // order (mark, then money) — and it is the narrowest of
+                        // the three, so it survives a tight column.
+                        if let relationship = relationshipBadge {
+                            tileChip(relationship.label, tint: wireBadgeTone(relationship.tone))
                         }
                         if let payment = paymentBadge {
-                            Text(payment.label)
-                                .font(BrandFont.mono(9))
-                                .foregroundStyle(paymentBadgeTone(payment.tone))
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 1)
-                                .background(paymentBadgeTone(payment.tone).opacity(0.14))
-                                .clipShape(Capsule())
-                                .lineLimit(1)
+                            tileChip(payment.label, tint: wireBadgeTone(payment.tone))
                         }
                     }
                 }
@@ -1210,6 +1230,14 @@ struct ProCalendarTimeGrid: View {
             ? (event.title.isEmpty ? "Blocked time" : event.title)
             : (event.isHold ? holdTitle(event) : event.clientName)
         var base = "\(name), \(timeLabel(event.startsAt))"
+        // The relationship mark is SPELLED OUT here ("New client · requested
+        // you"), never the bare letters — web's aria label does the same,
+        // because "NR" read aloud is not a sentence. Like payment, it is in the
+        // spoken label whenever significant, NOT gated on the chip having room.
+        if event.isBooking, let relationship = event.relationshipBadge?.display,
+           relationship.significant {
+            base += ", \(relationship.description)"
+        }
         // Payment state joins the spoken label whenever it's significant — like
         // web's card aria label, NOT gated on the visual chip having room.
         if event.isBooking, let payment = event.paymentBadge?.display, payment.significant {

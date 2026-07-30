@@ -137,6 +137,30 @@ const CHECKS = [
     def: 'ProWorkingHoursSaveOk',
     pick: (d) => [d],
   },
+  // GET /api/v1/pro/calendar — the payload is at the ROOT. A VERBATIM capture
+  // off the running route under `scope=ALL` (2026-07-30), so it carries the
+  // whole K-series accretion at once: K1's `paymentBadge`, K3's `scope` +
+  // `locationId`, K5's `relationshipBadge`, and two `management.waitlistToday`
+  // rows (the synthetic BOOKING-kind shape with a null location).
+  //
+  // Until now this feed had NO contract coverage at all — the response type
+  // lived inline in the route and had no name to export (K4-B). Every field the
+  // chain has added crossed to the device unchecked.
+  {
+    file: 'proCalendar.json',
+    def: 'ProCalendarResponseDTO',
+    pick: (d) => [d],
+  },
+  // GET /api/v1/pro/bookings — buckets + stats; validate every row, so a
+  // required field lost on ANY of them fails here rather than at runtime. The
+  // fixture models TODAY's server: both badges present on every row (K5-B).
+  // The pre-deploy shape — neither badge sent — is a device-side concern and is
+  // pinned by inline JSON in DecodingTests, not by a stale fixture row.
+  {
+    file: 'proBookingsList.json',
+    def: 'ProBookingListItemDTO',
+    pick: (d) => [...d.today, ...d.upcoming, ...d.past, ...d.cancelled],
+  },
 ]
 
 function fail(msg) {

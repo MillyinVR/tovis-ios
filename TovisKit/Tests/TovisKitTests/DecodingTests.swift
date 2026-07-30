@@ -771,9 +771,47 @@ func fixture(_ name: String) throws -> Data {
 
         #expect(res.upcoming[0].paymentBadge?.display?.label == "Deposit due")
 
-        // The field is absent on today's prod payloads (pre-#787-deploy) and
-        // must stay optional — the cancelled row pins that path.
-        #expect(res.cancelled[0].paymentBadge == nil)
+        // Relationship mark (K6) — same rule: consumed VERBATIM, vocabulary
+        // identical to web's lib/booking/relationshipLabel.ts.
+        let nr = try #require(first.relationshipBadge?.display)
+        #expect(nr.kind == "NR")
+        #expect(nr.label == "NR")
+        #expect(nr.description == "New client · requested you")
+        #expect(nr.tone == "accent")
+        #expect(nr.significant)
+
+        // D1's fourth cell rides the wire like any other mark.
+        #expect(res.today[1].relationshipBadge?.display?.kind == "RNR")
+        #expect(res.upcoming[0].relationshipBadge?.display?.label == "RR")
+
+        // UNKNOWN is the one non-significant mark — every surface renders
+        // NOTHING for it, so the cancelled row pins that it still DECODES.
+        let unknown = try #require(res.cancelled[0].relationshipBadge?.display)
+        #expect(unknown.kind == "UNKNOWN")
+        #expect(!unknown.significant)
+    }
+
+    // A server that predates the badge fields sends neither. This fixture-free
+    // case is what keeps both properties optional on the device: the contract
+    // fixture above models TODAY's server (both badges required, which is what
+    // scripts/contract/validate-fixtures.mjs checks it against), so the
+    // pre-deploy shape has to be pinned here instead of by a stale fixture row.
+    @Test func decodesAProBookingsListRowWithNoBadgesAtAll() throws {
+        let row = try JSONDecoder().decode(ProBookingListItem.self, from: Data("""
+        {
+          "id": "bk_legacy_1", "status": "COMPLETED", "statusLabel": "Completed",
+          "sessionStep": null, "scheduledFor": "2026-07-20T02:32:00.000Z",
+          "timeZone": "America/Los_Angeles", "whenLabel": "Mon, Jul 20 · 7:32 PM",
+          "serviceName": "Cut", "addOnNames": [], "durationMinutes": 45,
+          "total": "80.00",
+          "client": { "id": "cl_1", "fullName": "Jordan Rivera", "email": null,
+                      "phone": null, "canViewClient": true },
+          "location": { "formattedAddress": null, "lat": null, "lng": null, "isMobile": false },
+          "needsCloseout": false, "startedAt": null, "finishedAt": null
+        }
+        """.utf8))
+        #expect(row.paymentBadge == nil)
+        #expect(row.relationshipBadge == nil)
     }
 
     // POST /api/v1/pro/bookings — the create response. When the booking creates
@@ -1238,6 +1276,12 @@ func fixture(_ name: String) throws -> Data {
         #expect(chart.allergies.first?.recordedBy == "Studio Lumen")
         #expect(chart.noteGroups.first?.notes.first?.body == "Prefers cooler tones.")
         #expect(chart.history.first?.isMine == true)
+        // The K6 mark rides the chart's OWN rows only. Another pro's row carries
+        // no mark at all — "did this client request ME" has no answer there, and
+        // the server withholds it rather than leaving it to the view.
+        #expect(chart.history.first?.relationshipBadge?.display?.label == "RR")
+        let otherProRow = try #require(chart.history.first(where: { !$0.isMine }))
+        #expect(otherProRow.relationshipBadge == nil)
         #expect(chart.products.first?.brand == "Olaplex")
         #expect(chart.reviewsLeft.first?.rating == 5)
         #expect(chart.proFeedback.first?.title == "Punctual")
