@@ -194,11 +194,13 @@ func statusTone(_ status: String?) -> Color {
     }
 }
 
-/// Color for a payment badge's wire tone — the web `Badge` tone vocabulary
-/// (K1's `paymentBadge.tone`, consumed verbatim; the state is never recomputed
-/// on device). Lives here next to `statusTone` (the B10 seam) so no screen
-/// grows its own payment palette. An unrecognized tone reads muted, never loud.
-func paymentBadgeTone(_ tone: String?) -> Color {
+/// Color for a server-derived badge's wire tone — the web `Badge` tone
+/// vocabulary, consumed verbatim (the state is never recomputed on device).
+/// Shared by K1's `paymentBadge.tone` and K5's `relationshipBadge.tone`: both
+/// come from the same web vocabulary, so they get ONE table, not one each.
+/// Lives here next to `statusTone` (the B10 seam) so no screen grows its own
+/// badge palette. An unrecognized tone reads muted, never loud.
+func wireBadgeTone(_ tone: String?) -> Color {
     switch tone {
     case "danger": return BrandColor.ember
     case "success": return BrandColor.emerald

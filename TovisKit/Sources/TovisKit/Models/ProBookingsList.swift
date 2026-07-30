@@ -48,6 +48,11 @@ public struct ProBookingListItem: Decodable, Sendable, Identifiable {
     /// rendered verbatim (`display` hides unknown kinds). Optional so the app
     /// keeps decoding today's prod payloads until web #787 deploys.
     public let paymentBadge: ProPaymentBadge?
+    /// The NR/NNR/RR/RNR client-relationship mark (K5/K6) — a per-booking
+    /// SNAPSHOT mapped server-side by the one helper and rendered verbatim.
+    /// Optional so the app keeps decoding payloads from a server that predates
+    /// web #797.
+    public let relationshipBadge: ProRelationshipBadge?
 
     public var isInProgress: Bool { status.uppercased() == "IN_PROGRESS" }
 }

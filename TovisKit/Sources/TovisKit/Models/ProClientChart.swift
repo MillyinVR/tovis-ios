@@ -106,6 +106,11 @@ public struct ProChartBooking: Decodable, Sendable, Identifiable {
     public let categoryName: String?
     public let proName: String
     public let isMine: Bool
+    /// The NR/NNR/RR/RNR mark (K5/K6). The server sends it ONLY on the viewing
+    /// pro's own rows — the mark answers "did this client request ME", so on
+    /// another pro's booking it would misread — so this is nil whenever
+    /// `isMine` is false, by construction rather than by the view remembering.
+    public let relationshipBadge: ProRelationshipBadge?
     public let total: String?
     public let aftercareNotes: String?
 }

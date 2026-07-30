@@ -2,7 +2,11 @@
   "ok": true,
   "scheduleTimeZone": "America/Los_Angeles",
   "statusFilter": "ALL",
-  "stats": { "today": 2, "inSession": 1, "paymentDue": 1 },
+  "stats": {
+    "today": 2,
+    "inSession": 1,
+    "paymentDue": 1
+  },
   "today": [
     {
       "id": "bk_today_1",
@@ -13,7 +17,9 @@
       "timeZone": "America/Los_Angeles",
       "whenLabel": "Mon, Jun 29 · 10:00 AM",
       "serviceName": "Balayage",
-      "addOnNames": ["Toner"],
+      "addOnNames": [
+        "Toner"
+      ],
       "durationMinutes": 120,
       "total": "242.00",
       "client": {
@@ -25,8 +31,8 @@
       },
       "location": {
         "formattedAddress": "123 Palm Ave, Encinitas, CA",
-        "lat": 33.0370,
-        "lng": -117.2920,
+        "lat": 33.037,
+        "lng": -117.292,
         "isMobile": false
       },
       "needsCloseout": true,
@@ -36,6 +42,13 @@
         "kind": "DEPOSIT_PAID",
         "label": "Deposit paid $40.00",
         "tone": "info",
+        "significant": true
+      },
+      "relationshipBadge": {
+        "kind": "NR",
+        "label": "NR",
+        "description": "New client · requested you",
+        "tone": "accent",
         "significant": true
       }
     },
@@ -72,6 +85,13 @@
         "label": "Unpaid",
         "tone": "neutral",
         "significant": false
+      },
+      "relationshipBadge": {
+        "kind": "RNR",
+        "label": "RNR",
+        "description": "Returning client · via discovery",
+        "tone": "info",
+        "significant": true
       }
     }
   ],
@@ -85,7 +105,10 @@
       "timeZone": "America/Los_Angeles",
       "whenLabel": "Thu, Jul 2 · 11:00 AM",
       "serviceName": "Full Color",
-      "addOnNames": ["Olaplex", "Blowout"],
+      "addOnNames": [
+        "Olaplex",
+        "Blowout"
+      ],
       "durationMinutes": 150,
       "total": "210.00",
       "client": {
@@ -108,6 +131,13 @@
         "kind": "DEPOSIT_DUE",
         "label": "Deposit due",
         "tone": "pending",
+        "significant": true
+      },
+      "relationshipBadge": {
+        "kind": "RR",
+        "label": "RR",
+        "description": "Returning client · requested you",
+        "tone": "neutral",
         "significant": true
       }
     }
@@ -141,7 +171,20 @@
       },
       "needsCloseout": false,
       "startedAt": null,
-      "finishedAt": null
+      "finishedAt": null,
+      "relationshipBadge": {
+        "kind": "UNKNOWN",
+        "label": "Unknown",
+        "description": "Not classified",
+        "tone": "neutral",
+        "significant": false
+      },
+      "paymentBadge": {
+        "kind": "REFUNDED",
+        "label": "Refunded",
+        "tone": "danger",
+        "significant": true
+      }
     }
   ]
 }

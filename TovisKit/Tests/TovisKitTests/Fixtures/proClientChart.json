@@ -14,17 +14,43 @@
     "reviewCount": 2
   },
   "relationshipIntelligence": {
-    "lifetimeValue": { "value": "$720", "hint": "$960 platform-wide" },
-    "visits": { "value": "3", "hint": "4 platform-wide" },
-    "cadence": { "value": "~every 6 wks", "hint": "58 days since last visit" },
-    "leadTime": { "value": "9 days ahead", "hint": null },
-    "pattern": { "value": "Saturday · Afternoon", "hint": "1 cancelled" },
-    "rebooking": { "value": "At risk", "hint": "Birthday in 12d" },
+    "lifetimeValue": {
+      "value": "$720",
+      "hint": "$960 platform-wide"
+    },
+    "visits": {
+      "value": "3",
+      "hint": "4 platform-wide"
+    },
+    "cadence": {
+      "value": "~every 6 wks",
+      "hint": "58 days since last visit"
+    },
+    "leadTime": {
+      "value": "9 days ahead",
+      "hint": null
+    },
+    "pattern": {
+      "value": "Saturday · Afternoon",
+      "hint": "1 cancelled"
+    },
+    "rebooking": {
+      "value": "At risk",
+      "hint": "Birthday in 12d"
+    },
     "preferredContactMethod": "SMS",
     "referralSource": "Referred by a client",
     "flags": [
-      { "key": "retention-risk", "label": "Lapsed 8 wks · usual ~6 wk", "tone": "warn" },
-      { "key": "birthday-soon", "label": "Birthday in 12 days", "tone": "success" }
+      {
+        "key": "retention-risk",
+        "label": "Lapsed 8 wks · usual ~6 wk",
+        "tone": "warn"
+      },
+      {
+        "key": "birthday-soon",
+        "label": "Birthday in 12 days",
+        "tone": "success"
+      }
     ]
   },
   "alertBanner": "Sensitive scalp — patch test before color.",
@@ -44,7 +70,12 @@
       "kind": "GENERAL",
       "label": "General",
       "notes": [
-        { "id": "n_1", "title": null, "body": "Prefers cooler tones.", "createdAt": "2026-06-01T00:00:00.000Z" }
+        {
+          "id": "n_1",
+          "title": null,
+          "body": "Prefers cooler tones.",
+          "createdAt": "2026-06-01T00:00:00.000Z"
+        }
       ]
     }
   ],
@@ -59,20 +90,67 @@
       "proName": "Studio Lumen",
       "isMine": true,
       "total": "180.00",
-      "aftercareNotes": "Gloss refresh in 6 weeks."
+      "aftercareNotes": "Gloss refresh in 6 weeks.",
+      "relationshipBadge": {
+        "kind": "RR",
+        "label": "RR",
+        "description": "Returning client · requested you",
+        "tone": "neutral",
+        "significant": true
+      }
+    },
+    {
+      "id": "bk_other_pro_1",
+      "status": "COMPLETED",
+      "scheduledFor": "2026-07-15T18:00:00.000Z",
+      "timeZone": "America/Los_Angeles",
+      "serviceName": "Cut",
+      "categoryName": "Hair",
+      "proName": "Other Pro",
+      "isMine": false,
+      "total": "180.00",
+      "aftercareNotes": null,
+      "relationshipBadge": null
     }
   ],
   "products": [
-    { "id": "pr_1", "name": "Purple Shampoo", "brand": "Olaplex", "note": "Twice a week." }
+    {
+      "id": "pr_1",
+      "name": "Purple Shampoo",
+      "brand": "Olaplex",
+      "note": "Twice a week."
+    }
   ],
   "reviewsLeft": [
-    { "id": "rv_1", "rating": 5, "headline": "Love it", "body": "Best balayage.", "proName": "Studio Lumen", "createdAt": "2026-07-02T00:00:00.000Z" }
+    {
+      "id": "rv_1",
+      "rating": 5,
+      "headline": "Love it",
+      "body": "Best balayage.",
+      "proName": "Studio Lumen",
+      "createdAt": "2026-07-02T00:00:00.000Z"
+    }
   ],
   "proFeedback": [
-    { "id": "fb_1", "title": "Punctual", "body": "Always on time.", "proName": "Studio Lumen", "createdAt": "2026-07-02T00:00:00.000Z" }
+    {
+      "id": "fb_1",
+      "title": "Punctual",
+      "body": "Always on time.",
+      "proName": "Studio Lumen",
+      "createdAt": "2026-07-02T00:00:00.000Z"
+    }
   ],
   "photos": [
-    { "id": "ph_1", "bookingId": "bk_1", "phase": "AFTER", "caption": "Finished look", "isMine": true, "serviceName": "Balayage", "when": "2026-07-01T19:00:00.000Z", "imageUrl": "https://x/after.jpg" }
+    {
+      "id": "ph_1",
+      "bookingId": "bk_1",
+      "phase": "AFTER",
+      "caption": "Finished look",
+      "isMine": true,
+      "serviceName": "Balayage",
+      "when": "2026-07-01T19:00:00.000Z",
+      "imageUrl": "https://x/after.jpg"
+    }
   ],
   "technicalEnabled": false
 }
