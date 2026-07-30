@@ -76,14 +76,18 @@ public final class ProCalendarService: Sendable {
     }
 
     /// POST /api/v1/pro/calendar/blocked — create a block. `startsAt`/`endsAt` are
-    /// ISO-8601; `locationId` is required. Server validates the 15min–24h window
-    /// and rejects overlaps (booking/hold/block) with a user-facing message.
+    /// ISO-8601. Pass `locationId: nil` to block EVERY location: the field is then
+    /// omitted from the body and the server stores `locationId: null`, which every
+    /// conflict/availability read already treats as occupying all locations. The
+    /// server still requires the pro to have at least one bookable location
+    /// (`409 NO_BOOKABLE_LOCATION`). Validates the 15min–24h window and rejects
+    /// overlaps (booking/hold/block) with a user-facing message.
     @discardableResult
     public func createBlock(
         startsAt: String,
         endsAt: String,
         note: String?,
-        locationId: String
+        locationId: String?
     ) async throws -> ProCalendarBlock {
         let body = try JSONEncoder.canonical.encode(CreateBlockRequest(
             startsAt: startsAt, endsAt: endsAt, note: note, locationId: locationId))

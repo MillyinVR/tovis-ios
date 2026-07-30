@@ -25,6 +25,11 @@ struct ProBlockTimeSheet: View {
     @State private var end: Date
     @State private var note: String
     @State private var locationId: String?
+    /// Create-only: block EVERY location instead of one. Posts no `locationId`,
+    /// which the server stores as `locationId: null` — the block then occupies
+    /// this pro's time at every location, which is how every conflict and
+    /// availability read already interprets it (tovis-app #794).
+    @State private var blockAllLocations = false
     @State private var saving = false
     @State private var deleting = false
     @State private var errorText: String?
@@ -69,7 +74,8 @@ struct ProBlockTimeSheet: View {
         durationMinutes >= 15 && durationMinutes <= 24 * 60
     }
     private var canSave: Bool {
-        !saving && !deleting && windowValid && (isEditing || locationId != nil)
+        !saving && !deleting && windowValid
+            && (isEditing || blockAllLocations || locationId != nil)
     }
 
     var body: some View {
@@ -99,9 +105,38 @@ struct ProBlockTimeSheet: View {
                     }
 
                     // Location is fixed on edit (the PATCH route doesn't move it);
-                    // only offer a picker on create when there's a real choice.
+                    // only offer a choice on create when there's a real one.
                     if !isEditing && locations.count > 1 {
-                        field("Location") { locationMenu }
+                        field("Location") {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Toggle(isOn: $blockAllLocations) {
+                                    Text("Block all locations")
+                                        .font(BrandFont.body(15))
+                                        .foregroundStyle(BrandColor.textPrimary)
+                                }
+                                .tint(BrandColor.accent)
+                                .disabled(saving)
+
+                                if blockAllLocations {
+                                    Text("This block applies to every location.")
+                                        .font(BrandFont.body(12))
+                                        .foregroundStyle(BrandColor.textSecondary)
+                                } else {
+                                    locationMenu
+                                }
+                            }
+                        }
+                    }
+
+                    // An existing block with no location of its own is the pro's
+                    // time everywhere — say so, rather than showing nothing and
+                    // letting it read as a block at the location they're viewing.
+                    if case let .edit(block) = mode, block.locationId == nil {
+                        field("Location") {
+                            Text("All locations")
+                                .font(BrandFont.body(15))
+                                .foregroundStyle(BrandColor.textPrimary)
+                        }
                     }
 
                     field("Reason") {
@@ -235,12 +270,18 @@ struct ProBlockTimeSheet: View {
             do {
                 switch mode {
                 case .create:
-                    guard let locationId else { saving = false; return }
+                    // Unscoped ("all locations") is a DELIBERATE nil; a location
+                    // the pro simply never picked is not, and must still refuse.
+                    let scope = blockAllLocations ? nil : locationId
+                    guard blockAllLocations || scope != nil else {
+                        saving = false
+                        return
+                    }
                     try await session.client.proCalendar.createBlock(
                         startsAt: ProCalendarGrid.iso(start),
                         endsAt: ProCalendarGrid.iso(end),
                         note: trimmed.isEmpty ? nil : trimmed,
-                        locationId: locationId)
+                        locationId: scope)
                 case let .edit(block):
                     // Send the (possibly empty) note so clearing it persists.
                     try await session.client.proCalendar.updateBlock(

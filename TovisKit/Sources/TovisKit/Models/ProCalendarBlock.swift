@@ -54,13 +54,17 @@ public struct ProLocationsResponse: Decodable, Sendable {
 
 // ─── Request bodies ─────────────────────────────────────────────────────────────
 
-/// `POST /pro/calendar/blocked` body. `locationId` is required; a nil `note` is
-/// omitted (synthesized `encodeIfPresent`).
+/// `POST /pro/calendar/blocked` body. A nil `note` is omitted (synthesized
+/// `encodeIfPresent`), and so is a nil `locationId` — which is the point: the
+/// server reads an ABSENT locationId as "blocks all locations", matching
+/// `CalendarBlock.locationId String?` in the Prisma schema. Note it must be
+/// omitted rather than sent as `""`; the route refuses an empty string precisely
+/// so blanket-blocking every location cannot happen by accident (tovis-app #794).
 struct CreateBlockRequest: Encodable {
     let startsAt: String
     let endsAt: String
     let note: String?
-    let locationId: String
+    let locationId: String?
 }
 
 /// `PATCH /pro/calendar/blocked/[id]` body. The edit flow always sends the window
