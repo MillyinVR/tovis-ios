@@ -13,7 +13,8 @@ struct ProBlockTimeSheet: View {
     }
 
     let mode: Mode
-    /// Bookable locations only (create must pin to one).
+    /// The pro's bookable locations. Create picks one (or "all locations"); edit
+    /// can now MOVE the block between them.
     let locations: [ProLocationSummary]
     let timeZone: TimeZone
     let onSaved: () -> Void
@@ -25,11 +26,15 @@ struct ProBlockTimeSheet: View {
     @State private var end: Date
     @State private var note: String
     @State private var locationId: String?
-    /// Create-only: block EVERY location instead of one. Posts no `locationId`,
-    /// which the server stores as `locationId: null` — the block then occupies
-    /// this pro's time at every location, which is how every conflict and
-    /// availability read already interprets it (tovis-app #794).
+    /// Block EVERY location instead of one. On create this posts no `locationId`;
+    /// on edit it sends an explicit null. Either way the server stores
+    /// `locationId: null` — the block then occupies this pro's time at every
+    /// location, which is how every conflict and availability read already
+    /// interprets it (tovis-app #794).
     @State private var blockAllLocations = false
+    /// The scope the block had when the sheet opened, so an untouched save sends
+    /// no `locationId` at all and cannot widen the block by accident.
+    private let originalLocationId: String?
     @State private var saving = false
     @State private var deleting = false
     @State private var errorText: String?
@@ -62,7 +67,28 @@ struct ProBlockTimeSheet: View {
             _end = State(initialValue: parsedEnd)
             _note = State(initialValue: block.note ?? "")
             _locationId = State(initialValue: block.locationId)
+            // A block with no location of its own already applies everywhere.
+            _blockAllLocations = State(initialValue: block.locationId == nil)
         }
+
+        switch mode {
+        case .create:
+            originalLocationId = nil
+        case let .edit(block):
+            originalLocationId = block.locationId
+        }
+    }
+
+    /// What the PATCH should say about the location: nothing at all unless the
+    /// pro actually changed it.
+    private var scopeUpdate: BlockScopeUpdate {
+        let selected = blockAllLocations ? nil : locationId
+
+        guard selected != originalLocationId else { return .unchanged }
+
+        guard let selected else { return .allLocations }
+
+        return .location(selected)
     }
 
     // MARK: - Validation (mirrors server `validateBlockWindow`: 15min–24h)
@@ -75,7 +101,7 @@ struct ProBlockTimeSheet: View {
     }
     private var canSave: Bool {
         !saving && !deleting && windowValid
-            && (isEditing || blockAllLocations || locationId != nil)
+            && (blockAllLocations || locationId != nil)
     }
 
     var body: some View {
@@ -104,9 +130,11 @@ struct ProBlockTimeSheet: View {
                             .foregroundStyle(BrandColor.amber)
                     }
 
-                    // Location is fixed on edit (the PATCH route doesn't move it);
-                    // only offer a choice on create when there's a real one.
-                    if !isEditing && locations.count > 1 {
+                    // Offered on create AND edit: a block can be moved between
+                    // locations, which is also the only way to re-home one that a
+                    // location delete orphaned. Hidden when there is no real
+                    // choice to make.
+                    if locations.count > 1 {
                         field("Location") {
                             VStack(alignment: .leading, spacing: 12) {
                                 Toggle(isOn: $blockAllLocations) {
@@ -128,10 +156,10 @@ struct ProBlockTimeSheet: View {
                         }
                     }
 
-                    // An existing block with no location of its own is the pro's
-                    // time everywhere — say so, rather than showing nothing and
-                    // letting it read as a block at the location they're viewing.
-                    if case let .edit(block) = mode, block.locationId == nil {
+                    // With one location there is nothing to pick, but an existing
+                    // block that applies everywhere must still SAY so rather than
+                    // reading as a block at that one location.
+                    if locations.count <= 1, blockAllLocations {
                         field("Location") {
                             Text("All locations")
                                 .font(BrandFont.body(15))
@@ -283,12 +311,14 @@ struct ProBlockTimeSheet: View {
                         note: trimmed.isEmpty ? nil : trimmed,
                         locationId: scope)
                 case let .edit(block):
-                    // Send the (possibly empty) note so clearing it persists.
+                    // Send the (possibly empty) note so clearing it persists. The
+                    // scope goes only if the pro changed it — see `scopeUpdate`.
                     try await session.client.proCalendar.updateBlock(
                         id: block.id,
                         startsAt: ProCalendarGrid.iso(start),
                         endsAt: ProCalendarGrid.iso(end),
-                        note: trimmed)
+                        note: trimmed,
+                        scope: scopeUpdate)
                 }
                 onSaved()
                 dismiss()

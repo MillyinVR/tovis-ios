@@ -1830,6 +1830,33 @@ func fixture(_ name: String) throws -> Data {
         #expect(json.contains("\"startsAt\""))
     }
 
+    // The three scope states must produce three DIFFERENT wire shapes. Absent
+    // means "leave the scope alone"; if `.unchanged` leaked a null, every plain
+    // time edit would silently widen a location-scoped block to all locations.
+    @Test func updateBlockRequestOmitsLocationIdWhenScopeUnchanged() throws {
+        let json = try updateBlockJSON(scope: .unchanged)
+        #expect(!json.contains("locationId"))
+    }
+
+    @Test func updateBlockRequestSendsExplicitNullForAllLocations() throws {
+        let json = try updateBlockJSON(scope: .allLocations)
+        #expect(json.contains("\"locationId\":null"))
+    }
+
+    @Test func updateBlockRequestSendsTheChosenLocationId() throws {
+        let json = try updateBlockJSON(scope: .location("loc_9"))
+        #expect(json.contains("\"locationId\":\"loc_9\""))
+    }
+
+    private func updateBlockJSON(scope: BlockScopeUpdate) throws -> String {
+        let data = try JSONEncoder.canonical.encode(UpdateBlockRequest(
+            startsAt: "2026-07-15T19:00:00Z",
+            endsAt: "2026-07-15T20:00:00Z",
+            note: "Dentist",
+            scope: scope))
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
     // GET /api/v1/client/bookings/{id}/aftercare — care notes + featured pair (§24 AF3b).
     @Test func decodesClientAftercareDetail() throws {
         let json = """
