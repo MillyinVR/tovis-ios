@@ -96,16 +96,22 @@ public final class ProCalendarService: Sendable {
         return res.block
     }
 
-    /// PATCH /api/v1/pro/calendar/blocked/[id] — edit a block's window / note.
+    /// PATCH /api/v1/pro/calendar/blocked/[id] — edit a block's window, note, and
+    /// optionally its location. `scope` defaults to `.unchanged`, which omits
+    /// `locationId` so the block keeps the scope it has; pass `.allLocations` or
+    /// `.location(id)` only when the pro actually re-scoped it. A named location
+    /// is authorized like a create (must be one of this pro's bookable
+    /// locations), and conflicts are re-checked under the NEW scope.
     @discardableResult
     public func updateBlock(
         id: String,
         startsAt: String,
         endsAt: String,
-        note: String?
+        note: String?,
+        scope: BlockScopeUpdate = .unchanged
     ) async throws -> ProCalendarBlock {
         let body = try JSONEncoder.canonical.encode(UpdateBlockRequest(
-            startsAt: startsAt, endsAt: endsAt, note: note))
+            startsAt: startsAt, endsAt: endsAt, note: note, scope: scope))
         let res: ProCalendarBlockResponse = try await api.request(
             "/pro/calendar/blocked/\(id)", method: .patch, body: body)
         return res.block
