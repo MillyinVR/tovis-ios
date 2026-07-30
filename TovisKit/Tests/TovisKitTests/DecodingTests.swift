@@ -1814,6 +1814,22 @@ func fixture(_ name: String) throws -> Data {
         #expect(!json.contains("note"))
     }
 
+    // "Block all locations" — a nil locationId must be OMITTED, never sent as an
+    // empty string. The server reads absent/null as "blocks every location" but
+    // refuses `""` outright, so an empty string would 400 the whole create
+    // (tovis-app #794).
+    @Test func createBlockRequestOmitsNilLocationIdForAllLocations() throws {
+        let data = try JSONEncoder().encode(CreateBlockRequest(
+            startsAt: "2026-07-15T19:00:00Z",
+            endsAt: "2026-07-15T20:00:00Z",
+            note: "Dentist",
+            locationId: nil))
+        let json = String(data: data, encoding: .utf8) ?? ""
+        #expect(!json.contains("locationId"))
+        #expect(json.contains("\"note\""))
+        #expect(json.contains("\"startsAt\""))
+    }
+
     // GET /api/v1/client/bookings/{id}/aftercare — care notes + featured pair (§24 AF3b).
     @Test func decodesClientAftercareDetail() throws {
         let json = """
