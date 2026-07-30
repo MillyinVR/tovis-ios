@@ -73,10 +73,11 @@ public struct ProRelationshipBadge: Decodable, Sendable, Equatable {
         guard let trimmed = label?.trimmingCharacters(in: .whitespacesAndNewlines),
               !trimmed.isEmpty else { return nil }
         let spelled = description?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let readable = spelled.map { $0.isEmpty ? trimmed : $0 } ?? trimmed
         return Display(
             kind: kind,
             label: trimmed,
-            description: (spelled?.isEmpty ?? true) ? trimmed : spelled!,
+            description: readable,
             tone: tone ?? "neutral",
             significant: significant ?? true
         )
