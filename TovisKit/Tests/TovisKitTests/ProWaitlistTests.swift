@@ -270,13 +270,17 @@ private extension URLRequest {
         // The route rejects a missing idempotency-key header, so one is always sent,
         // and it mirrors web exactly: scope + entry + the ISO start as the action
         // (no nonce) — so the same entry+slot dedupes while a different slot mints a
-        // fresh key. Reconstruct it (same ~60s bucket) to pin that wiring.
+        // fresh key. Reconstruct it PINNED to the sent key's bucket to pin that
+        // wiring (rebuilding against the live clock races the 60s rollover — see
+        // IdempotencyKeyTestSupport).
         let key = try #require(ProWaitlistURLProtocol.capturedIdempotencyKey)
         #expect(key.split(separator: ":").count == 5)
-        #expect(key == buildClientIdempotencyKey(
+        #expect(key == rebuiltIdempotencyKey(
+            matchingBucketOf: key,
             scope: "pro-waitlist-offer",
             entityId: "wle_1",
             action: "2026-07-15T17:00:00.000Z"))
+        #expect(idempotencyKeyBucketIsCurrent(key))
 
         // Body carries only the slot + in-salon location; always SALON.
         let json = try bodyJSON()

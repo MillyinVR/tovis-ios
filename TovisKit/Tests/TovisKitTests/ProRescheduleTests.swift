@@ -137,15 +137,38 @@ private extension URLRequest {
         #expect(json["overrideReason"] as? String == "Client can only make it after close")
     }
 
+    /// The key the reschedule call derives for `scheduledFor`, rebuilt in the bucket
+    /// `captured` used. Two LIVE sends can straddle the 60s bucket boundary, so
+    /// comparing their keys to each other tests the clock as much as the wiring;
+    /// each send is instead compared to the derivation it should have produced.
+    private func expectedRescheduleKey(
+        matching captured: String, scheduledFor: String
+    ) throws -> String? {
+        let body = try JSONEncoder.canonical.encode(ProBookingRescheduleRequest(
+            scheduledFor: scheduledFor, notifyClient: true,
+            allowOutsideWorkingHours: false, allowShortNotice: false,
+            allowFarFuture: false, overrideReason: nil))
+        return rebuiltIdempotencyKey(
+            matchingBucketOf: captured,
+            scope: "pro-booking", entityId: "bkg_1", action: "reschedule",
+            nonce: idempotencyNonce(body))
+    }
+
     @Test func rescheduleKeyTracksBody() async throws {
-        // Same body ⇒ same key (a stable network retry replays server-side)…
+        // Same body ⇒ the same DERIVATION, so a stable network retry replays
+        // server-side instead of moving the booking twice.
         reset()
         try await makeService().reschedule(bookingId: "bkg_1", scheduledFor: "2026-08-01T15:00:00.000Z")
         let firstKey = try #require(ProRescheduleURLProtocol.capturedIdempotencyKey)
+        #expect(firstKey == (try expectedRescheduleKey(
+            matching: firstKey, scheduledFor: "2026-08-01T15:00:00.000Z")))
+        #expect(idempotencyKeyBucketIsCurrent(firstKey))
 
         reset()
         try await makeService().reschedule(bookingId: "bkg_1", scheduledFor: "2026-08-01T15:00:00.000Z")
-        #expect(ProRescheduleURLProtocol.capturedIdempotencyKey == firstKey)
+        let retryKey = try #require(ProRescheduleURLProtocol.capturedIdempotencyKey)
+        #expect(retryKey == (try expectedRescheduleKey(
+            matching: retryKey, scheduledFor: "2026-08-01T15:00:00.000Z")))
 
         // …a new time ⇒ a fresh key.
         reset()

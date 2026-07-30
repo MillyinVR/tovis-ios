@@ -21,12 +21,19 @@ import Foundation
 /// Prefer deriving `nonce` from the request's *exact serialized body* (see
 /// `idempotencyNonce(_:)`) so no volatile-yet-distinguishing field is ever
 /// missed — a missed field would resurface the 409 conflict.
+/// - Parameter now: the instant the bucket is derived from. Defaults to the
+///   current time, which is what every production caller wants. It exists so a
+///   TEST can pin the bucket: two calls to this function moments apart normally
+///   agree, but across a bucket boundary they do not, so an assertion that
+///   compares a captured key to a freshly built one is racing the clock rather
+///   than checking the wiring. See `rebuiltIdempotencyKey(matchingBucketOf:…)`.
 public func buildClientIdempotencyKey(
     scope: String,
     entityId: String,
     action: String = "",
     bucketMs: Double = 60_000,
-    nonce: String = ""
+    nonce: String = "",
+    now: Date = Date()
 ) -> String {
     let scope = scope.trimmingCharacters(in: .whitespacesAndNewlines)
     let entityId = entityId.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -39,7 +46,7 @@ public func buildClientIdempotencyKey(
     guard !scope.isEmpty, !entityId.isEmpty else { return UUID().uuidString }
 
     let ms = bucketMs > 0 ? bucketMs : 60_000
-    let bucket = Int((Date().timeIntervalSince1970 * 1000) / ms)
+    let bucket = Int((now.timeIntervalSince1970 * 1000) / ms)
 
     let fingerprint = djb2Hash([scope, entityId, action, String(bucket), nonce].joined(separator: "\u{241F}"))
 

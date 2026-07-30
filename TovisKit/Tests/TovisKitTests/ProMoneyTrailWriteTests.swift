@@ -126,15 +126,36 @@ private extension URLRequest {
         #expect(json["reason"] as? String == "service issue")
     }
 
+    /// The key a refund derives for this body, rebuilt in the bucket `captured`
+    /// used. Two LIVE sends can straddle the 60s bucket boundary, so comparing their
+    /// keys to each other tests the clock as much as the wiring; each send is
+    /// instead compared to the derivation it should have produced.
+    private func expectedRefundKey(
+        matching captured: String, amountCents: Int?, reason: String?
+    ) throws -> String? {
+        let body = try JSONEncoder.canonical.encode(
+            ProRefundRequest(amountCents: amountCents, reason: reason))
+        return rebuiltIdempotencyKey(
+            matchingBucketOf: captured,
+            scope: "booking", entityId: "bkg_1", action: "refund",
+            nonce: idempotencyNonce(body))
+    }
+
     @Test func refundKeyTracksBody() async throws {
-        // Same amount + reason ⇒ same key (a stable network retry replays server-side)…
+        // Same amount + reason ⇒ the same DERIVATION, so a stable network retry
+        // replays server-side instead of refunding twice.
         reset()
         try await makeService().refund(bookingId: "bkg_1", amountCents: 2500, reason: "service issue")
         let firstKey = try #require(ProMoneyTrailWriteURLProtocol.capturedIdempotencyKey)
+        #expect(firstKey == (try expectedRefundKey(
+            matching: firstKey, amountCents: 2500, reason: "service issue")))
+        #expect(idempotencyKeyBucketIsCurrent(firstKey))
 
         reset()
         try await makeService().refund(bookingId: "bkg_1", amountCents: 2500, reason: "service issue")
-        #expect(ProMoneyTrailWriteURLProtocol.capturedIdempotencyKey == firstKey)
+        let retryKey = try #require(ProMoneyTrailWriteURLProtocol.capturedIdempotencyKey)
+        #expect(retryKey == (try expectedRefundKey(
+            matching: retryKey, amountCents: 2500, reason: "service issue")))
 
         // …an edited amount ⇒ a fresh key…
         reset()
