@@ -117,6 +117,15 @@ public struct ProCalendarEvent: Decodable, Sendable, Identifiable {
     /// one has no colour, and inventing a default hue would be a lie about which
     /// service this is. Read it through `serviceSwatchId`.
     public let serviceSwatch: ProServiceSwatch?
+    /// BOOKING events only (K11/K13): whether the CLIENT said they're coming,
+    /// derived server-side by web's one helper and rendered as the tile's
+    /// CORNER GLYPH — the confirmation channel K7's budget reserved.
+    ///
+    /// 🔴 ABSENT is the common case and means "nobody asked": web omits the key
+    /// entirely for NOT_REQUESTED, which is every booking while the loop flag
+    /// is off. Absent must decode fine and render NOTHING. Read it through
+    /// `clientConfirmationDisplay`.
+    public let clientConfirmation: ProClientConfirmation?
 
     public var isBooking: Bool { kind == "BOOKING" }
     public var isBlock: Bool { kind == "BLOCK" }
@@ -155,6 +164,22 @@ public struct ProCalendarEvent: Decodable, Sendable, Identifiable {
     public var serviceSwatchId: String? {
         guard isBooking else { return nil }
         return serviceSwatch?.id
+    }
+
+    /// The client-confirmation state this tile should mark, or nil to mark
+    /// nothing.
+    ///
+    /// Gated on `isBooking` for the same reason `serviceSwatchId` is, mirroring
+    /// web's EventCard (`ev.kind === 'BOOKING' && …`): a block is the pro's own
+    /// time and a hold is a stranger mid-checkout — neither has a client who
+    /// could be asked, so neither may claim the confirmation channel even if a
+    /// future server were to send the field on one. `significant` is the web
+    /// helper's own call about what is worth showing (NOT_REQUESTED is not);
+    /// this view never second-guesses it.
+    public var clientConfirmationDisplay: ProClientConfirmation.Display? {
+        guard isBooking, let display = clientConfirmation?.display, display.significant
+        else { return nil }
+        return display
     }
 
     /// Whether this row can be offered a concrete time the client then confirms.

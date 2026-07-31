@@ -101,6 +101,25 @@ public struct ClientBooking: Decodable, Sendable, Identifiable {
     /// responses still decode; nil is treated as "no options loaded" by the checkout.
     public let paymentOptions: ClientBookingPaymentOptions?
 
+    /// The client's own view of K11's confirmation state — the SAME badge, from
+    /// the same helper, that the pro sees.
+    ///
+    /// 🔴 Its PRESENCE is the cue to offer the in-app answer: web suppresses the
+    /// field outright while `ENABLE_CLIENT_CONFIRMATION_LOOP` is off, even for a
+    /// row carrying stamps from an earlier trial, because the answer route
+    /// refuses then and a control the server will reject must not be drawn. So
+    /// the app draws the card exactly when this is present and renderable, and
+    /// never infers "they must have been asked" from anything else.
+    public let clientConfirmation: ProClientConfirmation?
+
+    /// The confirmation question this booking is waiting on, or nil when there
+    /// is nothing to answer (nobody asked, the loop is off, or the state is one
+    /// this build doesn't know).
+    public var clientConfirmationDisplay: ProClientConfirmation.Display? {
+        guard let display = clientConfirmation?.display, display.significant else { return nil }
+        return display
+    }
+
     /// True when this is an aftercare-sourced next appointment still PENDING because
     /// its approval is coupled to the previous appointment's off-platform payment —
     /// the pro approves it by confirming that payment (§10). Drives the "pending —

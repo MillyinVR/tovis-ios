@@ -789,6 +789,19 @@ func fixture(_ name: String) throws -> Data {
         let unknown = try #require(res.cancelled[0].relationshipBadge?.display)
         #expect(unknown.kind == "UNKNOWN")
         #expect(!unknown.significant)
+
+        // Client-confirmation state (K13) — one row per answer, captured off the
+        // live route. The cancelled row deliberately OMITS the key: web sends it
+        // only once the pro's reminder actually asked, so a fixture where every
+        // row carried one would prove nothing about the common case.
+        #expect(first.clientConfirmation?.display?.state == .clientConfirmed)
+        #expect(res.today[1].clientConfirmation?.display?.state == .declined)
+        let awaiting = try #require(res.upcoming[0].clientConfirmation?.display)
+        #expect(awaiting.state == .awaitingClient)
+        #expect(awaiting.label == "Awaiting client")
+        #expect(awaiting.description == "Awaiting client confirmation")
+        #expect(awaiting.tone == "pending")
+        #expect(res.cancelled[0].clientConfirmation == nil)
     }
 
     // A server that predates the badge fields sends neither. This fixture-free
@@ -812,6 +825,7 @@ func fixture(_ name: String) throws -> Data {
         """.utf8))
         #expect(row.paymentBadge == nil)
         #expect(row.relationshipBadge == nil)
+        #expect(row.clientConfirmation == nil)
     }
 
     // POST /api/v1/pro/bookings — the create response. When the booking creates

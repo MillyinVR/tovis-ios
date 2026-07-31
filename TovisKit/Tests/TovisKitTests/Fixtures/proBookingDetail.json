@@ -37,6 +37,13 @@
     "stripeCurrency": null,
     "checkoutStatus": "AWAITING_CONFIRMATION",
     "rebookOfBookingId": null,
+    "clientConfirmation": {
+      "kind": "CLIENT_CONFIRMED",
+      "label": "Client confirmed",
+      "description": "Client confirmed this appointment",
+      "tone": "success",
+      "significant": true
+    },
     "aftercareSummary": {
       "notes": "Use sulfate-free shampoo; gloss refresh in 6 weeks.",
       "sentToClientAt": "2026-07-15T20:00:00.000Z",

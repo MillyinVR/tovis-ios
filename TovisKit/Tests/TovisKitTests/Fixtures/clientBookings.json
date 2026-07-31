@@ -57,6 +57,13 @@
         "mediaUseConsent": false,
         "cancellationPolicy": "A cancellation fee ($25.00) applies if you cancel within 24 hours of your appointment or don’t show up.",
         "consultation": null,
+        "clientConfirmation": {
+          "kind": "AWAITING_CLIENT",
+          "label": "Awaiting client",
+          "description": "Awaiting client confirmation",
+          "tone": "pending",
+          "significant": true
+        },
         "paymentOptions": {
           "methods": [
             { "key": "cash", "label": "Cash", "handle": null },

@@ -28,6 +28,17 @@ struct BookingDetailView: View {
     @State private var working = false
     @State private var actionError: String?
 
+    // Client confirmation answer (K13) — "can you make it?", the in-app half of
+    // K12's reminder loop. `confirmationStateLocal` holds the state the SERVER
+    // returned from the answer, not the answer that was tapped: this view's
+    // `booking` is a value passed down from the list and never re-renders from a
+    // parent refresh, and the route can still refuse after the tap (booking
+    // cancelled, session already underway). Adopting its echo is the only
+    // reading that can't end up claiming an answer the row doesn't carry.
+    @State private var answeringConfirmation: AppointmentConfirmationAnswer?
+    @State private var confirmationStateLocal: ProClientConfirmation.State?
+    @State private var confirmationError: String?
+
     // Rebook confirmation (pro proposed a next appointment)
     @State private var decidingRebook = false
     @State private var rebookDecidedLocally = false
@@ -268,6 +279,15 @@ struct BookingDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 headerCard
+
+                // "Can you make it?" (K13). Drawn ONLY when the DTO carries the
+                // state, which the server sends only once the pro's reminder
+                // actually asked AND the loop flag is on — so a client whose pro
+                // never asked sees exactly what they saw before, and a control
+                // the server would reject is never drawn.
+                if let confirmation = booking.clientConfirmationDisplay {
+                    clientConfirmationCard(confirmation)
+                }
 
                 // Aftercare-sourced next appointment whose approval is coupled to
                 // the previous visit's off-platform payment — it stays PENDING until
@@ -2611,6 +2631,126 @@ struct BookingDetailView: View {
             actionError = error.userMessage
         } catch {
             actionError = "Something went wrong. Please try again."
+        }
+    }
+
+    // MARK: - Client confirmation ("can you make it?", K13)
+
+    /// The state to render: the server's echo of the last answer when this
+    /// screen has taken one, else what the feed said. Never the tapped answer.
+    private func effectiveConfirmationState(
+        _ confirmation: ProClientConfirmation.Display
+    ) -> ProClientConfirmation.State {
+        confirmationStateLocal ?? confirmation.state
+    }
+
+    /// Answer-ONLY, deliberately. Cancel and reschedule already live on this
+    /// screen (`manageCard`, through the same hold + policy-snapshot path web
+    /// uses); the SMS page has to carry its own copies because nothing else on
+    /// it can, and a second pair here would be two cancel buttons over two code
+    /// paths on one screen.
+    ///
+    /// 🔴 Declining is NOT cancelling (decision D5). The appointment keeps its
+    /// slot until the pro acts, and the copy says so — a client who reads
+    /// "I can't make it" as "cancelled" would stop expecting a fee they may
+    /// still owe under the policy snapshot.
+    @ViewBuilder
+    private func clientConfirmationCard(_ confirmation: ProClientConfirmation.Display) -> some View {
+        let state = effectiveConfirmationState(confirmation)
+        let confirmed = state == .clientConfirmed
+        let declined = state == .declined
+        let proLabel = booking.professional?.displayName ?? "Your pro"
+        let whenLabel = Wire.dateTime(booking.scheduledFor, timeZone: booking.timeZone)
+        let busy = answeringConfirmation != nil
+
+        BrandSurface {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    Image(systemName: confirmationGlyphName(state))
+                        .foregroundStyle(confirmationTone(state))
+                    Text(confirmed
+                         ? "You’re confirmed — see you \(whenLabel)"
+                         : (declined
+                            ? "\(proLabel) knows you can’t make it"
+                            : "Can you make it?"))
+                        .font(BrandFont.body(15, .semibold))
+                        .foregroundStyle(BrandColor.textPrimary)
+                }
+
+                Text(confirmed
+                     ? "\(proLabel) can see you’re coming."
+                     : (declined
+                        ? "The appointment stays on the calendar until they update it — you can also cancel or move it below."
+                        : whenLabel))
+                    .font(BrandFont.body(13))
+                    .foregroundStyle(BrandColor.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                if !confirmed {
+                    Button { Task { await answerConfirmation(.confirm) } } label: {
+                        confirmationActionLabel(
+                            "Yes, I’ll be there",
+                            filled: true,
+                            spinning: answeringConfirmation == .confirm)
+                    }
+                    .disabled(busy)
+                }
+
+                if !declined {
+                    Button { Task { await answerConfirmation(.decline) } } label: {
+                        confirmationActionLabel(
+                            confirmed ? "Actually, I can’t make it" : "I can’t make it",
+                            filled: false,
+                            spinning: answeringConfirmation == .decline)
+                    }
+                    .disabled(busy)
+                }
+
+                if let confirmationError {
+                    Text(confirmationError)
+                        .font(BrandFont.body(13)).foregroundStyle(BrandColor.ember)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+    }
+
+    private func confirmationActionLabel(
+        _ title: String, filled: Bool, spinning: Bool
+    ) -> some View {
+        Group {
+            if spinning { ProgressView().tint(filled ? BrandColor.onAccent : BrandColor.accent) }
+            else { Text(title).font(BrandFont.body(16, .semibold)) }
+        }
+        .frame(maxWidth: .infinity).padding(.vertical, 14)
+        .foregroundStyle(filled ? BrandColor.onAccent : BrandColor.ember)
+        .background(filled ? BrandColor.accent : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .stroke(filled ? Color.clear : BrandColor.ember.opacity(0.4), lineWidth: 1))
+    }
+
+    private func answerConfirmation(_ answer: AppointmentConfirmationAnswer) async {
+        guard answeringConfirmation == nil else { return }
+        answeringConfirmation = answer
+        confirmationError = nil
+        defer { answeringConfirmation = nil }
+        do {
+            let result = try await session.client.bookings.answerAppointmentConfirmation(
+                bookingId: booking.id, answer: answer)
+            // The SERVER's resulting state, not `answer` — a refusal that arrives
+            // as a 200 with an unchanged state must not be painted as success.
+            // An unknown state (a future server) leaves the card showing what it
+            // already knew rather than blanking into a state it can't describe.
+            if let resolved = result.resolvedState { confirmationStateLocal = resolved }
+            // The pro's calendar and the client's own list both carry this state,
+            // so the surfaces behind are now stale.
+            session.signalRefresh()
+            await onDecision()
+        } catch let error as APIError {
+            confirmationError = error.userMessage
+        } catch {
+            confirmationError = "Couldn’t send your answer. Please try again."
         }
     }
 

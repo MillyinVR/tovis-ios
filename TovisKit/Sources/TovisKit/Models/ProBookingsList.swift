@@ -53,6 +53,12 @@ public struct ProBookingListItem: Decodable, Sendable, Identifiable {
     /// Optional so the app keeps decoding payloads from a server that predates
     /// web #797.
     public let relationshipBadge: ProRelationshipBadge?
+    /// Whether the CLIENT said they're coming (K11/K13) — the words behind the
+    /// calendar tile's corner glyph, derived server-side and printed verbatim.
+    /// Optional AND omitted whenever nobody asked (every row while the loop
+    /// flag is off), so a payload from a server that predates web #806 decodes
+    /// identically to one from a server that has it.
+    public let clientConfirmation: ProClientConfirmation?
 
     public var isInProgress: Bool { status.uppercased() == "IN_PROGRESS" }
 }

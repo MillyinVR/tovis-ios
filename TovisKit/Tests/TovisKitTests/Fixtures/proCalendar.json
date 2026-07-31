@@ -49,6 +49,13 @@
         "significant": true
       },
       "serviceSwatch": "09",
+      "clientConfirmation": {
+        "kind": "CLIENT_CONFIRMED",
+        "label": "Client confirmed",
+        "description": "Client confirmed this appointment",
+        "tone": "success",
+        "significant": true
+      },
       "details": {
         "serviceName": "Balayage",
         "bufferMinutes": 15,
@@ -129,6 +136,13 @@
         "significant": true
       },
       "serviceSwatch": "09",
+      "clientConfirmation": {
+        "kind": "DECLINED",
+        "label": "Declined",
+        "description": "Client declined this appointment",
+        "tone": "danger",
+        "significant": true
+      },
       "details": {
         "serviceName": "Balayage",
         "bufferMinutes": 15,
@@ -165,6 +179,13 @@
         "significant": true
       },
       "serviceSwatch": "02",
+      "clientConfirmation": {
+        "kind": "AWAITING_CLIENT",
+        "label": "Awaiting client",
+        "description": "Awaiting client confirmation",
+        "tone": "pending",
+        "significant": true
+      },
       "details": {
         "serviceName": "Root Touch-Up",
         "bufferMinutes": 15,

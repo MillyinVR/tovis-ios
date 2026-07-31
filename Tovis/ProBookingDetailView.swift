@@ -211,6 +211,17 @@ struct ProBookingDetailView: View {
     private func statusRow(_ booking: ProBookingDetail) -> some View {
         HStack {
             Spacer()
+            // Client-confirmation state (K11/K13), beside the status capsule and
+            // never inside it: they are orthogonal facts (has the PRO accepted
+            // vs has the CLIENT answered), and web puts them side by side for
+            // the same reason. 🔴 Never the bare word "Confirmed" — the capsule
+            // to its right already prints that for ACCEPTED (B10); the server
+            // sends "Client confirmed".
+            if let confirmation = booking.clientConfirmation?.display,
+               confirmation.significant {
+                BrandPill(text: confirmation.label, tint: wireBadgeTone(confirmation.tone))
+                    .accessibilityLabel(confirmation.description)
+            }
             HStack(spacing: 6) {
                 Circle().fill(statusTone(booking.status)).frame(width: 6, height: 6)
                 // The LABEL uppercased, never the raw enum — `status.uppercased()`
