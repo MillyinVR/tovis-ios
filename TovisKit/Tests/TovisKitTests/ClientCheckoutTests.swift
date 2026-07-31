@@ -463,3 +463,119 @@ final class CheckoutProductsURLProtocol: URLProtocol {
         #expect(key1 != key2)
     }
 }
+
+// MARK: - Final-bill session start (web K10-A: the deposit credit)
+
+/// The final bill's session can legitimately not exist: when a paid deposit
+/// covers the whole total there is nothing to charge, so the server settles
+/// checkout PAID and returns `sessionId: null` with `settledByDeposit: true`.
+///
+/// 🔴 `StripeCheckoutSession.sessionId` used to be a non-optional `String`, so
+/// that null THREW during synthesized decoding and the client was shown
+/// "Couldn't start checkout. Please try again." on a booking the server had
+/// already marked PAID — a fully-paid client told their payment failed, on every
+/// retry. These pin both branches and the pre-deploy server.
+
+/// A SEPARATE transport for the session-start suite. `ClientCheckoutURLProtocol`
+/// keeps its canned response in a static, and distinct @Suite types run in
+/// parallel — sharing it let this suite's body leak into the confirm suite's
+/// requests and vice versa. One static per suite, so neither can stomp the other.
+final class CheckoutStartURLProtocol: URLProtocol {
+    nonisolated(unsafe) static var responseBody = Data("{\"ok\":true}".utf8)
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        let response = HTTPURLResponse(
+            url: request.url!, statusCode: 200, httpVersion: nil,
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Self.responseBody)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
+@Suite(.serialized) struct ClientCheckoutSessionStartTests {
+    private func makeService() async -> CheckoutService {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [CheckoutStartURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let tokenStore = TokenStore(service: "me.tovis.app.session.checkoutstart.tests")
+        await tokenStore.save("session.token.value")
+        let api = APIClient(
+            config: TovisConfig(baseURL: URL(string: "https://test.local/api/v1")!),
+            session: session,
+            tokenStore: tokenStore
+        )
+        return CheckoutService(api: api)
+    }
+
+    private func reset(_ body: String) {
+        CheckoutStartURLProtocol.responseBody = Data(body.utf8)
+    }
+
+    @Test func payableBillReturnsASessionToOpen() async throws {
+        reset("""
+        {"ok":true,"booking":{"id":"bkg_1","checkoutStatus":"READY","selectedPaymentMethod":"STRIPE_CARD","paymentProvider":"STRIPE","stripeCheckoutSessionId":"cs_1","stripePaymentIntentId":"pi_1","stripeCheckoutSessionStatus":"OPEN","stripePaymentStatus":"PROCESSING","stripeAmountTotal":20200,"stripeCurrency":"usd","tipAmount":"0.00","totalAmount":"242.00"},"stripeCheckout":{"sessionId":"cs_1","url":"https://checkout.stripe.com/c/pay/cs_1"},"settledByDeposit":false,"depositCreditCents":4000}
+        """)
+
+        let start = try await makeService().createCheckoutSession(bookingId: "bkg_1", tipAmount: nil)
+
+        guard case let .session(stripeSession) = start else {
+            Issue.record("expected a payable session")
+            return
+        }
+        #expect(stripeSession.sessionId == "cs_1")
+        #expect(stripeSession.url == "https://checkout.stripe.com/c/pay/cs_1")
+    }
+
+    /// The bug, at the wire. A null id must decode and report "nothing to pay".
+    @Test func depositCoveringTheBillSettlesInsteadOfThrowing() async throws {
+        reset("""
+        {"ok":true,"booking":{"id":"bkg_1","checkoutStatus":"PAID","selectedPaymentMethod":null,"paymentProvider":"MANUAL","stripeCheckoutSessionId":null,"stripePaymentIntentId":null,"stripeCheckoutSessionStatus":null,"stripePaymentStatus":null,"stripeAmountTotal":null,"stripeCurrency":null,"tipAmount":"0.00","totalAmount":"242.00"},"stripeCheckout":{"sessionId":null,"url":null},"settledByDeposit":true,"depositCreditCents":24200}
+        """)
+
+        let start = try await makeService().createCheckoutSession(bookingId: "bkg_1", tipAmount: nil)
+
+        guard case let .settledByDeposit(creditCents) = start else {
+            Issue.record("expected the settled branch, not a session")
+            return
+        }
+        #expect(creditCents == 24200)
+    }
+
+    /// Belt-and-braces: even without the flag, a missing session id can never be
+    /// mistaken for something the app should try to open.
+    @Test func aNullSessionIdSettlesEvenWhenTheFlagIsAbsent() async throws {
+        reset("""
+        {"ok":true,"booking":{"id":"bkg_1","checkoutStatus":"PAID","tipAmount":"0.00","totalAmount":"242.00"},"stripeCheckout":{"sessionId":null,"url":null}}
+        """)
+
+        let start = try await makeService().createCheckoutSession(bookingId: "bkg_1", tipAmount: nil)
+
+        guard case .settledByDeposit = start else {
+            Issue.record("expected the settled branch")
+            return
+        }
+    }
+
+    /// A pre-K10-A server sends neither new field. That must still decode and
+    /// still open the session — the deploy is not atomic across web and device.
+    @Test func preDeployServerWithoutTheNewFieldsStillOpensItsSession() async throws {
+        reset("""
+        {"ok":true,"booking":{"id":"bkg_1","checkoutStatus":"READY","tipAmount":"0.00","totalAmount":"242.00"},"stripeCheckout":{"sessionId":"cs_old","url":"https://checkout.stripe.com/c/pay/cs_old"}}
+        """)
+
+        let start = try await makeService().createCheckoutSession(bookingId: "bkg_1", tipAmount: nil)
+
+        guard case let .session(stripeSession) = start else {
+            Issue.record("expected a payable session from a pre-deploy server")
+            return
+        }
+        #expect(stripeSession.sessionId == "cs_old")
+    }
+}
