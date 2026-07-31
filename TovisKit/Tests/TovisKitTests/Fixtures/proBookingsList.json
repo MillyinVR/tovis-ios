@@ -50,6 +50,13 @@
         "description": "New client · requested you",
         "tone": "accent",
         "significant": true
+      },
+      "clientConfirmation": {
+        "kind": "CLIENT_CONFIRMED",
+        "label": "Client confirmed",
+        "description": "Client confirmed this appointment",
+        "tone": "success",
+        "significant": true
       }
     },
     {
@@ -91,6 +98,13 @@
         "label": "RNR",
         "description": "Returning client · via discovery",
         "tone": "info",
+        "significant": true
+      },
+      "clientConfirmation": {
+        "kind": "DECLINED",
+        "label": "Declined",
+        "description": "Client declined this appointment",
+        "tone": "danger",
         "significant": true
       }
     }
@@ -138,6 +152,13 @@
         "label": "RR",
         "description": "Returning client · requested you",
         "tone": "neutral",
+        "significant": true
+      },
+      "clientConfirmation": {
+        "kind": "AWAITING_CLIENT",
+        "label": "Awaiting client",
+        "description": "Awaiting client confirmation",
+        "tone": "pending",
         "significant": true
       }
     }

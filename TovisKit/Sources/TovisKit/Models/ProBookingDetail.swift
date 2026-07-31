@@ -76,6 +76,13 @@ public struct ProBookingDetail: Decodable, Sendable, Identifiable {
     /// where the flag is held off and the route 404s.
     public let noShowFeatureEnabled: Bool?
 
+    /// Whether the CLIENT said they're coming (K11/K13). 🔴 Web's RSC page
+    /// derived this from its OWN Prisma read, so until web #808 this route
+    /// never selected the columns and the state could not exist on device at
+    /// all. Optional and omitted when nobody asked — absent reads as "not
+    /// requested", never as an error.
+    public let clientConfirmation: ProClientConfirmation?
+
     /// The displayed total — totalAmount, else the subtotal snapshot, else 0.
     public var totalLabel: String { totalAmount ?? subtotalSnapshot ?? "0.00" }
 

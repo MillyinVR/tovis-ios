@@ -170,11 +170,24 @@ struct ProBookingsListView: View {
     private func bookingCard(_ booking: ProBookingListItem) -> some View {
         BrandSurface(tint: BrandColor.bgSecondary) {
             VStack(alignment: .leading, spacing: 8) {
+                // The service names the card; the badges get their own line
+                // below it.
+                //
+                // 🔴 They used to share one line with the title, and K13's
+                // fourth badge broke that: with four pills competing, SwiftUI
+                // compresses each one and `Text` wraps INSIDE the word —
+                // "Client confirm / ed", "Declin / ed", and a service title
+                // truncated to "Root To…". Web has always wrapped its badges
+                // onto a second line (flex-wrap wraps BETWEEN pills, never
+                // through a word), so this is the parity fix, not a redesign;
+                // it also un-wraps "Deposit paid $40.00", which was already
+                // taking two lines before K13.
+                Text(booking.serviceName)
+                    .font(BrandFont.body(15, .bold))
+                    .foregroundStyle(BrandColor.textPrimary)
+                    .lineLimit(1)
+
                 HStack(spacing: 8) {
-                    Text(booking.serviceName)
-                        .font(BrandFont.body(15, .bold))
-                        .foregroundStyle(BrandColor.textPrimary)
-                        .lineLimit(1)
                     BrandPill(text: booking.statusLabel, tint: statusTone(booking.status))
                     // Relationship mark (K5/K6) — web RelationshipBadgePill parity.
                     // Rendered before payment, like web. `significant` is what
@@ -190,6 +203,18 @@ struct ProBookingsListView: View {
                     // rows aren't a wall of "Unpaid" (the helper owns that call).
                     if let payment = booking.paymentBadge?.display, payment.significant {
                         BrandPill(text: payment.label, tint: wireBadgeTone(payment.tone))
+                    }
+                    // Client-confirmation state (K11/K13) — the WORDS behind the
+                    // calendar tile's corner glyph, printed verbatim. Same
+                    // `significant` gate: "Not requested" (every row until a pro
+                    // actually asks) renders nothing. 🔴 A DECLINED pill does
+                    // not mean the booking is gone — the slot stays until the
+                    // pro acts (D5) — which is why it sits beside the status
+                    // pill rather than replacing it.
+                    if let confirmation = booking.clientConfirmation?.display,
+                       confirmation.significant {
+                        BrandPill(text: confirmation.label, tint: wireBadgeTone(confirmation.tone))
+                            .accessibilityLabel(confirmation.description)
                     }
                     if booking.needsCloseout {
                         BrandPill(text: "Payment due", tint: BrandColor.gold)

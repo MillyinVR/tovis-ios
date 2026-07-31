@@ -915,6 +915,24 @@ struct ProCalendarTimeGrid: View {
         // view gets the colour a phone's ~45pt column has no space to spell out.
         let stripeTone = calendarSwatchTone(event.serviceSwatchId) ?? tone
 
+        // The CONFIRMATION channel (K11/K13): whether the client said they're
+        // coming, in the tile's top-trailing corner — the glyph channel K7's
+        // budget reserved for exactly this. Read off the event (like the stripe)
+        // rather than passed in, so the drag proxy carries it for free.
+        //
+        // 🔴 The three states are told apart by SHAPE, not colour: ✓ / ✕ / ?,
+        // and solid disc versus hollow ring. Hue already belongs to the service
+        // stripe and the status fill, and a channel a colour-blind pro can't
+        // read is decoration. Web resolved the same problem the same way (a
+        // circled family, so it can never read as a second CompletedCheck); iOS
+        // has no bare ✓ on a tile, but the shape rule holds regardless.
+        //
+        // NOT gated on column width, like the stripe and unlike the three text
+        // chips: it costs no room, so the week view keeps a signal a phone's
+        // ~45pt column has no space to spell out. The WORDS are always in the
+        // accessible name (`proCalendarTileAccessibilityLabel`).
+        let confirmation = event.clientConfirmationDisplay
+
         return HStack(spacing: 0) {
             Rectangle().fill(stripeTone).frame(width: 3)
             VStack(alignment: .leading, spacing: 1) {
@@ -960,15 +978,25 @@ struct ProCalendarTimeGrid: View {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .strokeBorder(ringColor, lineWidth: ringWidth)
         )
+        // The corner glyphs, in web's reading order: confirmation first, then
+        // the passive double-book warning. One overlay, not two — a second
+        // `.topTrailing` overlay would stack them on the same point.
         // A small amber glyph marks a double-booked tile (hidden while it's the one
         // being dragged, so the drag ring reads cleanly).
         .overlay(alignment: .topTrailing) {
-            if conflict && !lifted {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(BrandColor.amber)
-                    .padding(3)
+            HStack(spacing: 2) {
+                if let confirmation {
+                    Image(systemName: confirmationGlyphName(confirmation.state))
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(wireBadgeTone(confirmation.tone))
+                }
+                if conflict && !lifted {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(BrandColor.amber)
+                }
             }
+            .padding(3)
         }
         .shadow(color: lifted ? BrandColor.accent.opacity(0.35) : .clear,
                 radius: lifted ? 8 : 0, y: lifted ? 3 : 0)
@@ -1266,6 +1294,52 @@ struct ProCalendarTimeGrid: View {
     }
 }
 
+// MARK: - Client-confirmation presentation (K13)
+
+/// The SF Symbol for a client-confirmation state (K11/K13's corner glyph).
+///
+/// The three shapes are the point: a knocked-out ✓, a knocked-out ✕ and a
+/// hollow ? — different marks in different containers, so the states separate
+/// for a pro who can't tell the tones apart, and so a glance at a week grid
+/// answers "did they answer?" before "what did they say?". Web hand-built the
+/// same circled family in SVG (solid disc + mask for the answers, stroked ring
+/// for the question) precisely so it could never be mistaken for its COMPLETED
+/// check; SF Symbols ships that family, so the platforms agree by construction
+/// rather than by two people drawing the same idea twice.
+///
+/// File-scope and total rather than a private view helper, so a test can pin
+/// the mapping — K9-A is the standing lesson that an untestable presentation
+/// detail is exactly where a channel goes quietly wrong. An unknown kind can't
+/// reach here (`display` refuses it), but the fallback still says "asked, no
+/// answer" rather than claiming one.
+func confirmationGlyphName(_ state: ProClientConfirmation.State) -> String {
+    switch state {
+    case .clientConfirmed: return "checkmark.circle.fill"
+    case .declined: return "xmark.circle.fill"
+    // NOT_REQUESTED never reaches a glyph (it is `significant: false`, so every
+    // surface drops it first) — but a total switch is what makes a fifth state
+    // a COMPILE error here instead of a silently wrong mark on a pro's day.
+    case .awaitingClient, .notRequested: return "questionmark.circle"
+    }
+}
+
+/// The brand colour for a client-confirmation state, for the one surface that
+/// has no wire tone to read: the client's own answer card, which adopts the
+/// state the answer route echoed back (a bare `ClientConfirmationState`, with no
+/// badge attached).
+///
+/// 🔴 Everywhere the SERVER sends a tone — the pro tile, list and detail — that
+/// tone is used VERBATIM through `wireBadgeTone`, never this. This exists only
+/// so the local case cannot quietly disagree with it, and a test pins the two
+/// tables against each other for every state.
+func confirmationTone(_ state: ProClientConfirmation.State) -> Color {
+    switch state {
+    case .clientConfirmed: return wireBadgeTone("success")
+    case .declined: return wireBadgeTone("danger")
+    case .awaitingClient, .notRequested: return wireBadgeTone("pending")
+    }
+}
+
 // MARK: - Tile accessible name
 
 /// What VoiceOver reads for one calendar tile.
@@ -1316,6 +1390,15 @@ func proCalendarTileAccessibilityLabel(
 
     if event.isBooking, let payment = event.paymentBadge?.display, payment.significant {
         parts.append(payment.label)
+    }
+
+    // The confirmation state is rendered as a bare SHAPE, so the words have to
+    // be here or the channel doesn't exist for VoiceOver at all — "Client
+    // confirmed this appointment", never the label alone and never the bare
+    // word "Confirmed", which B10 gave to the ACCEPTED status. Web's aria label
+    // spells it out in this same position (after the money, before the place).
+    if let confirmation = event.clientConfirmationDisplay {
+        parts.append(confirmation.description)
     }
 
     // On a grid that mixes locations, WHERE a job is isn't decoration.

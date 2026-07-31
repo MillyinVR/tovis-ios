@@ -142,4 +142,39 @@ public final class BookingsService: Sendable {
         )
         return response.booking
     }
+
+    /// POST /api/v1/client/bookings/{id}/confirmation — answer the pro's "can
+    /// you make it?" from inside the app instead of hunting the reminder SMS
+    /// back out of Messages (K13). CLIENT-only, ownership-gated.
+    ///
+    /// Shares web's locked core with the token link, so the DB outcome is
+    /// byte-identical to tapping the SMS: the same stamp, the same refusals, and
+    /// a DECLINE still notifies the pro. 🔴 Declining does NOT cancel anything —
+    /// the appointment keeps its slot until the pro acts (decision D5).
+    ///
+    /// Deliberately carries NO idempotency key, unlike every other client
+    /// mutation here: web's route enforces none, and re-stamping IS the designed
+    /// behaviour (K11's latest-answer-wins), so a double tap or a change of mind
+    /// is a feature rather than a replay hazard. Minting one anyway would make a
+    /// client who changes their mind inside the same bucket collide with their
+    /// own earlier answer.
+    ///
+    /// Returns the resulting state as the SERVER sees it — adopt that rather
+    /// than assuming the answer landed, since the route can still refuse
+    /// (`APPOINTMENT_CONFIRMATION_UNAVAILABLE`: loop off, booking cancelled or
+    /// already underway).
+    @discardableResult
+    public func answerAppointmentConfirmation(
+        bookingId: String,
+        answer: AppointmentConfirmationAnswer
+    ) async throws -> AppointmentConfirmationResult {
+        let payload = try JSONEncoder.canonical.encode(
+            AppointmentConfirmationRequest(answer: answer.rawValue)
+        )
+        return try await api.request(
+            "/client/bookings/\(bookingId)/confirmation",
+            method: .post,
+            body: payload
+        )
+    }
 }
