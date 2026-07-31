@@ -904,8 +904,19 @@ struct ProCalendarTimeGrid: View {
             : (conflict ? BrandColor.amber : .clear)
         let ringWidth: CGFloat = (lifted || pending) ? 1.5 : (conflict ? 1 : 0)
 
+        // The SERVICE channel (K9): the pro's colour for this booking's service,
+        // on the leading stripe and nowhere else. Blocks and holds are not a
+        // service so they never claim it, and a booking with no colour keeps the
+        // status tone — which is every booking until a pro picks one, so an
+        // uncoloured tile renders exactly as it did before K9.
+        //
+        // Unlike the three text chips this is NOT gated on column width: the
+        // stripe already exists at every density and costs no room, so the week
+        // view gets the colour a phone's ~45pt column has no space to spell out.
+        let stripeTone = calendarSwatchTone(event.serviceSwatchId) ?? tone
+
         return HStack(spacing: 0) {
-            Rectangle().fill(tone).frame(width: 3)
+            Rectangle().fill(stripeTone).frame(width: 3)
             VStack(alignment: .leading, spacing: 1) {
                 Text(tileTitle(event))
                     .font(BrandFont.body(micro ? 10 : 12, .semibold))

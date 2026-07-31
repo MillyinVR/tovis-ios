@@ -211,3 +211,20 @@ func wireBadgeTone(_ tone: String?) -> Color {
     default: return BrandColor.textMuted  // "neutral" + anything unknown
     }
 }
+
+/// Colour for a booking's SERVICE swatch (K7–K9) — the pro's own colour for the
+/// service, painted on a calendar tile's leading stripe and nowhere else
+/// (decision D2: status keeps the fill).
+///
+/// Returns **nil**, not a fallback colour, when the booking has no swatch or
+/// carries one this build's palette doesn't define. nil means "this channel is
+/// unclaimed" and the caller keeps whatever the stripe already showed — a
+/// service colour nobody picked would be a lie about which service the booking
+/// is, and a substituted hue would be a lie about which colour they picked.
+///
+/// Lives here beside `statusTone` and `wireBadgeTone` (the B10 seam) so the grid
+/// views never grow a second colour system.
+func calendarSwatchTone(_ id: String?) -> Color? {
+    guard let id else { return nil }
+    return BrandColor.calendarSwatches[id]
+}

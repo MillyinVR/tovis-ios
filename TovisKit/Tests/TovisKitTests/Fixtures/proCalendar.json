@@ -48,6 +48,7 @@
         "tone": "accent",
         "significant": true
       },
+      "serviceSwatch": "09",
       "details": {
         "serviceName": "Balayage",
         "bufferMinutes": 15,
@@ -91,6 +92,7 @@
         "tone": "info",
         "significant": true
       },
+      "serviceSwatch": "09",
       "details": {
         "serviceName": "Balayage",
         "bufferMinutes": 15,
@@ -126,8 +128,88 @@
         "tone": "neutral",
         "significant": true
       },
+      "serviceSwatch": "09",
       "details": {
         "serviceName": "Balayage",
+        "bufferMinutes": 15,
+        "serviceItems": []
+      }
+    },
+    {
+      "id": "k9seedroottouchup00000001",
+      "kind": "BOOKING",
+      "startsAt": "2026-07-29T19:00:00.000Z",
+      "endsAt": "2026-07-29T19:45:00.000Z",
+      "title": "Root Touch-Up",
+      "clientName": "Test Client",
+      "clientProfileId": null,
+      "status": "ACCEPTED",
+      "locationType": "SALON",
+      "locationId": "cmrbry47t000fpo0dz0kdy80z",
+      "durationMinutes": 30,
+      "timeZone": "America/Los_Angeles",
+      "timeZoneSource": "BOOKING_SNAPSHOT",
+      "localDateKey": "2026-07-29",
+      "viewLocalDateKey": "2026-07-29",
+      "paymentBadge": {
+        "kind": "DEPOSIT_PAID",
+        "label": "Deposit paid $40.00",
+        "tone": "info",
+        "significant": true
+      },
+      "relationshipBadge": {
+        "kind": "NR",
+        "label": "NR",
+        "description": "New client · requested you",
+        "tone": "accent",
+        "significant": true
+      },
+      "serviceSwatch": "02",
+      "details": {
+        "serviceName": "Root Touch-Up",
+        "bufferMinutes": 15,
+        "serviceItems": [
+          {
+            "id": "k9seeditemroottouchup0001",
+            "name": "Root Touch-Up",
+            "durationMinutes": 90,
+            "price": "80",
+            "sortOrder": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "k9seedhaircutstyle0000001",
+      "kind": "BOOKING",
+      "startsAt": "2026-07-29T20:30:00.000Z",
+      "endsAt": "2026-07-29T21:15:00.000Z",
+      "title": "Haircut & Style",
+      "clientName": "Test Client",
+      "clientProfileId": null,
+      "status": "ACCEPTED",
+      "locationType": "SALON",
+      "locationId": "cmrbry47t000fpo0dz0kdy80z",
+      "durationMinutes": 30,
+      "timeZone": "America/Los_Angeles",
+      "timeZoneSource": "BOOKING_SNAPSHOT",
+      "localDateKey": "2026-07-29",
+      "viewLocalDateKey": "2026-07-29",
+      "paymentBadge": {
+        "kind": "DEPOSIT_PAID",
+        "label": "Deposit paid $40.00",
+        "tone": "info",
+        "significant": true
+      },
+      "relationshipBadge": {
+        "kind": "NR",
+        "label": "NR",
+        "description": "New client · requested you",
+        "tone": "accent",
+        "significant": true
+      },
+      "details": {
+        "serviceName": "Haircut & Style",
         "bufferMinutes": 15,
         "serviceItems": []
       }
