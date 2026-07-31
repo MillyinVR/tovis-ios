@@ -1237,29 +1237,12 @@ struct ProCalendarTimeGrid: View {
     }
 
     private func tileAccessibilityLabel(_ event: ProCalendarEvent, conflict: Bool) -> String {
-        let name = event.isBlock
-            ? (event.title.isEmpty ? "Blocked time" : event.title)
-            : (event.isHold ? holdTitle(event) : event.clientName)
-        var base = "\(name), \(timeLabel(event.startsAt))"
-        // The relationship mark is SPELLED OUT here ("New client · requested
-        // you"), never the bare letters — web's aria label does the same,
-        // because "NR" read aloud is not a sentence. Like payment, it is in the
-        // spoken label whenever significant, NOT gated on the chip having room.
-        if event.isBooking, let relationship = event.relationshipBadge?.display,
-           relationship.significant {
-            base += ", \(relationship.description)"
-        }
-        // Payment state joins the spoken label whenever it's significant — like
-        // web's card aria label, NOT gated on the visual chip having room.
-        if event.isBooking, let payment = event.paymentBadge?.display, payment.significant {
-            base += ", \(payment.label)"
-        }
-        // Same for the location: on a grid that mixes them, WHERE a job is isn't
-        // decoration, so it is spoken even in week view where no chip fits.
-        if let id = event.locationId, let location = eventLocationLabels[id] {
-            base += ", \(location)"
-        }
-        return conflict ? "\(base), overlaps another appointment" : base
+        proCalendarTileAccessibilityLabel(
+            event: event,
+            timeLabel: timeLabel(event.startsAt),
+            locationLabel: event.locationId.flatMap { eventLocationLabels[$0] },
+            conflict: conflict
+        )
     }
 
     // MARK: - Formatting
@@ -1281,6 +1264,66 @@ struct ProCalendarTimeGrid: View {
         Wire.dateTime(iso, timeZone: timeZone.identifier)
             .components(separatedBy: " · ").last ?? ""
     }
+}
+
+// MARK: - Tile accessible name
+
+/// What VoiceOver reads for one calendar tile.
+///
+/// File-scope and input-only (no view state) so it can be pinned by a test:
+/// every other visual signal on a tile has a test somewhere, and the spoken name
+/// is the one surface where a missing detail is invisible to a screenshot. It is
+/// the analog of web's `cardAriaLabel` + `buildEventCardCopy`.
+///
+/// 🔴 **Order and gating are the contract, not the wording.** Nothing here is
+/// gated on tile density: a phone's week column is ~45pt and fits none of the
+/// chips, so the visual surface silently drops signals that this string must
+/// keep. A detail that only appears when there happens to be room is not
+/// accessible.
+func proCalendarTileAccessibilityLabel(
+    event: ProCalendarEvent,
+    timeLabel: String,
+    locationLabel: String?,
+    conflict: Bool
+) -> String {
+    // A HOLD names nobody — it says only that the time is spoken for (B5).
+    let name: String = {
+        if event.isBlock { return event.title.isEmpty ? "Blocked time" : event.title }
+        if event.isHold { return event.title.isEmpty ? "Booking in progress" : event.title }
+        return event.clientName
+    }()
+
+    var parts = [name, timeLabel]
+
+    // WHICH SERVICE this booking is (K9). Web's card prints it as the secondary
+    // line AND carries it in the aria label; the iOS tile has room for one line
+    // and spends it on the client, so before K9 the service appeared nowhere on
+    // the tile — and K9 then encoded it as a COLOUR. A channel only sighted
+    // users can read, with no textual equivalent anywhere, is not a channel; it
+    // is decoration pretending to be data.
+    if event.isBooking {
+        let service = event.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !service.isEmpty { parts.append(service) }
+    }
+
+    // The relationship mark is SPELLED OUT ("New client · requested you"), never
+    // the bare letters — web's aria label does the same, because "NR" read aloud
+    // is not a sentence.
+    if event.isBooking, let relationship = event.relationshipBadge?.display,
+       relationship.significant {
+        parts.append(relationship.description)
+    }
+
+    if event.isBooking, let payment = event.paymentBadge?.display, payment.significant {
+        parts.append(payment.label)
+    }
+
+    // On a grid that mixes locations, WHERE a job is isn't decoration.
+    if let locationLabel, !locationLabel.isEmpty { parts.append(locationLabel) }
+
+    if conflict { parts.append("overlaps another appointment") }
+
+    return parts.joined(separator: ", ")
 }
 
 // MARK: - Now-line
