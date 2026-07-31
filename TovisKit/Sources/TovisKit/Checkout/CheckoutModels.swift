@@ -7,8 +7,17 @@ import Foundation
 // Only the rendered subset is modeled; unknown keys are ignored.
 
 /// The created hosted Checkout session. `url` is null when Stripe omits it.
+///
+/// 🔴 `sessionId` is OPTIONAL, and that is load-bearing. The final-bill route
+/// returns `sessionId: null` when a paid deposit already covers the whole total
+/// — there is no charge, so there is no session (web K10-A). As a non-optional
+/// `String` under synthesized decoding, that null THREW, and the throw surfaced
+/// to the client as "Couldn't start checkout. Please try again." on a booking
+/// the server had already settled as PAID. The deposit route always sends an id;
+/// leniency here costs it nothing and is the same non-throwing-decode rule
+/// `ProPaymentBadge` / `ProRelationshipBadge` / `ProServiceSwatch` follow.
 public struct StripeCheckoutSession: Decodable, Sendable {
-    public let sessionId: String
+    public let sessionId: String?
     public let url: String?
 }
 
@@ -22,6 +31,25 @@ struct CheckoutStripeSessionRequest: Encodable, Sendable {
 
 struct CheckoutStripeSessionResponse: Decodable, Sendable {
     let stripeCheckout: StripeCheckoutSession
+    /// True when a paid deposit covered the entire bill: checkout is already
+    /// PAID, no session exists, and the client owes nothing. OPTIONAL because a
+    /// pre-K10-A server sends neither this nor `depositCreditCents` — an absent
+    /// field must decode fine and read as "not settled", which is exactly what
+    /// that older server means.
+    let settledByDeposit: Bool?
+    /// Deposit money credited against this bill, in cents (0 when none).
+    let depositCreditCents: Int?
+}
+
+/// What starting the final-bill checkout actually produced. An enum rather than
+/// a session with nil fields, so a caller cannot try to open a checkout page
+/// that does not exist — the device-side mirror of the web write boundary's
+/// `STRIPE_SESSION` / `SETTLED_BY_DEPOSIT` union.
+public enum ClientCheckoutStart: Sendable {
+    /// Open `session.url` in the in-app browser.
+    case session(StripeCheckoutSession)
+    /// Nothing to pay — the deposit covered it and the booking is already PAID.
+    case settledByDeposit(creditCents: Int?)
 }
 
 // MARK: - POST /client/bookings/{id}/checkout (non-card confirm / save tip)

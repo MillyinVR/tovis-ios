@@ -25,7 +25,7 @@ public final class CheckoutService: Sendable {
         bookingId: String,
         tipAmount: String? = nil,
         idempotencyKey: String? = nil
-    ) async throws -> StripeCheckoutSession {
+    ) async throws -> ClientCheckoutStart {
         let payload = try JSONEncoder.canonical.encode(
             CheckoutStripeSessionRequest(tipAmount: tipAmount)
         )
@@ -41,7 +41,16 @@ public final class CheckoutService: Sendable {
                 Self.nativeReturnHeader: "native",
             ]
         )
-        return response.stripeCheckout
+        // A deposit that covers the whole bill leaves nothing to charge: the
+        // server settled checkout PAID and sent no session. Detect it from the
+        // server's OWN flag first, and fall back to "no session id" so a
+        // response that omits the flag still can't be mistaken for a payable
+        // session (the flag is optional for pre-K10-A servers, which never
+        // return a null id either).
+        if response.settledByDeposit == true || response.stripeCheckout.sessionId == nil {
+            return .settledByDeposit(creditCents: response.depositCreditCents)
+        }
+        return .session(response.stripeCheckout)
     }
 
     /// POST /api/v1/client/bookings/{id}/checkout — confirm a NON-card payment

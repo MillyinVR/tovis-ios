@@ -991,15 +991,28 @@ struct BookingDetailView: View {
         checkoutError = nil
         defer { creatingCheckout = false }
         do {
-            let sessionResult = try await session.client.checkout.createCheckoutSession(
+            let start = try await session.client.checkout.createCheckoutSession(
                 bookingId: booking.id,
                 tipAmount: CheckoutMoney.fixed2(tipDecimal)
             )
-            guard let raw = sessionResult.url, let url = URL(string: raw) else {
-                checkoutError = "Couldn’t open checkout. Please try again."
-                return
+            switch start {
+            case let .settledByDeposit(creditCents):
+                // The deposit already covered the whole bill and the server
+                // settled checkout PAID before answering. There is nothing to
+                // open and nothing to charge — reflect PAID immediately and
+                // refresh, exactly as the checkout-return handler does. Showing
+                // an error here (which is what a thrown decode used to produce)
+                // would tell a fully-paid client their payment failed.
+                _ = creditCents
+                paidLocally = true
+                await onDecision()
+            case let .session(stripeSession):
+                guard let raw = stripeSession.url, let url = URL(string: raw) else {
+                    checkoutError = "Couldn’t open checkout. Please try again."
+                    return
+                }
+                checkoutSheet = CheckoutSheet(url: url)
             }
-            checkoutSheet = CheckoutSheet(url: url)
         } catch let error as APIError {
             checkoutError = error.userMessage
         } catch {
