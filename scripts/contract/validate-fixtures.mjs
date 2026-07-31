@@ -140,8 +140,15 @@ const CHECKS = [
   // GET /api/v1/pro/calendar — the payload is at the ROOT. A VERBATIM capture
   // off the running route under `scope=ALL` (2026-07-30), so it carries the
   // whole K-series accretion at once: K1's `paymentBadge`, K3's `scope` +
-  // `locationId`, K5's `relationshipBadge`, and two `management.waitlistToday`
-  // rows (the synthetic BOOKING-kind shape with a null location).
+  // `locationId`, K5's `relationshipBadge`, K7/K8's `serviceSwatch`, and two
+  // `management.waitlistToday` rows (the synthetic BOOKING-kind shape with a
+  // null location).
+  //
+  // `serviceSwatch` is OPTIONAL and the capture pins BOTH sides of that: three
+  // rows carry "09", one carries "02" (a second hue, resolved through its BASE
+  // service item rather than the per-service fallback), and the Haircut & Style
+  // row OMITS the key entirely because its pro never picked a colour. Absent is
+  // the common case, so a fixture where every row had one would prove nothing.
   //
   // Until now this feed had NO contract coverage at all — the response type
   // lived inline in the route and had no name to export (K4-B). Every field the

@@ -109,6 +109,14 @@ public struct ProCalendarEvent: Decodable, Sendable, Identifiable {
     /// a per-booking SNAPSHOT mapped server-side and rendered verbatim.
     /// Absent on blocks, holds and waitlist rows.
     public let relationshipBadge: ProRelationshipBadge?
+    /// BOOKING events only (K7/K8/K9): the pro's colour for this booking's
+    /// service, resolved server-side by the one helper and painted on the tile's
+    /// leading stripe — the SERVICE channel, while status keeps the fill (D2).
+    ///
+    /// 🔴 ABSENT is the common case and means NO COLOUR: a pro who hasn't picked
+    /// one has no colour, and inventing a default hue would be a lie about which
+    /// service this is. Read it through `serviceSwatchId`.
+    public let serviceSwatch: ProServiceSwatch?
 
     public var isBooking: Bool { kind == "BOOKING" }
     public var isBlock: Bool { kind == "BLOCK" }
@@ -135,6 +143,18 @@ public struct ProCalendarEvent: Decodable, Sendable, Identifiable {
         let prefix = "block:"
         if id.hasPrefix(prefix) { return String(id.dropFirst(prefix.count)) }
         return id
+    }
+
+    /// The swatch this tile's SERVICE stripe should paint, or nil to keep the
+    /// status tone.
+    ///
+    /// Gated on `isBooking` deliberately, mirroring web's EventCard: a block is
+    /// the pro's own time and a hold is a stranger mid-checkout — neither is a
+    /// service, so neither may claim the service channel even if a future server
+    /// were to send the field on one.
+    public var serviceSwatchId: String? {
+        guard isBooking else { return nil }
+        return serviceSwatch?.id
     }
 
     /// Whether this row can be offered a concrete time the client then confirms.
