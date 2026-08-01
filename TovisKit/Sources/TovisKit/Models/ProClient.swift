@@ -175,6 +175,11 @@ struct ProClientConsentRequest: Encodable {
     let patchTestResult: String?
     let validUntil: String?
     let bookingId: String?
+    /// K14 — pins the record to the exact form TEXT put in front of the client.
+    /// Optional: a pro recording a paper waiver they hold has nothing to point
+    /// at, and that record must still be writable. The route 400s a version
+    /// belonging to another pro, or one whose form kind disagrees with `kind`.
+    let formVersionId: String?
 }
 
 /// POST /api/v1/pro/clients/{id}/consent-requests body (K15) — "send this form

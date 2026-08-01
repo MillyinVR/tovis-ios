@@ -55,7 +55,13 @@ struct ProClientTechnicalView: View {
             case .addFormula:
                 ProAddFormulaSheet(clientId: clientId, onSaved: reload)
             case .addConsent:
-                ProAddConsentSheet(clientId: clientId, onSaved: reload)
+                // K14 — the pro's active forms travel WITH the record, so the
+                // sheet offers exactly the choices web's does.
+                ProAddConsentSheet(
+                    clientId: clientId,
+                    consentForms: record?.consentForms.offerable ?? [],
+                    onSaved: reload
+                )
             case .editPhotoRelease:
                 ProEditPhotoReleaseSheet(
                     clientId: clientId,
@@ -70,6 +76,9 @@ struct ProClientTechnicalView: View {
 
     private func loaded(_ rec: ProClientTechnicalRecord) -> some View {
         VStack(alignment: .leading, spacing: 20) {
+            // K17-B. Its own load + its own failure domain: a policy route that
+            // errors must not cost the pro the record they came here to read.
+            ProClientPolicySection(clientId: clientId)
             photoReleaseSection(rec.photoReleaseStatus)
             formulaSection(rec.formula)
             consentSection(rec.consents)
@@ -146,7 +155,7 @@ struct ProClientTechnicalView: View {
         BrandSurface {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 6) {
-                    Text(consentKindLabel(c.kind)).font(BrandFont.body(14, .semibold)).foregroundStyle(BrandColor.textPrimary)
+                    Text(proConsentKindLabel(c.kind)).font(BrandFont.body(14, .semibold)).foregroundStyle(BrandColor.textPrimary)
                     Spacer()
                     if let result = c.patchTestResult {
                         BrandPill(text: result.capitalized, tint: patchTone(result))
@@ -175,6 +184,14 @@ struct ProClientTechnicalView: View {
                     }
                     if let notes = c.notes, !notes.isEmpty {
                         Text(notes).font(BrandFont.body(13)).foregroundStyle(BrandColor.textSecondary)
+                    }
+                    // K14 — WHICH form, and which VERSION of it, this record
+                    // attests to. The version is the part a pro cannot infer
+                    // from anything else on screen, and the snapshot is the
+                    // whole point of the feature: these words are what the
+                    // client agreed to, not whatever the form says today.
+                    if let form = c.formVersion?.display {
+                        formAttestation(form)
                     }
                 }
             }
@@ -226,6 +243,37 @@ struct ProClientTechnicalView: View {
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
+    /// The signed text, disclosed rather than inlined — a waiver body is long
+    /// and this is a scannable list of records.
+    @ViewBuilder
+    private func formAttestation(_ form: ProConsentFormVersion.Display) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Image(systemName: "doc.text").font(.system(size: 10))
+                Text(form.summary).font(BrandFont.body(12, .semibold))
+            }
+            .foregroundStyle(BrandColor.textSecondary)
+            if let origin = form.originLabel {
+                Text(origin).font(BrandFont.body(11)).foregroundStyle(BrandColor.textMuted)
+            }
+            if let body = form.body {
+                DisclosureGroup("Read the signed text") {
+                    Text(body)
+                        .font(BrandFont.body(12))
+                        .foregroundStyle(BrandColor.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 4)
+                }
+                .font(BrandFont.body(12))
+                .tint(BrandColor.accent)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 2)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Signed against \(form.summary)")
+    }
+
     private func proofLine(_ c: ProConsentRecord) -> String? {
         var parts: [String] = []
         if let method = c.proofMethod { parts.append(proofMethodLabel(method)) }
@@ -237,15 +285,6 @@ struct ProClientTechnicalView: View {
     private func isDateCurrent(_ iso: String) -> Bool {
         guard let date = Wire.date(iso) else { return false }
         return date > Date()
-    }
-
-    private func consentKindLabel(_ kind: String) -> String {
-        switch kind {
-        case "GENERAL_CONSENT": return "General consent"
-        case "SERVICE_WAIVER": return "Service waiver"
-        case "PATCH_TEST": return "Patch test"
-        default: return kind.capitalized
-        }
     }
 
     private func proofMethodLabel(_ method: String) -> String {

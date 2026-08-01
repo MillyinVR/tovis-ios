@@ -201,6 +201,16 @@ public final class ProClientsService: Sendable {
     /// POST /api/v1/pro/clients/{id}/consent — add a consent / waiver / patch-test
     /// record. `kind` ∈ GENERAL_CONSENT | SERVICE_WAIVER | PATCH_TEST; the patch-test
     /// result + validity apply only to PATCH_TEST. `notes` is encrypted server-side.
+    ///
+    /// `formVersionId` (K14) pins the record to the exact text the client was
+    /// shown — take it from `ProClientTechnicalRecord.consentForms`, whose
+    /// options are already resolved to the version that would be signed today.
+    /// The route 400s a version whose form kind disagrees with `kind`, so a
+    /// picker must offer only the forms matching the kind on screen.
+    ///
+    /// ⚠️ `proofMethod` must never be `CLIENT_TOKEN`: the route REFUSES it
+    /// (K15/K14-B), because that method means the platform witnessed a signature
+    /// through a link it sent. The only way to record one is `sendConsentRequest`.
     public func addConsent(
         clientId: String,
         kind: String,
@@ -211,14 +221,15 @@ public final class ProClientsService: Sendable {
         notes: String?,
         patchTestResult: String?,
         validUntil: String?,
-        bookingId: String? = nil
+        bookingId: String? = nil,
+        formVersionId: String? = nil
     ) async throws {
         let payload = try JSONEncoder.canonical.encode(
             ProClientConsentRequest(
                 kind: kind, serviceScope: serviceScope, proofMethod: proofMethod,
                 proofRef: proofRef, signedAt: signedAt, notes: notes,
                 patchTestResult: patchTestResult, validUntil: validUntil,
-                bookingId: bookingId
+                bookingId: bookingId, formVersionId: formVersionId
             )
         )
         try await api.requestVoid(
@@ -249,6 +260,54 @@ public final class ProClientsService: Sendable {
         try await api.requestVoid(
             "/pro/clients/\(clientId)/consent-requests", method: .post, body: payload
         )
+    }
+
+    // MARK: - Per-client booking requirements (K16; same technical-record gate)
+
+    /// GET /api/v1/pro/clients/{id}/policy → this pro's stored booking
+    /// requirements for this client, plus whether the save-card rail is live.
+    /// 404s when the founder technical-record flag is off, exactly like the
+    /// technical record — the whole surface stays dark together.
+    ///
+    /// 🔴 Returns the WHOLE response. `cardOnFileRailEnabled` gates the
+    /// card-on-file control, so a caller handed only `policy` would render a
+    /// switch the server is going to refuse.
+    public func clientPolicy(clientId: String) async throws -> ProClientPolicyResponse {
+        try await api.request("/pro/clients/\(clientId)/policy")
+    }
+
+    /// PUT /api/v1/pro/clients/{id}/policy — store the requirements, and return
+    /// the server's echo of what it stored (all-off DELETEs the row and echoes
+    /// `policy: nil`).
+    ///
+    /// Every switch is sent every time: the route stores the object it is given,
+    /// so omitting a field clears it.
+    ///
+    /// Throws `APIError.server` carrying the SERVER's own sentence on a 409 —
+    /// unfinished payment setup, no deposit amount configured, or a card-on-file
+    /// requirement while the rail is dark. The surface prints that sentence
+    /// rather than inventing one, because it names the setting that fixes it.
+    public func updateClientPolicy(
+        clientId: String,
+        policy: ProClientPolicy.Display
+    ) async throws -> ProClientPolicyResponse {
+        let payload = try JSONEncoder.canonical.encode(
+            ProClientPolicyRequest(
+                requireDeposit: policy.requireDeposit,
+                prepayScope: policy.prepayScope?.rawValue,
+                requireCardOnFile: policy.requireCardOnFile,
+                blockSelfServeBooking: policy.blockSelfServeBooking
+            )
+        )
+        return try await api.request(
+            "/pro/clients/\(clientId)/policy", method: .put, body: payload
+        )
+    }
+
+    /// DELETE /api/v1/pro/clients/{id}/policy — clear every requirement for this
+    /// client. Idempotent: clearing a client who had none is a 200, not a 404.
+    public func clearClientPolicy(clientId: String) async throws -> ProClientPolicyResponse {
+        try await api.request("/pro/clients/\(clientId)/policy", method: .delete)
     }
 
     /// PATCH /api/v1/pro/clients/{id}/photo-release — set the client's standing

@@ -188,6 +188,63 @@ const CHECKS = [
     def: 'ProSessionStateResponseDTO',
     pick: (d) => [d],
   },
+  // GET /api/v1/pro/clients/{id}/policy — K16's per-client booking requirements
+  // (K17-B). VERBATIM captures (2026-08-01) of the A/B that is the entire point
+  // of this contract, driven against the live local route in both flag states:
+  //
+  //   proClientPolicy.json      a STORED `requireCardOnFile: true` sitting beside
+  //                             `cardOnFileRailEnabled: false` — the rail is dark,
+  //                             and the stored switch is STILL true. The resolver
+  //                             would have zeroed it; the read route deliberately
+  //                             does not, because a pro must see what they set.
+  //                             The device disables that one CONTROL instead
+  //                             ([[kill-switch-must-reach-the-control]]).
+  //   proClientPolicyNone.json  the DELETE response — `policy: null`, which is a
+  //                             different fact from four falses and is why the
+  //                             write route deletes the row rather than storing
+  //                             an all-off one. Also the null-branch of the
+  //                             `policy` anyOf, so both arms are covered here.
+  {
+    file: 'proClientPolicy.json',
+    def: 'ProClientPolicyResponseDTO',
+    pick: (d) => [d],
+  },
+  {
+    file: 'proClientPolicyNone.json',
+    def: 'ProClientPolicyResponseDTO',
+    pick: (d) => [d],
+  },
+  // GET /api/v1/pro/clients/{id}/technical — the client technical record.
+  //
+  // 🔴 This route had NO declared shape until K17-B: the handler built an inline
+  // literal, nothing was `satisfies`-checked, and the generated schema carried no
+  // definition for it. That is why K14 could put `formVersion` and `consentForms`
+  // on the wire (#809) with zero contract coverage, and why the device decoded
+  // neither for two releases. tovis-app now declares
+  // `ProClientTechnicalRecordResponseDTO`, so this fixture finally has something
+  // to be checked against.
+  //
+  // VERBATIM capture (2026-08-01). Deliberately mixed: THREE consent rows, one
+  // with `formVersion: null` (a free-text record written during the drive
+  // through the picker's "No form" branch) and two carrying attestations — which
+  // between them cover all three `originLabel` phrasings the server composes.
+  // The record entries validate individually so a required field lost on any ONE
+  // of them fails here rather than at runtime.
+  {
+    file: 'proClientTechnical.json',
+    def: 'ProClientTechnicalRecordResponseDTO',
+    pick: (d) => [d],
+  },
+  {
+    file: 'proClientTechnical.json',
+    def: 'ProClientConsentRecordDTO',
+    pick: (d) => d.consents,
+  },
+  {
+    file: 'proClientTechnical.json',
+    def: 'ProConsentFormOptionDTO',
+    pick: (d) => d.consentForms,
+  },
   // GET /api/v1/pro/bookings — buckets + stats; validate every row, so a
   // required field lost on ANY of them fails here rather than at runtime. The
   // fixture models TODAY's server: both badges present on every row (K5-B).
