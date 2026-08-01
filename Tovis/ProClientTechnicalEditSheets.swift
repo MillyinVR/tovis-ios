@@ -149,12 +149,36 @@ let proConsentProofMethodOptions: [(value: String, label: String)] = [
     ("PAPER_ON_FILE", "Paper on file"),
 ]
 
+/// The consent kinds, as (wire value, words) — the ONE place these three labels
+/// are spelled. They were previously written twice: inline `Text().tag()` rows
+/// in this sheet's picker, and a private `switch` in the record card. Two copies
+/// of a label table is one drift away from a card and a picker disagreeing about
+/// what a record IS ([[drifted-duplicate-is-a-bug-report]]), and inline picker
+/// rows are untestable — the reason K14's dead proof method survived to K17-A.
+let proConsentKindOptions: [(value: String, label: String)] = [
+    ("GENERAL_CONSENT", "General consent"),
+    ("SERVICE_WAIVER", "Service waiver"),
+    ("PATCH_TEST", "Patch test"),
+]
+
+/// A consent kind in words. An unrecognised value prints readably rather than
+/// disappearing: this labels a record that already EXISTS, and a stored kind
+/// this build doesn't know is still a record the pro must be able to see.
+func proConsentKindLabel(_ kind: String) -> String {
+    proConsentKindOptions.first { $0.value == kind }?.label
+        ?? kind.replacingOccurrences(of: "_", with: " ").capitalized
+}
+
 /// POST /pro/clients/{id}/consent — a consent / waiver / patch-test record. The
 /// patch-test result + validity apply only to PATCH_TEST; notes are encrypted.
 struct ProAddConsentSheet: View {
     @Environment(SessionModel.self) private var session
     @Environment(\.dismiss) private var dismiss
     let clientId: String
+    /// K14 — the pro's ACTIVE forms, from the technical record this sheet was
+    /// opened over. Empty is a legitimate answer (a pro who has authored no
+    /// forms), and the sheet simply offers no form to pin.
+    var consentForms: [ProConsentFormOption.Display] = []
     var onSaved: () -> Void
 
     @State private var kind = "GENERAL_CONSENT"
@@ -166,10 +190,21 @@ struct ProAddConsentSheet: View {
     @State private var hasValidUntil = false
     @State private var validUntil = Date()
     @State private var notes = ""
+    @State private var formVersionId = "" // "" = pin no form
     @State private var saving = false
     @State private var error: String?
 
     private var isPatch: Bool { kind == "PATCH_TEST" }
+
+    /// 🔴 Only the forms whose kind MATCHES the record being written. The route
+    /// 400s a mismatch ("That form is for a different kind of consent."), and it
+    /// is right to: a record labelled PATCH_TEST pointing at a colour waiver's
+    /// words reads as proof of something it isn't. Offering the choice and
+    /// letting the server refuse it would be a control that can only fail
+    /// ([[offered-option-must-be-an-accepted-write]]).
+    private var formsForKind: [ProConsentFormOption.Display] {
+        consentForms.filter { $0.kind.rawValue == kind }
+    }
 
     var body: some View {
         NavigationStack {
@@ -178,12 +213,40 @@ struct ProAddConsentSheet: View {
                     VStack(alignment: .leading, spacing: 6) {
                         fieldLabel("Kind")
                         Picker("Kind", selection: $kind) {
-                            Text("General consent").tag("GENERAL_CONSENT")
-                            Text("Service waiver").tag("SERVICE_WAIVER")
-                            Text("Patch test").tag("PATCH_TEST")
+                            ForEach(proConsentKindOptions, id: \.value) { option in
+                                Text(option.label).tag(option.value)
+                            }
                         }
                         .pickerStyle(.menu)
                         .tint(BrandColor.accent)
+                        .onChange(of: kind) { _, _ in
+                            // 🔴 The picker below re-filters on kind, but the
+                            // SELECTION is state — a form pinned under the old
+                            // kind would survive out of sight and post a
+                            // mismatch the route 400s.
+                            formVersionId = ""
+                        }
+                    }
+
+                    // K14 — pin this record to the exact text the client was
+                    // shown. Optional by design: a pro recording a paper waiver
+                    // they hold has nothing to point at, and that record must
+                    // still be writable.
+                    if !formsForKind.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            fieldLabel("Form signed")
+                            Picker("Form signed", selection: $formVersionId) {
+                                Text("No form — free-text record").tag("")
+                                ForEach(formsForKind) { form in
+                                    Text(form.label).tag(form.versionId ?? "")
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .tint(BrandColor.accent)
+                            Text("Pins this record to that version's exact wording. What you pin is stored as it reads today and never rewritten.")
+                                .font(BrandFont.body(11))
+                                .foregroundStyle(BrandColor.textMuted)
+                        }
                     }
 
                     VStack(alignment: .leading, spacing: 6) {
@@ -283,7 +346,8 @@ struct ProAddConsentSheet: View {
                 signedAt: hasSignedAt ? isoDay(signedAt) : nil,
                 notes: notes.trimmedOrNil,
                 patchTestResult: isPatch && !patchResult.isEmpty ? patchResult : nil,
-                validUntil: isPatch && hasValidUntil ? isoDay(validUntil) : nil
+                validUntil: isPatch && hasValidUntil ? isoDay(validUntil) : nil,
+                formVersionId: formVersionId.isEmpty ? nil : formVersionId
             )
             onSaved()
             dismiss()

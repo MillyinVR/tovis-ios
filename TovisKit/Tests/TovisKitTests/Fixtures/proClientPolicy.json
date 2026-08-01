@@ -1,0 +1,10 @@
+{
+    "ok": true,
+    "policy": {
+        "requireDeposit": false,
+        "prepayScope": null,
+        "requireCardOnFile": true,
+        "blockSelfServeBooking": true
+    },
+    "cardOnFileRailEnabled": false
+}
