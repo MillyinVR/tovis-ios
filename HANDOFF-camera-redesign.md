@@ -88,9 +88,20 @@ Deliberate non-changes:
   nothing and must not hold the door.
 - The web's `closeoutChecklist.ts` keeps its `hasAfterPhoto` input (its caller
   derives `afterCount > 0` — same rule). The Swift port's departure is documented
-  in the file header. The web's `"N photos captured"` hard plural will read
-  "1 photos captured" under the one-photo norm — **a small web copy follow-up,
-  not deployed, awaiting Tori's go-ahead.**
+  in the file header.
+
+### Rode along with this change
+
+- **`tovis-app` #827** — the web wrap-up row said "1 photos captured" for the same
+  reason. Copy only; no behaviour, schema or DTO. ⚠️ **MERGED, NOT DEPLOYED** —
+  it rides the next deploy Tori authorizes.
+- **`tovis-ios` #256** — `Wire contract` was red on *every* iOS PR (pre-existing on
+  `main`) because `tovis-app` #821 (W6/W7 location truth) added required
+  `isAddressPublic` + `locationType` to the pro-search location preview. Fixed as
+  its own PR so this one stayed clean, and landed first so this one could merge
+  on a green board. iOS never had W7's bug — Discover plots a pin and offers no
+  directions — so the fix is the wire plus the rule (`publishedAddress` /
+  `isNavigable`); see `BACKLOG.md §5`.
 
 ### Not verified on device
 
