@@ -150,19 +150,12 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                 expectations: currentExpectations()
             )
 
-            let signals = coaches.map { ($0.category, $0.evaluate(ctx)) }
-            // Readiness is the importance-weighted mean — light + focus count for more
-            // than a clean backdrop, per the beauty-photography priority order.
-            let totalWeight = signals.reduce(0.0) { $0 + $1.0.weight }
-            let readiness = totalWeight == 0 ? 0
-                : signals.reduce(0.0) { $0 + $1.1.score * $1.0.weight } / totalWeight
-            // The fix to surface = the biggest *weighted* deficiency among coaches that
-            // have a tip — so a lighting problem outranks a slightly-busy background.
-            let worst = signals
-                .filter { $0.1.message != nil }
-                .max { $0.0.weight * (1 - $0.1.score) < $1.0.weight * (1 - $1.1.score) }
-            let nudge = worst.flatMap { entry in entry.1.message.map { CoachNudge(category: entry.0, message: $0) } }
-            let statuses = signals.map { CoachStatus(category: $0.0, score: $0.1.score, message: $0.1.message) }
+            // Scoring arithmetic lives in CoachAggregate (pure, camera-free) so it
+            // can be tuned and tested without hardware.
+            let verdict = CoachAggregate.evaluate(coaches, ctx)
+            let readiness = verdict.readiness
+            let nudge = verdict.nudge
+            let statuses = verdict.statuses
 
             // Center-region average color — the neutral sample for gray-card WB.
             let e = working.extent
