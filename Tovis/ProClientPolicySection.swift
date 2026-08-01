@@ -140,7 +140,24 @@ struct ProClientPolicySection: View {
                 EmptyView()
             case let .failed(message):
                 BrandSection(title: "Booking requirements") {
-                    Text(message).font(BrandFont.body(12)).foregroundStyle(BrandColor.ember)
+                    // A retry, because this section owns its own load: the
+                    // technical record around it can succeed while this fails,
+                    // and re-rendering the parent does NOT re-run this `.task`
+                    // (the view keeps its identity, so `phase` survives). Without
+                    // a button the pro has to leave the chart entirely to try
+                    // again — for a CONTROL, that is a dead end, not a hiccup.
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(message).font(BrandFont.body(12)).foregroundStyle(BrandColor.ember)
+                        Button {
+                            phase = .loading
+                            Task { await load() }
+                        } label: {
+                            Text("Try again")
+                                .font(BrandFont.body(13, .semibold))
+                                .foregroundStyle(BrandColor.accent)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             case let .loaded(response):
                 loaded(response)
