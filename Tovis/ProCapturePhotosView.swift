@@ -175,16 +175,57 @@ struct ProCapturePhotosView: View {
     /// Guards exit while the coach has auto-harvested best shots the pro hasn't
     /// reviewed yet — otherwise tapping Done silently discards them.
     @State private var showExitConfirm = false
+
+    // MARK: The three drawers (the subtraction pass's disclosure model)
+    /// Swipe the coach line up → the seven dimensions (was: seven status pills).
+    @State private var showDimensions = false
+    /// Tap ⋯ → the tools tray (was: eyedropper + AE/AF + gear in the header).
+    @State private var showTools = false
+    /// Tap the step chip → the guide sheet (was: the eight-part guide bar).
+    @State private var showGuideSheet = false
+
+    // MARK: The lane's transients
+    // Two lane tiers expire rather than persist: a step change announces the new
+    // shot for a beat, and a light-match result confirms itself. Both fall back
+    // to the coach tip. Each carries a token so a newer transient supersedes an
+    // older one's pending expiry instead of being cut short by it.
+    @State private var stepTransient: String?
+    @State private var stepTransientToken = 0
+    @State private var lightTransient: (text: String, ok: Bool)?
+    @State private var lightTransientToken = 0
+    /// The last light-match verdict seen, so the lane fires on the CHANGE rather
+    /// than re-announcing a steady state every frame.
+    @State private var lastLightMatchOK: Bool?
+    /// Times out the error line so one failure can't hold the lane forever.
+    @State private var errorToken = 0
+    /// …except for the one message that isn't backed by any other state.
+    @State private var errorSticky = false
+    /// The all-steps-done card is a decision point shown once; "Keep shooting"
+    /// dismisses it and the lane carries the set-complete line from then on.
+    @State private var setCompleteDismissed = false
+
+    // MARK: "Choose from library instead"
+    /// The dead-end states' second door — see `CameraLibraryImport`.
+    @State private var showLibraryPicker = false
+    @State private var libraryItems: [PhotosPickerItem] = []
+    @State private var importingLibrary = false
     /// A just-recorded clip awaiting frame-by-frame review (nil = none).
     @State private var scrubClip: ScrubClip?
 
     private struct ScrubClip: Identifiable, Equatable { let url: URL; var id: String { url.absoluteString } }
 
     /// True while a selection/review surface is up (best-shots tray, frame
-    /// scrubber, settings, or the look picker) — the live camera pauses so it
-    /// isn't still capturing + auto-harvesting while the pro picks photos.
+    /// scrubber, settings, the tools tray, the guide sheet, or either photo
+    /// picker) — the live camera pauses so it isn't still capturing +
+    /// auto-harvesting while the pro picks photos.
+    ///
+    /// The dimensions drawer is deliberately NOT here: it's a live read-out of
+    /// the same signals the coach line shows, opened precisely to watch a number
+    /// move, and the design says "live while open — swipe down or shoot to
+    /// dismiss." Pausing the camera behind it would freeze what it exists to show.
     private var isReviewing: Bool {
-        showBestShots || showSettings || showLookPicker || scrubClip != nil
+        showBestShots || showSettings || showLookPicker || showTools
+            || showGuideSheet || showLibraryPicker || scrubClip != nil
     }
 
     /// The coach reads the frame as good-to-shoot (green ring).
@@ -214,9 +255,9 @@ struct ProCapturePhotosView: View {
 
             switch camera.status {
             case .denied:
-                permissionState
+                deadEnd(.permissionDenied)
             case let .failed(message):
-                failedState(message)
+                deadEnd(.cameraFailed(message))
             default:
                 cameraUI
             }
@@ -366,6 +407,37 @@ struct ProCapturePhotosView: View {
             if settings.speak, !allStepsDone, let step = currentStep {
                 coach?.announce("Next, the \(step.title). \(step.hint)")
             }
+            // …and the lane says it for a beat before handing back to the coach.
+            announceStepInLane()
+        }
+        // The light-match verdict flipped — confirm it (or name the fix) briefly,
+        // then get out of the coach tip's way. Fires on the CHANGE only, so a
+        // steady state never re-announces itself.
+        .onChange(of: lightMatch?.ok) { _, ok in
+            guard let ok, ok != lastLightMatchOK else { return }
+            lastLightMatchOK = ok
+            if let label = lightMatch?.label { announceLightInLane(label, ok: ok) }
+        }
+        // An error line used to have its own permanent row, so it could sit there
+        // forever harmlessly. In the lane it outranks the coach, so it has to let
+        // go — otherwise one failed capture silences coaching for the rest of the
+        // shoot.
+        //
+        // Safe to expire because every message here is either transient advice
+        // ("try again", "holding for another try") or SHADOWED by a durable
+        // queue row that outranks it and doesn't expire — a failed upload is
+        // still in `failedUploads`, a failed library save still has its terminal
+        // photos. The one exception sets `errorSticky` (see `queueFailedUpload`):
+        // that photo is genuinely gone, and nothing else on screen says so.
+        .onChange(of: errorMessage) { _, message in
+            guard message != nil else { errorSticky = false; return }
+            guard !errorSticky else { return }
+            errorToken += 1
+            let token = errorToken
+            Task {
+                try? await Task.sleep(nanoseconds: 8_000_000_000)
+                if errorToken == token, !errorSticky { errorMessage = nil }
+            }
         }
         // Guided auto-capture: re-arm when the shot drops out of "ready", and shoot
         // once it has held good + steady (isSteadyReady) while armed.
@@ -402,12 +474,67 @@ struct ProCapturePhotosView: View {
         } message: {
             Text(CameraVisionConsent.lookDisclosure)
         }
+        // "Choose from library instead" — the dead-end states' second door.
+        // Multi-select: a pro rescuing a session usually has more than one shot
+        // to add, and re-opening the picker per photo is its own dead end.
+        .photosPicker(isPresented: $showLibraryPicker, selection: $libraryItems,
+                      maxSelectionCount: 10, matching: .images)
+        .onChange(of: libraryItems) { _, items in
+            guard !items.isEmpty else { return }
+            libraryItems = []
+            Task { await importFromLibrary(items) }
+        }
         .sheet(isPresented: $showSettings) {
             #if DEBUG
             CoachSettingsSheet(settings: settings, onOpenTuning: { showTuning = true })
             #else
             CoachSettingsSheet(settings: settings)
             #endif
+        }
+        // Drawer 1 — the seven dimensions, live behind the coach line.
+        .sheet(isPresented: $showDimensions) {
+            DimensionsDrawer(headline: laneMessage?.text ?? "Reading the frame…",
+                             headlineTone: laneMessage?.tone ?? .neutral,
+                             statuses: coach?.statuses ?? [])
+        }
+        // Drawer 2 — the tools tray.
+        .sheet(isPresented: $showTools) {
+            CameraToolsDrawer(
+                settings: settings,
+                whiteBalanceCalibrated: camera.whiteBalanceCalibrated,
+                cardCalibrated: cardMatrix != nil,
+                aeAfLocked: camera.aeAfLocked,
+                onionEnabled: $onionEnabled,
+                onionOpacity: $onionOpacity,
+                ghostAvailable: matchLook != nil || !referenceURLs.isEmpty,
+                referenceChoice: matchLook == nil && referenceURLs.count > 1
+                    ? (index: referenceIndex, count: referenceURLs.count) : nil,
+                onCycleReference: {
+                    referenceIndex = (referenceIndex + 1) % referenceURLs.count
+                },
+                onCalibrate: { calibrating = true; calibrationStatus = nil },
+                onToggleAEAF: { camera.setAEAFLock(!camera.aeAfLocked) },
+                onOpenAllSettings: { presentAfterDrawer { showSettings = true } }
+            )
+        }
+        // Drawer 3 — the guide + packs + the matched look's direction lines.
+        .sheet(isPresented: $showGuideSheet) {
+            ShotGuideDrawer(
+                guide: guide,
+                currentStepID: currentStepID,
+                completedStepIDs: completedStepIDs,
+                standardGuideName: standardGuide.name,
+                trendingPacks: trendingPacks,
+                activePackID: activePackID,
+                matchLookActive: matchLook != nil,
+                aiSummary: matchLook?.aiSummary,
+                directionLines: matchLook?.directionLines ?? [],
+                directionIndex: lookDirectionIndex,
+                onSelectStep: { currentStepID = $0 },
+                onSelectPack: selectPack,
+                onMatchAPhoto: { presentAfterDrawer { showLookPicker = true } },
+                onAdvanceDirection: advanceLookDirection
+            )
         }
         #if DEBUG
         // The tuning console rides a half-height sheet over the LIVE camera —
@@ -610,6 +737,14 @@ struct ProCapturePhotosView: View {
                         .gesture(
                             SpatialTapGesture().onEnded { handleFocusTap($0.location) }
                         )
+                        // Swipe the preview sideways to move a shot without
+                        // opening anything — the guide bar's Prev/Next chevrons,
+                        // as a gesture. Simultaneous so tap-to-focus still wins
+                        // a stationary touch.
+                        .simultaneousGesture(
+                            DragGesture(minimumDistance: 44)
+                                .onEnded { value in handlePreviewSwipe(value.translation) }
+                        )
                 } else {
                     Color.black
                     ProgressView().tint(.white)
@@ -633,29 +768,105 @@ struct ProCapturePhotosView: View {
                 }
 
                 if settings.showGrid { thirdsGrid }
-                if settings.showLevel, let roll = coach?.deviceRoll { levelIndicator(roll) }
+                // The level draws itself when the camera is more than a couple of
+                // degrees out even with the setting off, then disappears again —
+                // it's only information while it's a problem.
+                if let roll = coach?.deviceRoll,
+                   settings.showLevel || abs(roll) > CoachTuning.tiltLevelDegrees {
+                    levelIndicator(roll)
+                }
 
                 VStack(spacing: 0) {
-                    phaseHeader
-                    if settings.showGuides, !guide.steps.isEmpty {
-                        guideBar
-                        guidanceBanner
-                    }
-                    if settings.showChecklist, let statuses = coach?.statuses, !statuses.isEmpty {
-                        fundamentalsHUD(statuses)
-                    }
-                    // When not in guided mode, the single nudge chip stands in for
-                    // the banner.
-                    if (!settings.showGuides || guide.steps.isEmpty),
-                       settings.showNudge, let message = coach?.nudge?.message {
-                        nudgeChip(message)
-                    }
+                    topBar
                     Spacer()
                 }
             }
 
             controls
         }
+    }
+
+    // MARK: - Top bar (three items, one row)
+
+    /// Close · the step chip · ⋯. The eight-part guide bar collapsed into the
+    /// chip; the eyedropper, AE/AF lock and gear collapsed into the ⋯ tray.
+    private var topBar: some View {
+        HStack(spacing: 12) {
+            Button { requestExit() } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(BrandColor.textPrimary)
+                    .frame(width: 38, height: 38)
+                    .background(BrandColor.bgPrimary.opacity(0.62), in: Circle())
+            }
+            .accessibilityLabel("Close the camera")
+
+            Spacer(minLength: 0)
+            stepChip
+            Spacer(minLength: 0)
+
+            Button { showTools = true } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(BrandColor.textPrimary)
+                    .frame(width: 38, height: 38)
+                    .background(BrandColor.bgPrimary.opacity(0.62), in: Circle())
+            }
+            .accessibilityLabel("Tools")
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+    }
+
+    /// Progress dots + the shot you're on + a disclosure. Falls back to the
+    /// phase label when there's no guide to be on.
+    @ViewBuilder private var stepChip: some View {
+        if guidedShooting {
+            Button { showGuideSheet = true } label: {
+                HStack(spacing: 9) {
+                    HStack(spacing: 4) {
+                        ForEach(guide.steps) { step in
+                            Circle()
+                                .fill(completedStepIDs.contains(step.id) ? BrandColor.accent
+                                      : (step.id == currentStepID
+                                         ? BrandColor.textPrimary
+                                         : BrandColor.textPrimary.opacity(0.32)))
+                                .frame(width: 5, height: 5)
+                        }
+                    }
+                    Text(allStepsDone ? guide.name : (currentStep?.title ?? guide.name))
+                        .font(BrandFont.display(14, .semibold))
+                        .foregroundStyle(BrandColor.textPrimary)
+                        .lineLimit(1)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(BrandColor.textPrimary.opacity(0.55))
+                }
+                .padding(.horizontal, 15)
+                .frame(height: 38)
+                .background(BrandColor.bgPrimary.opacity(0.62), in: Capsule())
+            }
+            .accessibilityLabel("Shot \(currentStepIndex + 1) of \(guide.steps.count), \(currentStep?.title ?? guide.name)")
+            .accessibilityHint("Opens the shot guide")
+        } else {
+            Text("\(phaseLabel) photos".uppercased())
+                .font(BrandFont.mono(12))
+                .tracking(1.2)
+                .foregroundStyle(BrandColor.textPrimary)
+                .padding(.horizontal, 14)
+                .frame(height: 38)
+                .background(BrandColor.bgPrimary.opacity(0.62), in: Capsule())
+        }
+    }
+
+    /// Whether the directed shoot is actually driving right now.
+    private var guidedShooting: Bool { settings.showGuides && !guide.steps.isEmpty }
+
+    /// Sideways swipe on the preview = Prev/Next shot. Vertical drags are left
+    /// alone so a scroll-ish gesture never jumps the guide.
+    private func handlePreviewSwipe(_ translation: CGSize) {
+        guard guidedShooting, abs(translation.width) > abs(translation.height) else { return }
+        selectStep(translation.width < 0 ? 1 : -1)
     }
 
     /// Rule-of-thirds guide.
@@ -996,28 +1207,9 @@ struct ProCapturePhotosView: View {
         return Date().timeIntervalSince(since) >= CoachTuning.calibrationDriftSeconds
     }
 
-    /// One-tap path back to the card scan when the light has moved on.
-    @ViewBuilder private var driftNudgePill: some View {
-        if driftNudgeActive {
-            Button {
-                driftDismissed = true
-                calibrating = true
-                cardMode = true
-                calibrationStatus = nil
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "lightbulb.max").font(.system(size: 11, weight: .bold))
-                    Text("Light’s changed — re-scan the card").font(BrandFont.body(12, .semibold))
-                }
-                .foregroundStyle(BrandColor.gold)
-                .padding(.horizontal, 10).padding(.vertical, 6)
-                .background(.black.opacity(0.45), in: Capsule())
-                .overlay(Capsule().strokeBorder(BrandColor.gold.opacity(0.5), lineWidth: 1))
-            }
-            .accessibilityLabel("The light has changed — re-scan the card")
-            .accessibilityHint("Reopens the card scan")
-        }
-    }
+    // (The one-tap path back to the card scan is now the lane's FIX action —
+    // see `handleLaneAction(.recalibrate)`. It kept its own pill for as long as
+    // there was a stack to put one in.)
 
     /// Sample the center patch + lock white balance to neutralize the room's cast.
     private func setWhiteBalance() {
@@ -1166,6 +1358,7 @@ struct ProCapturePhotosView: View {
         activePackID = newID
         guide = pack.map(ShotGuide.init(pack:)) ?? standardGuide
         completedStepIDs = []
+        setCompleteDismissed = false   // a new shot list gets its own completion moment
         currentStepID = guide.steps.first?.id
         if settings.speak, let pack {
             coach?.announce("Trending set: \(pack.name). \(pack.tagline)")
@@ -1178,6 +1371,7 @@ struct ProCapturePhotosView: View {
         activePackID = nil
         guide = look.guide
         completedStepIDs = []
+        setCompleteDismissed = false   // a new shot list gets its own completion moment
         currentStepID = guide.steps.first?.id
         lookDirectionIndex = 0
         onionEnabled = true   // the ghost is the point
@@ -1240,190 +1434,13 @@ struct ProCapturePhotosView: View {
         }
     }
 
-    /// The inspiration menu: standard set, trending packs (hottest first, when
-    /// any match this service), and "Match a photo…". Flame fills gold while
-    /// anything other than the standard set drives the shoot.
-    private var inspoActive: Bool { activePackID != nil || matchLook != nil }
-
-    @ViewBuilder private var trendingMenu: some View {
-        Menu {
-            Button {
-                selectPack(nil)
-            } label: {
-                if !inspoActive {
-                    Label(standardGuide.name, systemImage: "checkmark")
-                } else {
-                    Text(standardGuide.name)
-                }
-            }
-            ForEach(trendingPacks) { pack in
-                Button {
-                    selectPack(pack)
-                } label: {
-                    if activePackID == pack.id {
-                        Label("\(pack.name) — \(pack.tagline)", systemImage: "checkmark")
-                    } else {
-                        Text("\(pack.name) — \(pack.tagline)")
-                    }
-                }
-            }
-            Divider()
-            Button {
-                showLookPicker = true
-            } label: {
-                if matchLook != nil {
-                    Label("Match a photo…", systemImage: "checkmark")
-                } else {
-                    Label("Match a photo…", systemImage: "photo.on.rectangle.angled")
-                }
-            }
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: inspoActive ? "flame.fill" : "flame")
-                    .font(.system(size: 11, weight: .bold))
-                Text("Inspo").font(BrandFont.mono(10)).tracking(0.5)
-            }
-            .foregroundStyle(inspoActive ? BrandColor.gold : .white.opacity(0.8))
-            .padding(.horizontal, 8).padding(.vertical, 4)
-            .background(.white.opacity(0.1), in: Capsule())
-        }
-    }
-
-    /// The directed-shoot bar: progress dots + the current shot (title + how-to) +
-    /// Prev/Next, so the pro is guided through a complete, consistent set.
-    private var guideBar: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 5) {
-                ForEach(guide.steps) { step in
-                    Circle()
-                        .fill(completedStepIDs.contains(step.id) ? BrandColor.emerald
-                              : (step.id == currentStepID ? .white : .white.opacity(0.3)))
-                        .frame(width: 6, height: 6)
-                }
-                Spacer()
-                trendingMenu
-                Text("\(completedStepIDs.count)/\(guide.steps.count)")
-                    .font(BrandFont.mono(11)).foregroundStyle(.white.opacity(0.7))
-            }
-
-            if allStepsDone {
-                HStack(spacing: 8) {
-                    Image(systemName: "checkmark.seal.fill").foregroundStyle(BrandColor.emerald)
-                    Text("Full \(guide.name.lowercased()) captured — reshoot any, or tap Done")
-                        .font(BrandFont.body(13, .semibold)).foregroundStyle(.white)
-                    Spacer()
-                }
-            } else if let step = currentStep {
-                HStack(spacing: 10) {
-                    Button { selectStep(-1) } label: {
-                        Image(systemName: "chevron.left").font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(.white.opacity(currentStepIndex == 0 ? 0.25 : 0.85))
-                    }
-                    .disabled(currentStepIndex == 0)
-
-                    Image(systemName: step.icon).font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(BrandColor.accent).frame(width: 22)
-
-                    VStack(alignment: .leading, spacing: 1) {
-                        HStack(spacing: 6) {
-                            Text("Shot \(currentStepIndex + 1) · \(step.title)")
-                                .font(BrandFont.body(14, .semibold)).foregroundStyle(.white)
-                            if completedStepIDs.contains(step.id) {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .font(.system(size: 12)).foregroundStyle(BrandColor.emerald)
-                            }
-                        }
-                        Text(step.hint).font(BrandFont.body(11)).foregroundStyle(.white.opacity(0.7))
-                            .lineLimit(1)
-                    }
-                    Spacer()
-
-                    Button { selectStep(1) } label: {
-                        Image(systemName: "chevron.right").font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(.white.opacity(currentStepIndex >= guide.steps.count - 1 ? 0.25 : 0.85))
-                    }
-                    .disabled(currentStepIndex >= guide.steps.count - 1)
-                }
-            }
-        }
-        .padding(.horizontal, 14).padding(.vertical, 10)
-        .background(.black.opacity(0.5), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .padding(.horizontal, 16).padding(.top, 10)
-        .animation(.easeOut(duration: 0.2), value: currentStepID)
-        .animation(.easeOut(duration: 0.2), value: allStepsDone)
-    }
-
-    /// Claude's direction lines for the matched look — tap to step through;
-    /// each line is spoken when voice tips are on. (The pose rules merged into
-    /// the brief already gate readiness; these are the human-coaching extras —
-    /// expression, head angle, hands, light — that no evaluator can measure.)
-    private func aiDirectionCard(_ look: ReferenceLook) -> some View {
-        let lines = look.directionLines
-        let index = min(lookDirectionIndex, lines.count - 1)
-        return Button {
-            let next = (index + 1) % lines.count
-            lookDirectionIndex = next
-            if settings.speak { coach?.announce(lines[next]) }
-        } label: {
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(BrandColor.gold)
-                    Text(look.aiSummary ?? "AI direction")
-                        .font(BrandFont.mono(10)).tracking(0.5)
-                        .foregroundStyle(.white.opacity(0.7))
-                        .lineLimit(1)
-                    Spacer(minLength: 8)
-                    Text("\(index + 1)/\(lines.count)")
-                        .font(BrandFont.mono(10)).foregroundStyle(.white.opacity(0.5))
-                }
-                Text(lines[index])
-                    .font(BrandFont.body(13, .semibold)).foregroundStyle(.white)
-                    .multilineTextAlignment(.leading)
-            }
-            .padding(.horizontal, 12).padding(.vertical, 8)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.black.opacity(0.5), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .padding(.horizontal, 16)
-        .animation(.easeOut(duration: 0.15), value: lookDirectionIndex)
-    }
-
-    // MARK: - Guidance banner (the photographer's voice)
-
-    /// One clear directive for the current moment — sets the shot, calls the single
-    /// most important fix, or says "hold steady" as it's about to capture.
-    private var guidanceText: String {
-        if allStepsDone { return "That's the full set — beautiful work." }
-        let title = currentStep?.title ?? "Shot"
-        if isReady { return "\(title) looks great — hold steady…" }
-        if let fix = coach?.nudge?.message { return "\(title) — \(fix)" }
-        if let hint = currentStep?.hint { return "\(title) — \(hint)" }
-        return title
-    }
-
-    private var guidanceBanner: some View {
-        let ready = isReady || allStepsDone
-        return HStack(spacing: 10) {
-            Image(systemName: allStepsDone ? "checkmark.seal.fill" : (isReady ? "camera.aperture" : "viewfinder"))
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(ready ? BrandColor.emerald : BrandColor.accent)
-            Text(guidanceText)
-                .font(BrandFont.body(15, .semibold))
-                .foregroundStyle(.white)
-                .lineLimit(2).multilineTextAlignment(.leading)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 14).padding(.vertical, 11)
-        .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder((ready ? BrandColor.emerald : BrandColor.accent).opacity(0.5), lineWidth: 1)
-        )
-        .padding(.horizontal, 16).padding(.top, 8)
-        .animation(.easeOut(duration: 0.2), value: ready)
+    /// Step through the matched look's AI direction lines (from the guide
+    /// drawer) — each line is spoken when voice tips are on.
+    private func advanceLookDirection() {
+        guard let lines = matchLook?.directionLines, !lines.isEmpty else { return }
+        let next = (min(max(lookDirectionIndex, 0), lines.count - 1) + 1) % lines.count
+        lookDirectionIndex = next
+        if settings.speak { coach?.announce(lines[next]) }
     }
 
     // MARK: - Light matching (before/after)
@@ -1480,441 +1497,351 @@ struct ProCapturePhotosView: View {
                             : "Cooler than the \(target.noun) — warm the light", false)
     }
 
-    /// The match-the-before light pill (AFTER phase, when a stamp is known).
-    @ViewBuilder private var lightMatchPill: some View {
-        if let match = lightMatch {
-            HStack(spacing: 6) {
-                Image(systemName: match.ok ? "checkmark.circle.fill" : "sun.max.trianglebadge.exclamationmark")
-                    .font(.system(size: 11, weight: .bold))
-                Text(match.label).font(BrandFont.body(12, .semibold))
-            }
-            .foregroundStyle(match.ok ? BrandColor.emerald : BrandColor.gold)
-            .padding(.horizontal, 10).padding(.vertical, 6)
-            .background(.black.opacity(0.45), in: Capsule())
-            .overlay(Capsule().strokeBorder(
-                (match.ok ? BrandColor.emerald : BrandColor.gold).opacity(0.5), lineWidth: 1))
-            // The ✓ / ⚠︎ icon carries the ok/off state — name it for VoiceOver.
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(match.ok ? "Light matched" : "Light off") — \(match.label)")
+    // MARK: - The lane
+
+    /// Everything the lane arbitrates between, gathered once per render.
+    private var laneInputs: CameraLane.Inputs {
+        var inputs = CameraLane.Inputs()
+        inputs.terminalCount = terminalUploads.count
+        inputs.retryableCount = retryableUploads.count
+        inputs.failedClipCount = failedClips.count
+        inputs.bestShotCount = coach?.harvested.count ?? 0
+        inputs.lightDrifted = driftNudgeActive
+        inputs.lightTransient = lightTransient
+        inputs.stepTransient = stepTransient
+        if guidedShooting {
+            inputs.stepProgress = (index: currentStepIndex, total: guide.steps.count)
+        }
+        // The card owns the moment the set completes; the lane carries it after.
+        inputs.setComplete = guidedShooting && allStepsDone && setCompleteDismissed
+        inputs.isReady = isReady
+        // Keep the standing disclosure on screen for as long as it's true.
+        inputs.aiDisclosure = enhancingLook ? CameraVisionConsent.lookDisclosure : nil
+        // Instructions, never scores — the coach's own phrasing, unprefixed.
+        // (The step chip already says which shot this is.) "On-screen tips" off
+        // now silences exactly this tier: failures and the shot's own name still
+        // reach the lane, because those aren't coaching.
+        inputs.coachTip = (allStepsDone || !settings.showNudge) ? nil : coach?.nudge?.message
+        inputs.stepHint = (guidedShooting && !allStepsDone) ? currentStep?.hint : nil
+        inputs.errorText = errorMessage
+        // "Fundamentals checklist" off now means the coach line doesn't offer to
+        // expand into the seven — the pills' setting, following the pills.
+        inputs.hasDimensions = settings.showChecklist && !(coach?.statuses.isEmpty ?? true)
+        return inputs
+    }
+
+    private var laneMessage: LaneMessage? { CameraLane.message(laneInputs) }
+
+    /// Work the pro can't act on — a hairline on the lane, never words.
+    private var backgroundBusy: Bool {
+        uploading || analyzingLook || enhancingLook || savingClips > 0
+    }
+
+    /// Say what the new shot is for a beat, then hand the lane back to the coach.
+    private func announceStepInLane() {
+        guard guidedShooting, !allStepsDone, let step = currentStep else { return }
+        stepTransient = step.hint
+        stepTransientToken += 1
+        let token = stepTransientToken
+        Task {
+            try? await Task.sleep(nanoseconds: UInt64(CameraLane.transientSeconds * 1_000_000_000))
+            // A newer transient superseded this one — its own timer owns the lane.
+            if stepTransientToken == token { stepTransient = nil }
         }
     }
 
-    // MARK: - Onion-skin (before/after matching)
-
-    /// Ghost controls: toggle the overlay, set its strength, and (before/after
-    /// mode only) cycle which "before" to line up against. Shown for AFTER
-    /// references or an active match-look.
-    private var onionControls: some View {
-        HStack(spacing: 12) {
-            Button { onionEnabled.toggle() } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: onionEnabled ? "square.on.square.dashed" : "square.on.square")
-                        .font(.system(size: 13, weight: .semibold))
-                    Text(matchLook != nil ? "Match the look" : "Match before")
-                        .font(BrandFont.body(13, .semibold))
-                }
-                .foregroundStyle(onionEnabled ? BrandColor.onAccent : .white)
-                .padding(.horizontal, 12).padding(.vertical, 7)
-                .background(onionEnabled ? BrandColor.accent : .white.opacity(0.12), in: Capsule())
-            }
-
-            if showOnion {
-                Image(systemName: "circle.lefthalf.filled").font(.system(size: 12)).foregroundStyle(.white.opacity(0.6))
-                    .accessibilityHidden(true)
-                Slider(value: $onionOpacity, in: 0.1...0.7).tint(.white)
-                    .accessibilityLabel("Ghost overlay strength")
-
-                if matchLook == nil, referenceURLs.count > 1 {
-                    Button {
-                        referenceIndex = (referenceIndex + 1) % referenceURLs.count
-                    } label: {
-                        Text("\(min(referenceIndex, referenceURLs.count - 1) + 1)/\(referenceURLs.count)")
-                            .font(BrandFont.mono(12)).foregroundStyle(.white)
-                            .padding(.horizontal, 10).padding(.vertical, 6)
-                            .background(.white.opacity(0.12), in: Capsule())
-                    }
-                    .accessibilityLabel("Reference photo \(min(referenceIndex, referenceURLs.count - 1) + 1) of \(referenceURLs.count)")
-                    .accessibilityHint("Cycles to the next reference photo")
-                }
-            }
-        }
-        .padding(.horizontal, 20)
-    }
-
-    // MARK: - Fundamentals HUD
-
-    /// The order the fundamentals pills appear in (stable so they don't reshuffle
-    /// frame-to-frame). Pose/clipping stays out of the row — it drives the priority
-    /// tip when it fires, but an always-green "pose" pill just adds noise.
-    private static let hudOrder: [CoachCategory] = [.lighting, .color, .level, .composition, .sharpness, .background]
-
-    /// At-a-glance checklist: each fundamental tinted green (good) / amber (minor) /
-    /// red (fix now), so the pro can *see* what's not photographer-worthy yet.
-    private func fundamentalsHUD(_ statuses: [CoachStatus]) -> some View {
-        HStack(spacing: 6) {
-            ForEach(Self.hudOrder.compactMap { cat in statuses.first { $0.category == cat } }) { status in
-                let info = Self.hudDisplay(status.category)
-                HStack(spacing: 4) {
-                    Image(systemName: info.icon).font(.system(size: 10, weight: .bold))
-                    Text(info.label).font(BrandFont.mono(10)).tracking(0.5)
-                }
-                .foregroundStyle(Self.hudTint(status))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .background(.black.opacity(0.45), in: Capsule())
-                .overlay(Capsule().strokeBorder(Self.hudTint(status).opacity(0.5), lineWidth: 1))
-                // The pill's status is color-only — spell it out for VoiceOver.
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(info.label), \(Self.hudA11yStatus(status))")
-            }
-        }
-        .padding(.top, 10)
-        .animation(.easeOut(duration: 0.2), value: statuses)
-    }
-
-    /// Spoken form of a fundamental's status (mirrors `hudTint`): the pill tints
-    /// green/amber/red, which VoiceOver can't see.
-    private static func hudA11yStatus(_ s: CoachStatus) -> String {
-        guard s.message != nil else { return "good" }
-        return s.score < 0.5 ? "needs fixing" : "minor issue"
-    }
-
-    private static func hudDisplay(_ c: CoachCategory) -> (label: String, icon: String) {
-        switch c {
-        case .lighting: return ("LIGHT", "sun.max.fill")
-        case .color: return ("COLOR", "drop.fill")
-        case .level: return ("LEVEL", "level.fill")
-        case .composition: return ("FRAME", "viewfinder")
-        case .sharpness: return ("FOCUS", "camera.metering.center.weighted")
-        case .background: return ("CLEAN", "square.on.square")
-        case .pose: return ("POSE", "figure.stand")
+    /// Same, for a light-match verdict.
+    private func announceLightInLane(_ text: String, ok: Bool) {
+        lightTransient = (text: text, ok: ok)
+        lightTransientToken += 1
+        let token = lightTransientToken
+        Task {
+            try? await Task.sleep(nanoseconds: UInt64(CameraLane.transientSeconds * 1_000_000_000))
+            if lightTransientToken == token { lightTransient = nil }
         }
     }
 
-    /// Green when the fundamental is good, amber for a minor issue, red when it
-    /// needs fixing now (a tip is present).
-    private static func hudTint(_ s: CoachStatus) -> Color {
-        guard s.message != nil else { return BrandColor.emerald }
-        return s.score < 0.5 ? BrandColor.ember : BrandColor.gold
-    }
-
-    /// The single prioritized coaching tip.
-    private func nudgeChip(_ message: String) -> some View {
-        Text(message)
-            .font(BrandFont.body(14, .semibold))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(.black.opacity(0.55), in: Capsule())
-            .overlay(Capsule().strokeBorder(BrandColor.accent.opacity(0.6), lineWidth: 1))
-            .padding(.top, 12)
-            .transition(.move(edge: .top).combined(with: .opacity))
-            .animation(.easeInOut(duration: 0.25), value: message)
-            .accessibilityLabel("Coaching tip: \(message)")
-    }
-
-    private var phaseHeader: some View {
-        HStack {
-            Button { requestExit() } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 38, height: 38)
-                    .background(.black.opacity(0.4), in: Circle())
-            }
-            Spacer()
-            Text("\(phaseLabel) photos".uppercased())
-                .font(BrandFont.mono(12))
-                .tracking(1.2)
-                .foregroundStyle(.white)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(.black.opacity(0.4), in: Capsule())
-            Spacer()
-            Button { calibrating.toggle() } label: {
-                Image(systemName: camera.whiteBalanceCalibrated ? "eyedropper.halffull" : "eyedropper")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(camera.whiteBalanceCalibrated ? BrandColor.emerald
-                                     : (calibrating ? BrandColor.gold : .white))
-                    .frame(width: 38, height: 38)
-                    .background(.black.opacity(0.4), in: Circle())
-            }
-            .accessibilityLabel("White balance calibration")
-
-            Button { camera.setAEAFLock(!camera.aeAfLocked) } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: camera.aeAfLocked ? "lock.fill" : "lock.open")
-                        .font(.system(size: 14, weight: .semibold))
-                    if camera.aeAfLocked {
-                        Text("AE/AF").font(BrandFont.mono(10)).tracking(0.5)
-                    }
-                }
-                .foregroundStyle(camera.aeAfLocked ? BrandColor.gold : .white)
-                .padding(.horizontal, 11).frame(height: 38)
-                .background(.black.opacity(0.4), in: Capsule())
-            }
-            .accessibilityLabel(camera.aeAfLocked ? "Unlock focus and exposure" : "Lock focus and exposure")
-
-            Button { showSettings = true } label: {
-                Image(systemName: "slider.horizontal.3")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 38, height: 38)
-                    .background(.black.opacity(0.4), in: Circle())
-            }
-            .accessibilityLabel("Coaching settings")
+    /// Present a sheet that a drawer just asked for. Raising the new flag in the
+    /// same tick the drawer calls `dismiss()` loses the presentation entirely —
+    /// SwiftUI is still tearing the old sheet down and drops the request — so the
+    /// second one waits for the dismissal to land.
+    private func presentAfterDrawer(_ present: @escaping () -> Void) {
+        Task {
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            present()
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
     }
+
+    /// The lane's action words, wired to what they already did as buttons.
+    private func handleLaneAction(_ kind: LaneAction.Kind) {
+        switch kind {
+        case .retryUploads:
+            if !retryableUploads.isEmpty { Task { await retryFailedUploads() } }
+            if !failedClips.isEmpty { retryFailedClips() }
+        case .terminalOptions:
+            showTerminalDecision = true
+        case .reviewBestShots:
+            showBestShots = true
+        case .recalibrate:
+            driftDismissed = true
+            calibrating = true
+            cardMode = true
+            calibrationStatus = nil
+        }
+    }
+
+    // MARK: - Controls (the lane + the shutter row)
 
     private var controls: some View {
-        VStack(spacing: 14) {
-            if calibrating { calibrationControls }
-            lightMatchPill
-            driftNudgePill
-            if analyzingLook {
-                HStack(spacing: 8) {
-                    ProgressView().tint(.white)
-                    Text("Reading the look…").font(BrandFont.body(13)).foregroundStyle(.white.opacity(0.85))
-                }
-            }
-            if enhancingLook {
-                VStack(spacing: 3) {
-                    HStack(spacing: 8) {
-                        ProgressView().tint(.white)
-                        Text("Enhancing with AI…").font(BrandFont.body(13)).foregroundStyle(.white.opacity(0.85))
-                    }
-                    // The standing disclosure — this is the moment bytes leave the device.
-                    Text(CameraVisionConsent.lookDisclosure)
-                        .font(BrandFont.body(10)).foregroundStyle(.white.opacity(0.55))
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 24)
-                }
-            }
-            if let look = matchLook, !look.directionLines.isEmpty {
-                aiDirectionCard(look)
-            }
-            if matchLook != nil || !referenceURLs.isEmpty { onionControls }
+        VStack(spacing: 0) {
+            if calibrating {
+                // Calibration is a MODE, not a row: one job on screen, and the
+                // coach + shutter step aside until it's set or skipped.
+                calibrationControls.padding(.vertical, 16)
+            } else {
+                // The only state that earns a card instead of a lane — it's a
+                // decision point, and the shutter still works underneath it.
+                if guidedShooting, allStepsDone, !setCompleteDismissed { setCompleteCard }
 
-            if let errorMessage {
-                Text(errorMessage)
-                    .font(BrandFont.body(13))
-                    .foregroundStyle(BrandColor.ember)
-                    .multilineTextAlignment(.center)
+                CameraLaneView(
+                    message: laneMessage,
+                    backgroundBusy: backgroundBusy,
+                    onAction: handleLaneAction,
+                    onExpand: { showDimensions = true },
+                    accessibilityValue: CameraLane.accessibilityValue(
+                        message: laneMessage, statuses: coach?.statuses ?? [])
+                )
+
+                shutterRow
             }
-
-            // Shots the connection dropped — kept in durable custody, worth a tap.
-            // Named by CAUSE, so the pro can tell this from the refusal below:
-            // this one gets better when the signal does.
-            if !retryableUploads.isEmpty {
-                let count = retryableUploads.count
-                Button { Task { await retryFailedUploads() } } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "arrow.clockwise").font(.system(size: 13, weight: .semibold))
-                        Text("\(count) photo\(count == 1 ? "" : "s") waiting on signal — retry")
-                            .font(BrandFont.body(14, .semibold))
-                    }
-                    .foregroundStyle(BrandColor.textPrimary)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(BrandColor.amber.opacity(0.85), in: Capsule())
-                }
-                .disabled(uploading)
-                .accessibilityHint("Tries these photos again")
-            }
-
-            // Shots the server REFUSED. No retry button: retrying re-fails. This
-            // needs a decision, so it opens one instead of looping.
-            if !terminalUploads.isEmpty {
-                let count = terminalUploads.count
-                Button { showTerminalDecision = true } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 13, weight: .semibold))
-                        Text("\(count) photo\(count == 1 ? "" : "s") can’t be saved here")
-                            .font(BrandFont.body(14, .semibold))
-                    }
-                    .foregroundStyle(BrandColor.textPrimary)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(BrandColor.ember.opacity(0.9), in: Capsule())
-                }
-                .accessibilityHint("Choose whether to keep these photos on your phone")
-            }
-
-            // Clips whose upload failed — safe in the ClipVault, retried on demand.
-            if !failedClips.isEmpty {
-                Button { retryFailedClips() } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "arrow.clockwise").font(.system(size: 13, weight: .semibold))
-                        Text("Retry \(failedClips.count) unsaved clip\(failedClips.count == 1 ? "" : "s")")
-                            .font(BrandFont.body(14, .semibold))
-                    }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(BrandColor.ember.opacity(0.85), in: Capsule())
-                }
-                .disabled(savingClips > 0)
-            }
-
-            // A stopped recording is uploading in the background.
-            if savingClips > 0 {
-                HStack(spacing: 8) {
-                    ProgressView().tint(.white).scaleEffect(0.8)
-                    Text("Saving clip…")
-                        .font(BrandFont.body(13, .semibold))
-                        .foregroundStyle(.white)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(.black.opacity(0.45), in: Capsule())
-            }
-
-            // Auto-harvested "best shots" awaiting review (Session Reel).
-            if let coach, !coach.harvested.isEmpty {
-                Button { showBestShots = true } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "sparkles").font(.system(size: 14, weight: .semibold))
-                        Text("\(coach.harvested.count) best \(coach.harvested.count == 1 ? "shot" : "shots") — review")
-                            .font(BrandFont.body(14, .semibold))
-                    }
-                    .foregroundStyle(BrandColor.onAccent)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(BrandColor.accent, in: Capsule())
-                }
-            }
-
-            // Captured strip (this session)
-            if !captured.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(captured) { shot in
-                            Button {
-                                viewingMedia = FullscreenMedia.local(id: shot.id.uuidString, image: shot.image)
-                            } label: {
-                                Image(uiImage: shot.image)
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: 54, height: 54)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                }
-                .frame(height: 54)
-            }
-
-            // Shutter
-            HStack {
-                // Record control (left) — silent video clip → frame scrubber.
-                Group {
-                    if camera.recordingAvailable {
-                        Button { Task { await toggleRecording() } } label: {
-                            ZStack {
-                                Circle().strokeBorder(.white.opacity(0.7), lineWidth: 2).frame(width: 44, height: 44)
-                                RoundedRectangle(cornerRadius: camera.isRecording ? 4 : 11, style: .continuous)
-                                    .fill(BrandColor.ember)
-                                    .frame(width: camera.isRecording ? 20 : 22,
-                                           height: camera.isRecording ? 20 : 22)
-                                    .animation(.easeInOut(duration: 0.2), value: camera.isRecording)
-                            }
-                        }
-                        .accessibilityLabel(camera.isRecording ? "Stop recording" : "Record clip")
-                    } else if !captured.isEmpty {
-                        Text("\(captured.count) captured")
-                            .font(BrandFont.mono(11))
-                            .foregroundStyle(.white.opacity(0.7))
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                Button {
-                    Task { await capture() }
-                } label: {
-                    ZStack {
-                        // Readiness ring (green = good to shoot), per the coach.
-                        Circle()
-                            .strokeBorder(readinessColor, lineWidth: 4)
-                            .frame(width: 74, height: 74)
-                            .animation(.easeInOut(duration: 0.3), value: readinessColor)
-                        // Auto-capture "filling" ring — the photographer deciding,
-                        // completing as the shot holds steady, then it fires.
-                        Circle()
-                            .trim(from: 0, to: coach?.holdProgress ?? 0)
-                            .stroke(BrandColor.emerald, style: StrokeStyle(lineWidth: 4, lineCap: .round))
-                            .rotationEffect(.degrees(-90))
-                            .frame(width: 74, height: 74)
-                            .animation(.linear(duration: 0.12), value: coach?.holdProgress ?? 0)
-                        if uploading {
-                            ProgressView().tint(.white)
-                        } else {
-                            // Dim + shrink the shutter when the coach says the shot
-                            // isn't strong yet — a visible "hold for the green ring."
-                            Circle().fill(.white).frame(width: 60, height: 60)
-                                .scaleEffect(isReady ? 1.0 : 0.84)
-                                .opacity(isReady ? 1.0 : 0.55)
-                                .animation(.easeInOut(duration: 0.25), value: isReady)
-                        }
-                    }
-                }
-                .disabled(uploading || scanningCard || camera.status != .ready)
-                .accessibilityLabel("Shutter")
-                .accessibilityHint(isReady
-                    ? "Ready — double tap to take the photo"
-                    : "Hold steady for the coach's green ring, then double tap to capture")
-
-                // Done
-                Button("Done") { requestExit() }
-                    .font(BrandFont.body(15, .semibold))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-            }
-            .padding(.horizontal, 20)
         }
-        .padding(.top, 16)
         .padding(.bottom, 28)
         .frame(maxWidth: .infinity)
         .background(Color.black)
     }
 
-    // MARK: - States
+    /// "That's the full set" — a card, because finishing the guide is a choice
+    /// point (review what you have, or keep shooting extras).
+    private var setCompleteCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("That’s the full set")
+                    .font(BrandFont.display(19, .semibold))
+                    .foregroundStyle(BrandColor.textPrimary)
+                Text("\(guide.steps.count) shots, all matched to the brief. Keep shooting if you want extras.")
+                    .font(BrandFont.body(13.5))
+                    .foregroundStyle(BrandColor.textSecondary)
+            }
+            HStack(spacing: 8) {
+                // "Review N" counts the shots the button actually OPENS — the
+                // harvest tray. When there's nothing harvested, reviewing is not
+                // the decision on offer; finishing is.
+                let harvested = coach?.harvested.count ?? 0
+                Button {
+                    setCompleteDismissed = true
+                    if harvested > 0 { showBestShots = true } else { requestExit() }
+                } label: {
+                    Text(harvested > 0 ? "Review \(harvested)" : "Done")
+                        .font(BrandFont.display(14.5, .semibold))
+                        .foregroundStyle(BrandColor.onAccent)
+                        .frame(maxWidth: .infinity).frame(height: 46)
+                        .background(BrandColor.accent,
+                                    in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                }
 
-    private var permissionState: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "camera.fill").font(.system(size: 36)).foregroundStyle(.white.opacity(0.7))
-            Text("Camera access needed")
-                .font(BrandFont.display(20, .semibold)).foregroundStyle(.white)
-            Text("Enable camera access in Settings to take session photos.")
-                .font(BrandFont.body(14)).foregroundStyle(.white.opacity(0.7))
-                .multilineTextAlignment(.center)
-            Button("Open Settings") {
-                if let url = URL(string: UIApplication.openSettingsURLString) {
-                    UIApplication.shared.open(url)
+                Button { setCompleteDismissed = true } label: {
+                    Text("Keep shooting")
+                        .font(BrandFont.display(14.5, .semibold))
+                        .foregroundStyle(BrandColor.textSecondary)
+                        .frame(maxWidth: .infinity).frame(height: 46)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                .strokeBorder(BrandColor.textPrimary.opacity(0.16), lineWidth: 1)
+                        )
                 }
             }
-            .font(BrandFont.body(15, .semibold))
-            .foregroundStyle(BrandColor.onAccent)
-            .padding(.vertical, 12).padding(.horizontal, 28)
-            .background(BrandColor.accent)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-
-            Button("Close") { dismiss() }.font(BrandFont.body(14)).foregroundStyle(.white.opacity(0.7))
         }
-        .padding(28)
+        .padding(18)
+        .background(BrandColor.bgPrimary.opacity(0.88),
+                    in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(BrandColor.accent.opacity(0.42), lineWidth: 1)
+        )
+        .padding(.horizontal, 18)
+        .padding(.bottom, 12)
+        .transition(.opacity.combined(with: .scale(scale: 0.97)))
     }
 
-    private func failedState(_ message: String) -> some View {
-        VStack(spacing: 14) {
-            Text(message).font(BrandFont.body(15)).foregroundStyle(.white).multilineTextAlignment(.center)
-            Button("Close") { dismiss() }
-                .font(BrandFont.body(15, .semibold)).foregroundStyle(.white)
+    /// Last frame + count · shutter · Done. Nothing above the shutter changes
+    /// height, so this row never moves under a busy thumb.
+    private var shutterRow: some View {
+        HStack {
+            HStack(spacing: 8) {
+                // Record control — a silent clip → the frame scrubber. It keeps a
+                // slot because it is the ONLY way to record, and recording is
+                // capture; on hardware without it the slot collapses to the
+                // thumbnail alone, which is the design's left slot exactly.
+                if camera.recordingAvailable {
+                    Button { Task { await toggleRecording() } } label: {
+                        ZStack {
+                            Circle()
+                                .strokeBorder(BrandColor.textPrimary.opacity(0.7), lineWidth: 2)
+                                .frame(width: 40, height: 40)
+                            RoundedRectangle(cornerRadius: camera.isRecording ? 4 : 10, style: .continuous)
+                                .fill(BrandColor.ember)
+                                .frame(width: camera.isRecording ? 18 : 20,
+                                       height: camera.isRecording ? 18 : 20)
+                                .animation(.easeInOut(duration: 0.2), value: camera.isRecording)
+                        }
+                    }
+                    .accessibilityLabel(camera.isRecording ? "Stop recording" : "Record clip")
+                }
+                lastFrameThumbnail
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            shutterButton
+
+            Button("Done") { requestExit() }
+                .font(BrandFont.display(15.5, .semibold))
+                .foregroundStyle(allStepsDone ? BrandColor.accent : BrandColor.textPrimary)
+                .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .padding(28)
+        .padding(.horizontal, 24)
+        .padding(.top, 8)
+    }
+
+    /// The scrolling strip becomes one thumbnail with a count badge — proof the
+    /// shot landed, and the door to reviewing it.
+    @ViewBuilder private var lastFrameThumbnail: some View {
+        if let shot = captured.first {
+            Button {
+                viewingMedia = FullscreenMedia.local(id: shot.id.uuidString, image: shot.image)
+            } label: {
+                Image(uiImage: shot.image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 46, height: 58)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(BrandColor.textPrimary.opacity(0.22), lineWidth: 1)
+                    )
+                    .overlay(alignment: .bottomTrailing) {
+                        Text("\(captured.count)")
+                            .font(BrandFont.mono(9))
+                            .foregroundStyle(BrandColor.onAccent)
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .background(BrandColor.textPrimary, in: RoundedRectangle(cornerRadius: 5))
+                            .padding(4)
+                    }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(captured.count) captured this session")
+            .accessibilityHint("Opens the last shot")
+        }
+    }
+
+    /// Always full size, always tappable. The dim-and-shrink is gone: a ring that
+    /// says "not yet" is guidance; a button that shrinks away is the app arguing
+    /// with a professional.
+    private var shutterButton: some View {
+        Button {
+            Task { await capture() }
+        } label: {
+            ZStack {
+                if settings.showReadinessRing {
+                    // Readiness ring, per the coach.
+                    Circle()
+                        .strokeBorder(readinessColor, lineWidth: 3)
+                        .frame(width: 78, height: 78)
+                        .animation(.easeInOut(duration: 0.3), value: readinessColor)
+                    // Auto-capture "filling" ring — the photographer deciding,
+                    // completing as the shot holds steady, then it fires. Gated
+                    // by the same setting: the toggle used to silence the ring's
+                    // COLOUR only, leaving this trim ring drawing regardless.
+                    Circle()
+                        .trim(from: 0, to: coach?.holdProgress ?? 0)
+                        .stroke(BrandColor.accent, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                        .frame(width: 78, height: 78)
+                        .animation(.linear(duration: 0.12), value: coach?.holdProgress ?? 0)
+                } else {
+                    Circle()
+                        .strokeBorder(BrandColor.textPrimary, lineWidth: 3)
+                        .frame(width: 78, height: 78)
+                }
+                if uploading {
+                    ProgressView().tint(BrandColor.textPrimary)
+                } else {
+                    Circle().fill(BrandColor.textPrimary).frame(width: 62, height: 62)
+                }
+            }
+        }
+        .disabled(uploading || scanningCard || camera.status != .ready)
+        .accessibilityLabel("Take photo")
+        .accessibilityValue(isReady ? "ready" : "not ready yet")
+    }
+
+    // MARK: - Dead-end states
+
+    /// Permission denied and "the camera didn't start" — same template, different
+    /// words, and both keep the session moving via the library.
+    private func deadEnd(_ kind: CameraDeadEndView.Kind) -> some View {
+        CameraDeadEndView(
+            kind: kind,
+            onPrimary: {
+                switch kind {
+                case .permissionDenied:
+                    if let url = URL(string: UIApplication.openSettingsURLString) {
+                        UIApplication.shared.open(url)
+                    }
+                case .cameraFailed:
+                    Task { await camera.start(frameDelegate: coach?.analyzer) }
+                }
+            },
+            onChooseFromLibrary: { showLibraryPicker = true },
+            onClose: { requestExit() },
+            importing: importingLibrary,
+            note: errorMessage
+        )
+    }
+
+    // MARK: - "Choose from library instead"
+
+    /// Push photos the pro already has through the SAME presign→PUT→confirm
+    /// pipeline a captured shot uses. Every failure lands in the same durable
+    /// custody a failed capture does, so an import is no more losable than a shot.
+    private func importFromLibrary(_ items: [PhotosPickerItem]) async {
+        guard !importingLibrary else { return }
+        importingLibrary = true
+        errorMessage = nil
+        defer { importingLibrary = false }
+
+        var added = 0
+        var unreadable = 0
+        for item in items {
+            guard let raw = try? await item.loadTransferable(type: Data.self),
+                  let prepared = await CameraLibraryImport.prepare(raw) else {
+                unreadable += 1
+                continue
+            }
+            if let thumb = await ImageDownsample.thumbnail(from: prepared.jpeg, maxPixel: 216) {
+                captured.insert(CapturedShot(image: thumb), at: 0)
+            }
+            // Deliberately NOT `upload(_:focal:)`: the card correction is a
+            // calibration of THIS camera in THIS light, and a photo taken
+            // elsewhere must not have it applied.
+            await uploadCorrected(prepared.jpeg, focal: prepared.focal)
+            added += 1
+        }
+
+        if unreadable > 0 {
+            errorMessage = added == 0
+                ? "Couldn’t read \(unreadable == 1 ? "that photo" : "those photos") — try different ones."
+                : "Added \(added); couldn’t read \(unreadable)."
+        }
     }
 
     // MARK: - Capture + upload
@@ -1934,8 +1861,13 @@ struct ProCapturePhotosView: View {
         // card scan owns the capture pipeline (two in-flight captures collide →
         // "Couldn't take that photo.").
         guard !uploading, !scanningCard else { return false }
+        // "Swipe down or SHOOT to dismiss" — the dimensions drawer is the only
+        // surface the camera keeps running behind, so taking a shot has to close
+        // it or the pro's confirmation lands under a sheet.
+        showDimensions = false
         uploading = true
         errorMessage = nil
+        errorSticky = false
         defer { uploading = false }
 
         if trigger == .auto { return await autoCaptureBest() }
@@ -2122,6 +2054,10 @@ struct ProCapturePhotosView: View {
         guard let url = SessionByteVault.writePendingUpload(
             payload, bookingId: bookingId, phase: uploadPhase, focal: focal
         ) else {
+            // Nothing is left holding this photo — no queue row, no vault file,
+            // no retry. It is the ONE message in this file not backed by state,
+            // so it must not time out of the lane like the recoverable ones do.
+            errorSticky = true
             errorMessage = "Couldn’t save that photo, and it couldn’t be kept to retry."
             return
         }
@@ -2277,13 +2213,14 @@ struct ProCapturePhotosView: View {
         }
     }
 
-    /// Shutter ring color from the coach's readiness: red → amber → green.
+    /// Shutter ring colour from the coach's readiness — the same three meanings
+    /// the lane uses: alert → warn → shooting.
     private var readinessColor: Color {
-        guard settings.showReadinessRing, let readiness = coach?.readiness else { return .white }
+        guard let readiness = coach?.readiness else { return BrandColor.textPrimary }
         switch readiness {
-        case ..<CoachTuning.readyWarnThreshold: return BrandColor.ember
-        case ..<CoachTuning.readyThreshold: return BrandColor.gold
-        default: return BrandColor.emerald
+        case ..<CoachTuning.readyWarnThreshold: return LaneTone.alert.color
+        case ..<CoachTuning.readyThreshold: return LaneTone.warn.color
+        default: return LaneTone.accent.color
         }
     }
 }
@@ -2301,14 +2238,14 @@ private struct CoachSettingsSheet: View {
             Form {
                 Section {
                     Toggle("Shot guide", isOn: $settings.showGuides)
-                    Toggle("Fundamentals checklist", isOn: $settings.showChecklist)
+                    Toggle("Swipe up for all seven", isOn: $settings.showChecklist)
                     Toggle("On-screen tips", isOn: $settings.showNudge)
                     Toggle("Speak tips aloud", isOn: $settings.speak)
                     Toggle("Haptic feedback", isOn: $settings.haptics)
                 } header: {
                     Text("How it guides you")
                 } footer: {
-                    Text("The AI photographer coaches lighting and composition in real time. Pick how you'd like the tips.")
+                    Text("The AI photographer coaches lighting and composition in real time, one instruction at a time. Swipe the coach line up to see all seven fundamentals at once.")
                 }
 
                 Section {
