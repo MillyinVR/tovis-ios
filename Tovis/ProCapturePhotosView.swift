@@ -18,6 +18,10 @@ struct ProCapturePhotosView: View {
     /// "Before" photos to ghost as onion-skin while shooting AFTER, so the pairs
     /// line up. Empty for the BEFORE phase (nothing to match yet).
     var referenceURLs: [URL] = []
+    /// Photos this phase already has on the server (from an earlier camera open).
+    /// Counts toward the one-photo requirement — reopening the camera on a phase
+    /// that's already covered must not act like nothing has been shot.
+    var alreadyCaptured: Int = 0
 
     @State private var camera = CameraController()
     /// Onion-skin (before/after matching) state.
@@ -203,6 +207,11 @@ struct ProCapturePhotosView: View {
     /// The all-steps-done card is a decision point shown once; "Keep shooting"
     /// dismisses it and the lane carries the set-complete line from then on.
     @State private var setCompleteDismissed = false
+    /// The requirement-met card ("that's the one you need") was answered. It also
+    /// retires itself on the next shot — a pro who kept shooting has answered it.
+    @State private var requirementCardDismissed = false
+    /// Photos kept in THIS camera session (kept, not necessarily uploaded yet).
+    @State private var keptThisSession = 0
 
     // MARK: "Choose from library instead"
     /// The dead-end states' second door — see `CameraLibraryImport`.
@@ -523,6 +532,9 @@ struct ProCapturePhotosView: View {
                 guide: guide,
                 currentStepID: currentStepID,
                 completedStepIDs: completedStepIDs,
+                requirementNote: requirementMet
+                    ? ProSessionPhotoRequirement.metDetail(phase)
+                    : ProSessionPhotoRequirement.guideNote(phase),
                 standardGuideName: standardGuide.name,
                 trendingPacks: trendingPacks,
                 activePackID: activePackID,
@@ -573,7 +585,7 @@ struct ProCapturePhotosView: View {
             discard: discardTerminalUploads
         ))
         .confirmationDialog(
-            "Leave with work unfinished?",
+            exitDialogTitle,
             isPresented: $showExitConfirm,
             titleVisibility: .visible
         ) {
@@ -599,7 +611,14 @@ struct ProCapturePhotosView: View {
     /// telling the pro everything is "discarded" would be as wrong as the old
     /// silence. Best shots are swept; owed uploads resume; refusals never will.
     private var exitWarningMessage: String {
-        var lines = ["You still have \(unsavedWorkSummary)."]
+        var lines: [String] = []
+        // The requirement, when it's outstanding — said once, plainly, with the
+        // way out named. Extras are never mentioned: they are not owed.
+        if !requirementMet {
+            lines.append(ProSessionPhotoRequirement.outstandingSentence(phase))
+            lines.append("You can come back and take it any time.")
+        }
+        if hasUnsavedWork { lines.append("You still have \(unsavedWorkSummary).") }
         if coach?.harvested.isEmpty == false {
             lines.append("Best shots aren’t saved until you review them — leaving discards those.")
         }
@@ -684,9 +703,14 @@ struct ProCapturePhotosView: View {
     /// sat in the retry queue, exit dismissed without a word, and the bytes were
     /// wiped on the next camera start. Owed photos and clips now hold the door
     /// too — anything the server hasn't taken is work the pro can still lose.
+    ///
+    /// It has never counted guide steps and must not start: an unfinished shot
+    /// list costs nothing. The ONE count it now names is the phase requirement —
+    /// leaving with no photo at all is the only shortfall the session will feel,
+    /// and even that is a sentence, not a locked door.
     private func requestExit() {
         if camera.isRecording { Task { await stopRecordingAndSave(review: false) } }
-        if hasUnsavedWork {
+        if hasUnsavedWork || !requirementMet {
             showExitConfirm = true
         } else {
             dismiss()
@@ -697,6 +721,14 @@ struct ProCapturePhotosView: View {
     /// the server hasn't accepted, or clips still owed.
     private var hasUnsavedWork: Bool {
         coach?.harvested.isEmpty == false || !failedUploads.isEmpty || !failedClips.isEmpty
+    }
+
+    /// The exit dialog names whichever problem is actually true — bytes at risk,
+    /// or the one photo the session still needs.
+    private var exitDialogTitle: String {
+        hasUnsavedWork
+            ? "Leave with work unfinished?"
+            : ProSessionPhotoRequirement.leavingWithoutTitle(phase)
     }
 
     /// Plain-language list of what's at risk, for the exit dialog. Refused photos
@@ -847,6 +879,11 @@ struct ProCapturePhotosView: View {
                 .background(BrandColor.bgPrimary.opacity(0.62), in: Capsule())
             }
             .accessibilityLabel("Shot \(currentStepIndex + 1) of \(guide.steps.count), \(currentStep?.title ?? guide.name)")
+            // "1 of 5" spoken alone is a quota. The value says what the count
+            // actually means: one photo is owed, the set is a suggestion.
+            .accessibilityValue(requirementMet
+                                ? ProSessionPhotoRequirement.metDetail(phase)
+                                : ProSessionPhotoRequirement.guideNote(phase))
             .accessibilityHint("Opens the shot guide")
         } else {
             Text("\(phaseLabel) photos".uppercased())
@@ -1327,8 +1364,35 @@ struct ProCapturePhotosView: View {
     private var currentStepIndex: Int {
         guide.steps.firstIndex { $0.id == currentStepID } ?? 0
     }
+    /// The guide's whole shot list is captured. An ACHIEVEMENT, not a demand —
+    /// see `requirementMet` for the only count this camera actually needs.
     private var allStepsDone: Bool {
         !guide.steps.isEmpty && completedStepIDs.count >= guide.steps.count
+    }
+
+    // MARK: - The requirement (one photo), vs the guide (a suggestion list)
+
+    /// Photos this phase has: what the server already holds plus what's been shot
+    /// here. Shots whose upload failed still count — the bytes are in custody and
+    /// land on the next connection, so the pro isn't asked to redo them. Counted
+    /// separately from the `captured` strip, which drops a shot whose thumbnail
+    /// couldn't be decoded; a missing thumbnail must never re-open a met
+    /// requirement.
+    private var phasePhotoCount: Int { alreadyCaptured + keptThisSession }
+
+    /// The one photo this phase owes is in hand.
+    private var requirementMet: Bool {
+        ProSessionPhotoRequirement.isMet(captured: phasePhotoCount)
+    }
+
+    /// The moment the requirement is FIRST met, and only then: the card says the
+    /// shoot is already sufficient. One more shot retires it on its own (the pro
+    /// has answered by continuing), as does "Keep shooting".
+    private var showRequirementCard: Bool {
+        !requirementCardDismissed
+            && !allStepsDone
+            && keptThisSession > 0   // not on reopening a phase that's already covered
+            && phasePhotoCount == ProSessionPhotoRequirement.requiredPerPhase
     }
 
     /// Move the current-shot pointer (Prev/Next chevrons).
@@ -1599,9 +1663,15 @@ struct ProCapturePhotosView: View {
                 // coach + shutter step aside until it's set or skipped.
                 calibrationControls.padding(.vertical, 16)
             } else {
-                // The only state that earns a card instead of a lane — it's a
-                // decision point, and the shutter still works underneath it.
-                if guidedShooting, allStepsDone, !setCompleteDismissed { setCompleteCard }
+                // The only states that earn a card instead of a lane — they're
+                // decision points, and the shutter still works underneath them.
+                // The requirement card comes FIRST in the shoot (one photo in),
+                // the full-set card at the end; they can't both be true.
+                if guidedShooting, allStepsDone, !setCompleteDismissed {
+                    setCompleteCard
+                } else if showRequirementCard {
+                    requirementCard
+                }
 
                 CameraLaneView(
                     message: laneMessage,
@@ -1620,15 +1690,40 @@ struct ProCapturePhotosView: View {
         .background(Color.black)
     }
 
-    /// "That's the full set" — a card, because finishing the guide is a choice
-    /// point (review what you have, or keep shooting extras).
+    /// "That's the one you need" — the shoot is already sufficient, one photo in.
+    /// 🔴 This moment used to arrive only at the LAST step of a 4–5 shot guide,
+    /// which is what made the whole set read as mandatory on a real client.
+    private var requirementCard: some View {
+        completionCard(
+            headline: ProSessionPhotoRequirement.metHeadline,
+            detail: ProSessionPhotoRequirement.metDetail(phase),
+            dismiss: { requirementCardDismissed = true }
+        )
+    }
+
+    /// "That's the full set" — finishing the whole guide is still a choice point
+    /// (review what you have, or keep shooting extras). It was never required.
     private var setCompleteCard: some View {
+        completionCard(
+            headline: "That’s the full set",
+            detail: "\(guide.steps.count) shots, all matched to the brief. Keep shooting if you want extras.",
+            dismiss: { setCompleteDismissed = true }
+        )
+    }
+
+    /// The shared shape of both "you can stop here" moments: what you have, then
+    /// the two answers — finish, or carry on shooting extras.
+    private func completionCard(
+        headline: String,
+        detail: String,
+        dismiss: @escaping () -> Void
+    ) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("That’s the full set")
+                Text(headline)
                     .font(BrandFont.display(19, .semibold))
                     .foregroundStyle(BrandColor.textPrimary)
-                Text("\(guide.steps.count) shots, all matched to the brief. Keep shooting if you want extras.")
+                Text(detail)
                     .font(BrandFont.body(13.5))
                     .foregroundStyle(BrandColor.textSecondary)
             }
@@ -1638,7 +1733,7 @@ struct ProCapturePhotosView: View {
                 // the decision on offer; finishing is.
                 let harvested = coach?.harvested.count ?? 0
                 Button {
-                    setCompleteDismissed = true
+                    dismiss()
                     if harvested > 0 { showBestShots = true } else { requestExit() }
                 } label: {
                     Text(harvested > 0 ? "Review \(harvested)" : "Done")
@@ -1649,7 +1744,7 @@ struct ProCapturePhotosView: View {
                                     in: RoundedRectangle(cornerRadius: 13, style: .continuous))
                 }
 
-                Button { setCompleteDismissed = true } label: {
+                Button { dismiss() } label: {
                     Text("Keep shooting")
                         .font(BrandFont.display(14.5, .semibold))
                         .foregroundStyle(BrandColor.textSecondary)
@@ -1703,9 +1798,12 @@ struct ProCapturePhotosView: View {
 
             shutterButton
 
+            // Accented once the phase HAS what it needs — one photo — not once
+            // the guide's whole shot list is finished. "You're free to go" is a
+            // fact about the requirement, not about the suggestions.
             Button("Done") { requestExit() }
                 .font(BrandFont.display(15.5, .semibold))
-                .foregroundStyle(allStepsDone ? BrandColor.accent : BrandColor.textPrimary)
+                .foregroundStyle(requirementMet ? BrandColor.accent : BrandColor.textPrimary)
                 .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .padding(.horizontal, 24)
@@ -1962,6 +2060,7 @@ struct ProCapturePhotosView: View {
         if let thumb = await ImageDownsample.thumbnail(from: data, maxPixel: 216) {
             captured.insert(CapturedShot(image: thumb), at: 0)
         }
+        keptThisSession += 1   // the phase requirement counts kept shots, not thumbnails
         if advanceGuide { markCurrentCaptured() }   // complete the guided shot + advance
         await upload(data, focal: focal)
     }

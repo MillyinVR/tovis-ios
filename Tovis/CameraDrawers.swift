@@ -290,6 +290,11 @@ struct ShotGuideDrawer: View {
     let guide: ShotGuide
     let currentStepID: String?
     let completedStepIDs: Set<String>
+    /// What the shoot actually owes, in one line
+    /// (`ProSessionPhotoRequirement.guideNote`). The shot list below it is a set
+    /// of suggestions — the dots and checkmarks used to read as a checklist the
+    /// pro had to clear before they were allowed to leave.
+    let requirementNote: String
     let standardGuideName: String
     let trendingPacks: [ProShotPack]
     let activePackID: String?
@@ -317,6 +322,10 @@ struct ShotGuideDrawer: View {
                 Spacer()
                 packsMenu
             }
+
+            Text(requirementNote)
+                .font(BrandFont.body(12.5))
+                .foregroundStyle(BrandColor.textSecondary)
 
             if !directionLines.isEmpty { directionCard }
 
