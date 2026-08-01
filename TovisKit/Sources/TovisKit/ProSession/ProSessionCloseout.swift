@@ -4,19 +4,28 @@ import Foundation
 // of the web `lib/proSession/closeoutChecklist.ts`. Drives the five wrap-up rows
 // (after photos · aftercare sent · payment collected · checkout paid/waived ·
 // consultation approved) and the help text. No network — unit-tested 1:1.
+//
+// One deliberate departure from the web shape: the web input carries BOTH
+// `afterCount` and a `hasAfterPhoto` its caller derives as `afterCount > 0`.
+// That is the photo requirement, re-stated — so this port takes the count alone
+// and asks `ProSessionPhotoRequirement`. Same rule, one place to change it.
 
 public struct ProSessionCloseoutInput: Sendable {
     public let afterCount: Int
-    public let hasAfterPhoto: Bool
     public let hasAftercareDraft: Bool
     public let hasFinalizedAftercare: Bool
     public let hasPaymentCollected: Bool
     public let hasCheckoutClosed: Bool
     public let hasConsultationApproved: Bool
 
+    /// Whether the after-photo requirement is satisfied — derived, never passed
+    /// in, so this can't disagree with `afterCount`.
+    public var hasAfterPhoto: Bool {
+        ProSessionPhotoRequirement.isMet(captured: afterCount)
+    }
+
     public init(
         afterCount: Int,
-        hasAfterPhoto: Bool,
         hasAftercareDraft: Bool,
         hasFinalizedAftercare: Bool,
         hasPaymentCollected: Bool,
@@ -24,7 +33,6 @@ public struct ProSessionCloseoutInput: Sendable {
         hasConsultationApproved: Bool
     ) {
         self.afterCount = afterCount
-        self.hasAfterPhoto = hasAfterPhoto
         self.hasAftercareDraft = hasAftercareDraft
         self.hasFinalizedAftercare = hasFinalizedAftercare
         self.hasPaymentCollected = hasPaymentCollected
@@ -86,7 +94,11 @@ public enum ProSessionCloseout {
                 ProSessionCloseoutItem(
                     key: .afterPhotos,
                     title: "After photos",
-                    subtitle: input.hasAfterPhoto ? "\(input.afterCount) photos captured" : "Missing",
+                    // Pluralised, because ONE after photo is now the expected
+                    // case — the web's hard-coded plural would read "1 photos".
+                    subtitle: input.hasAfterPhoto
+                        ? ProSessionPhotoRequirement.capturedSentence(input.afterCount)
+                        : "Missing",
                     done: input.hasAfterPhoto,
                 ),
                 ProSessionCloseoutItem(

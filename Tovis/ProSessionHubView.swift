@@ -137,7 +137,11 @@ struct ProSessionHubView: View {
         .fullScreenCover(item: $capturing, onDismiss: { Task { await reloadAfterCapture() } }) { selection in
             ProCapturePhotosView(bookingId: bookingId, phase: selection.phase,
                                  serviceName: detail?.baseItem?.serviceName,
-                                 referenceURLs: selection.phase == .after ? beforeReferenceURLs : [])
+                                 referenceURLs: selection.phase == .after ? beforeReferenceURLs : [],
+                                 // Photos this phase ALREADY has. Without it the
+                                 // camera would re-ask for the required shot every
+                                 // time it reopens on a phase that's already covered.
+                                 alreadyCaptured: selection.phase == .before ? beforeCount : afterCount)
         }
         .fullScreenCover(item: $viewingMedia) { item in
             MediaFullscreenViewer(media: item) { viewingMedia = nil }
@@ -420,13 +424,14 @@ struct ProSessionHubView: View {
         }
 
         photoSection(title: "Before photos", count: beforeCount, phase: .before,
-                     primary: beforeCount == 0)
+                     primary: !ProSessionPhotoRequirement.isMet(captured: beforeCount))
 
         if approved {
-            if beforeCount > 0 {
+            if ProSessionPhotoRequirement.isMet(captured: beforeCount) {
                 primaryButton("Continue to service") { await transition(to: .serviceInProgress) }
             } else {
-                Text("Add at least one before photo to continue to service.")
+                Text(ProSessionPhotoRequirement.gateSentence(
+                    .before, action: "Add", purpose: "to continue to service"))
                     .font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
             }
         }
@@ -475,7 +480,8 @@ struct ProSessionHubView: View {
         BrandSurface {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(beforeCount) before photos saved").font(BrandFont.body(14, .semibold))
+                    Text("\(beforeCount) before photo\(beforeCount == 1 ? "" : "s") saved")
+                        .font(BrandFont.body(14, .semibold))
                         .foregroundStyle(BrandColor.textPrimary)
                     Text("Ready for comparison at wrap-up").font(BrandFont.body(12))
                         .foregroundStyle(BrandColor.textSecondary)
@@ -493,13 +499,14 @@ struct ProSessionHubView: View {
 
     @ViewBuilder
     private func wrapUpScreen(_ state: ProSessionState) -> some View {
-        // No after photo yet → send the pro to capture them first (web redirects).
-        if afterCount == 0 {
+        // No after photo yet → send the pro to capture one first (web redirects).
+        if !ProSessionPhotoRequirement.isMet(captured: afterCount) {
             BrandSurface {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Capture after photos").font(BrandFont.body(15, .semibold))
                         .foregroundStyle(BrandColor.textPrimary)
-                    Text("Take at least one after photo to open the wrap-up checklist.")
+                    Text(ProSessionPhotoRequirement.gateSentence(
+                        .after, action: "Take", purpose: "to open the wrap-up checklist"))
                         .font(BrandFont.body(13)).foregroundStyle(BrandColor.textSecondary)
                 }
             }
@@ -1157,7 +1164,6 @@ struct ProSessionHubView: View {
     private func closeoutInput(_ state: ProSessionState) -> ProSessionCloseoutInput {
         ProSessionCloseoutInput(
             afterCount: afterCount,
-            hasAfterPhoto: afterCount > 0,
             hasAftercareDraft: state.aftercare?.hasDraft ?? false,
             hasFinalizedAftercare: state.aftercare?.isSent ?? false,
             hasPaymentCollected: state.checkout?.paymentCollectedAt != nil,

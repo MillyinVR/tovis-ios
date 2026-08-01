@@ -63,7 +63,6 @@ struct ProSessionFlowTests {
         let checklist = ProSessionCloseout.checklist(
             ProSessionCloseoutInput(
                 afterCount: 0,
-                hasAfterPhoto: false,
                 hasAftercareDraft: false,
                 hasFinalizedAftercare: false,
                 hasPaymentCollected: false,
@@ -82,7 +81,6 @@ struct ProSessionFlowTests {
         let checklist = ProSessionCloseout.checklist(
             ProSessionCloseoutInput(
                 afterCount: 3,
-                hasAfterPhoto: true,
                 hasAftercareDraft: true,
                 hasFinalizedAftercare: true,
                 hasPaymentCollected: true,
@@ -95,5 +93,26 @@ struct ProSessionFlowTests {
         #expect(checklist.helpText == ProSessionCloseout.readyHelpText)
         #expect(checklist.items.first?.subtitle == "3 photos captured")
         #expect(checklist.items.allSatisfy { $0.done })
+    }
+
+    /// The rule Tori asked for, at the gate that enforces it: ONE after photo
+    /// closes the after-photos row and unblocks closeout. If this ever needs a
+    /// second photo, this test fails before a pro finds out mid-session.
+    @Test func oneAfterPhotoSatisfiesCloseout() {
+        let checklist = ProSessionCloseout.checklist(
+            ProSessionCloseoutInput(
+                afterCount: 1,
+                hasAftercareDraft: true,
+                hasFinalizedAftercare: true,
+                hasPaymentCollected: true,
+                hasCheckoutClosed: true,
+                hasConsultationApproved: true,
+            )
+        )
+
+        #expect(checklist.canComplete == true)
+        #expect(checklist.items.first?.done == true)
+        // Singular — one photo is the expected case now, not an edge case.
+        #expect(checklist.items.first?.subtitle == "1 photo captured")
     }
 }
