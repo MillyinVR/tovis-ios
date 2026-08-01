@@ -34,6 +34,25 @@ struct ProMainTabView: View {
     /// Set while a pushed screen asks for the footer to be hidden (a full-screen
     /// form whose own bottom action bar the footer would sit on top of).
     @State private var footerHidden = false
+    #if DEBUG
+    /// DEBUG ONLY — a recurring appointment opened straight from the launch
+    /// environment, so the screen can actually be LOOKED AT.
+    ///
+    /// The same reasoning that produced `DebugSessionSeed`: on this machine the
+    /// simulator cannot be driven by synthetic taps (osascript has no assistive
+    /// access and the simulator MCP needs a `sudo xcode-select`), and the series
+    /// screen is three taps deep. Four parity-epic steps in a row shipped iOS
+    /// screens that were build-green, unit-tested and never once seen; that is
+    /// the failure this key exists to stop repeating.
+    ///
+    /// Behind `#if DEBUG`, like the token seed, so it does not exist in a
+    /// Release binary. Read ONCE at appear — it is a launch argument, not a
+    /// route.
+    @State private var debugSeriesId: DebugSeriesRef?
+
+    /// `sheet(item:)` needs identity; a bare String has none.
+    private struct DebugSeriesRef: Identifiable, Hashable { let id: String }
+    #endif
 
     var body: some View {
         Group {
@@ -123,6 +142,26 @@ struct ProMainTabView: View {
             }
             .tint(BrandColor.accent)
         }
+        #if DEBUG
+        .sheet(item: $debugSeriesId) { ref in
+            NavigationStack {
+                ProBookingSeriesView(seriesId: ref.id)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Done") { debugSeriesId = nil }
+                                .tint(BrandColor.textSecondary)
+                        }
+                    }
+            }
+            .tint(BrandColor.accent)
+        }
+        .onAppear {
+            guard debugSeriesId == nil else { return }
+            let raw = ProcessInfo.processInfo.environment["TOVIS_DEBUG_OPEN_SERIES"]?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if let raw, !raw.isEmpty { debugSeriesId = DebugSeriesRef(id: raw) }
+        }
+        #endif
         // A tapped `/pro/bookings/{id}[/aftercare]` push → that booking's detail.
         .sheet(item: $deepLinkProBooking) { ref in
             NavigationStack {
