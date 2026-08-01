@@ -126,6 +126,16 @@ public struct ProCalendarEvent: Decodable, Sendable, Identifiable {
     /// is off. Absent must decode fine and render NOTHING. Read it through
     /// `clientConfirmationDisplay`.
     public let clientConfirmation: ProClientConfirmation?
+    /// BOOKING events only (K15/K17-A): a consent form one of this appointment's
+    /// services requires and this client has not signed. A TEXT CHIP — never a
+    /// colour, and never a second warning glyph, because the conflict triangle
+    /// owns that shape (K7's channel budget).
+    ///
+    /// 🔴 ABSENT is the common case and means nothing is outstanding: web omits
+    /// the key entirely, which is every booking until a pro binds a form to a
+    /// service. Absent must decode fine and render NOTHING. Read it through
+    /// `consentRequirementDisplay`.
+    public let consentRequirement: ProConsentRequirement?
 
     public var isBooking: Bool { kind == "BOOKING" }
     public var isBlock: Bool { kind == "BLOCK" }
@@ -178,6 +188,24 @@ public struct ProCalendarEvent: Decodable, Sendable, Identifiable {
     /// this view never second-guesses it.
     public var clientConfirmationDisplay: ProClientConfirmation.Display? {
         guard isBooking, let display = clientConfirmation?.display, display.significant
+        else { return nil }
+        return display
+    }
+
+    /// The unsigned-consent mark this tile should print, or nil to print
+    /// nothing.
+    ///
+    /// Gated on `isBooking` for the same reason the two above are, mirroring
+    /// web's EventCard (`ev.kind === 'BOOKING' && ev.consentRequirement`): a
+    /// block is the pro's own time and a hold is a stranger mid-checkout —
+    /// neither has a client who could sign anything.
+    ///
+    /// `significant` is web's helper deciding that an appointment which has
+    /// already started is not worth warning about; this never second-guesses it.
+    /// ⚠️ That gate is right HERE and wrong on the session hub, whose list is a
+    /// different field for exactly that reason.
+    public var consentRequirementDisplay: ProConsentRequirement.Display? {
+        guard isBooking, let display = consentRequirement?.display, display.significant
         else { return nil }
         return display
     }

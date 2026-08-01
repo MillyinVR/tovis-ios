@@ -226,6 +226,31 @@ public final class ProClientsService: Sendable {
         )
     }
 
+    /// POST /api/v1/pro/clients/{id}/consent-requests — mint and SEND a signing
+    /// link for one form (K15). The only writer of `ConsentProofMethod.CLIENT_TOKEN`
+    /// is the signing route on the other end of this link; the pro's own record
+    /// form must never offer that method by hand (K14-B).
+    ///
+    /// `bookingId` anchors the link to the appointment the pro is looking at.
+    /// Omitting it makes the server pick the client's next upcoming booking —
+    /// right from a chart, wrong from a session hub, so callers there pass it.
+    ///
+    /// Throws `APIError` carrying the SERVER's own sentence for a refusal (no
+    /// booking to attach to, an unknown form, a client this pro can't view) —
+    /// the surface prints it rather than inventing its own.
+    public func sendConsentRequest(
+        clientId: String,
+        formId: String,
+        bookingId: String? = nil
+    ) async throws {
+        let payload = try JSONEncoder.canonical.encode(
+            ProConsentRequestBody(formId: formId, bookingId: bookingId)
+        )
+        try await api.requestVoid(
+            "/pro/clients/\(clientId)/consent-requests", method: .post, body: payload
+        )
+    }
+
     /// PATCH /api/v1/pro/clients/{id}/photo-release — set the client's standing
     /// photo-release decision. `status` ∈ NOT_SET | GRANTED | DECLINED (NOT_SET
     /// clears it). This does NOT change the public-sharing path.

@@ -177,6 +177,16 @@ struct ProClientConsentRequest: Encodable {
     let bookingId: String?
 }
 
+/// POST /api/v1/pro/clients/{id}/consent-requests body (K15) — "send this form
+/// to be signed". `bookingId` is deliberately explicit wherever the pro is
+/// standing in front of ONE appointment (the session hub): with it omitted the
+/// server attaches the link to the client's next upcoming booking, which is a
+/// different appointment than the one on screen.
+struct ProConsentRequestBody: Encodable {
+    let formId: String
+    let bookingId: String?
+}
+
 /// PATCH /api/v1/pro/clients/{id}/photo-release body. `status` ∈ NOT_SET | GRANTED
 /// | DECLINED (NOT_SET clears the standing release).
 struct ProClientPhotoReleaseRequest: Encodable {

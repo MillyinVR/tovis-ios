@@ -1,0 +1,30 @@
+{
+  "ok": true,
+  "state": {
+    "bookingId": "k9todayhaircut0000000001",
+    "status": "ACCEPTED",
+    "sessionStep": "NONE",
+    "effectiveSessionStep": "NONE",
+    "terminal": false,
+    "startedAt": null,
+    "finishedAt": null,
+    "consultation": null,
+    "checkout": {
+      "status": "NOT_READY",
+      "selectedPaymentMethod": null,
+      "paymentCollectedAt": null,
+      "paymentAuthorizedAt": null,
+      "stripePaymentStatus": null
+    },
+    "aftercare": null,
+    "bookingUpdatedAt": "2026-07-31T17:36:32.212Z"
+  },
+  "stateHash": "fd7d2094fb72b95e9131d1b62ac24a03805d7cf37d08358891c040759a0db0c1",
+  "unsignedConsentForms": [
+    {
+      "formId": "cms9gjaik0001pomdkl7qn4ag",
+      "title": "K17 drive release",
+      "kindLabel": "Service waiver"
+    }
+  ]
+}

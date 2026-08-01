@@ -138,24 +138,54 @@ const CHECKS = [
     pick: (d) => [d],
   },
   // GET /api/v1/pro/calendar — the payload is at the ROOT. A VERBATIM capture
-  // off the running route under `scope=ALL` (2026-07-30), so it carries the
-  // whole K-series accretion at once: K1's `paymentBadge`, K3's `scope` +
-  // `locationId`, K5's `relationshipBadge`, K7/K8's `serviceSwatch`, and two
+  // off the running route under `scope=ALL` over a WEEK (2026-08-01), so it
+  // carries the whole K-series accretion at once: K1's `paymentBadge`, K3's
+  // `scope` + `locationId`, K5's `relationshipBadge`, K7/K8's `serviceSwatch`,
+  // K11/K13's `clientConfirmation`, K15's `consentRequirement`, and two
   // `management.waitlistToday` rows (the synthetic BOOKING-kind shape with a
   // null location).
   //
-  // `serviceSwatch` is OPTIONAL and the capture pins BOTH sides of that: three
-  // rows carry "09", one carries "02" (a second hue, resolved through its BASE
-  // service item rather than the per-service fallback), and the Haircut & Style
-  // row OMITS the key entirely because its pro never picked a colour. Absent is
-  // the common case, so a fixture where every row had one would prove nothing.
+  // Every optional field is pinned on BOTH sides, because absent is the common
+  // case and a fixture where every row carried one would prove nothing:
+  //   * `serviceSwatch` — four rows carry "09", two carry "02" (a second hue,
+  //     one of them resolved through its BASE service item rather than the
+  //     per-service fallback), and the two Haircut & Style rows OMIT the key
+  //     because that pro never picked a colour.
+  //   * `clientConfirmation` — one CLIENT_CONFIRMED, one DECLINED, one
+  //     AWAITING_CLIENT, five omitting it (nobody asked).
+  //   * `consentRequirement` — exactly ONE row carries it (a FUTURE booking
+  //     whose service requires a form this client hasn't signed) and seven omit
+  //     it. The past Haircut & Style booking has the same unsigned requirement
+  //     and still omits the key: the badge helper's `significant` goes false
+  //     once the appointment has started, and the route drops an insignificant
+  //     badge outright. That row is the significance gate, captured.
   //
-  // Until now this feed had NO contract coverage at all — the response type
-  // lived inline in the route and had no name to export (K4-B). Every field the
-  // chain has added crossed to the device unchecked.
+  // Until K6 this feed had NO contract coverage at all — the response type lived
+  // inline in the route and had no name to export (K4-B). Every field the chain
+  // had added crossed to the device unchecked.
   {
     file: 'proCalendar.json',
     def: 'ProCalendarResponseDTO',
+    pick: (d) => [d],
+  },
+  // GET /api/v1/pro/bookings/{id}/session/state — the payload is at the ROOT.
+  // A VERBATIM capture (2026-08-01) of the LOUD case: a booking whose service
+  // requires a form the client has not signed, so `unsignedConsentForms` is
+  // present beside `state` (K17-A).
+  //
+  // 🔴 The quiet case is the same route with the key simply ABSENT — the route
+  // has ONE representation for "nothing to sign", never `[]`. It is pinned
+  // device-side by `ConsentRequirementTests` rather than by a second CHECKS
+  // entry, because the fixture that models it (`proSessionState.json`) is a
+  // hand-built shape from PR #441 that no longer matches today's server at all:
+  // it predates `stateHash`, `bookingUpdatedAt`, `checkout.paymentAuthorizedAt`
+  // /`stripePaymentStatus` and `consultation.updatedAt`. It still earns its keep
+  // in the Swift tests — it is the only fixture carrying a consultation PROOF —
+  // but a contract fixture models the CURRENT server, so it stays out of here
+  // until someone re-captures it ([[contract-fixture-models-the-current-server]]).
+  {
+    file: 'proSessionStateConsent.json',
+    def: 'ProSessionStateResponseDTO',
     pick: (d) => [d],
   },
   // GET /api/v1/pro/bookings — buckets + stats; validate every row, so a

@@ -245,6 +245,67 @@ import TovisKit
         #expect(Set(tones.map(String.init(describing:))).count == 3)
     }
 
+    // MARK: - Unsigned consent (K15 / K17-A)
+
+    /// `fullBooking` plus the unsigned-consent mark — the shape the live route
+    /// sends once a pro binds a form to one of the booking's services.
+    private var withConsentRequirement: String {
+        fullBooking.replacingOccurrences(
+            of: "\"serviceSwatch\": \"09\",",
+            with: """
+            "serviceSwatch": "09",
+            "consentRequirement": {
+              "kind": "UNSIGNED_CONSENT", "label": "Form due",
+              "description": "K17 drive release not signed",
+              "tone": "warn", "significant": true
+            },
+            """)
+    }
+
+    @Test("🔴 the chip prints an abbreviation — the spoken name says WHICH form")
+    func consentNamesTheFormNotJustTheChip() throws {
+        // "Form due" is the same three words on every tile. A pro chasing a
+        // signature needs the form's name, and on a phone's ~45pt week column
+        // the chip isn't drawn at all — so this string is the only carrier
+        // there, exactly as it is for the service (K9-A) and the confirmation
+        // glyph (K13).
+        let decoded = try event(withConsentRequirement)
+        #expect(decoded.consentRequirementDisplay?.label == "Form due")
+
+        let label = proCalendarTileAccessibilityLabel(
+            event: decoded, timeLabel: "9:15 AM", locationLabel: "TOVIS Test Salon",
+            conflict: false)
+
+        // After the confirmation, before the place — web's aria label reads in
+        // this same order.
+        #expect(label == "Test Client, 9:15 AM, Balayage, New client · requested you, Deposit paid $40.00, K17 drive release not signed, TOVIS Test Salon")
+        #expect(!label.contains("Form due"))
+    }
+
+    @Test("an appointment that already started warns nobody")
+    func insignificantConsentIsSilent() throws {
+        // The web helper sets `significant: false` once `scheduledFor <= now`,
+        // so a pro binding their first form today doesn't light up their whole
+        // history in amber. The device honours that call and never re-derives it.
+        let row = withConsentRequirement.replacingOccurrences(
+            of: #""tone": "warn", "significant": true"#,
+            with: #""tone": "warn", "significant": false"#)
+        let label = proCalendarTileAccessibilityLabel(
+            event: try event(row), timeLabel: "9:15 AM", locationLabel: nil, conflict: false)
+
+        #expect(!label.contains("not signed"))
+        #expect(label == "Test Client, 9:15 AM, Balayage, New client · requested you, Deposit paid $40.00")
+    }
+
+    @Test("a booking with nothing outstanding reads exactly as it did before K17")
+    func noRequirementIsByteIdentical() throws {
+        // The common case — every booking until a pro binds a form.
+        let label = proCalendarTileAccessibilityLabel(
+            event: try event(fullBooking), timeLabel: "9:15 AM",
+            locationLabel: nil, conflict: false)
+        #expect(!label.lowercased().contains("signed"))
+    }
+
     @Test("a blank service title adds nothing rather than an empty gap")
     func blankServiceTitle() throws {
         let row = fullBooking.replacingOccurrences(of: "\"title\": \"Balayage\"",
