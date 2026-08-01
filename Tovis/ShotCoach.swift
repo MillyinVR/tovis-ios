@@ -175,6 +175,44 @@ protocol ShotCoach: Sendable {
     func evaluate(_ ctx: FrameContext) -> CoachSignal
 }
 
+// MARK: - Aggregation
+
+/// Turns the per-coach signals into the readiness value + the one tip to show.
+/// Lives here (pure, CoreGraphics-only) rather than inline in the analyzer's
+/// frame callback so the scoring arithmetic can be tuned and TESTED without a
+/// camera — the perception thresholds need a device, the arithmetic does not.
+enum CoachAggregate {
+    struct Verdict: Sendable {
+        let readiness: Double
+        let nudge: CoachNudge?
+        let statuses: [CoachStatus]
+    }
+
+    /// How badly one coach drags readiness down: its weight × how far short it
+    /// scored. This is what ranks the tips — the biggest weighted deficiency
+    /// wins the single on-screen line.
+    static func deficit(_ category: CoachCategory, _ signal: CoachSignal) -> Double {
+        category.weight * (1 - signal.score)
+    }
+
+    static func evaluate(_ coaches: [ShotCoach], _ ctx: FrameContext) -> Verdict {
+        let signals = coaches.map { ($0.category, $0.evaluate(ctx)) }
+        // Readiness is the importance-weighted mean — light + focus count for more
+        // than a clean backdrop, per the beauty-photography priority order.
+        let totalWeight = signals.reduce(0.0) { $0 + $1.0.weight }
+        let readiness = totalWeight == 0 ? 0
+            : signals.reduce(0.0) { $0 + $1.1.score * $1.0.weight } / totalWeight
+        // The fix to surface = the biggest *weighted* deficiency among coaches that
+        // have a tip — so a lighting problem outranks a slightly-busy background.
+        let worst = signals
+            .filter { $0.1.message != nil }
+            .max { deficit($0.0, $0.1) < deficit($1.0, $1.1) }
+        let nudge = worst.flatMap { entry in entry.1.message.map { CoachNudge(category: entry.0, message: $0) } }
+        let statuses = signals.map { CoachStatus(category: $0.0, score: $0.1.score, message: $0.1.message) }
+        return Verdict(readiness: readiness, nudge: nudge, statuses: statuses)
+    }
+}
+
 // MARK: - Lighting
 
 /// Judges exposure + backlighting. The strongest, most reliable on-device signal.
