@@ -54,6 +54,16 @@ struct ProSessionHubView: View {
     /// drives the "See membership options" upgrade route below the error.
     @State private var critiqueOffersUpgrade = false
     @State private var showCritiqueConsent = false
+    /// K15/K17-A: the forms this appointment needs that the client has not
+    /// signed, off `GET …/session/state`'s sibling field. Empty is the common
+    /// case (and the only representation of "nothing outstanding" — the route
+    /// omits the key rather than sending `[]`).
+    @State private var unsignedConsentForms: [ProUnsignedConsentForm.Display] = []
+    /// Which form's link is in flight, which ones this screen has already sent,
+    /// and the server's own sentence if a send was refused.
+    @State private var sendingConsentFormId: String?
+    @State private var sentConsentFormIds: Set<String> = []
+    @State private var consentSendError: String?
 
     private struct CaptureSelection: Identifiable {
         let phase: MediaPhase
@@ -150,6 +160,8 @@ struct ProSessionHubView: View {
                 Text(actionError).font(BrandFont.body(13)).foregroundStyle(BrandColor.ember)
             }
 
+            unsignedConsentBanner(state)
+
             switch state.screenKey {
             case .consultation:
                 consultationScreen(state)
@@ -162,6 +174,146 @@ struct ProSessionHubView: View {
             case .done:
                 doneScreen(state)
             }
+        }
+    }
+
+    // MARK: - Unsigned consent forms (K15 / K17-A)
+
+    /// What the pro sees at session start when this appointment's services
+    /// require a form the client has not signed.
+    ///
+    /// 🔴 It WARNS. There is no "you cannot start" here and no disabled control —
+    /// blocking a real appointment over an unsigned waiver on the day a pro sets
+    /// their first requirement is exactly what K15 refused. The pro decides: send
+    /// the link now, take it on paper, or carry on. Web's banner says so in as
+    /// many words and this repeats it, because a warning with no stated
+    /// consequence reads as one.
+    ///
+    /// 🔴 NOT gated on anything resembling `significant`. The calendar chip's
+    /// gate goes quiet once `scheduledFor <= now`, which at session start is true
+    /// by definition — the same gate here would blank the warning at the exact
+    /// moment it is worth the most. The SCREEN carries the decision instead:
+    /// shown on the pre-service screens (and while the service runs, where the
+    /// pro can still get a signature), never on wrap-up, done, or a terminal
+    /// booking, where signing beforehand is a fact nobody can act on. That is
+    /// web's placement, screen for screen.
+    @ViewBuilder
+    private func unsignedConsentBanner(_ state: ProSessionState) -> some View {
+        if !unsignedConsentForms.isEmpty, showsConsentBanner(state.screenKey) {
+            BrandSurface(tint: BrandColor.amber.opacity(0.08)) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(unsignedConsentForms.count == 1
+                        ? "A form for this service is unsigned"
+                        : "\(unsignedConsentForms.count) forms for this service are unsigned")
+                        .font(BrandFont.body(14, .semibold))
+                        .foregroundStyle(BrandColor.textPrimary)
+
+                    ForEach(unsignedConsentForms) { form in
+                        consentFormRow(form)
+                    }
+
+                    if let consentSendError {
+                        Text(consentSendError)
+                            .font(BrandFont.body(12))
+                            .foregroundStyle(BrandColor.ember)
+                    }
+
+                    Text("You can start the appointment either way — this is a reminder, not a block.")
+                        .font(BrandFont.body(12))
+                        .foregroundStyle(BrandColor.textMuted)
+                }
+            }
+        }
+    }
+
+    /// Web renders the banner on the CONSULTATION, WAITING_ON_CLIENT /
+    /// BEFORE_PHOTOS and SERVICE_IN_PROGRESS screens and nowhere else.
+    /// Deliberately a `switch` with every case spelled out rather than a `!=`
+    /// list: a sixth screen added later has to make this choice on purpose.
+    private func showsConsentBanner(_ screenKey: ProSessionScreenKey) -> Bool {
+        switch screenKey {
+        case .consultation, .waitingOnClient, .beforePhotos, .serviceInProgress:
+            return true
+        case .wrapUp, .done:
+            return false
+        }
+    }
+
+    /// One outstanding form: what it is, and the pro's one action on it.
+    ///
+    /// The row names the form and its kind because "which waiver?" is the pro's
+    /// next question, and VoiceOver reads the two as a sentence rather than as a
+    /// middle dot (`accessibilityLabel` on the display row).
+    @ViewBuilder
+    private func consentFormRow(_ form: ProUnsignedConsentForm.Display) -> some View {
+        let sent = sentConsentFormIds.contains(form.formId)
+        let sending = sendingConsentFormId == form.formId
+
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(form.title)
+                    .font(BrandFont.body(13, .semibold))
+                    .foregroundStyle(BrandColor.textPrimary)
+                if let kindLabel = form.kindLabel {
+                    Text(kindLabel)
+                        .font(BrandFont.body(11))
+                        .foregroundStyle(BrandColor.textSecondary)
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(form.accessibilityLabel)
+
+            Spacer(minLength: 8)
+
+            // The link can only be minted for a client this screen can name.
+            // `ProBookingClient.id` is optional for older backends, and a send
+            // with no client id has nowhere to go — so the WARNING still shows
+            // and only the action is withheld.
+            if let clientId = detail?.client.id, !clientId.isEmpty {
+                Button {
+                    Task { await sendConsentLink(clientId: clientId, form: form) }
+                } label: {
+                    Text(sending ? "Sending…" : (sent ? "Sent" : "Send"))
+                        .font(BrandFont.body(12, .semibold))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(BrandColor.bgSecondary)
+                        .foregroundStyle(sent ? BrandColor.textMuted : BrandColor.textPrimary)
+                        .clipShape(Capsule())
+                }
+                .disabled(sending)
+            }
+        }
+    }
+
+    /// POST the signing link for ONE form, anchored to THIS booking.
+    ///
+    /// 🔴 The booking id is explicit. Omitted, the server attaches the link to
+    /// the client's next upcoming appointment — which is not necessarily the one
+    /// the pro is standing in: the hub can be opened from a booking detail long
+    /// before that booking is next.
+    ///
+    /// "Sent" is a receipt for the send, NOT for a signature: the banner stays up
+    /// until the client actually signs and the next load drops the row. Web makes
+    /// the same distinction, and hiding the ask on send would tell the pro the
+    /// thing they still need is done.
+    private func sendConsentLink(clientId: String, form: ProUnsignedConsentForm.Display) async {
+        guard sendingConsentFormId == nil else { return }
+        sendingConsentFormId = form.formId
+        consentSendError = nil
+        defer { sendingConsentFormId = nil }
+
+        do {
+            try await session.client.proClients.sendConsentRequest(
+                clientId: clientId, formId: form.formId, bookingId: bookingId
+            )
+            sentConsentFormIds.insert(form.formId)
+        } catch let error as APIError {
+            // The server's own sentence — it knows why (no booking to attach to,
+            // a form this pro doesn't own, a client they can't view).
+            consentSendError = error.userMessage
+        } catch {
+            consentSendError = "Couldn’t send the form."
         }
     }
 
@@ -1020,9 +1172,13 @@ struct ProSessionHubView: View {
         do {
             async let stateTask = session.client.proSession.state(bookingId: bookingId)
             async let detailTask = try? session.client.proBookings.detail(bookingId: bookingId)
-            let state = try await stateTask
+            let result = try await stateTask
             detail = await detailTask
-            phase = .loaded(state)
+            // K17-A: a SIBLING of `state`, so it is adopted here rather than read
+            // off the phase. A reload after a signature lands drops the row; a
+            // reload while it is still outstanding keeps warning.
+            unsignedConsentForms = result.unsignedConsentForms
+            phase = .loaded(result.state)
         } catch let error as APIError {
             phase = .failed(error.userMessage)
         } catch {

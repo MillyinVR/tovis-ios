@@ -789,6 +789,21 @@ struct ProCalendarTimeGrid: View {
             return display
         }()
 
+        // Consent mark (K15/K17-A): a form one of this booking's services requires
+        // and this client has not signed. A TEXT CHIP in the wire's warn tone —
+        // K7's channel budget already spends the fill on status, the stripe on
+        // service and the corner glyph on confirmation, and the warning SHAPE
+        // belongs to the conflict triangle. Same room test as the two chips
+        // above, and the same `significant` gate: web's helper decides that an
+        // appointment which has already started is not worth warning about, so a
+        // pro binding their first form today doesn't light up their whole
+        // history. (The route already omits an insignificant badge entirely;
+        // `consentRequirementDisplay` re-checks it the way web's EventCard does.)
+        let consentRequirement: ProConsentRequirement.Display? = {
+            guard colWidth >= 150 else { return nil }
+            return event.consentRequirementDisplay
+        }()
+
         // Location chip (K4): WHERE this job is, on a grid that mixes locations.
         // Deliberately a WORD, not a colour — status owns the tile's fill and D2
         // gave the accent stripe to service, so a location hue would be a fourth
@@ -817,6 +832,7 @@ struct ProCalendarTimeGrid: View {
             conflict: conflict,
             paymentBadge: paymentBadge,
             relationshipBadge: relationshipBadge,
+            consentRequirement: consentRequirement,
             locationLabel: locationLabel
         )
         .padding(.horizontal, 1.5)
@@ -896,6 +912,7 @@ struct ProCalendarTimeGrid: View {
         conflict: Bool,
         paymentBadge: ProPaymentBadge.Display? = nil,
         relationshipBadge: ProRelationshipBadge.Display? = nil,
+        consentRequirement: ProConsentRequirement.Display? = nil,
         locationLabel: String? = nil
     ) -> some View {
         // Drag states own the ring; otherwise a conflict paints it amber.
@@ -959,6 +976,23 @@ struct ProCalendarTimeGrid: View {
                         // the three, so it survives a tight column.
                         if let relationship = relationshipBadge {
                             tileChip(relationship.label, tint: wireBadgeTone(relationship.tone))
+                        }
+                        // 🔴 Consent BEFORE the money, and web puts it after —
+                        // a deliberate deviation, for the reason the location
+                        // chip already states: this line is ONE row on a ~700px
+                        // phone tile, so its order is a priority order, not
+                        // web's reading order (web's card is ≥768px and splits
+                        // the chips across two rows, so nothing there competes).
+                        // Drove it last-in-row first: "Deposit paid $40.00" ate
+                        // the remaining width and the warning was pushed clean
+                        // off the tile. A settled payment is a fact; an unsigned
+                        // form is a thing the pro still has to DO.
+                        // `layoutPriority` keeps it whole rather than truncating
+                        // "Form due" into "Form d…", which would read as a
+                        // different, vaguer warning.
+                        if let consent = consentRequirement {
+                            tileChip(consent.label, tint: wireBadgeTone(consent.tone))
+                                .layoutPriority(1)
                         }
                         if let payment = paymentBadge {
                             tileChip(payment.label, tint: wireBadgeTone(payment.tone))
@@ -1399,6 +1433,16 @@ func proCalendarTileAccessibilityLabel(
     // spells it out in this same position (after the money, before the place).
     if let confirmation = event.clientConfirmationDisplay {
         parts.append(confirmation.description)
+    }
+
+    // The chip prints "Form due"; the accessible name says WHICH form, because
+    // "which waiver?" is the pro's very next question (K5's words-not-shapes
+    // rule applied to an abbreviation). Ungated by density, like every other
+    // word here — the week column that has no room for the chip is exactly
+    // where this is the only carrier. Web's aria label puts it in this same
+    // position, after the confirmation and before the place.
+    if let consent = event.consentRequirementDisplay {
+        parts.append(consent.description)
     }
 
     // On a grid that mixes locations, WHERE a job is isn't decoration.

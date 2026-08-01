@@ -68,11 +68,11 @@ struct ProCalendarServiceSwatchTests {
         let response = try decodeFeed()
         let bookings = response.events.filter(\.isBooking)
 
-        // Three Balayage rows share the pro's colour for that service; the Root
-        // Touch-Up row is a DIFFERENT service with a different colour — so the
+        // The Balayage rows share the pro's colour for that service; the Root
+        // Touch-Up rows are a DIFFERENT service with a different colour — so the
         // stripe is genuinely per-service, not per-pro or per-day.
-        #expect(bookings.filter { $0.serviceSwatchId == "09" }.count == 3)
-        #expect(bookings.filter { $0.serviceSwatchId == "02" }.count == 1)
+        #expect(bookings.filter { $0.serviceSwatchId == "09" }.count == 4)
+        #expect(bookings.filter { $0.serviceSwatchId == "02" }.count == 2)
 
         // And the uncoloured one: the server omits the key entirely rather than
         // sending null, and the tile must read that as "keep the status tone".

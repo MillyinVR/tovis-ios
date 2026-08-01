@@ -76,11 +76,21 @@ struct ProSessionActionResponse: Decodable, Sendable {
 
 // MARK: - Per-booking session state
 
-/// `GET /api/v1/pro/bookings/{id}/session/state` → { ok, state, stateHash }.
-/// Mirrors `buildProSessionState` (lib/proSession/sessionState.ts). The authoritative
+/// `GET /api/v1/pro/bookings/{id}/session/state` → { ok, state, stateHash,
+/// unsignedConsentForms? }. Mirrors `buildProSessionState`
+/// (lib/proSession/sessionState.ts) plus K17-A's sibling list. The authoritative
 /// state for one booking's live session — drives the session hub screen.
 struct ProSessionStateResponse: Decodable, Sendable {
     let state: ProSessionState
+    /// K15's outstanding forms for THIS booking (K17-A). A SIBLING of `state`,
+    /// deliberately not part of it: `state` is hashed for polling and this is
+    /// not a booking-row fact, so it refreshes when the hub reloads rather than
+    /// on every tick.
+    ///
+    /// 🔴 Absent while the technical-record gate is off, and absent when there
+    /// is nothing outstanding — the route has ONE representation for "nothing to
+    /// sign", so an empty array never reaches the screen.
+    let unsignedConsentForms: [ProUnsignedConsentForm]?
 }
 
 public struct ProSessionState: Decodable, Sendable {

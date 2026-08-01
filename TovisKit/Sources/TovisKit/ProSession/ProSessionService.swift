@@ -20,12 +20,24 @@ public final class ProSessionService: Sendable {
     }
 
     /// GET /api/v1/pro/bookings/{id}/session/state → the authoritative per-booking
-    /// session state (status, step, checkout). Drives the session hub.
-    public func state(bookingId: String) async throws -> ProSessionState {
+    /// session state (status, step, checkout) plus what the hub renders alongside
+    /// it. Drives the session hub.
+    ///
+    /// Returns the whole answer rather than just `state`: K17-A added the
+    /// outstanding-consent list as a SIBLING of `state`, and a method that
+    /// unwrapped one field would have quietly dropped it — which is how a wire
+    /// field ends up with no reader.
+    public func state(bookingId: String) async throws -> ProSessionStateResult {
         let response: ProSessionStateResponse = try await api.request(
             "/pro/bookings/\(bookingId)/session/state"
         )
-        return response.state
+        return ProSessionStateResult(
+            state: response.state,
+            // Absent and empty mean the same thing to every caller: nothing to
+            // sign. A row that cannot name itself is dropped rather than
+            // rendered blank.
+            unsignedConsentForms: (response.unsignedConsentForms ?? []).displayable
+        )
     }
 
     /// POST /api/v1/pro/bookings/{id}/session/start. Returns the `nextHref` the
@@ -155,6 +167,26 @@ public final class ProSessionService: Sendable {
     /// web hook). Send both so a single key dedupes the write.
     private func idempotencyHeaders(_ key: String) -> [String: String] {
         ["Idempotency-Key": key, "x-idempotency-key": key]
+    }
+}
+
+/// One booking's session-state answer: the polled spine, plus the forms the hub
+/// warns about at session start (K17-A).
+public struct ProSessionStateResult: Sendable {
+    public let state: ProSessionState
+    /// Already validated and in wire order — a session-start warning, NEVER
+    /// gated on anything resembling `significant`. At session start the
+    /// appointment's scheduled time has arrived by definition, which is exactly
+    /// the condition the CALENDAR's badge uses to go quiet; reusing that gate
+    /// here would blank the warning at the moment it matters most.
+    public let unsignedConsentForms: [ProUnsignedConsentForm.Display]
+
+    public init(
+        state: ProSessionState,
+        unsignedConsentForms: [ProUnsignedConsentForm.Display] = []
+    ) {
+        self.state = state
+        self.unsignedConsentForms = unsignedConsentForms
     }
 }
 

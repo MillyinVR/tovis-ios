@@ -130,6 +130,25 @@ struct ProAddFormulaSheet: View {
 
 // MARK: - Add consent
 
+/// The proof methods a pro may CLAIM by hand, as (wire value, words).
+///
+/// 🔴 `CLIENT_TOKEN` is deliberately absent, and this list is file-scope so a
+/// test can say so. It means "the platform witnessed this signature through a
+/// link it sent", and since K15 the only writer of it is the signing route
+/// behind the link — which also stamps `signatureTokenId`, the unique column
+/// that proves a real link existed. `POST /pro/clients/{id}/consent` REFUSES it
+/// with "Send the form to the client to record a link signature.", so offering
+/// it here was a control the server could only ever say no to (K14-B: the
+/// option had been lying since it shipped; K15 closed it on web, and this is the
+/// device's half).
+///
+/// ⚠️ Reading a stored `CLIENT_TOKEN` is a different question and stays — a
+/// record signed through a real link renders its own honest label.
+let proConsentProofMethodOptions: [(value: String, label: String)] = [
+    ("IN_PERSON", "In person"),
+    ("PAPER_ON_FILE", "Paper on file"),
+]
+
 /// POST /pro/clients/{id}/consent — a consent / waiver / patch-test record. The
 /// patch-test result + validity apply only to PATCH_TEST; notes are encrypted.
 struct ProAddConsentSheet: View {
@@ -176,9 +195,9 @@ struct ProAddConsentSheet: View {
                         fieldLabel("Proof method")
                         Picker("Proof method", selection: $proofMethod) {
                             Text("Proof method…").tag("")
-                            Text("In person").tag("IN_PERSON")
-                            Text("Client link").tag("CLIENT_TOKEN")
-                            Text("Paper on file").tag("PAPER_ON_FILE")
+                            ForEach(proConsentProofMethodOptions, id: \.value) { option in
+                                Text(option.label).tag(option.value)
+                            }
                         }
                         .pickerStyle(.menu)
                         .tint(BrandColor.accent)
