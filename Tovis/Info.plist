@@ -10,6 +10,8 @@
 	<string>Tovis uses your location to find pros and services near you on Discover.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Tovis uses the camera to capture before and after photos during your appointments.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Tovis can save session photos to your library when they can’t be uploaded, so you never lose a shot you’ve taken.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

@@ -89,11 +89,39 @@ struct ProCapturePhotosView: View {
     @State private var captured: [CapturedShot] = []
     /// A captured shot opened full-screen (tap the captured strip).
     @State private var viewingMedia: FullscreenMedia?
-    /// Captured JPEGs whose upload failed — spilled to the session byte store (not
-    /// held as `[Data]` in RAM, which grows unbounded on a dead connection) and
-    /// retried on demand, so a flaky connection never loses a shot the pro took.
-    @State private var failedUploads: [(url: URL, focal: MediaFocalPoint?)] = []
+    /// Captured JPEGs the server hasn't accepted — spilled to the byte vault (not
+    /// held as `[Data]` in RAM, which grows unbounded on a dead connection) so a
+    /// flaky connection never loses a shot the pro took.
+    ///
+    /// Split by whether re-sending could ever work (`APIError.isRetryable`). They
+    /// were one list behind one Retry button, which meant a server REFUSAL — a
+    /// 4xx the server repeats forever — sat behind a button that could not win,
+    /// with no other way out. Terminal ones now get a decision instead of a loop.
+    @State private var failedUploads: [FailedUpload] = []
     @State private var uploading = false
+
+    /// A photo still owed to the server. `phase` travels with it: a BEFORE shot
+    /// stranded by a crash must still land in BEFORE when it's swept up during a
+    /// later AFTER shoot.
+    private struct FailedUpload: Identifiable, Equatable {
+        let id = UUID()
+        let url: URL
+        let phase: MediaPhase
+        let focal: MediaFocalPoint?
+        /// False = the server refused these bytes; retrying re-fails.
+        let isRetryable: Bool
+        /// What the server said, for the terminal card's explanation.
+        let reason: String
+    }
+
+    /// Terminal failures need a decision (keep them or drop them), not a retry.
+    private var terminalUploads: [FailedUpload] { failedUploads.filter { !$0.isRetryable } }
+    private var retryableUploads: [FailedUpload] { failedUploads.filter(\.isRetryable) }
+    /// Presents the keep-or-discard card for refused photos.
+    @State private var showTerminalDecision = false
+    /// Re-entry guard while refused photos are being written to the library, so a
+    /// second tap can't double-save (and then double-release) the same bytes.
+    @State private var savingToLibrary = false
     /// Recorded clips whose upload failed — kept safe in the ClipVault (never
     /// tmp), retried on demand. Tuple carries the phase so a BEFORE clip
     /// stranded by a crash still lands in BEFORE when swept up later.
@@ -261,6 +289,22 @@ struct ProCapturePhotosView: View {
             let stranded = ClipVault.strandedClips(bookingId: bookingId)
                 .filter { !queued.contains($0.url) }
             if !stranded.isEmpty { failedClips.append(contentsOf: stranded) }
+
+            // Same for PHOTOS the server never accepted. They used to be wiped on
+            // camera start instead of recovered, so a refused shot was gone by the
+            // time the pro came back for it. Their stored phase is authoritative —
+            // a BEFORE photo swept up mid-AFTER shoot still belongs to BEFORE.
+            // Re-queued as retryable so the pro gets one honest attempt on the new
+            // connection; a repeat refusal re-classifies it as terminal.
+            let owedURLs = Set(failedUploads.map(\.url))
+            let owed = SessionByteVault.strandedUploads(bookingId: bookingId)
+                .filter { !owedURLs.contains($0.url) }
+                .map {
+                    FailedUpload(url: $0.url, phase: $0.phase, focal: $0.focal,
+                                 isRetryable: true,
+                                 reason: "Waiting to finish uploading.")
+                }
+            if !owed.isEmpty { failedUploads.append(contentsOf: owed) }
         }
         // Keep the coach judging "ready for THIS shot" — expectations follow the
         // current guided step (and clear for freeform / all-done shooting).
@@ -394,16 +438,84 @@ struct ProCapturePhotosView: View {
                 uploading = false
             }
         }))
+        .modifier(TerminalUploadDialog(
+            isPresented: $showTerminalDecision,
+            count: terminalUploads.count,
+            reason: terminalUploads.first?.reason,
+            save: { Task { await saveTerminalUploadsToLibrary() } },
+            discard: discardTerminalUploads
+        ))
         .confirmationDialog(
-            "You have unsaved best shots",
+            "Leave with work unfinished?",
             isPresented: $showExitConfirm,
             titleVisibility: .visible
         ) {
-            Button("Review best shots") { showBestShots = true }
-            Button("Discard & exit", role: .destructive) { dismiss() }
+            if !terminalUploads.isEmpty {
+                Button("Decide on refused photos") { showTerminalDecision = true }
+            }
+            if coach?.harvested.isEmpty == false {
+                Button("Review best shots") { showBestShots = true }
+            }
+            // Only destructive when something is genuinely discarded by leaving:
+            // owed uploads survive in custody and resume next time; the harvest
+            // tray does not.
+            Button("Leave", role: coach?.harvested.isEmpty == false ? .destructive : nil) {
+                dismiss()
+            }
             Button("Keep shooting", role: .cancel) {}
         } message: {
-            Text("The camera captured \(coach?.harvested.count ?? 0) best shots this session. Review them to save to \(phaseLabel) — leaving now discards them.")
+            Text(exitWarningMessage)
+        }
+    }
+
+    /// Honest about what leaving actually costs — the three outcomes differ, and
+    /// telling the pro everything is "discarded" would be as wrong as the old
+    /// silence. Best shots are swept; owed uploads resume; refusals never will.
+    private var exitWarningMessage: String {
+        var lines = ["You still have \(unsavedWorkSummary)."]
+        if coach?.harvested.isEmpty == false {
+            lines.append("Best shots aren’t saved until you review them — leaving discards those.")
+        }
+        if !retryableUploads.isEmpty || !failedClips.isEmpty {
+            lines.append("Anything still uploading is kept safely and finishes next time you open the camera.")
+        }
+        if !terminalUploads.isEmpty {
+            lines.append("The refused photos won’t upload on their own — save them to your phone first, or they’re gone.")
+        }
+        return lines.joined(separator: " ")
+    }
+
+    /// The keep-or-drop decision for photos the server refused, as a modifier for
+    /// the same reason as `RetakeDialog`: the body's modifier chain is already at
+    /// the edge of what the type-checker resolves quickly.
+    private struct TerminalUploadDialog: ViewModifier {
+        @Binding var isPresented: Bool
+        let count: Int
+        let reason: String?
+        let save: () -> Void
+        let discard: () -> Void
+
+        func body(content: Content) -> some View {
+            // ⚠️ Nothing here may `.disabled(…)` — a modifier applies to `content`,
+            // which is the whole camera. Re-entry is already prevented by the
+            // dialog dismissing on tap plus the guard in the save itself.
+            content.confirmationDialog(
+                count == 1 ? "This photo can’t be saved here"
+                           : "\(count) photos can’t be saved here",
+                isPresented: $isPresented,
+                titleVisibility: .visible
+            ) {
+                Button("Save to my photos") { save() }
+                Button("Discard", role: .destructive) { discard() }
+                Button("Decide later", role: .cancel) {}
+            } message: {
+                Text(
+                    [reason,
+                     "The server won’t accept \(count == 1 ? "it" : "them"), so trying again won’t help. Save to your photos to keep \(count == 1 ? "it" : "them")."]
+                        .compactMap { $0 }
+                        .joined(separator: " ")
+                )
+            }
         }
     }
 
@@ -436,18 +548,48 @@ struct ProCapturePhotosView: View {
         }
     }
 
-    /// Leave the camera — but if the coach is holding unreviewed best shots, ask
-    /// first so they're not silently lost. Manually captured photos already
-    /// uploaded, so only the harvest tray is at risk. A rolling recording is
-    /// stopped + saved first (the upload finishes in the background; a failure
-    /// lands in the ClipVault and is swept up next time the camera opens).
+    /// Leave the camera — but never silently, if anything would be lost by going.
+    /// A rolling recording is stopped + saved first (the upload finishes in the
+    /// background; a failure lands in the ClipVault and is swept up next time).
+    ///
+    /// 🔴 This used to check ONLY the harvest tray, on the assumption that
+    /// "manually captured photos already uploaded". They hadn't: a refused photo
+    /// sat in the retry queue, exit dismissed without a word, and the bytes were
+    /// wiped on the next camera start. Owed photos and clips now hold the door
+    /// too — anything the server hasn't taken is work the pro can still lose.
     private func requestExit() {
         if camera.isRecording { Task { await stopRecordingAndSave(review: false) } }
-        if (coach?.harvested.isEmpty == false) {
+        if hasUnsavedWork {
             showExitConfirm = true
         } else {
             dismiss()
         }
+    }
+
+    /// Anything that leaving would strand: unreviewed auto-harvested shots, photos
+    /// the server hasn't accepted, or clips still owed.
+    private var hasUnsavedWork: Bool {
+        coach?.harvested.isEmpty == false || !failedUploads.isEmpty || !failedClips.isEmpty
+    }
+
+    /// Plain-language list of what's at risk, for the exit dialog. Refused photos
+    /// are called out separately — they're the ones that will never upload on
+    /// their own, so "come back later" is not a real answer for them.
+    private var unsavedWorkSummary: String {
+        var parts: [String] = []
+        if let harvested = coach?.harvested.count, harvested > 0 {
+            parts.append("\(harvested) best shot\(harvested == 1 ? "" : "s") to review")
+        }
+        if !retryableUploads.isEmpty {
+            parts.append("\(retryableUploads.count) photo\(retryableUploads.count == 1 ? "" : "s") still uploading")
+        }
+        if !terminalUploads.isEmpty {
+            parts.append("\(terminalUploads.count) photo\(terminalUploads.count == 1 ? "" : "s") the server refused")
+        }
+        if !failedClips.isEmpty {
+            parts.append("\(failedClips.count) clip\(failedClips.count == 1 ? "" : "s") still uploading")
+        }
+        return parts.formatted(.list(type: .and))
     }
 
     // MARK: - Camera UI
@@ -1562,20 +1704,43 @@ struct ProCapturePhotosView: View {
                     .multilineTextAlignment(.center)
             }
 
-            // Shots whose upload failed — kept locally, retried on demand.
-            if !failedUploads.isEmpty {
+            // Shots the connection dropped — kept in durable custody, worth a tap.
+            // Named by CAUSE, so the pro can tell this from the refusal below:
+            // this one gets better when the signal does.
+            if !retryableUploads.isEmpty {
+                let count = retryableUploads.count
                 Button { Task { await retryFailedUploads() } } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "arrow.clockwise").font(.system(size: 13, weight: .semibold))
-                        Text("Retry \(failedUploads.count) unsaved photo\(failedUploads.count == 1 ? "" : "s")")
+                        Text("\(count) photo\(count == 1 ? "" : "s") waiting on signal — retry")
                             .font(BrandFont.body(14, .semibold))
                     }
-                    .foregroundStyle(.white)
+                    .foregroundStyle(BrandColor.textPrimary)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
-                    .background(BrandColor.ember.opacity(0.85), in: Capsule())
+                    .background(BrandColor.amber.opacity(0.85), in: Capsule())
                 }
                 .disabled(uploading)
+                .accessibilityHint("Tries these photos again")
+            }
+
+            // Shots the server REFUSED. No retry button: retrying re-fails. This
+            // needs a decision, so it opens one instead of looping.
+            if !terminalUploads.isEmpty {
+                let count = terminalUploads.count
+                Button { showTerminalDecision = true } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("\(count) photo\(count == 1 ? "" : "s") can’t be saved here")
+                            .font(BrandFont.body(14, .semibold))
+                    }
+                    .foregroundStyle(BrandColor.textPrimary)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(BrandColor.ember.opacity(0.9), in: Capsule())
+                }
+                .accessibilityHint("Choose whether to keep these photos on your phone")
             }
 
             // Clips whose upload failed — safe in the ClipVault, retried on demand.
@@ -1884,54 +2049,155 @@ struct ProCapturePhotosView: View {
     }
 
     /// Upload bytes that are already color-final (retries must not re-correct). On
-    /// failure the bytes spill to disk and their URL joins the retry queue — a
-    /// flaky connection must never lose a shot the pro already took, and the bytes
-    /// mustn't pile up in RAM while the queue drains.
-    private func uploadCorrected(_ payload: Data, focal: MediaFocalPoint?) async {
+    /// failure the bytes spill to the durable vault and join the owed-photos queue
+    /// — a flaky connection must never lose a shot the pro already took, and the
+    /// bytes mustn't pile up in RAM while the queue drains.
+    ///
+    /// `uploadPhase` is the phase the SHOT belongs to, which is not always the
+    /// phase being shot now: a BEFORE photo stranded by a crash gets swept up
+    /// during the AFTER shoot and must still land in BEFORE.
+    /// `custody` is the vault file these bytes are ALREADY spilled to (a retry).
+    /// It's released only once the server has them, and re-queued in place on a
+    /// re-failure — so the bytes are never off disk while the network is in
+    /// flight. A crash mid-retry then costs nothing; deleting first and
+    /// re-spilling after would lose the photo for the whole upload window.
+    private func uploadCorrected(
+        _ payload: Data,
+        focal: MediaFocalPoint?,
+        uploadPhase: MediaPhase? = nil,
+        custody: URL? = nil
+    ) async {
+        let target = uploadPhase ?? phase
         do {
             try await session.client.proMedia.uploadSessionPhoto(
                 bookingId: bookingId,
-                phase: phase,
+                phase: target,
                 imageData: payload,
                 focal: focal
             )
+            if let custody { SessionByteVault.remove(custody) }   // safe server-side now
             session.signalRefresh()   // the hub's gallery refreshes
         } catch let error as APIError {
-            queueFailedUpload(payload, focal: focal, message: error.userMessage)
+            // The split that matters: a dropped connection is worth another tap;
+            // a refusal will be repeated forever, so it needs a decision instead.
+            requeue(payload, focal: focal, phase: target, custody: custody,
+                    retryable: error.isRetryable, reason: error.userMessage)
         } catch {
-            queueFailedUpload(payload, focal: focal,
-                              message: "Couldn’t save that photo — it’s kept here to retry.")
+            // Unknown, so assume transient — never strand a shot on a guess.
+            requeue(payload, focal: focal, phase: target, custody: custody, retryable: true,
+                    reason: "Couldn’t save that photo — it’s kept here to retry.")
         }
     }
 
-    /// Spill a failed upload's bytes to disk and remember the URL for the retry
-    /// pill. If even the spill fails, surface it rather than silently pinning the
-    /// bytes in RAM (the whole point of spilling).
-    private func queueFailedUpload(_ payload: Data, focal: MediaFocalPoint?, message: String) {
-        if let url = SessionByteVault.write(payload, to: .pendingUpload) {
-            failedUploads.append((url: url, focal: focal))
-            errorMessage = message
+    /// Put a failed upload back in the queue: reusing its existing vault file when
+    /// this was a retry, or spilling fresh bytes when it's a new capture.
+    private func requeue(
+        _ payload: Data,
+        focal: MediaFocalPoint?,
+        phase uploadPhase: MediaPhase,
+        custody: URL?,
+        retryable: Bool,
+        reason: String
+    ) {
+        if let custody {
+            failedUploads.append(FailedUpload(url: custody, phase: uploadPhase, focal: focal,
+                                              isRetryable: retryable, reason: reason))
+            if retryable { errorMessage = reason } else { showTerminalDecision = true }
         } else {
-            errorMessage = "Couldn’t save that photo, and it couldn’t be kept to retry."
+            queueFailedUpload(payload, focal: focal, phase: uploadPhase,
+                              retryable: retryable, reason: reason)
         }
     }
 
-    /// Re-attempt every queued failed upload; whatever fails again re-spills.
+    /// Spill an un-uploaded photo to durable custody and remember it. If even the
+    /// spill fails, surface it rather than silently pinning the bytes in RAM (the
+    /// whole point of spilling).
+    private func queueFailedUpload(
+        _ payload: Data,
+        focal: MediaFocalPoint?,
+        phase uploadPhase: MediaPhase,
+        retryable: Bool,
+        reason: String
+    ) {
+        guard let url = SessionByteVault.writePendingUpload(
+            payload, bookingId: bookingId, phase: uploadPhase, focal: focal
+        ) else {
+            errorMessage = "Couldn’t save that photo, and it couldn’t be kept to retry."
+            return
+        }
+        failedUploads.append(FailedUpload(url: url, phase: uploadPhase, focal: focal,
+                                          isRetryable: retryable, reason: reason))
+        // A refusal isn't an error line to squint at — it's a choice to make.
+        if retryable { errorMessage = reason } else { showTerminalDecision = true }
+    }
+
+    /// Re-attempt the uploads that could still succeed; whatever fails again
+    /// re-spills (and may re-classify as terminal). Refused photos are left
+    /// alone — re-sending them just reproduces the refusal.
     private func retryFailedUploads() async {
-        guard !uploading, !failedUploads.isEmpty else { return }
+        guard !uploading else { return }
+        let pending = retryableUploads
+        guard !pending.isEmpty else { return }
         uploading = true
         errorMessage = nil
         defer { uploading = false }
-        let pending = failedUploads
-        failedUploads = []
+        failedUploads.removeAll { entry in pending.contains { $0.id == entry.id } }
         for entry in pending {
             guard let payload = await Task.detached(
                 priority: .userInitiated,
                 operation: { SessionByteVault.read(entry.url) }
             ).value else { continue }   // gone from disk — nothing to retry
-            SessionByteVault.remove(entry.url)   // uploadCorrected re-spills on re-failure
-            await uploadCorrected(payload, focal: entry.focal)
+            // Custody stays with the file for the whole attempt; it's released
+            // only once the server has the bytes.
+            await uploadCorrected(payload, focal: entry.focal,
+                                  uploadPhase: entry.phase, custody: entry.url)
         }
+    }
+
+    /// Write refused photos to the pro's own library, then let them go. This is
+    /// the escape the retry loop never had: the server won't take these bytes, so
+    /// the only honest options are "leave with the photo" or "drop it" — and the
+    /// pro picks, rather than losing it silently on exit.
+    private func saveTerminalUploadsToLibrary() async {
+        let doomed = terminalUploads
+        guard !doomed.isEmpty, !savingToLibrary else { return }
+        savingToLibrary = true
+        defer { savingToLibrary = false }
+
+        var saved = 0
+        for entry in doomed {
+            guard let data = await Task.detached(
+                priority: .userInitiated,
+                operation: { SessionByteVault.read(entry.url) }
+            ).value else { continue }
+            if await PhotoLibrarySaver.save(data) { saved += 1 }
+        }
+
+        guard saved == doomed.count else {
+            // Keep the bytes: a partial save must not discard what didn't land.
+            errorMessage = saved == 0
+                ? "Couldn’t save to your photos — check Tovis has photo access."
+                : "Saved \(saved) of \(doomed.count). The rest are still here."
+            return
+        }
+        // Release exactly what was saved. A refusal that arrived DURING the save
+        // isn't in `doomed`, hasn't been written anywhere, and must not be
+        // dropped along with the rest.
+        release(doomed)
+        errorMessage = nil
+    }
+
+    /// Drop every refused photo currently queued — the pro's explicit choice.
+    private func discardTerminalUploads() {
+        release(terminalUploads)
+    }
+
+    /// Release specific photos from custody: delete their bytes and forget them.
+    private func release(_ entries: [FailedUpload]) {
+        let ids = Set(entries.map(\.id))
+        for entry in entries { SessionByteVault.remove(entry.url) }
+        failedUploads.removeAll { ids.contains($0.id) }
+        if terminalUploads.isEmpty { showTerminalDecision = false }
     }
 
     private func toggleRecording() async {
