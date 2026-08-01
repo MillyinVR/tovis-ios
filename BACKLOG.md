@@ -290,6 +290,16 @@ intent=CLAIM_INVITE + inviteToken adopts the profile; cold self-serve
 NOT accepted divergences (they're A2 build items): the public *client* profile
 `/u/[handle]` + public boards are social surfaces (looks/stats/follow), not SEO.
 
+**W7 address publishing (`tovis-app` #821) — iOS status:** the wire fields
+(`isAddressPublic`, `locationType`) are modelled on `SearchProLocation`, and the
+rule lives on the model as `publishedAddress` / `isNavigable`. iOS Discover plots
+a map PIN only and has **no Navigate / Open-in-Maps affordance**, so the web bug
+(directions built over a coarsened point, aimed at a mobile-only pro's fuzzed
+home) never existed here. No UI change was needed. ⚠️ If a directions / "open in
+Maps" / copy-address affordance is ever added to Discover, gate it on
+`isNavigable` — never on "is there a lat/lng", which is exactly how web shipped
+it broken.
+
 - [ ] **A1 — native auth.** ⚠️ **"Biggest structural gap" framing is STALE —
   reconciled by `tovis-app §15` (2026-07-08 audit):** native signup/login is largely
   SHIPPED (role chooser · client + pro 3-step signup on real `POST /auth/register` ·

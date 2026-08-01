@@ -23,7 +23,9 @@
         "placeId": null,
         "lat": 34.05,
         "lng": -118.24,
-        "isPrimary": true
+        "isPrimary": true,
+        "locationType": "MOBILE_BASE",
+        "isAddressPublic": false
       },
       "primaryLocation": {
         "id": "loc_1",
@@ -34,7 +36,9 @@
         "placeId": null,
         "lat": 34.05,
         "lng": -118.24,
-        "isPrimary": true
+        "isPrimary": true,
+        "locationType": "MOBILE_BASE",
+        "isAddressPublic": false
       }
     },
     {

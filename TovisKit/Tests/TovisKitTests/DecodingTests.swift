@@ -1760,8 +1760,63 @@ func fixture(_ name: String) throws -> Data {
         #expect(pro.supportsMobile == true)
         #expect(pro.mapLocation?.lat == 34.05)
         #expect(pro.mapLocation?.cityState == "Los Angeles, CA")
+        // W7: a redacted preview — mobile base, address withheld. The pin is
+        // fine (that's what the coarsening is for); a destination is not.
+        #expect(pro.mapLocation?.isAddressPublic == false)
+        #expect(pro.mapLocation?.isMobileBase == true)
+        #expect(pro.mapLocation?.publishedAddress == nil)
+        #expect(pro.mapLocation?.isNavigable == false)
         // Pro with no location still decodes (optionals).
         #expect(res.items[1].mapLocation == nil)
+    }
+
+    /// W7 (`tovis-app` #821): the published-address rule, both ways. The wire
+    /// case above only covers a refusal, and a rule that can only say no is not
+    /// tested — nor is one that says yes on a coordinate alone.
+    @Test func searchProLocationPublishesAnAddressOnlyWhenTheProDid() throws {
+        func location(_ json: String) throws -> SearchProLocation {
+            try JSONDecoder().decode(SearchProLocation.self, from: Data(json.utf8))
+        }
+
+        let published = try location("""
+        {"id":"loc_1","formattedAddress":"800 S Hope St, Los Angeles, CA",
+         "city":"Los Angeles","state":"CA","timeZone":"America/Los_Angeles",
+         "placeId":"place_1","lat":34.0483,"lng":-118.2604,"isPrimary":true,
+         "locationType":"SALON","isAddressPublic":true}
+        """)
+        #expect(published.publishedAddress == "800 S Hope St, Los Angeles, CA")
+        #expect(published.isNavigable == true)
+
+        // A real address + real coordinates, but the pro never published it.
+        let unpublished = try location("""
+        {"id":"loc_2","formattedAddress":"800 S Hope St, Los Angeles, CA",
+         "city":"Los Angeles","state":"CA","timeZone":"America/Los_Angeles",
+         "placeId":"place_1","lat":34.0483,"lng":-118.2604,"isPrimary":true,
+         "locationType":"SALON","isAddressPublic":false}
+        """)
+        #expect(unpublished.publishedAddress == nil)
+        #expect(unpublished.isNavigable == false)
+
+        // A mobile base is where the pro starts from, never a destination —
+        // refused even if the flag says otherwise (the server refuses it too).
+        let mobileBase = try location("""
+        {"id":"loc_3","formattedAddress":"12 Private Way, Los Angeles, CA",
+         "city":"Los Angeles","state":"CA","timeZone":"America/Los_Angeles",
+         "placeId":"place_3","lat":34.0483,"lng":-118.2604,"isPrimary":true,
+         "locationType":"MOBILE_BASE","isAddressPublic":true}
+        """)
+        #expect(mobileBase.publishedAddress == nil)
+        #expect(mobileBase.isNavigable == false)
+
+        // A backend older than W7 sends neither field: decode survives, and the
+        // absent flag reads as NOT published — the safe direction.
+        let preW7 = try location("""
+        {"id":"loc_4","formattedAddress":"800 S Hope St, Los Angeles, CA",
+         "city":"Los Angeles","state":"CA","timeZone":"America/Los_Angeles",
+         "placeId":"place_1","lat":34.0483,"lng":-118.2604,"isPrimary":true}
+        """)
+        #expect(preW7.isAddressPublic == false)
+        #expect(preW7.isNavigable == false)
     }
 
     // GET /api/v1/client/notifications — Fixtures/clientNotifications.json (schema-validated).

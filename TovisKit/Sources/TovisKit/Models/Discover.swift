@@ -3,9 +3,15 @@ import Foundation
 // Wire models for Discover — GET /api/v1/search/pros (the geo pro search the web
 // SearchMapClient uses) + GET /api/v1/discover/categories. Mirrors
 // lib/search/contracts.ts (SearchProItemDto / SearchProLocationPreviewDto) and
-// lib/discovery/categoryTypes.ts. Coordinates are coarsened (~neighborhood) on
-// the wire for privacy; distanceMiles is accurate. Only the rendered subset is
-// modeled; unknown keys are ignored.
+// lib/discovery/categoryTypes.ts. Only the rendered subset is modeled; unknown
+// keys are ignored.
+//
+// These routes are UNAUTHENTICATED, so a location's address and placeId come
+// back nulled and its coordinates coarsened to a ~1.1km grid unless the pro
+// published that address (`isAddressPublic`, W7). distanceMiles is computed
+// server-side from the exact point, so it stays accurate either way. Anything
+// that would send a client TO a location must go through `publishedAddress` /
+// `isNavigable` on `SearchProLocation` — never through lat/lng alone.
 
 // MARK: - GET /api/v1/search/pros
 
@@ -45,6 +51,51 @@ public struct SearchProLocation: Decodable, Sendable, Identifiable {
     public let lat: Double?
     public let lng: Double?
     public let isPrimary: Bool
+    /// `SALON` / `SUITE` / `MOBILE_BASE` — raw, like `ProCalendarBlockLocation.type`.
+    public let locationType: String?
+
+    /// W7 (`tovis-app` #821, `lib/discovery/publicAddress.ts`): whether the
+    /// address, placeId and coordinates on THIS preview are the pro's real ones
+    /// because they chose to publish them. False = the preview is redacted:
+    /// address and placeId nulled, coordinates coarsened to a ~1.1km grid.
+    ///
+    /// Optional on the wire ONLY to survive a backend older than W7 — an absent
+    /// flag reads as not published, which is the safe direction. The schema
+    /// requires it, and the contract gate holds the fixture to that.
+    private let isAddressPublicRaw: Bool?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, formattedAddress, city, state, timeZone, placeId, lat, lng, isPrimary
+        case locationType
+        case isAddressPublicRaw = "isAddressPublic"
+    }
+
+    public var isAddressPublic: Bool { isAddressPublicRaw ?? false }
+
+    /// Where the pro STARTS FROM, not somewhere clients go.
+    public var isMobileBase: Bool { locationType == "MOBILE_BASE" }
+
+    /// The address a public audience may actually be shown or routed to — nil
+    /// unless the pro published it.
+    ///
+    /// 🔴 On web this shipped broken: Discover built a Navigate button on top of
+    /// the coordinates, which are coarsened for everyone on these unauthenticated
+    /// routes, so Maps got a fuzzed point with no address and snapped to the
+    /// nearest building. For a mobile-only pro the only location with coordinates
+    /// is their MOBILE_BASE — it pointed at a fuzzed version of their home.
+    /// Branch on the flag, NEVER on "is there a lat/lng": a coarsened coordinate
+    /// is still a coordinate, and that is exactly how it shipped.
+    public var publishedAddress: String? {
+        guard isAddressPublic, !isMobileBase else { return nil }
+        guard let address = formattedAddress?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !address.isEmpty else { return nil }
+        return address
+    }
+
+    /// Whether this location may be offered as a destination (directions, an
+    /// "Open in Maps", a copyable address). The map PIN is fine either way — a
+    /// neighborhood-accurate dot is what the coarsening is for.
+    public var isNavigable: Bool { publishedAddress != nil }
 
     /// A short "City, ST" label.
     public var cityState: String? {
