@@ -335,7 +335,6 @@ struct ProClientPolicyEditSheet: View {
                         Text(error)
                             .font(BrandFont.body(12))
                             .foregroundStyle(BrandColor.ember)
-                            .accessibilityAddTraits(.isStaticText)
                     }
 
                     if hasStoredPolicy {
@@ -371,8 +370,8 @@ struct ProClientPolicyEditSheet: View {
                 Text("The whole booking, including add-ons").tag(ProClientPolicy.PrepayScope.entireBooking)
                 Text("The main service only").tag(ProClientPolicy.PrepayScope.serviceOnly)
             }
-            .pickerStyle(.inline)
-            .labelsHidden()
+            .pickerStyle(.menu)
+            .tint(BrandColor.accent)
             .disabled(saving)
         }
         .padding(12)
