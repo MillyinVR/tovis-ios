@@ -319,7 +319,10 @@ struct ProCalendarTimeGrid: View {
     let currentDate: Date
     let timeZone: TimeZone
     let events: [ProCalendarEvent]
-    let onTapBooking: (String) -> Void
+    /// K20: the seriesId travels with the tap so the booking screen can offer
+    /// the whole standing appointment. It comes off the tile's OWN mark, which
+    /// is contract-covered — the booking-detail route carries no series field.
+    let onTapBooking: (String, String?) -> Void
     let onTapBlock: (ProCalendarEvent) -> Void
     /// Tapping empty grid space → the parent's add-appointment / block-time
     /// chooser, pinned to that instant (the tapped column's day + y-position,
@@ -816,6 +819,21 @@ struct ProCalendarTimeGrid: View {
             return eventLocationLabels[id]
         }()
 
+        // Recurring mark (K19-C/K20): this booking is one occurrence of a series.
+        //
+        // 🔴 Gated with the CHIPS, not with the stripe and corner glyph, even
+        // though it is a glyph. The stripe and the confirmation mark cost no
+        // horizontal room (one is the tile's edge, the other its corner); this
+        // one sits in the single line iOS spends on time + every chip, which is
+        // the one contended row on the tile
+        // ([[web-row-order-is-not-phone-priority-order]]). On a phone's ~45pt
+        // week column the accessible name is the carrier, as it is for the
+        // chips.
+        let recurring: ProRecurringMark.Display? = {
+            guard colWidth >= 150, !micro else { return nil }
+            return event.recurringDisplay
+        }()
+
         // Build the fully-interactive tile at its NATURAL (un-offset) position:
         // content shape, tap, and the resize-handle overlay all attach here. `.offset`
         // is applied LAST (below) so the touch target travels with the visual. (A
@@ -833,7 +851,8 @@ struct ProCalendarTimeGrid: View {
             paymentBadge: paymentBadge,
             relationshipBadge: relationshipBadge,
             consentRequirement: consentRequirement,
-            locationLabel: locationLabel
+            locationLabel: locationLabel,
+            recurring: recurring
         )
         .padding(.horizontal, 1.5)
         .frame(width: colWidth, alignment: .leading)
@@ -842,7 +861,11 @@ struct ProCalendarTimeGrid: View {
             // A hold is read-only occupancy: nothing to open, and it must NOT
             // fall into the block branch (there is no block behind it) (B5).
             if event.isHold { return }
-            if event.isBooking { onTapBooking(event.id) } else { onTapBlock(event) }
+            if event.isBooking {
+                onTapBooking(event.id, event.recurringDisplay?.seriesId)
+            } else {
+                onTapBlock(event)
+            }
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(tileAccessibilityLabel(event, conflict: conflict))
@@ -913,7 +936,8 @@ struct ProCalendarTimeGrid: View {
         paymentBadge: ProPaymentBadge.Display? = nil,
         relationshipBadge: ProRelationshipBadge.Display? = nil,
         consentRequirement: ProConsentRequirement.Display? = nil,
-        locationLabel: String? = nil
+        locationLabel: String? = nil,
+        recurring: ProRecurringMark.Display? = nil
     ) -> some View {
         // Drag states own the ring; otherwise a conflict paints it amber.
         let ringColor: Color = (lifted || pending)
@@ -963,6 +987,27 @@ struct ProCalendarTimeGrid: View {
                             .font(BrandFont.mono(9))
                             .foregroundStyle(lifted ? BrandColor.accent : BrandColor.textSecondary)
                             .lineLimit(1)
+                        // 🔴 The recurring mark rides with the TIME, ahead of
+                        // every chip — web puts it in its own time row beside
+                        // the location chip, and this is the same idea on a
+                        // tile that has only one row to give. It belongs to
+                        // the "when", which is what a recurrence describes, and
+                        // it is a ~10pt glyph rather than a chip, so leading
+                        // the row costs the chips behind it almost nothing.
+                        // Placing it LAST would have made the mark the first
+                        // thing pushed off a tight tile — acceptable for a
+                        // warning that degrades, wrong for a fact that simply
+                        // disappears without saying so.
+                        if let recurring {
+                            // The WORDS ride the tile's own accessibility
+                            // label (the tile combines its children), so the
+                            // glyph itself is hidden rather than announcing a
+                            // symbol name.
+                            Image(systemName: "repeat")
+                                .font(BrandFont.mono(8))
+                                .foregroundStyle(BrandColor.textMuted)
+                                .accessibilityHidden(true)
+                        }
                         // Location before payment: when the row runs out of width
                         // it is the shorter chip, and on a mixed-location grid it
                         // is the thing the pro opened this view to see. (Web puts
@@ -1447,6 +1492,14 @@ func proCalendarTileAccessibilityLabel(
 
     // On a grid that mixes locations, WHERE a job is isn't decoration.
     if let locationLabel, !locationLabel.isEmpty { parts.append(locationLabel) }
+
+    // The recurring mark is a bare SHAPE too, so the words have to be here.
+    // Ungated by density on purpose — the narrow week column that has no room
+    // for the glyph is exactly where this is the only carrier. Web's aria label
+    // puts it in this same position, after the place and before the conflict.
+    if let recurring = event.recurringDisplay {
+        parts.append(recurring.description)
+    }
 
     if conflict { parts.append("overlaps another appointment") }
 

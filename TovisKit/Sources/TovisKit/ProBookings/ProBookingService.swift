@@ -21,6 +21,20 @@ public final class ProBookingService: Sendable {
         return try await api.request("/pro/bookings", query: query)
     }
 
+    /// GET /api/v1/pro/booking-series/{id} → one RECURRING APPOINTMENT (K18–K20):
+    /// which dates it actually booked, which it could not and why, what the
+    /// client is charged, and whether more dates are still coming.
+    ///
+    /// 🔴 Deliberately NOT gated on the recurring-appointments flag, mirroring
+    /// web: the read (and the cancel) stay reachable when the switch is off, so
+    /// turning the feature back off never strands live appointments with no way
+    /// to see or end them. Data gates it instead — no series, no route, a 404.
+    /// The payload is at the ROOT of the response, not under a key — the route
+    /// returns the DTO itself (`const body: ProBookingSeriesDetailDTO = series`).
+    public func series(seriesId: String) async throws -> ProBookingSeriesDetail {
+        try await api.request("/pro/booking-series/\(seriesId)")
+    }
+
     /// GET /api/v1/pro/aftercare → the "all aftercare" list (web `/pro/aftercare`):
     /// Draft / Sent / Finished cards + rebook chips + before/after thumbs.
     public func aftercareList() async throws -> [ProAftercareCardItem] {

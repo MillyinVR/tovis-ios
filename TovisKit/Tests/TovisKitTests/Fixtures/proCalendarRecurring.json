@@ -1,0 +1,622 @@
+{
+    "ok": true,
+    "professionalId": "cmrbry44b0003po0d5f1fcs2u",
+    "scope": "LOCATION",
+    "location": {
+        "id": "cmrbry47t000fpo0dz0kdy80z",
+        "type": "SALON",
+        "timeZone": "America/Los_Angeles",
+        "timeZoneValid": true
+    },
+    "timeZone": "America/Los_Angeles",
+    "viewportTimeZone": "America/Los_Angeles",
+    "needsTimeZoneSetup": false,
+    "range": {
+        "from": "2026-08-01T07:00:00.000Z",
+        "requestedTo": "2026-09-12T07:00:00.000Z",
+        "effectiveTo": "2026-09-12T07:00:00.000Z",
+        "clamped": false,
+        "maxDays": 42
+    },
+    "events": [
+        {
+            "id": "k9todayhaircut0000000001",
+            "kind": "BOOKING",
+            "startsAt": "2026-08-02T16:30:00.000Z",
+            "endsAt": "2026-08-02T17:15:00.000Z",
+            "title": "Haircut & Style",
+            "clientName": "Test Client",
+            "clientProfileId": "cmrbry45v0006po0d8pkxen1z",
+            "status": "ACCEPTED",
+            "locationType": "SALON",
+            "locationId": "cmrbry47t000fpo0dz0kdy80z",
+            "durationMinutes": 30,
+            "timeZone": "America/Los_Angeles",
+            "timeZoneSource": "BOOKING_SNAPSHOT",
+            "localDateKey": "2026-08-02",
+            "viewLocalDateKey": "2026-08-02",
+            "paymentBadge": {
+                "kind": "DEPOSIT_PAID",
+                "label": "Deposit paid $40.00",
+                "tone": "info",
+                "significant": true
+            },
+            "relationshipBadge": {
+                "kind": "NR",
+                "label": "NR",
+                "description": "New client \u00b7 requested you",
+                "tone": "accent",
+                "significant": true
+            },
+            "clientConfirmation": {
+                "kind": "AWAITING_CLIENT",
+                "label": "Awaiting client",
+                "description": "Awaiting client confirmation",
+                "tone": "pending",
+                "significant": true
+            },
+            "details": {
+                "serviceName": "Haircut & Style",
+                "bufferMinutes": 15,
+                "serviceItems": []
+            }
+        },
+        {
+            "id": "cmsaczb1r00dlpobwmfatozsu",
+            "kind": "BOOKING",
+            "startsAt": "2026-08-11T17:00:00.000Z",
+            "endsAt": "2026-08-11T20:15:00.000Z",
+            "title": "Balayage",
+            "clientName": "Test Client",
+            "clientProfileId": "cmrbry45v0006po0d8pkxen1z",
+            "status": "ACCEPTED",
+            "locationType": "SALON",
+            "locationId": "cmrbry47t000fpo0dz0kdy80z",
+            "durationMinutes": 180,
+            "timeZone": "America/Los_Angeles",
+            "timeZoneSource": "BOOKING_SNAPSHOT",
+            "localDateKey": "2026-08-11",
+            "viewLocalDateKey": "2026-08-11",
+            "paymentBadge": {
+                "kind": "UNPAID",
+                "label": "Unpaid",
+                "tone": "neutral",
+                "significant": false
+            },
+            "relationshipBadge": {
+                "kind": "UNKNOWN",
+                "label": "Unknown",
+                "description": "Not classified",
+                "tone": "neutral",
+                "significant": false
+            },
+            "serviceSwatch": "09",
+            "recurring": {
+                "seriesId": "cmsaczb0z00djpobwc1e8buck",
+                "occurrenceNumber": 1,
+                "description": "Repeating appointment 1"
+            },
+            "details": {
+                "serviceName": "Balayage",
+                "bufferMinutes": 15,
+                "serviceItems": [
+                    {
+                        "id": "cmsaczb1x00dnpobwmt07zlyg",
+                        "name": "Balayage",
+                        "durationMinutes": 180,
+                        "price": "180",
+                        "sortOrder": 0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "cmsaczzw800hapobwcj4tbwak",
+            "kind": "BOOKING",
+            "startsAt": "2026-08-13T17:00:00.000Z",
+            "endsAt": "2026-08-13T20:15:00.000Z",
+            "title": "Balayage",
+            "clientName": "Test Client",
+            "clientProfileId": "cmrbry45v0006po0d8pkxen1z",
+            "status": "ACCEPTED",
+            "locationType": "SALON",
+            "locationId": "cmrbry47t000fpo0dz0kdy80z",
+            "durationMinutes": 180,
+            "timeZone": "America/Los_Angeles",
+            "timeZoneSource": "BOOKING_SNAPSHOT",
+            "localDateKey": "2026-08-13",
+            "viewLocalDateKey": "2026-08-13",
+            "paymentBadge": {
+                "kind": "UNPAID",
+                "label": "Unpaid",
+                "tone": "neutral",
+                "significant": false
+            },
+            "relationshipBadge": {
+                "kind": "UNKNOWN",
+                "label": "Unknown",
+                "description": "Not classified",
+                "tone": "neutral",
+                "significant": false
+            },
+            "serviceSwatch": "09",
+            "recurring": {
+                "seriesId": "cmsaczzvw00h8pobwkxx0earz",
+                "occurrenceNumber": 1,
+                "description": "Repeating appointment 1"
+            },
+            "details": {
+                "serviceName": "Balayage",
+                "bufferMinutes": 15,
+                "serviceItems": [
+                    {
+                        "id": "cmsaczzwa00hcpobwrugbrdv7",
+                        "name": "Balayage",
+                        "durationMinutes": 180,
+                        "price": "180",
+                        "sortOrder": 0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "cmsaczb6e00e5pobwulee0oxa",
+            "kind": "BOOKING",
+            "startsAt": "2026-08-18T17:00:00.000Z",
+            "endsAt": "2026-08-18T20:15:00.000Z",
+            "title": "Balayage",
+            "clientName": "Test Client",
+            "clientProfileId": "cmrbry45v0006po0d8pkxen1z",
+            "status": "ACCEPTED",
+            "locationType": "SALON",
+            "locationId": "cmrbry47t000fpo0dz0kdy80z",
+            "durationMinutes": 180,
+            "timeZone": "America/Los_Angeles",
+            "timeZoneSource": "BOOKING_SNAPSHOT",
+            "localDateKey": "2026-08-18",
+            "viewLocalDateKey": "2026-08-18",
+            "paymentBadge": {
+                "kind": "UNPAID",
+                "label": "Unpaid",
+                "tone": "neutral",
+                "significant": false
+            },
+            "relationshipBadge": {
+                "kind": "UNKNOWN",
+                "label": "Unknown",
+                "description": "Not classified",
+                "tone": "neutral",
+                "significant": false
+            },
+            "serviceSwatch": "09",
+            "recurring": {
+                "seriesId": "cmsaczb0z00djpobwc1e8buck",
+                "occurrenceNumber": 2,
+                "description": "Repeating appointment 2"
+            },
+            "details": {
+                "serviceName": "Balayage",
+                "bufferMinutes": 15,
+                "serviceItems": [
+                    {
+                        "id": "cmsaczb6f00e7pobw9lg133hc",
+                        "name": "Balayage",
+                        "durationMinutes": 180,
+                        "price": "180",
+                        "sortOrder": 0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "cmsaczzog00g9pobww33jquv0",
+            "kind": "BOOKING",
+            "startsAt": "2026-08-20T17:30:00.000Z",
+            "endsAt": "2026-08-20T18:45:00.000Z",
+            "title": "Haircut & Style",
+            "clientName": "Test Client",
+            "clientProfileId": "cmrbry45v0006po0d8pkxen1z",
+            "status": "ACCEPTED",
+            "locationType": "SALON",
+            "locationId": "cmrbry47t000fpo0dz0kdy80z",
+            "durationMinutes": 60,
+            "timeZone": "America/Los_Angeles",
+            "timeZoneSource": "BOOKING_SNAPSHOT",
+            "localDateKey": "2026-08-20",
+            "viewLocalDateKey": "2026-08-20",
+            "paymentBadge": {
+                "kind": "UNPAID",
+                "label": "Unpaid",
+                "tone": "neutral",
+                "significant": false
+            },
+            "relationshipBadge": {
+                "kind": "UNKNOWN",
+                "label": "Unknown",
+                "description": "Not classified",
+                "tone": "neutral",
+                "significant": false
+            },
+            "details": {
+                "serviceName": "Haircut & Style",
+                "bufferMinutes": 15,
+                "serviceItems": [
+                    {
+                        "id": "cmsaczzol00gbpobwnjv7e3o8",
+                        "name": "Haircut & Style",
+                        "durationMinutes": 60,
+                        "price": "65",
+                        "sortOrder": 0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "cmsaczb7n00efpobww9xbn7p9",
+            "kind": "BOOKING",
+            "startsAt": "2026-08-25T17:00:00.000Z",
+            "endsAt": "2026-08-25T20:15:00.000Z",
+            "title": "Balayage",
+            "clientName": "Test Client",
+            "clientProfileId": "cmrbry45v0006po0d8pkxen1z",
+            "status": "ACCEPTED",
+            "locationType": "SALON",
+            "locationId": "cmrbry47t000fpo0dz0kdy80z",
+            "durationMinutes": 180,
+            "timeZone": "America/Los_Angeles",
+            "timeZoneSource": "BOOKING_SNAPSHOT",
+            "localDateKey": "2026-08-25",
+            "viewLocalDateKey": "2026-08-25",
+            "paymentBadge": {
+                "kind": "UNPAID",
+                "label": "Unpaid",
+                "tone": "neutral",
+                "significant": false
+            },
+            "relationshipBadge": {
+                "kind": "UNKNOWN",
+                "label": "Unknown",
+                "description": "Not classified",
+                "tone": "neutral",
+                "significant": false
+            },
+            "serviceSwatch": "09",
+            "recurring": {
+                "seriesId": "cmsaczb0z00djpobwc1e8buck",
+                "occurrenceNumber": 3,
+                "description": "Repeating appointment 3"
+            },
+            "details": {
+                "serviceName": "Balayage",
+                "bufferMinutes": 15,
+                "serviceItems": [
+                    {
+                        "id": "cmsaczb7p00ehpobwp83deake",
+                        "name": "Balayage",
+                        "durationMinutes": 180,
+                        "price": "180",
+                        "sortOrder": 0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "cmsaczzy800hwpobwuvbherra",
+            "kind": "BOOKING",
+            "startsAt": "2026-08-27T17:00:00.000Z",
+            "endsAt": "2026-08-27T20:15:00.000Z",
+            "title": "Balayage",
+            "clientName": "Test Client",
+            "clientProfileId": "cmrbry45v0006po0d8pkxen1z",
+            "status": "ACCEPTED",
+            "locationType": "SALON",
+            "locationId": "cmrbry47t000fpo0dz0kdy80z",
+            "durationMinutes": 180,
+            "timeZone": "America/Los_Angeles",
+            "timeZoneSource": "BOOKING_SNAPSHOT",
+            "localDateKey": "2026-08-27",
+            "viewLocalDateKey": "2026-08-27",
+            "paymentBadge": {
+                "kind": "UNPAID",
+                "label": "Unpaid",
+                "tone": "neutral",
+                "significant": false
+            },
+            "relationshipBadge": {
+                "kind": "UNKNOWN",
+                "label": "Unknown",
+                "description": "Not classified",
+                "tone": "neutral",
+                "significant": false
+            },
+            "serviceSwatch": "09",
+            "recurring": {
+                "seriesId": "cmsaczzvw00h8pobwkxx0earz",
+                "occurrenceNumber": 3,
+                "description": "Repeating appointment 3"
+            },
+            "details": {
+                "serviceName": "Balayage",
+                "bufferMinutes": 15,
+                "serviceItems": [
+                    {
+                        "id": "cmsaczzy900hypobwelhqmve2",
+                        "name": "Balayage",
+                        "durationMinutes": 180,
+                        "price": "180",
+                        "sortOrder": 0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "cmsaczb8w00eppobwiie2lxyb",
+            "kind": "BOOKING",
+            "startsAt": "2026-09-01T17:00:00.000Z",
+            "endsAt": "2026-09-01T20:15:00.000Z",
+            "title": "Balayage",
+            "clientName": "Test Client",
+            "clientProfileId": "cmrbry45v0006po0d8pkxen1z",
+            "status": "ACCEPTED",
+            "locationType": "SALON",
+            "locationId": "cmrbry47t000fpo0dz0kdy80z",
+            "durationMinutes": 180,
+            "timeZone": "America/Los_Angeles",
+            "timeZoneSource": "BOOKING_SNAPSHOT",
+            "localDateKey": "2026-09-01",
+            "viewLocalDateKey": "2026-09-01",
+            "paymentBadge": {
+                "kind": "UNPAID",
+                "label": "Unpaid",
+                "tone": "neutral",
+                "significant": false
+            },
+            "relationshipBadge": {
+                "kind": "UNKNOWN",
+                "label": "Unknown",
+                "description": "Not classified",
+                "tone": "neutral",
+                "significant": false
+            },
+            "serviceSwatch": "09",
+            "recurring": {
+                "seriesId": "cmsaczb0z00djpobwc1e8buck",
+                "occurrenceNumber": 4,
+                "description": "Repeating appointment 4"
+            },
+            "details": {
+                "serviceName": "Balayage",
+                "bufferMinutes": 15,
+                "serviceItems": [
+                    {
+                        "id": "cmsaczb8y00erpobw10davtyv",
+                        "name": "Balayage",
+                        "durationMinutes": 180,
+                        "price": "180",
+                        "sortOrder": 0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "cmsaczzzi00i6pobwr9bvwcvp",
+            "kind": "BOOKING",
+            "startsAt": "2026-09-03T17:00:00.000Z",
+            "endsAt": "2026-09-03T20:15:00.000Z",
+            "title": "Balayage",
+            "clientName": "Test Client",
+            "clientProfileId": "cmrbry45v0006po0d8pkxen1z",
+            "status": "ACCEPTED",
+            "locationType": "SALON",
+            "locationId": "cmrbry47t000fpo0dz0kdy80z",
+            "durationMinutes": 180,
+            "timeZone": "America/Los_Angeles",
+            "timeZoneSource": "BOOKING_SNAPSHOT",
+            "localDateKey": "2026-09-03",
+            "viewLocalDateKey": "2026-09-03",
+            "paymentBadge": {
+                "kind": "UNPAID",
+                "label": "Unpaid",
+                "tone": "neutral",
+                "significant": false
+            },
+            "relationshipBadge": {
+                "kind": "UNKNOWN",
+                "label": "Unknown",
+                "description": "Not classified",
+                "tone": "neutral",
+                "significant": false
+            },
+            "serviceSwatch": "09",
+            "recurring": {
+                "seriesId": "cmsaczzvw00h8pobwkxx0earz",
+                "occurrenceNumber": 4,
+                "description": "Repeating appointment 4"
+            },
+            "details": {
+                "serviceName": "Balayage",
+                "bufferMinutes": 15,
+                "serviceItems": [
+                    {
+                        "id": "cmsaczzzj00i8pobw2lc071gn",
+                        "name": "Balayage",
+                        "durationMinutes": 180,
+                        "price": "180",
+                        "sortOrder": 0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "cmsaczba300ezpobwiyx9fh0s",
+            "kind": "BOOKING",
+            "startsAt": "2026-09-08T17:00:00.000Z",
+            "endsAt": "2026-09-08T20:15:00.000Z",
+            "title": "Balayage",
+            "clientName": "Test Client",
+            "clientProfileId": "cmrbry45v0006po0d8pkxen1z",
+            "status": "ACCEPTED",
+            "locationType": "SALON",
+            "locationId": "cmrbry47t000fpo0dz0kdy80z",
+            "durationMinutes": 180,
+            "timeZone": "America/Los_Angeles",
+            "timeZoneSource": "BOOKING_SNAPSHOT",
+            "localDateKey": "2026-09-08",
+            "viewLocalDateKey": "2026-09-08",
+            "paymentBadge": {
+                "kind": "UNPAID",
+                "label": "Unpaid",
+                "tone": "neutral",
+                "significant": false
+            },
+            "relationshipBadge": {
+                "kind": "UNKNOWN",
+                "label": "Unknown",
+                "description": "Not classified",
+                "tone": "neutral",
+                "significant": false
+            },
+            "serviceSwatch": "09",
+            "recurring": {
+                "seriesId": "cmsaczb0z00djpobwc1e8buck",
+                "occurrenceNumber": 5,
+                "description": "Repeating appointment 5"
+            },
+            "details": {
+                "serviceName": "Balayage",
+                "bufferMinutes": 15,
+                "serviceItems": [
+                    {
+                        "id": "cmsaczba400f1pobwwt9mr0oi",
+                        "name": "Balayage",
+                        "durationMinutes": 180,
+                        "price": "180",
+                        "sortOrder": 0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "cmsad000r00ihpobw0kt0d4zf",
+            "kind": "BOOKING",
+            "startsAt": "2026-09-10T17:00:00.000Z",
+            "endsAt": "2026-09-10T20:15:00.000Z",
+            "title": "Balayage",
+            "clientName": "Test Client",
+            "clientProfileId": "cmrbry45v0006po0d8pkxen1z",
+            "status": "ACCEPTED",
+            "locationType": "SALON",
+            "locationId": "cmrbry47t000fpo0dz0kdy80z",
+            "durationMinutes": 180,
+            "timeZone": "America/Los_Angeles",
+            "timeZoneSource": "BOOKING_SNAPSHOT",
+            "localDateKey": "2026-09-10",
+            "viewLocalDateKey": "2026-09-10",
+            "paymentBadge": {
+                "kind": "UNPAID",
+                "label": "Unpaid",
+                "tone": "neutral",
+                "significant": false
+            },
+            "relationshipBadge": {
+                "kind": "UNKNOWN",
+                "label": "Unknown",
+                "description": "Not classified",
+                "tone": "neutral",
+                "significant": false
+            },
+            "serviceSwatch": "09",
+            "recurring": {
+                "seriesId": "cmsaczzvw00h8pobwkxx0earz",
+                "occurrenceNumber": 5,
+                "description": "Repeating appointment 5"
+            },
+            "details": {
+                "serviceName": "Balayage",
+                "bufferMinutes": 15,
+                "serviceItems": [
+                    {
+                        "id": "cmsad000t00ijpobwkbxvsgs6",
+                        "name": "Balayage",
+                        "durationMinutes": 180,
+                        "price": "180",
+                        "sortOrder": 0
+                    }
+                ]
+            }
+        }
+    ],
+    "canSalon": true,
+    "canMobile": true,
+    "stats": {
+        "todaysBookings": 0,
+        "availableHours": null,
+        "pendingRequests": 0,
+        "blockedHours": 0
+    },
+    "blockedMinutesToday": 0,
+    "autoAcceptBookings": false,
+    "management": {
+        "todaysBookings": [],
+        "pendingRequests": [],
+        "waitlistToday": [
+            {
+                "id": "waitlist:cmrr3m7kl0003poai8vxy1mou",
+                "kind": "BOOKING",
+                "startsAt": "2026-07-19T01:09:55.030Z",
+                "endsAt": "2026-07-19T01:09:55.030Z",
+                "title": "Balayage",
+                "clientName": "Email Only",
+                "clientProfileId": null,
+                "status": "WAITLIST",
+                "locationType": null,
+                "locationId": null,
+                "durationMinutes": 0,
+                "timeZone": "America/Los_Angeles",
+                "timeZoneSource": "PROFESSIONAL",
+                "localDateKey": "2026-07-18",
+                "viewLocalDateKey": "2026-08-01",
+                "preferenceLabel": "Any time",
+                "offerHref": "/pro/bookings/new?clientId=cmrbry47n000bpo0dhw9pdc8b&offeringId=cmrbry49b0055po0dbbtbpp35",
+                "waitlistEntryId": "cmrr3m7kl0003poai8vxy1mou",
+                "serviceId": "cmrbry482000xpo0di0hbjtni",
+                "offeringId": "cmrbry49b0055po0dbbtbpp35",
+                "pendingOffer": null,
+                "details": {
+                    "serviceName": "Balayage",
+                    "bufferMinutes": 0,
+                    "serviceItems": []
+                }
+            },
+            {
+                "id": "waitlist:cmrr3m7kn0005poaixg0l2jt3",
+                "kind": "BOOKING",
+                "startsAt": "2026-07-19T01:09:55.032Z",
+                "endsAt": "2026-07-19T01:09:55.032Z",
+                "title": "Balayage",
+                "clientName": "Phone Only",
+                "clientProfileId": null,
+                "status": "WAITLIST",
+                "locationType": null,
+                "locationId": null,
+                "durationMinutes": 0,
+                "timeZone": "America/Los_Angeles",
+                "timeZoneSource": "PROFESSIONAL",
+                "localDateKey": "2026-07-18",
+                "viewLocalDateKey": "2026-08-01",
+                "preferenceLabel": "Any time",
+                "offerHref": "/pro/bookings/new?clientId=cmrbry47p000dpo0dcsf18d0l&offeringId=cmrbry49b0055po0dbbtbpp35",
+                "waitlistEntryId": "cmrr3m7kn0005poaixg0l2jt3",
+                "serviceId": "cmrbry482000xpo0di0hbjtni",
+                "offeringId": "cmrbry49b0055po0dbbtbpp35",
+                "pendingOffer": null,
+                "details": {
+                    "serviceName": "Balayage",
+                    "bufferMinutes": 0,
+                    "serviceItems": []
+                }
+            }
+        ],
+        "blockedToday": []
+    }
+}

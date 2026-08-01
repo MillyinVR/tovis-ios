@@ -1,0 +1,97 @@
+{
+    "ok": true,
+    "seriesId": "cmsaczzvw00h8pobwkxx0earz",
+    "status": "ENDED",
+    "timeZone": "America/Los_Angeles",
+    "anchorAt": "2026-08-13T17:00:00.000Z",
+    "intervalWeeks": 1,
+    "occurrenceCount": 6,
+    "nextOccurrenceIndex": 6,
+    "depositRequested": false,
+    "depositPerOccurrence": false,
+    "clientId": "cmrbry45v0006po0d8pkxen1z",
+    "clientName": "Test Client",
+    "offeringId": "cmrbry49b0055po0dbbtbpp35",
+    "serviceName": "Balayage",
+    "locationId": "cmrbry47t000fpo0dz0kdy80z",
+    "locationLabel": "Salon \u2022 123 Test Salon Ave, Los Angeles, CA 90001",
+    "locationType": "SALON",
+    "addOnNames": [],
+    "internalNotes": null,
+    "pricing": {
+        "pinnedTotalCents": 18000,
+        "currentListTotalCents": 18000,
+        "occurrencesDisagree": false,
+        "listPriceMoved": false
+    },
+    "rollForward": {
+        "willContinue": false,
+        "pendingCount": 0,
+        "leadDays": 90
+    },
+    "occurrences": [
+        {
+            "index": 0,
+            "bookingId": "cmsaczzw800hapobwcj4tbwak",
+            "scheduledFor": "2026-08-13T17:00:00.000Z",
+            "status": "ACCEPTED",
+            "startedAt": null,
+            "bookedTotalCents": 18000,
+            "depositHeldCents": 0,
+            "cancellable": true,
+            "untouchedReason": null
+        },
+        {
+            "index": 2,
+            "bookingId": "cmsaczzy800hwpobwuvbherra",
+            "scheduledFor": "2026-08-27T17:00:00.000Z",
+            "status": "ACCEPTED",
+            "startedAt": null,
+            "bookedTotalCents": 18000,
+            "depositHeldCents": 0,
+            "cancellable": true,
+            "untouchedReason": null
+        },
+        {
+            "index": 3,
+            "bookingId": "cmsaczzzi00i6pobwr9bvwcvp",
+            "scheduledFor": "2026-09-03T17:00:00.000Z",
+            "status": "ACCEPTED",
+            "startedAt": null,
+            "bookedTotalCents": 18000,
+            "depositHeldCents": 0,
+            "cancellable": true,
+            "untouchedReason": null
+        },
+        {
+            "index": 4,
+            "bookingId": "cmsad000r00ihpobw0kt0d4zf",
+            "scheduledFor": "2026-09-10T17:00:00.000Z",
+            "status": "ACCEPTED",
+            "startedAt": null,
+            "bookedTotalCents": 18000,
+            "depositHeldCents": 0,
+            "cancellable": true,
+            "untouchedReason": null
+        },
+        {
+            "index": 5,
+            "bookingId": "cmsad002500irpobwl7ggq0h4",
+            "scheduledFor": "2026-09-17T17:00:00.000Z",
+            "status": "ACCEPTED",
+            "startedAt": null,
+            "bookedTotalCents": 18000,
+            "depositHeldCents": 0,
+            "cancellable": true,
+            "untouchedReason": null
+        }
+    ],
+    "skipped": [
+        {
+            "index": 1,
+            "intendedStart": "2026-08-20T17:00:00.000Z",
+            "reason": "SLOT_UNAVAILABLE",
+            "detail": "TIME_BOOKED"
+        }
+    ]
+}

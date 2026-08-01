@@ -80,7 +80,11 @@ struct ProCalendarView: View {
     @State private var pendingActionError: String?
 
     // Programmatic push to a booking's detail when a time-grid tile is tapped.
-    private struct BookingNav: Identifiable, Hashable { let id: String }
+    private struct BookingNav: Identifiable, Hashable {
+        let id: String
+        /// K20: set when the tapped tile carried a recurring mark.
+        var seriesId: String? = nil
+    }
     @State private var bookingNav: BookingNav?
 
     // Programmatic push to the new-booking form, prefilled to a tapped empty slot.
@@ -230,7 +234,7 @@ struct ProCalendarView: View {
                 ProNotificationsView()
             }
             .navigationDestination(item: $bookingNav) { nav in
-                ProBookingDetailView(bookingId: nav.id)
+                ProBookingDetailView(bookingId: nav.id, seriesId: nav.seriesId)
             }
             .navigationDestination(item: $newBookingNav) { nav in
                 ProNewBookingView(
@@ -470,7 +474,9 @@ struct ProCalendarView: View {
                     currentDate: currentDate,
                     timeZone: calendarTimeZone,
                     events: data.events,
-                    onTapBooking: { id in bookingNav = BookingNav(id: id) },
+                    onTapBooking: { id, seriesId in
+                        bookingNav = BookingNav(id: id, seriesId: seriesId)
+                    },
                     onTapBlock: { event in openBlockEditor(event) },
                     onTapEmptySlot: { date in emptySlotChoice = date },
                     collapseToggle: chromeCollapsed,

@@ -17,6 +17,13 @@ struct ProBookingDetailView: View {
     /// The `step` carried on a tapped `/pro/bookings/{id}/…` push (e.g. `aftercare`);
     /// the detail scrolls to that section once loaded. nil = open at the top.
     var focusStep: String? = nil
+    /// K20: the recurring series this booking belongs to, when the caller knows
+    /// it. Passed IN rather than read from the detail response, because
+    /// `GET /pro/bookings/{id}` carries no series field — it has no declared DTO
+    /// at all, so adding one is a contract job of its own (K20-B). The calendar
+    /// knows it from the tile's own contract-covered `recurring` mark, which is
+    /// the one place on device a pro meets a series today.
+    var seriesId: String? = nil
 
     private enum Phase {
         case loading
@@ -201,11 +208,55 @@ struct ProBookingDetailView: View {
     private func content(_ booking: ProBookingDetail) -> some View {
         statusRow(booking)
         headerCard(booking)
+        seriesCard()
         servicesCard(booking)
         timingCard(booking)
         paymentCard(booking)
         aftercareCard(booking)
             .id(Anchor.aftercare)   // scroll anchor for a `…/aftercare` deep link
+    }
+
+    /// K20 — this appointment is one occurrence of a standing appointment.
+    ///
+    /// DATA-gated, never flag-gated, exactly as web's card is: a seriesId can
+    /// only exist if the feature ran, and hiding the way through after the
+    /// switch went off would strand the pro on a booking whose siblings they can
+    /// neither see nor stop.
+    @ViewBuilder
+    private func seriesCard() -> some View {
+        if let seriesId {
+            NavigationLink {
+                ProBookingSeriesView(seriesId: seriesId)
+            } label: {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "repeat")
+                            .font(BrandFont.mono(10))
+                            .foregroundStyle(BrandColor.textMuted)
+                        Text("Part of a recurring appointment")
+                            .font(BrandFont.body(14, .semibold))
+                            .foregroundStyle(BrandColor.textPrimary)
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right")
+                            .font(BrandFont.mono(10))
+                            .foregroundStyle(BrandColor.textMuted)
+                    }
+                    // 🔴 Says what cancelling HERE does. The three scopes are a
+                    // web surface; on device this screen cancels this one only,
+                    // and a pro who assumed otherwise would think they had
+                    // stopped a standing appointment they had not.
+                    Text("Cancelling here cancels this one only.")
+                        .font(BrandFont.body(12))
+                        .foregroundStyle(BrandColor.textSecondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+                .background(BrandColor.bgSecondary)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Part of a recurring appointment. Cancelling here cancels this one only. Opens the whole series.")
+        }
     }
 
     private func statusRow(_ booking: ProBookingDetail) -> some View {

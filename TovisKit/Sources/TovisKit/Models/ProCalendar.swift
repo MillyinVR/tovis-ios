@@ -136,6 +136,15 @@ public struct ProCalendarEvent: Decodable, Sendable, Identifiable {
     /// service. Absent must decode fine and render NOTHING. Read it through
     /// `consentRequirementDisplay`.
     public let consentRequirement: ProConsentRequirement?
+    /// BOOKING events only (K19-C/K20): this appointment is one occurrence of a
+    /// recurring series. Rendered in the tile's TIME ROW beside the location
+    /// chip — deliberately NOT a sixth chip and NOT a second corner glyph; see
+    /// `ProRecurringMark` for the channel call.
+    ///
+    /// 🔴 ABSENT is the common case and means "not part of a series", which is
+    /// every booking while `ENABLE_RECURRING_APPOINTMENTS` is unset. Absent must
+    /// decode fine and render NOTHING. Read it through `recurringDisplay`.
+    public let recurring: ProRecurringMark?
 
     public var isBooking: Bool { kind == "BOOKING" }
     public var isBlock: Bool { kind == "BLOCK" }
@@ -208,6 +217,21 @@ public struct ProCalendarEvent: Decodable, Sendable, Identifiable {
         guard isBooking, let display = consentRequirement?.display, display.significant
         else { return nil }
         return display
+    }
+
+    /// The recurring mark this tile should print, or nil to print nothing.
+    ///
+    /// Gated on `isBooking` for the same reason the three above are, mirroring
+    /// web's EventCard (`ev.kind === 'BOOKING' ? ev.recurring : null`): a block
+    /// is the pro's own time and a hold is a stranger mid-checkout — neither is
+    /// an occurrence of anything.
+    ///
+    /// 🔴 No `significant` check, and that is not an omission: `ProRecurringMark`
+    /// carries no such flag, because recurrence is a fact rather than a warning
+    /// that goes stale. A completed occurrence still says it was one.
+    public var recurringDisplay: ProRecurringMark.Display? {
+        guard isBooking else { return nil }
+        return recurring?.display
     }
 
     /// Whether this row can be offered a concrete time the client then confirms.

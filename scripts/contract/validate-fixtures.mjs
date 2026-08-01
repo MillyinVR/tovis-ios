@@ -255,6 +255,60 @@ const CHECKS = [
     def: 'ProBookingListItemDTO',
     pick: (d) => [...d.today, ...d.upcoming, ...d.past, ...d.cancelled],
   },
+  // GET /api/v1/pro/booking-series/{id} — a RECURRING APPOINTMENT (K18-K20).
+  // The payload is at the ROOT (the route returns the DTO itself).
+  //
+  // Until K20 the whole of Phase 8 was invisible on device (K18-D/K19-D): the
+  // schema, the materializer, the UI and the roll-forward all shipped on web
+  // with no fixture and no entry here.
+  //
+  // VERBATIM captures (2026-08-01), driven against the live local route. TWO,
+  // because `rollForward` has exactly two meanings and one fixture can only
+  // carry one of them:
+  //
+  //   proBookingSeries.json           an ENDED series that booked FIVE of six
+  //                                   dates: a planted 30-minute-offset
+  //                                   collision made occurrence 1 a
+  //                                   SLOT_UNAVAILABLE skip. The `skipped` arm
+  //                                   is the single most important part of this
+  //                                   contract — a device rendering only
+  //                                   `occurrences` tells the pro they got six
+  //                                   ([[an-always-empty-key-looks-like-an-export]]).
+  //                                   `rollForward.willContinue` is false and
+  //                                   `pendingCount` is 0.
+  //   proBookingSeriesOpenEnded.json  an ACTIVE OPEN-ENDED series, still
+  //                                   growing: `occurrenceCount` and
+  //                                   `pendingCount` are BOTH null (which is a
+  //                                   real answer, not a missing one) and
+  //                                   `willContinue` is true. It also carries
+  //                                   the shape K20 created: eight occurrences
+  //                                   and NO exception rows, because creation
+  //                                   DEFERRED at the pro's 60-day booking
+  //                                   horizon rather than burning permanent
+  //                                   skips on dates it will book later.
+  {
+    file: 'proBookingSeries.json',
+    def: 'ProBookingSeriesDetailDTO',
+    pick: (d) => [d],
+  },
+  {
+    file: 'proBookingSeriesOpenEnded.json',
+    def: 'ProBookingSeriesDetailDTO',
+    pick: (d) => [d],
+  },
+  // GET /api/v1/pro/calendar — the K19-C recurring MARK on the tile.
+  //
+  // A second calendar fixture rather than an edit to `proCalendar.json`: that
+  // one is K6's verbatim capture and stays the ABSENT case, which is every
+  // booking while `ENABLE_RECURRING_APPOINTMENTS` is unset. This one is a
+  // VERBATIM capture (2026-08-01) of a week carrying BOTH — series occurrences
+  // with `recurring` present and ordinary bookings with the key omitted
+  // entirely — so the A/B that matters lives in one file.
+  {
+    file: 'proCalendarRecurring.json',
+    def: 'ProCalendarResponseDTO',
+    pick: (d) => [d],
+  },
 ]
 
 function fail(msg) {
