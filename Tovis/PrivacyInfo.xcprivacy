@@ -120,6 +120,19 @@
 				<string>CA92.1</string>
 			</array>
 		</dict>
+		<!--
+		  File timestamps — the capture vaults (SessionByteVault, ClipVault) read
+		  `.creationDateKey` to expire their own cached bytes. Container-only, so
+		  reason C617.1 (files inside the app container).
+		-->
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>C617.1</string>
+			</array>
+		</dict>
 	</array>
 </dict>
 </plist>

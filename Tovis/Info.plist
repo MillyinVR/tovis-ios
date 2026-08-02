@@ -12,6 +12,8 @@
 	<string>Tovis uses the camera to capture before and after photos during your appointments.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Tovis can save session photos to your library when they can’t be uploaded, so you never lose a shot you’ve taken.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>Tovis reads the device’s motion sensors to show whether the camera is level, so your before and after photos line up.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
