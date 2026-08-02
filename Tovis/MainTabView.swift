@@ -40,6 +40,10 @@ struct MainTabView: View {
     /// over the shell. Carries the `?accept=` recipient id to float + highlight.
     @State private var offersPresentation: OffersPresentation?
 
+    /// Set while a pushed screen asks for the footer to be hidden (a screen whose
+    /// own bottom bar the footer would sit on top of) — see `ShellFooterVisibility`.
+    @State private var footerHidden = false
+
     /// Identifiable wrapper so `.sheet(item:)` can carry the optional highlight id.
     private struct OffersPresentation: Identifiable {
         let id = UUID()
@@ -64,8 +68,17 @@ struct MainTabView: View {
                 .tag(ClientTab.ID.me)
         }
         .toolbar(.hidden, for: .tabBar)         // hide the system tab bar
+        // A pushed screen with its own bottom bar (e.g. a thread's composer) would
+        // otherwise be covered by the footer — see `ShellFooterVisibility`. Read
+        // the request before installing the bar so the inset collapses to zero
+        // while such a screen is up.
+        .onPreferenceChange(HidesShellFooterKey.self) { hidden in
+            footerHidden = hidden
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            TovisTabBar(selected: $tab, messagesBadge: messagesBadge)
+            if !footerHidden {
+                TovisTabBar(selected: $tab, messagesBadge: messagesBadge)
+            }
         }
         .tint(BrandColor.accent)
         // Keep the Inbox tab badge live (foreground/Realtime + gentle poll).
