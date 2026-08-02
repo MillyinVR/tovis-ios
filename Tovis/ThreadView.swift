@@ -153,6 +153,14 @@ struct ThreadView: View {
         .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
         .safeAreaInset(edge: .top) { contextBar }
         .safeAreaInset(edge: .bottom) { composer }
+        // `composer` above is pinned to the bottom, and a thread is PUSHED inside
+        // the role shell, whose footer reaches ~30pt further down than the safe
+        // area a pushed screen is handed — so the footer sat on top of the
+        // composer (and covered it outright with the keyboard up), leaving the
+        // message field unusable. Give the conversation the screen instead, as
+        // Messages.app does. No effect in the deep-link `.sheet` presentations,
+        // which never had a footer over them.
+        .hidesShellFooter()
         .navigationDestination(item: $contextBookingNav) { nav in
             BookingDetailView(booking: nav.booking)
         }

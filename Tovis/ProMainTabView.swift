@@ -86,11 +86,11 @@ struct ProMainTabView: View {
                 .tag(ProTab.ID.profile)
         }
         .toolbar(.hidden, for: .tabBar)
-        // A pushed full-screen form (e.g. New booking) pins its own primary action
-        // to the bottom, which the footer would otherwise cover — see
-        // `ProFooterVisibility`. Read the request before installing the bar so the
-        // inset collapses to zero while such a screen is up.
-        .onPreferenceChange(HidesProFooterKey.self) { hidden in
+        // A pushed screen with its own bottom bar (e.g. New booking's create bar,
+        // a thread's composer) would otherwise be covered by the footer — see
+        // `ShellFooterVisibility`. Read the request before installing the bar so
+        // the inset collapses to zero while such a screen is up.
+        .onPreferenceChange(HidesShellFooterKey.self) { hidden in
             footerHidden = hidden
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {

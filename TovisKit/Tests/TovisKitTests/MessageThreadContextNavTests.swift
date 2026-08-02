@@ -46,11 +46,31 @@ import Testing
         #expect(thread.contextDestination == .booking(id: "bk_1"))
     }
 
-    @Test func proProfileContextLinksToTheThreadsPro() throws {
+    @Test func proProfileContextLinksToTheThreadsProForAClientViewer() throws {
         // Web uses the thread's contextId, which for PRO_PROFILE is the pro's id;
         // the modeled professional.id is that same pro.
-        let thread = try makeThread(contextType: "PRO_PROFILE", bookingId: nil)
+        let thread = try makeThread(contextType: "PRO_PROFILE", bookingId: nil, isViewerPro: false)
         #expect(thread.contextDestination == .proProfile(id: "pro_1"))
+    }
+
+    /// The reported bug: a PRO_PROFILE thread's professional IS the viewer when
+    /// `isViewerPro`, so "View profile" opened the pro's OWN profile (and showed
+    /// their own name on it). The pro's counterparty is the client, reached via
+    /// the chart jump — so there is no context link for them here.
+    /// Mirrors web's `resolveThreadContextNav` (lib/messages/contextNav.ts).
+    @Test func proProfileContextGivesTheThreadsProNoSelfLink() throws {
+        let thread = try makeThread(contextType: "PRO_PROFILE", bookingId: nil, isViewerPro: true)
+        #expect(thread.contextDestination == nil)
+    }
+
+    /// A BOOKING thread's receipt is dual-role — both parties keep that link.
+    @Test func bookingContextLinksForEitherViewer() throws {
+        for isViewerPro in [true, false] {
+            let thread = try makeThread(
+                contextType: "BOOKING", bookingId: "bk_1", isViewerPro: isViewerPro
+            )
+            #expect(thread.contextDestination == .booking(id: "bk_1"))
+        }
     }
 
     @Test func contextsWebGivesNoLinkGetNone() throws {
