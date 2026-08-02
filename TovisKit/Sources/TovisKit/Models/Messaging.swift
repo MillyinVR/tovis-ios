@@ -117,8 +117,8 @@ public enum MessageThreadContextDestination: Equatable, Sendable {
     case booking(id: String)
     /// This thread's professional's public profile — only ever produced for a
     /// CLIENT viewer, since for the thread's own pro it would be their own page.
-    /// Web keys this off the thread's
-    /// `contextId`, which for a PRO_PROFILE thread IS the professional's id —
+    /// Web keys this off the thread's `contextId`, which for a PRO_PROFILE
+    /// thread IS the professional's id —
     /// every construction path sets the two from the same value (web's
     /// `toResolvePayload` in lib/messages.ts; `openProfileThread`/`openClientThread`
     /// here) — so the modeled `professional.id` names the same pro without the
