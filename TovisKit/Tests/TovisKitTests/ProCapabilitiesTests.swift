@@ -1,8 +1,6 @@
 import Foundation
 import Testing
-import TovisKit
-
-@testable import Tovis
+@testable import TovisKit
 
 /// The wire contract behind the two Business rows that used to dead-end on a
 /// "Coming soon" screen ("No-show fees", "Import from another app").
