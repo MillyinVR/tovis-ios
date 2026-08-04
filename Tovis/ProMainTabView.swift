@@ -34,6 +34,10 @@ struct ProMainTabView: View {
     /// Set while a pushed screen asks for the footer to be hidden (a full-screen
     /// form whose own bottom action bar the footer would sit on top of).
     @State private var footerHidden = false
+    /// The standalone (practice) camera, opened from the centre button when no
+    /// session is live. Its shots land in the practice library — no booking,
+    /// nothing owed.
+    @State private var showPracticeCamera = false
     #if DEBUG
     /// DEBUG ONLY — a recurring appointment opened straight from the launch
     /// environment, so the screen can actually be LOOKED AT.
@@ -52,6 +56,14 @@ struct ProMainTabView: View {
 
     /// `sheet(item:)` needs identity; a bare String has none.
     private struct DebugSeriesRef: Identifiable, Hashable { let id: String }
+
+    /// DEBUG ONLY — open the practice library straight from the launch
+    /// environment, for the same reason as `TOVIS_DEBUG_OPEN_SERIES`: this
+    /// machine cannot drive the simulator with synthetic taps, and the library
+    /// is three taps behind a camera the simulator does not have. Without this
+    /// the screen ships build-green, unit-tested, and never once looked at —
+    /// which is precisely the failure that key exists to stop repeating.
+    @State private var debugPractice = false
     #endif
 
     /// The tab a launch starts on — Calendar, unless a DEBUG build was launched
@@ -119,7 +131,8 @@ struct ProMainTabView: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if !footerHidden {
-                ProTabBar(selected: $tab, session: proSession, messagesBadge: messagesBadge)
+                ProTabBar(selected: $tab, session: proSession, messagesBadge: messagesBadge,
+                          onStandaloneCamera: { showPracticeCamera = true })
             }
         }
         .tint(BrandColor.accent)
@@ -179,7 +192,22 @@ struct ProMainTabView: View {
             }
             .tint(BrandColor.accent)
         }
+        .sheet(isPresented: $debugPractice) {
+            NavigationStack {
+                ProPracticeLibraryView()
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Done") { debugPractice = false }
+                                .tint(BrandColor.textSecondary)
+                        }
+                    }
+            }
+            .tint(BrandColor.accent)
+        }
         .onAppear {
+            if ProcessInfo.processInfo.environment["TOVIS_DEBUG_OPEN_PRACTICE"] == "1" {
+                debugPractice = true
+            }
             guard debugSeriesId == nil else { return }
             let raw = ProcessInfo.processInfo.environment["TOVIS_DEBUG_OPEN_SERIES"]?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -226,6 +254,14 @@ struct ProMainTabView: View {
                     }
             }
             .tint(BrandColor.accent)
+        }
+        // The standalone camera. Deliberately NOT force-dismissed when a session
+        // becomes live mid-shoot: the footer button flips back on its own (it is
+        // state-driven), but yanking a running camera out from under a pro is
+        // exactly the custody hazard this whole track has been closing. The
+        // session button is waiting the moment they close it.
+        .fullScreenCover(isPresented: $showPracticeCamera) {
+            ProCapturePhotosView(destination: .practice)
         }
         // The booking picker (UPCOMING_PICKER with >1 eligible session).
         .sheet(isPresented: Binding(get: { proSession.pickerOpen }, set: { proSession.pickerOpen = $0 })) {

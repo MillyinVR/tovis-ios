@@ -90,6 +90,8 @@ public final class TovisClient: Sendable {
     public let proMedia: ProMediaService
     /// PRO workspace — camera support content (trending shot packs).
     public let proCamera: ProCameraService
+    /// PRO workspace — the practice library (shots taken outside a session).
+    public let proPractice: ProPracticeService
     /// PRO workspace — the Finance & Tax tab (income/expenses/tax + expense CRUD).
     public let proFinance: ProFinanceService
     /// PRO workspace — membership status (plan tier + entitlements; display only).
@@ -206,6 +208,7 @@ public final class TovisClient: Sendable {
             supabaseKey: config.supabaseAnonKey
         )
         self.proCamera = ProCameraService(api: api)
+        self.proPractice = ProPracticeService(api: api, media: self.proMedia)
         self.proFinance = ProFinanceService(api: api)
         self.proMembership = ProMembershipService(api: api)
         self.proLooks = ProLooksService(api: api)

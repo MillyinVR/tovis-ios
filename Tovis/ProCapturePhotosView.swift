@@ -11,8 +11,10 @@ struct ProCapturePhotosView: View {
     @Environment(SessionModel.self) private var session
     @Environment(\.dismiss) private var dismiss
 
-    let bookingId: String
-    let phase: MediaPhase
+    /// Where these shots go — a booking's phase, or the practice library. The
+    /// camera, coach, guide and calibration are identical either way; the
+    /// destination is only what the shoot OWES. See `ProCameraDestination`.
+    let destination: ProCameraDestination
     /// Base service name (e.g. "Balayage") — selects the ShotGuide. Nil → generic.
     var serviceName: String? = nil
     /// "Before" photos to ghost as onion-skin while shooting AFTER, so the pairs
@@ -22,6 +24,14 @@ struct ProCapturePhotosView: View {
     /// Counts toward the one-photo requirement — reopening the camera on a phase
     /// that's already covered must not act like nothing has been shot.
     var alreadyCaptured: Int = 0
+
+    /// The phase being shot — `.other` when practising.
+    private var phase: MediaPhase { destination.phase }
+    /// The namespace the byte vault, the clip vault, and this shoot's stored
+    /// white-balance / card calibration key on. Practice has its own, so a
+    /// stranded practice photo is never re-offered to a booking's queue and a
+    /// calibration solved at home never re-colours a client's before/after.
+    private var custodyScope: String { destination.custodyScope }
 
     @State private var camera = CameraController()
     /// Onion-skin (before/after matching) state.
@@ -185,6 +195,16 @@ struct ProCapturePhotosView: View {
     @State private var showDimensions = false
     /// Tap ⋯ → the tools tray (was: eyedropper + AE/AF + gear in the header).
     @State private var showTools = false
+    /// The practice library, reached from the tools tray while practising.
+    @State private var showPracticeLibrary = false
+    /// PRACTICE ONLY — keep a copy of each kept shot in the pro's own camera
+    /// roll. Off by default and remembered between shoots.
+    ///
+    /// Deliberately NOT offered in a session: a client's before/after is their
+    /// photo, and quietly copying it to the pro's phone is not a toggle to slip
+    /// into a tools tray. (The refused-photo escape hatch is a different thing —
+    /// there the alternative is losing the bytes entirely.)
+    @AppStorage("tovis.camera.practice.saveToPhotos") private var savePracticeToPhotos = false
     /// Tap the step chip → the guide sheet (was: the eight-part guide bar).
     @State private var showGuideSheet = false
 
@@ -234,7 +254,8 @@ struct ProCapturePhotosView: View {
     /// dismiss." Pausing the camera behind it would freeze what it exists to show.
     private var isReviewing: Bool {
         showBestShots || showSettings || showLookPicker || showTools
-            || showGuideSheet || showLibraryPicker || scrubClip != nil
+            || showGuideSheet || showLibraryPicker || showPracticeLibrary
+            || scrubClip != nil
     }
 
     /// The coach reads the frame as good-to-shoot (green ring).
@@ -336,7 +357,7 @@ struct ProCapturePhotosView: View {
             // (.task re-fires after every fullScreenCover round-trip, so skip
             // anything already queued or in flight.)
             let queued = Set(failedClips.map(\.url))
-            let stranded = ClipVault.strandedClips(bookingId: bookingId)
+            let stranded = ClipVault.strandedClips(bookingId: custodyScope)
                 .filter { !queued.contains($0.url) }
             if !stranded.isEmpty { failedClips.append(contentsOf: stranded) }
 
@@ -347,7 +368,7 @@ struct ProCapturePhotosView: View {
             // Re-queued as retryable so the pro gets one honest attempt on the new
             // connection; a repeat refusal re-classifies it as terminal.
             let owedURLs = Set(failedUploads.map(\.url))
-            let owed = SessionByteVault.strandedUploads(bookingId: bookingId)
+            let owed = SessionByteVault.strandedUploads(bookingId: custodyScope)
                 .filter { !owedURLs.contains($0.url) }
                 .map {
                     FailedUpload(url: $0.url, phase: $0.phase, focal: $0.focal,
@@ -523,7 +544,11 @@ struct ProCapturePhotosView: View {
                 },
                 onCalibrate: { calibrating = true; calibrationStatus = nil },
                 onToggleAEAF: { camera.setAEAFLock(!camera.aeAfLocked) },
-                onOpenAllSettings: { presentAfterDrawer { showSettings = true } }
+                onOpenAllSettings: { presentAfterDrawer { showSettings = true } },
+                onOpenPracticeLibrary: destination.isPractice
+                    ? { presentAfterDrawer { showPracticeLibrary = true } }
+                    : nil,
+                saveToPhotos: destination.isPractice ? $savePracticeToPhotos : nil
             )
         }
         // Drawer 3 — the guide + packs + the matched look's direction lines.
@@ -532,9 +557,7 @@ struct ProCapturePhotosView: View {
                 guide: guide,
                 currentStepID: currentStepID,
                 completedStepIDs: completedStepIDs,
-                requirementNote: requirementMet
-                    ? ProSessionPhotoRequirement.metDetail(phase)
-                    : ProSessionPhotoRequirement.guideNote(phase),
+                requirementNote: destination.guideNote(requirementMet: requirementMet),
                 standardGuideName: standardGuide.name,
                 trendingPacks: trendingPacks,
                 activePackID: activePackID,
@@ -559,14 +582,27 @@ struct ProCapturePhotosView: View {
             }
         }
         #endif
+        .sheet(isPresented: $showPracticeLibrary) {
+            NavigationStack {
+                // No `onShoot`: the camera is already open behind this sheet.
+                ProPracticeLibraryView()
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Done") { showPracticeLibrary = false }
+                                .tint(BrandColor.textSecondary)
+                        }
+                    }
+            }
+            .tint(BrandColor.accent)
+        }
         .sheet(isPresented: $showBestShots) {
             if let coach {
-                BestShotsReviewView(coach: coach, bookingId: bookingId, phase: phase,
+                BestShotsReviewView(coach: coach, destination: destination,
                                     correction: cardMatrix)
             }
         }
         .fullScreenCover(item: $scrubClip) { clip in
-            FrameScrubberView(videoURL: clip.url, bookingId: bookingId, phase: phase,
+            FrameScrubberView(videoURL: clip.url, destination: destination,
                               correction: cardMatrix)
         }
         .mediaFullscreenCover($viewingMedia)
@@ -614,8 +650,8 @@ struct ProCapturePhotosView: View {
         var lines: [String] = []
         // The requirement, when it's outstanding — said once, plainly, with the
         // way out named. Extras are never mentioned: they are not owed.
-        if !requirementMet {
-            lines.append(ProSessionPhotoRequirement.outstandingSentence(phase))
+        if destination.owesAPhoto && !requirementMet {
+            lines.append(destination.outstandingSentence)
             lines.append("You can come back and take it any time.")
         }
         if hasUnsavedWork { lines.append("You still have \(unsavedWorkSummary).") }
@@ -710,7 +746,7 @@ struct ProCapturePhotosView: View {
     /// and even that is a sentence, not a locked door.
     private func requestExit() {
         if camera.isRecording { Task { await stopRecordingAndSave(review: false) } }
-        if hasUnsavedWork || !requirementMet {
+        if hasUnsavedWork || (destination.owesAPhoto && !requirementMet) {
             showExitConfirm = true
         } else {
             dismiss()
@@ -728,7 +764,7 @@ struct ProCapturePhotosView: View {
     private var exitDialogTitle: String {
         hasUnsavedWork
             ? "Leave with work unfinished?"
-            : ProSessionPhotoRequirement.leavingWithoutTitle(phase)
+            : destination.leavingWithoutTitle
     }
 
     /// Plain-language list of what's at risk, for the exit dialog. Refused photos
@@ -881,9 +917,7 @@ struct ProCapturePhotosView: View {
             .accessibilityLabel("Shot \(currentStepIndex + 1) of \(guide.steps.count), \(currentStep?.title ?? guide.name)")
             // "1 of 5" spoken alone is a quota. The value says what the count
             // actually means: one photo is owed, the set is a suggestion.
-            .accessibilityValue(requirementMet
-                                ? ProSessionPhotoRequirement.metDetail(phase)
-                                : ProSessionPhotoRequirement.guideNote(phase))
+            .accessibilityValue(destination.guideNote(requirementMet: requirementMet))
             .accessibilityHint("Opens the shot guide")
         } else {
             Text("\(phaseLabel) photos".uppercased())
@@ -1382,14 +1416,15 @@ struct ProCapturePhotosView: View {
 
     /// The one photo this phase owes is in hand.
     private var requirementMet: Bool {
-        ProSessionPhotoRequirement.isMet(captured: phasePhotoCount)
+        destination.requirementMet(captured: phasePhotoCount)
     }
 
     /// The moment the requirement is FIRST met, and only then: the card says the
     /// shoot is already sufficient. One more shot retires it on its own (the pro
     /// has answered by continuing), as does "Keep shooting".
     private var showRequirementCard: Bool {
-        !requirementCardDismissed
+        destination.owesAPhoto
+            && !requirementCardDismissed
             && !allStepsDone
             && keptThisSession > 0   // not on reopening a phase that's already covered
             && phasePhotoCount == ProSessionPhotoRequirement.requiredPerPhase
@@ -1511,9 +1546,9 @@ struct ProCapturePhotosView: View {
 
     /// Where this booking's locked white-balance gains persist (before + after
     /// share one calibration).
-    private var wbDefaultsKey: String { "tovis.camera.wb.\(bookingId)" }
+    private var wbDefaultsKey: String { "tovis.camera.wb.\(custodyScope)" }
     /// Where this booking's card calibration persists (9 matrix values + EV).
-    private var cardCalDefaultsKey: String { "tovis.camera.cardcal.\(bookingId)" }
+    private var cardCalDefaultsKey: String { "tovis.camera.cardcal.\(custodyScope)" }
 
     /// Measure each before-reference's luma + warmth once (downscaled, same
     /// math as the live frame) — the target the after shoot matches.
@@ -1777,7 +1812,12 @@ struct ProCapturePhotosView: View {
                 // slot because it is the ONLY way to record, and recording is
                 // capture; on hardware without it the slot collapses to the
                 // thumbnail alone, which is the design's left slot exactly.
-                if camera.recordingAvailable {
+                // ⚠️ Practice is photos only for now. A PracticeShot has no
+                // poster-frame columns, so a practice clip would land in the
+                // library as a tile with nothing to show. Two nullable columns
+                // and a poster copy on attach would fix it; that is a decision,
+                // not a detail, so the control is hidden rather than half-built.
+                if camera.recordingAvailable && !destination.isPractice {
                     Button { Task { await toggleRecording() } } label: {
                         ZStack {
                             Circle()
@@ -2075,6 +2115,18 @@ struct ProCapturePhotosView: View {
         if let cardMatrix, let corrected = await CardCorrection.apply(cardMatrix, to: data) {
             payload = corrected
         }
+        // A copy in the pro's own camera roll, when they asked for one. The
+        // COLOUR-FINAL bytes, so what lands in Photos is what the library shows
+        // — and add-only + raw-resource, so the original JPEG (EXIF orientation
+        // and all) is preserved rather than re-encoded. A refusal here is
+        // silent on purpose: the shot is still uploading, nothing is lost, and
+        // an error line about a secondary copy would outrank the shoot.
+        //
+        // Only on this path — a RETRY re-enters `uploadCorrected` directly, and
+        // a library import came FROM Photos, so neither double-saves.
+        if destination.isPractice && savePracticeToPhotos {
+            _ = await PhotoLibrarySaver.save(payload)
+        }
         // Card correction is color-only — geometry (and thus the focal) is unchanged.
         await uploadCorrected(payload, focal: focal)
     }
@@ -2100,11 +2152,12 @@ struct ProCapturePhotosView: View {
     ) async {
         let target = uploadPhase ?? phase
         do {
-            try await session.client.proMedia.uploadSessionPhoto(
-                bookingId: bookingId,
-                phase: target,
-                imageData: payload,
-                focal: focal
+            try await ProCameraUpload.photo(
+                payload,
+                focal: focal,
+                to: destination,
+                phaseOverride: target,
+                client: session.client
             )
             if let custody { SessionByteVault.remove(custody) }   // safe server-side now
             session.signalRefresh()   // the hub's gallery refreshes
@@ -2151,7 +2204,7 @@ struct ProCapturePhotosView: View {
         reason: String
     ) {
         guard let url = SessionByteVault.writePendingUpload(
-            payload, bookingId: bookingId, phase: uploadPhase, focal: focal
+            payload, bookingId: custodyScope, phase: uploadPhase, focal: focal
         ) else {
             // Nothing is left holding this photo — no queue row, no vault file,
             // no retry. It is the ONE message in this file not backed by state,
@@ -2256,7 +2309,7 @@ struct ProCapturePhotosView: View {
             errorMessage = "Couldn’t finish that recording. Please try again."
             return
         }
-        let stored = ClipVault.stash(url, bookingId: bookingId, phase: phase)
+        let stored = ClipVault.stash(url, bookingId: custodyScope, phase: phase)
         if review { scrubClip = ScrubClip(url: stored) }
         uploadClip(stored, phase: phase)
     }
@@ -2266,6 +2319,11 @@ struct ProCapturePhotosView: View {
     /// failure the clip stays in the vault and joins the retry pill — a flaky
     /// connection must never lose a take the pro already recorded.
     private func uploadClip(_ url: URL, phase: MediaPhase) {
+        // Clips are a session-only feature for now — the record control is
+        // hidden while practising (a PracticeShot has nowhere to keep a poster
+        // frame). Guarded here as well so a stranded clip swept up under the
+        // practice scope can never be posted to a booking that didn't shoot it.
+        guard let clipBookingId = destination.bookingId else { return }
         guard ClipVault.beginUpload(url) else { return }
         savingClips += 1
         let matrix = cardMatrix
@@ -2282,7 +2340,7 @@ struct ProCapturePhotosView: View {
             let poster = await ClipVault.poster(for: uploadURL)
             do {
                 try await client.proMedia.uploadSessionVideo(
-                    bookingId: bookingId, phase: phase,
+                    bookingId: clipBookingId, phase: phase,
                     fileURL: uploadURL, posterData: poster
                 )
                 ClipVault.remove(url)
@@ -2305,6 +2363,7 @@ struct ProCapturePhotosView: View {
     }
 
     private var phaseLabel: String {
+        if destination.isPractice { return "Practice" }
         switch phase {
         case .before: return "Before"
         case .after: return "After"

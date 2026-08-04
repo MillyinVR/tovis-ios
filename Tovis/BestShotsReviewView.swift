@@ -1,7 +1,8 @@
 // Best-shots review — the Session Reel tray. The coach auto-harvested these stills
 // at quality peaks across the session; the pro reviews and uploads the keepers
 // (staged, not auto-uploaded — capture stays intentional). Selected shots upload
-// to the booking's BEFORE/AFTER media via the same pipeline as a manual capture.
+// to wherever this shoot's shots go — the booking's BEFORE/AFTER media, or the
+// practice library — via the same pipeline as a manual capture.
 import SwiftUI
 import TovisKit
 
@@ -10,8 +11,9 @@ struct BestShotsReviewView: View {
     @Environment(\.dismiss) private var dismiss
 
     let coach: CoachEngine
-    let bookingId: String
-    let phase: MediaPhase
+    /// Where these shots go. The tray is destination-blind beyond its button
+    /// label — `ProCameraUpload` owns the fan-out.
+    let destination: ProCameraDestination
     /// Card-solved color correction — baked into each kept shot at upload,
     /// same as manual captures. Nil = no card scanned.
     var correction: ColorMatrix3x3? = nil
@@ -190,11 +192,11 @@ struct BestShotsReviewView: View {
                 payload = corrected
             }
             do {
-                try await session.client.proMedia.uploadSessionPhoto(
-                    bookingId: bookingId,
-                    phase: phase,
-                    imageData: payload,
-                    focal: MediaFocalPoint(faceCenter: shot.focalPoint)
+                try await ProCameraUpload.photo(
+                    payload,
+                    focal: MediaFocalPoint(faceCenter: shot.focalPoint),
+                    to: destination,
+                    client: session.client
                 )
                 uploaded.insert(shot.id)
             } catch let error as APIError {
@@ -219,7 +221,8 @@ struct BestShotsReviewView: View {
     }
 
     private var phaseLabel: String {
-        switch phase {
+        if destination.isPractice { return "Practice" }
+        switch destination.phase {
         case .before: return "Before"
         case .after: return "After"
         case .other: return "Session"

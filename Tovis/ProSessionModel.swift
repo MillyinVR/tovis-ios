@@ -19,6 +19,10 @@ final class ProSessionModel {
     private(set) var center: ProSessionCenter = ProSessionCenter(label: "Start", action: .none, href: nil)
 
     private(set) var loading = false
+    /// True once the first `load()` has come back. The centre button reads it
+    /// so it can't flash the standalone camera glyph on the pre-load default
+    /// (`action: .none`) and then flip to a live session a beat later.
+    private(set) var hasLoaded = false
     /// `start` / `nav` while a tap is in flight (drives the button label).
     private(set) var actionLoading: ActionKind?
     var error: String?
@@ -46,6 +50,35 @@ final class ProSessionModel {
 
     var showsCamera: Bool {
         center.action == .captureBefore || center.action == .captureAfter
+    }
+
+    /// The server has no session action for this pro right now — so the centre
+    /// slot is NOT a disabled session button, it's a plain camera button that
+    /// opens the standalone (practice) camera.
+    ///
+    /// Deliberately keyed on `.none`/`.unknown` rather than on `centerDisabled`:
+    /// the other disabled states (a tap in flight, a START with no booking id, a
+    /// picker with nothing to pick) are all SESSION states, and hijacking them
+    /// would replace a session button mid-flow. When a session does start, this
+    /// goes false on the next poll and the session button returns — session flow
+    /// takes priority, exactly as before this existed.
+    var isStandaloneCamera: Bool {
+        Self.isStandaloneCamera(
+            action: center.action, hasLoaded: hasLoaded, actionInFlight: actionLoading != nil)
+    }
+
+    /// The rule itself, pure, so it can be pinned by a test without standing up
+    /// a network client.
+    static func isStandaloneCamera(
+        action: ProSessionCenterAction,
+        hasLoaded: Bool,
+        actionInFlight: Bool
+    ) -> Bool {
+        guard hasLoaded, !actionInFlight else { return false }
+        switch action {
+        case .none, .unknown: return true
+        case .start, .finish, .pickBooking, .navigate, .captureBefore, .captureAfter: return false
+        }
     }
 
     /// Eligible-booking count badge when picking (web `pickerCount`).
@@ -88,12 +121,16 @@ final class ProSessionModel {
         defer { if !silent { loading = false } }
         do {
             let payload = try await client.proSession.session()
+            hasLoaded = true
             mode = payload.mode
             booking = payload.booking
             eligibleBookings = payload.eligibleBookings ?? []
             center = payload.center
             if mode != .upcomingPicker { pickerOpen = false }
         } catch let err as APIError {
+            // A failed load must not turn the centre into a camera: we don't
+            // know whether a session is live, and offering practice on top of a
+            // live client would be worse than showing the disabled button.
             if !silent { error = err.userMessage }
         } catch {
             if !silent { self.error = "Couldn’t load your session." }
