@@ -26,3 +26,7 @@ package-lock.json
 # committed lock file, and an unpinned ajv means the gate's validation
 # behaviour could change under us without any commit saying so.
 !scripts/contract/package-lock.json
+# Local Claude Code state (settings.local.json, worktrees). Gitignored in
+# tovis-app since #237-era cleanup; mirrored here so the shared checkout can
+# read clean at the end of a session.
+.claude/
