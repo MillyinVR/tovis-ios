@@ -122,6 +122,17 @@ hatch is a different thing — there the alternative is losing the bytes.)
 - The centre button was **looked at** in the simulator, signed in as a pro with
   no live session: a full-opacity camera glyph on the plume ring where the
   greyed-out session coin used to be.
+- The **practice library was looked at too** — three shots, the attached one
+  carrying its teal seal, placeholder tiles where no bytes sit behind the
+  pointer. Reached via a new `TOVIS_DEBUG_OPEN_PRACTICE=1` launch key
+  (`#if DEBUG`, mirroring `TOVIS_DEBUG_OPEN_SERIES`), because this machine still
+  cannot drive the simulator with synthetic taps.
+  🔴 **This is why it was worth looking.** The first attempt rendered
+  `Internal server error`. It was NOT this code: the long-running dev server on
+  :3000 had been booted before `PracticeShot` existed, so its in-memory Prisma
+  client had no such model. A server started from a fresh checkout of merged
+  `main` returned all three shots. Worth knowing — any sibling session's dev
+  server will 500 on `/pro/practice` until it restarts.
 - Every practice route was **driven end-to-end** against the local stack with a
   real pro bearer token: confirm (focal carried, no storage pointer on the
   wire), double-confirm refused, owner-scoped list, 401 unauthenticated, all four
@@ -142,9 +153,11 @@ API-driven but never watched end to end:
 
 - the practice camera actually **shooting** — every frame-path behaviour (coach
   lane, auto-capture, calibration) in standalone mode,
-- a real practice shot appearing in the library grid with its signed thumbnail
-  (the API was driven with no bytes behind the pointer, so `renderUrl` was null
-  by design — correct degradation, but an un-watched happy path),
+- a practice tile with a REAL signed thumbnail. The grid itself was watched, but
+  every fixture had no bytes behind its pointer, so what rendered was the
+  placeholder path. Writing real bytes needs the signing route, which correctly
+  refuses a local database against remote storage — so this is a device or
+  staging check, not something this machine can close.
 - the attach sheet's two flows against real data,
 - the button flipping back mid-shoot when a session starts.
 
