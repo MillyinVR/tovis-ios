@@ -370,12 +370,16 @@ struct ProProfileTabView: View {
         if tiles.isEmpty {
             emptyTab("No portfolio assets yet. Upload your best work to start building your client-facing profile.")
         } else {
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+            // Cell size comes from `MediaGridCell`, never from the media — a
+            // landscape upload used to widen its own cell past the column and
+            // draw over its neighbour. See MediaGridCell.swift.
+            LazyVGrid(columns: MediaGridLayout.columns(count: 3, spacing: 10), spacing: 10) {
                 ForEach(tiles.prefix(60)) { tile in
                     if let before = tile.before, let beforeStr = before.displayUrl,
                        let beforeURL = URL(string: beforeStr), let afterURL = URL(string: tile.displayUrl) {
-                        // Paired before/after → the comparison slider fills the cell.
-                        BeforeAfterCompareView(beforeURL: beforeURL, afterURL: afterURL, height: 120, cornerRadius: 12)
+                        // Paired before/after → the comparison slider fills the cell,
+                        // at the same size as every plain tile in the row.
+                        MediaGridCompareCell(beforeURL: beforeURL, afterURL: afterURL, cornerRadius: 12)
                     } else {
                         Button {
                             // The pro's own portfolio tile mirrors web's
@@ -391,17 +395,7 @@ struct ProProfileTabView: View {
                                 )
                             )
                         } label: {
-                            ZStack {
-                                BrandColor.bgSecondary
-                                if let u = URL(string: tile.displayUrl) {
-                                    AsyncImage(url: u) { $0.resizable().scaledToFill() } placeholder: { ProgressView().tint(BrandColor.accent) }
-                                }
-                                if tile.isVideo {
-                                    Image(systemName: "play.circle.fill").font(.system(size: 20)).foregroundStyle(.white.opacity(0.9))
-                                }
-                            }
-                            .frame(height: 120)
-                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            PortfolioTileFace(tile: tile, cornerRadius: 12, chrome: .videoGlyph)
                         }
                         .buttonStyle(.plain)
                     }
