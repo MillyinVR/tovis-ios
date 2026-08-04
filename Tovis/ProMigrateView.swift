@@ -273,9 +273,9 @@ struct ProMigrateView: View {
         VStack(spacing: 10) {
             Image(systemName: "arrow.down.doc")
                 .font(.system(size: 26)).foregroundStyle(BrandColor.textMuted)
-            Text("Coming soon")
+            Text("Not available")
                 .font(BrandFont.body(15, .semibold)).foregroundStyle(BrandColor.textPrimary)
-            Text("Bringing your business over from another app isn’t switched on for your account yet.")
+            Text("Bringing your business over from another app isn’t switched on for your account.")
                 .font(BrandFont.body(13)).foregroundStyle(BrandColor.textMuted)
                 .multilineTextAlignment(.center)
         }
