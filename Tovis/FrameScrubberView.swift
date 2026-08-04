@@ -12,8 +12,8 @@ struct FrameScrubberView: View {
     @Environment(\.dismiss) private var dismiss
 
     let videoURL: URL
-    let bookingId: String
-    let phase: MediaPhase
+    /// Where a pulled frame goes — `ProCameraUpload` owns the fan-out.
+    let destination: ProCameraDestination
     /// Card-solved color correction — baked into an extracted still at upload
     /// (the clip's own upload bakes it into the video separately). Nil = no
     /// card scanned.
@@ -185,8 +185,8 @@ struct FrameScrubberView: View {
             payload = corrected
         }
         do {
-            try await session.client.proMedia.uploadSessionPhoto(
-                bookingId: bookingId, phase: phase, imageData: payload, focal: focal
+            try await ProCameraUpload.photo(
+                payload, focal: focal, to: destination, client: session.client
             )
             session.signalRefresh()
             message = "Saved that frame."

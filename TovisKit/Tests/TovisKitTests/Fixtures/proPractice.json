@@ -1,0 +1,27 @@
+{
+  "ok": true,
+  "items": [
+    {
+      "id": "shot_practice_1",
+      "mediaType": "IMAGE",
+      "caption": null,
+      "createdAt": "2026-08-04T12:00:00.000Z",
+      "focalX": 0.5,
+      "focalY": 0.42,
+      "attachedMediaId": null,
+      "attachedAt": null,
+      "renderUrl": "https://storage.example/signed/practice-1.jpg"
+    },
+    {
+      "id": "shot_practice_2",
+      "mediaType": "IMAGE",
+      "caption": "balayage practice, window light",
+      "createdAt": "2026-08-03T18:30:00.000Z",
+      "focalX": null,
+      "focalY": null,
+      "attachedMediaId": "media_abc123",
+      "attachedAt": "2026-08-04T09:15:00.000Z",
+      "renderUrl": null
+    }
+  ]
+}

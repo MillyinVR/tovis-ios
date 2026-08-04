@@ -45,6 +45,10 @@ const CHECKS = [
       ...d.buckets.past,
     ],
   },
+  // The practice library — the standalone camera's shots. Both rows on
+  // purpose: an unattached one (nulls throughout) and one already promoted,
+  // so a field going non-optional on either shape fails here.
+  { file: 'proPractice.json', def: 'ProPracticeShotDTO', pick: (d) => d.items },
   { file: 'looksFeed.json', def: 'LooksFeedItemDto', pick: (d) => d.items },
   { file: 'lookDetail.json', def: 'LooksDetailItemDto', pick: (d) => [d.item] },
   { file: 'looksComments.json', def: 'LooksCommentDto', pick: (d) => d.comments },

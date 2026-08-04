@@ -34,6 +34,10 @@ struct ProMainTabView: View {
     /// Set while a pushed screen asks for the footer to be hidden (a full-screen
     /// form whose own bottom action bar the footer would sit on top of).
     @State private var footerHidden = false
+    /// The standalone (practice) camera, opened from the centre button when no
+    /// session is live. Its shots land in the practice library — no booking,
+    /// nothing owed.
+    @State private var showPracticeCamera = false
     #if DEBUG
     /// DEBUG ONLY — a recurring appointment opened straight from the launch
     /// environment, so the screen can actually be LOOKED AT.
@@ -95,7 +99,8 @@ struct ProMainTabView: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if !footerHidden {
-                ProTabBar(selected: $tab, session: proSession, messagesBadge: messagesBadge)
+                ProTabBar(selected: $tab, session: proSession, messagesBadge: messagesBadge,
+                          onStandaloneCamera: { showPracticeCamera = true })
             }
         }
         .tint(BrandColor.accent)
@@ -202,6 +207,14 @@ struct ProMainTabView: View {
                     }
             }
             .tint(BrandColor.accent)
+        }
+        // The standalone camera. Deliberately NOT force-dismissed when a session
+        // becomes live mid-shoot: the footer button flips back on its own (it is
+        // state-driven), but yanking a running camera out from under a pro is
+        // exactly the custody hazard this whole track has been closing. The
+        // session button is waiting the moment they close it.
+        .fullScreenCover(isPresented: $showPracticeCamera) {
+            ProCapturePhotosView(destination: .practice)
         }
         // The booking picker (UPCOMING_PICKER with >1 eligible session).
         .sheet(isPresented: Binding(get: { proSession.pickerOpen }, set: { proSession.pickerOpen = $0 })) {

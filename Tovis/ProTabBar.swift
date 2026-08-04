@@ -13,6 +13,8 @@ struct ProTabBar: View {
     let session: ProSessionModel
     /// Unread Messages badge text (e.g. "3", "9+"). Nil → no badge.
     var messagesBadge: String? = nil
+    /// Opens the standalone (practice) camera when there's no live session.
+    var onStandaloneCamera: (() -> Void)? = nil
 
     // Footer geometry — matches the web `ProSessionFooter` / `footers.css` 1:1:
     //   bar min-height 80 · top padding 14 · center coin 72 · center raised so its
@@ -43,7 +45,8 @@ struct ProTabBar: View {
         // The raised center button pokes above the bar's top edge — measured from
         // the top like the web's margin-top lift (coin top = 20pt above bar top).
         .overlay(alignment: .top) {
-            ProSessionCenterButton(session: session, size: centerSize)
+            ProSessionCenterButton(session: session, size: centerSize,
+                                   onStandaloneCamera: onStandaloneCamera)
                 .offset(y: -centerTopLift)
         }
         // surface + hairline top border (--bg-surface / --line)
@@ -100,15 +103,36 @@ struct ProTabBar: View {
     }
 }
 
-/// The raised live-session center button. Ported from `ProSessionFooter`'s center
-/// button: the shared `BrandCoin` (CTA ring when live, plume when idle) shows the
-/// mono action label or a camera glyph; a pulse ring radiates when live, and an
-/// eligible-booking count badge appears in the UPCOMING_PICKER mode.
+/// The raised center button — contextual.
+///
+/// WITH a session: exactly as it has always been. Ported from `ProSessionFooter`'s
+/// center button: the shared `BrandCoin` (CTA ring when live, plume when idle)
+/// shows the mono action label or a camera glyph; a pulse ring radiates when
+/// live, and an eligible-booking count badge appears in UPCOMING_PICKER mode.
+///
+/// WITHOUT one (`session.isStandaloneCamera`): it stops being a dead, greyed-out
+/// session button and becomes a plain camera — the same camera and the same
+/// coach, shooting into the pro's practice library instead of a booking. The
+/// moment a session becomes available the session button returns; session flow
+/// always wins the slot.
 struct ProSessionCenterButton: View {
     let session: ProSessionModel
     var size: CGFloat = 72
+    /// Opens the standalone camera. Nil (the default) keeps the old behaviour
+    /// everywhere the shell hasn't wired one up.
+    var onStandaloneCamera: (() -> Void)? = nil
 
     @State private var pulse = false
+
+    /// Out of session AND the shell gave us somewhere to go.
+    private var standalone: Bool {
+        session.isStandaloneCamera && onStandaloneCamera != nil
+    }
+
+    private var accessibilityLabel: String {
+        if standalone { return "Practice camera" }
+        return session.showsCamera ? "Open camera" : session.label
+    }
 
     var body: some View {
         ZStack {
@@ -125,7 +149,11 @@ struct ProSessionCenterButton: View {
             }
 
             Button {
-                Task { await session.handleCenterClick() }
+                if standalone {
+                    onStandaloneCamera?()
+                } else {
+                    Task { await session.handleCenterClick() }
+                }
             } label: {
                 // Idle: coin is slightly translucent (the footer reads faintly
                 // through it) but the outer ring stays full color. Live: the coin
@@ -136,7 +164,12 @@ struct ProSessionCenterButton: View {
                     coinOpacity: session.isLive ? 1 : 0.82
                 ) {
                     Group {
-                        if session.showsCamera {
+                        if standalone {
+                            // A plain camera glyph — no label, because there is
+                            // no session action to name.
+                            Image(systemName: "camera.fill")
+                                .font(.system(size: 24, weight: .semibold))
+                        } else if session.showsCamera {
                             Image(systemName: "camera.fill")
                                 .font(.system(size: 22, weight: .semibold))
                         } else {
@@ -172,9 +205,11 @@ struct ProSessionCenterButton: View {
                 }
             }
             .buttonStyle(.plain)
-            .disabled(session.centerDisabled)
-            .opacity(session.centerDisabled ? 0.5 : 1)
-            .accessibilityLabel(session.showsCamera ? "Open camera" : session.label)
+            // Standalone is never the greyed-out state — that WAS the problem.
+            .disabled(standalone ? false : session.centerDisabled)
+            .opacity(!standalone && session.centerDisabled ? 0.5 : 1)
+            .accessibilityLabel(accessibilityLabel)
+            .accessibilityHint(standalone ? "Shoots into your practice library — no client, nothing owed" : "")
         }
     }
 }

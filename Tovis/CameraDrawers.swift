@@ -133,6 +133,14 @@ struct CameraToolsDrawer: View {
     let onCalibrate: () -> Void
     let onToggleAEAF: () -> Void
     let onOpenAllSettings: () -> Void
+    /// Opens the practice library. Nil in a session shoot — practice shots and
+    /// session photos are different custody, and mixing the two entry points
+    /// here would suggest otherwise.
+    var onOpenPracticeLibrary: (() -> Void)? = nil
+    /// "Also save to Photos", practice only. Nil in a session shoot: a client's
+    /// before/after is THEIR photo, and quietly copying it to the pro's camera
+    /// roll is not a toggle to offer in passing.
+    var saveToPhotos: Binding<Bool>? = nil
 
     @Environment(\.dismiss) private var dismiss
 
@@ -166,6 +174,49 @@ struct CameraToolsDrawer: View {
                     onionEnabled.toggle()
                 }
                 .disabled(!ghostAvailable)
+            }
+
+            if let saveToPhotos {
+                Toggle(isOn: saveToPhotos) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Also save to Photos")
+                            .font(BrandFont.body(15, .semibold))
+                            .foregroundStyle(BrandColor.textPrimary)
+                        Text("Keeps a copy in your camera roll, originals untouched")
+                            .font(BrandFont.mono(10))
+                            .foregroundStyle(BrandColor.textMuted)
+                    }
+                }
+                .tint(BrandColor.accent)
+                .padding(.horizontal, 14)
+                .frame(minHeight: 56)
+                .background(BrandColor.textPrimary.opacity(0.08),
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+
+            if let onOpenPracticeLibrary {
+                Button {
+                    dismiss()
+                    onOpenPracticeLibrary()
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "square.grid.2x2")
+                            .font(.system(size: 15, weight: .semibold))
+                        Text("Practice library")
+                            .font(BrandFont.body(15, .semibold))
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .bold))
+                    }
+                    .foregroundStyle(BrandColor.textPrimary)
+                    .padding(.horizontal, 14)
+                    .frame(height: 48)
+                    .frame(maxWidth: .infinity)
+                    .background(BrandColor.textPrimary.opacity(0.08),
+                                in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Every shot you've taken outside a session")
             }
 
             if ghostAvailable, onionEnabled {
