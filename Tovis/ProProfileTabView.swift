@@ -532,6 +532,17 @@ struct ProProfileTabView: View {
 
             SettingsLegalSection()
 
+            // App Store guideline 5.1.1(v): account deletion has to be
+            // reachable from inside the app. It sits in its own section rather
+            // than beside Sign out, so a tap meant for signing out never lands
+            // on the irreversible one.
+            BrandSection(title: "Account") {
+                businessLink(
+                    icon: "trash",
+                    title: "Delete account"
+                ) { DeleteAccountView() }
+            }
+
             Button(role: .destructive) {
                 Task { await session.logout() }
             } label: {

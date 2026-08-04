@@ -16,6 +16,9 @@ public final class TovisClient: Sendable {
     public let bookings: BookingsService
     public let profiles: ProfileService
     public let me: MeService
+    /// BOTH workspaces — self-serve account deletion (App Store 5.1.1(v)).
+    /// Role-agnostic: one contract for the client app, the pro app and web.
+    public let accountDeletion: AccountDeletionService
     /// Client account settings — the editable identity profile (name / phone /
     /// birthday / avatar) behind the Settings hub. Distinct from `me` (dashboard).
     public let clientSettings: ClientSettingsService
@@ -158,6 +161,7 @@ public final class TovisClient: Sendable {
         self.bookings = BookingsService(api: api)
         self.profiles = ProfileService(api: api)
         self.me = MeService(api: api)
+        self.accountDeletion = AccountDeletionService(api: api)
         self.clientSettings = ClientSettingsService(api: api)
         self.clientPublicProfile = ClientPublicProfileService(api: api)
         self.support = SupportService(api: api)
