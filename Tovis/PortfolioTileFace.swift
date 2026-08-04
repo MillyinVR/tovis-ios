@@ -23,6 +23,9 @@ struct PortfolioTileFace: View {
     /// Whether this is the grid's first tile — only the first one may wear the
     /// "FEAT" chip, matching the web grid.
     var isFirst: Bool = false
+    /// See `MediaGridImage.showsSpinner` — the public profile's mosaic loads
+    /// into a plain fill, the pro's spaced grid into a spinner.
+    var showsSpinner: Bool = true
 
     enum Chrome {
         /// A centred play glyph and nothing else (the pro's own portfolio tab).
@@ -36,7 +39,7 @@ struct PortfolioTileFace: View {
     // would push the chip out past the cell's edge and into the clip.
     var body: some View {
         MediaGridCell(cornerRadius: cornerRadius) {
-            MediaGridImage(url: URL(string: tile.displayUrl))
+            MediaGridImage(url: URL(string: tile.displayUrl), showsSpinner: showsSpinner)
         }
         .overlay { glyph }
         .overlay(alignment: .topLeading) { featChip }

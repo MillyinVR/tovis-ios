@@ -586,7 +586,9 @@ struct ProProfileView: View {
     }
 
     private func portfolioTileFace(_ tile: ProPortfolioTile, isFirst: Bool) -> some View {
-        PortfolioTileFace(tile: tile, cornerRadius: 0, chrome: .chips, isFirst: isFirst)
+        // `showsSpinner: false` keeps this grid — the one that was already
+        // rendering correctly — pixel-identical to before the tile was shared.
+        PortfolioTileFace(tile: tile, cornerRadius: 0, chrome: .chips, isFirst: isFirst, showsSpinner: false)
     }
 
     // MARK: - Services

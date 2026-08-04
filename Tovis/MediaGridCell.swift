@@ -92,12 +92,19 @@ struct MediaGridCell<Content: View>: View {
 /// where `scaledToFill`'s overflow is harmless and gets clipped.
 struct MediaGridImage: View {
     let url: URL?
+    /// Whether a loading tile shows a spinner. The spaced grids (the pro's own
+    /// portfolio, My media, review shots) do. The public profile's flush 2pt
+    /// mosaic passes `false`: a loading tile there is just the cell's own fill,
+    /// which is exactly how that screen looked before this view was shared — and
+    /// that screen is the one that was already right, so it doesn't get changed.
+    var showsSpinner: Bool = true
+
     var body: some View {
         if let url {
             AsyncImage(url: url) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
-                ProgressView().tint(BrandColor.accent)
+                if showsSpinner { ProgressView().tint(BrandColor.accent) }
             }
         }
     }
