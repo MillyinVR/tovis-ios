@@ -540,7 +540,7 @@ struct ProProfileTabView: View {
                 businessLink(
                     icon: "trash",
                     title: "Delete account"
-                ) { ProDeleteAccountView() }
+                ) { DeleteAccountView() }
             }
 
             Button(role: .destructive) {

@@ -1,5 +1,11 @@
 // Self-serve account deletion — the native twin of the web
-// `/pro/account/delete` screen, required by App Store guideline 5.1.1(v).
+// `/pro/account/delete` and `/client/settings` panels, required by App Store
+// guideline 5.1.1(v).
+//
+// Role-agnostic, and rendered from BOTH workspace settings hubs. The wire is
+// role-agnostic too (`/me/account-deletion`), so one screen is the whole
+// feature — a pro-only screen would ship a compliance hole for anyone who only
+// ever uses the client tab.
 //
 // The screen never deletes anything itself. It opens a grace window that a
 // server-side sweep executes once the window closes, so a mis-tap stays
@@ -12,7 +18,7 @@
 import SwiftUI
 import TovisKit
 
-struct ProDeleteAccountView: View {
+struct DeleteAccountView: View {
     @Environment(SessionModel.self) private var session
 
     private enum Phase: Equatable {
