@@ -226,20 +226,15 @@ struct ProReviewsListView: View {
         // A paired before is subsumed by its after's slider, so drop it from the grid.
         let beforeIds = Set(tiles.compactMap { $0.before?.id })
         let visible = tiles.filter { !beforeIds.contains($0.id) }
-        return LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
+        return LazyVGrid(columns: MediaGridLayout.columns(count: 3, spacing: 8), spacing: 8) {
             ForEach(visible) { tile in
                 if let before = tile.before, let beforeStr = before.displayUrl,
                    let beforeURL = URL(string: beforeStr), let afterURL = URL(string: tile.src) {
                     // Paired before/after → the comparison slider fills the square cell.
-                    Color.clear
-                        .aspectRatio(1, contentMode: .fit)
-                        .overlay {
-                            GeometryReader { geo in
-                                BeforeAfterCompareView(beforeURL: beforeURL, afterURL: afterURL, height: geo.size.height, cornerRadius: 10)
-                                    .frame(width: geo.size.width, height: geo.size.height)
-                            }
-                        }
-                        .clipped()
+                    MediaGridCompareCell(
+                        beforeURL: beforeURL, afterURL: afterURL,
+                        aspectRatio: MediaGridLayout.squareAspect, cornerRadius: 10
+                    )
                 } else {
                     VStack(spacing: 6) {
                         Button {
@@ -247,15 +242,17 @@ struct ProReviewsListView: View {
                             // so open it as an image — reliable full-size view of the shot.
                             viewingMedia = FullscreenMedia.remote(id: tile.id, urlString: tile.src, isVideo: false)
                         } label: {
-                            ZStack(alignment: .topTrailing) {
-                                RoundedRectangle(cornerRadius: 10, style: .continuous).fill(BrandColor.bgPrimary)
-                                if let url = URL(string: tile.src) {
-                                    AsyncImage(url: url) { image in
-                                        image.resizable().scaledToFill()
-                                    } placeholder: {
-                                        ProgressView().tint(BrandColor.accent)
-                                    }
-                                }
+                            // Square, column-sized cell — the review shot does not get
+                            // to size its own tile (MediaGridCell.swift).
+                            MediaGridCell(
+                                aspectRatio: MediaGridLayout.squareAspect,
+                                cornerRadius: 10,
+                                background: BrandColor.bgPrimary
+                            ) {
+                                MediaGridImage(url: URL(string: tile.src))
+                            }
+                            // Anchored to the cell, not to the image it clips.
+                            .overlay(alignment: .topTrailing) {
                                 if tile.isVideo {
                                     Text("VIDEO")
                                         .font(BrandFont.mono(8))
@@ -266,8 +263,6 @@ struct ProReviewsListView: View {
                                         .padding(6)
                                 }
                             }
-                            .aspectRatio(1, contentMode: .fill)
-                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                         }
                         .buttonStyle(.plain)
 

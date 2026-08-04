@@ -13,7 +13,7 @@ import TovisKit
 
 struct ProMainTabView: View {
     @Environment(SessionModel.self) private var session
-    @State private var tab: ProTab.ID = .calendar   // pros land on Calendar (web `/pro` → `/pro/calendar`); the Overview home is reached via the Calendar bar's Home control
+    @State private var tab: ProTab.ID = Self.launchTab   // pros land on Calendar (web `/pro` → `/pro/calendar`); the Overview home is reached via the Calendar bar's Home control
     @State private var messagesBadge: String?
     @State private var proSession: ProSessionModel?
     /// A conversation surfaced by a tapped message push (`/messages/thread/{id}`),
@@ -53,6 +53,30 @@ struct ProMainTabView: View {
     /// `sheet(item:)` needs identity; a bare String has none.
     private struct DebugSeriesRef: Identifiable, Hashable { let id: String }
     #endif
+
+    /// The tab a launch starts on — Calendar, unless a DEBUG build was launched
+    /// with `TOVIS_DEBUG_OPEN_TAB` naming another one.
+    ///
+    /// DEBUG ONLY, for the same reason as `TOVIS_DEBUG_OPEN_SERIES` above: this
+    /// machine can't drive the simulator with synthetic taps, so a screen behind
+    /// a footer tap is a screen nobody ever looks at. Accepts a `ProTab.ID` raw
+    /// value (`overview` · `looks` · `calendar` · `messages` · `profile`);
+    /// anything else lands on Calendar as usual.
+    ///
+    ///     SIMCTL_CHILD_TOVIS_DEBUG_OPEN_TAB=profile xcrun simctl launch …
+    ///
+    /// Read as the STATE'S INITIAL VALUE rather than applied in `onAppear`: the
+    /// shell swaps view identity the moment a live pro session resolves, which
+    /// resets `@State` — an onAppear assignment got silently thrown away by that
+    /// swap about half the time.
+    private static var launchTab: ProTab.ID {
+        #if DEBUG
+        let raw = ProcessInfo.processInfo.environment["TOVIS_DEBUG_OPEN_TAB"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if let raw, let wanted = ProTab.ID(rawValue: raw) { return wanted }
+        #endif
+        return .calendar
+    }
 
     var body: some View {
         Group {

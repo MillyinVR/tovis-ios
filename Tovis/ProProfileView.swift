@@ -528,7 +528,7 @@ struct ProProfileView: View {
             emptyCard("No portfolio posts yet.")
         } else {
             LazyVGrid(
-                columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 3),
+                columns: MediaGridLayout.columns(count: 3, spacing: 2),
                 spacing: 2
             ) {
                 ForEach(Array(tiles.enumerated()), id: \.element.id) { index, tile in
@@ -547,20 +547,7 @@ struct ProProfileView: View {
             // Paired before/after → the interactive comparison slider fills the
             // cell (parity with the web public portfolio grid). The slider owns
             // the tap/drag, so there's no fullscreen button here.
-            Color.clear
-                .aspectRatio(3.0 / 4.0, contentMode: .fit)
-                .overlay {
-                    GeometryReader { geo in
-                        BeforeAfterCompareView(
-                            beforeURL: beforeURL,
-                            afterURL: afterURL,
-                            height: geo.size.height,
-                            cornerRadius: 0
-                        )
-                        .frame(width: geo.size.width, height: geo.size.height)
-                    }
-                }
-                .clipped()
+            MediaGridCompareCell(beforeURL: beforeURL, afterURL: afterURL, cornerRadius: 0)
         } else {
             standardPortfolioTile(tile, isFirst: isFirst)
         }
@@ -599,44 +586,7 @@ struct ProProfileView: View {
     }
 
     private func portfolioTileFace(_ tile: ProPortfolioTile, isFirst: Bool) -> some View {
-        Rectangle()
-            .fill(BrandColor.bgSecondary)
-            .aspectRatio(3.0 / 4.0, contentMode: .fit)
-            .overlay {
-                if let url = URL(string: tile.displayUrl) {
-                    AsyncImage(url: url) { image in
-                        image.resizable().scaledToFill()
-                    } placeholder: {
-                        BrandColor.bgSecondary
-                    }
-                }
-            }
-            .clipped()
-            .overlay(alignment: .topLeading) {
-                if isFirst && tile.isFeaturedInPortfolio {
-                    chip("★ FEAT", tint: BrandColor.iris).padding(6)
-                }
-            }
-            .overlay(alignment: .topTrailing) {
-                if tile.isVideo {
-                    chip("VIDEO", tint: .white).padding(6)
-                }
-            }
-            .overlay(alignment: .bottomLeading) {
-                if !tile.serviceIds.isEmpty {
-                    chip("SERVICE", tint: .white).padding(6)
-                }
-            }
-            .contentShape(Rectangle())
-    }
-
-    private func chip(_ text: String, tint: Color) -> some View {
-        Text(text)
-            .font(BrandFont.mono(9))
-            .foregroundStyle(tint)
-            .padding(.vertical, 3)
-            .padding(.horizontal, 6)
-            .background(.black.opacity(0.55), in: Capsule())
+        PortfolioTileFace(tile: tile, cornerRadius: 0, chrome: .chips, isFirst: isFirst)
     }
 
     // MARK: - Services

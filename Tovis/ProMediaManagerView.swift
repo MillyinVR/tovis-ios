@@ -85,7 +85,7 @@ struct ProMediaManagerView: View {
 
     private func grid(_ items: [ProManagedMediaItem], options: [ProMediaServiceTag]) -> some View {
         LazyVGrid(
-            columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3),
+            columns: MediaGridLayout.columns(count: 3, spacing: 10),
             spacing: 10
         ) {
             ForEach(items) { item in
@@ -95,22 +95,22 @@ struct ProMediaManagerView: View {
         }
     }
 
+    // Square cells, sized by the column and never by the upload — the same
+    // `scaledToFill`-sizes-its-own-cell trap the portfolio grid fell into
+    // (MediaGridCell.swift), which here showed up as a ragged, overlapping
+    // inventory whenever a landscape shot sat next to a portrait one.
     private func tile(_ item: ProManagedMediaItem) -> some View {
-        ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: 12, style: .continuous).fill(BrandColor.bgSecondary)
+        MediaGridCell(aspectRatio: MediaGridLayout.squareAspect, cornerRadius: 12) {
             if let str = item.displayThumbUrl, let url = URL(string: str) {
-                AsyncImage(url: url) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    ProgressView().tint(BrandColor.accent)
-                }
+                MediaGridImage(url: url)
             } else {
                 Image(systemName: "photo")
                     .font(.system(size: 22))
                     .foregroundStyle(BrandColor.textMuted)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-
+        }
+        // Badges anchor to the cell — the image inside it deliberately overflows.
+        .overlay(alignment: .topLeading) {
             VStack(alignment: .leading, spacing: 4) {
                 if item.isFeaturedInPortfolio {
                     badge("★", tint: BrandColor.accent, fg: BrandColor.onAccent)
@@ -120,16 +120,14 @@ struct ProMediaManagerView: View {
                 }
             }
             .padding(6)
-
+        }
+        .overlay {
             if item.isVideo {
                 Image(systemName: "play.circle.fill")
                     .font(.system(size: 20))
                     .foregroundStyle(.white.opacity(0.9))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .aspectRatio(1, contentMode: .fill)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .accessibilityLabel("Edit media")
     }
 
