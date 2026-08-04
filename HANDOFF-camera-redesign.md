@@ -16,10 +16,139 @@ Design source of truth: Claude Design "Tovis Pro Camera Redesign.dc.html".
 | Refused-photo custody | #249 (`e079d9b`) | A photo the server refuses stops vanishing: terminal vs retryable uploads split, byte vault, exit holds the door on owed bytes. |
 | Step 2 — subtraction | #250 (`d1b1012`) | Thirteen on-screen elements become five. One 56pt lane above the shutter with a six-tier priority queue (`CameraLane.message` — pure, unit-tested). Guide bar → one chip + a sheet; tools → one tray. |
 | Coach tuning (offline) | #254 (`9efd7ac`) | `CoachAggregate` extracted pure; offline bench over real photographs. `mixedLightSpread` was firing on ~half of ordinary portraits and winning the single lane line. |
-| **One photo required** | this branch | The camera stops reading as "shoot the whole set or you're not done". See below. |
+| One photo required | #255 (`9a42f0c`) | The camera stops reading as "shoot the whole set or you're not done". See below. |
+| **Camera outside a session** | this branch | The footer's centre button stops being dead when no session is live. Same camera, same coach, no custody. See below. |
 
 Still owed: the on-device tune pass proper (`BACKLOG.md` §"Camera on-device tune
 pass") — perception thresholds need the sensor, and the simulator has no camera.
+
+---
+
+## Step: the camera outside a session (2026-08-04)
+
+> Tori: "Can we have a way the pro can access the camera features when they
+> aren't in a session? Maybe instead of the center button being disabled make it
+> the camera button but when the pro is in session it stays the way we have it
+> set up now?"
+
+**Out of session the centre coin is a plain camera; in a session it is
+byte-for-byte what it was.** When a session starts, the next poll takes the slot
+back — session flow always wins it. The rule is
+`ProSessionModel.isStandaloneCamera`, keyed on the server's `center.action`
+being `NONE`/`UNKNOWN`, deliberately NOT on `centerDisabled`: the other disabled
+states (a tap in flight, START with no booking id, a picker with nothing to
+pick) are session states, and hijacking those would replace a Start button
+mid-flow.
+
+### One camera, not two
+
+The whole difference between the two shoots is a value type,
+`Tovis/ProCameraDestination.swift`:
+
+| | `.session(bookingId:phase:)` | `.practice` |
+| --- | --- | --- |
+| Owes | one photo (`ProSessionPhotoRequirement`) | **nothing** |
+| Uploads to | that booking's private session media | the practice library |
+| Custody scope | the booking id | the literal `"practice"` |
+| Requirement card / accented Done / exit sentence | as before | absent |
+
+Everything that used to read `bookingId`/`phase` inside `ProCapturePhotosView`
+now asks the destination, so the preview, coach, guide, auto-capture,
+calibration, harvest tray and byte vault are **shared, not forked** — there is
+no second camera to keep in sync, and the outstanding on-device tune reaches
+both by construction. `Tovis/ProCameraUpload.swift` is the single upload
+fan-out; the best-shots tray and the frame scrubber go through it too rather
+than each knowing an endpoint.
+
+🔴 **Practice has its OWN custody scope.** If it ever shared a booking's, a
+stranded practice photo would be swept into that booking's owed-upload queue and
+posted to a client who was never in it — and a white balance solved at home
+would silently re-colour their before/after. Pinned by
+`ProCameraDestinationTests`, red-proofed.
+
+### The practice library + attach-later
+
+Portfolio-shaped, none of the obligations. A shot can later become real media,
+which is the moment a service is finally known:
+
+- **To a client** → that booking's session media, private, phase `OTHER`.
+- **As a look** → a public asset + a LookPost. "Post it now" defaults **off**
+  and the footer says what off means; a draft is never a surprise post.
+
+Attach **copies** the bytes rather than sharing them, so deleting a practice
+shot can never pull the file out from under media promoted from it.
+
+**"Also save to Photos"** (tools tray, off by default, remembered) keeps a copy
+of each kept practice shot in the pro's own camera roll, through the existing
+`PhotoLibrarySaver` — add-only authorization, raw-resource write, so the
+original JPEG and its EXIF orientation survive rather than being re-encoded. It
+saves the COLOUR-FINAL bytes, so the camera roll matches the library. Offered on
+practice only: a client's before/after is their photo, and quietly copying it to
+the pro's phone is not a toggle to slip into a tray. (The refused-photo escape
+hatch is a different thing — there the alternative is losing the bytes.)
+
+### Rode along
+
+- **`tovis-app` #832** — the whole server half: `PracticeShot` (deliberately not
+  a `MediaAsset` — every MediaAsset anchors to a bookable `primaryServiceId`, and
+  a shot with no booking has no service), the four routes, the
+  `pro_practice_disabled` kill switch, and migration
+  `20260830120000_pro_practice_shots` (purely additive, starts empty).
+  ⚠️ Renumbered off `20260830000000` mid-flight — a sibling session claimed that
+  timestamp for `handle_global_namespace` after this one was numbered. **Check
+  worktrees AND other sessions' working trees before numbering.**
+  ⚠️ The repo's own privacy export-completeness guard caught `PracticeShot`
+  missing from the export. The **delete** side has no such guard and was found by
+  reading: `deleteUserData` *anonymizes* the ProfessionalProfile rather than
+  deleting it, so `onDelete: Cascade` never fires and practice shots would have
+  outlived a deletion request.
+
+### Deliberate reductions (flagged, not half-built)
+
+- **Practice records no clips.** A `PracticeShot` has no poster-frame columns, so
+  a practice clip would land in the library as a tile with nothing to show. The
+  record control is hidden while practising. Two nullable columns plus a poster
+  copy on attach would fix it — that is a decision, not a detail.
+- **Attaching to a client reaches ACTIVE work, not history.** The booking write
+  boundary refuses media on a COMPLETED or cancelled booking (closeout
+  integrity), so the picker only offers appointments that can still take one.
+  Widening that means punching a hole in a deliberate lock — Tori's call.
+- **The library is reached from the practice camera's tools tray.** A Profile-tab
+  row would be more discoverable, but that file belonged to a live sibling
+  session.
+
+### Verified, and how
+
+- The centre button was **looked at** in the simulator, signed in as a pro with
+  no live session: a full-opacity camera glyph on the plume ring where the
+  greyed-out session coin used to be.
+- Every practice route was **driven end-to-end** against the local stack with a
+  real pro bearer token: confirm (focal carried, no storage pointer on the
+  wire), double-confirm refused, owner-scoped list, 401 unauthenticated, all four
+  attach guards, delete. The Prisma layer was separately driven against real
+  Postgres in an isolated shadow DB (10/10 — including the `(bucket, path)`
+  unique index and the SetNull FK).
+- Red-proofed by breaking the code and watching the right test fail: the
+  storage-pointer leak guard, client-asserted pointers, the private-bucket
+  refusal, byte-copying vs sharing, the another-pro 404, already-attached 409,
+  the kill switch, the privacy delete wiring, the custody-scope split, and every
+  centre-button state.
+
+### Not verified — needs Tori's device
+
+The simulator has no camera, and the simulator MCP needs a `sudo xcode-select`
+this session could not run, so the screens below were compiled, unit-tested and
+API-driven but never watched end to end:
+
+- the practice camera actually **shooting** — every frame-path behaviour (coach
+  lane, auto-capture, calibration) in standalone mode,
+- a real practice shot appearing in the library grid with its signed thumbnail
+  (the API was driven with no bytes behind the pointer, so `renderUrl` was null
+  by design — correct degradation, but an un-watched happy path),
+- the attach sheet's two flows against real data,
+- the button flipping back mid-shoot when a session starts.
+
+Fold this into the same real-device pass as the outstanding on-device tune.
 
 ---
 
