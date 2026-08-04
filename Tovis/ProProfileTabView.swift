@@ -27,6 +27,9 @@ struct ProProfileTabView: View {
     }
 
     @State private var phase: Phase = .loading
+    /// Which flag-held Business rows this server actually serves. Starts at
+    /// `.none` and only ever widens from the wire — see `ProCapabilities.none`.
+    @State private var capabilities: ProCapabilities = .none
     @State private var tab: Tab = .portfolio
     @State private var composing = false
     @State private var editing = false
@@ -494,8 +497,19 @@ struct ProProfileTabView: View {
                     businessLink(icon: "checklist", title: "Reminders") { ProRemindersView() }
                     businessLink(icon: "clock", title: "Working hours") { ProWorkingHoursView() }
                     businessLink(icon: "bell.badge", title: "Appointment reminders") { ProReminderSettingsView() }
-                    businessLink(icon: "clock.badge.exclamationmark", title: "No-show fees") { ProNoShowSettingsView() }
-                    businessLink(icon: "square.and.arrow.down", title: "Import from another app") { ProMigrateView() }
+                    // 🔴 Both destinations are complete features held behind a
+                    // server env flag, and their endpoints 404 while it is off.
+                    // Rendering the row unconditionally is what made them dead
+                    // ends ("Coming soon"). Web hides the same two surfaces the
+                    // same way — it just reads the flag in-process. `.none`
+                    // until the wire says otherwise, so a failed/pending load
+                    // hides rather than dead-ends.
+                    if capabilities.noShowFees {
+                        businessLink(icon: "clock.badge.exclamationmark", title: "No-show fees") { ProNoShowSettingsView() }
+                    }
+                    if capabilities.importFromAnotherApp {
+                        businessLink(icon: "square.and.arrow.down", title: "Import from another app") { ProMigrateView() }
+                    }
                 }
             }
 
@@ -573,6 +587,12 @@ struct ProProfileTabView: View {
     // MARK: - Load
 
     private func load() async {
+        // The Business section renders outside `phase`, so the capability read
+        // is its own request — a profile that fails to load must not decide
+        // which rows exist. Started concurrently with the profile so it costs
+        // no extra wall-clock, and consumed after, so it lands either way.
+        async let capabilityRead = try? session.client.proSettings.capabilities()
+
         do {
             let mine = try await session.client.proProfile.myProfile()
             // The public preview doubles as the approval signal: a 404 means the
@@ -594,5 +614,10 @@ struct ProProfileTabView: View {
         } catch {
             phase = .failed("Couldn’t load your profile.")
         }
+
+        // On failure the previous answer stands (initially `.none`), so a
+        // dropped request hides the flag-held rows rather than resurrecting a
+        // dead end, and never flickers a working row away mid-session.
+        if let fresh = await capabilityRead { capabilities = fresh }
     }
 }

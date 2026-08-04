@@ -10,6 +10,17 @@ public final class ProSettingsService: Sendable {
         self.api = api
     }
 
+    // MARK: - Capabilities (never flag-gated — it reports the flags)
+
+    /// GET /api/v1/pro/capabilities → which flag-held pro features this server
+    /// actually serves. Unlike every other call on this service it answers 200
+    /// while the features are off; that is its whole purpose, so a caller can
+    /// hide the entry point instead of navigating into a 404.
+    public func capabilities() async throws -> ProCapabilities {
+        let response: ProCapabilitiesResponse = try await api.request("/pro/capabilities")
+        return response.capabilities
+    }
+
     // MARK: - Appointment reminders (not flag-gated)
 
     /// GET /api/v1/pro/reminder-settings → the cadence + suggested presets.

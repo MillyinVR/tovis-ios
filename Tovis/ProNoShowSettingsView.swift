@@ -122,8 +122,8 @@ struct ProNoShowSettingsView: View {
     private var unavailableState: some View {
         VStack(spacing: 10) {
             Image(systemName: "clock.badge.exclamationmark").font(.system(size: 26)).foregroundStyle(BrandColor.textMuted)
-            Text("Coming soon").font(BrandFont.body(15, .semibold)).foregroundStyle(BrandColor.textPrimary)
-            Text("No-show protection isn't switched on for your account yet.")
+            Text("Not available").font(BrandFont.body(15, .semibold)).foregroundStyle(BrandColor.textPrimary)
+            Text("No-show protection isn't switched on for your account.")
                 .font(BrandFont.body(13)).foregroundStyle(BrandColor.textMuted).multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity).padding(.top, 60)
