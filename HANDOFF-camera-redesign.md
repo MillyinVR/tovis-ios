@@ -697,6 +697,64 @@ AUTO. If it degrades, the new `⚠️ camera:` log line carries AVFoundation's o
 reason string — which is precisely what this crash log lacked — and that names
 the remaining precondition without another round of inference.
 
+#### The camera stack now has ONE isolation story
+
+Tori's Xcode showed ~50 Swift-6 concurrency warnings, half of them in
+`CameraController`. Most were noise, but two were a real unsynchronized
+read/write, and they are exactly the shape of defect that lets a validated
+device parameter go stale before it is applied:
+
+- **`device` was written on `sessionQueue`** (by `configureSession`) **and read
+  on the main actor** — every public method opened with `guard let device else
+  { return }` before dispatching, then captured that non-Sendable
+  `AVCaptureDevice` into the `@Sendable` queue closure. Seven call sites.
+- **`configured` had the same split**, written on the queue and read by
+  `start()`.
+
+Neither *caused* the abort — the crash is AVFoundation's own renegotiation, not
+a Swift data race — but a file that died to "validated at one instant, written
+at another" does not get to be casual about which thread is looking at the
+device. The model is now stated at the top of the class and enforced:
+
+| Home | What lives there |
+| --- | --- |
+| **Main actor** | `status`, `aeAfLocked`, `whiteBalanceCalibrated`, `isRecording`, the callbacks, and `previewLayer` (main-thread UIKit state that was wrongly marked `nonisolated`) |
+| **`sessionQueue`** | every AVFoundation object, `device`, `configured`, the continuations, the metering scalars — `@ObservationIgnored nonisolated(unsafe)`, and never touched from the main actor |
+
+Every `device` read now happens **inside** the queue closure. Main-actor →
+queue crossings go through one explicit `onSessionQueue` helper, so a crossing
+has to be written down rather than happening because a property looked like
+"just a Bool". `frameDelegate` is handed to `configureSession` as an argument
+and stored on the queue instead of parked on the main actor and read from it.
+
+Two side benefits worth naming: the session-queue internals were being tracked
+by `@Observable`, so **every session-queue write was invalidating SwiftUI views
+for state no view reads** — `@ObservationIgnored` stops that. And
+`@preconcurrency import AVFoundation` was deliberately NOT used: it silences the
+whole module's Sendable diagnostics in one line, including the ones worth
+reading. The one genuine unverifiable transfer (handing the coach's frame
+delegate to the queue) goes through a `UncheckedSendableBox` that names the
+invariant instead of hiding it.
+
+**Camera stack: 26 warnings → 0.** Whole app: 48 → 22. Clean build, BUILD
+SUCCEEDED, 1218 TovisKit tests still pass.
+
+⚠️ **This refactor is verified by compilation and reading, not by running the
+camera.** The simulator has no capture device — `preferredCaptureDevice()`
+returns nil there, so `configureSession` bails with "No camera available" and
+none of the device paths execute. It changes threading in `start()` /
+`configureSession`, so it wants a real look on build 39: camera opens, preview
+draws, tap-to-focus works, AE/AF lock works, a clip records.
+
+The remaining 22 warnings are one coherent group — image helpers
+(`FrameMath`, `PhotoQC`, `CardCorrection`, `BeforeShotMeasure`, `ReferenceLook`,
+`CameraLibraryImport`, `ProMediaExport`, `BestShotsReviewView`,
+`ProCapturePhotosView`) whose `static` methods are main-actor-isolated but called
+from background contexts, plus two genuinely cosmetic ones (`LooksGrid`
+nil-coalescing, `ProCalendarTimeGrid` unused var). **None of them touch
+`AVCaptureDevice` or the session queue**, which is where the scope line was
+drawn. Filed as a follow-up.
+
 ### 2026-08-05 — build 37 STILL crashes; the crash log names white balance
 
 > 🔴 **Tori must archive BUILD 38.** Build 37's camera is dead on every

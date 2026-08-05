@@ -413,10 +413,16 @@ final class CoachEngine {
         ])
         analyzer.autoHarvestEnabled = settings.autoHarvest
         analyzer.sink = { [weak self] result in
-            Task { @MainActor in self?.apply(result) }
+            // Bind the weak reference before the Task — referencing the captured
+            // optional from concurrently-executing code is an error under the
+            // Swift 6 language mode. This closure is called from the live-frame
+            // queue, so the crossing is real, not theoretical.
+            guard let self else { return }
+            Task { @MainActor in self.apply(result) }
         }
         analyzer.onHarvest = { [weak self] data, readiness, focalPoint in
-            Task { @MainActor in self?.addHarvest(data, readiness, focalPoint) }
+            guard let self else { return }
+            Task { @MainActor in self.addHarvest(data, readiness, focalPoint) }
         }
         // Feed device roll to both the live horizon UI and the level coach.
         level.onUpdate = { [weak self] roll in

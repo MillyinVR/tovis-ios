@@ -11,6 +11,18 @@ import TovisKit
 
 enum CameraError: Error { case noData, captureInProgress, timedOut }
 
+/// A non-Sendable value being handed across an isolation boundary on purpose.
+///
+/// This exists so such a transfer has to be WRITTEN DOWN. `@preconcurrency
+/// import AVFoundation` would silence the whole module's Sendable diagnostics
+/// in one line — including the ones worth reading — whereas every use of this
+/// box is a single, greppable place where someone claimed an invariant the
+/// compiler cannot check, and had to say what it was.
+struct UncheckedSendableBox<Value>: @unchecked Sendable {
+    let value: Value
+    init(_ value: Value) { self.value = value }
+}
+
 @Observable
 @MainActor
 final class CameraController: NSObject {
@@ -18,18 +30,47 @@ final class CameraController: NSObject {
 
     private(set) var status: Status = .idle
 
-    // The AVFoundation objects are confined to `sessionQueue`. They're marked
-    // nonisolated(unsafe) so the queue closures can touch them without tripping
-    // the project's default-MainActor isolation — the serial queue is the real
-    // guard. `session` is read by CameraPreview (nonisolated → safe to read).
-    nonisolated(unsafe) let session = AVCaptureSession()
-    nonisolated(unsafe) private let photoOutput = AVCapturePhotoOutput()
-    nonisolated(unsafe) private let videoOutput = AVCaptureVideoDataOutput()
+    // ═══════════════════════════════════════════════════════════════════════
+    // THE ISOLATION STORY. There are exactly two homes for state in this
+    // class, and every property below says which one it lives in.
+    //
+    //   • MAIN ACTOR — everything the SwiftUI view observes (`status`,
+    //     `aeAfLocked`, `whiteBalanceCalibrated`, `isRecording`, the callbacks,
+    //     `previewLayer`). Declared plainly, with no isolation attribute.
+    //
+    //   • `sessionQueue` — every AVFoundation object, the active `device`, and
+    //     the bookkeeping the queue closures read. Declared `nonisolated`, and
+    //     **never touched from the main actor**. Where the main actor genuinely
+    //     needs one of these, it hops the queue explicitly via `onSessionQueue`.
+    //
+    // The rule that matters: `device` is read INSIDE `sessionQueue.async`, never
+    // captured into it from the main actor. Build 38 died to a device parameter
+    // that was validated at one instant and written at another, so this file
+    // does not get to be casual about which thread is looking at the device —
+    // and a `guard let device` on the main actor feeding a queue closure is
+    // exactly that casualness, plus a genuine unsynchronized read of a property
+    // `configureSession` writes on the queue.
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// sessionQueue. `session` is also read by `CameraPreview` when it attaches
+    /// the layer — an `AVCaptureSession` reference is safe to hand over; what is
+    /// not safe is configuring it from two places, which is why every mutation
+    /// below goes through the queue.
+    nonisolated let session = AVCaptureSession()
+    /// sessionQueue.
+    nonisolated private let photoOutput = AVCapturePhotoOutput()
+    /// sessionQueue.
+    nonisolated private let videoOutput = AVCaptureVideoDataOutput()
     /// The active capture device — kept so tap-to-focus / AE-AF lock can configure
-    /// its focus + exposure.
-    nonisolated(unsafe) private var device: AVCaptureDevice?
+    /// its focus + exposure. **sessionQueue only.** Written by `configureSession`
+    /// on that queue; reading it from the main actor would be an unsynchronized
+    /// read of a property another thread writes.
+    @ObservationIgnored nonisolated(unsafe) private var device: AVCaptureDevice?
     /// The live preview layer, for converting tap points to device coordinates.
-    nonisolated(unsafe) weak var previewLayer: AVCaptureVideoPreviewLayer?
+    /// **Main actor only** — it is created by `CameraPreview.makeUIView` on the
+    /// main thread and every read (`focus(atLayerPoint:)`, the framing overlay)
+    /// is a main-thread UIKit read. It was never session-queue state.
+    @ObservationIgnored weak var previewLayer: AVCaptureVideoPreviewLayer?
     /// Whether focus + exposure are currently locked (AE/AF lock).
     private(set) var aeAfLocked = false
     /// Whether white balance is locked to a calibrated (gray-card) value.
@@ -42,16 +83,22 @@ final class CameraController: NSObject {
     /// re-applying poison on every launch. See `applyWhiteBalanceGains`.
     var onWhiteBalanceUnusable: (() -> Void)?
     /// Records silent video clips (NO mic input — we never capture salon audio).
-    nonisolated(unsafe) private let movieOutput = AVCaptureMovieFileOutput()
-    nonisolated(unsafe) private var configured = false
-    nonisolated(unsafe) private var captureContinuation: CheckedContinuation<Data, Error>?
+    /// sessionQueue.
+    nonisolated private let movieOutput = AVCaptureMovieFileOutput()
+    /// sessionQueue — the single source of truth for "inputs and outputs are
+    /// attached". `start()` asks the queue for it rather than keeping a main-actor
+    /// mirror, so there is one answer and it is never read while being written.
+    @ObservationIgnored nonisolated(unsafe) private var configured = false
+    /// sessionQueue.
+    @ObservationIgnored nonisolated(unsafe) private var captureContinuation: CheckedContinuation<Data, Error>?
     /// Bumped per capture so a stale watchdog for a finished shot can't resolve a
     /// newer capture that has since reused the continuation slot. sessionQueue.
-    nonisolated(unsafe) private var captureToken = 0
+    @ObservationIgnored nonisolated(unsafe) private var captureToken = 0
     /// Longest we wait on a still's delegate callback before failing the awaiting
     /// continuation, so a capture the system silently drops can't strand the
     /// shutter (and leave `uploading` gating the whole UI shut) forever.
-    private static let captureWatchdog: TimeInterval = 10
+    /// Read from the session queue's watchdog, so `nonisolated`.
+    nonisolated private static let captureWatchdog: TimeInterval = 10
     /// Longest single clip. A product number, not a measurement: a salon clip
     /// that earns its place is a few seconds of movement, and everything
     /// downstream (colour re-export, temp file, upload) scales with length.
@@ -59,22 +106,39 @@ final class CameraController: NSObject {
     /// `.photo` preset and are deliberately left alone until the device pass
     /// measures what they actually are (`docs/design/camera-excellence-plan.md`
     /// §3.6) — changing the codec blind would risk web playback.
-    static let maxClipSeconds: Double = 60
-    nonisolated(unsafe) private var recordContinuation: CheckedContinuation<URL, Error>?
+    nonisolated static let maxClipSeconds: Double = 60
+    /// sessionQueue.
+    @ObservationIgnored nonisolated(unsafe) private var recordContinuation: CheckedContinuation<URL, Error>?
     /// Whether the session could add the movie output (false → recording hidden).
     private(set) var recordingAvailable = false
     private(set) var isRecording = false
-    /// Live-frame delegate for the on-device coach (set before `start`). Weak —
-    /// the CoachEngine owns it.
-    nonisolated(unsafe) weak var frameDelegate: AVCaptureVideoDataOutputSampleBufferDelegate?
+    /// Live-frame delegate for the on-device coach. **sessionQueue only** — it is
+    /// handed to `configureSession` as an argument rather than parked on the main
+    /// actor and read from the queue, which is what it used to be. Weak: the
+    /// CoachEngine owns it.
+    @ObservationIgnored nonisolated(unsafe) private weak var frameDelegate: AVCaptureVideoDataOutputSampleBufferDelegate?
     /// Notification tokens (subject-area change + session interruption), removed
-    /// on deinit.
-    nonisolated(unsafe) private var observers: [any NSObjectProtocol] = []
+    /// on deinit. sessionQueue (+ deinit).
+    @ObservationIgnored nonisolated(unsafe) private var observers: [any NSObjectProtocol] = []
     private let sessionQueue = DispatchQueue(label: "tovis.camera.session")
     private let frameQueue = DispatchQueue(label: "tovis.camera.frames")
 
     deinit {
         observers.forEach(NotificationCenter.default.removeObserver)
+    }
+
+    /// Read (or do) something on the session queue from the main actor, and wait
+    /// for the answer.
+    ///
+    /// The point is that every main-actor → session-queue crossing in this file
+    /// is spelled out at the call site. State that lives on the queue is never
+    /// read directly from the main actor "because it's just a Bool" — that is
+    /// how `device` and `configured` came to be written on one thread and read
+    /// on another.
+    private func onSessionQueue<T: Sendable>(_ body: @escaping @Sendable () -> T) async -> T {
+        await withCheckedContinuation { (cont: CheckedContinuation<T, Never>) in
+            sessionQueue.async { cont.resume(returning: body()) }
+        }
     }
 
     /// Make every caught AVFoundation exception visible.
@@ -94,17 +158,19 @@ final class CameraController: NSObject {
     /// Request permission, configure once, and start the preview. Idempotent.
     /// Pass `frameDelegate` to feed the on-device coach the live frames.
     func start(frameDelegate: AVCaptureVideoDataOutputSampleBufferDelegate? = nil) async {
-        if let frameDelegate { self.frameDelegate = frameDelegate }
         Self.installExceptionLogging()
         guard await Self.ensureAuthorized() else { status = .denied; return }
 
-        if !configured {
+        // `configured` lives on the session queue, so ASK the queue rather than
+        // reading it from here. The read used to race `configureSession`'s write
+        // of the same property on that queue.
+        let alreadyConfigured = await onSessionQueue { self.configured }
+        if !alreadyConfigured {
             status = .configuring
-            if let failure = await configureSession() {
+            if let failure = await configureSession(frameDelegate: frameDelegate) {
                 status = .failed(failure)
                 return
             }
-            configured = true
         }
 
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
@@ -216,14 +282,17 @@ final class CameraController: NSObject {
     /// continuous AF/AE once the scene moves on, so a tap doesn't pin focus for
     /// the rest of the shoot.
     func focus(atLayerPoint layerPoint: CGPoint) {
-        guard let device, let layer = previewLayer else { return }
+        // The layer conversion is main-actor work (it reads UIKit geometry), so
+        // it happens here; the DEVICE is read on the queue that owns it.
+        guard let layer = previewLayer else { return }
         // A preview layer that hasn't been laid out yet has zero bounds, and the
         // conversion then divides by it — a NaN point of interest is an ObjC
         // exception on the write, not a missed tap.
         guard let point = DeviceParameterGuard.unitPoint(
             layer.captureDevicePointConverted(fromLayerPoint: layerPoint)) else { return }
         sessionQueue.async {
-            guard (try? device.lockForConfiguration()) != nil else { return }
+            guard let device = self.device,
+                  (try? device.lockForConfiguration()) != nil else { return }
             // Unlock is AFTER the shielded block, never a `defer` inside it —
             // an ObjC unwind runs no Swift cleanup. See CaptureDeviceShielding.
             CaptureExceptionShield.settings("focus(atLayerPoint:)") {
@@ -263,16 +332,16 @@ final class CameraController: NSObject {
     /// A user tap-to-focus meter is in play (until the scene moves on) — face
     /// metering stands down so it doesn't fight the pro's explicit intent.
     /// sessionQueue-confined.
-    nonisolated(unsafe) private var userMeteringActive = false
+    @ObservationIgnored nonisolated(unsafe) private var userMeteringActive = false
     /// Last face point we metered at (device space), to rate-limit updates.
-    nonisolated(unsafe) private var lastFaceExposurePoint: CGPoint?
+    @ObservationIgnored nonisolated(unsafe) private var lastFaceExposurePoint: CGPoint?
     /// Whether a face is currently driving the meter (the no-face fallback
     /// point is dead center, so the point alone can't tell). sessionQueue-confined.
-    nonisolated(unsafe) private var faceMeteringActive = false
+    @ObservationIgnored nonisolated(unsafe) private var faceMeteringActive = false
     /// Card-anchored exposure: EV bias from the calibration card's neutral band
     /// ("this gray must render at reference luma in THIS room's light").
     /// Composes with the face-metering highlight bias. sessionQueue-confined.
-    nonisolated(unsafe) private var calibrationBiasEV: Float = 0
+    @ObservationIgnored nonisolated(unsafe) private var calibrationBiasEV: Float = 0
 
     /// Continuously meter exposure for the subject's face — what a photographer
     /// does by default, and what silently fixes "too dark" / "backlit" instead
@@ -281,9 +350,9 @@ final class CameraController: NSObject {
     /// Stands down while AE/AF is locked or a tap-to-focus meter is active.
     /// Fed by the coach's per-frame face detection (already running).
     func setFaceExposure(center: CGPoint?) {
-        guard let device else { return }
         sessionQueue.async {
-            guard !self.userMeteringActive,
+            guard let device = self.device,
+                  !self.userMeteringActive,
                   device.exposureMode != .locked,
                   device.isExposurePointOfInterestSupported else { return }
             // Upright top-left (x, y) → device space (sensor landscape-right,
@@ -323,8 +392,8 @@ final class CameraController: NSObject {
     /// band renders at its reference luma in this room's light. Applied
     /// immediately and folded into every subsequent face-metering update.
     func setCalibrationExposureBias(_ ev: Float) {
-        guard let device else { return }
         sessionQueue.async {
+            guard let device = self.device else { return }
             // Sanitize at the STORE, not just the write: a NaN parked here would
             // go on poisoning the bias of every later face-metering update.
             self.calibrationBiasEV = ev.isFinite ? ev : 0
@@ -345,9 +414,9 @@ final class CameraController: NSObject {
     /// Lock (or release) focus + exposure so the camera stops re-metering as hands
     /// and product move through the frame — the pro's "set it and shoot" control.
     func setAEAFLock(_ locked: Bool) {
-        guard let device else { return }
         sessionQueue.async {
-            guard (try? device.lockForConfiguration()) != nil else { return }
+            guard let device = self.device,
+                  (try? device.lockForConfiguration()) != nil else { return }
             CaptureExceptionShield.settings("setAEAFLock") {
                 if locked {
                     if device.isFocusModeSupported(.locked) { device.focusMode = .locked }
@@ -372,8 +441,8 @@ final class CameraController: NSObject {
     /// true, consistent color for the profile / Looks feed. `sample` is the average
     /// linear-ish RGB (0…1) of the neutral patch.
     func lockWhiteBalance(sampleR: Double, sampleG: Double, sampleB: Double) {
-        guard let device else { return }
         sessionQueue.async {
+            guard let device = self.device else { return }
             // The neutralizing solve needs the device's CURRENT gains and max,
             // and both are only trustworthy inside the same still window that
             // holds the write — see `applyWhiteBalanceGains` for why.
@@ -409,8 +478,8 @@ final class CameraController: NSObject {
     /// the write itself is caught, so a raise degrades to automatic white
     /// balance instead of `SIGABRT`.
     func applyWhiteBalanceGains(r: Double, g: Double, b: Double) {
-        guard let device else { return }
         sessionQueue.async {
+            guard let device = self.device else { return }
             self.withSettledFormat {
                 let outcome = GuardedWhiteBalance.apply(r: r, g: g, b: b, to: device)
                 self.handle(outcome, source: "applyWhiteBalanceGains", persist: false)
@@ -487,9 +556,9 @@ final class CameraController: NSObject {
     /// Back to automatic white balance (drop the calibration — including any
     /// card-anchored exposure bias).
     func resetWhiteBalance() {
-        guard let device else { return }
         sessionQueue.async {
-            guard (try? device.lockForConfiguration()) != nil else { return }
+            guard let device = self.device,
+                  (try? device.lockForConfiguration()) != nil else { return }
             self.calibrationBiasEV = 0
             let faceBias: Float = self.faceMeteringActive ? CoachTuning.faceExposureBias : 0
             CaptureExceptionShield.settings("resetWhiteBalance") {
@@ -571,7 +640,8 @@ final class CameraController: NSObject {
     /// Stills bigger than this balloon every downstream decode/upload (QC, card
     /// correction, strip thumbnails) with no visible gain on the feed or the
     /// profile — the transients that piled into the jetsam kills.
-    private static let photoPixelCap = 24_500_000
+    /// Read by `maxPhotoDimensions`, which runs on the session queue.
+    nonisolated private static let photoPixelCap = 24_500_000
 
     /// The largest still size at/under the cap that a format ACTUALLY OFFERS,
     /// else the smallest it offers. Nil when it offers nothing.
@@ -713,9 +783,24 @@ final class CameraController: NSObject {
 
     /// Configure inputs/outputs on the session queue. Returns an error message
     /// on failure, nil on success.
-    private func configureSession() async -> String? {
-        await withCheckedContinuation { (cont: CheckedContinuation<String?, Never>) in
+    private func configureSession(
+        frameDelegate: AVCaptureVideoDataOutputSampleBufferDelegate?
+    ) async -> String? {
+        // Handing the coach's frame delegate to the session queue is a genuine
+        // non-Sendable transfer that the type system cannot verify, so it is
+        // named here rather than hidden behind `@preconcurrency import`.
+        //
+        // Why it is sound: this reference is only ever STORED. It is never
+        // called from this queue. `setSampleBufferDelegate(_:queue:)` below is
+        // told to deliver every buffer on `frameQueue`, so the delegate's own
+        // code runs on exactly one queue for the life of the session — which is
+        // the invariant `CoachAnalyzer` is written against.
+        let delegateBox = UncheckedSendableBox(frameDelegate)
+        return await withCheckedContinuation { (cont: CheckedContinuation<String?, Never>) in
             sessionQueue.async {
+                // The delegate is STORED here, on the queue that owns it, rather
+                // than assigned on the main actor and read from here.
+                if let frameDelegate = delegateBox.value { self.frameDelegate = frameDelegate }
                 CaptureExceptionShield.perform("beginConfiguration") {
                     self.session.beginConfiguration()
                 }
@@ -792,6 +877,9 @@ final class CameraController: NSObject {
 
                 self.registerObservers(device: device)
                 self.commitConfigurationShielded()
+                // Owned by this queue, set on this queue — `start()` asks for it
+                // through `onSessionQueue` rather than reading it from the main actor.
+                self.configured = true
 
                 // ⚠️ EVERYTHING THAT READS `activeFormat` HAPPENS HERE, AFTER
                 // THE COMMIT — never in the pass above.
@@ -838,8 +926,12 @@ final class CameraController: NSObject {
             forName: AVCaptureSession.wasInterruptedNotification,
             object: session, queue: nil
         ) { [weak self] _ in
+            // Bind the weak reference HERE, not inside the Task — referencing the
+            // captured optional from concurrently-executing code is an error under
+            // the Swift 6 language mode.
+            guard let self else { return }
             Task { @MainActor in
-                guard let self, self.status == .ready else { return }
+                guard self.status == .ready else { return }
                 self.status = .interrupted
             }
         })
