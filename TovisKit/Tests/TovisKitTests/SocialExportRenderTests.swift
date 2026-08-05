@@ -295,32 +295,41 @@ private func mark(_ shows: Bool, signature: String? = "@tori") -> ExportWatermar
     }
 }
 
-@Suite struct SocialExportOriginalBytesTests {
-    /// A JPEG carrying EXIF a pro would miss — the capture date and a portrait
-    /// orientation tag (the one the web gallery reads).
-    static func jpegWithExif() -> Data {
-        let image = flatImage(width: 400, height: 300)
-        let data = NSMutableData()
-        let destination = CGImageDestinationCreateWithData(
-            data as CFMutableData, "public.jpeg" as CFString, 1, nil
-        )!
-        CGImageDestinationAddImage(destination, image, [
-            kCGImagePropertyOrientation: 6,  // rotated 90° — portrait shot
-            kCGImagePropertyExifDictionary: [
-                kCGImagePropertyExifDateTimeOriginal: "2026:08:05 11:30:00",
-            ],
-        ] as CFDictionary)
-        CGImageDestinationFinalize(destination)
-        return data as Data
-    }
+/// A JPEG carrying EXIF a pro would miss — the capture date and a portrait
+/// orientation tag (the one the web gallery reads). Built deterministically so the
+/// stub below can serve it without anyone having to set it first.
+private func jpegWithExif() -> Data {
+    let image = flatImage(width: 400, height: 300)
+    let data = NSMutableData()
+    let destination = CGImageDestinationCreateWithData(
+        data as CFMutableData, "public.jpeg" as CFString, 1, nil
+    )!
+    CGImageDestinationAddImage(destination, image, [
+        kCGImagePropertyOrientation: 6,  // rotated 90° — portrait shot
+        kCGImagePropertyExifDictionary: [
+            kCGImagePropertyExifDateTimeOriginal: "2026:08:05 11:30:00",
+        ],
+    ] as CFDictionary)
+    CGImageDestinationFinalize(destination)
+    return data as Data
+}
 
-    static func exifDate(_ data: Data) -> String? {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-              let exif = props[kCGImagePropertyExifDictionary] as? [CFString: Any]
-        else { return nil }
-        return exif[kCGImagePropertyExifDateTimeOriginal] as? String
-    }
+private func exifDate(_ data: Data) -> String? {
+    guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+          let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+          let exif = props[kCGImagePropertyExifDictionary] as? [CFString: Any]
+    else { return nil }
+    return exif[kCGImagePropertyExifDateTimeOriginal] as? String
+}
+
+/// A session wired to the stub at the bottom of this file.
+private func stubbedSession() -> URLSession {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [OriginalBytesURLProtocol.self]
+    return URLSession(configuration: configuration)
+}
+
+@Suite struct SocialExportOriginalBytesTests {
 
     // 🔴 The save path's whole promise. `OriginalMediaBytes.fetch` must hand back
     // the file it was served, byte for byte — anything that decodes and re-encodes
@@ -328,27 +337,21 @@ private func mark(_ shows: Bool, signature: String? = "@tori") -> ExportWatermar
     // colour profile from the pro's own archive, and the photo still looks fine, so
     // nobody would notice for months.
     @Test func fetchingAnOriginalChangesNotOneByte() async throws {
-        let original = Self.jpegWithExif()
-        #expect(Self.exifDate(original) == "2026:08:05 11:30:00")
-
-        OriginalBytesURLProtocol.body = original
-        OriginalBytesURLProtocol.status = 200
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [OriginalBytesURLProtocol.self]
+        let original = jpegWithExif()
+        #expect(exifDate(original) == "2026:08:05 11:30:00")
 
         let fetched = try await OriginalMediaBytes.fetch(
-            URL(string: "https://example.test/original.jpg")!,
-            using: URLSession(configuration: configuration)
+            OriginalBytesURLProtocol.okURL, using: stubbedSession()
         )
         #expect(fetched == original)
-        #expect(Self.exifDate(fetched) == "2026:08:05 11:30:00")
+        #expect(exifDate(fetched) == "2026:08:05 11:30:00")
     }
 
     // ...and the contrast that makes the rule worth stating: an EXPORT is a new
     // photograph and carries none of it. Which is exactly why a save must never be
     // routed through the renderer.
     @Test func anExportIsANewFileAndKeepsNoneOfTheOriginalSExif() throws {
-        let original = Self.jpegWithExif()
+        let original = jpegWithExif()
         let upright = try #require(UprightImageDecode.cgImage(from: original, maxPixel: 2400))
         let plan = SocialExportPlanner.plan(
             format: .instagram45,
@@ -359,7 +362,7 @@ private func mark(_ shows: Bool, signature: String? = "@tori") -> ExportWatermar
         let exported = try SocialExportRenderer.render(
             plan: plan, images: [upright], watermark: mark(true)
         )
-        #expect(Self.exifDate(exported) == nil)
+        #expect(exifDate(exported) == nil)
         #expect(exported != original)
     }
 
@@ -369,41 +372,43 @@ private func mark(_ shows: Bool, signature: String? = "@tori") -> ExportWatermar
     // orientation 6, so upright it is 300×400.
     @Test func theDecodeUsedForExportsAppliesExifOrientation() throws {
         let upright = try #require(
-            UprightImageDecode.cgImage(from: Self.jpegWithExif(), maxPixel: 2400)
+            UprightImageDecode.cgImage(from: jpegWithExif(), maxPixel: 2400)
         )
         #expect(upright.width == 300)
         #expect(upright.height == 400)
     }
 
     @Test func aFailedFetchIsAnErrorRatherThanEmptyBytesSavedAsAPhoto() async {
-        OriginalBytesURLProtocol.body = Data()
-        OriginalBytesURLProtocol.status = 403
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [OriginalBytesURLProtocol.self]
-        let session = URLSession(configuration: configuration)
-
         await #expect(throws: OriginalMediaBytesError.http(status: 403)) {
             try await OriginalMediaBytes.fetch(
-                URL(string: "https://example.test/gone.jpg")!, using: session
+                OriginalBytesURLProtocol.forbiddenURL, using: stubbedSession()
             )
         }
     }
 }
 
-/// Serves canned bytes. Same URLProtocol pattern as the service tests.
+/// Serves canned bytes, keyed on the URL it was asked for.
+///
+/// 🔴 No mutable statics, deliberately. The first version had `body`/`status`
+/// class vars that each test set before its own fetch. That passed locally and went
+/// RED in CI, because swift-testing runs tests in PARALLEL and the 403 case
+/// clobbered the byte-identity case while its request was in flight. A stub that
+/// answers from the request cannot be raced.
 final class OriginalBytesURLProtocol: URLProtocol {
-    nonisolated(unsafe) static var body = Data()
-    nonisolated(unsafe) static var status = 200
+    static let okURL = URL(string: "https://example.test/original.jpg")!
+    static let forbiddenURL = URL(string: "https://example.test/gone.jpg")!
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
+        let forbidden = request.url == Self.forbiddenURL
         let response = HTTPURLResponse(
-            url: request.url!, statusCode: Self.status, httpVersion: nil, headerFields: nil
+            url: request.url!, statusCode: forbidden ? 403 : 200,
+            httpVersion: nil, headerFields: nil
         )!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Self.body)
+        client?.urlProtocol(self, didLoad: forbidden ? Data() : jpegWithExif())
         client?.urlProtocolDidFinishLoading(self)
     }
 
