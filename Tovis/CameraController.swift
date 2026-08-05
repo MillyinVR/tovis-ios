@@ -48,6 +48,14 @@ final class CameraController: NSObject {
     /// continuation, so a capture the system silently drops can't strand the
     /// shutter (and leave `uploading` gating the whole UI shut) forever.
     private static let captureWatchdog: TimeInterval = 10
+    /// Longest single clip. A product number, not a measurement: a salon clip
+    /// that earns its place is a few seconds of movement, and everything
+    /// downstream (colour re-export, temp file, upload) scales with length.
+    /// The clip's RESOLUTION, frame rate and codec are still inherited from the
+    /// `.photo` preset and are deliberately left alone until the device pass
+    /// measures what they actually are (`docs/design/camera-excellence-plan.md`
+    /// §3.6) — changing the codec blind would risk web playback.
+    static let maxClipSeconds: Double = 60
     nonisolated(unsafe) private var recordContinuation: CheckedContinuation<URL, Error>?
     /// Whether the session could add the movie output (false → recording hidden).
     private(set) var recordingAvailable = false
@@ -371,11 +379,24 @@ final class CameraController: NSObject {
         isRecording = true
         sessionQueue.async {
             guard self.session.isRunning, !self.movieOutput.isRecording else { return }
-            // Upright portrait orientation (iOS 17 rotation API).
-            if let conn = self.movieOutput.connection(with: .video),
-               conn.isVideoRotationAngleSupported(90) {
-                conn.videoRotationAngle = 90
+            if let conn = self.movieOutput.connection(with: .video) {
+                // Upright portrait orientation (iOS 17 rotation API).
+                if conn.isVideoRotationAngleSupported(90) {
+                    conn.videoRotationAngle = 90
+                }
+                // Stabilize. This was never set, so it defaulted to OFF and
+                // every handheld salon clip shipped shaky — in a room where the
+                // pro is holding the phone one-handed over a client. `.auto`
+                // lets the device pick the strongest mode its format supports.
+                if conn.isVideoStabilizationSupported {
+                    conn.preferredVideoStabilizationMode = .auto
+                }
             }
+            // Cap the take. With no cap, a long clip means a long card-correction
+            // re-export (per-frame CIColorMatrix at highest quality), a large temp
+            // file and a large upload — on a phone that is also running the coach.
+            self.movieOutput.maxRecordedDuration = CMTime(
+                seconds: Self.maxClipSeconds, preferredTimescale: 600)
             let url = FileManager.default.temporaryDirectory
                 .appendingPathComponent("tovis-clip-\(UUID().uuidString).mov")
             self.movieOutput.startRecording(to: url, recordingDelegate: self)
@@ -408,6 +429,77 @@ final class CameraController: NSObject {
         return dims.last(where: { Int($0.width) * Int($0.height) <= 24_500_000 }) ?? dims.first
     }
 
+    // MARK: - Device selection
+
+    /// The back camera to shoot with, best first.
+    ///
+    /// The session used to take `builtInWideAngleCamera` only, which meant no
+    /// macro auto-switch, no ultra-wide and no zoom anywhere in the stack — and
+    /// the nails guide asked for "macro on one nail", a shot that physically
+    /// cannot focus on a wide-angle-only device. A VIRTUAL device (triple /
+    /// dual-wide / dual) is one input that auto-switches between its
+    /// constituents, so close focus and zoom become available without the app
+    /// managing lenses. The single wide camera stays the last resort.
+    nonisolated static func preferredCaptureDevice() -> AVCaptureDevice? {
+        let preferred: [AVCaptureDevice.DeviceType] = [
+            .builtInTripleCamera,     // ultra-wide + wide + tele — macro auto-switch
+            .builtInDualWideCamera,   // ultra-wide + wide — macro auto-switch
+            .builtInDualCamera,       // wide + tele
+            .builtInWideAngleCamera,
+        ]
+        for type in preferred {
+            if let device = AVCaptureDevice.default(type, for: .video, position: .back) {
+                return device
+            }
+        }
+        return AVCaptureDevice.default(for: .video)
+    }
+
+    /// The zoom factor that parks a virtual device on its WIDE-ANGLE
+    /// constituent, i.e. reproduces exactly the framing the single wide camera
+    /// gave before the switch to a virtual device.
+    ///
+    /// This matters and is easy to get wrong: on a triple camera, zoom factor
+    /// 1.0 is the ULTRA-WIDE. Adopting the virtual device without this would
+    /// silently make every shot in the app 0.5×, which is a far bigger visible
+    /// change than the capability it was adopted for.
+    ///
+    /// `switchOverFactors` (`virtualDeviceSwitchOverVideoZoomFactors`) has one
+    /// entry per boundary between consecutive constituents, widest first — so
+    /// the factor that first selects constituent `k` is entry `k − 1`.
+    nonisolated static func wideAngleZoomFactor(
+        wideIndex: Int, switchOverFactors: [CGFloat]
+    ) -> CGFloat {
+        guard wideIndex > 0 else { return 1.0 }   // already the widest constituent
+        guard wideIndex - 1 < switchOverFactors.count else { return 1.0 }
+        let factor = switchOverFactors[wideIndex - 1]
+        return factor > 0 ? factor : 1.0
+    }
+
+    /// Park a virtual device on its wide-angle constituent so adopting one
+    /// doesn't change the default framing of every shot in the app.
+    nonisolated private static func matchWideAngleFraming(_ device: AVCaptureDevice) {
+        let constituents = device.constituentDevices
+        guard !constituents.isEmpty,
+              let wideIndex = constituents.firstIndex(where: { $0.deviceType == .builtInWideAngleCamera })
+        else { return }
+        let factor = wideAngleZoomFactor(
+            wideIndex: wideIndex,
+            switchOverFactors: device.virtualDeviceSwitchOverVideoZoomFactors.map { CGFloat(truncating: $0) })
+        guard factor > 1.0, (try? device.lockForConfiguration()) != nil else { return }
+        device.videoZoomFactor = min(max(factor, device.minAvailableVideoZoomFactor),
+                                     device.maxAvailableVideoZoomFactor)
+        device.unlockForConfiguration()
+    }
+
+    /// sRGB, explicitly — see the session-level note in `configureSession`.
+    nonisolated private static func pinColorSpace(_ device: AVCaptureDevice) {
+        guard device.activeFormat.supportedColorSpaces.contains(.sRGB),
+              (try? device.lockForConfiguration()) != nil else { return }
+        device.activeColorSpace = .sRGB
+        device.unlockForConfiguration()
+    }
+
     private static func ensureAuthorized() async -> Bool {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized: return true
@@ -423,10 +515,18 @@ final class CameraController: NSObject {
             sessionQueue.async {
                 self.session.beginConfiguration()
                 self.session.sessionPreset = .photo
+                // Pin the capture colour space. Left to its default, the
+                // session auto-configures wide colour, so captures ship tagged
+                // Display P3 — while `CardCorrection.applySync` re-encodes
+                // explicitly to sRGB. Whether a card had been scanned therefore
+                // changed the colour space of the shipped JPEG, WITHIN one
+                // shoot if the pro scanned mid-session. sRGB for both: it is
+                // what the correction path already produces and what the feed
+                // and every social platform assume.
+                self.session.automaticallyConfiguresCaptureDeviceForWideColor = false
 
                 guard
-                    let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
-                        ?? AVCaptureDevice.default(for: .video),
+                    let device = Self.preferredCaptureDevice(),
                     let input = try? AVCaptureDeviceInput(device: device),
                     self.session.canAddInput(input)
                 else {
@@ -436,6 +536,8 @@ final class CameraController: NSObject {
                 }
                 self.session.addInput(input)
                 self.device = device
+                Self.pinColorSpace(device)
+                Self.matchWideAngleFraming(device)
 
                 guard self.session.canAddOutput(self.photoOutput) else {
                     self.session.commitConfiguration()

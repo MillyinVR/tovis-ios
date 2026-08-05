@@ -22,6 +22,12 @@ struct ReferenceLook {
     /// Reference light target (same scales the live coach reads).
     let luma: Double
     let warmth: Double
+    /// The same light measured on the reference's segmented BACKGROUND — what
+    /// the live matcher prefers to compare against, so recreating a look isn't
+    /// judged on how bright the subject's own hair or top happens to be.
+    /// Nil when the reference had no segmentable person.
+    var backgroundLuma: Double? = nil
+    var backgroundWarmth: Double? = nil
     /// One-step directed guide carrying the synthesized brief.
     let guide: ShotGuide
     /// Claude's one-line read of the look (Phase D AI enhance; nil = measured only).
@@ -69,20 +75,27 @@ enum ReferenceLookAnalyzer {
         let pose = VisionDetect.poseSignal(performing: handler())
 
         var fill: Double?
+        var backgroundLuma: Double?
+        var backgroundWarmth: Double?
         let segRequest = VNGeneratePersonSegmentationRequest()
         segRequest.qualityLevel = .balanced
         segRequest.outputPixelFormat = kCVPixelFormatType_OneComponent8
         try? handler().perform([segRequest])
         if let maskBuffer = segRequest.results?.first?.pixelBuffer,
-           let seg = FrameMath.segmentation(maskBuffer: maskBuffer, working: working,
-                                            context: context) {
+           let seg = FrameMath.segmentSignals(maskBuffer: maskBuffer, working: working,
+                                              cropGuide: nil, context: context) {
             fill = seg.subjectFill
+            backgroundLuma = seg.backgroundLuma
+            backgroundWarmth = FrameMath.backgroundAverageRGB(
+                working, background: seg.background, context: context
+            ).map { FrameMath.warmth($0.rgb) }
         }
 
         let eyesClosed = face != nil && PhotoQC.eyesClosedRead(in: working)
         let step = brief(face: face, pose: pose, fill: fill, aspect: aspect,
                          eyesClosed: eyesClosed)
         return ReferenceLook(image: uiImage, luma: luma, warmth: warmth,
+                             backgroundLuma: backgroundLuma, backgroundWarmth: backgroundWarmth,
                              guide: ShotGuide(name: "Match the look", steps: [step]))
     }
 
@@ -146,12 +159,11 @@ enum ReferenceLookAnalyzer {
         let isDetail = face == nil && pose == nil
         let faceExpectation: ShotExpectations.Face =
             face != nil ? .required : (pose != nil ? .absent : .either)
-        var band: ClosedRange<Double>?
-        if !isDetail, let fill, fill > 0.02 {
-            let lower = max(0.05, fill - 0.12)
-            let upper = min(0.98, fill + 0.12)
-            if lower < upper { band = lower...upper }
-        }
+        // Same derivation the booking's own before shot uses — one definition of
+        // "framed like its reference", so the two can never disagree.
+        let band: ClosedRange<Double>? = isDetail
+            ? nil
+            : fill.flatMap { BeforeShotMeasure.fillBand(matching: $0) }
 
         return ShotStep("Reference look", "Line them up with the ghosted reference",
                         icon: "photo.fill",

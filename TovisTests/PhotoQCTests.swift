@@ -40,11 +40,11 @@ import TovisKit
 
     @Test func reportPassedReflectsRetakeReason() {
         let ok = PhotoQCReport(retakeReason: nil, sharpness: 0.5, luma: 0.5,
-                               eyesClosed: false, focalPoint: nil)
+                               faceLuma: nil, eyesClosed: false, focalPoint: nil)
         #expect(ok.passed)
 
         let bad = PhotoQCReport(retakeReason: "It came out too dark", sharpness: 0.5,
-                                luma: 0.05, eyesClosed: false, focalPoint: nil)
+                                luma: 0.05, faceLuma: nil, eyesClosed: false, focalPoint: nil)
         #expect(!bad.passed)
     }
 

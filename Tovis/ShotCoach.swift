@@ -7,6 +7,7 @@
 // carries pre-computed signals so coaches don't each re-scan, and every perception
 // threshold lives in `CoachTuning` (one file to adjust during device tuning).
 import CoreGraphics
+import Foundation   // TimeInterval — the tip arbiter's dwell clock
 
 enum CoachCategory: String, Sendable {
     case lighting, composition, sharpness, background, pose, level, color
@@ -33,6 +34,17 @@ enum CoachCategory: String, Sendable {
 struct CoachSignal: Sendable {
     let score: Double
     let message: String?
+    /// WHY the tip is worth acting on, in a photographer's terms. The message
+    /// is an imperative ("Move in closer"); this is the sentence a photographer
+    /// would add after it, surfaced in the dimensions drawer. Nil where the
+    /// message speaks for itself — or where there is no message at all.
+    let why: String?
+
+    init(score: Double, message: String?, why: String? = nil) {
+        self.score = score
+        self.message = message
+        self.why = why
+    }
 }
 
 /// A prioritized tip surfaced to the pro (chip / voice).
@@ -47,7 +59,17 @@ struct CoachStatus: Sendable, Equatable, Identifiable {
     let score: Double
     /// The corrective tip, if this fundamental needs attention right now.
     let message: String?
+    /// Why that tip matters — shown under it in the dimensions drawer, which is
+    /// the one surface the pro opened on purpose to ask "why won't it go green?"
+    let why: String?
     var id: String { category.rawValue }
+
+    init(category: CoachCategory, score: Double, message: String?, why: String? = nil) {
+        self.category = category
+        self.score = score
+        self.message = message
+        self.why = why
+    }
 }
 
 /// The aggregated result for one analyzed frame.
@@ -62,10 +84,19 @@ struct CoachResult: Sendable {
     /// Face center (upright, top-left normalized) — drives face-priority
     /// exposure metering. Nil when no face is in frame.
     let faceCenter: CGPoint?
-    /// Whole-frame luma + warmth of this frame — the live side of the
-    /// before/after light matcher (compared against the before's stamp).
+    /// Whole-frame luma of this frame.
     let frameLuma: Double
+    /// Warmth of this frame's LIGHT — measured on the segmented background when
+    /// there is one (see `ColorSignal`), so a client's warm top doesn't read as
+    /// a warm room. Also what the calibration-drift watcher compares.
     let frameWarmth: Double?
+    /// Luma of the segmented background. The before/after light matcher prefers
+    /// this pair (`frameBackgroundLuma` + `frameWarmth`) over the whole frame:
+    /// a dark-to-blonde colour service legitimately changes whole-frame luma —
+    /// that IS the work — and the matcher used to call it a light mismatch.
+    let frameBackgroundLuma: Double?
+    /// The dimension that just stopped complaining, on the one frame it does.
+    let cleared: CoachCategory?
     /// Raw perception values for the DEBUG tuning console. Nil unless the
     /// console is open (`CoachDebug.captureSignals`) — zero cost otherwise.
     let debug: [DebugSignal]?
@@ -138,6 +169,18 @@ struct ColorSignal: Sendable {
     let greenTint: Double
     /// Global warmth, signed (+warm/yellow / −cool/blue). Strong + = warm bulbs.
     let warmth: Double
+    /// True when all three were measured on the segmented BACKGROUND only — the
+    /// colour OF THE LIGHT rather than of the client's top. False when no person
+    /// was segmented, in which case the whole frame IS the background (a flat-lay
+    /// or a detail shot) and standing in for it is correct, not a fallback.
+    let backgroundScoped: Bool
+
+    init(mixed: Double, greenTint: Double, warmth: Double, backgroundScoped: Bool = false) {
+        self.mixed = mixed
+        self.greenTint = greenTint
+        self.warmth = warmth
+        self.backgroundScoped = backgroundScoped
+    }
 }
 
 /// Pre-computed, orientation-corrected signals for the current frame. Coordinates
@@ -147,8 +190,16 @@ struct FrameContext: Sendable {
     let avgLuma: Double
     /// Largest detected face, normalized (top-left origin). Nil if none.
     let faceBounds: CGRect?
-    /// Average luma inside the face region, if a face was found.
+    /// Average luma inside the face region, if a face was found. This — not
+    /// `avgLuma` — is what "is this exposed correctly" is judged on when there
+    /// is a face: a photographer's first act is to expose for the skin.
     let faceLuma: Double?
+    /// Average luma of the segmented BACKGROUND (the subject excluded). Nil
+    /// when no person was segmented or there was too little background to
+    /// measure. The backlit test compares the face against THIS rather than
+    /// against the whole frame, which contains the face — a face-vs-frame ratio
+    /// trips on deeper complexions in evenly-lit rooms with no backlight at all.
+    let backgroundLuma: Double?
     /// Focus quality 0…1 (measured on the subject region when a face is present,
     /// else the whole frame). Low = soft / motion-blurred.
     let sharpness: Double
@@ -158,6 +209,14 @@ struct FrameContext: Sendable {
     /// Fraction of the frame the subject (segmented person) fills, 0…1. Nil when no
     /// person is segmented (flat-lay / detail shots aren't nagged to "get closer").
     let subjectFill: Double?
+    /// The publish crop the pro is composing to (`PublishCrop.feedRect`), as a
+    /// normalized top-left rect of the capture frame — set while the crop guide
+    /// is on. Composition is judged INSIDE it, because that is the picture that
+    /// ships. Nil = judge the whole capture frame, as before.
+    let cropGuide: CGRect?
+    /// Subject fill measured inside `cropGuide` rather than over the whole
+    /// frame. Nil when there is no crop guide or no person is segmented.
+    let cropSubjectFill: Double?
     /// Body-pose framing read, when a human body is detected. Nil otherwise.
     let pose: PoseSignal?
     /// Device roll off level, in degrees (signed), from CoreMotion. Nil when motion
@@ -168,6 +227,40 @@ struct FrameContext: Sendable {
     /// What the current directed shot should contain (nil = freeform shooting —
     /// judge like a generic portrait).
     let expectations: ShotExpectations?
+
+    /// Written out rather than synthesized so the signals added for the
+    /// background- and crop-scoped judgements can default to "not measured" —
+    /// which is exactly what they are on a frame where segmentation found no
+    /// person or the pro has the crop guide off.
+    init(
+        avgLuma: Double,
+        faceBounds: CGRect?,
+        faceLuma: Double?,
+        backgroundLuma: Double? = nil,
+        sharpness: Double,
+        backgroundClutter: Double?,
+        subjectFill: Double?,
+        cropGuide: CGRect? = nil,
+        cropSubjectFill: Double? = nil,
+        pose: PoseSignal?,
+        deviceTilt: Double?,
+        color: ColorSignal?,
+        expectations: ShotExpectations?
+    ) {
+        self.avgLuma = avgLuma
+        self.faceBounds = faceBounds
+        self.faceLuma = faceLuma
+        self.backgroundLuma = backgroundLuma
+        self.sharpness = sharpness
+        self.backgroundClutter = backgroundClutter
+        self.subjectFill = subjectFill
+        self.cropGuide = cropGuide
+        self.cropSubjectFill = cropSubjectFill
+        self.pose = pose
+        self.deviceTilt = deviceTilt
+        self.color = color
+        self.expectations = expectations
+    }
 }
 
 protocol ShotCoach: Sendable {
@@ -186,6 +279,18 @@ enum CoachAggregate {
         let readiness: Double
         let nudge: CoachNudge?
         let statuses: [CoachStatus]
+        /// The dimension that was holding the one coach line and has just
+        /// stopped complaining — the moment the coach can be heard being
+        /// SATISFIED rather than only dissatisfied. Nil on every other frame.
+        let cleared: CoachCategory?
+
+        init(readiness: Double, nudge: CoachNudge?, statuses: [CoachStatus],
+             cleared: CoachCategory? = nil) {
+            self.readiness = readiness
+            self.nudge = nudge
+            self.statuses = statuses
+            self.cleared = cleared
+        }
     }
 
     /// How badly one coach drags readiness down: its weight × how far short it
@@ -195,47 +300,192 @@ enum CoachAggregate {
         category.weight * (1 - signal.score)
     }
 
-    static func evaluate(_ coaches: [ShotCoach], _ ctx: FrameContext) -> Verdict {
+    /// Rank + arbitrate in one pass. `arbiter` carries the dwell/margin state
+    /// across frames; `now` is a monotonic clock in seconds.
+    static func evaluate(
+        _ coaches: [ShotCoach], _ ctx: FrameContext,
+        arbiter: inout CoachTipArbiter, now: TimeInterval
+    ) -> Verdict {
         let signals = coaches.map { ($0.category, $0.evaluate(ctx)) }
         // Readiness is the importance-weighted mean — light + focus count for more
         // than a clean backdrop, per the beauty-photography priority order.
         let totalWeight = signals.reduce(0.0) { $0 + $1.0.weight }
         let readiness = totalWeight == 0 ? 0
             : signals.reduce(0.0) { $0 + $1.1.score * $1.0.weight } / totalWeight
-        // The fix to surface = the biggest *weighted* deficiency among coaches that
-        // have a tip — so a lighting problem outranks a slightly-busy background.
-        let worst = signals
-            .filter { $0.1.message != nil }
-            .max { deficit($0.0, $0.1) < deficit($1.0, $1.1) }
-        let nudge = worst.flatMap { entry in entry.1.message.map { CoachNudge(category: entry.0, message: $0) } }
-        let statuses = signals.map { CoachStatus(category: $0.0, score: $0.1.score, message: $0.1.message) }
-        return Verdict(readiness: readiness, nudge: nudge, statuses: statuses)
+        let outcome = arbiter.select(from: signals, now: now)
+        let statuses = signals.map {
+            CoachStatus(category: $0.0, score: $0.1.score, message: $0.1.message, why: $0.1.why)
+        }
+        return Verdict(readiness: readiness, nudge: outcome.nudge,
+                       statuses: statuses, cleared: outcome.cleared)
+    }
+
+    /// Single-frame evaluation with no memory — the raw ranking, which is what
+    /// the offline bench and the scoring tests want. Delegates to the same
+    /// arbiter with a fresh state, so there is exactly one selection rule in
+    /// the codebase and this can't drift from what the camera does.
+    static func evaluate(_ coaches: [ShotCoach], _ ctx: FrameContext) -> Verdict {
+        var fresh = CoachTipArbiter()
+        return evaluate(coaches, ctx, arbiter: &fresh, now: 0)
+    }
+}
+
+/// Keeps the one coach line still long enough to be worth acting on.
+///
+/// Without this the winner is a plain `max` over weighted deficits recomputed
+/// every analyzed frame — six times a second. Two coaches with near-equal
+/// deficits therefore ALTERNATE, and each alternation used to fire a warning
+/// haptic and restart the spoken tip from the top: a continuous buzz and a
+/// sentence that never finishes. That is a code-level mechanism for "it feels
+/// like nagging", independent of whether the tips are right.
+///
+/// Two rules, both pure arithmetic:
+///
+///  • **Dwell** — a tip that takes the line holds it for `tipDwellSeconds`,
+///    long enough for the pro to read it, hear it out, and start acting.
+///  • **Margin** — after the dwell, a challenger only takes the line if it
+///    beats the incumbent's CURRENT deficit by `tipSwitchMargin`. A tie, or a
+///    hair's difference, leaves the incumbent alone.
+///
+/// The incumbent yields IMMEDIATELY — no dwell, no margin — the moment its own
+/// coach stops complaining. A problem the pro just fixed must never keep the
+/// line, and that hand-back is what `cleared` reports so the coach can say so.
+struct CoachTipArbiter: Sendable {
+    struct Outcome: Sendable {
+        let nudge: CoachNudge?
+        /// Set on the single frame where the incumbent's dimension went quiet.
+        let cleared: CoachCategory?
+    }
+
+    private var incumbent: CoachNudge?
+    private var heldSince: TimeInterval = 0
+
+    init() {}
+
+    mutating func select(
+        from signals: [(CoachCategory, CoachSignal)], now: TimeInterval
+    ) -> Outcome {
+        let speaking = signals.filter { $0.1.message != nil }
+        let challenger = speaking.max {
+            CoachAggregate.deficit($0.0, $0.1) < CoachAggregate.deficit($1.0, $1.1)
+        }
+        let best = challenger.flatMap { entry in
+            entry.1.message.map { CoachNudge(category: entry.0, message: $0) }
+        }
+
+        guard let held = incumbent else {
+            adopt(best, now: now)
+            return Outcome(nudge: best, cleared: nil)
+        }
+
+        // Is the incumbent's dimension still unhappy? (Its wording may have
+        // moved on — "a touch soft" → "clearly soft" — which is the same tip
+        // getting worse, not a different tip.)
+        guard let current = speaking.first(where: { $0.0 == held.category }) else {
+            // Fixed. Hand the line over at once and report the good news.
+            adopt(best, now: now)
+            return Outcome(nudge: best, cleared: held.category)
+        }
+
+        let currentNudge = current.1.message.map {
+            CoachNudge(category: current.0, message: $0)
+        } ?? held
+        let stillWarm = now - heldSince < CoachTuning.tipDwellSeconds
+        let beatsMargin = best.map { candidate in
+            candidate.category != held.category
+                && CoachAggregate.deficit(current.0, current.1) + CoachTuning.tipSwitchMargin
+                    < deficit(of: candidate, in: speaking)
+        } ?? false
+
+        if stillWarm || !beatsMargin {
+            // Keep the line. Re-wording within the same dimension doesn't
+            // restart the clock — it's the same tip, said more precisely.
+            incumbent = currentNudge
+            return Outcome(nudge: currentNudge, cleared: nil)
+        }
+        adopt(best, now: now)
+        return Outcome(nudge: best, cleared: nil)
+    }
+
+    private mutating func adopt(_ nudge: CoachNudge?, now: TimeInterval) {
+        incumbent = nudge
+        heldSince = now
+    }
+
+    private func deficit(of nudge: CoachNudge, in signals: [(CoachCategory, CoachSignal)]) -> Double {
+        guard let entry = signals.first(where: { $0.0 == nudge.category }) else { return 0 }
+        return CoachAggregate.deficit(entry.0, entry.1)
     }
 }
 
 // MARK: - Lighting
 
-/// Judges exposure + backlighting. The strongest, most reliable on-device signal.
+/// Judges exposure + backlighting — on the SKIN, not on the room.
+///
+/// A photographer's first act is to expose for the subject's skin. This coach
+/// used to make its entire "is this exposed correctly" judgement from
+/// `avgLuma`, the whole-frame average, which is dominated by the wall behind
+/// the client. The consequence was not evenly distributed: a correctly-lit
+/// deep-complexion client against a light salon wall could be badly
+/// underexposed while the ring went green and no coach anywhere in the stack
+/// said "their face is dark."
+///
+/// The BANDS are unchanged (they still need the salon pass). What changed is
+/// the pixels they are measured over.
 struct LightingCoach: ShotCoach {
     let category: CoachCategory = .lighting
 
     func evaluate(_ ctx: FrameContext) -> CoachSignal {
-        let luma = ctx.avgLuma
-
-        // Backlit: subject noticeably darker than the overall scene.
-        if let faceLuma = ctx.faceLuma,
-           faceLuma < luma * CoachTuning.backlitFaceRatio,
+        // Backlit is a claim about the subject versus what is BEHIND them, so
+        // it is measured against the segmented background rather than against a
+        // whole-frame average that contains the face and the subject's own
+        // clothes. With no mask there is no comparison to make, so the coach
+        // makes no claim rather than inventing one.
+        //
+        // ⚠️ Read this before the salon pass. This relocation makes the rule
+        // MORE sensitive at the current ratio, not less: the background is
+        // brighter than a frame average that the darker subject was dragging
+        // down, so `background × 0.6` is a higher bar than `frame × 0.6`. The
+        // relocation is the structurally correct comparison — it is the one
+        // that actually means "the light is behind them" — but it does NOT by
+        // itself fix the deep-complexion false positive, because no ratio of
+        // skin REFLECTANCE to background ILLUMINATION can separate "less light
+        // on their face" from "less light coming back off their face".
+        // `backlitFaceRatio` is reserved for §3.1 of the plan and setting it is
+        // the single most important measurement of the whole device pass;
+        // `backlitFaceMaxLuma` is what caps the damage until then.
+        // `CoachReadinessTests` pins this direction so it can't surprise anyone.
+        if let faceLuma = ctx.faceLuma, let behind = ctx.backgroundLuma,
+           faceLuma < behind * CoachTuning.backlitFaceRatio,
            faceLuma < CoachTuning.backlitFaceMaxLuma {
-            return CoachSignal(score: 0.35, message: "Light’s behind them — turn them to face the window")
+            return CoachSignal(
+                score: 0.35,
+                message: "Light’s behind them — turn them to face the window",
+                why: "The light is behind your client, so the camera exposes for the window and leaves their face in shadow.")
         }
-        if luma < CoachTuning.lumaTooDark {
-            return CoachSignal(score: 0.3, message: "Too dark — move toward the light")
+
+        // Expose for the skin when there is skin to expose for; the whole frame
+        // is the fallback for flat-lays and detail shots, where it IS the subject.
+        let subject = ctx.faceLuma ?? ctx.avgLuma
+        let onFace = ctx.faceLuma != nil
+
+        if subject < CoachTuning.lumaTooDark {
+            return CoachSignal(
+                score: 0.3,
+                message: onFace ? "Their face is too dark — turn them toward the light"
+                                : "Too dark — move toward the light",
+                why: onFace ? "Skin that's underexposed loses its true tone, and lifting it later brings up noise instead."
+                            : "There isn't enough light on the work to hold detail.")
         }
-        if luma > CoachTuning.lumaTooBright {
-            return CoachSignal(score: 0.4, message: "Blown out — turn away from the bright light")
+        if subject > CoachTuning.lumaTooBright {
+            return CoachSignal(
+                score: 0.4,
+                message: onFace ? "Their face is blown out — turn away from the bright light"
+                                : "Blown out — turn away from the bright light",
+                why: "Clipped highlights are gone for good — there's nothing left in the file to pull back.")
         }
         // Score falls off smoothly away from the ideal exposure.
-        let dist = abs(luma - CoachTuning.lumaIdeal)
+        let dist = abs(subject - CoachTuning.lumaIdeal)
         let score = max(0.6, 1.0 - dist * CoachTuning.lumaFalloff)
         return CoachSignal(score: score, message: nil)
     }
@@ -246,27 +496,41 @@ struct LightingCoach: ShotCoach {
 /// Judges subject placement when a face is present (centering + headroom). Stays
 /// neutral when there's no face so non-portrait services aren't nagged (pose +
 /// saliency coaches cover those later).
+///
+/// When the pro has the publish-crop guide on, every rule below is evaluated
+/// INSIDE the 9:16 box rather than over the full 3:4 sensor frame. The camera
+/// composes for the sensor and publishes to the feed; judging the sensor frame
+/// let the coach call a shot perfectly composed — green ring, auto-capture
+/// fires — while the published crop took the sides off it.
 struct CompositionCoach: ShotCoach {
     let category: CoachCategory = .composition
 
     func evaluate(_ ctx: FrameContext) -> CoachSignal {
         let expects = ctx.expectations
+        let crop = ctx.cropGuide
 
         // Fill the frame — the #1 amateur mistake is standing too far back.
         // Judged against the current shot's band when the guide sets one
         // (a detail shot wants much more fill than a portrait), else the
         // global floor. Detail/macro shots skip the floor — partial subjects
-        // are the point.
-        if let fill = ctx.subjectFill {
+        // are the point. Inside the crop when there is one: filling the sensor
+        // frame is not the same as filling what ships.
+        if let fill = crop == nil ? ctx.subjectFill : ctx.cropSubjectFill {
+            let closer = "Move in closer — fill the frame"
+            let closerWhy = crop == nil
+                ? "Standing too far back is the difference between a photo of a person and a photo of a room."
+                : "The 9:16 feed crop takes ~40% of the width off this — what looks filled here won't be once it's published."
             if let band = expects?.fillBand {
                 if fill < band.lowerBound {
-                    return CoachSignal(score: 0.5, message: "Move in closer — fill the frame")
+                    return CoachSignal(score: 0.5, message: closer, why: closerWhy)
                 }
                 if fill > band.upperBound {
-                    return CoachSignal(score: 0.55, message: "Too tight — step back a touch")
+                    return CoachSignal(
+                        score: 0.55, message: "Too tight — step back a touch",
+                        why: "This shot wants the same framing as its pair; too tight and the two stop being comparable.")
                 }
             } else if expects?.isDetail != true, fill < CoachTuning.minSubjectFill {
-                return CoachSignal(score: 0.5, message: "Move in closer — fill the frame")
+                return CoachSignal(score: 0.5, message: closer, why: closerWhy)
             }
         }
 
@@ -275,12 +539,27 @@ struct CompositionCoach: ShotCoach {
         if expects?.face == .absent {
             return CoachSignal(score: 1.0, message: nil)
         }
-        guard let face = ctx.faceBounds else {
+        guard let frameFace = ctx.faceBounds else {
             if expects?.face == .required {
-                return CoachSignal(score: 0.6, message: "Frame their face for this shot")
+                return CoachSignal(
+                    score: 0.6, message: "Frame their face for this shot",
+                    why: "This step's whole job is the face — its pair on the other side of the booking has one.")
             }
             return CoachSignal(score: 1.0, message: nil)
         }
+
+        // Falling outside the publish crop is its own, nameable problem: the
+        // subject IS in the picture the pro is looking at, and won't be in the
+        // one that ships.
+        if let crop {
+            let center = CGPoint(x: frameFace.midX, y: frameFace.midY)
+            guard crop.contains(center) else {
+                return CoachSignal(
+                    score: 0.45, message: "They’re outside the feed crop — center them",
+                    why: "The bright box is what the feed publishes; anything outside it is cut off there even though you can see it here.")
+            }
+        }
+        let face = crop.map { PublishCrop.inCropSpace(frameFace, crop: $0) } ?? frameFace
 
         let centerX = face.midX
         let topY = face.minY
@@ -288,17 +567,23 @@ struct CompositionCoach: ShotCoach {
 
         // Headroom: face too high (cramped top) or sitting too low.
         if topY < CoachTuning.minHeadroom {
-            return CoachSignal(score: 0.45, message: "Leave a little headroom — lower the camera")
+            return CoachSignal(
+                score: 0.45, message: "Leave a little headroom — lower the camera",
+                why: "Hair cropped at the top of the frame reads as an accident rather than a choice.")
         }
         if midY > CoachTuning.maxSubjectLow {
-            return CoachSignal(score: 0.5, message: "Raise the camera — subject’s too low")
+            return CoachSignal(
+                score: 0.5, message: "Raise the camera — subject’s too low",
+                why: "Empty space above the head pulls the eye away from the work.")
         }
         // Horizontal placement: comfortable near center or a third.
         let nearCenter = abs(centerX - 0.5) < CoachTuning.centerTolerance
         let nearThird = abs(centerX - 0.33) < CoachTuning.thirdTolerance
             || abs(centerX - 0.67) < CoachTuning.thirdTolerance
         if !nearCenter && !nearThird {
-            return CoachSignal(score: 0.55, message: "Center your subject")
+            return CoachSignal(
+                score: 0.55, message: "Center your subject",
+                why: "Sitting between centre and a third reads as neither — the eye can't settle.")
         }
 
         // Reward good framing; small deviation → small penalty.
@@ -322,10 +607,14 @@ struct SharpnessCoach: ShotCoach {
         // portrait" doesn't pass for a close-up of the work.
         let factor = ctx.expectations?.isDetail == true ? CoachTuning.detailSharpnessFactor : 1
         if s < CoachTuning.sharpnessSoft * factor {
-            return CoachSignal(score: 0.3, message: "Hold steady — shot looks soft")
+            return CoachSignal(
+                score: 0.3, message: "Hold steady — shot looks soft",
+                why: "Softness is the one thing no edit fixes, and it shows up full-size long after the shoot.")
         }
         if s < CoachTuning.sharpnessSlightlySoft * factor {
-            return CoachSignal(score: 0.6, message: "Tap to focus — a touch soft")
+            return CoachSignal(
+                score: 0.6, message: "Tap to focus — a touch soft",
+                why: "The camera may be focused behind them; a tap puts it on the work.")
         }
         // Clearly sharp; reward it.
         return CoachSignal(score: min(1.0, 0.7 + s * 0.5), message: nil)
@@ -347,7 +636,9 @@ struct BackgroundCoach: ShotCoach {
             return CoachSignal(score: 1.0, message: nil)
         }
         if clutter > CoachTuning.clutterBusy {
-            return CoachSignal(score: 0.5, message: "Busy background — find a cleaner backdrop")
+            return CoachSignal(
+                score: 0.5, message: "Busy background — find a cleaner backdrop",
+                why: "Shelves and product bottles compete with the work for attention, and they crop badly.")
         }
         let score = max(0.7, 1.0 - clutter)
         return CoachSignal(score: score, message: nil)
@@ -397,7 +688,9 @@ struct PoseCoach: ShotCoach {
 
     func evaluate(_ ctx: FrameContext) -> CoachSignal {
         if let pose = ctx.pose, pose.edgeClipped {
-            return CoachSignal(score: 0.5, message: "Subject’s getting clipped — pull back")
+            return CoachSignal(
+                score: 0.5, message: "Subject’s getting clipped — pull back",
+                why: "A shoulder or hand cut by the frame edge reads as a mistake, and there's no room left to crop.")
         }
 
         let rules = ctx.expectations?.poseRules ?? []
@@ -408,12 +701,21 @@ struct PoseCoach: ShotCoach {
             }
             // Surface the FIRST unmet rule (pack order = direction order).
             for rule in rules where !Self.satisfied(rule, pose: pose, ctx: ctx) {
-                return CoachSignal(score: 0.45, message: rule.tip)
+                return CoachSignal(
+                    score: 0.45, message: rule.tip,
+                    why: "This shot's brief is a specific pose — the camera waits for it rather than shooting past it.")
             }
             return CoachSignal(score: 1.0, message: nil)
         }
 
-        return CoachSignal(score: ctx.pose == nil ? 1.0 : 0.9, message: nil)
+        // No brief and nobody clipped: nothing to say, so nothing is charged.
+        //
+        // This used to return 0.9 the moment a body was detected — with NO
+        // message. In a portrait session that is always, so it was a permanent
+        // 0.06 readiness tax the pro could never clear and was never told
+        // about. An unexplained standing penalty is a bug whichever way you
+        // look at it; a coach with nothing to say scores like one.
+        return CoachSignal(score: 1.0, message: nil)
     }
 
     // MARK: Rule evaluators
@@ -469,10 +771,14 @@ struct LevelCoach: ShotCoach {
         if off > CoachTuning.tiltBadDegrees {
             // Sign convention may flip per device orientation — verify on hardware.
             let dir = tilt > 0 ? "right" : "left"
-            return CoachSignal(score: 0.4, message: "Camera’s tilted \(dir) — straighten it")
+            return CoachSignal(
+                score: 0.4, message: "Camera’s tilted \(dir) — straighten it",
+                why: "Straightening it afterwards means cropping in, and the ends of the hair are usually what gets lost.")
         }
         if off > CoachTuning.tiltWarnDegrees {
-            return CoachSignal(score: 0.7, message: "Almost level — straighten up")
+            return CoachSignal(
+                score: 0.7, message: "Almost level — straighten up",
+                why: "A couple of degrees is enough to read as “off” next to its before/after pair.")
         }
         return CoachSignal(score: 1.0, message: nil)
     }
@@ -483,6 +789,12 @@ struct LevelCoach: ShotCoach {
 /// Flags the light problems that wreck beauty color: mixed sources (the #1 culprit)
 /// and a strong green/fluorescent or warm/yellow cast that misrepresents skin tone.
 /// Neutral when it can't measure (no signal) so it never blocks readiness blindly.
+///
+/// The three signals now arrive measured on the segmented BACKGROUND wherever a
+/// person is in frame (`ColorSignal.backgroundScoped`), so they describe the
+/// colour of the LIGHT rather than the colour of the client's top. The
+/// thresholds are unchanged — they were guessed against a confounded signal and
+/// are re-measured in the salon pass, on this cleaner one.
 struct ColorCoach: ShotCoach {
     let category: CoachCategory = .color
 
@@ -491,13 +803,19 @@ struct ColorCoach: ShotCoach {
 
         // Mixed light first — it can't be fixed with one white-balance setting.
         if color.mixed > CoachTuning.mixedLightSpread {
-            return CoachSignal(score: 0.45, message: "Mixed light — turn off the overheads")
+            return CoachSignal(
+                score: 0.45, message: "Mixed light — turn off the overheads",
+                why: "Warm bulbs on one side and a cool window on the other can't both be corrected — one half of their skin will read wrong whatever you do after.")
         }
         if color.greenTint > CoachTuning.greenCastTint {
-            return CoachSignal(score: 0.55, message: "Greenish light — switch to one clean source")
+            return CoachSignal(
+                score: 0.55, message: "Greenish light — switch to one clean source",
+                why: "Fluorescent green sits right where skin tone lives, so it's the cast clients notice first.")
         }
         if color.warmth > CoachTuning.warmCastWarmth {
-            return CoachSignal(score: 0.6, message: "Warm/yellow light — daylight reads truer")
+            return CoachSignal(
+                score: 0.6, message: "Warm/yellow light — daylight reads truer",
+                why: "Warm light pushes blonde and ash tones yellow, which is the colour work the client paid for.")
         }
         // Small penalty for mild mixing; otherwise clean.
         let score = max(0.75, 1.0 - color.mixed)

@@ -59,27 +59,43 @@ struct DimensionsDrawer: View {
         .padding(.top, 22)
         .padding(.bottom, 28)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .presentationDetents([.height(430)])
+        .presentationDetents([.height(560)])
         .presentationDragIndicator(.visible)
         .presentationBackground(BrandColor.bgSecondary)
         // The camera keeps running behind this one — it's a live read-out, and
         // the pro is looking at it precisely to watch a number change.
-        .presentationBackgroundInteraction(.enabled(upThrough: .height(430)))
+        .presentationBackgroundInteraction(.enabled(upThrough: .height(560)))
     }
 
     private func row(_ status: CoachStatus) -> some View {
         let tone = Self.tone(status)
-        return HStack(spacing: 12) {
+        let spoken = [status.message, status.message == nil ? nil : status.why]
+            .compactMap { $0 }
+        return HStack(alignment: .top, spacing: 12) {
             Circle().fill(tone.color).frame(width: 7, height: 7)
+                .padding(.top, 5)
             Text(status.category.shortLabel)
                 .font(BrandFont.mono(11))
                 .tracking(0.8)
                 .foregroundStyle(status.message == nil ? BrandColor.textMuted : BrandColor.textPrimary)
                 .frame(width: 74, alignment: .leading)
-            Text(status.message ?? Self.goodPhrase(status.category))
-                .font(BrandFont.body(13.5))
-                .foregroundStyle(status.message == nil ? BrandColor.textMuted : BrandColor.textSecondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(status.message ?? Self.goodPhrase(status.category))
+                    .font(BrandFont.body(13.5))
+                    .foregroundStyle(status.message == nil ? BrandColor.textMuted : BrandColor.textSecondary)
+                // The drawer is the one surface the pro opened on purpose to
+                // ask "why won't it go green?" — so it is where the coach stops
+                // issuing imperatives and explains itself. A photographer says
+                // WHY; a checklist just says what.
+                if let why = status.why, status.message != nil {
+                    Text(why)
+                        .font(BrandFont.body(12))
+                        .foregroundStyle(BrandColor.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
@@ -89,7 +105,7 @@ struct DimensionsDrawer: View {
         // The row's state is carried by colour — spell it out.
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(status.category.spokenName)
-        .accessibilityValue(status.message ?? "good")
+        .accessibilityValue(spoken.isEmpty ? "good" : spoken.joined(separator: ". "))
     }
 
     /// Mirrors the pills' tint: good, minor issue, or fix-this-now.
