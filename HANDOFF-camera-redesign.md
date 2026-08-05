@@ -19,7 +19,7 @@ Design source of truth: Claude Design "Tovis Pro Camera Redesign.dc.html".
 | One photo required | #255 (`9a42f0c`) | The camera stops reading as "shoot the whole set or you're not done". See below. |
 | **Camera outside a session** | #261 (`85b6d9f`) | The footer's centre button stops being dead when no session is live. Same camera, same coach, no custody. See below. |
 | Gap analysis vs the bar | 2026-08-04 | `docs/design/camera-excellence-plan.md` — the whole camera measured against "a real photographer is holding my hand", every claim cited to `file:line`, split into `[BUILD]` / `[PASS]` / `[DECIDE]`. |
-| **Pre-device-pass fixes (B1–B17)** | this branch | Everything the plan classified as buildable without guessing a threshold. See below. |
+| **Pre-device-pass fixes (B1–B17)** | #268 (`1089f2c`) | Everything the plan classified as buildable without guessing a threshold. See below. |
 
 Still owed: the on-device tune pass proper (`BACKLOG.md` §"Camera on-device tune
 pass") — perception thresholds need the sensor, and the simulator has no camera.
@@ -173,7 +173,7 @@ Fold this into the same real-device pass as the outstanding on-device tune.
 `docs/design/camera-excellence-plan.md` measured the whole camera against Tori's
 bar and sorted every gap into `[BUILD]` (buildable now, no threshold guessing),
 `[PASS]` (needs the salon device pass) and `[DECIDE]` (a product call). Tori
-approved the `[BUILD]` set — **B1–B17**. This branch is all seventeen.
+approved the `[BUILD]` set — **B1–B17**. #268 is all seventeen.
 
 **Not in scope, deliberately:** no threshold the plan reserves for the device
 pass was touched, and the platform-export (`D1`) and enhancement-policy (`D2`)
@@ -328,10 +328,31 @@ practice modes share all of it by construction, as before.
 - **195 unit tests green** (`xcodebuild test`, iPhone 17 Pro simulator), up from
   the previous suite by four new files: `CoachTipArbiterTests`,
   `GuidedCaptureArmTests`, `PublishCropTests`, `CameraCompositionTests`.
-- **Red-proofed by breaking each fix and watching the intended test fail** — the
-  auto-capture re-arm, the tip dwell, the switching margin, exposure-on-the-face,
-  backlit-on-the-background, composition-inside-the-crop, the pose cap, framing
-  parity, the virtual-camera zoom factor, and the cover band's asymmetry.
+- **Red-proofed — eleven probes, each one reverting a fix in the production
+  source and confirming the intended test goes red.** A test that stays green
+  with the fix removed is not coverage, it is decoration. The ledger:
+
+  | Probe | Reverting it turns these red |
+  | --- | --- |
+  | **B1** exposure judged on the face | `anUnderexposedFaceIsNamedEvenWhenTheRoomAverageLooksFine` (3 expectations), `withoutAMaskTheCoachDeclinesToCallBacklight`, `aLightingFailureAloneStillClearsBothTheRingAndTheHarvestGate` (2) |
+  | **B2** backlit vs the segmented background | `relocatingTheBacklitTestMakesItMoreSensitiveNotLess` |
+  | **B4a** tip dwell | `theDwellHoldsTheLineEvenAgainstAClearlyWorseProblem` |
+  | **B4b** tip switching margin | `aChallengerMustBeatTheIncumbentByTheMarginNotMerelyBeatIt` |
+  | **B6** auto-capture re-arm | `aRejectedBurstRearmsWithoutTheShotLeavingTheGreenRing` |
+  | **B7** framing parity from the before shot | `theAfterInheritsTheBeforesMeasuredFraming`, `matchingFramingPreservesEverythingElseAboutTheStep` |
+  | **B8** light match on the background | `aColourTransformationNoLongerReadsAsALightChange`, `theRoomGettingBrighterIsStillCaught`, `theRoomGoingWarmIsCaughtAndNamedSeparately` |
+  | **B9** composition inside the feed crop | `aFrameThatFillsTheSensorButNotTheFeedCropIsCaught`, `aSubjectOutsideTheFeedCropIsNamedAsSuch`, `centeringIsMeasuredInTheCropsOwnSpace` |
+  | **B10** cover-band asymmetry | `theCoverSafeBandReservesMoreRoomBelowThanAbove` |
+  | **B14** parked on the wide constituent | `aTripleCameraIsParkedOnItsWideConstituent` |
+  | **B15** the silent PoseCoach cap | `aFlawlessPortraitNowActuallyScoresOne`, `detectingABodyNoLongerCostsReadiness` |
+
+  ⚠️ **B1's first run was not a red proof and was not counted as one.** The
+  simulator refused the launch (`FBSOpenApplicationErrorDomain Code=6`,
+  "Application failed preflight checks", reason `Busy`) — a red that came from
+  the harness, not from the reverted code, which proves nothing about coverage.
+  It was re-run cleanly on **2026-08-05** on a dedicated freshly-booted iPhone 17
+  Pro (iOS 27.0), green baseline first, and the failures above are the second
+  run's. A red proof only counts when the *test* fails, not the run.
 - **The offline bench was run** over 35 real photographs and produced the
   before/after colour table above. It compiles the live sources every run, so it
   cannot drift from the camera.
