@@ -133,7 +133,13 @@ struct ProSessionHubView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
         .task { if case .loading = phase { await load() } }
-        .onChange(of: session.refreshTick) { Task { await loadMedia() } }
+        // A live tick means the CLIENT just acted — approved or declined the
+        // consultation, signed a consent form, answered the confirmation. All of
+        // that lives in the session state, not in the media list, so reloading
+        // only media left the pro looking at a stale screen until they backed
+        // out and came in again. `silent` keeps the last good state on a
+        // transient failure rather than swapping the screen for an error card.
+        .onChange(of: session.refreshTick) { Task { await load(silent: true) } }
         .fullScreenCover(item: $capturing, onDismiss: { Task { await reloadAfterCapture() } }) { selection in
             ProCapturePhotosView(destination: .session(bookingId: bookingId, phase: selection.phase),
                                  serviceName: detail?.baseItem?.serviceName,
@@ -1174,7 +1180,14 @@ struct ProSessionHubView: View {
 
     // MARK: - Actions
 
-    private func load() async {
+    /// Load the session state, detail, media and payment methods.
+    ///
+    /// `silent` is for a refresh the pro did not ask for (a live-sync tick after
+    /// the client acted): keep the last good screen when the refresh fails
+    /// instead of replacing what they are working on with an error card. The
+    /// first, explicit load still surfaces failures — same rule `loadMedia`
+    /// already follows.
+    private func load(silent: Bool = false) async {
         do {
             async let stateTask = session.client.proSession.state(bookingId: bookingId)
             async let detailTask = try? session.client.proBookings.detail(bookingId: bookingId)
@@ -1186,9 +1199,9 @@ struct ProSessionHubView: View {
             unsignedConsentForms = result.unsignedConsentForms
             phase = .loaded(result.state)
         } catch let error as APIError {
-            phase = .failed(error.userMessage)
+            if !silent { phase = .failed(error.userMessage) }
         } catch {
-            phase = .failed("Couldn’t load this session.")
+            if !silent { phase = .failed("Couldn’t load this session.") }
         }
         await loadMedia()
         await loadPaymentMethods()
