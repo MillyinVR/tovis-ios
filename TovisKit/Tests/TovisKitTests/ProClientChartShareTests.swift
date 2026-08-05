@@ -124,6 +124,28 @@ final class ProChartShareURLProtocol: URLProtocol {
         #expect(share.proCanAsk)
     }
 
+    // 🔴 A future server code this build cannot name. Without the fallback the
+    // screen renders neither a button (proCanAsk is false) nor a reason
+    // (no copy matched) — the pro stares at the refusal with nothing to do.
+    @Test func anUnknownBlockReasonStillExplainsItself() async throws {
+        reset(body: #"{"ok":true,"chartShare":{"status":"REVOKED","canRequest":false,"requestBlockedReason":"SOME_FUTURE_RULE"}}"#)
+
+        let share = try await makeService().chartShare(clientId: "cl_1")
+
+        #expect(share.proCanAsk == false)
+        #expect(share.blockedCopy != nil)
+    }
+
+    // The mirror of the rule above: copy appears only when the ask does not.
+    @Test func aStaleBlockReasonIsIgnoredOnceTheAskIsAllowed() async throws {
+        reset(body: #"{"ok":true,"chartShare":{"status":"REVOKED","canRequest":true,"requestBlockedReason":"COOLDOWN"}}"#)
+
+        let share = try await makeService().chartShare(clientId: "cl_1")
+
+        #expect(share.proCanAsk)
+        #expect(share.blockedCopy == nil)
+    }
+
     // The refusal has to reach the caller as a `code`, not as prose: the pro
     // chart view branches on CHART_NOT_SHARED, and NO_CLIENT_RELATIONSHIP
     // deliberately answers the same status with different copy.

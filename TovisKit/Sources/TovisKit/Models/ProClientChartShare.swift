@@ -71,12 +71,20 @@ public struct ProClientChartShare: Decodable, Sendable, Equatable {
     /// strand the pro with no route out of the refusal.
     public var proCanAsk: Bool { canRequest ?? true }
 
-    /// Pro-facing copy for a blocked ask. Nil when there is nothing to explain.
+    /// Pro-facing copy for a blocked ask. Nil exactly when the ask is offered.
     ///
     /// A blocked state renders as TEXT, never a disabled button — a control
     /// that cannot act still reads as one the pro is failing to use, and for a
     /// decline it would make the client's answer look negotiable.
+    ///
+    /// 🔴 Never nil while `proCanAsk` is false. A future server code this build
+    /// cannot name would otherwise render as neither a button nor a reason —
+    /// the pro would be left staring at the refusal with nothing on screen to
+    /// do or to explain it. The generic line is worse copy than the specific
+    /// ones and infinitely better than a blank.
     public var blockedCopy: String? {
+        guard !proCanAsk else { return nil }
+
         switch requestBlockedReason {
         case "REQUEST_PENDING":
             return "Asked — waiting on them. You’ll get a notification if they say yes."
@@ -87,7 +95,7 @@ public struct ProClientChartShare: Decodable, Sendable, Equatable {
         case "ALREADY_GRANTED":
             return "They already share their chart with you."
         default:
-            return nil
+            return "You can’t ask for chart access right now."
         }
     }
 }
