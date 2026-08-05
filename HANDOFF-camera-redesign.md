@@ -564,6 +564,139 @@ dropped is a broken promise they can point at.
 
 ## Device feedback log
 
+### 2026-08-05 — build 38 crashes AGAIN, same site; the app stops betting on validation
+
+> 🔴 **Tori must archive BUILD 39.** Build 38 is dead on every multi-lens phone
+> the same way 37 was — it opens, runs ~2s, and aborts. Do not ship or demo 38.
+> No deploy implications: this is app-side only, nothing server changed.
+
+**Round 2 was not enough, and this is why.** #275 (build 38) diagnosed a NaN
+walking through a hand-rolled `min(max(…))` clamp, replaced every clamp in the
+app with the NaN-safe `DeviceParameterGuard`, and red-proofed it. That diagnosis
+was correct and that fix is still in. It just was not the whole bug — it fixed
+*the value* and the crash was never really about the value. Build 38 aborts at
+the same call, having gone through the new guard.
+
+The honest version: rounds 1 and 2 both answered "what did we write that was
+invalid?" Round 3's evidence says the better question was "what makes a write
+that passed every check we can make still illegal by the time it lands?"
+
+**The evidence.** `EXC_CRASH (SIGABRT)`, uncaught ObjC exception on
+`tovis.camera.session`, `lastExceptionBacktrace` = `objc_exception_throw` ←
+`-[AVCaptureFigVideoDevice _setWhiteBalanceModeLockedWithDeviceWhiteBalanceGains:completionHandler:]`,
+incident `606EB0B6-…`, iPhone16,2 / iOS 27.0 beta 24A5390f, ~2.2s after launch.
+Symbolicated against build 38's own dSYM (slice
+`0AF7954C-A604-3E4F-BBE1-11DC78E8E9AF`,
+`Archives/2026-08-05/Tovis 8-5-26, 12.35 PM.xcarchive`):
+
+| Image offset | Symbol |
+| --- | --- |
+| 913640 | `closure #1 in CameraController.applyWhiteBalanceGains(r:g:b:)` — `CameraController.swift` |
+| 1570956 | caller frame, `CoachEngine.swift` |
+
+So **#275's guard was in the binary and the crashing call site routed through
+it.** Confirmed before anything else was assumed.
+
+**What actually threw.** Apple raises `NSGenericException` from that setter for
+three separate preconditions: gains outside `1…maxWhiteBalanceGain`, the device
+not being locked for configuration, and `.locked` white balance being
+unsupported. The crash log carries a backtrace but **no exception `reason`
+string**, so which of the three fired cannot be read off it directly — that is
+stated plainly rather than guessed, and the new logging (below) captures the
+reason if it ever happens again.
+
+It does not matter much, because **all three collapse into one root cause**:
+
+> Every precondition was checked against the device at one instant and the write
+> happened at a later one.
+
+The specifics line up exactly:
+
+- The device is **virtual** (`preferredCaptureDevice` prefers
+  `.builtInTripleCamera` / `.builtInDualWideCamera` since #268). A virtual device
+  switches its **active constituent lens asynchronously**, including during the
+  settle after `startRunning`.
+- `maxWhiteBalanceGain` and `isWhiteBalanceModeSupported(.locked)` are both
+  **per-active-format** — the wide lens's limits are not the ultra-wide's.
+- `applyWhiteBalanceGains` runs **immediately after `await camera.start(…)`**
+  (`ProCapturePhotosView.swift`, the "one card, one session" re-apply) — i.e.
+  squarely inside that settle window. That is the ~2.2s.
+- The crash log's **main thread was inside
+  `-[AVCaptureVideoPreviewLayer _initWithSession:makeConnection:]`** —
+  `CameraPreview.makeUIView` assigning `videoPreviewLayer.session`, which adds a
+  connection to the already-running session and **forces it to re-negotiate the
+  active format**, concurrently.
+- `lockForConfiguration()` does **not** close this window. It excludes other
+  *clients* from configuring the device; it does not stop the session's own
+  renegotiation or the virtual device's constituent switching. #275's
+  `defer`-unlock audit was correct and is not implicated.
+
+**The fix, in two layers — because one layer has now failed twice.**
+
+*(a) The root cause.* The white-balance write now happens inside a session
+configuration transaction (`withSettledFormat`), so the session cannot
+re-negotiate its format — and the virtual device cannot swap constituents —
+while the limits are read and the write lands. Inside that, **every precondition
+is re-read within the device lock** immediately before the write, by
+`GuardedWhiteBalance` (TovisKit). The transaction contains no session-level
+changes, so the commit is a no-op; its entire job is mutual exclusion against
+the main thread's preview attach.
+
+*(b) The guarantee.* **Swift can now catch AVFoundation's exceptions.** A new
+`TovisObjC` target — the one place in the codebase allowed to contain `@try` —
+exposes `TovisObjCException.catching(_:)`, wrapped for app use as
+`CaptureExceptionShield.perform(_:_:)`. **Every** `AVCaptureDevice` /
+`AVCaptureSession` call in `CameraController.swift` that can raise now goes
+through it. A raise is no longer a process kill; it is a returned outcome. For
+white balance specifically the degradation is explicit: log it, skip the lock,
+fall back to `.continuousAutoWhiteBalance`, keep the session running, and show
+**AUTO** rather than falsely claiming CALIBRATED. The coach worked without
+locked WB for months. A less colour-calibrated shoot beats a dead camera.
+
+⚠️ **The one rule for shielded blocks**, and it is load-bearing: a block holds
+exactly one AVFoundation call and **never a `defer`**. An ObjC exception
+unwinding through a Swift frame runs no Swift cleanup, so a
+`defer { unlockForConfiguration() }` inside a shielded block would silently not
+run and wedge the device for the rest of the shoot. Every unlock is spelled out
+*after* the shielded call, on both paths. Documented in
+`TovisObjCException.h` and `CaptureDeviceShielding.swift`.
+
+**Red-proofed, both layers, and the red is real.**
+`CaptureExceptionShieldTests` + `GuardedWhiteBalanceTests` (13 tests) raise
+genuine `NSException`s through the genuine shim. `GuardedWhiteBalanceTests`
+stages the crash itself: gains valid for the lens that was active, the device
+switching to a lens with a lower max *while the lock is held*, and the write
+rejected — then asserts the camera came back on auto WB with the device
+unlocked and the lock/unlock counts balanced. **Mutation-checked:** with the
+`@catch` removed from the shim, the suite does not fail, it dies —
+`exited with unexpected signal code 6`, `libc++abi: terminating due to uncaught
+exception of type NSException`. That is build 38's failure mode reproduced
+inside the test harness, which is the correct red for this bug.
+
+**Audit — the writes shielded (all in `CameraController.swift`).**
+`setWhiteBalanceModeLocked` ×2 · `whiteBalanceMode` · `setExposureTargetBias` ×3
+· `focusPointOfInterest` / `exposurePointOfInterest` · `focusMode` /
+`exposureMode` · `isSubjectAreaChangeMonitoringEnabled` · `videoZoomFactor` ·
+`activeColorSpace` · `photoOutput.maxPhotoDimensions` ·
+`settings.maxPhotoDimensions` · `maxPhotoQualityPrioritization` · `capturePhoto`
+· `sessionPreset` · `addInput` / `addOutput` ×3 · `beginConfiguration` /
+`commitConfiguration` · `startRunning` ×3 / `stopRunning` ·
+`movieOutput.startRecording` / `stopRecording` / `maxRecordedDuration` ·
+`conn.videoRotationAngle` / `preferredVideoStabilizationMode`. Where a raise
+means a delegate callback will never arrive (`capturePhoto`, `startRecording`,
+`stopRecording`), the awaiting continuation is failed immediately rather than
+left to the 10s watchdog with the shutter gated shut.
+
+⚠️ **CI still does not compile the app target** (`swift test` on TovisKit only).
+Verified locally: **BUILD SUCCEEDED** against the iOS Simulator SDK, **1218
+TovisKit tests pass**. Both new TovisKit files and the ObjC target DO run in CI.
+
+**Not verified — needs Tori's device.** That build 39 opens the camera and stays
+open on a multi-lens phone, and whether the WB lock now succeeds or degrades to
+AUTO. If it degrades, the new `⚠️ camera:` log line carries AVFoundation's own
+reason string — which is precisely what this crash log lacked — and that names
+the remaining precondition without another round of inference.
+
 ### 2026-08-05 — build 37 STILL crashes; the crash log names white balance
 
 > 🔴 **Tori must archive BUILD 38.** Build 37's camera is dead on every

@@ -12,7 +12,13 @@ let package = Package(
         .library(name: "TovisKit", targets: ["TovisKit"]),
     ],
     targets: [
-        .target(name: "TovisKit"),
+        // The Objective-C exception catcher. Swift cannot `@catch`, and every
+        // AVFoundation device write validates by raising — so the app's only
+        // way to survive one is to cross into ObjC for the write. Kept as its
+        // own tiny target because it is the ONE place in the codebase allowed
+        // to contain `@try`. See TovisObjCException.h.
+        .target(name: "TovisObjC"),
+        .target(name: "TovisKit", dependencies: ["TovisObjC"]),
         .testTarget(
             name: "TovisKitTests",
             dependencies: ["TovisKit"],
