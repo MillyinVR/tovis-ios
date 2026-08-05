@@ -1,0 +1,6 @@
+{
+  "ok": true,
+  "url": "https://tovis.app/api/v1/auth/session-handoff/clx9handoffrow1.4f8c2a1d9e7b6c5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a?from=%2Fpro%2Fmembership",
+  "redirectPath": "/pro/membership",
+  "expiresAt": "2026-08-05T12:01:00.000Z"
+}

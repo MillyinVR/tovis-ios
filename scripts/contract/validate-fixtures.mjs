@@ -313,6 +313,18 @@ const CHECKS = [
     def: 'ProCalendarResponseDTO',
     pick: (d) => [d],
   },
+  // POST /api/v1/auth/session-handoff returns `jsonOk({ url, redirectPath,
+  // expiresAt })`, so the payload is spread at the ROOT alongside `ok`.
+  //
+  // Worth a fixture even though the shape is three strings: `url` decodes into
+  // a Swift `URL`, so a backend that ever returned a relative path (or dropped
+  // the key) would fail to decode at runtime on a security-critical tap-out.
+  // The token in the fixture is fabricated, not a captured credential.
+  {
+    file: 'authSessionHandoff.json',
+    def: 'AuthSessionHandoffResponseDTO',
+    pick: (d) => [d],
+  },
 ]
 
 function fail(msg) {

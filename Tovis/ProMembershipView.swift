@@ -18,7 +18,14 @@ struct ProMembershipView: View {
     /// to go find the site themselves — the single highest conversion-per-line item
     /// in membership-value-brief.md §5.3.
     @State private var manageLink: MembershipWebLink?
+    /// True while the one-time sign-in token is being minted. Gates the button so
+    /// a double-tap cannot mint two tokens (the second would burn the first).
+    @State private var isPreparingWebLink = false
     private let brandName = "Tovis"
+
+    /// The single place this destination is spelled, shared by the hand-off
+    /// request and its plain-URL fallback so the two can never disagree.
+    private static let membershipPath = "/pro/membership"
 
     var body: some View {
         ScrollView {
@@ -184,20 +191,40 @@ struct ProMembershipView: View {
     /// button — SFSafariViewController, reusing the same wrapper the Stripe
     /// checkout hand-off uses.
     ///
-    /// ⚠️ NOT a signed-in hand-off. SFSafariViewController shares cookies with
-    /// Safari, not with this app's session, and the backend has no one-time
-    /// sign-in-link endpoint. A pro already signed in on Safari lands straight on
-    /// the page; anyone else hits /login, which carries `?from=/pro/membership` and
-    /// returns them here. Building a real hand-off means new auth surface (a
-    /// single-use, short-TTL, user-bound token) — a security decision, not a UI one.
+    /// ✅ Now a REAL signed-in hand-off. SFSafariViewController shares cookies with
+    /// Safari rather than with this app's session, so this used to drop a
+    /// signed-in pro on the login wall. It now asks the backend for a one-time,
+    /// 60-second, user-bound token and opens the exchange URL, which sets the
+    /// web session cookie and lands them straight on their plan.
+    ///
+    /// ⚠️ Degrades on purpose. `webHandoffURL` swallows every failure and returns
+    /// the plain page URL — the exact pre-hand-off behaviour (`/login?from=…`,
+    /// which returns the pro here after signing in). A tap-out must never become
+    /// a dead button because an auth endpoint was unreachable or the build is
+    /// talking to a backend that predates it.
     private var manageOnWeb: some View {
         VStack(alignment: .leading, spacing: 6) {
             Button {
-                manageLink = MembershipWebLink(
-                    url: session.client.webPageURL("/pro/membership"),
-                )
+                // The token dies in 60s, so it is requested at the moment of the
+                // tap and opened immediately — never fetched ahead of time.
+                guard !isPreparingWebLink else { return }
+                isPreparingWebLink = true
+
+                Task {
+                    let url = await session.client.auth.webHandoffURL(
+                        for: Self.membershipPath,
+                        fallback: session.client.webPageURL(Self.membershipPath),
+                    )
+                    isPreparingWebLink = false
+                    manageLink = MembershipWebLink(url: url)
+                }
             } label: {
                 HStack(spacing: 8) {
+                    if isPreparingWebLink {
+                        ProgressView()
+                            .tint(BrandColor.onAccent)
+                            .scaleEffect(0.8)
+                    }
                     Text("Manage plan on the web")
                         .font(BrandFont.body(15, .semibold))
                     Image(systemName: "arrow.up.right.square")
@@ -209,6 +236,7 @@ struct ProMembershipView: View {
                 .background(BrandColor.accent)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
+            .disabled(isPreparingWebLink)
 
             Text("Plans are purchased and managed on the \(brandName) website.")
                 .font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)

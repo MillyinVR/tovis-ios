@@ -447,6 +447,49 @@ public final class AuthService: Sendable {
         guard let token = await tokenStore.token() else { return nil }
         return SessionToken.sessionKind(from: token)
     }
+
+    /// POST /api/v1/auth/session-handoff — mint a one-time URL that signs this
+    /// pro into a browser and lands them on `redirectPath`.
+    ///
+    /// `redirectPath` must be inside the PRO workspace (`/pro/...`); the server
+    /// holds the allowlist and 400s anything else, so a typo here fails loudly
+    /// rather than silently sending the pro somewhere unintended.
+    ///
+    /// PRO-only and authenticated. See `SessionHandoff` for the handling rules —
+    /// the returned URL is a live credential for the next 60 seconds.
+    public func webSessionHandoff(
+        redirectPath: String = "/pro/membership"
+    ) async throws -> SessionHandoff {
+        let payload = try JSONEncoder.canonical.encode(
+            SessionHandoffRequest(redirectPath: redirectPath)
+        )
+        return try await api.request(
+            "/auth/session-handoff",
+            method: .post,
+            body: payload
+        )
+    }
+
+    /// The URL to open for a web tap-out, with the hand-off applied when it can
+    /// be. Degrades to the plain page URL on ANY failure — an older backend that
+    /// 404s this endpoint, an expired session, no network — because the tap-out
+    /// must never become a dead button. The plain URL is exactly the behaviour
+    /// that shipped before the hand-off existed: the pro lands on `/login` with
+    /// `?from=` set and is returned to the page after signing in.
+    public func webHandoffURL(
+        for path: String,
+        fallback: URL
+    ) async -> URL {
+        do {
+            return try await webSessionHandoff(redirectPath: path).url
+        } catch {
+            return fallback
+        }
+    }
+}
+
+struct SessionHandoffRequest: Encodable, Sendable {
+    let redirectPath: String
 }
 
 /// Stateless token refresh used by `APIClient`'s 401 handler.
