@@ -35,7 +35,19 @@ struct ProClientChartView: View {
     }
     @State private var viewMode: ViewMode = .chart
 
-    private enum Phase { case loading, loaded(ProClientChart), failed(String) }
+    private enum Phase {
+        case loading
+        case loaded(ProClientChart)
+        case failed(String)
+        /// W5 CONTACT_ONLY: the pro knows this client but the chart isn't shared.
+        ///
+        /// Its own phase rather than `.failed`, because the two need opposite
+        /// affordances. `.failed` offers "Try again", which is right for a
+        /// transport blip and actively wrong here — the server will refuse
+        /// identically forever, so the retry can never win. What this state
+        /// needs is a way to ASK, which is what the pro had none of.
+        case notShared(message: String, share: ProClientChartShare?)
+    }
     @State private var phase: Phase = .loading
     @State private var tab: Tab = .notes
     @State private var showAddNote = false
@@ -60,6 +72,10 @@ struct ProClientChartView: View {
     }
     @State private var editSheet: EditSheet?
 
+    // W5 chart-access request (the `.notShared` phase).
+    @State private var requestingAccess = false
+    @State private var requestError: String?
+
     private var loadedChart: ProClientChart? {
         if case let .loaded(chart) = phase { return chart }
         return nil
@@ -78,6 +94,8 @@ struct ProClientChartView: View {
                         HStack { Spacer(); ProgressView().tint(BrandColor.accent); Spacer() }.padding(.top, 70)
                     case let .failed(message):
                         errorState(message)
+                    case let .notShared(message, share):
+                        notSharedState(message: message, share: share)
                     case let .loaded(chart):
                         content(chart)
                     }
@@ -669,11 +687,107 @@ struct ProClientChartView: View {
         .frame(maxWidth: .infinity).padding(.top, 60)
     }
 
+    /// W5 CONTACT_ONLY: the chart is refused but the pro can ask.
+    ///
+    /// This is the state the whole follow-up exists for. It used to render as a
+    /// generic error with a "Try again" button — the server's own copy already
+    /// said "You can ask them for access", which was true of the API and false
+    /// of every control the pro could reach.
+    @ViewBuilder
+    private func notSharedState(message: String, share: ProClientChartShare?) -> some View {
+        VStack(spacing: 14) {
+            Image(systemName: "lock.doc")
+                .font(.system(size: 34, weight: .light))
+                .foregroundStyle(BrandColor.textMuted)
+
+            Text(message)
+                .font(BrandFont.body(15))
+                .foregroundStyle(BrandColor.textSecondary)
+                .multilineTextAlignment(.center)
+
+            if let blocked = share?.blockedCopy {
+                // Rendered as copy, never a disabled button — see `blockedCopy`.
+                Text(blocked)
+                    .font(BrandFont.body(13, .semibold))
+                    .foregroundStyle(BrandColor.textMuted)
+                    .multilineTextAlignment(.center)
+            } else if share?.proCanAsk ?? true {
+                Button {
+                    Task { await requestChartAccess() }
+                } label: {
+                    if requestingAccess {
+                        ProgressView().tint(BrandColor.onAccent)
+                            .padding(.vertical, 12).padding(.horizontal, 28)
+                            .background(BrandColor.accent)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    } else {
+                        Text("Request chart access")
+                            .font(BrandFont.body(15, .semibold))
+                            .foregroundStyle(BrandColor.onAccent)
+                            .padding(.vertical, 12).padding(.horizontal, 28)
+                            .background(BrandColor.accent)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                }
+                .disabled(requestingAccess)
+            }
+
+            if let requestError {
+                Text(requestError)
+                    .font(BrandFont.body(13))
+                    .foregroundStyle(BrandColor.ember)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .frame(maxWidth: .infinity).padding(.top, 60)
+    }
+
+    /// Ask, then re-read the share so the button becomes the waiting copy.
+    private func requestChartAccess() async {
+        guard !requestingAccess else { return }
+        requestingAccess = true
+        requestError = nil
+        defer { requestingAccess = false }
+
+        guard case let .notShared(message, _) = phase else { return }
+
+        do {
+            let share = try await session.client.proClients
+                .requestChartAccess(clientId: clientId)
+            phase = .notShared(message: message, share: share)
+        } catch let error as APIError {
+            // The server's refusal copy is already pro-facing (e.g. "You already
+            // have a request waiting with this client."), so pass it through.
+            requestError = error.userMessage
+            // Re-read: a 409 means the server knows a state this screen doesn't,
+            // and leaving the button live would invite the same refusal again.
+            if let fresh = try? await session.client.proClients.chartShare(clientId: clientId) {
+                phase = .notShared(message: message, share: fresh)
+            }
+        } catch {
+            requestError = "Couldn’t send the request. Try again."
+        }
+    }
+
     private func load() async {
         do {
             let chart = try await session.client.proClients.chart(clientId: clientId)
             phase = .loaded(chart)
         } catch let error as APIError {
+            // CHART_NOT_SHARED is the pro-can-ask refusal (W5 chartAccessCopy).
+            // Branch on the CODE, not the copy — the message is prose that will
+            // be reworded, and NO_CLIENT_RELATIONSHIP deliberately answers the
+            // same 404 with a flat "Client not found." for a stranger.
+            if case let .server(_, message, code) = error, code == "CHART_NOT_SHARED" {
+                // Best-effort: the refusal screen is worth showing even if the
+                // share read fails, and `proCanAsk` defaults to offering the ask.
+                let share = try? await session.client.proClients.chartShare(clientId: clientId)
+                phase = .notShared(
+                    message: message ?? "This client hasn’t shared their chart with you yet.",
+                    share: share
+                )
+                return
+            }
             phase = .failed(error.userMessage)
         } catch {
             phase = .failed("Couldn’t load this client’s chart.")
