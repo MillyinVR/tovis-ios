@@ -458,15 +458,19 @@ struct ProCalendarManagementSheet: View {
     @ViewBuilder
     private func clientNameView(_ event: ProCalendarEvent) -> some View {
         let name = event.clientName.isEmpty ? "Client" : event.clientName
-        if let clientProfileId = event.clientProfileId {
+        switch ClientIdentityDestination.resolve(
+            clientProfileId: event.clientProfileId,
+            publicProfileHandle: event.clientPublicProfileHandle
+        ) {
+        case let .chart(clientId):
             clientNameButton(name) {
-                chartTarget = ChartTarget(clientId: clientProfileId, fullName: name)
+                chartTarget = ChartTarget(clientId: clientId, fullName: name)
             }
-        } else if let handle = event.clientPublicProfileHandle, !handle.isEmpty {
+        case let .publicProfile(handle):
             clientNameButton(name) {
                 publicProfileTarget = PublicProfileTarget(handle: handle)
             }
-        } else {
+        case .none:
             Text(name)
                 .font(BrandFont.body(13))
                 .foregroundStyle(BrandColor.textSecondary)

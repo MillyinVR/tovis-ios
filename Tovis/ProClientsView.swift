@@ -191,22 +191,24 @@ struct ProClientsView: View {
     /// DESIGN, so there is genuinely nothing to push.
     @ViewBuilder
     private func row(_ client: ProClientSummary) -> some View {
-        if client.canViewClient {
-            NavigationLink { ProClientChartView(clientId: client.id, fullName: client.fullName) } label: { rowBody(client) }
+        switch destination(client) {
+        case let .chart(clientId):
+            NavigationLink { ProClientChartView(clientId: clientId, fullName: client.fullName) } label: { rowBody(client) }
                 .buttonStyle(.plain)
-        } else if let handle = client.publicProfileHandle, !handle.isEmpty {
+        case let .publicProfile(handle):
             NavigationLink { PublicClientViewerView(handle: handle) } label: { rowBody(client) }
                 .buttonStyle(.plain)
-        } else {
+        case .none:
             rowBody(client)   // no chart, no public page → nothing to open
         }
     }
 
-    /// True when the row pushes somewhere — either destination. Drives the
-    /// chevron, which previously tracked `canViewClient` alone and so promised
-    /// "no" on rows that now open a public profile.
-    private func rowIsTappable(_ client: ProClientSummary) -> Bool {
-        client.canViewClient || !(client.publicProfileHandle ?? "").isEmpty
+    private func destination(_ client: ProClientSummary) -> ClientIdentityDestination {
+        .resolve(
+            clientId: client.id,
+            canViewClient: client.canViewClient,
+            publicProfileHandle: client.publicProfileHandle
+        )
     }
 
     private func rowBody(_ client: ProClientSummary) -> some View {
@@ -225,7 +227,7 @@ struct ProClientsView: View {
                     }
                 }
                 Spacer()
-                if rowIsTappable(client) {
+                if destination(client).isTappable {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(BrandColor.textMuted)

@@ -791,7 +791,12 @@ struct ProBookingDetailView: View {
     @ViewBuilder
     private func clientNameView(_ booking: ProBookingDetail) -> some View {
         let name = booking.client.fullName.isEmpty ? "Client" : booking.client.fullName
-        if let handle = booking.client.publicProfileHandle, !handle.isEmpty {
+        // This screen never links the CHART — it is already the pro-only record
+        // for this booking — so only the public arm of the rule is taken here.
+        if case let .publicProfile(handle) = ClientIdentityDestination.resolve(
+            clientProfileId: nil,
+            publicProfileHandle: booking.client.publicProfileHandle
+        ) {
             Button {
                 publicProfileNav = PublicProfileNav(handle: handle)
             } label: {
