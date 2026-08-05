@@ -110,6 +110,12 @@ struct ProClientChartView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
         .task { if case .loading = phase { await load() } }
+        // Live-sync: a client GRANTING chart access is a decision this screen is
+        // literally rendering the refusal of. Without this the pro sits on
+        // "Request chart access" until they navigate away and back, even though
+        // the server already pinged them. Reload unconditionally — the same tick
+        // also covers a chart edited from the salon computer.
+        .onChange(of: session.refreshTick) { Task { await load() } }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
