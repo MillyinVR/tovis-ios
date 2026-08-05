@@ -77,10 +77,25 @@ final class CameraController: NSObject {
         observers.forEach(NotificationCenter.default.removeObserver)
     }
 
+    /// Make every caught AVFoundation exception visible.
+    ///
+    /// The shield turns a process kill into a degraded setting, which is the
+    /// point — but a degradation nobody can see is a bug that never gets fixed.
+    /// Three rounds of this crash were diagnosed from a backtrace that carried
+    /// no exception `reason`; from here on the reason is in the log the first
+    /// time it happens, next to the name of the write that raised.
+    nonisolated private static func installExceptionLogging() {
+        CaptureExceptionShield.onCaughtException = { label, outcome in
+            print("⚠️ camera: AVFoundation raised on `\(label)` — write skipped, "
+                  + "camera still running. \(outcome.reason ?? "no reason given")")
+        }
+    }
+
     /// Request permission, configure once, and start the preview. Idempotent.
     /// Pass `frameDelegate` to feed the on-device coach the live frames.
     func start(frameDelegate: AVCaptureVideoDataOutputSampleBufferDelegate? = nil) async {
         if let frameDelegate { self.frameDelegate = frameDelegate }
+        Self.installExceptionLogging()
         guard await Self.ensureAuthorized() else { status = .denied; return }
 
         if !configured {
@@ -94,7 +109,9 @@ final class CameraController: NSObject {
 
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
             sessionQueue.async {
-                if !self.session.isRunning { self.session.startRunning() }
+                if !self.session.isRunning {
+                    CaptureExceptionShield.perform("startRunning") { self.session.startRunning() }
+                }
                 cont.resume()
             }
         }
@@ -103,7 +120,9 @@ final class CameraController: NSObject {
 
     func stop() {
         sessionQueue.async {
-            if self.session.isRunning { self.session.stopRunning() }
+            if self.session.isRunning {
+                CaptureExceptionShield.perform("stopRunning") { self.session.stopRunning() }
+            }
         }
     }
 
@@ -114,7 +133,7 @@ final class CameraController: NSObject {
     func resume() {
         sessionQueue.async {
             guard self.configured, !self.session.isRunning else { return }
-            self.session.startRunning()
+            CaptureExceptionShield.perform("startRunning(resume)") { self.session.startRunning() }
         }
     }
 
@@ -151,9 +170,19 @@ final class CameraController: NSObject {
                 // or `capturePhoto` throws NSInvalidArgumentException.
                 let outputMax = self.photoOutput.maxPhotoDimensions
                 if outputMax.width > 0, outputMax.height > 0 {
-                    settings.maxPhotoDimensions = outputMax
+                    CaptureExceptionShield.settings("settings.maxPhotoDimensions") {
+                        settings.maxPhotoDimensions = outputMax
+                    }
                 }
-                self.photoOutput.capturePhoto(with: settings, delegate: self)
+                // A raise here means no delegate callback ever arrives, so the
+                // awaiting continuation must be failed rather than left to the
+                // 10s watchdog with the shutter gated shut.
+                if CaptureExceptionShield.perform("capturePhoto", {
+                    self.photoOutput.capturePhoto(with: settings, delegate: self)
+                }).didThrow {
+                    self.resolveCapture(.failure(CameraError.noData))
+                    return
+                }
                 // Watchdog: if neither capture delegate fires (a shot the system
                 // silently drops — session interrupted mid-capture, an output
                 // glitch), fail this capture after a beat so the caller recovers.
@@ -195,15 +224,19 @@ final class CameraController: NSObject {
             layer.captureDevicePointConverted(fromLayerPoint: layerPoint)) else { return }
         sessionQueue.async {
             guard (try? device.lockForConfiguration()) != nil else { return }
-            if device.isFocusPointOfInterestSupported {
-                device.focusPointOfInterest = point
-                if device.isFocusModeSupported(.autoFocus) { device.focusMode = .autoFocus }
+            // Unlock is AFTER the shielded block, never a `defer` inside it —
+            // an ObjC unwind runs no Swift cleanup. See CaptureDeviceShielding.
+            CaptureExceptionShield.settings("focus(atLayerPoint:)") {
+                if device.isFocusPointOfInterestSupported {
+                    device.focusPointOfInterest = point
+                    if device.isFocusModeSupported(.autoFocus) { device.focusMode = .autoFocus }
+                }
+                if device.isExposurePointOfInterestSupported {
+                    device.exposurePointOfInterest = point
+                    if device.isExposureModeSupported(.autoExpose) { device.exposureMode = .autoExpose }
+                }
+                device.isSubjectAreaChangeMonitoringEnabled = true
             }
-            if device.isExposurePointOfInterestSupported {
-                device.exposurePointOfInterest = point
-                if device.isExposureModeSupported(.autoExpose) { device.exposureMode = .autoExpose }
-            }
-            device.isSubjectAreaChangeMonitoringEnabled = true
             device.unlockForConfiguration()
             self.userMeteringActive = true   // face metering stands down
             Task { @MainActor in self.aeAfLocked = false }
@@ -216,9 +249,11 @@ final class CameraController: NSObject {
     /// never fights the lock.)
     nonisolated private func restoreContinuousFocus() {
         guard let device, (try? device.lockForConfiguration()) != nil else { return }
-        if device.isFocusModeSupported(.continuousAutoFocus) { device.focusMode = .continuousAutoFocus }
-        if device.isExposureModeSupported(.continuousAutoExposure) { device.exposureMode = .continuousAutoExposure }
-        device.isSubjectAreaChangeMonitoringEnabled = false
+        CaptureExceptionShield.settings("restoreContinuousFocus") {
+            if device.isFocusModeSupported(.continuousAutoFocus) { device.focusMode = .continuousAutoFocus }
+            if device.isExposureModeSupported(.continuousAutoExposure) { device.exposureMode = .continuousAutoExposure }
+            device.isSubjectAreaChangeMonitoringEnabled = false
+        }
         device.unlockForConfiguration()
         userMeteringActive = false
     }
@@ -265,17 +300,19 @@ final class CameraController: NSObject {
             if !faceChanged, let last = self.lastFaceExposurePoint,
                abs(last.x - target.x) < 0.08, abs(last.y - target.y) < 0.08 { return }
             guard (try? device.lockForConfiguration()) != nil else { return }
-            device.exposurePointOfInterest = target
-            if device.isExposureModeSupported(.continuousAutoExposure) {
-                device.exposureMode = .continuousAutoExposure
-            }
-            // Slight under-expose while metering a face (blown highlights are
-            // unrecoverable; lifted shadows are fine), on top of any card-
-            // anchored calibration bias for this room's light.
-            let bias = self.calibrationBiasEV + (center == nil ? 0 : CoachTuning.faceExposureBias)
-            if let safe = DeviceParameterGuard.clamped(
-                bias, lower: device.minExposureTargetBias, upper: device.maxExposureTargetBias) {
-                device.setExposureTargetBias(safe)
+            CaptureExceptionShield.settings("setFaceExposure") {
+                device.exposurePointOfInterest = target
+                if device.isExposureModeSupported(.continuousAutoExposure) {
+                    device.exposureMode = .continuousAutoExposure
+                }
+                // Slight under-expose while metering a face (blown highlights are
+                // unrecoverable; lifted shadows are fine), on top of any card-
+                // anchored calibration bias for this room's light.
+                let bias = self.calibrationBiasEV + (center == nil ? 0 : CoachTuning.faceExposureBias)
+                if let safe = DeviceParameterGuard.clamped(
+                    bias, lower: device.minExposureTargetBias, upper: device.maxExposureTargetBias) {
+                    device.setExposureTargetBias(safe)
+                }
             }
             device.unlockForConfiguration()
             self.lastFaceExposurePoint = target
@@ -294,10 +331,12 @@ final class CameraController: NSObject {
             guard device.exposureMode != .locked,
                   (try? device.lockForConfiguration()) != nil else { return }
             let faceBias: Float = self.faceMeteringActive ? CoachTuning.faceExposureBias : 0
-            if let safe = DeviceParameterGuard.clamped(
-                self.calibrationBiasEV + faceBias,
-                lower: device.minExposureTargetBias, upper: device.maxExposureTargetBias) {
-                device.setExposureTargetBias(safe)
+            CaptureExceptionShield.settings("setCalibrationExposureBias") {
+                if let safe = DeviceParameterGuard.clamped(
+                    self.calibrationBiasEV + faceBias,
+                    lower: device.minExposureTargetBias, upper: device.maxExposureTargetBias) {
+                    device.setExposureTargetBias(safe)
+                }
             }
             device.unlockForConfiguration()
         }
@@ -309,15 +348,17 @@ final class CameraController: NSObject {
         guard let device else { return }
         sessionQueue.async {
             guard (try? device.lockForConfiguration()) != nil else { return }
-            if locked {
-                if device.isFocusModeSupported(.locked) { device.focusMode = .locked }
-                if device.isExposureModeSupported(.locked) { device.exposureMode = .locked }
-            } else {
-                if device.isFocusModeSupported(.continuousAutoFocus) { device.focusMode = .continuousAutoFocus }
-                if device.isExposureModeSupported(.continuousAutoExposure) { device.exposureMode = .continuousAutoExposure }
+            CaptureExceptionShield.settings("setAEAFLock") {
+                if locked {
+                    if device.isFocusModeSupported(.locked) { device.focusMode = .locked }
+                    if device.isExposureModeSupported(.locked) { device.exposureMode = .locked }
+                } else {
+                    if device.isFocusModeSupported(.continuousAutoFocus) { device.focusMode = .continuousAutoFocus }
+                    if device.isExposureModeSupported(.continuousAutoExposure) { device.exposureMode = .continuousAutoExposure }
+                }
+                // The explicit lock supersedes any pending tap-to-focus revert.
+                device.isSubjectAreaChangeMonitoringEnabled = false
             }
-            // The explicit lock supersedes any pending tap-to-focus revert.
-            device.isSubjectAreaChangeMonitoringEnabled = false
             device.unlockForConfiguration()
             self.userMeteringActive = false
             Task { @MainActor in self.aeAfLocked = locked }
@@ -333,51 +374,113 @@ final class CameraController: NSObject {
     func lockWhiteBalance(sampleR: Double, sampleG: Double, sampleB: Double) {
         guard let device else { return }
         sessionQueue.async {
-            guard device.isWhiteBalanceModeSupported(.locked),
-                  (try? device.lockForConfiguration()) != nil else { return }
-            defer { device.unlockForConfiguration() }
-            let current = device.deviceWhiteBalanceGains
-            let maxGain = device.maxWhiteBalanceGain
-            let target = CameraCalibration.neutralizingGains(
-                sample: RGB(sampleR, sampleG, sampleB),
-                current: RGB(Double(current.redGain), Double(current.greenGain), Double(current.blueGain)),
-                maxGain: Double(maxGain)
-            )
-            guard let safe = DeviceParameterGuard.whiteBalanceGains(
-                r: target.r, g: target.g, b: target.b, maxGain: maxGain) else { return }
-            device.setWhiteBalanceModeLocked(
-                with: AVCaptureDevice.WhiteBalanceGains(
-                    redGain: safe.r, greenGain: safe.g, blueGain: safe.b),
-                completionHandler: nil)
-            Task { @MainActor in
-                self.whiteBalanceCalibrated = true
-                self.onWhiteBalanceLocked?(Double(safe.r), Double(safe.g), Double(safe.b))
+            // The neutralizing solve needs the device's CURRENT gains and max,
+            // and both are only trustworthy inside the same still window that
+            // holds the write — see `applyWhiteBalanceGains` for why.
+            self.withSettledFormat {
+                let current = device.deviceWhiteBalanceGains
+                let target = CameraCalibration.neutralizingGains(
+                    sample: RGB(sampleR, sampleG, sampleB),
+                    current: RGB(Double(current.redGain), Double(current.greenGain), Double(current.blueGain)),
+                    maxGain: Double(device.maxWhiteBalanceGain)
+                )
+                let outcome = GuardedWhiteBalance.apply(
+                    r: target.r, g: target.g, b: target.b, to: device)
+                self.handle(outcome, source: "lockWhiteBalance", persist: true)
             }
         }
     }
 
     /// Re-apply previously locked WB gains (persisted per booking) so the AFTER
     /// shoot uses the same calibration as the BEFORE without re-carding.
+    /// 🔴 THE BUILD 38 CRASH SITE. Read `GuardedWhiteBalance.swift` before
+    /// changing anything here.
+    ///
+    /// This runs milliseconds after `startRunning`, from the camera view's
+    /// "one card, one session" re-apply — i.e. squarely inside the window where
+    /// a virtual device is still settling its active constituent lens and the
+    /// preview layer is attaching a connection on the main thread. Build 38
+    /// validated the gains against the device as it was *before* that settled
+    /// and wrote them *after*, and AVFoundation killed the process for it.
+    ///
+    /// Three things now stand between that and an abort: the write happens
+    /// inside a session-configuration transaction so the format cannot change
+    /// underneath it; every precondition is re-read inside the device lock; and
+    /// the write itself is caught, so a raise degrades to automatic white
+    /// balance instead of `SIGABRT`.
     func applyWhiteBalanceGains(r: Double, g: Double, b: Double) {
         guard let device else { return }
         sessionQueue.async {
-            guard device.isWhiteBalanceModeSupported(.locked),
-                  (try? device.lockForConfiguration()) != nil else { return }
-            defer { device.unlockForConfiguration() }
-            guard let safe = DeviceParameterGuard.whiteBalanceGains(
-                r: r, g: g, b: b, maxGain: device.maxWhiteBalanceGain) else {
-                // Gains persisted by an older build that let a NaN through. They
-                // are unusable and they are not going to become usable — say so,
-                // so the calibration gets dropped instead of re-poisoning every
-                // future launch of this camera.
-                Task { @MainActor in self.onWhiteBalanceUnusable?() }
-                return
+            self.withSettledFormat {
+                let outcome = GuardedWhiteBalance.apply(r: r, g: g, b: b, to: device)
+                self.handle(outcome, source: "applyWhiteBalanceGains", persist: false)
             }
-            device.setWhiteBalanceModeLocked(
-                with: AVCaptureDevice.WhiteBalanceGains(
-                    redGain: safe.r, greenGain: safe.g, blueGain: safe.b),
-                completionHandler: nil)
-            Task { @MainActor in self.whiteBalanceCalibrated = true }
+        }
+    }
+
+    /// Runs `body` inside a session configuration transaction, so the session
+    /// cannot re-negotiate its active format — and a virtual device cannot swap
+    /// its active constituent lens — while `body` reads the device's limits and
+    /// writes to it.
+    ///
+    /// This is the root-cause half of the build 38 fix. `lockForConfiguration`
+    /// alone does NOT close this window: it excludes other clients from
+    /// configuring the device, not the session's own renegotiation, and a
+    /// preview-layer attach on the main thread is exactly that renegotiation.
+    ///
+    /// sessionQueue-confined. `commitConfiguration` is shielded too, because it
+    /// is itself a call AVFoundation can raise from.
+    nonisolated private func withSettledFormat(_ body: () -> Void) {
+        CaptureExceptionShield.perform("beginConfiguration") { self.session.beginConfiguration() }
+        body()
+        commitConfigurationShielded()
+    }
+
+    /// `commitConfiguration()` with exceptions caught. It validates the whole
+    /// pending configuration and raises on an invalid one, so it is a throwing
+    /// call like any other — and the one that must never be skipped, since an
+    /// uncommitted transaction leaves the session wedged.
+    nonisolated private func commitConfigurationShielded() {
+        CaptureExceptionShield.perform("commitConfiguration") {
+            self.session.commitConfiguration()
+        }
+    }
+
+    /// Fold one white-balance attempt back into the UI + persisted calibration.
+    ///
+    /// Every case here leaves a running camera. `persist` is true only for a
+    /// fresh gray-card lock — re-applying stored gains must not re-write them.
+    nonisolated private func handle(
+        _ outcome: WhiteBalanceOutcome, source: String, persist: Bool
+    ) {
+        if let reason = outcome.reason {
+            // Caught, not fatal — but a caught throw here is still a bug, and
+            // this is the line that will name it next time. AVFoundation's own
+            // message says which precondition it enforced; the build 38 crash
+            // log did not carry one, which is why round 3 had to infer it.
+            print("⚠️ camera: \(source) — AVFoundation raised on the WB write, "
+                  + "falling back to automatic white balance. \(reason)")
+        }
+        switch outcome {
+        case let .locked(r, g, b):
+            Task { @MainActor in
+                self.whiteBalanceCalibrated = true
+                if persist { self.onWhiteBalanceLocked?(Double(r), Double(g), Double(b)) }
+            }
+        case .unusableGains:
+            // Gains persisted by an older build that let a NaN through. They are
+            // unusable and they are not going to become usable — say so, so the
+            // calibration gets dropped instead of re-poisoning every future
+            // launch of this camera.
+            Task { @MainActor in
+                self.whiteBalanceCalibrated = false
+                self.onWhiteBalanceUnusable?()
+            }
+        case .unsupported, .lockUnavailable, .fellBackToAuto:
+            // The shoot runs on automatic white balance — which is what it did
+            // for months before calibration existed. The badge must say AUTO
+            // rather than claim a calibration that is not in effect.
+            Task { @MainActor in self.whiteBalanceCalibrated = false }
         }
     }
 
@@ -387,14 +490,16 @@ final class CameraController: NSObject {
         guard let device else { return }
         sessionQueue.async {
             guard (try? device.lockForConfiguration()) != nil else { return }
-            if device.isWhiteBalanceModeSupported(.continuousAutoWhiteBalance) {
-                device.whiteBalanceMode = .continuousAutoWhiteBalance
-            }
             self.calibrationBiasEV = 0
             let faceBias: Float = self.faceMeteringActive ? CoachTuning.faceExposureBias : 0
-            if let safe = DeviceParameterGuard.clamped(
-                faceBias, lower: device.minExposureTargetBias, upper: device.maxExposureTargetBias) {
-                device.setExposureTargetBias(safe)
+            CaptureExceptionShield.settings("resetWhiteBalance") {
+                if device.isWhiteBalanceModeSupported(.continuousAutoWhiteBalance) {
+                    device.whiteBalanceMode = .continuousAutoWhiteBalance
+                }
+                if let safe = DeviceParameterGuard.clamped(
+                    faceBias, lower: device.minExposureTargetBias, upper: device.maxExposureTargetBias) {
+                    device.setExposureTargetBias(safe)
+                }
             }
             device.unlockForConfiguration()
             Task { @MainActor in self.whiteBalanceCalibrated = false }
@@ -408,27 +513,35 @@ final class CameraController: NSObject {
         isRecording = true
         sessionQueue.async {
             guard self.session.isRunning, !self.movieOutput.isRecording else { return }
-            if let conn = self.movieOutput.connection(with: .video) {
-                // Upright portrait orientation (iOS 17 rotation API).
-                if conn.isVideoRotationAngleSupported(90) {
-                    conn.videoRotationAngle = 90
+            CaptureExceptionShield.settings("startRecording/connection") {
+                if let conn = self.movieOutput.connection(with: .video) {
+                    // Upright portrait orientation (iOS 17 rotation API).
+                    if conn.isVideoRotationAngleSupported(90) {
+                        conn.videoRotationAngle = 90
+                    }
+                    // Stabilize. This was never set, so it defaulted to OFF and
+                    // every handheld salon clip shipped shaky — in a room where the
+                    // pro is holding the phone one-handed over a client. `.auto`
+                    // lets the device pick the strongest mode its format supports.
+                    if conn.isVideoStabilizationSupported {
+                        conn.preferredVideoStabilizationMode = .auto
+                    }
                 }
-                // Stabilize. This was never set, so it defaulted to OFF and
-                // every handheld salon clip shipped shaky — in a room where the
-                // pro is holding the phone one-handed over a client. `.auto`
-                // lets the device pick the strongest mode its format supports.
-                if conn.isVideoStabilizationSupported {
-                    conn.preferredVideoStabilizationMode = .auto
-                }
+                // Cap the take. With no cap, a long clip means a long card-correction
+                // re-export (per-frame CIColorMatrix at highest quality), a large temp
+                // file and a large upload — on a phone that is also running the coach.
+                self.movieOutput.maxRecordedDuration = CMTime(
+                    seconds: Self.maxClipSeconds, preferredTimescale: 600)
             }
-            // Cap the take. With no cap, a long clip means a long card-correction
-            // re-export (per-frame CIColorMatrix at highest quality), a large temp
-            // file and a large upload — on a phone that is also running the coach.
-            self.movieOutput.maxRecordedDuration = CMTime(
-                seconds: Self.maxClipSeconds, preferredTimescale: 600)
             let url = FileManager.default.temporaryDirectory
                 .appendingPathComponent("tovis-clip-\(UUID().uuidString).mov")
-            self.movieOutput.startRecording(to: url, recordingDelegate: self)
+            // A raise here means no delegate callback, so the UI must not be
+            // left showing a recording that never started.
+            if CaptureExceptionShield.perform("startRecording", {
+                self.movieOutput.startRecording(to: url, recordingDelegate: self)
+            }).didThrow {
+                Task { @MainActor in self.isRecording = false }
+            }
         }
     }
 
@@ -441,7 +554,14 @@ final class CameraController: NSObject {
                     return
                 }
                 self.recordContinuation = cont
-                self.movieOutput.stopRecording()
+                if CaptureExceptionShield.perform("stopRecording", {
+                    self.movieOutput.stopRecording()
+                }).didThrow {
+                    // No `didFinishRecordingTo` will arrive — fail the awaiting
+                    // caller now rather than stranding it forever.
+                    self.recordContinuation = nil
+                    cont.resume(throwing: CameraError.noData)
+                }
             }
         }
     }
@@ -537,19 +657,24 @@ final class CameraController: NSObject {
             wideIndex: wideIndex,
             switchOverFactors: device.virtualDeviceSwitchOverVideoZoomFactors.map { CGFloat(truncating: $0) })
         guard factor > 1.0, (try? device.lockForConfiguration()) != nil else { return }
-        defer { device.unlockForConfiguration() }
-        guard let safe = DeviceParameterGuard.clamped(
-            factor,
-            lower: device.minAvailableVideoZoomFactor,
-            upper: device.maxAvailableVideoZoomFactor) else { return }
-        device.videoZoomFactor = safe
+        CaptureExceptionShield.settings("videoZoomFactor") {
+            if let safe = DeviceParameterGuard.clamped(
+                factor,
+                lower: device.minAvailableVideoZoomFactor,
+                upper: device.maxAvailableVideoZoomFactor) {
+                device.videoZoomFactor = safe
+            }
+        }
+        device.unlockForConfiguration()
     }
 
     /// sRGB, explicitly — see the session-level note in `configureSession`.
     nonisolated private static func pinColorSpace(_ device: AVCaptureDevice) {
         guard device.activeFormat.supportedColorSpaces.contains(.sRGB),
               (try? device.lockForConfiguration()) != nil else { return }
-        device.activeColorSpace = .sRGB
+        CaptureExceptionShield.settings("activeColorSpace") {
+            device.activeColorSpace = .sRGB
+        }
         device.unlockForConfiguration()
     }
 
@@ -565,16 +690,17 @@ final class CameraController: NSObject {
     /// exceptions, and an exception is an instant process kill with no preview
     /// ever drawn — the shape of the report this fix came from.
     nonisolated private func applyFormatDependentSettings(device: AVCaptureDevice) {
-        session.beginConfiguration()
-        defer { session.commitConfiguration() }
-
-        // Per-capture `settings.maxPhotoDimensions` may not exceed the output's,
-        // so both derive from this one choice — see `capturePhoto`.
-        if let dims = Self.maxPhotoDimensions(for: device.activeFormat.supportedMaxPhotoDimensions) {
-            photoOutput.maxPhotoDimensions = dims
+        withSettledFormat {
+            // Per-capture `settings.maxPhotoDimensions` may not exceed the output's,
+            // so both derive from this one choice — see `capturePhoto`.
+            CaptureExceptionShield.settings("maxPhotoDimensions") {
+                if let dims = Self.maxPhotoDimensions(for: device.activeFormat.supportedMaxPhotoDimensions) {
+                    self.photoOutput.maxPhotoDimensions = dims
+                }
+            }
+            Self.pinColorSpace(device)
+            Self.matchWideAngleFraming(device)
         }
-        Self.pinColorSpace(device)
-        Self.matchWideAngleFraming(device)
     }
 
     private static func ensureAuthorized() async -> Bool {
@@ -590,12 +716,16 @@ final class CameraController: NSObject {
     private func configureSession() async -> String? {
         await withCheckedContinuation { (cont: CheckedContinuation<String?, Never>) in
             sessionQueue.async {
-                self.session.beginConfiguration()
+                CaptureExceptionShield.perform("beginConfiguration") {
+                    self.session.beginConfiguration()
+                }
                 // `.photo` is supported everywhere the app runs, but an
                 // unsupported preset is another uncatchable ObjC exception, and
                 // this file no longer takes that bet anywhere.
-                if self.session.canSetSessionPreset(.photo) {
-                    self.session.sessionPreset = .photo
+                CaptureExceptionShield.settings("sessionPreset") {
+                    if self.session.canSetSessionPreset(.photo) {
+                        self.session.sessionPreset = .photo
+                    }
                 }
                 // Pin the capture colour space. Left to its default, the
                 // session auto-configures wide colour, so captures ship tagged
@@ -612,38 +742,56 @@ final class CameraController: NSObject {
                     let input = try? AVCaptureDeviceInput(device: device),
                     self.session.canAddInput(input)
                 else {
-                    self.session.commitConfiguration()
+                    self.commitConfigurationShielded()
                     cont.resume(returning: "No camera available.")
                     return
                 }
-                self.session.addInput(input)
+                // `canAddInput` said yes, but a raise here is still fatal to the
+                // session rather than merely to one setting — so it reports a
+                // failed camera instead of leaving a half-built session running.
+                guard !CaptureExceptionShield.perform("addInput", {
+                    self.session.addInput(input)
+                }).didThrow else {
+                    self.commitConfigurationShielded()
+                    cont.resume(returning: "No camera available.")
+                    return
+                }
                 self.device = device
 
-                guard self.session.canAddOutput(self.photoOutput) else {
-                    self.session.commitConfiguration()
+                guard self.session.canAddOutput(self.photoOutput),
+                      !CaptureExceptionShield.perform("addOutput(photo)", {
+                          self.session.addOutput(self.photoOutput)
+                      }).didThrow
+                else {
+                    self.commitConfigurationShielded()
                     cont.resume(returning: "Camera output unavailable.")
                     return
                 }
-                self.session.addOutput(self.photoOutput)
                 // Prioritize quality — these stills go on the pro's profile + the
                 // Looks feed, so favor the best capture over speed.
-                self.photoOutput.maxPhotoQualityPrioritization = .quality
+                CaptureExceptionShield.settings("maxPhotoQualityPrioritization") {
+                    self.photoOutput.maxPhotoQualityPrioritization = .quality
+                }
 
                 // Live frames for the on-device coach (optional).
                 if let frameDelegate = self.frameDelegate, self.session.canAddOutput(self.videoOutput) {
-                    self.videoOutput.alwaysDiscardsLateVideoFrames = true
-                    self.videoOutput.setSampleBufferDelegate(frameDelegate, queue: self.frameQueue)
-                    self.session.addOutput(self.videoOutput)
+                    CaptureExceptionShield.settings("addOutput(video)") {
+                        self.videoOutput.alwaysDiscardsLateVideoFrames = true
+                        self.videoOutput.setSampleBufferDelegate(frameDelegate, queue: self.frameQueue)
+                        self.session.addOutput(self.videoOutput)
+                    }
                 }
 
                 // Silent video recording (iOS 16+ allows movie + data outputs).
-                if self.session.canAddOutput(self.movieOutput) {
-                    self.session.addOutput(self.movieOutput)
+                if self.session.canAddOutput(self.movieOutput),
+                   !CaptureExceptionShield.perform("addOutput(movie)", {
+                       self.session.addOutput(self.movieOutput)
+                   }).didThrow {
                     Task { @MainActor in self.recordingAvailable = true }
                 }
 
                 self.registerObservers(device: device)
-                self.session.commitConfiguration()
+                self.commitConfigurationShielded()
 
                 // ⚠️ EVERYTHING THAT READS `activeFormat` HAPPENS HERE, AFTER
                 // THE COMMIT — never in the pass above.
@@ -701,7 +849,9 @@ final class CameraController: NSObject {
         ) { [weak self] _ in
             guard let self else { return }
             self.sessionQueue.async {
-                if self.configured, !self.session.isRunning { self.session.startRunning() }
+                if self.configured, !self.session.isRunning {
+                    CaptureExceptionShield.perform("startRunning(interruptionEnded)") { self.session.startRunning() }
+                }
                 Task { @MainActor in
                     if self.status == .interrupted { self.status = .ready }
                 }
