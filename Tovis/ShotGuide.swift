@@ -152,8 +152,13 @@ struct ShotGuide: Sendable, Equatable {
         ShotStep("Detail", "Move in close on the finished work", icon: "magnifyingglass", expects: .detail),
     ])
 
+    // The cape lines below are the standard salon before/after advice and were
+    // missing entirely: shoot the before the moment they sit, BEFORE the cape
+    // goes on, and shoot the after with it OFF. A cape in one frame and not the
+    // other is the fastest way to make a real transformation look staged.
     static let hair = ShotGuide(name: "Hair set", steps: [
-        ShotStep("Front", "Window to the side for shine, shoulders square", icon: "person.fill", expects: .portrait),
+        ShotStep("Front", "Cape off — window to the side for shine, shoulders square",
+                 icon: "person.fill", expects: .portrait),
         ShotStep("Left side", "45° left — light raking across to show dimension", icon: "arrow.turn.up.left", expects: .portrait),
         ShotStep("Right side", "45° right — light raking across to show dimension", icon: "arrow.turn.up.right", expects: .portrait),
         ShotStep("Back of cut", "The money shot — full canvas of the color & shape", icon: "arrow.uturn.down", expects: .backOfHead),
@@ -163,7 +168,13 @@ struct ShotGuide: Sendable, Equatable {
     static let nails = ShotGuide(name: "Nail set", steps: [
         ShotStep("Both hands", "Hands together, nails toward the light", icon: "hands.sparkles.fill"),
         ShotStep("Top-down", "Straight above the spread fingers", icon: "arrow.down"),
-        ShotStep("Detail", "Macro on one nail — show the finish", icon: "magnifyingglass", expects: .detail),
+        // Not "macro": until the device pass confirms the virtual camera's
+        // close-focus range (plan §3.4), promising a true one-nail macro is
+        // promising a shot the hardware may not be able to take — and the coach
+        // then nags "hold steady, shot looks soft" forever at something
+        // physically impossible. This asks for as close as it will actually focus.
+        ShotStep("Detail", "As close as it’ll focus on one nail — show the finish",
+                 icon: "magnifyingglass", expects: .detail),
         ShotStep("Side angle", "Low angle to catch the shine", icon: "arrow.turn.up.right"),
     ])
 
@@ -175,7 +186,8 @@ struct ShotGuide: Sendable, Equatable {
     ])
 
     static let face = ShotGuide(name: "Face set", steps: [
-        ShotStep("Front", "Soft light for catchlights in the eyes, eyes level", icon: "person.fill", expects: .portrait),
+        ShotStep("Front", "Cape off — soft light for catchlights, eyes level",
+                 icon: "person.fill", expects: .portrait),
         ShotStep("Eye look", "Crop in close — sharp on the eyes, show the blend", icon: "eye.fill", expects: .detail),
         ShotStep("Lips", "Close on the lip — true color, catch the gloss", icon: "mouth.fill", expects: .detail),
         ShotStep("Profile", "45° to show contour & sculpting", icon: "arrow.turn.up.right", expects: .portrait),

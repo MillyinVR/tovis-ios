@@ -17,10 +17,13 @@ Design source of truth: Claude Design "Tovis Pro Camera Redesign.dc.html".
 | Step 2 — subtraction | #250 (`d1b1012`) | Thirteen on-screen elements become five. One 56pt lane above the shutter with a six-tier priority queue (`CameraLane.message` — pure, unit-tested). Guide bar → one chip + a sheet; tools → one tray. |
 | Coach tuning (offline) | #254 (`9efd7ac`) | `CoachAggregate` extracted pure; offline bench over real photographs. `mixedLightSpread` was firing on ~half of ordinary portraits and winning the single lane line. |
 | One photo required | #255 (`9a42f0c`) | The camera stops reading as "shoot the whole set or you're not done". See below. |
-| **Camera outside a session** | this branch | The footer's centre button stops being dead when no session is live. Same camera, same coach, no custody. See below. |
+| **Camera outside a session** | #261 (`85b6d9f`) | The footer's centre button stops being dead when no session is live. Same camera, same coach, no custody. See below. |
+| Gap analysis vs the bar | 2026-08-04 | `docs/design/camera-excellence-plan.md` — the whole camera measured against "a real photographer is holding my hand", every claim cited to `file:line`, split into `[BUILD]` / `[PASS]` / `[DECIDE]`. |
+| **Pre-device-pass fixes (B1–B17)** | this branch | Everything the plan classified as buildable without guessing a threshold. See below. |
 
 Still owed: the on-device tune pass proper (`BACKLOG.md` §"Camera on-device tune
 pass") — perception thresholds need the sensor, and the simulator has no camera.
+The plan's §3 is now the agenda for that pass.
 
 ---
 
@@ -162,6 +165,203 @@ API-driven but never watched end to end:
 - the button flipping back mid-shoot when a session starts.
 
 Fold this into the same real-device pass as the outstanding on-device tune.
+
+---
+
+## Step: the pre-device-pass camera fixes (2026-08-04)
+
+`docs/design/camera-excellence-plan.md` measured the whole camera against Tori's
+bar and sorted every gap into `[BUILD]` (buildable now, no threshold guessing),
+`[PASS]` (needs the salon device pass) and `[DECIDE]` (a product call). Tori
+approved the `[BUILD]` set — **B1–B17**. This branch is all seventeen.
+
+**Not in scope, deliberately:** no threshold the plan reserves for the device
+pass was touched, and the platform-export (`D1`) and enhancement-policy (`D2`)
+items were not built — they are open product decisions.
+
+### The one structural idea
+
+The plan's shortest summary: *"it measures the room where it should measure the
+subject."* The person-segmentation mask was already being computed at 2.5 fps,
+reduced to one clutter scalar, and thrown away. It now carries five judgements:
+
+| judged on | before | now |
+| --- | --- | --- |
+| exposure | whole-frame `avgLuma` | **`faceLuma`** when there's a face, whole frame otherwise |
+| backlit | face vs whole frame (which contains the face) | face vs **segmented background** |
+| mixed light / warmth / green tint | whole frame | **segmented background** |
+| before/after light match | whole frame | **segmented background**, both sides |
+| composition (fill, headroom, centering) | full 3:4 sensor frame | **inside the 9:16 crop** the guide draws |
+| post-capture QC exposure | whole image | **face region** when there's a face |
+
+`FrameMath.backgroundAverageRGB` is the whole trick: `image × mask` and `mask`
+are both area-averaged through the same transfer curve, so their ratio is the
+background-only mean in the same domain the old numbers lived in. **The
+thresholds keep meaning what they meant; only the pixels change.**
+
+### What the bench says it bought — measured, not asserted
+
+The offline bench (B17) now reports both scopings side by side over 35 images:
+
+| | whole frame (before) | background (now) |
+| --- | --- | --- |
+| `mixed` median | 0.120 | **0.086** |
+| images tripping `mixedLightSpread = 0.13` | **17/35** | **11/35** |
+
+August 1's headline finding was that `mixedLightSpread` sat *on the median of
+ordinary portraits* and therefore won the single coach line about half the time.
+**The relocation moved the median below the threshold without touching the
+threshold.** Details in `docs/camera-tuning-bench.md`.
+
+### 🔴 The one thing to read before the device pass
+
+**Moving the backlit test onto the background makes it MORE sensitive at the
+current `backlitFaceRatio = 0.6`, not less.** The background is brighter than a
+frame average the darker subject was dragging down, so `background × 0.6` is a
+higher bar than `frame × 0.6`.
+
+The relocation is still correct — face-vs-background is what "the light is
+behind them" *means* — but it is a **structural** fix and **not** a fix for the
+deep-complexion false positive the plan describes. No ratio of skin
+*reflectance* to background *illumination* can separate "less light on their
+face" from "less light coming back off their face". Only §3.1's per-complexion
+measurement can. `backlitFaceMaxLuma = 0.4` is what caps the damage until then.
+
+`CoachReadinessTests.relocatingTheBacklitTestMakesItMoreSensitiveNotLess` pins
+this in a test so it cannot surprise anyone.
+
+### A second finding the work surfaced
+
+An outright lighting failure, **alone**, does not drop a frame out of the green
+ring — and does not even fall short of the harvest gate. Lighting is the
+heaviest coach and still only 1.6 of 7.5 total weight, so scoring it 0.3 lands
+at **0.851**: over `readyThreshold` (0.80) *and* over `harvestThreshold` (0.85).
+
+So the coach now correctly says *"their face is too dark"* while auto-capture
+fires anyway and the Session Reel keeps the frame. Fixing that means moving
+`readyThreshold`, the lighting weight, or the failure score — all three reserved
+for the device pass. Pinned as
+`CoachReadinessTests.aLightingFailureAloneStillClearsBothTheRingAndTheHarvestGate`
+rather than quietly changed.
+
+### The coach stops nagging
+
+Three separate mechanisms, all arithmetic:
+
+- **`CoachTipArbiter`** — the one line was re-ranked by a plain `max` six times a
+  second, so two near-tied coaches alternated. A tip now holds the line for
+  `tipDwellSeconds` (2.5 s) and a challenger must beat the incumbent's *current*
+  deficit by `tipSwitchMargin` (0.15). The incumbent yields **immediately** when
+  its own coach stops complaining — a fixed problem never keeps the line.
+- **Haptics fire for news only** — a different dimension taking the line, at most
+  once per `nudgeHapticMinInterval` (2 s). It used to buzz on every alternation.
+- **Speech stops cancelling itself** — coach tips no longer interrupt an
+  in-flight utterance (they're dropped; the line is on screen anyway), and
+  deliberate directives queue behind rather than cutting off. The pro used to
+  hear the first three words of everything and the whole of nothing.
+
+Plus the coach can now be heard being *satisfied*: when the dimension holding the
+line clears, it says "Focus — got it".
+
+These three numbers are new to `CoachTuning`, in their own section marked
+**behavioural, not perception** — they're set by how long a person takes to read
+a line, so the salon pass doesn't invalidate them. A stopwatch would.
+
+### Everything else in B1–B17
+
+- **B6 — auto-capture stalled silently after a QC-rejected burst.** Re-armed only
+  when readiness left the green ring, so a client holding perfectly still meant
+  auto-capture was dead while the lane promised "holding for another try". The
+  arming rule is now `GuidedCaptureArm`, a five-line state machine with its own
+  test suite, because the bug was invisible in the UI and self-healing on the
+  success path — which is why it survived.
+- **B7 — framing parity.** The after's fill band is now the booking's **own
+  before shot's measured fill** (`BeforeShotMeasure`), not the generic portrait
+  band. Shooting the before tight and the after loose is the most-cited
+  before/after mistake. Nothing is guessed: the target IS the before's number.
+  "Match a look" now shares that derivation instead of keeping its own copy.
+- **B10 — the Reels cover safe band** is drawn inside the 9:16 box (top 220 px,
+  bottom 450 px of 1080×1920). Drawn by insetting the **already-mapped** box,
+  not by mapping a frame-space rect: `previewRect` is only exact for rects
+  centred in both axes, and this band is deliberately off-centre.
+- **B11 — every tip now carries a `why`**, shown under it in the dimensions
+  drawer. That drawer is the one surface the pro opens on purpose to ask "why
+  won't it go green?", so it is where the coach explains itself.
+- **B12 — video.** Stabilization was never set, so it defaulted to OFF and every
+  handheld salon clip shipped shaky; it's `.auto` now. Clips are capped at 60 s.
+  ⚠️ **Resolution, frame rate and codec are deliberately NOT changed** — the plan
+  marks measuring them `[PASS]` (§3.6), and switching the codec blind risks web
+  playback (HEVC in a `.mov` does not play in Chrome).
+- **B13 — colour space pinned to sRGB.** Captures were tagged Display P3 by
+  default while `CardCorrection` re-encoded to sRGB, so *whether a card had been
+  scanned changed the colour space of the shipped JPEG* — within one shoot, if
+  the pro scanned mid-session.
+- **B14 — the virtual multi-camera device** (`builtInTripleCamera` →
+  `builtInDualWideCamera` → `builtInDualCamera` → wide), unlocking macro
+  auto-switch and zoom. ⚠️ On a triple camera **zoom factor 1.0 is the
+  ultra-wide**, so the session is parked on the wide constituent to keep today's
+  framing byte-for-byte. That arithmetic is pure and tested; that it *works on
+  real glass* is a device check.
+- **B15 — `PoseCoach`'s silent 0.9 cap is gone.** It fired whenever a body was
+  detected — always, in a portrait session — with no message: a permanent 0.06
+  readiness tax the pro could never clear and was never told about.
+- **B16 — cape copy.** "Cape off" on the hair and face front shots. A cape in one
+  frame and not the other makes a real transformation look staged.
+- **The nails macro step is honest now.** It asked for "Macro on one nail", a
+  shot a wide-angle-only session physically could not focus, and the coach would
+  then nag "hold steady — shot looks soft" forever at something impossible. It
+  asks for "as close as it'll focus" until §3.4 confirms the virtual camera's
+  close-focus range on real hardware.
+
+### One camera, no duplicate logic
+
+`FrameMath` gained `segmentSignals` and `colorSignal`; the analyzer, the offline
+bench, `ReferenceLookAnalyzer` and `BeforeShotMeasure` all call them. The bench
+used to keep **its own copies** of the segmentation and colour math, which could
+silently disagree with the camera — that's gone. `PublishCrop` is the single
+source of the crop geometry that the overlay draws and the coach judges inside,
+so the lines can't promise one thing while the ring approves another. Session and
+practice modes share all of it by construction, as before.
+
+### Verified, and how
+
+- **195 unit tests green** (`xcodebuild test`, iPhone 17 Pro simulator), up from
+  the previous suite by four new files: `CoachTipArbiterTests`,
+  `GuidedCaptureArmTests`, `PublishCropTests`, `CameraCompositionTests`.
+- **Red-proofed by breaking each fix and watching the intended test fail** — the
+  auto-capture re-arm, the tip dwell, the switching margin, exposure-on-the-face,
+  backlit-on-the-background, composition-inside-the-crop, the pose cap, framing
+  parity, the virtual-camera zoom factor, and the cover band's asymmetry.
+- **The offline bench was run** over 35 real photographs and produced the
+  before/after colour table above. It compiles the live sources every run, so it
+  cannot drift from the camera.
+- Two existing tests were **deliberately inverted** rather than deleted, because
+  they pinned behaviour this branch changed on purpose:
+  `aFlawlessPortraitClearsEveryGateButNeverScoresOne` →
+  `aFlawlessPortraitNowActuallyScoresOne`, and
+  `detectingABodyPermanentlyCostsReadiness` →
+  `detectingABodyNoLongerCostsReadiness`.
+
+### Not verified — needs Tori's device
+
+**The simulator has no camera**, so nothing below could be watched. Every item
+is compiled, unit-tested where it is pure, and reasoned to from the API
+contracts — none of it has seen a photon.
+
+| What | Why it needs the phone | Plan § |
+| --- | --- | --- |
+| 🔴 **`backlitFaceRatio` across complexions** | The relocation is more sensitive at 0.6. This is the single most important number in the pass. | §3.1 |
+| 🔴 **The target face-luma band, per complexion**, and whether `faceExposureBias = −0.3 EV` holds | `faceLuma` is now what the coach judges; the bench has zero complexion coverage. | §3.1 |
+| **`mixedLightSpread` / `warmCastWarmth` / `greenCastTint` re-measured** | Now on the de-confounded background signal — measure the right column. | §3.2 |
+| **B14: does the virtual device actually give macro?** Does the nails detail shot focus? Is the default framing unchanged? | Lens behaviour is glass, not arithmetic. If framing shifted, `matchWideAngleFraming` is the one place to look. | §3.4 |
+| **B13: are the shipped JPEGs actually sRGB** with and without a card scan? | `activeColorSpace` support varies by active format. | §3.7 |
+| **B12: what a clip now IS** — resolution, fps, size, and whether stabilization visibly helps | Also settles the codec question the plan left open. | §3.6 |
+| **B6 on hardware**: force a QC rejection, hold perfectly still, does it fire again? | The unit test proves the arm re-arms; only the phone proves the whole loop closes. | §3.5 |
+| **Do the dwell + margin FEEL right?** 2.5 s / 0.15 are reasoned, not measured. | No bench can answer "does this nag". | §3.5 |
+| **Does the confirmation beat land or annoy?** | Same. | — |
+| **B9: the crop-aware coach against a real preview** — does judging inside 9:16 make it nag to get closer constantly? | The bench corpus is framed loose, so it can't distinguish the fix from the corpus. | §3.2 |
+| **B7: does the after's inherited fill band hold** with a client who moves? | — | §3.1 |
+| Everything already owed from the previous step (practice camera shooting, real thumbnails, attach flows, onion-skin alignment, tilt sign, face-exposure mapping) | Unchanged. | §3.9 |
 
 ---
 

@@ -66,9 +66,12 @@ struct ProCapturePhotosView: View {
     /// Tap-to-focus reticle position (preview space) + a token to time its fade.
     @State private var focusPoint: CGPoint?
     @State private var focusToken = 0
-    /// Guided auto-capture is armed (fires once per stabilization — must drop out
-    /// of "ready" and settle again before the next auto-shot).
-    @State private var autoArmed = true
+    /// Guided auto-capture's arming rule (fires once per stabilization — must
+    /// drop out of "ready" and settle again before the next auto-shot, OR come
+    /// back from a burst that kept nothing). The state machine lives in
+    /// `GuidedCaptureArm` so the "silently stalls after a rejected burst" case
+    /// is a unit test rather than a shape you have to trace through handlers.
+    @State private var autoArm = GuidedCaptureArm()
     /// A steady-ready auto-capture was wanted but a transient gate (upload in
     /// flight, review sheet, calibration, recording, interrupted session) blocked
     /// it. Re-fire when the gate clears instead of waiting for the subject to
@@ -165,11 +168,10 @@ struct ProCapturePhotosView: View {
         let focal: MediaFocalPoint?
     }
 
-    /// Measured light (luma + warmth) of each "before" reference — the target
-    /// the AFTER shoot matches so the transformation compare is credible
-    /// (same angle via onion-skin, same LIGHT via this).
-    @State private var referenceLight: [URL: LightStamp] = [:]
-    private struct LightStamp: Equatable { let luma: Double; let warmth: Double }
+    /// Each "before" reference, measured — the targets the AFTER shoot matches
+    /// so the transformation compare is credible: same angle via onion-skin,
+    /// same LIGHT and same FRAMING via this.
+    @State private var referenceStamps: [URL: BeforeShotStamp] = [:]
     /// Brief white flash on a successful capture (shutter confirmation).
     @State private var flash = false
 
@@ -318,6 +320,7 @@ struct ProCapturePhotosView: View {
                 camera?.setFaceExposure(center: center)
             }
             engine.analyzer.setExpectations(activeExpectations)
+            engine.analyzer.setCropGuide(settings.showCropGuide ? PublishCrop.feedRect : nil)
             // Persist gray-card WB per booking: the AFTER shoot re-applies the
             // BEFORE's calibration automatically (one card, one session).
             camera.onWhiteBalanceLocked = { r, g, b in
@@ -343,9 +346,10 @@ struct ProCapturePhotosView: View {
                 camera.setCalibrationExposureBias(Float(record.exposureBiasEV))
                 calibrationWarmth = record.calibrationWarmth
             }
-            // Stamp each "before" reference's light so the AFTER can match it.
-            if referenceLight.isEmpty, !referenceURLs.isEmpty {
-                await loadReferenceLight()
+            // Stamp each "before" reference so the AFTER can match its light
+            // and its framing.
+            if referenceStamps.isEmpty, !referenceURLs.isEmpty {
+                await loadReferenceStamps()
             }
             // Trending shot packs for this service (server-driven; silent
             // failure → the standard guides carry the shoot).
@@ -472,10 +476,15 @@ struct ProCapturePhotosView: View {
         // Guided auto-capture: re-arm when the shot drops out of "ready", and shoot
         // once it has held good + steady (isSteadyReady) while armed.
         .onChange(of: coach?.isReady ?? false) { _, ready in
-            if !ready { autoArmed = true }
+            autoArm.readinessChanged(ready: ready)
         }
         .onChange(of: coach?.isSteadyReady ?? false) { _, steady in
-            if steady, autoArmed { attemptGuidedCapture() }
+            if autoArm.shouldFire(steady: steady) { attemptGuidedCapture() }
+        }
+        // Judge composition inside the crop the pro is composing to, so the
+        // frame the coach approves is the frame that ships.
+        .onChange(of: settings.showCropGuide) { _, on in
+            coach?.analyzer.setCropGuide(on ? PublishCrop.feedRect : nil)
         }
     }
 
@@ -1025,28 +1034,51 @@ struct ProCapturePhotosView: View {
     private var cropSafeOverlay: some View {
         GeometryReader { geo in
             ZStack {
-                cropBox(aspect: 4.0 / 5.0, label: "4:5", primary: false, in: geo.size)
-                cropBox(aspect: 9.0 / 16.0, label: "9:16 · feed", primary: true, in: geo.size)
+                cropBox(aspect: PublishCrop.instagramFeed, label: "4:5", primary: false, in: geo.size)
+                cropBox(aspect: PublishCrop.feed, label: "9:16 · feed", primary: true, in: geo.size)
+                coverSafeBand(in: geo.size)
             }
         }
         .allowsHitTesting(false)
     }
 
+    /// The band inside the 9:16 box that survives a Reel COVER — the platform
+    /// lays its own chrome over the top ~220 px and bottom ~450 px of a
+    /// 1080×1920 cover, and the cover is what stops the scroll. Published,
+    /// fixed numbers; drawn dashed rather than as a third solid box so it reads
+    /// as a warning zone and not another crop to compose to.
+    ///
+    /// Insetting the ALREADY-MAPPED 9:16 box rather than mapping a frame-space
+    /// rect is deliberate: `previewRect` is only exact for rects centered in
+    /// both axes (its own note says so — the upright→sensor axis swap hides the
+    /// flip when they are), and this band is deliberately off-centre vertically.
+    /// The preview shows the upright image, so a vertical fraction of the drawn
+    /// box is the same vertical fraction of the published cover.
+    private func coverSafeBand(in size: CGSize) -> some View {
+        let feedBox = previewRect(uprightNormalized: PublishCrop.rect(aspect: PublishCrop.feed),
+                                  in: size)
+        let box = PublishCrop.coverSafeRect(in: feedBox)
+        return Rectangle()
+            .strokeBorder(.white.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [3, 4]))
+            .frame(width: box.width, height: box.height)
+            .overlay(alignment: .bottomLeading) {
+                Text("cover safe")
+                    .font(BrandFont.mono(9)).tracking(0.5)
+                    .foregroundStyle(.white.opacity(0.5))
+                    .padding(.horizontal, 5).padding(.vertical, 2)
+                    .background(.black.opacity(0.35), in: Capsule())
+                    .padding(4)
+            }
+            .position(x: box.midX, y: box.midY)
+    }
+
     /// A centered crop of `aspect` (w/h) within the upright 3:4 capture frame,
     /// mapped to preview space. `primary` = the crop the Tovis feed itself uses.
+    /// The geometry comes from `PublishCrop`, which is the same source
+    /// `CompositionCoach` judges inside — so what the lines promise and what the
+    /// coach approves cannot drift apart.
     private func cropBox(aspect: CGFloat, label: String, primary: Bool, in size: CGSize) -> some View {
-        let frameAspect: CGFloat = 3.0 / 4.0   // upright sensor frame w/h (.photo preset)
-        let normalized: CGRect
-        if aspect > frameAspect {
-            // Wider than the frame → full width, cropped height.
-            let h = frameAspect / aspect
-            normalized = CGRect(x: 0, y: (1 - h) / 2, width: 1, height: h)
-        } else {
-            // Narrower → full height, cropped width.
-            let w = aspect / frameAspect
-            normalized = CGRect(x: (1 - w) / 2, y: 0, width: w, height: 1)
-        }
-        let box = previewRect(uprightNormalized: normalized, in: size)
+        let box = previewRect(uprightNormalized: PublishCrop.rect(aspect: aspect), in: size)
         return Rectangle()
             .strokeBorder(.white.opacity(primary ? 0.6 : 0.22), lineWidth: primary ? 1.5 : 1)
             .frame(width: box.width, height: box.height)
@@ -1338,11 +1370,16 @@ struct ProCapturePhotosView: View {
             return
         }
         guidedCaptureQueued = false
-        autoArmed = false
+        autoArm.didFire()
         Task {
             let title = currentStep?.title
             let kept = await capture(trigger: .auto)   // burst + QC; advances only on a keeper
             coach?.resetHold()
+            // A burst that kept NOTHING re-arms. Without this the lane says
+            // "holding for another try" while auto-capture is dead until the
+            // shot leaves the green ring — and a client holding perfectly still
+            // is precisely the case where it never does. (See GuidedCaptureArm.)
+            autoArm.captureFinished(kept: kept)
             if kept, settings.speak, let title { coach?.announce("Got the \(title).") }
         }
     }
@@ -1350,7 +1387,8 @@ struct ProCapturePhotosView: View {
     /// A transient gate that blocked a queued auto-capture just cleared — if the
     /// shot is still held steady and armed, take it now.
     private func retryGuidedIfReady() {
-        guard guidedCaptureQueued, autoArmed, coach?.isSteadyReady ?? false else { return }
+        guard guidedCaptureQueued,
+              autoArm.shouldFire(steady: coach?.isSteadyReady ?? false) else { return }
         attemptGuidedCapture()
     }
 
@@ -1391,9 +1429,18 @@ struct ProCapturePhotosView: View {
 
     /// What the coach should expect of the frame right now — the current guided
     /// shot's expectations, or nil for freeform shooting (guides off / done).
+    ///
+    /// In an AFTER shoot the step's generic fill band is replaced by the
+    /// booking's OWN before shot for this step: shooting the before tight and
+    /// the after loose is the most-cited before/after mistake, and the target
+    /// here is the before's measured number rather than a guess. A "match a
+    /// look" reference already carries its own measured brief, so it wins.
     private var activeExpectations: ShotExpectations? {
-        guard settings.showGuides, !guide.steps.isEmpty, !allStepsDone else { return nil }
-        return currentStep?.expects
+        guard settings.showGuides, !guide.steps.isEmpty, !allStepsDone,
+              let expects = currentStep?.expects else { return nil }
+        guard matchLook == nil, let url = currentReferenceURL,
+              let stamp = referenceStamps[url] else { return expects }
+        return expects.matchingFraming(of: stamp)
     }
     private var currentStepIndex: Int {
         guide.steps.firstIndex { $0.id == currentStepID } ?? 0
@@ -1550,50 +1597,48 @@ struct ProCapturePhotosView: View {
     /// Where this booking's card calibration persists (9 matrix values + EV).
     private var cardCalDefaultsKey: String { "tovis.camera.cardcal.\(custodyScope)" }
 
-    /// Measure each before-reference's luma + warmth once (downscaled, same
-    /// math as the live frame) — the target the after shoot matches.
-    private func loadReferenceLight() async {
-        for url in referenceURLs where referenceLight[url] == nil {
+    /// Measure each before-reference once — light AND framing, with the same
+    /// eyes the live coach judges with (`BeforeShotMeasure`).
+    private func loadReferenceStamps() async {
+        for url in referenceURLs where referenceStamps[url] == nil {
             guard let (data, _) = try? await URLSession.shared.data(from: url),
-                  let image = CIImage(data: data, options: [.applyOrientationProperty: true])
-            else { continue }
-            let stamp = await Task.detached(priority: .utility) {
-                let working = FrameMath.downscaled(image, maxDim: 240)
-                let luma = FrameMath.averageLuma(working, context: FrameMath.context)
-                let rgb = FrameMath.averageRGB(working, context: FrameMath.context) ?? (0.5, 0.5, 0.5)
-                return LightStamp(luma: luma, warmth: FrameMath.warmth(rgb))
-            }.value
-            referenceLight[url] = stamp
+                  let stamp = await BeforeShotMeasure.measure(data) else { continue }
+            referenceStamps[url] = stamp
         }
     }
 
     /// The live light vs the active target (a match-look reference wins over
     /// the before shot): matched, or the single biggest mismatch phrased as a
     /// fix. Nil when there's nothing to match.
+    ///
+    /// Compared on the segmented BACKGROUND when both sides have one. On the
+    /// whole frame, a dark-to-blonde colour service legitimately moves the
+    /// luma — that *is* the work — and the coach would say "Brighter than the
+    /// before — dim a touch" about a transformation that had succeeded. The
+    /// background is the part of the picture that is supposed to be unchanged,
+    /// which is exactly what "did the light change?" means.
     private var lightMatch: (label: String, ok: Bool)? {
         guard showOnion, let coach else { return nil }
-        let target: (luma: Double, warmth: Double, noun: String)
+        let target: LightMatch.Reading
+        let noun: String
         if let look = matchLook {
-            target = (look.luma, look.warmth, "reference")
-        } else if let url = currentReferenceURL, let stamp = referenceLight[url] {
-            target = (stamp.luma, stamp.warmth, "before")
+            target = LightMatch.Reading(luma: look.luma, warmth: look.warmth,
+                                        backgroundLuma: look.backgroundLuma,
+                                        backgroundWarmth: look.backgroundWarmth)
+            noun = "reference"
+        } else if let url = currentReferenceURL, let stamp = referenceStamps[url] {
+            target = stamp.lightReading
+            noun = "before"
         } else {
             return nil
         }
-        let dLuma = coach.frameLuma - target.luma
-        let dWarmth = (coach.frameWarmth ?? target.warmth) - target.warmth
-        // Normalize each axis by its tolerance so they compare fairly.
-        let lumaSeverity = abs(dLuma) / CoachTuning.lightMatchLumaTolerance
-        let warmthSeverity = abs(dWarmth) / CoachTuning.lightMatchWarmthTolerance
-        if lumaSeverity <= 1, warmthSeverity <= 1 {
-            return ("Light matches the \(target.noun)", true)
-        }
-        if lumaSeverity >= warmthSeverity {
-            return (dLuma > 0 ? "Brighter than the \(target.noun) — dim a touch"
-                              : "Darker than the \(target.noun) — add light", false)
-        }
-        return (dWarmth > 0 ? "Warmer than the \(target.noun) — cool the light"
-                            : "Cooler than the \(target.noun) — warm the light", false)
+        // The live frame's colour signal is already background-scoped when a
+        // person is segmented (see `ColorSignal`), so its warmth serves both
+        // slots; the comparison itself decides which pair to use.
+        let live = LightMatch.Reading(luma: coach.frameLuma, warmth: coach.frameWarmth,
+                                      backgroundLuma: coach.frameBackgroundLuma,
+                                      backgroundWarmth: coach.frameWarmth)
+        return LightMatch.verdict(live: live, target: target, noun: noun)
     }
 
     // MARK: - The lane

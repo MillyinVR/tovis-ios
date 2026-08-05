@@ -46,6 +46,27 @@ enum CoachTuning {
     /// Auto-harvest (Session Reel) only grabs frames at/above this readiness.
     nonisolated(unsafe) static var harvestThreshold: Double = 0.85
 
+    // MARK: - How the one coach line behaves
+    //
+    // These are BEHAVIOURAL, not perception: they're set by how long a person
+    // takes to read a line and start acting on it, not by what the sensor
+    // measures. The salon pass doesn't invalidate them — a stopwatch would.
+
+    /// Minimum time (seconds) a tip holds the one on-screen line before any
+    /// challenger may take it. Roughly the length of the spoken tip plus a beat
+    /// to start acting: below this the pro is being told a new thing before
+    /// they've finished the last one.
+    nonisolated(unsafe) static var tipDwellSeconds: Double = 2.5
+    /// How much better a challenger's weighted deficit must be to take the line
+    /// from an incumbent that has served its dwell. Sized against the spread of
+    /// real deficits (~0.4 for a busy background, ~1.1 for a lighting failure):
+    /// big enough that two near-tied coaches stop alternating, small enough that
+    /// a genuinely worse problem still wins immediately.
+    nonisolated(unsafe) static var tipSwitchMargin: Double = 0.15
+    /// Minimum spacing (seconds) between coaching haptics. The buzz is for
+    /// news; without a floor, a re-rank storm is felt as a continuous vibration.
+    nonisolated(unsafe) static var nudgeHapticMinInterval: Double = 2.0
+
     // MARK: - Lighting
 
     /// Whole-frame luma below this = "too dark".

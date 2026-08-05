@@ -100,21 +100,131 @@ off level 0.30, a touch soft 0.56, a detected body 0.06 (permanent — `PoseCoac
 caps at 0.9 whenever it sees a person). Three ordinary conditions usually still
 clear the ring; the fourth never does.
 
+---
+
+## Measured again, 2026-08-04 — after the pre-device-pass fixes
+
+The bench was extended (plan item **B17**) to report the columns §3.1 and §3.2
+of `docs/design/camera-excellence-plan.md` actually need: `faceLuma`,
+`faceLuma/luma`, `backgroundLuma`, `faceLuma/backgroundLuma`, the colour signals
+measured **both ways** (whole frame vs segmented background), and **the coach
+line each image would put on screen**. It also stopped keeping its own copies of
+the analyzer's segmentation and colour math — both now live in `FrameMath` and
+the bench calls them, so it cannot drift from the camera.
+
+Corpus: 35 images — the 6 `SampleContent` shots plus 29 watch-face / gallery
+placeholder assets from the installed iOS 26.4 simulator runtime. 21 have a
+detected face. **Still no complexion coverage** (see the caveat below).
+
+### The headline: relocating colour onto the background fixed the worst finding
+
+| | whole frame (what shipped before) | segmented background (what ships now) |
+|---|---|---|
+| `mixed` median | **0.120** | **0.086** |
+| `mixed` max | 0.523 | 0.416 |
+| trips `mixedLightSpread = 0.13` | **17/35** | **11/35** |
+
+The August 1 finding was that `mixedLightSpread` "sits on the median of ordinary
+portraits" and therefore wins the single coach line about half the time. **The
+relocation alone moves the median from above the threshold to below it, without
+touching the threshold.** Six images that were being told to turn off the
+overheads no longer are.
+
+Per-image, the confound is large where you'd expect — a subject filling the
+frame in strongly-coloured clothing:
+
+```
+base_4D9C5F54…   mixed 0.523 → 0.145    warmth −0.031 → −0.539
+base_E73CC61B…   mixed 0.297 → 0.032    warmth −0.256 → −0.393
+base_152A8D27…   mixed 0.309 → 0.035    warmth −0.241 → −0.371
+gallery-…-3B     mixed 0.280 → 0.095    warmth −0.212 → −0.657
+```
+
+`warmCastWarmth = 0.30` was never tripped by the August corpus. On the
+background column it is now tripped by exactly one image (max 0.336) — still
+essentially untested, still the device pass's call.
+
+### faceLuma, reported for the first time
+
+| | min | median | max |
+|---|---|---|---|
+| `faceLuma` (21 faces) | 0.276 | **0.487** | 0.606 |
+| `faceLuma / luma` | 0.488 | 0.844 | 1.130 |
+| `faceLuma / backgroundLuma` | 0.467 | 0.841 | 2.120 |
+
+Zero faces fall outside the `lumaTooDark 0.22 … lumaTooBright 0.78` band, so on
+this corpus the relocated exposure rule changes no verdict — which is expected
+and is exactly why §3.1 needs real subjects. What the table gives the device
+pass is the **shape** of the distribution to compare a salon sweep against.
+
+### ⚠️ The direction the device pass must set
+
+Moving the backlit test onto the background makes it **more** sensitive at the
+current `backlitFaceRatio = 0.6`, not less: `faceLuma/backgroundLuma` has a
+median of 0.841 against `faceLuma/luma`'s 0.844, but its *lower tail* is lower
+(0.467 vs 0.488) because the background is brighter than a frame average the
+darker subject was dragging down.
+
+On this corpus it changes nothing (1 image trips, either way). On deeper
+complexions it will trip more. The relocation is still the right comparison —
+face-vs-background is what "the light is behind them" means — but it is a
+**structural** fix and **not** a fix for the deep-complexion false positive.
+`CoachReadinessTests.relocatingTheBacklitTestMakesItMoreSensitiveNotLess` pins
+this so it can't surprise anyone.
+
+### Which line wins now
+
+| count | line |
+|---|---|
+| 17/35 | composition — "Move in closer — fill the frame" |
+| 10/35 | colour — "Mixed light — turn off the overheads" |
+| 6/35 | sharpness |
+| 1/35 | lighting |
+| 1/35 | nothing to fix |
+
+Colour is no longer the top voice; composition is. That is partly the fix and
+partly the corpus (watch-face assets are framed loose, so `minSubjectFill 0.22`
+fires constantly on them — a corpus artefact, not a salon finding).
+
+`BackgroundCoach` now fires on 4/35 rather than 1/23 — but only on the faceless
+gallery assets, which have no subject to segment. **On portraits it is still
+effectively dead**, so August's recommendation #2 stands and is still the device
+pass's number to set.
+
+### Still no complexion coverage
+
+This remains the single biggest gap in the bench, and it is the one thing the
+bench could fix on a Mac. To close it, point `run.sh` at a folder of
+complexion-diverse portraits shot under one light and read Table 1:
+
+```sh
+scripts/coach-tuning-bench/run.sh ~/Pictures/complexion-sweep/
+```
+
+Until then §3.1 is a discovery on the device rather than a confirmation.
+
+---
+
 ## Recommended next steps
 
 These are **recommendations, not applied changes** — the corpus is not salon
 footage, and the perception numbers are the device pass's call:
 
-1. **Re-measure `mixedLightSpread` against real salon frames** before changing
-   it. If the median there is also ~0.13, raise it until it flags only genuinely
-   mixed rooms, and consider whether `mixed` should be measured on the
-   background region only (excluding the segmented subject) to kill the content
-   confound.
+1. ~~**Re-measure `mixedLightSpread` against real salon frames** before changing
+   it.~~ …and consider whether `mixed` should be measured on the background
+   region only (excluding the segmented subject) to kill the content confound.
+   → **The background-only half SHIPPED 2026-08-04** and moved the median below
+   the threshold on its own. The re-measurement against real salon light is
+   still owed and is now plan §3.2 — and it must be read off the **background**
+   column, which is what the coach judges.
 2. **Lower `clutterReference`** (or `clutterBusy`) so `BackgroundCoach` can fire
-   at all — currently it is dead weight on portraits.
+   at all — currently it is dead weight on portraits. **Still open**; the
+   direction is measured, the value is the device pass's.
 3. **Reconsider the colour weight or the mixed-light score** so a
    low-confidence, often-unactionable signal cannot outrank focus and tilt for
-   the single on-screen line.
+   the single on-screen line. **Still open** — but much less pressing now that
+   the signal is de-confounded and the tip has a dwell + switching margin, so
+   even when colour wins it no longer wins six times a second.
 
 ## What still genuinely needs the phone
 

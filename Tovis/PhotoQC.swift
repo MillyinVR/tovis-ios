@@ -14,7 +14,14 @@ struct PhotoQCReport: Sendable {
     let retakeReason: String?
     /// Normalized sharpness of the capture (same scale as the live coach).
     let sharpness: Double
+    /// Whole-image luma.
     let luma: Double
+    /// Luma inside the detected face — nil when no face was found. The exposure
+    /// verdict is taken on THIS when it exists, for the same reason the live
+    /// coach does: a whole-image gate offers a correctly-exposed close-up of
+    /// deep skin (or any shot on a dark backdrop) as a retake for being "too
+    /// dark", which is the one failure mode this camera can least afford.
+    let faceLuma: Double?
     let eyesClosed: Bool
     /// Normalized top-left center of the largest detected face (camera C6),
     /// computed in the EXIF-corrected upright frame — nil when no face is found.
@@ -78,7 +85,7 @@ enum PhotoQC {
         guard let full = CIImage(data: jpeg, options: [.applyOrientationProperty: true]) else {
             // Unreadable bytes → don't block the flow; upload will surface it.
             return PhotoQCReport(retakeReason: nil, sharpness: 1, luma: 0.5,
-                                 eyesClosed: false, focalPoint: nil)
+                                 faceLuma: nil, eyesClosed: false, focalPoint: nil)
         }
         let working = FrameMath.downscaled(full, maxDim: CoachTuning.workingMaxDim)
         let luma = FrameMath.averageLuma(working, context: FrameMath.context)
@@ -103,16 +110,24 @@ enum PhotoQC {
             }
         }
         let sharpness = FrameMath.sharpness(working, subject: faceRect, context: FrameMath.context)
+        // Expose for the skin here too, on the same bands. Whole-image luma is
+        // the room; when there's a face in the shot, the face is the exposure.
+        let faceLuma = faceRect.map {
+            FrameMath.averageLuma(FrameMath.crop(working, normalizedTopLeft: $0),
+                                  context: FrameMath.context)
+        }
+        let exposure = faceLuma ?? luma
+        let subject = faceLuma == nil ? "It" : "Their face"
 
         let reason: String?
         if checkBlink, eyesClosed {
             reason = "Their eyes were closed"
         } else if sharpness < CoachTuning.qcSharpnessMin {
             reason = "It came out soft"
-        } else if luma < CoachTuning.qcLumaMin {
-            reason = "It came out too dark"
-        } else if luma > CoachTuning.qcLumaMax {
-            reason = "It came out blown out"
+        } else if exposure < CoachTuning.qcLumaMin {
+            reason = "\(subject) came out too dark"
+        } else if exposure > CoachTuning.qcLumaMax {
+            reason = "\(subject) came out blown out"
         } else {
             reason = nil
         }
@@ -121,6 +136,6 @@ enum PhotoQC {
         // is needed here; no face → nil → center.
         let focalPoint = faceRect.map { CGPoint(x: $0.midX, y: $0.midY) }
         return PhotoQCReport(retakeReason: reason, sharpness: sharpness, luma: luma,
-                             eyesClosed: eyesClosed, focalPoint: focalPoint)
+                             faceLuma: faceLuma, eyesClosed: eyesClosed, focalPoint: focalPoint)
     }
 }

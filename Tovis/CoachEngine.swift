@@ -25,8 +25,13 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     private var lastHeavyAt: CFTimeInterval = 0
     private var cachedClutter: Double?
     private var cachedSubjectFill: Double?
+    private var cachedCropSubjectFill: Double?
+    private var cachedBackgroundLuma: Double?
     private var cachedPose: PoseSignal?
     private var cachedColor: ColorSignal?
+    /// Dwell + switching margin for the one on-screen tip. Frame-queue-confined
+    /// (this delegate is serial), which is where the ranking already happens.
+    private var tipArbiter = CoachTipArbiter()
     /// Working resolution for the CoreImage / Vision math — full-res frames are
     /// needless cost for these aggregate signals.
     private let workingMaxDim = CoachTuning.workingMaxDim
@@ -51,6 +56,18 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     }
     private func currentExpectations() -> ShotExpectations? {
         expectationsLock.lock(); defer { expectationsLock.unlock() }; return _expectations
+    }
+
+    // The publish crop the pro is composing to, when the crop-safe guide is on
+    // — written from the camera view, read per frame, same cross-queue pattern.
+    // Nil = the guide is off, so composition is judged over the whole frame.
+    private let cropLock = NSLock()
+    private var _cropGuide: CGRect?
+    func setCropGuide(_ value: CGRect?) {
+        cropLock.lock(); _cropGuide = value; cropLock.unlock()
+    }
+    private func currentCropGuide() -> CGRect? {
+        cropLock.lock(); defer { cropLock.unlock() }; return _cropGuide
     }
 
     // MARK: - Best-shot harvesting (Session Reel)
@@ -126,14 +143,24 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             let working = downscaled(CIImage(cvPixelBuffer: pixelBuffer).oriented(.right))
 
             let face = detectFace(pixelBuffer)
+            let cropGuide = currentCropGuide()
             // Heavy Vision (segmentation + pose) on its own slower cadence; reuse last.
+            //
+            // The mask's derived numbers are cached; the mask IMAGE is not. It
+            // is measured through here, while the Vision buffer backing it is
+            // still alive, and released with this frame's pool — holding it
+            // across frames would pin a buffer in exactly the path that has
+            // already been jetsam-killed once.
             if now - lastHeavyAt >= heavyInterval {
                 lastHeavyAt = now
-                let seg = segment(pixelBuffer, working: working)
+                let seg = segment(pixelBuffer, working: working, cropGuide: cropGuide)
                 cachedClutter = seg?.clutter
                 cachedSubjectFill = seg?.subjectFill
+                cachedCropSubjectFill = seg?.cropSubjectFill
+                cachedBackgroundLuma = seg?.backgroundLuma
                 cachedPose = bodyPose(pixelBuffer)
-                cachedColor = colorSignal(working)
+                cachedColor = FrameMath.colorSignal(working, background: seg?.background,
+                                                    context: ciContext)
             }
 
             let avgLuma = averageLuma(working)
@@ -141,9 +168,12 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                 avgLuma: avgLuma,
                 faceBounds: face,
                 faceLuma: face.map { regionLuma(working, normalizedTopLeft: $0) },
+                backgroundLuma: cachedBackgroundLuma,
                 sharpness: sharpness(working, subject: face),
                 backgroundClutter: cachedClutter,
                 subjectFill: cachedSubjectFill,
+                cropGuide: cropGuide,
+                cropSubjectFill: cachedCropSubjectFill,
                 pose: cachedPose,
                 deviceTilt: currentDeviceTilt(),
                 color: cachedColor,
@@ -151,8 +181,10 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             )
 
             // Scoring arithmetic lives in CoachAggregate (pure, camera-free) so it
-            // can be tuned and tested without hardware.
-            let verdict = CoachAggregate.evaluate(coaches, ctx)
+            // can be tuned and tested without hardware. The arbiter carries the
+            // tip's dwell across frames so the one line stops being re-ranked
+            // six times a second.
+            let verdict = CoachAggregate.evaluate(coaches, ctx, arbiter: &tipArbiter, now: now)
             let readiness = verdict.readiness
             let nudge = verdict.nudge
             let statuses = verdict.statuses
@@ -168,13 +200,23 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                 debug = [
                     DebugSignal(name: "luma", value: avgLuma),
                     DebugSignal(name: "faceLuma", value: ctx.faceLuma ?? -1),
+                    // The complexion sweep's key column: the whole point of the
+                    // face-vs-room fix is that these two disagree.
+                    DebugSignal(name: "bgLuma", value: ctx.backgroundLuma ?? -1),
+                    DebugSignal(name: "face/bg", value: (ctx.faceLuma).flatMap { f in
+                        ctx.backgroundLuma.map { $0 > 0 ? f / $0 : -1 }
+                    } ?? -1),
                     DebugSignal(name: "sharpness", value: ctx.sharpness),
                     DebugSignal(name: "clutter", value: ctx.backgroundClutter ?? -1),
                     DebugSignal(name: "fill", value: ctx.subjectFill ?? -1),
+                    DebugSignal(name: "cropFill", value: ctx.cropSubjectFill ?? -1),
                     DebugSignal(name: "tilt°", value: ctx.deviceTilt ?? 0),
                     DebugSignal(name: "mixed", value: ctx.color?.mixed ?? -1),
                     DebugSignal(name: "green", value: ctx.color?.greenTint ?? -1),
                     DebugSignal(name: "warmth", value: ctx.color?.warmth ?? -1),
+                    // 1 = colour was measured on the background (subject
+                    // excluded); 0 = whole frame stood in.
+                    DebugSignal(name: "bgScoped", value: ctx.color?.backgroundScoped == true ? 1 : 0),
                     DebugSignal(name: "READY", value: readiness),
                 ]
             }
@@ -183,6 +225,8 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                               centerR: center.r, centerG: center.g, centerB: center.b,
                               faceCenter: face.map { CGPoint(x: $0.midX, y: $0.midY) },
                               frameLuma: avgLuma, frameWarmth: cachedColor?.warmth,
+                              frameBackgroundLuma: cachedBackgroundLuma,
+                              cleared: verdict.cleared,
                               debug: debug))
 
             // Harvest a keeper when quality peaks (rate-limited + capped). Reserve
@@ -239,22 +283,6 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         FrameMath.averageLuma(image, context: ciContext)
     }
 
-    /// Color-of-light read: mixed light (warm↔cool spread across vertical thirds —
-    /// window on one side, bulb on the other) + global green / warmth cast.
-    private func colorSignal(_ working: CIImage) -> ColorSignal? {
-        let e = working.extent
-        guard e.width > 0, e.height > 0, let global = averageRGB(working) else { return nil }
-
-        let third = e.width / 3
-        let warms: [Double] = (0..<3).compactMap { i in
-            let rect = CGRect(x: e.minX + CGFloat(i) * third, y: e.minY, width: third, height: e.height)
-            return averageRGB(working.cropped(to: rect)).map(FrameMath.warmth)
-        }
-        let mixed = warms.count >= 2 ? ((warms.max() ?? 0) - (warms.min() ?? 0)) : 0
-        let greenTint = (2 * global.g - global.r - global.b) / (2 * global.g + global.r + global.b + 1e-3)
-        return ColorSignal(mixed: max(0, mixed), greenTint: greenTint, warmth: FrameMath.warmth(global))
-    }
-
     /// Largest face (upright top-left normalized). Back camera in portrait →
     /// orient `.right` so Vision works in an upright frame. Shared extraction
     /// lives in VisionDetect (the reference-look analyzer uses the same eyes).
@@ -278,35 +306,25 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         FrameMath.sharpness(image, subject: face, context: ciContext)
     }
 
-    /// Person-segmentation read for one frame: how much of the frame the subject
-    /// fills (drives "get closer") and how busy the background is (drives "cleaner
-    /// backdrop"). Nil when no person is found — flat-lay / detail shots aren't
-    /// pushed toward an empty frame or nagged to get closer.
-    private struct SegmentSignal { let clutter: Double?; let subjectFill: Double }
-
-    private func segment(_ pixelBuffer: CVPixelBuffer, working: CIImage) -> SegmentSignal? {
+    /// Person-segmentation read for one frame: how much of the frame (and of the
+    /// publish crop) the subject fills, how busy the background is, how bright
+    /// it is, and the mask itself for the colour-of-light measurement. Nil when
+    /// no person is found — flat-lay / detail shots aren't pushed toward an
+    /// empty frame or nagged to get closer.
+    ///
+    /// The derivation lives in `FrameMath.segmentSignals`; this is only the
+    /// pixel-buffer plumbing, so the offline bench measures the same numbers
+    /// from the same code rather than from a copy of it.
+    private func segment(_ pixelBuffer: CVPixelBuffer, working: CIImage, cropGuide: CGRect?)
+        -> FrameMath.SegmentedFrame? {
         let request = VNGeneratePersonSegmentationRequest()
         request.qualityLevel = .balanced
         request.outputPixelFormat = kCVPixelFormatType_OneComponent8
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .right, options: [:])
         try? handler.perform([request])
-        guard let maskBuffer = request.results?.first?.pixelBuffer,
-              let seg = FrameMath.segmentation(maskBuffer: maskBuffer, working: working,
-                                               context: ciContext) else { return nil }
-
-        // Only judge clutter when there's enough background to judge (subject not
-        // filling the whole frame).
-        guard seg.backgroundFraction > CoachTuning.minBackgroundFraction else {
-            return SegmentSignal(clutter: nil, subjectFill: seg.subjectFill)
-        }
-        // Edge energy that falls in the background = edges × background weight.
-        let bgEdges = FrameMath.edges(working).applyingFilter("CIMultiplyCompositing", parameters: [
-            kCIInputBackgroundImageKey: seg.background,
-        ])
-        let bgEdgeMean = averageLuma(bgEdges.cropped(to: working.extent))
-        // Normalize by background area, then against the "fully cluttered" reference.
-        let clutter = min(1.0, max(0.0, (bgEdgeMean / seg.backgroundFraction) / CoachTuning.clutterReference))
-        return SegmentSignal(clutter: clutter, subjectFill: seg.subjectFill)
+        guard let maskBuffer = request.results?.first?.pixelBuffer else { return nil }
+        return FrameMath.segmentSignals(maskBuffer: maskBuffer, working: working,
+                                        cropGuide: cropGuide, context: ciContext)
     }
 
     /// Body-pose read (upright, top-left normalized). Nil unless a body is
@@ -354,10 +372,14 @@ final class CoachEngine {
     private var readySince: Date?
     /// Latest center-region average color — the neutral sample for gray-card WB.
     private(set) var centerSample: (r: Double, g: Double, b: Double) = (0.5, 0.5, 0.5)
-    /// Live whole-frame luma + warmth — the before/after light matcher compares
-    /// these against the before shot's stamp.
+    /// Live whole-frame luma + the light's warmth — the before/after light
+    /// matcher compares these against the before shot's stamp.
     private(set) var frameLuma: Double = 0.5
     private(set) var frameWarmth: Double?
+    /// Live background-only luma, when a person is segmented. The light matcher
+    /// prefers it: it changes when the ROOM's light changes, and doesn't change
+    /// just because the client's hair went four shades lighter.
+    private(set) var frameBackgroundLuma: Double?
     /// Face-priority exposure feed — the camera view wires this to
     /// `CameraController.setFaceExposure` so the camera meters for the face.
     var onFaceCenter: ((CGPoint?) -> Void)?
@@ -369,6 +391,8 @@ final class CoachEngine {
     private let synthesizer = AVSpeechSynthesizer()
     private let level = DeviceLevelProvider()
     private var wasReady = false
+    /// When the last coaching buzz fired — the floor under haptic frequency.
+    private var lastNudgeHapticAt: Date?
     /// Whether we've claimed the audio session for spoken tips (lazily, on the
     /// first utterance — so camera sessions with voice off never touch audio).
     private var audioSessionConfigured = false
@@ -451,14 +475,34 @@ final class CoachEngine {
         centerSample = (result.centerR, result.centerG, result.centerB)
         frameLuma = result.frameLuma
         if let warmth = result.frameWarmth { frameWarmth = warmth }
+        frameBackgroundLuma = result.frameBackgroundLuma
         if let debug = result.debug { debugSignals = debug }
         onFaceCenter?(result.faceCenter)
 
+        // The coach heard being SATISFIED, not only dissatisfied: the dimension
+        // that was holding the line just cleared. Spoken before the replacement
+        // tip so the pro hears "got it" about the thing they actually just fixed.
+        if let cleared = result.cleared, settings.speak {
+            speak("\(cleared.spokenName) — got it", priority: .tip)
+        }
+
         if result.nudge != nudge {
+            let previous = nudge
             nudge = result.nudge
             if let nudge = result.nudge {
-                if settings.haptics { tap(.warning) }
-                if settings.speak { speak(nudge.message) }
+                // Buzz for NEWS. A haptic per re-rank is the mechanism behind
+                // "it feels like nagging": with two near-tied coaches it was a
+                // continuous warning vibration. Now it fires only when a
+                // different dimension takes the line, and not twice in a beat.
+                let now = Date()
+                let sinceLast = lastNudgeHapticAt.map { now.timeIntervalSince($0) }
+                    ?? .greatestFiniteMagnitude
+                if settings.haptics, nudge.category != previous?.category,
+                   sinceLast >= CoachTuning.nudgeHapticMinInterval {
+                    lastNudgeHapticAt = now
+                    tap(.warning)
+                }
+                if settings.speak { speak(nudge.message, priority: .tip) }
             }
         }
 
@@ -487,11 +531,26 @@ final class CoachEngine {
         isSteadyReady = false
     }
 
+    /// What a spoken line is allowed to do to one already in flight.
+    private enum SpeechPriority {
+        /// A coaching tip. Never interrupts — if the coach is mid-sentence this
+        /// one is dropped, because the tip is on screen anyway and a sentence
+        /// that never finishes is worse than a sentence not said. (Every tip
+        /// used to cancel the last one, which with a re-ranked winner meant the
+        /// pro heard the first three words of everything and the whole of
+        /// nothing.)
+        case tip
+        /// A deliberate directive the pro is waiting on — the next guided shot,
+        /// a capture confirmation. Queued behind whatever is speaking rather
+        /// than cutting it off, and never dropped.
+        case directive
+    }
+
     /// Speak a one-off line (guided directives / capture confirmations). The caller
     /// decides whether voice is enabled.
-    func announce(_ text: String) { speak(text) }
+    func announce(_ text: String) { speak(text, priority: .directive) }
 
-    private func speak(_ text: String) {
+    private func speak(_ text: String, priority: SpeechPriority) {
         // `.playback` sounds through the silent switch — a salon phone is almost
         // always on silent, which would otherwise mute every spoken tip. Duck
         // (don't stop) any music playing in the salon.
@@ -501,8 +560,7 @@ final class CoachEngine {
             try? session.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers])
             try? session.setActive(true)
         }
-        // Don't stack utterances — replace any in-flight tip.
-        if synthesizer.isSpeaking { synthesizer.stopSpeaking(at: .immediate) }
+        if priority == .tip, synthesizer.isSpeaking { return }
         let utterance = AVSpeechUtterance(string: text)
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
         synthesizer.speak(utterance)

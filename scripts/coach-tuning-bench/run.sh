@@ -50,6 +50,7 @@ swiftc -O -swift-version 6 \
   "$ROOT/Tovis/VisionDetect.swift" \
   "$ROOT/Tovis/ShotCoach.swift" \
   "$ROOT/Tovis/CoachTuning.swift" \
+  "$ROOT/Tovis/PublishCrop.swift" \
   "$BUILD/ShotExpectationsShim.swift" \
   "$BUILD/main.swift" \
   -o "$BUILD/bench" 2>&1 | grep -v "warning: 'nonisolated(unsafe)' is unnecessary" || true
