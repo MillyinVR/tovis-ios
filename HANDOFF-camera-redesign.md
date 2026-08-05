@@ -20,6 +20,7 @@ Design source of truth: Claude Design "Tovis Pro Camera Redesign.dc.html".
 | **Camera outside a session** | #261 (`85b6d9f`) | The footer's centre button stops being dead when no session is live. Same camera, same coach, no custody. See below. |
 | Gap analysis vs the bar | 2026-08-04 | `docs/design/camera-excellence-plan.md` — the whole camera measured against "a real photographer is holding my hand", every claim cited to `file:line`, split into `[BUILD]` / `[PASS]` / `[DECIDE]`. |
 | **Pre-device-pass fixes (B1–B17)** | #268 (`1089f2c`) | Everything the plan classified as buildable without guessing a threshold. See below. |
+| **Save + social export pack (D1)** | #TBD | The camera stops at upload no longer. Save the original to Photos anywhere the pro sees their own work; make a signed 4:5 / 9:16 / before-after post from it. Plan D1 DECIDED. See below. |
 
 Still owed: the on-device tune pass proper (`BACKLOG.md` §"Camera on-device tune
 pass") — perception thresholds need the sensor, and the simulator has no camera.
@@ -383,6 +384,181 @@ contracts — none of it has seen a photon.
 | **B9: the crop-aware coach against a real preview** — does judging inside 9:16 make it nag to get closer constantly? | The bench corpus is framed loose, so it can't distinguish the fix from the corpus. | §3.2 |
 | **B7: does the after's inherited fill band hold** with a client who moves? | — | §3.1 |
 | Everything already owed from the previous step (practice camera shooting, real thumbnails, attach flows, onion-skin alignment, tilt sign, face-exposure mapping) | Unchanged. | §3.9 |
+
+---
+
+## Step: save to phone + the social export pack (2026-08-05)
+
+> The approved member perk from the membership review, decision 9 — and the
+> answer to the plan's biggest open question, **D1**.
+
+The camera has always been a very good photographer that **stopped at upload**:
+excellent source material, handed over as a 3:4 JPEG. This is the other half of
+"a real photographer *and social media expert*". Two ways out of the app with the
+pro's own work, and they are deliberately different things:
+
+| | What it produces | Watermark |
+| --- | --- | --- |
+| **Save to Photos** | the ORIGINAL file, byte for byte — EXIF, orientation, colour profile intact | **never**, on any tier, in any membership state |
+| **Make a post** | a platform-ready render: 4:5 or 9:16, single shot or before/after diptych | **always** — the pro's own handle, corner-placed, photographer's-signature small |
+
+**The signature is never a paid feature.** The work is theirs on every tier. What
+the membership changes is the small platform mark that sits beside it.
+
+### Where the affordances are
+
+| Surface | Save | Export | Diptych |
+| --- | --- | --- | --- |
+| Session shots (`ProSessionHubView` → fullscreen) | ✅ | ✅ | ✅ — reuses `comparisonPairs`, the same pairing the wrap-up publishes |
+| Media manager (`ProMediaEditSheet` → fullscreen) | ✅ | ✅ | ❌ — see follow-ups |
+| Practice library (`ProPracticeShotDetail`) | ✅ | ✅ | n/a (a practice shot has no pair) |
+| The in-camera captured strip | ❌ | ❌ | — |
+
+The bar itself is **one component** (`ProMediaExportBar`), so "Save to Photos"
+means the same thing and reads the same words everywhere. It hangs off
+`FullscreenMedia.export`, which is `nil` by default — the shared viewer is used by
+client surfaces too (chart photos, message attachments), and this is PRO-only.
+
+**The in-camera strip is deliberately excluded.** `CapturedShot` holds a 216 px
+thumbnail, not the capture — holding full-sensor decodes is what jetsam-killed
+real sessions. A "save the original" built on a thumbnail would be a lie, and an
+export from one would be visibly soft. The camera already saves the colour-final
+ORIGINAL bytes where it honestly can: the practice auto-save toggle, and the
+refused-photo escape hatch. Everything shot in-session reaches the session-shots
+surface a moment later, where the real bytes are.
+
+### 🔴 Why a save can't accidentally become an export
+
+Three locks, in order of how hard they are to defeat:
+
+1. **The type.** `SocialExportRenderer.render` takes a NON-optional
+   `ExportWatermark`, and `SocialExportPolicy.watermark` returns `nil` for
+   `.saveOriginal`. A save physically cannot be routed through the renderer.
+2. **The intent, not the destination.** Both paths can end at the camera roll, so
+   `MediaWriteIntent` — not "where is this going" — is what decides. An export
+   saved to Photos IS signed; a save to the same place is not.
+3. **The bytes.** `OriginalMediaBytes.fetch` exists to be the one named place that
+   says "do not re-encode this". Anything that decodes and re-encodes silently
+   strips the capture date, the orientation tag the web gallery reads, the lens and
+   the colour profile — and the photo still looks fine, so nobody would notice for
+   months.
+
+### Geometry, and why it is where it is
+
+`PublishCrop` **moved out of the app target into TovisKit**. It was already the
+single source of the crop the overlay draws and the coach judges inside; it is now
+also what the exporter cuts to, so the frame the coach approved while shooting is
+the frame that gets posted. It moved because CI compiles and tests TovisKit and
+**nothing compiles `Tovis/`** — this is arithmetic that decides whether the client
+is in the picture the pro posts.
+
+For the same reason the whole export engine lives in TovisKit and uses
+CoreGraphics + CoreText + ImageIO with **no UIKit**, so it compiles and runs on the
+macOS CI runner: `SocialExportPlan` (crop + layout), `SocialExportPolicy`
+(the signature and the tier), `SocialExportRenderer` (the actual pixels).
+
+Two decisions worth knowing:
+
+- **The diptych arrangement is geometry, not taste.** Side-by-side inside a 9:16
+  box leaves each half at ~0.28 w/h — a letterbox slot no face survives. So the
+  tall canvas **stacks** (before on top) and 4:5 sits **side by side** (before on
+  the left). Before is always first.
+- **The subject anchor is 0.44 vertically, not 0.5.** Beauty work is judged on the
+  head and the hair; the subject sits a little high and the room goes underneath.
+  That is the live coach's headroom rule surviving the crop. The hint is the focal
+  point the camera **already** found at capture (C6) — no new detection pass. Only
+  practice shots surface a focal on read; everything else centres.
+
+### ⚠️ One thing for Tori's eye
+
+**The 9:16 signature sits at the cover-safe band, not the true corner** — about
+three-quarters of the way down. A vertical post is covered by the platform's
+caption, audio row and action rail across roughly its bottom 450 of 1920, so a
+corner signature is a signature nobody sees. That is the reasoning, but the
+position is a taste call. One line to change:
+`SocialExportPlanner.signatureBox`, plus its test.
+
+### The membership gate — and what actually renders today
+
+`social_export_unbranded` (tovis-app #847, MERGED, **not deployed**) sits on
+PRO/PREMIUM/STUDIO. The server resolves it to one boolean, `exportsUnbranded` on
+`/api/v1/pro/membership/status` — same shape as the finance payload's
+`canExportTaxDocs`. The render is on-device; the decision is not.
+
+> 🔴 **With `ENABLE_MEMBERSHIP_ENFORCEMENT` off — production today — a free pro and
+> a paying pro export the SAME unbranded image.** Every paid gate in tovis-app
+> resolves as granted while that switch is off; this follows them rather than
+> inventing a new rule. The perk is real in code and invisible in production until
+> the flag flips. There is a live argument for gating this one on the entitlement
+> ALONE (nothing is being taken away — the feature is new; and the mark is
+> marketing, not a restriction). One line in `lib/pro/socialExportMark.ts` plus its
+> test. **Tori's call** — recorded in `docs/design/camera-excellence-plan.md` §5.1.
+
+A missing answer fails **generous** (unbranded): an older backend, an offline
+launch or a 500 all resolve to the member treatment. A free pro's absent mark
+costs a little reach; a paying pro whose export sprouts a mark because their signal
+dropped is a broken promise they can point at.
+
+### Verified, and how
+
+- **51 new TovisKit tests**, all in CI. Crop invariants across 5 source shapes × 4
+  subject positions × 5 nudges × both formats; the layout; the signature box; the
+  watermark policy in both directions on every tier and both flag states; and the
+  renderer on **real pixels** (a black|white split source proves the crop keeps its
+  seam centred, a black/white pair proves before comes first, and the signature
+  corner is diffed against an unsigned render to prove the mark is drawn there and
+  **nowhere else**).
+- **Nine mutants killed.** Watermark never drawn · perk ignored (mark always drawn)
+  · a save watermarked · headroom bias removed · before/after swapped · 9:16
+  signature under the action rail · destination not flipped · manual nudge ignored ·
+  the save path re-encoding (EXIF stripped). Every one turns the suite red.
+- **Looked at, in both modes**, on the simulator — which needs no camera to render
+  and export. Free renders `@toristyles TOVIS`; member renders `@toristyles` and
+  nothing else, with the picture itself byte-identical between them.
+  `SIMCTL_CHILD_TOVIS_DEBUG_OPEN_EXPORT=1` +
+  `TOVIS_DEBUG_EXPORT_TIER=free|member` opens the sheet on a synthetic before/after
+  from the ROOT view — no session, no token, no local backend, so it stays reachable
+  on a day when the debug token seed or the dev stack is unwell (which is exactly
+  when someone reaches for it). The sample supplies only source pixels; the crop,
+  layout and signature all come from the real renderer.
+
+### Not verified — needs Tori's device
+
+- **The share sheet handing a real file to Instagram / TikTok / Messages.** The
+  simulator has no social apps installed, so the hand-off past `UIActivityView-
+  Controller` is unexercised.
+- **`PHPhotoLibrary` writing the original bytes into a real library**, and what
+  Photos then reports for capture date / orientation. The byte-identity is proven in
+  CI; the library write is not.
+- **How the signature reads over real hair.** Every sample here is synthetic. The
+  legibility pass (a light signature with a soft dark shadow, so it survives both a
+  blonde balayage and dark hair) is reasoned and looked at, not judged on a real
+  photograph.
+- **Whether the 9:16 signature position is right** once she sees one posted.
+
+### Follow-up cards (designed, deliberately not built)
+
+1. **Client-side share treatment.** A client sharing their own before/after with
+   their pro's handle on it — designed exactly the same way: the client's save is
+   always their clean original, the export carries the PRO's handle (it is the
+   pro's work), and the same entitlement decides the platform mark. Scope-guarded
+   out of this session on purpose; it needs a client-side entitlement read and a
+   consent question this session did not answer.
+2. **Video / clip export.** Stills first. The clip machinery re-exports a whole take
+   through a per-frame filter (`CardCorrection.swift:156-183`); adding a watermark
+   pass and two crops on top of that is its own piece of work with its own length
+   cap and its own thermal budget.
+3. **1:1 (1080×1080).** The IG profile grid and most ad units. A real gap, left as a
+   gap rather than guessed at.
+4. **Carousel assembly.** Option (c) of D1. The guides already produce the shot list
+   a carousel wants (before, process, detail, full after); the assembly doesn't
+   exist.
+5. **A full-resolution `beforeUrl` on `ProMediaBeforeOption`** (tovis-app). It
+   carries only `thumbUrl` today, which is right for the pairing picker and the
+   preview slider but would export a visibly soft half — so the media manager
+   offers no diptych. One additive DTO field unlocks it.
+6. **Save/export from the in-camera strip**, if the camera ever holds full bytes for
+   a reviewed shot.
 
 ---
 

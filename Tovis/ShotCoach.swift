@@ -8,6 +8,7 @@
 // threshold lives in `CoachTuning` (one file to adjust during device tuning).
 import CoreGraphics
 import Foundation   // TimeInterval — the tip arbiter's dwell clock
+import TovisKit     // PublishCrop — the crop the coach judges inside
 
 enum CoachCategory: String, Sendable {
     case lighting, composition, sharpness, background, pose, level, color

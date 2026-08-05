@@ -248,10 +248,25 @@ struct ProPracticeLibraryView: View {
     }
 }
 
-/// One shot, full-bleed, with its attach state spelled out.
+/// One shot, full-bleed, with its attach state spelled out — and the two ways out
+/// with it. A practice shot is owed to nobody, which makes it the purest case for
+/// both: save the original to the camera roll, or make a post out of it without
+/// it ever touching a booking.
 private struct ProPracticeShotDetail: View {
     let shot: ProPracticeShot
     @Environment(\.dismiss) private var dismiss
+
+    /// The subject focal the camera found at capture time — practice shots are
+    /// the one surface that carries it on read, so their smart crop is the one
+    /// that actually knows where the face is.
+    private var exportContext: ProMediaExportContext? {
+        guard shot.mediaType == .image,
+              let raw = shot.renderUrl, let url = URL(string: raw) else { return nil }
+        return ProMediaExportContext(
+            main: .remote(url),
+            focal: MediaFocalPoint(x: shot.focalX, y: shot.focalY)
+        )
+    }
 
     var body: some View {
         NavigationStack {
@@ -276,6 +291,13 @@ private struct ProPracticeShotDetail: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Done") { dismiss() }
                         .tint(BrandColor.textSecondary)
+                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                if let exportContext {
+                    // The same bar the fullscreen viewer shows, so "Save to
+                    // Photos" means the same thing on every pro surface.
+                    ProMediaExportBar(context: exportContext)
                 }
             }
         }

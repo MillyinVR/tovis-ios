@@ -6,7 +6,7 @@
 > |---|---|
 > | **§4 — buildable without guessing a threshold (B1–B17)** | ✅ **Merged** to `main` as **#268 (`1089f2c`)**, 2026-08-05. All seventeen, CI green, and eleven red-proof probes confirming each fix's coverage actually fails when the fix is reverted. See `HANDOFF-camera-redesign.md` § "the pre-device-pass camera fixes". |
 > | **§3 — what the on-device salon pass must measure** | ⏳ **Open.** This is now the agenda for that pass, and B17 made §3.1/§3.2 measurable offline first. Two items were ADDED by the build — see the ⚠️ notes in §2.1 and §2.5. |
-> | **§5 — open product decisions (D1–D12)** | ⏳ **Open.** None built, deliberately: they change what gets built and they are not engineering calls. |
+> | **§5 — open product decisions (D1–D12)** | ⏳ **D1 DECIDED + BUILT** (2026-08-05) — Tovis produces platform-ready assets, and the platform mark is the membership perk. See §5.1. D7 moves with it on the export side. **D2–D6, D8–D12 still open**, deliberately: they change what gets built and they are not engineering calls. |
 >
 > Everything in §1 and §2 below describes the state **before** the §4 build, and
 > is left as written so the reasoning can be checked against the diff. Where the
@@ -387,12 +387,16 @@ source material and hands the pro a 3:4 JPEG.
 - ✅ `[BUILD]` — add the Reels-cover safe band to the overlay. Fixed, published numbers. **Done.**
 - `[DECIDE]` — should 4:5 be co-primary with 9:16? Instagram's feed is where salon
   before/afters get saved and shared; the dim treatment says it's an afterthought.
-- `[DECIDE]` — **does Tovis export platform-ready assets, or stop at upload?** This is the
-  largest single scope question in this document. A "make me a Reel cover / a 9:16 export /
-  a 4-up carousel" step is a different product surface from a camera.
+  **Half-answered (2026-08-05):** on the EXPORT side they are equals and 4:5 is the
+  default. The live viewfinder is unchanged — D7 still stands for the overlay.
+- ✅ `[DECIDE]` → **DECIDED, 2026-08-05** — **does Tovis export platform-ready assets, or
+  stop at upload?** It exports. 4:5 + 9:16, single or before/after diptych, signed with
+  the pro's handle; members drop the platform mark. **Built** — see §5.1 for the full
+  decision and `HANDOFF-camera-redesign.md`.
   (Note: the built-in guides already *produce* the shot list a carousel wants — before,
   process, detail, full after — which is reported to outperform a single split-screen
-  ~3:1 on saves and shares ([SalonSOS]). The assets exist; the assembly doesn't.)
+  ~3:1 on saves and shares ([SalonSOS]). The assets exist; the **carousel assembly**
+  still doesn't — that was option (c) and is a deliberate follow-up.)
 
 ---
 
@@ -858,7 +862,7 @@ Each of these changes what gets built. None of them is an engineering call.
 
 | # | Decision | Options | Note |
 |---|---|---|---|
-| **D1** | **Does Tovis produce platform-ready assets, or stop at upload?** | (a) stop at upload · (b) 9:16 + 4:5 exports with focal-aware crop · (c) full: cover frame, carousel assembly, share sheet | The biggest scope question here. "Social media expert" is half the promise, and today the app is only the photographer half. §2.4 |
+| **D1** | ✅ **DECIDED — (b), member-flavoured.** Does Tovis produce platform-ready assets, or stop at upload? | ~~(a) stop at upload~~ · **(b) 9:16 + 4:5 exports with focal-aware crop** · ~~(c) full: cover frame, carousel assembly~~ | Tori, 2026-08-05. Built; see §5.1 below. |
 | **D2** | **The enhancement policy** (§2.9). | (a) calibration only, forever · (b) + symmetric global finishing · (c) + optional beautification | Recommend (b). Before/after integrity is the product; (c) breaks it. |
 | **D3** | **Clip audio.** | (a) stay silent · (b) opt-in with a visible indicator | Defensible either way; today it's inherited, not chosen. §2.8 |
 | **D4** | **The card.** | (a) measure a print batch and unblock B4 · (b) drop the matrix, keep the WB lock (which already works with a white towel) | Today the matrix is decorative (`docs/calibration/README.md:54`). (b) is honest and free; (a) is real colour science and costs a spectrophotometer. |
@@ -870,6 +874,89 @@ Each of these changes what gets built. None of them is an engineering call.
 | **D10** | **Practice clips.** | (a) stay photos-only · (b) two nullable poster columns + poster copy on attach | Already scoped in the handoff. §2.8 |
 | **D11** | **Should auto-capture default ON?** | today: it's a setting | Depends entirely on §3.5's reliability numbers. |
 | **D12** | **Front camera / torch / manual EV for the pro.** | (a) none (today) · (b) torch + EV slider | A dim salon has no fill-light affordance at all. §2.11 |
+
+---
+
+### 5.1 D1 — decided, and what got built
+
+**The decision (Tori, 2026-08-05): Tovis produces platform-ready assets — option
+(b), with the platform mark as a membership perk.** The camera was a very good
+photographer that stopped at upload; it now finishes the job.
+
+**What every pro gets, on every tier.** Two ways out of the app with their own work,
+and they are deliberately different things:
+
+| | What it produces | Watermark |
+|---|---|---|
+| **Save to Photos** | the ORIGINAL file, byte for byte — EXIF, orientation, colour profile intact | **never**, on any tier, in any membership state |
+| **Make a post** | a platform-ready render: 4:5 or 9:16, single or before/after diptych | **always** — the pro's own handle, corner-placed |
+
+The signature is never a paid feature: the work is theirs. What the membership
+changes is the small platform mark that sits beside it.
+
+**Formats.** 4:5 (1080×1350, Instagram's tallest feed post) and 9:16 (1080×1920,
+Reels / TikTok / the Looks feed). Geometry comes from `PublishCrop` — the same
+numbers the live crop guide draws and the coach judges inside — so the frame the
+coach approved while shooting is the frame that gets posted. **1:1 is a known gap**
+(the IG profile grid, most ad units) and is a follow-up rather than a guess.
+
+**The diptych arrangement is geometry, not taste.** Splitting a 9:16 box side by
+side leaves each half at ~0.28 w/h, a letterbox slot no face survives, so the tall
+canvas **stacks** (before on top) and the squarer 4:5 sits **side by side** (before
+on the left). Before is always first; a diptych that reads after-then-before is not
+a transformation, it is a warning.
+
+**Smart crop.** The largest target-aspect rect that fits, slid along whatever axis
+has slack so the subject lands on its anchor, then the pro's manual nudge across
+whatever travel remains (both extremes always reachable). The subject anchor is
+**0.44 vertically, not 0.5** — beauty work is judged on the head and the hair, so
+the subject sits a little high and the room goes underneath. That is the live
+coach's headroom rule surviving the crop. The subject hint is the focal point the
+camera **already** found at capture time (camera C6); no new detection pass. Only
+practice shots surface a focal on read today — booking and library media fall back
+to a centred crop.
+
+**The 9:16 signature is inset to the cover-safe band**, not the true corner. A
+vertical post is covered by the platform's caption, audio row and action rail
+across roughly its bottom 450 of 1920 — a signature in the corner is a signature
+nobody ever sees, which is the one failure mode that renders perfectly and makes
+the whole feature pointless. ⚠️ **This is a taste call worth Tori's eye**: it puts
+the signature about three-quarters of the way down rather than at the very bottom.
+Changing it is one line (`SocialExportPlanner.signatureBox`) plus its test.
+
+**Destination is the pro's choice** — the share sheet, the camera roll, or both.
+The destination has no say in what gets drawn; only the intent does
+(`MediaWriteIntent`), which is why a save can never pick up a watermark by going to
+the same place an export goes.
+
+#### The membership gate, and what actually renders today
+
+The entitlement is `social_export_unbranded` (tovis-app `lib/pro/entitlements.ts`,
+PRO/PREMIUM/STUDIO). The server resolves it to one boolean, `exportsUnbranded` on
+`/api/v1/pro/membership/status` — the same shape as the finance payload's
+`canExportTaxDocs`. The render happens on the device; the decision does not.
+
+> 🔴 **While `ENABLE_MEMBERSHIP_ENFORCEMENT` is off — which is production today —
+> a free pro and a paying pro export the SAME unbranded image.** Every paid gate in
+> tovis-app resolves as granted while that master switch is off (the tax-export
+> gate, the retention-insights gate, the camera quota), and this follows them
+> rather than inventing a thirteenth rule. The perk is real in code and invisible
+> in production until Tori flips the flag.
+>
+> **There is a live argument for gating this one on the entitlement alone.** The
+> flag exists so that turning enforcement on never TAKES AWAY something pros
+> already have — and social export did not exist yesterday, so there is nothing to
+> take away. The platform mark is also *marketing* rather than a *restriction*: a
+> free pro's export is how a salon down the street first hears the name. Flipping
+> to that behaviour is a one-line change in `lib/pro/socialExportMark.ts` plus its
+> test. **Tori's call.**
+
+#### D7 moves with it
+
+**D7 (is 4:5 co-primary with 9:16?) is effectively answered on the export side:**
+both are offered as equals, and 4:5 is the *default* because that is where salon
+before/afters get saved and shared. D7 remains open for the **live viewfinder**,
+where 9:16 is still the bright box and 4:5 is still drawn dim.
 
 ---
 

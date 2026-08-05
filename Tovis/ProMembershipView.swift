@@ -21,7 +21,7 @@ struct ProMembershipView: View {
     /// True while the one-time sign-in token is being minted. Gates the button so
     /// a double-tap cannot mint two tokens (the second would burn the first).
     @State private var isPreparingWebLink = false
-    private let brandName = "Tovis"
+    private let brandName = TovisBrand.displayName
 
     /// The single place this destination is spelled, shared by the hand-off
     /// request and its plain-URL fallback so the two can never disagree.

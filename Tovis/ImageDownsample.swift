@@ -1,36 +1,22 @@
-// Decode-bounded image loading. A full-sensor capture decodes to a bitmap in
-// the hundreds of MB, so every place that only DISPLAYS a shot (captured
-// strip, best-shots tray, onion ghost) must hold a bitmap sized for its frame,
-// not the sensor — retaining full decodes is what jetsam-killed the camera
-// mid-session. ImageIO thumbnailing decodes straight to the target size; the
-// full-resolution bitmap never materializes. Upload payloads stay full-res —
-// this bounds pixels we HOLD, never pixels we SEND.
-import ImageIO
+// Decode-bounded image loading, as UIImage.
+//
+// The decode itself lives in `TovisKit.UprightImageDecode` — the export renderer
+// needs the same bounded, orientation-baked CGImage and CI only compiles TovisKit,
+// so there is one implementation and this is the UIKit wrapper over it. See that
+// file for why both the size bound and the transform flag matter.
 import SwiftUI
+import TovisKit
 import UIKit
 
 enum ImageDownsample {
     /// Long-edge budget for a full-screen ghost/preview (≈ 3x display scale).
-    static let screenMaxPixel: CGFloat = 2048
+    static let screenMaxPixel: CGFloat = UprightImageDecode.screenMaxPixel
 
     /// Decode `data` to at most `maxPixel` on its long edge, applying EXIF
     /// orientation. Nil when the bytes don't decode.
     nonisolated static func thumbnailSync(from data: Data, maxPixel: CGFloat) -> UIImage? {
         autoreleasepool {
-            let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
-            guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions) else {
-                return nil
-            }
-            let options = [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceShouldCacheImmediately: true,
-                kCGImageSourceThumbnailMaxPixelSize: maxPixel,
-            ] as [CFString: Any] as CFDictionary
-            guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options) else {
-                return nil
-            }
-            return UIImage(cgImage: cgImage)
+            UprightImageDecode.cgImage(from: data, maxPixel: maxPixel).map(UIImage.init(cgImage:))
         }
     }
 

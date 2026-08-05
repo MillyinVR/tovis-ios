@@ -15,6 +15,16 @@ public struct ProMembership: Decodable, Sendable {
     public let compUntil: String?
     /// Boolean entitlements unlocked by the effective plan (see PLAN_ENTITLEMENTS).
     public let entitlements: [String]
+    /// Whether this pro's social exports drop the small platform mark, leaving
+    /// only their own signature. Resolved SERVER-side
+    /// (tovis-app lib/pro/socialExportMark.ts) rather than re-derived here from
+    /// `entitlements`, the same way the finance payload ships `canExportTaxDocs` —
+    /// the render happens on the device, the decision does not.
+    ///
+    /// Optional so a backend older than the field still decodes; `nil` means
+    /// "unbranded" (`SocialExportPolicy.dropsPlatformMark`), which is also what
+    /// every server answers while ENABLE_MEMBERSHIP_ENFORCEMENT is off.
+    public let exportsUnbranded: Bool?
     /// Renewal / trial dates (ISO-8601) and billing flags.
     public let currentPeriodEnd: String?
     public let cancelAtPeriodEnd: Bool

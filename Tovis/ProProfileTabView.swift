@@ -13,7 +13,7 @@ struct ProProfileTabView: View {
     @Environment(ThemeStore.self) private var theme
 
     /// The pro's brand name, used in the approval-notice copy.
-    private let brandName = "Tovis"
+    private let brandName = TovisBrand.displayName
 
     private enum Tab: String, CaseIterable, Identifiable {
         case portfolio, services, reviews
