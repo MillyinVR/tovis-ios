@@ -1129,6 +1129,25 @@ final class SessionModel {
 struct RootView: View {
     @Environment(SessionModel.self) private var session
 
+    #if DEBUG
+    /// DEBUG ONLY — open the social export sheet on a synthetic before/after,
+    /// via `SIMCTL_CHILD_TOVIS_DEBUG_OPEN_EXPORT=1`. Same reasoning as
+    /// `DebugSessionSeed` and `TOVIS_DEBUG_OPEN_PRACTICE`: this machine cannot
+    /// drive the simulator with synthetic taps, and the export sheet otherwise
+    /// sits behind a camera the simulator does not have, a signed-in pro and a
+    /// booking with media — three separate reasons for a screen to ship
+    /// build-green and never once be looked at.
+    ///
+    /// It hangs off the ROOT rather than the pro shell deliberately: it then needs
+    /// no session, no token and no local backend, so the screen stays reachable on
+    /// a machine where the debug token seed or the dev stack is having a bad day
+    /// (which is exactly when someone reaches for it). `DebugExportSample`
+    /// supplies only the source pixels — the crop, the layout and the signature
+    /// all come from the real renderer.
+    @State private var debugExport = ProcessInfo.processInfo
+        .environment["TOVIS_DEBUG_OPEN_EXPORT"] == "1"
+    #endif
+
     var body: some View {
         ZStack {
             BrandColor.bgPrimary.ignoresSafeArea()
@@ -1157,6 +1176,17 @@ struct RootView: View {
         // (via the backend bounce page). Route it into the session so the active
         // booking screen can dismiss the browser and refetch. A tapped
         // password-reset Universal Link routes through the same handler.
+        #if DEBUG
+        // A cover, not a sheet: the shells below already stack several sheet
+        // modifiers and SwiftUI honours only one at a time, so a debug sheet added
+        // among them simply never presents.
+        .fullScreenCover(isPresented: $debugExport) {
+            ProSocialExportSheet(
+                context: DebugExportSample.context(),
+                model: DebugExportSample.model()
+            )
+        }
+        #endif
         .onOpenURL { url in
             // Give the Google Sign-In SDK first crack at its OAuth redirect (the
             // SFSafariViewController fallback routes back through the app's URL

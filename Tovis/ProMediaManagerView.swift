@@ -315,7 +315,20 @@ struct ProMediaEditSheet: View {
     @ViewBuilder
     private var preview: some View {
         Button {
-            viewingMedia = FullscreenMedia.remote(id: item.id, urlString: item.displayUrl, isVideo: false)
+            // The pro's own library asset — save the original, or make a post
+            // from it.
+            //
+            // No diptych here, on purpose: `ProMediaBeforeOption` carries only a
+            // `thumbUrl`, which is fine for the pairing picker and the preview
+            // slider but would export a visibly soft half. The session hub pairs
+            // from two full-resolution assets and offers the diptych there. Adding
+            // a full URL to the before-options DTO is the follow-up
+            // (HANDOFF-camera-redesign.md).
+            viewingMedia = FullscreenMedia.proOwned(
+                id: item.id,
+                urlString: item.displayUrl,
+                isVideo: item.isVideo
+            )
         } label: {
             ZStack {
                 RoundedRectangle(cornerRadius: 14, style: .continuous).fill(BrandColor.bgSecondary)

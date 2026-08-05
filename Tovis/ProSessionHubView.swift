@@ -111,6 +111,13 @@ struct ProSessionHubView: View {
         }
     }
 
+    /// The "before" this shot is paired with, when it is an AFTER that has one.
+    /// Reuses `comparisonPairs` — the same pairing the wrap-up publishes — so the
+    /// diptych a pro exports is the diptych their portfolio shows.
+    private func pairedBefore(for item: ProBookingMediaItem) -> ProBookingMediaItem? {
+        comparisonPairs.first { $0.afterItem.id == item.id }?.beforeItem
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -1068,7 +1075,8 @@ struct ProSessionHubView: View {
             ? (item.renderThumbUrl ?? item.thumbUrl)
             : item.displayThumbUrl
         Button {
-            viewingMedia = FullscreenMedia.session(item)
+            // The pro looking at their own session's shots — save + export on.
+            viewingMedia = FullscreenMedia.proSession(item, before: pairedBefore(for: item))
         } label: {
             ZStack {
                 BrandColor.bgSecondary
