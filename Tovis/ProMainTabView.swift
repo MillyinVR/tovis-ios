@@ -208,6 +208,17 @@ struct ProMainTabView: View {
             if ProcessInfo.processInfo.environment["TOVIS_DEBUG_OPEN_PRACTICE"] == "1" {
                 debugPractice = true
             }
+            // DEBUG ONLY — open the standalone camera itself (not the library),
+            // i.e. exactly what the centre button does out of session. The
+            // simulator has no camera, so this cannot exercise AVFoundation —
+            // but it DOES exercise everything before the first photon: the view
+            // being constructed, its `@Environment(SessionModel.self)` lookup,
+            // guide resolution, the coach engine starting, the vault sweeps.
+            // That is the half of an "instant crash on tap" report that can be
+            // reproduced on this machine, and it was not reachable at all.
+            if ProcessInfo.processInfo.environment["TOVIS_DEBUG_OPEN_PRACTICE_CAMERA"] == "1" {
+                showPracticeCamera = true
+            }
             guard debugSeriesId == nil else { return }
             let raw = ProcessInfo.processInfo.environment["TOVIS_DEBUG_OPEN_SERIES"]?
                 .trimmingCharacters(in: .whitespacesAndNewlines)

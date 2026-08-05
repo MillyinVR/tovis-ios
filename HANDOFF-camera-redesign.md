@@ -388,6 +388,74 @@ contracts — none of it has seen a photon.
 
 ## Device feedback log
 
+### 2026-08-05 — build 36 crashes the moment the camera opens (Tori, real device)
+
+> "im in the app when i click the camera the app crashes immediately."
+
+**Not the standalone camera.** The centre button out of session was the obvious
+suspect (it was new in #261, and it is what Tori tapped), but it is not the
+variable. `TOVIS_DEBUG_OPEN_PRACTICE_CAMERA=1` opens
+`ProCapturePhotosView(destination: .practice)` on the simulator exactly as the
+centre button does, and the whole pre-photon half runs clean: the view
+constructs, `@Environment(SessionModel.self)` resolves, `ShotGuide.resolve`,
+`CoachEngine.start()` (CoreMotion), the crop-guide wiring, the clip/byte vault
+sweeps. It lands on the permission prompt and then the "No camera available"
+dead end. **The in-session camera should be expected to crash identically** —
+the destination is not involved.
+
+**Where it actually is.** `CameraController.configureSession()`, on hardware,
+after permission. Three properties there answer a bad value with an **ObjC
+exception**, which Swift cannot catch, so each one is an instant process kill
+with no preview ever drawn — precisely the reported shape:
+
+| property | raises |
+| --- | --- |
+| `AVCapturePhotoOutput.maxPhotoDimensions` | size not in the active format's `supportedMaxPhotoDimensions` |
+| `AVCaptureDevice.activeColorSpace` | colour space not in the active format's `supportedColorSpaces` |
+| `AVCaptureDevice.videoZoomFactor` | factor outside the active format's range |
+
+**All three read `device.activeFormat` from INSIDE the
+`beginConfiguration`/`commitConfiguration` block** — i.e. before the session has
+negotiated the format it will actually run, which it settles on COMMIT and which
+depends on the full set of attached outputs (photo + video-data + movie). Every
+value derived there describes a format the camera may not end up in.
+
+That was survivable while the input was always the single wide-angle camera: one
+camera, one obvious format, before and after agreed. **#268's B14 adopted the
+virtual triple / dual-wide devices**, whose negotiation with three outputs
+attached is not trivial — so the two reads stopped agreeing on hardware that has
+a second lens, which is every phone a pro shoots on and no simulator.
+
+**The fix.** The three format-dependent settings moved out of the configure pass
+into `applyFormatDependentSettings(device:)`, which runs after the commit in its
+own begin/commit pair, so each read of `activeFormat` describes the format that
+is actually active, and each value is checked against that format's own
+supported list.
+
+**Two defects red-proofed on the way** (`CameraCompositionTests`), both in the
+still-size choice, both latent until a virtual device reported a richer list:
+
+- `dims.last(where: ≤ cap)` reads as "the largest under the cap" but is only
+  that if the device lists ascending, which nothing promises. A device
+  reporting 24 MP before 48 MP lost the 24 and shipped 12 — the pro's stills
+  silently halving with nothing anywhere saying so.
+- when everything on offer is over the cap the fallback was `dims.first`, which
+  can be the LARGEST size on the device — the exact opposite of a cap that
+  exists because full-sensor stills piled into the jetsam kills.
+
+`maxPhotoDimensions(for:)` is now order-independent and always returns a member
+of the list it was given.
+
+⚠️ **NOT CONFIRMED AGAINST THE CRASH LOG.** The root cause above is reasoned
+from the diff and the surface, and the simulator can only prove where the crash
+*isn't* — it has no capture device, so `configureSession` never reaches any of
+the three properties there. The crash log settles it in one line: an
+**Exception Type** of `EXC_CRASH (SIGABRT)` with
+`-[AVCaptureSession commitConfiguration]`, `setMaxPhotoDimensions:`,
+`setActiveColorSpace:` or `setVideoZoomFactor:` in the top frames confirms it.
+Settings → Privacy & Security → Analytics & Improvements → Analytics Data
+(`Tovis-…​.ips`), or Xcode → Window → Organizer → Crashes.
+
 ### 2026-08-01 — first live client session (Tori, real device)
 
 > "I tested the camera with a client today and it's making it mandatory to take
