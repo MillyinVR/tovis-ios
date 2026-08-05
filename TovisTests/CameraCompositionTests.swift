@@ -5,6 +5,7 @@
 // framing target IS the before's measured number, and the zoom factor is read
 // off the device. Nothing here is waiting on the salon pass.
 import CoreGraphics
+import CoreMedia
 import Testing
 @testable import Tovis
 
@@ -154,6 +155,59 @@ import Testing
                                                      switchOverFactors: [2]) == 1)
         #expect(CameraController.wideAngleZoomFactor(wideIndex: 1,
                                                      switchOverFactors: [0]) == 1)
+    }
+
+    // MARK: - The still-size ceiling (the crash surface)
+
+    // `AVCapturePhotoOutput.maxPhotoDimensions` is one of the few properties on
+    // the entry path that answers a bad value with an ObjC exception rather than
+    // an error — and Swift cannot catch those, so a wrong answer here is not a
+    // degraded camera, it is the app dying the instant the pro taps it. The
+    // choice therefore has to hold for ANY list a device hands over, not just
+    // the tidy ascending one a single wide-angle camera happens to report.
+    //
+    // Virtual devices (triple / dual-wide, adopted in #268) report richer and
+    // differently-ordered lists than the wide-angle-only device this code was
+    // written against, which is what makes the two rules below load-bearing now
+    // when they were merely true before.
+
+    private func dims(_ w: Int32, _ h: Int32) -> CMVideoDimensions {
+        CMVideoDimensions(width: w, height: h)
+    }
+
+    /// 🔴 The list is NOT promised in ascending order. Picking "the last one
+    /// under the cap" quietly means "the last one under the cap that happens to
+    /// sit before a bigger one", so a device that reports 24 MP before 48 MP
+    /// loses the 24 and ships 12 — the pro's stills silently halve in
+    /// resolution with nothing anywhere saying so.
+    @Test func theLargestAllowedSizeIsFoundWhateverOrderTheDeviceListsThem() {
+        let unsorted = [dims(5712, 4284), dims(4032, 3024), dims(8064, 6048)]
+        let chosen = CameraController.maxPhotoDimensions(for: unsorted)
+        #expect(chosen?.width == 5712 && chosen?.height == 4284)
+    }
+
+    /// 🔴 When everything on offer is over the cap, the fallback must be the
+    /// SMALLEST — the cap exists because full-sensor stills piled into the
+    /// jetsam kills. Falling back to "whatever is listed first" can hand back
+    /// the largest size on the device, i.e. the exact opposite of the cap.
+    @Test func aDeviceWithNothingUnderTheCapFallsBackToItsSmallest() {
+        let allTooBig = [dims(12000, 9000), dims(8064, 6048)]
+        let chosen = CameraController.maxPhotoDimensions(for: allTooBig)
+        #expect(chosen?.width == 8064 && chosen?.height == 6048)
+    }
+
+    /// Whatever comes back must be a size the format actually offers — a
+    /// synthesized "capped" value is precisely what throws.
+    @Test func theChosenSizeIsAlwaysOneTheFormatOffered() {
+        let offered = [dims(4032, 3024), dims(5712, 4284), dims(8064, 6048)]
+        let chosen = CameraController.maxPhotoDimensions(for: offered)
+        #expect(offered.contains { $0.width == chosen?.width && $0.height == chosen?.height })
+    }
+
+    /// A format that offers nothing must leave the output's ceiling alone
+    /// rather than assign a zero one.
+    @Test func aFormatOfferingNothingLeavesTheCeilingUntouched() {
+        #expect(CameraController.maxPhotoDimensions(for: []) == nil)
     }
 }
 

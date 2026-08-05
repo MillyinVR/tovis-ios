@@ -419,14 +419,35 @@ final class CameraController: NSObject {
 
     // MARK: - Setup
 
-    /// The largest still dimensions we'll shoot for a device's active format:
-    /// the biggest at/under ~24 MP (full-sensor 48 MP stills just balloon every
-    /// downstream decode/upload with no feed/profile gain), else the smallest
-    /// offered. Both the photo output's ceiling and each capture's `settings`
-    /// derive from this so they always agree — see `capturePhoto`.
-    nonisolated private static func cappedPhotoDimensions(for device: AVCaptureDevice) -> CMVideoDimensions? {
-        let dims = device.activeFormat.supportedMaxPhotoDimensions
-        return dims.last(where: { Int($0.width) * Int($0.height) <= 24_500_000 }) ?? dims.first
+    /// Stills bigger than this balloon every downstream decode/upload (QC, card
+    /// correction, strip thumbnails) with no visible gain on the feed or the
+    /// profile — the transients that piled into the jetsam kills.
+    private static let photoPixelCap = 24_500_000
+
+    /// The largest still size at/under the cap that a format ACTUALLY OFFERS,
+    /// else the smallest it offers. Nil when it offers nothing.
+    ///
+    /// ⚠️ The result must always be one of `supported`, never a value derived
+    /// from it: `AVCapturePhotoOutput.maxPhotoDimensions` answers a size the
+    /// active format doesn't list with an **ObjC exception**, and Swift cannot
+    /// catch those — so a wrong answer here is not a degraded camera, it is the
+    /// app dying the instant the pro taps it.
+    ///
+    /// `supported` is deliberately treated as UNORDERED. The old reading —
+    /// "the last one under the cap" — is only the largest-under-the-cap if the
+    /// device lists ascending, which nothing promises. It held for the single
+    /// wide-angle camera this was written against; #268 adopted the virtual
+    /// triple / dual-wide devices, which report richer lists, and the same line
+    /// then silently means "the last one under the cap that happens to sit
+    /// before a bigger one".
+    nonisolated static func maxPhotoDimensions(
+        for supported: [CMVideoDimensions]
+    ) -> CMVideoDimensions? {
+        let pixels = { (d: CMVideoDimensions) in Int(d.width) * Int(d.height) }
+        if let best = supported.filter({ pixels($0) <= photoPixelCap }).max(by: { pixels($0) < pixels($1) }) {
+            return best
+        }
+        return supported.min(by: { pixels($0) < pixels($1) })
     }
 
     // MARK: - Device selection
@@ -500,6 +521,30 @@ final class CameraController: NSObject {
         device.unlockForConfiguration()
     }
 
+    /// The three settings that are only meaningful once the session has SETTLED
+    /// on the format it will run — the still-size ceiling, the capture colour
+    /// space, and the virtual device's wide-angle parking zoom.
+    ///
+    /// Called on the session queue after `configureSession`'s commit, and does
+    /// its own `beginConfiguration`/`commitConfiguration` so each read of
+    /// `device.activeFormat` describes the format that is actually active. Each
+    /// value is also checked against that format's own supported list rather
+    /// than assumed: the three properties here are the entry path's only ObjC
+    /// exceptions, and an exception is an instant process kill with no preview
+    /// ever drawn — the shape of the report this fix came from.
+    nonisolated private func applyFormatDependentSettings(device: AVCaptureDevice) {
+        session.beginConfiguration()
+        defer { session.commitConfiguration() }
+
+        // Per-capture `settings.maxPhotoDimensions` may not exceed the output's,
+        // so both derive from this one choice — see `capturePhoto`.
+        if let dims = Self.maxPhotoDimensions(for: device.activeFormat.supportedMaxPhotoDimensions) {
+            photoOutput.maxPhotoDimensions = dims
+        }
+        Self.pinColorSpace(device)
+        Self.matchWideAngleFraming(device)
+    }
+
     private static func ensureAuthorized() async -> Bool {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized: return true
@@ -536,8 +581,6 @@ final class CameraController: NSObject {
                 }
                 self.session.addInput(input)
                 self.device = device
-                Self.pinColorSpace(device)
-                Self.matchWideAngleFraming(device)
 
                 guard self.session.canAddOutput(self.photoOutput) else {
                     self.session.commitConfiguration()
@@ -548,14 +591,6 @@ final class CameraController: NSObject {
                 // Prioritize quality — these stills go on the pro's profile + the
                 // Looks feed, so favor the best capture over speed.
                 self.photoOutput.maxPhotoQualityPrioritization = .quality
-                // Declare the output's max still dimensions up front. Per-capture
-                // `settings.maxPhotoDimensions` may not exceed this, so both are
-                // set from the same cap (else `capturePhoto` throws). Capped at
-                // ~24 MP: full-sensor 48 MP stills balloon every downstream
-                // decode/upload with no feed/profile gain.
-                if let dims = Self.cappedPhotoDimensions(for: device) {
-                    self.photoOutput.maxPhotoDimensions = dims
-                }
 
                 // Live frames for the on-device coach (optional).
                 if let frameDelegate = self.frameDelegate, self.session.canAddOutput(self.videoOutput) {
@@ -572,6 +607,30 @@ final class CameraController: NSObject {
 
                 self.registerObservers(device: device)
                 self.session.commitConfiguration()
+
+                // ⚠️ EVERYTHING THAT READS `activeFormat` HAPPENS HERE, AFTER
+                // THE COMMIT — never in the pass above.
+                //
+                // The session picks the device's active format to satisfy the
+                // preset AND the set of outputs attached to it, and it settles
+                // that choice when the configuration is COMMITTED. Reading
+                // `device.activeFormat` between `beginConfiguration` and
+                // `commitConfiguration` therefore reads the format from before
+                // the negotiation, and every value derived from it is a value
+                // for a format that may not be the one the camera ends up
+                // running — which is fatal rather than merely wrong, because
+                // both properties set from it answer an unsupported value with
+                // an ObjC exception Swift cannot catch.
+                //
+                // This was survivable while the input was always the single
+                // wide-angle camera: one camera, one obvious format, before and
+                // after agreed. #268 adopted the virtual triple / dual-wide
+                // devices, whose format negotiation is exactly what a movie
+                // output and a video-data output added alongside a photo output
+                // make non-trivial — so the two reads stopped agreeing on
+                // hardware that has a second lens, which is every phone a pro
+                // actually shoots on and no simulator.
+                self.applyFormatDependentSettings(device: device)
                 cont.resume(returning: nil)
             }
         }
