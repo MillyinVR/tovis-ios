@@ -321,4 +321,33 @@ public final class ProClientsService: Sendable {
             "/pro/clients/\(clientId)/photo-release", method: .patch, body: payload
         )
     }
+
+    // MARK: - Chart consent (W5)
+
+    /// GET /api/v1/pro/clients/{id}/chart-share → where the ask stands, and
+    /// whether this pro may make one.
+    ///
+    /// 🔴 Gated on CONTACT, not on chart access. Asking to see a chart is
+    /// precisely what a pro does when they cannot see it, so a chart-level gate
+    /// here would make the call fail exactly when it is needed.
+    public func chartShare(clientId: String) async throws -> ProClientChartShare {
+        let response: ProClientChartShareResponse =
+            try await api.request("/pro/clients/\(clientId)/chart-share")
+        return response.chartShare
+    }
+
+    /// POST /api/v1/pro/clients/{id}/chart-share — ask this client for access.
+    ///
+    /// Refuses with 409 when the pair already has an answer: `REQUEST_PENDING`
+    /// (one open ask at a time), `DECLINED` (a client's no is not re-askable),
+    /// `ALREADY_GRANTED`, or `COOLDOWN` (a recent revoke). The server's copy is
+    /// pro-facing, so callers print `error.userMessage` rather than inventing
+    /// their own.
+    @discardableResult
+    public func requestChartAccess(clientId: String) async throws -> ProClientChartShare {
+        let response: ProClientChartShareResponse = try await api.request(
+            "/pro/clients/\(clientId)/chart-share", method: .post
+        )
+        return response.chartShare
+    }
 }
