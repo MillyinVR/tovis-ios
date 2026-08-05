@@ -45,28 +45,33 @@ import Testing
         #expect(advertised.count == ProMembershipCopy.proPreviewEntitlements.count)
     }
 
-    // 🔴 The pitch must stay true when the planned fee model ships: a pro-side $5
-    // flat fee, and the client fee moving from flat $5 to 10% of the DEPOSIT. Any
-    // of these phrases would become a lie that day, so none may appear.
-    @Test func commissionPitchSurvivesThePlannedFeeModel() {
-        let body = ProMembershipCopy.commissionPitchBody(brandName: "Tovis")
-        #expect(!body.contains("$"))
-        #expect(!body.lowercased().contains("keep 100%"))
-        #expect(!body.lowercased().contains("0% of your deposits"))
-        #expect(!body.lowercased().contains("paid by the client"))
-        #expect(!body.lowercased().contains("flat fee"))
+    // Tori chose this wording verbatim on 2026-08-04. Pinned exactly so a future
+    // tidy cannot quietly reword a commercial claim, and so the string stays
+    // byte-identical to web's feePitchBody (same apostrophe, same dash).
+    @Test func feePitchIsTheApprovedCopyVerbatim() {
+        #expect(
+            ProMembershipCopy.commissionPitchBody(brandName: "Tovis")
+                == "We never take a percentage of your work. Ever. "
+                + "One flat $5 when Tovis brings you a brand-new client "
+                + "— and members don\u{2019}t even pay that."
+        )
     }
 
-    // What it DOES claim — the durable structural contrast, which holds because the
-    // pro fee is flat and the client fee is a share of the DEPOSIT, so neither is
-    // ever a cut of the service price.
-    @Test func commissionPitchKeepsTheDurableClaims() {
-        let body = ProMembershipCopy.commissionPitchBody(brandName: "Tovis")
-        #expect(body.contains("20–30%"))
-        #expect(body.contains("never takes a percentage of your service price"))
-        #expect(body.contains("Tovis"))
-        // The once-per-cold-match rule is true today and in the planned model.
-        #expect(body.lowercased().contains("returning client"))
+    // 🔴 Durability under the planned fee model (brief §11.5): the pro fee is a
+    // FLAT $5, so "never a percentage of your work" holds; the client fee becomes a
+    // share of the DEPOSIT, which is still not a percentage of the pro's work.
+    @Test func feePitchNeverClaimsAPercentageIsTakenFromThePro() {
+        let body = ProMembershipCopy.commissionPitchBody(brandName: "Tovis").lowercased()
+        #expect(body.contains("never take a percentage of your work"))
+        // "keep 100%" would be false the day the pro-side $5 ships.
+        #expect(!body.contains("keep 100%"))
+        #expect(!body.contains("% of your service"))
+    }
+
+    @Test func feePitchUsesTheBrandNameItIsGiven() {
+        let body = ProMembershipCopy.commissionPitchBody(brandName: "Salon X")
+        #expect(body.contains("when Salon X brings you"))
+        #expect(!body.contains("Tovis"))
     }
 
     // Studio is shown but never sold, so its copy must not name an unbuilt feature.

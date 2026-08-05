@@ -107,16 +107,11 @@ struct ProMembershipView: View {
     /// The commission pitch (copy + every claim behind it: ProMembershipCopy).
     private func commissionPitch() -> some View {
         BrandSurface {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(ProMembershipCopy.commissionPitchTitle)
-                    .font(BrandFont.body(14, .semibold))
-                    .foregroundStyle(BrandColor.textPrimary)
-                Text(ProMembershipCopy.commissionPitchBody(brandName: brandName))
-                .font(BrandFont.body(13))
-                .foregroundStyle(BrandColor.textSecondary)
+            Text(ProMembershipCopy.commissionPitchBody(brandName: brandName))
+                .font(BrandFont.body(14, .semibold))
+                .foregroundStyle(BrandColor.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            }
         }
     }
 
