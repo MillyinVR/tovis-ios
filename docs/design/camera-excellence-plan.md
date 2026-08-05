@@ -1,10 +1,10 @@
 # Camera excellence — gap analysis against "a real photographer is holding my hand"
 
-> ## 🟢 STATUS — §4 (B1–B17) SHIPPED. §3 and §5 still open.
+> ## 🟢 STATUS — §4 (B1–B17) MERGED. §3 and §5 still open.
 >
 > | Section | State |
 > |---|---|
-> | **§4 — buildable without guessing a threshold (B1–B17)** | ✅ **Built**, 2026-08-04. All seventeen. See `HANDOFF-camera-redesign.md` § "the pre-device-pass camera fixes". |
+> | **§4 — buildable without guessing a threshold (B1–B17)** | ✅ **Merged** to `main` as **#268 (`1089f2c`)**, 2026-08-05. All seventeen, CI green, and eleven red-proof probes confirming each fix's coverage actually fails when the fix is reverted. See `HANDOFF-camera-redesign.md` § "the pre-device-pass camera fixes". |
 > | **§3 — what the on-device salon pass must measure** | ⏳ **Open.** This is now the agenda for that pass, and B17 made §3.1/§3.2 measurable offline first. Two items were ADDED by the build — see the ⚠️ notes in §2.1 and §2.5. |
 > | **§5 — open product decisions (D1–D12)** | ⏳ **Open.** None built, deliberately: they change what gets built and they are not engineering calls. |
 >
@@ -13,8 +13,8 @@
 > build changed a claim, an inline note says so. Every `[BUILD]` line in §2 is
 > now done; every `[PASS]` and `[DECIDE]` line still stands.
 >
-> Written 2026-08-04 against `main` @ `6af4954`; status updated on the branch
-> that shipped §4. Companion docs: `HANDOFF-camera-redesign.md` (the redesign
+> Written 2026-08-04 against `main` @ `6af4954`; §4 merged 2026-08-05.
+> **§3 is now the whole agenda for Tori's device pass** — nothing else blocks it. Companion docs: `HANDOFF-camera-redesign.md` (the redesign
 > thread + device-feedback log), `docs/camera-tuning-bench.md` (the offline coach
 > measurements — now reporting `faceLuma` and the background-scoped colour
 > columns), `docs/calibration/README.md` (the card), `BACKLOG.md §1` (the owed

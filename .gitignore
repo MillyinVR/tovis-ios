@@ -30,3 +30,7 @@ package-lock.json
 # tovis-app since #237-era cleanup; mirrored here so the shared checkout can
 # read clean at the end of a session.
 .claude/
+# Agent worktrees live in a SIBLING directory, not inside `.claude/`, so the
+# line above never covered them — a session that spawned one left the checkout
+# reading dirty on `main`.
+.claude-worktrees/
