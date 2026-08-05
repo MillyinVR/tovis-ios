@@ -351,12 +351,13 @@ func fixture(_ name: String) throws -> Data {
         #expect(m.entitlements.contains("tax_export"))
         #expect(m.cancelAtPeriodEnd == false)
         #expect(m.hasBillingAccount == true)
-        // No `discoveryFeeCents` above: this is the pre-2026-08-04 server shape, and
-        // it must still decode. The commission pitch degrades to omitting the amount.
-        #expect(m.discoveryFeeCents == nil)
     }
 
-    @Test func decodesProMembershipWithDiscoveryFee() throws {
+    // An UNKNOWN extra field must not break decoding. The server briefly sent
+    // `discoveryFeeCents` for the commission pitch; the pitch no longer names an
+    // amount (the planned fee model changes both numbers), so the field is gone
+    // from the model — but a deployed server may still be sending it.
+    @Test func decodesProMembershipIgnoringUnknownServerFields() throws {
         let json = """
         {
           "ok": true,
@@ -371,7 +372,8 @@ func fixture(_ name: String) throws -> Data {
         }
         """.data(using: .utf8)!
         let m = try JSONDecoder().decode(ProMembershipResponse.self, from: json).membership
-        #expect(m.discoveryFeeCents == 500)
+        #expect(m.planKey == "free")
+        #expect(m.hasBillingAccount == false)
     }
 
     @Test func decodesProLooksAnalytics() throws {

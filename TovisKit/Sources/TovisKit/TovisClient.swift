@@ -10,6 +10,8 @@ import Foundation
 ///     let result = try await tovis.auth.login(email:..., password:..., deviceId: tovis.deviceId)
 public final class TovisClient: Sendable {
     public let api: APIClient
+    /// Origin-matched link out to the hosted web app (purchasing is web-only).
+    private let webURLs: TovisConfig
     public let auth: AuthService
     public let devices: DeviceService
     public let home: HomeService
@@ -131,7 +133,13 @@ public final class TovisClient: Sendable {
     public let googleClientID: String?
     public let googleServerClientID: String?
 
+    /// A page on the web app for this build's environment, e.g.
+    /// `webPageURL("/pro/membership")`. Delegates to TovisConfig so the derivation
+    /// lives in one tested place.
+    public func webPageURL(_ path: String) -> URL { webURLs.webPageURL(path) }
+
     public init(config: TovisConfig, session: URLSession? = nil) {
+        self.webURLs = config
         let store = TokenStore()
         self.tokenStore = store
         self.deviceId = Self.resolveDeviceId()

@@ -24,7 +24,6 @@ public enum ProMembershipCopy {
     /// `docs/design/membership-value-brief.md` §5.1.F in tovis-app.
     public static let proPreviewEntitlements = [
         "tax_export", "custom_handle", "advanced_analytics", "priority_discovery",
-        "discovery_fee_waiver",
     ]
 
     /// Copy for an entitlement key, or nil when we deliberately do NOT advertise it.
@@ -43,7 +42,11 @@ public enum ProMembershipCopy {
         case "advanced_analytics":
             return "Retention insights — rebooking rate + who's due back (on the web)"
         case "priority_discovery": return "Priority placement in discovery"
-        case "discovery_fee_waiver": return "No platform fee for your new discovery clients"
+        // 🔴 `discovery_fee_waiver` is deliberately UNLABELED (Tori, 2026-08-04).
+        // As coded it waives the CLIENT's fee; the intended perk waives a PRO-side
+        // fee that does not exist yet. Nothing honest to advertise — see
+        // membership-value-brief.md §8.5 in tovis-app. Do not add a label until
+        // that fee ships AND its conversion impact has been measured.
         default: return nil
         }
     }
@@ -57,29 +60,36 @@ public enum ProMembershipCopy {
         }
     }
 
-    public static let commissionPitchTitle = "You keep 100% of what you charge"
+    public static let commissionPitchTitle = "Never a commission on your work"
 
-    /// The commission pitch body — the strongest true thing about the platform, and
-    /// it was nowhere in the membership story (membership-value-brief.md §0.4 / §3.1).
+    /// The commission pitch — the strongest true thing about the platform, and it
+    /// was nowhere in the membership story (membership-value-brief.md §0.4 / §3.1).
     ///
-    /// Every claim is checkable in tovis-app: the only `application_fee_amount` the
-    /// platform ever charges is the discovery fee, deposits settle to the pro in
-    /// full, and the fee is charged solely to a brand-new client arriving via
-    /// LOOKS_FEED / DISCOVERY_SEARCH (`isNewDiscoveryClient`). The 20–30% figure is
-    /// hedged and unattributed — a market observation from the brief's competitor
-    /// scan, not a per-competitor claim we can verify at render time.
+    /// 🔴 EVERY CLAIM MUST SURVIVE THE PLANNED FEE MODEL (§8.5), not just today's
+    /// code. A pro-side fee is coming ($5 flat, once, on a cold match) and the
+    /// client fee moves from a flat $5 to 10% of the DEPOSIT. So this copy must
+    /// never say "you keep 100%", "0% of deposits", "paid by the client", "a flat
+    /// fee", or any dollar amount — each is false the day that model ships.
     ///
-    /// `feeCents` comes from the server so the amount tracks the configured fee
-    /// (env-overridable up to $10). When it is nil — an older server, or a build
-    /// running before that field deploys — we keep the 0%-commission claim and drop
-    /// the sentence that would need a number. Never hardcode $5 here.
-    public static func commissionPitchBody(feeCents: Int?, brandName: String) -> String {
-        let lead = "Many booking marketplaces take 20–30% of a new client's first "
-            + "appointment out of the pro's payout. \(brandName) takes 0% of your "
-            + "services and 0% of your deposits, on every plan."
-        guard let fee = Wire.moneyCents(feeCents) else { return lead }
-        return lead + " The one platform fee is a flat \(fee) paid by the client, "
-            + "once, the first time a brand-new client books you from Discovery or "
-            + "the Looks feed."
+    /// What it does claim, and why it stays true: the pro fee is flat and the client
+    /// fee is a share of the DEPOSIT, so neither is ever a cut of the service price;
+    /// and both fire only once per client↔pro pair on a cold discovery match, which
+    /// is the rule today (isNewDiscoveryClient) and the rule in the planned model.
+    /// The 20–30% figure is hedged and unattributed — a market observation from the
+    /// brief's competitor scan, which applies to a NEW client's first appointment.
+    public static func commissionPitchBody(brandName: String) -> String {
+        "Many booking marketplaces take 20–30% of a new client's first appointment "
+            + "out of the pro's payout — every time. \(brandName) never takes a "
+            + "percentage of your service price. The only platform fee is small and "
+            + "one-time, and it applies solely to the first booking from a brand-new "
+            + "client who found you through Discovery or the Looks feed — never on a "
+            + "returning client, a rebook, or anyone who came from your own link."
     }
+
+    /// Studio is shown as an enterprise tier: no price, no purchase, contact only.
+    /// Copy names nothing unbuilt — white-label in particular has no implementation.
+    public static let studioTitle = "Salons & teams"
+    public static let studioBody =
+        "Studio is our plan for salons and teams — custom setup, billed by "
+        + "arrangement. Get in touch and we'll walk you through it."
 }
