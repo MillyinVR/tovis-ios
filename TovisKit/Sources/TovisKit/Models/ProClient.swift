@@ -34,6 +34,11 @@ public struct ProClientSummary: Decodable, Sendable, Identifiable {
     /// (booking-less directory invite). Present on the directory list only when
     /// the booking-less-claim feature is on; nil elsewhere (treated as false).
     public let invitable: Bool?
+    /// The client's public `@handle`, or nil when they have no public profile.
+    /// Independent of `canViewClient` — see ProBookingListClient for why. Lets
+    /// the roster open /u/{handle} for a client whose chart it cannot open,
+    /// instead of a row that does nothing.
+    public let publicProfileHandle: String?
 
     public init(
         id: String,
@@ -42,7 +47,8 @@ public struct ProClientSummary: Decodable, Sendable, Identifiable {
         email: String?,
         phone: String?,
         lastBookingLabel: String? = nil,
-        invitable: Bool? = nil
+        invitable: Bool? = nil,
+        publicProfileHandle: String? = nil
     ) {
         self.id = id
         self.fullName = fullName
@@ -51,6 +57,7 @@ public struct ProClientSummary: Decodable, Sendable, Identifiable {
         self.phone = phone
         self.lastBookingLabel = lastBookingLabel
         self.invitable = invitable
+        self.publicProfileHandle = publicProfileHandle
     }
 }
 

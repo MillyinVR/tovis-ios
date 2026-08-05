@@ -49,6 +49,9 @@ public struct ProBookingSeriesDetail: Decodable, Sendable, Equatable {
     public let depositPerOccurrence: Bool?
     public let clientId: String?
     public let clientName: String?
+    /// The client's public `@handle`, or nil when they have no public profile.
+    /// Same separate axis as the other pro reads — see ProBookingListClient.
+    public let clientPublicProfileHandle: String?
     public let offeringId: String?
     public let serviceName: String?
     public let locationId: String?
@@ -64,7 +67,8 @@ public struct ProBookingSeriesDetail: Decodable, Sendable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case seriesId, status, timeZone, anchorAt, intervalWeeks, occurrenceCount
         case nextOccurrenceIndex, depositRequested, depositPerOccurrence
-        case clientId, clientName, offeringId, serviceName, locationId
+        case clientId, clientName, clientPublicProfileHandle
+        case offeringId, serviceName, locationId
         case locationLabel, locationType, addOnNames, internalNotes
         case pricing, rollForward, occurrences, skipped
     }
@@ -82,6 +86,8 @@ public struct ProBookingSeriesDetail: Decodable, Sendable, Equatable {
         depositPerOccurrence = (try? c?.decodeIfPresent(Bool.self, forKey: .depositPerOccurrence)) ?? nil
         clientId = (try? c?.decodeIfPresent(String.self, forKey: .clientId)) ?? nil
         clientName = (try? c?.decodeIfPresent(String.self, forKey: .clientName)) ?? nil
+        clientPublicProfileHandle =
+            (try? c?.decodeIfPresent(String.self, forKey: .clientPublicProfileHandle)) ?? nil
         offeringId = (try? c?.decodeIfPresent(String.self, forKey: .offeringId)) ?? nil
         serviceName = (try? c?.decodeIfPresent(String.self, forKey: .serviceName)) ?? nil
         locationId = (try? c?.decodeIfPresent(String.self, forKey: .locationId)) ?? nil

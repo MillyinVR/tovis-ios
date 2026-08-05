@@ -54,6 +54,13 @@ struct ProCalendarManagementSheet: View {
         let fullName: String
     }
     private struct BookingTarget: Identifiable, Hashable { let id: String }
+    /// A client's PUBLIC `/u/{handle}` profile — the destination for a client the
+    /// pro cannot chart. A different resource from the chart in every sense: it
+    /// is world-readable and holds nothing clinical.
+    private struct PublicProfileTarget: Identifiable, Hashable {
+        let id = UUID()
+        let handle: String
+    }
     /// The new-booking deep-link fallback: books the appointment outright, with no
     /// offer for the client to confirm. Only used for rows the offer flow can't
     /// take (see `offerSheetTarget`).
@@ -72,6 +79,7 @@ struct ProCalendarManagementSheet: View {
         var id: String { waitlistEntryId }
     }
     @State private var chartTarget: ChartTarget?
+    @State private var publicProfileTarget: PublicProfileTarget?
     @State private var bookingTarget: BookingTarget?
     @State private var offerTarget: OfferTarget?
     @State private var offerSheetTarget: OfferSheetTarget?
@@ -133,6 +141,9 @@ struct ProCalendarManagementSheet: View {
             }
             .navigationDestination(item: $chartTarget) { target in
                 ProClientChartView(clientId: target.clientId, fullName: target.fullName)
+            }
+            .navigationDestination(item: $publicProfileTarget) { target in
+                PublicClientViewerView(handle: target.handle)
             }
             .navigationDestination(item: $bookingTarget) { target in
                 ProBookingDetailView(bookingId: target.id)
@@ -435,28 +446,53 @@ struct ProCalendarManagementSheet: View {
         .buttonStyle(.plain)
     }
 
-    // Client name → the pro-only chart when the server exposed a clientProfileId;
-    // otherwise plain text (no link, matching the web id-leak guard).
+    // Client name → the same rule web's ManagementModal uses:
+    //   1. the pro-only chart, when the server exposed a clientProfileId
+    //   2. else the client's PUBLIC profile, when the server exposed a handle
+    //   3. else plain text — no tap, matching the web id-leak guard
+    //
+    // Case 2 is new, and this sheet is where it matters most: a WAITLIST row
+    // never carries a clientProfileId (joining a waitlist creates a thread and
+    // nothing else, which is CONTACT_ONLY), so every waitlist client's name was
+    // inert here — including clients whose profile anyone can read.
     @ViewBuilder
     private func clientNameView(_ event: ProCalendarEvent) -> some View {
         let name = event.clientName.isEmpty ? "Client" : event.clientName
-        if let clientProfileId = event.clientProfileId {
-            Button {
-                chartTarget = ChartTarget(clientId: clientProfileId, fullName: name)
-            } label: {
-                Text(name)
-                    .font(BrandFont.body(13, .semibold))
-                    .foregroundStyle(BrandColor.accent)
-                    .underline()
-                    .lineLimit(1)
+        switch ClientIdentityDestination.resolve(
+            clientProfileId: event.clientProfileId,
+            publicProfileHandle: event.clientPublicProfileHandle
+        ) {
+        case let .chart(clientId):
+            clientNameButton(name) {
+                chartTarget = ChartTarget(clientId: clientId, fullName: name)
             }
-            .buttonStyle(.plain)
-        } else {
+        case let .publicProfile(handle):
+            clientNameButton(name) {
+                publicProfileTarget = PublicProfileTarget(handle: handle)
+            }
+        case .none:
             Text(name)
                 .font(BrandFont.body(13))
                 .foregroundStyle(BrandColor.textSecondary)
                 .lineLimit(1)
         }
+    }
+
+    /// The tappable form of a client's name. One builder so both destinations
+    /// look and behave identically — the pro should not have to know which of
+    /// the two they are about to open.
+    private func clientNameButton(
+        _ name: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(name)
+                .font(BrandFont.body(13, .semibold))
+                .foregroundStyle(BrandColor.accent)
+                .underline()
+                .lineLimit(1)
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Buttons

@@ -286,6 +286,13 @@ public struct ProBookingClient: Decodable, Sendable {
     /// client, so defaulting to hidden would REMOVE a working button for
     /// everyone until the web field deploys. Absent ⇒ behave exactly as before.
     public let canMessage: Bool?
+
+    /// The client's public `@handle`, or nil when they have no public profile.
+    ///
+    /// Independent of chart access: it says only whether a world-readable
+    /// `/u/{handle}` page exists. Optional so a build talking to a backend that
+    /// predates the field decodes unchanged — absent simply means no link.
+    public let publicProfileHandle: String?
 }
 
 public struct ProBookingServiceItem: Decodable, Sendable, Identifiable {

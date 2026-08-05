@@ -17,7 +17,8 @@
     "client": {
       "fullName": "Jordan Rivera",
       "email": "jordan@example.com",
-      "phone": "+15555550123"
+      "phone": "+15555550123",
+      "publicProfileHandle": "ava"
     },
     "timeZone": "America/Los_Angeles",
     "timeZoneSource": "LOCATION",

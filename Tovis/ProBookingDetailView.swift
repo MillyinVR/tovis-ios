@@ -90,6 +90,13 @@ struct ProBookingDetailView: View {
     // Message-the-client entry point (mirrors web /pro/bookings/[id]).
     @State private var messageNav: MessageThreadNav?
     @State private var messageWorking = false
+    /// The client's PUBLIC `/u/{handle}` profile, pushed from their name.
+    /// Wrapped because `navigationDestination(item:)` needs Identifiable.
+    private struct PublicProfileNav: Identifiable, Hashable {
+        let handle: String
+        var id: String { handle }
+    }
+    @State private var publicProfileNav: PublicProfileNav?
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -138,6 +145,9 @@ struct ProBookingDetailView: View {
                     .accessibilityLabel("Message client")
                 }
             }
+        }
+        .navigationDestination(item: $publicProfileNav) { nav in
+            PublicClientViewerView(handle: nav.handle)
         }
         .navigationDestination(item: $messageNav) { nav in
             ThreadView(thread: nav.thread)
@@ -315,9 +325,11 @@ struct ProBookingDetailView: View {
                 HStack(spacing: 10) {
                     BrandAvatar(name: booking.client.fullName, size: 40)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(booking.client.fullName.isEmpty ? "Client" : booking.client.fullName)
-                            .font(BrandFont.body(14, .semibold))
-                            .foregroundStyle(BrandColor.textPrimary)
+                        // Name → the client's PUBLIC profile when they have one
+                        // (web parity). Plain text otherwise: a private client
+                        // has no public page by design, so there is nothing to
+                        // open and nothing should look tappable.
+                        clientNameView(booking)
                         if let contact = clientContact(booking) {
                             Text(contact).font(BrandFont.body(11)).foregroundStyle(BrandColor.textMuted).lineLimit(1)
                         }
@@ -771,6 +783,35 @@ struct ProBookingDetailView: View {
     }
 
     // MARK: - Labels / helpers
+
+    /// The client's name — tappable through to their PUBLIC profile when they
+    /// have one, plain text when they don't. This screen never links the CHART:
+    /// it is already the pro-only record for this booking, and the chart has its
+    /// own gated entry point elsewhere.
+    @ViewBuilder
+    private func clientNameView(_ booking: ProBookingDetail) -> some View {
+        let name = booking.client.fullName.isEmpty ? "Client" : booking.client.fullName
+        // This screen never links the CHART — it is already the pro-only record
+        // for this booking — so only the public arm of the rule is taken here.
+        if case let .publicProfile(handle) = ClientIdentityDestination.resolve(
+            clientProfileId: nil,
+            publicProfileHandle: booking.client.publicProfileHandle
+        ) {
+            Button {
+                publicProfileNav = PublicProfileNav(handle: handle)
+            } label: {
+                Text(name)
+                    .font(BrandFont.body(14, .semibold))
+                    .foregroundStyle(BrandColor.accent)
+                    .underline()
+            }
+            .buttonStyle(.plain)
+        } else {
+            Text(name)
+                .font(BrandFont.body(14, .semibold))
+                .foregroundStyle(BrandColor.textPrimary)
+        }
+    }
 
     private func clientContact(_ booking: ProBookingDetail) -> String? {
         [booking.client.email, booking.client.phone].compactMap { $0 }.joined(separator: " · ").nilIfEmpty

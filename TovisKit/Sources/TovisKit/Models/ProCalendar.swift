@@ -77,6 +77,16 @@ public struct ProCalendarEvent: Decodable, Sendable, Identifiable {
     /// ClientProfile id — present only when the pro may open this client's chart
     /// (server-gated, so nil means "render the name as plain text, no link").
     public let clientProfileId: String?
+    /// The client's public `@handle`, or nil when they have no public profile.
+    ///
+    /// A SEPARATE axis from `clientProfileId` — that one is "may this pro open
+    /// the private chart", this one is "does a world-readable /u/{handle} page
+    /// exist". A waitlist client the pro has never booked, and a client past the
+    /// 30-day chart window, both arrive with `clientProfileId == nil` and a
+    /// handle; before this they were plain text on the management sheet.
+    ///
+    /// Both nil ⇒ genuinely nowhere to go: render the name as plain text.
+    public let clientPublicProfileHandle: String?
     /// Waitlist rows only: human label for the client's preferred time
     /// (e.g. "Any time", "Morning", "Jun 14").
     public let preferenceLabel: String?
