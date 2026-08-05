@@ -29,10 +29,22 @@ public enum CameraCalibration {
     /// green channel and scales red/blue by the sample's channel ratios, then clamps
     /// each gain to the device's valid `[1, maxGain]` range. This is the "custom
     /// white balance off a grey card / white towel" path — forgiving, no card needed.
+    ///
+    /// Every component of the result is finite and inside `[1, maxGain]`. That is
+    /// load-bearing, not tidiness: these gains are handed to
+    /// `setWhiteBalanceModeLocked`, which answers a NaN with an ObjC exception —
+    /// i.e. the app dying. The ratios here reach NaN by ordinary means (a device
+    /// that reports `current` gains of 0 before it has settled, times a
+    /// near-black sample's ∞ ratio, is 0 × ∞), and the old hand-rolled
+    /// `min(max(x, 1), maxGain)` let exactly that through. A channel that cannot
+    /// be computed falls back to 1.0 — the identity gain, no correction — so a
+    /// bad read degrades the calibration instead of killing the process.
     public static func neutralizingGains(sample: RGB, current: RGB, maxGain: Double) -> RGB {
         let r = sample.r > 0 ? current.r * (sample.g / sample.r) : current.r
         let b = sample.b > 0 ? current.b * (sample.g / sample.b) : current.b
-        func clamp(_ x: Double) -> Double { min(max(x, 1.0), maxGain) }
+        func clamp(_ x: Double) -> Double {
+            DeviceParameterGuard.clamped(x, lower: 1.0, upper: maxGain) ?? 1.0
+        }
         return RGB(clamp(r), clamp(current.g), clamp(b))
     }
 

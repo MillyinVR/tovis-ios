@@ -326,6 +326,12 @@ struct ProCapturePhotosView: View {
             camera.onWhiteBalanceLocked = { r, g, b in
                 UserDefaults.standard.set([r, g, b], forKey: wbDefaultsKey)
             }
+            // A calibration stored by a build that let a non-finite gain through
+            // is unusable forever — drop it so this shoot just runs on automatic
+            // white balance instead of retrying it every launch.
+            camera.onWhiteBalanceUnusable = {
+                UserDefaults.standard.removeObject(forKey: wbDefaultsKey)
+            }
             await camera.start(frameDelegate: engine.analyzer)
             if !camera.whiteBalanceCalibrated,
                let gains = UserDefaults.standard.array(forKey: wbDefaultsKey) as? [Double],
