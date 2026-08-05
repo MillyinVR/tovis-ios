@@ -20,6 +20,11 @@ public struct ProMembership: Decodable, Sendable {
     public let cancelAtPeriodEnd: Bool
     public let trialEndsAt: String?
     public let hasBillingAccount: Bool
+    /// The live one-time discovery platform fee in cents, for the commission pitch.
+    /// OPTIONAL on purpose: the fee is env-configurable server-side, and a build
+    /// running against a server that predates the field must degrade to omitting
+    /// the amount rather than printing a stale hardcoded one.
+    public let discoveryFeeCents: Int?
 }
 
 struct ProMembershipResponse: Decodable, Sendable {
