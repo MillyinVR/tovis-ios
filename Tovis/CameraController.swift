@@ -37,6 +37,10 @@ final class CameraController: NSObject {
     /// Fired (on the main actor) with the final locked WB gains — the camera
     /// view persists them per booking so before + after share one calibration.
     var onWhiteBalanceLocked: ((Double, Double, Double) -> Void)?
+    /// Fired (on the main actor) when previously-persisted WB gains turn out to
+    /// be unusable — the camera view drops the stored calibration rather than
+    /// re-applying poison on every launch. See `applyWhiteBalanceGains`.
+    var onWhiteBalanceUnusable: (() -> Void)?
     /// Records silent video clips (NO mic input — we never capture salon audio).
     nonisolated(unsafe) private let movieOutput = AVCaptureMovieFileOutput()
     nonisolated(unsafe) private var configured = false
@@ -184,7 +188,11 @@ final class CameraController: NSObject {
     /// the rest of the shoot.
     func focus(atLayerPoint layerPoint: CGPoint) {
         guard let device, let layer = previewLayer else { return }
-        let point = layer.captureDevicePointConverted(fromLayerPoint: layerPoint)
+        // A preview layer that hasn't been laid out yet has zero bounds, and the
+        // conversion then divides by it — a NaN point of interest is an ObjC
+        // exception on the write, not a missed tap.
+        guard let point = DeviceParameterGuard.unitPoint(
+            layer.captureDevicePointConverted(fromLayerPoint: layerPoint)) else { return }
         sessionQueue.async {
             guard (try? device.lockForConfiguration()) != nil else { return }
             if device.isFocusPointOfInterestSupported {
@@ -246,7 +254,9 @@ final class CameraController: NSObject {
             // Upright top-left (x, y) → device space (sensor landscape-right,
             // top-left origin): (y, 1 − x). ⚠️ Verify on hardware, like the
             // level sign — sensor mounting can flip this.
-            let target = center.map { CGPoint(x: $0.y, y: 1 - $0.x) } ?? CGPoint(x: 0.5, y: 0.5)
+            guard let target = DeviceParameterGuard.unitPoint(
+                center.map { CGPoint(x: $0.y, y: 1 - $0.x) } ?? CGPoint(x: 0.5, y: 0.5)
+            ) else { return }   // a garbage face box must not reach the device
             let faceActive = center != nil
             let faceChanged = faceActive != self.faceMeteringActive
             self.faceMeteringActive = faceActive
@@ -263,8 +273,10 @@ final class CameraController: NSObject {
             // unrecoverable; lifted shadows are fine), on top of any card-
             // anchored calibration bias for this room's light.
             let bias = self.calibrationBiasEV + (center == nil ? 0 : CoachTuning.faceExposureBias)
-            device.setExposureTargetBias(
-                min(max(bias, device.minExposureTargetBias), device.maxExposureTargetBias))
+            if let safe = DeviceParameterGuard.clamped(
+                bias, lower: device.minExposureTargetBias, upper: device.maxExposureTargetBias) {
+                device.setExposureTargetBias(safe)
+            }
             device.unlockForConfiguration()
             self.lastFaceExposurePoint = target
         }
@@ -276,12 +288,17 @@ final class CameraController: NSObject {
     func setCalibrationExposureBias(_ ev: Float) {
         guard let device else { return }
         sessionQueue.async {
-            self.calibrationBiasEV = ev
+            // Sanitize at the STORE, not just the write: a NaN parked here would
+            // go on poisoning the bias of every later face-metering update.
+            self.calibrationBiasEV = ev.isFinite ? ev : 0
             guard device.exposureMode != .locked,
                   (try? device.lockForConfiguration()) != nil else { return }
             let faceBias: Float = self.faceMeteringActive ? CoachTuning.faceExposureBias : 0
-            device.setExposureTargetBias(
-                min(max(ev + faceBias, device.minExposureTargetBias), device.maxExposureTargetBias))
+            if let safe = DeviceParameterGuard.clamped(
+                self.calibrationBiasEV + faceBias,
+                lower: device.minExposureTargetBias, upper: device.maxExposureTargetBias) {
+                device.setExposureTargetBias(safe)
+            }
             device.unlockForConfiguration()
         }
     }
@@ -318,6 +335,7 @@ final class CameraController: NSObject {
         sessionQueue.async {
             guard device.isWhiteBalanceModeSupported(.locked),
                   (try? device.lockForConfiguration()) != nil else { return }
+            defer { device.unlockForConfiguration() }
             let current = device.deviceWhiteBalanceGains
             let maxGain = device.maxWhiteBalanceGain
             let target = CameraCalibration.neutralizingGains(
@@ -325,14 +343,15 @@ final class CameraController: NSObject {
                 current: RGB(Double(current.redGain), Double(current.greenGain), Double(current.blueGain)),
                 maxGain: Double(maxGain)
             )
-            func clamp(_ x: Double) -> Float { min(max(Float(x), 1), maxGain) }
-            let gains = AVCaptureDevice.WhiteBalanceGains(
-                redGain: clamp(target.r), greenGain: clamp(target.g), blueGain: clamp(target.b))
-            device.setWhiteBalanceModeLocked(with: gains, completionHandler: nil)
-            device.unlockForConfiguration()
+            guard let safe = DeviceParameterGuard.whiteBalanceGains(
+                r: target.r, g: target.g, b: target.b, maxGain: maxGain) else { return }
+            device.setWhiteBalanceModeLocked(
+                with: AVCaptureDevice.WhiteBalanceGains(
+                    redGain: safe.r, greenGain: safe.g, blueGain: safe.b),
+                completionHandler: nil)
             Task { @MainActor in
                 self.whiteBalanceCalibrated = true
-                self.onWhiteBalanceLocked?(Double(gains.redGain), Double(gains.greenGain), Double(gains.blueGain))
+                self.onWhiteBalanceLocked?(Double(safe.r), Double(safe.g), Double(safe.b))
             }
         }
     }
@@ -344,12 +363,20 @@ final class CameraController: NSObject {
         sessionQueue.async {
             guard device.isWhiteBalanceModeSupported(.locked),
                   (try? device.lockForConfiguration()) != nil else { return }
-            let maxGain = device.maxWhiteBalanceGain
-            func clamp(_ x: Double) -> Float { min(max(Float(x), 1), maxGain) }
-            let gains = AVCaptureDevice.WhiteBalanceGains(
-                redGain: clamp(r), greenGain: clamp(g), blueGain: clamp(b))
-            device.setWhiteBalanceModeLocked(with: gains, completionHandler: nil)
-            device.unlockForConfiguration()
+            defer { device.unlockForConfiguration() }
+            guard let safe = DeviceParameterGuard.whiteBalanceGains(
+                r: r, g: g, b: b, maxGain: device.maxWhiteBalanceGain) else {
+                // Gains persisted by an older build that let a NaN through. They
+                // are unusable and they are not going to become usable — say so,
+                // so the calibration gets dropped instead of re-poisoning every
+                // future launch of this camera.
+                Task { @MainActor in self.onWhiteBalanceUnusable?() }
+                return
+            }
+            device.setWhiteBalanceModeLocked(
+                with: AVCaptureDevice.WhiteBalanceGains(
+                    redGain: safe.r, greenGain: safe.g, blueGain: safe.b),
+                completionHandler: nil)
             Task { @MainActor in self.whiteBalanceCalibrated = true }
         }
     }
@@ -365,8 +392,10 @@ final class CameraController: NSObject {
             }
             self.calibrationBiasEV = 0
             let faceBias: Float = self.faceMeteringActive ? CoachTuning.faceExposureBias : 0
-            device.setExposureTargetBias(
-                min(max(faceBias, device.minExposureTargetBias), device.maxExposureTargetBias))
+            if let safe = DeviceParameterGuard.clamped(
+                faceBias, lower: device.minExposureTargetBias, upper: device.maxExposureTargetBias) {
+                device.setExposureTargetBias(safe)
+            }
             device.unlockForConfiguration()
             Task { @MainActor in self.whiteBalanceCalibrated = false }
         }
@@ -508,9 +537,12 @@ final class CameraController: NSObject {
             wideIndex: wideIndex,
             switchOverFactors: device.virtualDeviceSwitchOverVideoZoomFactors.map { CGFloat(truncating: $0) })
         guard factor > 1.0, (try? device.lockForConfiguration()) != nil else { return }
-        device.videoZoomFactor = min(max(factor, device.minAvailableVideoZoomFactor),
-                                     device.maxAvailableVideoZoomFactor)
-        device.unlockForConfiguration()
+        defer { device.unlockForConfiguration() }
+        guard let safe = DeviceParameterGuard.clamped(
+            factor,
+            lower: device.minAvailableVideoZoomFactor,
+            upper: device.maxAvailableVideoZoomFactor) else { return }
+        device.videoZoomFactor = safe
     }
 
     /// sRGB, explicitly — see the session-level note in `configureSession`.
@@ -559,7 +591,12 @@ final class CameraController: NSObject {
         await withCheckedContinuation { (cont: CheckedContinuation<String?, Never>) in
             sessionQueue.async {
                 self.session.beginConfiguration()
-                self.session.sessionPreset = .photo
+                // `.photo` is supported everywhere the app runs, but an
+                // unsupported preset is another uncatchable ObjC exception, and
+                // this file no longer takes that bet anywhere.
+                if self.session.canSetSessionPreset(.photo) {
+                    self.session.sessionPreset = .photo
+                }
                 // Pin the capture colour space. Left to its default, the
                 // session auto-configures wide colour, so captures ship tagged
                 // Display P3 — while `CardCorrection.applySync` re-encodes

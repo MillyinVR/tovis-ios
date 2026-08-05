@@ -388,6 +388,93 @@ contracts — none of it has seen a photon.
 
 ## Device feedback log
 
+### 2026-08-05 — build 37 STILL crashes; the crash log names white balance
+
+> 🔴 **Tori must archive BUILD 38.** Build 37's camera is dead on every
+> multi-lens phone — it opens, runs ~5s, and aborts. #273 is in build 37 and
+> #273 was not enough. Do not ship or demo 37.
+
+Build 37 carried #273 and crashed anyway on iPhone16,2 / iOS 27.0 beta
+(24A5390f), ~5s after the camera opened. **This time there is a crash log**, and
+unlike the build 36 entry below, nothing here is reasoned from the surface:
+
+`EXC_CRASH (SIGABRT)`, uncaught ObjC exception on `tovis.camera.session`,
+`lastExceptionBacktrace` running `objc_exception_throw` ←
+`-[AVCaptureFigVideoDevice _setWhiteBalanceModeLockedWithDeviceWhiteBalanceGains:completionHandler:]`.
+Symbolicated against build 37's own dSYM (slice
+`10C2A400-534C-3944-95C1-EACB69AAE217`, `Archives/2026-08-05/Tovis 8-5-26, 8.47 AM.xcarchive`),
+the app frame at image offset 911544 is **`CameraController.swift:352`** — the
+return address after `setWhiteBalanceModeLocked` inside
+**`applyWhiteBalanceGains(r:g:b:)`**. A fourth device-parameter write of exactly
+the class #273 was opened for.
+
+**The call site was already clamping. The clamp was the bug.**
+
+```swift
+func clamp(_ x: Double) -> Float { min(max(Float(x), 1), maxGain) }
+```
+
+Swift's `min`/`max` are `Comparable`, not IEEE — `1 >= NaN` and `maxGain < NaN`
+are both false — so **a NaN falls straight back out unchanged**. Measured:
+`+∞ → maxGain`, `−∞ → 1`, `99 → maxGain`, `NaN → NaN`. Every bad value was
+caught except the one that matters, which is why the line survived three reads.
+
+**Why it fired on open, every time, and never in the simulator.** The gains
+`applyWhiteBalanceGains` writes are not computed at open — they are read raw out
+of `UserDefaults` (`ProCapturePhotosView`, the per-booking "one card, one
+session" re-apply) right after `await camera.start(...)`. That is the ~5s.
+`CameraCalibration.neutralizingGains` had the *identical* hole in its own clamp
+and reaches NaN by ordinary means — a device that reports `deviceWhiteBalanceGains`
+of 0 before it has settled, times a near-black sample's ∞ channel ratio, is
+0 × ∞. So one bad card scan wrote a NaN to `UserDefaults` once, and from then on
+**the poison was persisted state, not a code path she re-entered** — it aborted
+every subsequent open, on that phone, forever.
+
+**The fix (#TBD).** One shared, NaN-safe clamp —
+`TovisKit/CameraCalibration/DeviceParameterGuard.swift` — that answers `nil`
+("make no write at all") rather than forwarding a value, and treats bounds read
+off the device as untrusted too. **Every** `AVCaptureDevice` /
+`AVCaptureSession` parameter write in the app now goes through it; there is no
+second clamp anywhere. Poisoned stored gains are additionally *dropped* on
+detection (`onWhiteBalanceUnusable` → the view removes the defaults key), so a
+phone already carrying a NaN — Tori's is — recovers on the next launch instead
+of shooting on automatic white balance forever.
+
+Red-proofed in `CameraCalibrationTests` + `DeviceParameterGuardTests`. Three of
+the new tests compile unchanged against build 37's math and **fail there with a
+literal `nan`**; `build37sHandRolledClampLetNaNStraightThrough` pins the exact
+`min(max(…))` expression so the hole cannot be reintroduced by hand.
+
+**Audit — every device/session parameter write, and its disposition.** All are
+in `CameraController.swift`; nothing outside that file touches a capture device.
+
+| Write | Before | Now |
+| --- | --- | --- |
+| `setWhiteBalanceModeLocked` (`applyWhiteBalanceGains`) | **the crash** — NaN through | guard; unusable stored gains dropped |
+| `setWhiteBalanceModeLocked` (`lockWhiteBalance`) | same hole, one user tap away | guard |
+| `neutralizingGains` clamp (TovisKit) | **source of the poison** | shared guard; result finite by contract |
+| `setExposureTargetBias` ×3 (face meter, card anchor, WB reset) | range-clamped, NaN through | guard |
+| `calibrationBiasEV` store | a NaN parked here poisoned every later bias | sanitized at the store |
+| `focusPointOfInterest` / `exposurePointOfInterest` (tap) | NaN if the preview layer has zero bounds | guard (`unitPoint`) |
+| `exposurePointOfInterest` (face meter) | unvalidated Vision-derived point | guard (`unitPoint`) |
+| `videoZoomFactor` | #273 range-clamped, NaN through | guard |
+| `session.sessionPreset` | unguarded (`.photo` always supported, but still a bet) | `canSetSessionPreset` |
+| `activeColorSpace` | #273 — checked against `supportedColorSpaces` | unchanged, already safe |
+| `photoOutput.maxPhotoDimensions` | #273 — checked against the format's list | unchanged, already safe |
+| `settings.maxPhotoDimensions` (per capture) | bounded by the output's own value | unchanged, already safe |
+| `focusMode` / `exposureMode` / `whiteBalanceMode` | `is…Supported` gated | unchanged, already safe |
+| `isSubjectAreaChangeMonitoringEnabled`, `conn.videoRotationAngle`, `maxPhotoQualityPrioritization` | no invalid domain | unchanged |
+| `addInput` / `addOutput` | `canAddInput` / `canAddOutput` gated | unchanged |
+
+Two latent leaks fixed in passing: `lockWhiteBalance`, `applyWhiteBalanceGains`
+and `matchWideAngleFraming` now `defer { unlockForConfiguration() }`, because the
+new guards introduce early returns *after* the device is locked.
+
+⚠️ **CI does not compile the app target** (`swift test` on TovisKit only — see
+the note in `.github/workflows/ci.yml`), so `CameraController.swift` changes are
+green in CI whether they build or not. This change was built locally against the
+iOS Simulator SDK: **BUILD SUCCEEDED**, 1144 TovisKit tests pass.
+
 ### 2026-08-05 — build 36 crashes the moment the camera opens (Tori, real device)
 
 > "im in the app when i click the camera the app crashes immediately."
@@ -446,15 +533,20 @@ still-size choice, both latent until a virtual device reported a richer list:
 `maxPhotoDimensions(for:)` is now order-independent and always returns a member
 of the list it was given.
 
-⚠️ **NOT CONFIRMED AGAINST THE CRASH LOG.** The root cause above is reasoned
-from the diff and the surface, and the simulator can only prove where the crash
-*isn't* — it has no capture device, so `configureSession` never reaches any of
-the three properties there. The crash log settles it in one line: an
-**Exception Type** of `EXC_CRASH (SIGABRT)` with
-`-[AVCaptureSession commitConfiguration]`, `setMaxPhotoDimensions:`,
-`setActiveColorSpace:` or `setVideoZoomFactor:` in the top frames confirms it.
-Settings → Privacy & Security → Analytics & Improvements → Analytics Data
-(`Tovis-…​.ips`), or Xcode → Window → Organizer → Crashes.
+⚠️ **NEVER CONFIRMED AGAINST A CRASH LOG, AND STILL ISN'T.** The root cause
+above is reasoned from the diff and the surface; no build 36 log was ever
+captured, and the simulator can only prove where the crash *isn't* — it has no
+capture device, so `configureSession` never reaches any of the three properties
+there.
+
+What we know now: build 37 shipped this fix and **crashed again**, on a fourth
+property (locked white-balance gains) that this entry never considered — see the
+build 37 entry above, which *is* log-confirmed and symbolicated. So #273 was a
+real hardening pass against a real crash class, but whether it fixed the crash
+Tori actually hit in build 36 is unknown and now unknowable: build 36's
+white-balance path had the same NaN hole, and the persisted-gain re-apply fires
+on open, which fits "crashes immediately" at least as well. Treat #273 as
+necessary, not as diagnosed.
 
 ### 2026-08-01 — first live client session (Tori, real device)
 

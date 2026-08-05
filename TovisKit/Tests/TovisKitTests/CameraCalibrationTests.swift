@@ -36,6 +36,51 @@ struct CameraCalibrationTests {
         #expect(gains.r >= 1.0 - 1e-9)
     }
 
+    // MARK: - Non-finite inputs (the build 37 crash, at its source)
+
+    // These two are the red proof. They compile unchanged against build 37 and
+    // FAIL there: the gains come back NaN, and a NaN gain handed to
+    // `setWhiteBalanceModeLocked` is an uncaught ObjC exception — `abort()` on
+    // the camera's session queue, which is exactly the crash Tori hit.
+
+    @Test func aDeviceThatReportsZeroGainsCannotProduceNaN() {
+        // `deviceWhiteBalanceGains` reads back 0 before the device has settled.
+        // Against a near-black "neutral" sample the channel ratio overflows to
+        // ∞, and 0 × ∞ is NaN — which build 37's `min(max(x, 1), maxGain)` then
+        // passed through untouched.
+        let gains = CameraCalibration.neutralizingGains(
+            sample: RGB(1e-320, 0.5, 1e-320), current: RGB(0, 0, 0), maxGain: 4.0)
+        #expect(gains.r.isFinite)
+        #expect(gains.g.isFinite)
+        #expect(gains.b.isFinite)
+        #expect(gains.r >= 1.0 && gains.r <= 4.0)
+        #expect(gains.b >= 1.0 && gains.b <= 4.0)
+    }
+
+    @Test func aNaNSampleCannotProduceNaNGains() {
+        let gains = CameraCalibration.neutralizingGains(
+            sample: RGB(0.5, .nan, 0.5), current: RGB(1.2, 1.0, 1.4), maxGain: 4.0)
+        #expect(gains.r.isFinite)
+        #expect(gains.g.isFinite)
+        #expect(gains.b.isFinite)
+    }
+
+    @Test func aNaNCurrentGainCannotProduceNaNGains() {
+        let gains = CameraCalibration.neutralizingGains(
+            sample: RGB(0.5, 0.5, 0.5), current: RGB(.nan, .nan, .nan), maxGain: 4.0)
+        #expect(gains.r.isFinite)
+        #expect(gains.g.isFinite)
+        #expect(gains.b.isFinite)
+    }
+
+    @Test func anUntrustworthyMaxGainStillYieldsFiniteGains() {
+        let gains = CameraCalibration.neutralizingGains(
+            sample: RGB(0.6, 0.5, 0.4), current: RGB(1.0, 1.0, 1.0), maxGain: .nan)
+        #expect(gains.r.isFinite)
+        #expect(gains.g.isFinite)
+        #expect(gains.b.isFinite)
+    }
+
     // MARK: - ColorChecker 3×3 solve
 
     @Test func recoversAKnownLinearTransform() {
