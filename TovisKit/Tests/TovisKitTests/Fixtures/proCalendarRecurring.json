@@ -59,7 +59,8 @@
                 "serviceName": "Haircut & Style",
                 "bufferMinutes": 15,
                 "serviceItems": []
-            }
+            },
+            "clientPublicProfileHandle": null
         },
         {
             "id": "cmsaczb1r00dlpobwmfatozsu",
@@ -108,7 +109,8 @@
                         "sortOrder": 0
                     }
                 ]
-            }
+            },
+            "clientPublicProfileHandle": null
         },
         {
             "id": "cmsaczzw800hapobwcj4tbwak",
@@ -157,7 +159,8 @@
                         "sortOrder": 0
                     }
                 ]
-            }
+            },
+            "clientPublicProfileHandle": null
         },
         {
             "id": "cmsaczb6e00e5pobwulee0oxa",
@@ -206,7 +209,8 @@
                         "sortOrder": 0
                     }
                 ]
-            }
+            },
+            "clientPublicProfileHandle": null
         },
         {
             "id": "cmsaczzog00g9pobww33jquv0",
@@ -249,7 +253,8 @@
                         "sortOrder": 0
                     }
                 ]
-            }
+            },
+            "clientPublicProfileHandle": null
         },
         {
             "id": "cmsaczb7n00efpobww9xbn7p9",
@@ -298,7 +303,8 @@
                         "sortOrder": 0
                     }
                 ]
-            }
+            },
+            "clientPublicProfileHandle": null
         },
         {
             "id": "cmsaczzy800hwpobwuvbherra",
@@ -347,7 +353,8 @@
                         "sortOrder": 0
                     }
                 ]
-            }
+            },
+            "clientPublicProfileHandle": null
         },
         {
             "id": "cmsaczb8w00eppobwiie2lxyb",
@@ -396,7 +403,8 @@
                         "sortOrder": 0
                     }
                 ]
-            }
+            },
+            "clientPublicProfileHandle": null
         },
         {
             "id": "cmsaczzzi00i6pobwr9bvwcvp",
@@ -445,7 +453,8 @@
                         "sortOrder": 0
                     }
                 ]
-            }
+            },
+            "clientPublicProfileHandle": null
         },
         {
             "id": "cmsaczba300ezpobwiyx9fh0s",
@@ -494,7 +503,8 @@
                         "sortOrder": 0
                     }
                 ]
-            }
+            },
+            "clientPublicProfileHandle": null
         },
         {
             "id": "cmsad000r00ihpobw0kt0d4zf",
@@ -543,7 +553,8 @@
                         "sortOrder": 0
                     }
                 ]
-            }
+            },
+            "clientPublicProfileHandle": null
         }
     ],
     "canSalon": true,
@@ -586,7 +597,8 @@
                     "serviceName": "Balayage",
                     "bufferMinutes": 0,
                     "serviceItems": []
-                }
+                },
+                "clientPublicProfileHandle": null
             },
             {
                 "id": "waitlist:cmrr3m7kn0005poaixg0l2jt3",
@@ -614,7 +626,8 @@
                     "serviceName": "Balayage",
                     "bufferMinutes": 0,
                     "serviceItems": []
-                }
+                },
+                "clientPublicProfileHandle": null
             }
         ],
         "blockedToday": []

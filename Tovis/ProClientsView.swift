@@ -180,14 +180,33 @@ struct ProClientsView: View {
         }
     }
 
+    /// Where this row leads — the same rule as web's `resolveClientProfileHref`:
+    ///   1. chart, when the pro may open it
+    ///   2. else the client's PUBLIC profile, when they have one
+    ///   3. else nowhere — a plain, non-tappable row
+    ///
+    /// Case 2 is new. A client the pro can no longer chart used to be an inert
+    /// row even when their `/u/{handle}` page is readable by the whole internet.
+    /// Case 3 stays inert on purpose: a private client has no public page BY
+    /// DESIGN, so there is genuinely nothing to push.
     @ViewBuilder
     private func row(_ client: ProClientSummary) -> some View {
         if client.canViewClient {
             NavigationLink { ProClientChartView(clientId: client.id, fullName: client.fullName) } label: { rowBody(client) }
                 .buttonStyle(.plain)
+        } else if let handle = client.publicProfileHandle, !handle.isEmpty {
+            NavigationLink { PublicClientViewerView(handle: handle) } label: { rowBody(client) }
+                .buttonStyle(.plain)
         } else {
-            rowBody(client)   // not viewable → no chart link (mirrors web gating)
+            rowBody(client)   // no chart, no public page → nothing to open
         }
+    }
+
+    /// True when the row pushes somewhere — either destination. Drives the
+    /// chevron, which previously tracked `canViewClient` alone and so promised
+    /// "no" on rows that now open a public profile.
+    private func rowIsTappable(_ client: ProClientSummary) -> Bool {
+        client.canViewClient || !(client.publicProfileHandle ?? "").isEmpty
     }
 
     private func rowBody(_ client: ProClientSummary) -> some View {
@@ -206,7 +225,7 @@ struct ProClientsView: View {
                     }
                 }
                 Spacer()
-                if client.canViewClient {
+                if rowIsTappable(client) {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(BrandColor.textMuted)

@@ -44,7 +44,7 @@
       "relationshipBadge": {
         "kind": "NR",
         "label": "NR",
-        "description": "New client · requested you",
+        "description": "New client \u00b7 requested you",
         "tone": "accent",
         "significant": true
       },
@@ -61,7 +61,8 @@
             "sortOrder": 0
           }
         ]
-      }
+      },
+      "clientPublicProfileHandle": null
     },
     {
       "id": "cmrobpmp70003poyqsuts9v4v",
@@ -81,14 +82,14 @@
       "viewLocalDateKey": "2026-07-29",
       "paymentBadge": {
         "kind": "DISPUTED",
-        "label": "⚠ Disputed",
+        "label": "\u26a0 Disputed",
         "tone": "danger",
         "significant": true
       },
       "relationshipBadge": {
         "kind": "RNR",
         "label": "RNR",
-        "description": "Returning client · via discovery",
+        "description": "Returning client \u00b7 via discovery",
         "tone": "info",
         "significant": true
       },
@@ -97,7 +98,8 @@
         "serviceName": "Balayage",
         "bufferMinutes": 15,
         "serviceItems": []
-      }
+      },
+      "clientPublicProfileHandle": null
     },
     {
       "id": "cmrr5vuca0017po3n02mc7t6e",
@@ -124,7 +126,7 @@
       "relationshipBadge": {
         "kind": "RR",
         "label": "RR",
-        "description": "Returning client · requested you",
+        "description": "Returning client \u00b7 requested you",
         "tone": "neutral",
         "significant": true
       },
@@ -133,7 +135,8 @@
         "serviceName": "Balayage",
         "bufferMinutes": 15,
         "serviceItems": []
-      }
+      },
+      "clientPublicProfileHandle": null
     },
     {
       "id": "k9seedroottouchup00000001",
@@ -160,7 +163,7 @@
       "relationshipBadge": {
         "kind": "NR",
         "label": "NR",
-        "description": "New client · requested you",
+        "description": "New client \u00b7 requested you",
         "tone": "accent",
         "significant": true
       },
@@ -177,7 +180,8 @@
             "sortOrder": 0
           }
         ]
-      }
+      },
+      "clientPublicProfileHandle": null
     },
     {
       "id": "k9seedhaircutstyle0000001",
@@ -204,7 +208,7 @@
       "relationshipBadge": {
         "kind": "NR",
         "label": "NR",
-        "description": "New client · requested you",
+        "description": "New client \u00b7 requested you",
         "tone": "accent",
         "significant": true
       },
@@ -212,7 +216,8 @@
         "serviceName": "Haircut & Style",
         "bufferMinutes": 15,
         "serviceItems": []
-      }
+      },
+      "clientPublicProfileHandle": null
     },
     {
       "id": "k9todaybalayage000000001",
@@ -239,7 +244,7 @@
       "relationshipBadge": {
         "kind": "NR",
         "label": "NR",
-        "description": "New client · requested you",
+        "description": "New client \u00b7 requested you",
         "tone": "accent",
         "significant": true
       },
@@ -255,7 +260,8 @@
         "serviceName": "Balayage",
         "bufferMinutes": 15,
         "serviceItems": []
-      }
+      },
+      "clientPublicProfileHandle": null
     },
     {
       "id": "k9todayroottouchup0000001",
@@ -282,7 +288,7 @@
       "relationshipBadge": {
         "kind": "NR",
         "label": "NR",
-        "description": "New client · requested you",
+        "description": "New client \u00b7 requested you",
         "tone": "accent",
         "significant": true
       },
@@ -298,7 +304,8 @@
         "serviceName": "Root Touch-Up",
         "bufferMinutes": 15,
         "serviceItems": []
-      }
+      },
+      "clientPublicProfileHandle": null
     },
     {
       "id": "k9todayhaircut0000000001",
@@ -325,7 +332,7 @@
       "relationshipBadge": {
         "kind": "NR",
         "label": "NR",
-        "description": "New client · requested you",
+        "description": "New client \u00b7 requested you",
         "tone": "accent",
         "significant": true
       },
@@ -347,7 +354,8 @@
         "serviceName": "Haircut & Style",
         "bufferMinutes": 15,
         "serviceItems": []
-      }
+      },
+      "clientPublicProfileHandle": null
     }
   ],
   "canSalon": true,
@@ -387,7 +395,7 @@
         "relationshipBadge": {
           "kind": "NR",
           "label": "NR",
-          "description": "New client · requested you",
+          "description": "New client \u00b7 requested you",
           "tone": "accent",
           "significant": true
         },
@@ -403,7 +411,8 @@
           "serviceName": "Balayage",
           "bufferMinutes": 15,
           "serviceItems": []
-        }
+        },
+        "clientPublicProfileHandle": null
       },
       {
         "id": "k9todayroottouchup0000001",
@@ -430,7 +439,7 @@
         "relationshipBadge": {
           "kind": "NR",
           "label": "NR",
-          "description": "New client · requested you",
+          "description": "New client \u00b7 requested you",
           "tone": "accent",
           "significant": true
         },
@@ -446,7 +455,8 @@
           "serviceName": "Root Touch-Up",
           "bufferMinutes": 15,
           "serviceItems": []
-        }
+        },
+        "clientPublicProfileHandle": null
       }
     ],
     "pendingRequests": [],
@@ -477,7 +487,8 @@
           "serviceName": "Balayage",
           "bufferMinutes": 0,
           "serviceItems": []
-        }
+        },
+        "clientPublicProfileHandle": "ava"
       },
       {
         "id": "waitlist:cmrr3m7kn0005poaixg0l2jt3",
@@ -505,7 +516,8 @@
           "serviceName": "Balayage",
           "bufferMinutes": 0,
           "serviceItems": []
-        }
+        },
+        "clientPublicProfileHandle": null
       }
     ],
     "blockedToday": []

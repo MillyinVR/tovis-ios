@@ -770,6 +770,9 @@ func fixture(_ name: String) throws -> Data {
         #expect(first.needsCloseout)
         #expect(first.client.fullName == "Jordan Rivera")
         #expect(first.client.canViewClient)
+        // The public-profile axis rides alongside chart access, never instead
+        // of it — a client can be both chartable and public.
+        #expect(first.client.publicProfileHandle == "ava")
         #expect(first.location.isMobile == false)
         #expect(first.location.formattedAddress == "123 Palm Ave, Encinitas, CA")
 
@@ -1563,6 +1566,12 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.clients[1].email == nil)
         #expect(res.clients[1].phone == nil)
         #expect(res.clients[1].lastBookingLabel == "No bookings yet")
+        // The public-profile axis, BOTH directions. It is independent of
+        // `canViewClient`: a handle is "a world-readable /u/{handle} page
+        // exists", not "this pro may open the chart". nil must stay nil — the
+        // roster row renders untappable rather than pushing a 404.
+        #expect(first.publicProfileHandle == "ava")
+        #expect(res.clients[1].publicProfileHandle == nil)
     }
 
     // GET /api/v1/pro/clients/search — Fixtures/proClientsSearch.json. The pro
@@ -1576,6 +1585,10 @@ func fixture(_ name: String) throws -> Data {
         #expect(first.canViewClient)
         #expect(res.recentClients[1].email == nil)
         #expect(res.otherClients.first?.canViewClient == false)
+        // 🔴 The case this whole change exists for: a client the pro may NOT
+        // chart, who DOES have a public profile. Before, that row was inert.
+        #expect(res.recentClients.first?.publicProfileHandle == "ava")
+        #expect(res.otherClients.first?.publicProfileHandle == nil)
     }
 
     // GET /api/v1/client/bookings — Fixtures/clientBookings.json (schema-validated).

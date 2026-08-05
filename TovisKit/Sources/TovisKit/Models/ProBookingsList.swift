@@ -69,6 +69,17 @@ public struct ProBookingListClient: Decodable, Sendable {
     public let email: String?
     public let phone: String?
     public let canViewClient: Bool
+    /// The client's public `@handle`, or nil when they have no public profile.
+    ///
+    /// A SEPARATE axis from `canViewClient`: that one says whether this pro may
+    /// open the private CHART, this one says whether a world-readable
+    /// `/u/{handle}` page exists at all. A pro past their 30-day chart window
+    /// looking at a public client gets `canViewClient == false` AND a handle —
+    /// which is exactly the row that used to be a dead end on this screen.
+    ///
+    /// Optional on the wire so a build talking to a backend that predates the
+    /// field decodes unchanged rather than failing the whole list.
+    public let publicProfileHandle: String?
 }
 
 public struct ProBookingListLocation: Decodable, Sendable {
