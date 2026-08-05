@@ -26,6 +26,7 @@ struct ProMembershipView: View {
                 case let .loaded(m):
                     planHero(m)
                     if let note = statusNote(m) { infoRow(note) }
+                    commissionPitch(m)
                     if let usage = cameraUsage { cameraUsageSection(usage) }
                     entitlements(m)
                     manageNote
@@ -70,25 +71,50 @@ struct ProMembershipView: View {
     private func entitlements(_ m: ProMembership) -> some View {
         BrandSection(title: m.planKey == "free" ? "Upgrade unlocks" : "What's included") {
             VStack(spacing: 10) {
-                let items = m.planKey == "free" ? Self.proPreviewEntitlements : m.entitlements
+                let keys = m.planKey == "free"
+                    ? ProMembershipCopy.proPreviewEntitlements
+                    : m.entitlements
+                // Anything without customer-facing copy is dropped, never auto-titled.
+                let items = ProMembershipCopy.advertised(keys)
                 if items.isEmpty {
                     Text("Your current plan covers the essentials — booking, payments, clients, and growth tools.")
                         .font(BrandFont.body(13)).foregroundStyle(BrandColor.textMuted)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
-                    ForEach(items, id: \.self) { key in
+                    ForEach(items, id: \.key) { item in
                         HStack(spacing: 12) {
                             Image(systemName: m.planKey == "free" ? "lock" : "checkmark.circle.fill")
                                 .font(.system(size: 16))
                                 .foregroundStyle(m.planKey == "free" ? BrandColor.textMuted : BrandColor.emerald)
                                 .frame(width: 22)
-                            Text(Self.entitlementLabel(key))
+                            Text(item.label)
                                 .font(BrandFont.body(14))
                                 .foregroundStyle(BrandColor.textPrimary)
                             Spacer()
                         }
                     }
                 }
+            }
+        }
+    }
+
+    /// The commission pitch (copy + every claim behind it: ProMembershipCopy).
+    private func commissionPitch(_ m: ProMembership) -> some View {
+        BrandSurface {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(ProMembershipCopy.commissionPitchTitle)
+                    .font(BrandFont.body(14, .semibold))
+                    .foregroundStyle(BrandColor.textPrimary)
+                Text(
+                    ProMembershipCopy.commissionPitchBody(
+                        feeCents: m.discoveryFeeCents,
+                        brandName: brandName,
+                    )
+                )
+                .font(BrandFont.body(13))
+                .foregroundStyle(BrandColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
@@ -214,21 +240,9 @@ struct ProMembershipView: View {
         }
     }
 
-    private static let proPreviewEntitlements = [
-        "tax_export", "custom_handle", "priority_discovery", "discovery_fee_waiver", "advanced_analytics",
-    ]
-
-    private static func entitlementLabel(_ key: String) -> String {
-        switch key {
-        case "custom_handle": return "Custom handle (name.tovis.me)"
-        case "tax_export": return "Tax exports (CSV + Schedule C)"
-        case "advanced_analytics": return "Advanced analytics"
-        case "priority_discovery": return "Priority placement in discovery"
-        case "discovery_fee_waiver": return "No platform fee for your new discovery clients"
-        case "white_label": return "Salon white-label"
-        default: return key.replacingOccurrences(of: "_", with: " ").capitalized
-        }
-    }
+    // Entitlement labels + the commission pitch live in TovisKit
+    // (ProMembershipCopy) so CI actually compiles and tests them — nothing here in
+    // `Tovis/` is built by the contract job.
 
     // MARK: - Load
 

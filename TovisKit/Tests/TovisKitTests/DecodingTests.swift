@@ -351,6 +351,27 @@ func fixture(_ name: String) throws -> Data {
         #expect(m.entitlements.contains("tax_export"))
         #expect(m.cancelAtPeriodEnd == false)
         #expect(m.hasBillingAccount == true)
+        // No `discoveryFeeCents` above: this is the pre-2026-08-04 server shape, and
+        // it must still decode. The commission pitch degrades to omitting the amount.
+        #expect(m.discoveryFeeCents == nil)
+    }
+
+    @Test func decodesProMembershipWithDiscoveryFee() throws {
+        let json = """
+        {
+          "ok": true,
+          "membership": {
+            "planKey": "free", "rawPlanKey": "free", "status": null,
+            "compPlanKey": null, "compUntil": null,
+            "entitlements": [],
+            "currentPeriodEnd": null,
+            "cancelAtPeriodEnd": false, "trialEndsAt": null, "hasBillingAccount": false,
+            "discoveryFeeCents": 500
+          }
+        }
+        """.data(using: .utf8)!
+        let m = try JSONDecoder().decode(ProMembershipResponse.self, from: json).membership
+        #expect(m.discoveryFeeCents == 500)
     }
 
     @Test func decodesProLooksAnalytics() throws {
