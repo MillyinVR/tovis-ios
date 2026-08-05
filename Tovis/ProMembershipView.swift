@@ -13,6 +13,11 @@ struct ProMembershipView: View {
     /// Loaded independently of the plan so a 404 (endpoint not yet deployed) or
     /// any error simply hides the camera-quota panel instead of failing the page.
     @State private var cameraUsage: ProCameraUsage?
+    /// The web membership page, opened in SFSafariViewController. Purchasing is
+    /// web-only (Apple IAP), and this used to be a dead-end sentence telling the pro
+    /// to go find the site themselves — the single highest conversion-per-line item
+    /// in membership-value-brief.md §5.3.
+    @State private var manageLink: MembershipWebLink?
     private let brandName = "Tovis"
 
     var body: some View {
@@ -26,10 +31,11 @@ struct ProMembershipView: View {
                 case let .loaded(m):
                     planHero(m)
                     if let note = statusNote(m) { infoRow(note) }
-                    commissionPitch(m)
+                    commissionPitch()
                     if let usage = cameraUsage { cameraUsageSection(usage) }
                     entitlements(m)
-                    manageNote
+                    studioNote
+                    manageOnWeb
                 }
             }
             .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 40)
@@ -99,18 +105,13 @@ struct ProMembershipView: View {
     }
 
     /// The commission pitch (copy + every claim behind it: ProMembershipCopy).
-    private func commissionPitch(_ m: ProMembership) -> some View {
+    private func commissionPitch() -> some View {
         BrandSurface {
             VStack(alignment: .leading, spacing: 6) {
                 Text(ProMembershipCopy.commissionPitchTitle)
                     .font(BrandFont.body(14, .semibold))
                     .foregroundStyle(BrandColor.textPrimary)
-                Text(
-                    ProMembershipCopy.commissionPitchBody(
-                        feeCents: m.discoveryFeeCents,
-                        brandName: brandName,
-                    )
-                )
+                Text(ProMembershipCopy.commissionPitchBody(brandName: brandName))
                 .font(BrandFont.body(13))
                 .foregroundStyle(BrandColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -166,10 +167,61 @@ struct ProMembershipView: View {
         }
     }
 
-    private var manageNote: some View {
-        Text("Manage or change your plan from the \(brandName) website.")
-            .font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
-            .padding(.top, 4)
+    /// Studio is shown, never sold — it is granted after a conversation, and it is
+    /// salon-only with a minimum-pro-count gate that does not exist yet.
+    private var studioNote: some View {
+        BrandSurface {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(ProMembershipCopy.studioTitle)
+                    .font(BrandFont.body(14, .semibold))
+                    .foregroundStyle(BrandColor.textPrimary)
+                Text(ProMembershipCopy.studioBody)
+                    .font(BrandFont.body(13))
+                    .foregroundStyle(BrandColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    /// Was a plain `Text` telling the pro to go find the website on their own.
+    /// External-link steering to a web purchase is permitted, so this is a real
+    /// button — SFSafariViewController, reusing the same wrapper the Stripe
+    /// checkout hand-off uses.
+    ///
+    /// ⚠️ NOT a signed-in hand-off. SFSafariViewController shares cookies with
+    /// Safari, not with this app's session, and the backend has no one-time
+    /// sign-in-link endpoint. A pro already signed in on Safari lands straight on
+    /// the page; anyone else hits /login, which carries `?from=/pro/membership` and
+    /// returns them here. Building a real hand-off means new auth surface (a
+    /// single-use, short-TTL, user-bound token) — a security decision, not a UI one.
+    private var manageOnWeb: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                manageLink = MembershipWebLink(
+                    url: session.client.webPageURL("/pro/membership"),
+                )
+            } label: {
+                HStack(spacing: 8) {
+                    Text("Manage plan on the web")
+                        .font(BrandFont.body(15, .semibold))
+                    Image(systemName: "arrow.up.right.square")
+                        .font(.system(size: 14))
+                }
+                .foregroundStyle(BrandColor.onAccent)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 13)
+                .background(BrandColor.accent)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+
+            Text("Plans are purchased and managed on the \(brandName) website.")
+                .font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
+        }
+        .padding(.top, 4)
+        .sheet(item: $manageLink) { link in
+            SafariView(url: link.url) { manageLink = nil }
+        }
     }
 
     private func infoRow(_ text: String) -> some View {
@@ -258,4 +310,11 @@ struct ProMembershipView: View {
         // Best-effort — hides the panel if the endpoint isn't deployed yet.
         cameraUsage = try? await session.client.proCamera.usage()
     }
+}
+
+/// The membership page's web destination, wrapped so `.sheet(item:)` can present
+/// it — same shape as SettingsRows' SettingsWebLink.
+private struct MembershipWebLink: Identifiable {
+    let url: URL
+    var id: String { url.absoluteString }
 }

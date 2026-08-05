@@ -42,6 +42,31 @@ public struct TovisConfig: Sendable {
         self.googleServerClientID = googleServerClientID
     }
 
+    /// The web app's origin behind `baseURL` — i.e. `baseURL` with its `/api/v1`
+    /// path stripped. Derived rather than configured separately so the two can
+    /// never point at different environments: a build talking to a local API opens
+    /// local web pages, and a TestFlight build opens the live site.
+    ///
+    /// Needed because purchasing is web-only (Apple IAP — see the membership
+    /// decision log), so the app has to be able to hand a pro off to the site.
+    public var webBaseURL: URL {
+        var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
+        components?.path = ""
+        components?.query = nil
+        components?.fragment = nil
+        return components?.url ?? baseURL
+    }
+
+    /// A page on the web app, e.g. `webPageURL("/pro/membership")`. Leading slash
+    /// optional; a malformed path falls back to the origin rather than trapping.
+    public func webPageURL(_ path: String) -> URL {
+        let trimmed = path.hasPrefix("/") ? String(path.dropFirst()) : path
+        guard !trimmed.isEmpty else { return webBaseURL }
+        var components = URLComponents(url: webBaseURL, resolvingAgainstBaseURL: false)
+        components?.path = "/" + trimmed
+        return components?.url ?? webBaseURL
+    }
+
     /// The Supabase project powering live-sync. This is a PUBLIC publishable key
     /// (the kind designed to ship in client apps) for the same project the
     /// backend uses, so it's safe to embed. Rotate here if the project changes.
