@@ -514,14 +514,35 @@ struct ProMoneyTrailView: View {
             ))
         }
 
+        // The two cold-match fees are separate rows on purpose: one is money the
+        // CLIENT paid on top of the deposit, the other comes OUT of this pro's
+        // payout. Merging them would tell a pro they were charged the client's fee.
         if let f = trail.discoveryFee {
             let refunded = f.refundedAt != nil
             entries.append(TrailEntry(
-                key: "discovery-fee", label: "Platform discovery fee",
-                subtitle: refunded ? "Refunded" : nil,
+                key: "discovery-fee", label: "Client booking fee",
+                subtitle: refunded ? "Refunded" : "Paid by the client, on top of the deposit",
                 amount: money(f.amountCents), flow: .none,
                 tone: refunded ? .muted : .info,
                 status: refunded ? "REFUNDED" : "CHARGED"
+            ))
+        }
+
+        // 🔴 Shown only when the pro was actually charged, or when a membership
+        // actively saved them the charge. A plain zero means the platform fees are
+        // switched off (or this was never a cold match) — a "New-client fee $0.00,
+        // not charged" row on every deposit booking would announce a fee that is
+        // not live, which is exactly the sequencing Tori's decision rules out.
+        if let p = trail.proDiscoveryFee, p.amountCents > 0 || p.waived {
+            let charged = p.amountCents > 0
+            entries.append(TrailEntry(
+                key: "pro-discovery-fee", label: "New-client fee",
+                subtitle: p.waived
+                    ? "Waived by your membership"
+                    : "One-time, deducted from your deposit payout",
+                amount: money(p.amountCents), flow: charged ? .out : .none,
+                tone: charged ? .warn : .success,
+                status: p.waived ? "WAIVED" : "CHARGED"
             ))
         }
 

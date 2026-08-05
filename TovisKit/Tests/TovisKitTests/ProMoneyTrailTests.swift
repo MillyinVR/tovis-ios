@@ -75,6 +75,7 @@ final class ProMoneyTrailURLProtocol: URLProtocol {
           "finalCharge":{"status":"SUCCEEDED","capturedCents":12000,"applicationFeeCents":360,"paidAt":"2026-07-08T18:00:00.000Z"},
           "deposit":{"status":"PAID","amountCents":3000,"paidAt":"2026-07-01T12:00:00.000Z","creditedAt":"2026-07-08T18:00:00.000Z","refundedCents":0},
           "discoveryFee":{"amountCents":500,"refundedAt":null},
+          "proDiscoveryFee":{"amountCents":500,"waived":false},
           "noShowFee":{"status":"FAILED","reason":"NO_SHOW","amountCents":2500,"chargedAt":null,"markedAt":"2026-07-02T09:00:00.000Z","refundedCents":0,"disputedAt":null},
           "refunds":[{"id":"ref_1","amountCents":2000,"currency":"usd","status":"SUCCEEDED","trigger":"DISCRETIONARY","reason":"service issue","initiatedByRole":"PRO","failureMessage":null,"createdAt":"2026-07-09T10:00:00.000Z"}],
           "summary":{"capturedCents":12000,"refundedCents":2000,"pendingRefundCents":0,"netCents":10000},
@@ -102,6 +103,10 @@ final class ProMoneyTrailURLProtocol: URLProtocol {
         #expect(trail.deposit?.refundedCents == 0)
         #expect(trail.discoveryFee?.amountCents == 500)
         #expect(trail.discoveryFee?.refundedAt == nil)
+        // The pro's own fee is decoded SEPARATELY from the client's — one is
+        // deducted from this pro's payout, the other is money the client paid.
+        #expect(trail.proDiscoveryFee?.amountCents == 500)
+        #expect(trail.proDiscoveryFee?.waived == false)
         #expect(trail.noShowFee?.status == "FAILED")
         #expect(trail.noShowFee?.reason == "NO_SHOW")
         #expect(trail.noShowFee?.refundedCents == 0)
@@ -137,6 +142,9 @@ final class ProMoneyTrailURLProtocol: URLProtocol {
         #expect(trail.finalCharge == nil)
         #expect(trail.deposit == nil)
         #expect(trail.discoveryFee == nil)
+        // Absent (older server, or a booking predating the fee model) decodes as nil
+        // rather than failing the whole trail.
+        #expect(trail.proDiscoveryFee == nil)
         #expect(trail.noShowFee == nil)
         #expect(trail.refunds.isEmpty)
         #expect(trail.summary.capturedCents == 0)

@@ -12,9 +12,9 @@ import Testing
         // white_label has no implementation in either repo and is salon-only with
         // a minimum-pro-count purchase gate, so it is never previewed to a pro.
         #expect(!preview.contains("white_label"))
-        // discovery_fee_waiver as CODED waives the CLIENT's fee; the intended perk
-        // waives a pro-side fee that does not exist yet, so it is not previewed.
-        #expect(!preview.contains("discovery_fee_waiver"))
+        // pro_discovery_fee_waiver waives the PRO's $5 cold-match fee. Correct now,
+        // but still unadvertised until the fees are live and measured (§11.5).
+        #expect(!preview.contains("pro_discovery_fee_waiver"))
         // advanced_analytics IS previewed — but only because it is now built
         // (the gated retention section on the web dashboard).
         #expect(preview.contains("advanced_analytics"))
@@ -27,11 +27,11 @@ import Testing
     // partner was shown "White Label" for a feature with no implementation.
     @Test func anUnadvertisedEntitlementIsDroppedNotAutoTitled() {
         #expect(ProMembershipCopy.entitlementLabel("white_label") == nil)
-        #expect(ProMembershipCopy.entitlementLabel("discovery_fee_waiver") == nil)
+        #expect(ProMembershipCopy.entitlementLabel("pro_discovery_fee_waiver") == nil)
         #expect(ProMembershipCopy.entitlementLabel("some_future_key") == nil)
 
         let advertised = ProMembershipCopy.advertised([
-            "custom_handle", "white_label", "tax_export", "discovery_fee_waiver",
+            "custom_handle", "white_label", "tax_export", "pro_discovery_fee_waiver",
             "some_future_key",
         ])
         #expect(advertised.map(\.key) == ["custom_handle", "tax_export"])

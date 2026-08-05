@@ -32,8 +32,15 @@ public struct ProBookingMoneyTrail: Decodable, Sendable {
     public let finalCharge: FinalCharge?
     /// The up-front deposit — nil when no deposit was ever required.
     public let deposit: Deposit?
-    /// The one-time platform discovery fee — nil when none applied.
+    /// The CLIENT's one-time convenience fee on a cold discovery match — money the
+    /// client paid on top of the deposit. Never money out of the pro's pocket.
+    /// Nil when none applied.
     public let discoveryFee: DiscoveryFee?
+    /// The PRO's one-time fee on the same cold match — deducted from their deposit
+    /// payout, so their net is `deposit.amountCents - amountCents`. Nil on bookings
+    /// that predate the fee model; `amountCents == 0` with `waived == true` is a
+    /// membership waiver, and with `waived == false` the platform fees were off.
+    public let proDiscoveryFee: ProDiscoveryFee?
     /// The no-show / late-cancel fee — nil when none was ever assessed.
     public let noShowFee: NoShowFee?
     public let refunds: [Refund]
@@ -78,6 +85,13 @@ public struct ProBookingMoneyTrail: Decodable, Sendable {
     public struct DiscoveryFee: Decodable, Sendable {
         public let amountCents: Int
         public let refundedAt: String?
+    }
+
+    public struct ProDiscoveryFee: Decodable, Sendable {
+        public let amountCents: Int
+        /// A membership waived this pro's fee. Distinct from `amountCents == 0`
+        /// alone, which also covers the platform fees simply being switched off.
+        public let waived: Bool
     }
 
     public struct NoShowFee: Decodable, Sendable {

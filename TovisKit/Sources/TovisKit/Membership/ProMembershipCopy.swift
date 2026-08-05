@@ -42,11 +42,13 @@ public enum ProMembershipCopy {
         case "advanced_analytics":
             return "Retention insights — rebooking rate + who's due back (on the web)"
         case "priority_discovery": return "Priority placement in discovery"
-        // 🔴 `discovery_fee_waiver` is deliberately UNLABELED (Tori, 2026-08-04).
-        // As coded it waives the CLIENT's fee; the intended perk waives a PRO-side
-        // fee that does not exist yet. Nothing honest to advertise — see
-        // membership-value-brief.md §8.5 in tovis-app. Do not add a label until
-        // that fee ships AND its conversion impact has been measured.
+        // 🔴 `pro_discovery_fee_waiver` is deliberately UNLABELED (Tori, 2026-08-04).
+        // It now waives the right thing — the PRO's $5 cold-match fee, never the
+        // client's convenience fee (the fee model shipped 2026-08-05, see
+        // membership-value-brief.md §11.5 in tovis-app). Still unadvertised on
+        // purpose: the locked sequencing is fees live -> measure conversion -> ONLY
+        // THEN advertise the waiver. It is also inert until ENABLE_PLATFORM_FEES is
+        // flipped, so a label today would sell a discount on an uncharged fee.
         default: return nil
         }
     }
@@ -63,16 +65,15 @@ public enum ProMembershipCopy {
     /// The fee pitch, exactly as Tori chose it on 2026-08-04 (option A, verbatim).
     /// Mirrors `feePitchBody` in tovis-app app/pro/membership/entitlementCopy.ts.
     ///
-    /// 🔴 THIS COPY DESCRIBES THE PLANNED FEE MODEL, NOT TODAY'S CODE. Under that
-    /// model (brief §11.5) the pro pays a flat $5 once per cold-match client and
-    /// membership waives it — which is what this says, and it stays true when the
-    /// model ships.
+    /// ✅ THE CODE NOW MATCHES THIS COPY (fee model shipped 2026-08-05, brief §11.5).
+    /// The pro pays a flat $5 once per cold-match client — `PRO_DISCOVERY_FEE_CENTS`
+    /// in tovis-app lib/booking/discoveryFee.ts, collected out of their deposit
+    /// payout, never a percentage of the service — and `pro_discovery_fee_waiver`
+    /// waives exactly that.
     ///
-    /// Today there is NO pro-side fee: the $5 is charged to the CLIENT, and
-    /// `discovery_fee_waiver` is flag-gated off. So a pro reading this today is
-    /// told they pay something they do not, and that membership waives something it
-    /// does not yet waive. Tori chose this wording knowingly; the safe sequencing is
-    /// to ship it WITH the fee-model card, not before it.
+    /// ⚠️ One gap remains by design: both fees are inert until ENABLE_PLATFORM_FEES
+    /// is flipped on, so until then a pro reading this is told they pay something
+    /// they are not yet charged. Tori chose this wording knowingly and owns the flip.
     public static func commissionPitchBody(brandName: String) -> String {
         "We never take a percentage of your work. Ever. "
             + "One flat $5 when \(brandName) brings you a brand-new client "
