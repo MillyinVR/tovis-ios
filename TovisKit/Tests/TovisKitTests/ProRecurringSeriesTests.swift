@@ -179,6 +179,10 @@ struct ProRecurringSeriesTests {
         // The headline. Six were attempted; five became appointments. A screen
         // reading `occurrences.count` alone would say "5 of 5".
         #expect(series.attemptedCount == 6)
+        // The client-identity axis: a handle here means a world-readable
+        // /u/{handle} page exists, independent of chart access. The open-ended
+        // fixture carries nil for the same field — both directions decode.
+        #expect(series.clientPublicProfileHandle == "ava")
 
         let skip = try #require(series.skippedRows.first)
         #expect(skip.occurrenceNumber == 2)
@@ -220,6 +224,9 @@ struct ProRecurringSeriesTests {
         #expect(series.occurrenceCount == nil)
         #expect(series.plannedLabel == "Open-ended")
         #expect(series.statusDisplay == .active)
+        // A PRIVATE client — no public page by design, so nil, and the heading
+        // must render as plain text rather than link to /u/.
+        #expect(series.clientPublicProfileHandle == nil)
 
         let roll = try #require(series.rollForward)
         #expect(roll.willContinue == true)
