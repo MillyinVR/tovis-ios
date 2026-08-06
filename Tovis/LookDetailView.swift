@@ -47,6 +47,7 @@ struct LookDetailView: View {
     @State private var bookLaunch: DetailBookLaunch?
     @State private var bookResolving = false
     @State private var proProfileFor: String?
+    @State private var fullscreenMedia: FullscreenMedia?
 
     var body: some View {
         content
@@ -98,6 +99,7 @@ struct LookDetailView: View {
             .navigationDestination(item: $proProfileFor) { id in
                 ProProfileView(professionalId: id)
             }
+            .mediaFullscreenCover($fullscreenMedia)
     }
 
     @ViewBuilder
@@ -158,6 +160,13 @@ struct LookDetailView: View {
                     height: 420,
                     passVerticalScroll: true
                 )
+                .overlay(alignment: .topTrailing) {
+                    shareButton(
+                        after: pair.after.absoluteString,
+                        before: pair.before.absoluteString,
+                        professionalId: look.professional.id
+                    )
+                }
             } else if let url = URL(string: look.primaryMedia.url) {
                 FocalCoverImage(url: url, focal: look.focalPoint) {
                     Rectangle().fill(BrandColor.bgSecondary)
@@ -166,9 +175,33 @@ struct LookDetailView: View {
                 }
                 .frame(height: 420)
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(alignment: .topTrailing) {
+                    shareButton(after: look.primaryMedia.url, professionalId: look.professional.id)
+                }
             }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    /// Signed export/share, crediting the pro — the same corner affordance as
+    /// the aftercare pair. Not on the feed's fast-scroll slides (a design
+    /// constraint already spent on the existing 6-icon rail there); reached
+    /// from here, the deliberate tap-through detail screen, instead.
+    private func shareButton(after: String, before: String? = nil, professionalId: String) -> some View {
+        Button {
+            fullscreenMedia = FullscreenMedia.clientExportable(
+                id: after, urlString: after, isVideo: false,
+                professionalId: professionalId, beforeUrlString: before
+            )
+        } label: {
+            Image(systemName: "square.and.arrow.up")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 32, height: 32)
+                .background(.black.opacity(0.45), in: Circle())
+        }
+        .padding(10)
+        .accessibilityLabel("Share")
     }
 
     // MARK: - Actions

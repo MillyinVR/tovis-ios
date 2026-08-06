@@ -1177,7 +1177,8 @@ struct BookingDetailView: View {
                         AftercareBeforeAfterPair(
                             beforeUrl: detail.beforeAfter.beforePreferred,
                             afterUrl: detail.beforeAfter.afterPreferred,
-                            compareHeight: 300
+                            compareHeight: 300,
+                            clientExportProfessionalId: booking.professional?.id
                         )
                         aftercarePrivacyNote
                     }

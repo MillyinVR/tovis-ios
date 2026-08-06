@@ -72,13 +72,43 @@ public enum SocialExportPolicy {
         businessName: String?,
         platformMark: String
     ) -> ExportWatermark? {
+        watermark(
+            for: intent,
+            dropsPlatformMark: dropsPlatformMark(membership),
+            handle: handle,
+            businessName: businessName,
+            platformMark: platformMark
+        )
+    }
+
+    /// Same decision as the `membership:`-based overload above, for a caller that
+    /// already has the resolved boolean rather than a full `ProMembership` — e.g.
+    /// a client exporting a DIFFERENT pro's work, who reads the pro's
+    /// `clientExport.dropsPlatformMark` off the public profile rather than
+    /// loading that pro's (pro-authed, self-only) membership status. Both callers
+    /// funnel through this one function so there is exactly one signing rule.
+    ///
+    /// - Parameters:
+    ///   - dropsPlatformMark: whether this export should omit the platform mark
+    ///     (see `dropsPlatformMark(_:)` for how the membership-based caller
+    ///     resolves this).
+    ///   - handle: the pro's `@handle`, with or without the leading "@".
+    ///   - businessName: fallback signature when there is no handle.
+    ///   - platformMark: the tenant's display name.
+    public static func watermark(
+        for intent: MediaWriteIntent,
+        dropsPlatformMark: Bool,
+        handle: String?,
+        businessName: String?,
+        platformMark: String
+    ) -> ExportWatermark? {
         // 🔴 Rule 1, and it is first for a reason: no tier, no entitlement and no
         // membership state can reach past this line. A save is the pro's original.
         guard intent == .socialExport else { return nil }
 
         return ExportWatermark(
             signature: signature(handle: handle, businessName: businessName),
-            showsPlatformMark: !dropsPlatformMark(membership),
+            showsPlatformMark: !dropsPlatformMark,
             platformMark: platformMark
         )
     }

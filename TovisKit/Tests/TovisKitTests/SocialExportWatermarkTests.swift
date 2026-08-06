@@ -190,3 +190,75 @@ private func watermark(
         #expect(membership(exportsUnbranded: false).exportsUnbranded == false)
     }
 }
+
+/// `ProProfileHeader.clientExport` — the client-side counterpart of
+/// `exportsUnbranded` above: whether a CLIENT viewing this pro's profile may
+/// export/share the pro's media, decoded from the same public endpoint every
+/// client viewer already reads (no pro-authed call needed).
+private func header(clientExportJson: String?) -> ProProfileHeader {
+    var fields = """
+    "id":"pro_1","displayName":"Dana Lee","professionLabel":"Hair Stylist"
+    """
+    if let clientExportJson {
+        fields += ",\"clientExport\":\(clientExportJson)"
+    }
+    let json = Data("{\(fields)}".utf8)
+    // swiftlint:disable:next force_try
+    return try! JSONDecoder().decode(ProProfileHeader.self, from: json)
+}
+
+@Suite struct ProClientExportFieldDecodeTests {
+    // Absent on a backend older than the field — resolves generous (enabled,
+    // unbranded), the same missing-signal default SocialExportPolicy uses.
+    @Test func aPayloadWithoutTheFieldStillDecodesGenerous() {
+        let h = header(clientExportJson: nil)
+        #expect(h.clientExport.enabled == true)
+        #expect(h.clientExport.dropsPlatformMark == true)
+    }
+
+    @Test func thePayloadWithTheFieldDecodesAllFourCombinations() {
+        for enabled in [true, false] {
+            for drops in [true, false] {
+                let h = header(
+                    clientExportJson: "{\"enabled\":\(enabled),\"dropsPlatformMark\":\(drops)}"
+                )
+                #expect(h.clientExport.enabled == enabled)
+                #expect(h.clientExport.dropsPlatformMark == drops)
+            }
+        }
+    }
+}
+
+/// The `dropsPlatformMark:`-overload (client path, reads a DIFFERENT pro's
+/// resolved boolean off their public profile) must make the EXACT same
+/// signing decision as the `membership:`-overload (pro path, reads their own
+/// membership) for the same underlying answer — proving the client export
+/// flow reuses the one signing rule rather than a second, driftable copy.
+@Suite struct SocialExportWatermarkOverloadParityTests {
+    @Test func bothOverloadsAgreeForEveryMembershipState() {
+        for m in [free, member, legacyBackend] {
+            let viaMembership = SocialExportPolicy.watermark(
+                for: .socialExport, membership: m,
+                handle: "tori", businessName: "Tori Studio", platformMark: "Tovis"
+            )
+            let viaBool = SocialExportPolicy.watermark(
+                for: .socialExport, dropsPlatformMark: SocialExportPolicy.dropsPlatformMark(m),
+                handle: "tori", businessName: "Tori Studio", platformMark: "Tovis"
+            )
+            #expect(viaMembership == viaBool)
+        }
+    }
+
+    @Test func bothOverloadsAgreeThatASaveIsNeverMarked() {
+        let viaMembership = SocialExportPolicy.watermark(
+            for: .saveOriginal, membership: member,
+            handle: "tori", businessName: nil, platformMark: "Tovis"
+        )
+        let viaBool = SocialExportPolicy.watermark(
+            for: .saveOriginal, dropsPlatformMark: true,
+            handle: "tori", businessName: nil, platformMark: "Tovis"
+        )
+        #expect(viaMembership == nil)
+        #expect(viaBool == nil)
+    }
+}

@@ -24,12 +24,12 @@ struct FullscreenMedia: Identifiable {
     /// chart photos, the capture strip) — those keep the bare viewer.
     let overlay: MediaCaptionOverlay?
 
-    /// PRO-side save + export affordances. `nil` everywhere by default, and set
-    /// only by surfaces showing the PRO their own work (session media, the media
-    /// manager, the practice library) — a client sharing their own before/after
-    /// with their pro's handle on it is designed the same way and is recorded as
-    /// the follow-up card in HANDOFF-camera-redesign.md, not built here.
+    /// Save + export affordances. `nil` everywhere by default, and set only by
+    /// surfaces that offer it (pro-owned media, or a client-facing surface via
+    /// `clientExportable`). `exportIdentity` decides whose signature it
+    /// carries and which affordances show — see `MediaExportIdentity`.
     var export: ProMediaExportContext?
+    var exportIdentity: MediaExportIdentity = .own
 
     enum Source {
         case remote(url: URL, isVideo: Bool)
@@ -93,6 +93,39 @@ struct FullscreenMedia: Identifiable {
 }
 
 extension FullscreenMedia {
+    /// A CLIENT viewing media exports/shares it signed with the PRO's handle —
+    /// their own aftercare before/after, or the pro's portfolio/Looks/review
+    /// work. Signed-export only, no plain unmarked save (see
+    /// `MediaExportIdentity.client`'s doc for why one rule covers both).
+    ///
+    /// `beforeUrlString`, when the surface has one, unlocks the diptych
+    /// formats — the before/after payoff is the natural thing to share, same
+    /// as `.proOwned`.
+    static func clientExportable(
+        id: String,
+        urlString: String?,
+        isVideo: Bool,
+        professionalId: String,
+        beforeUrlString: String? = nil,
+        overlay: MediaCaptionOverlay? = nil
+    ) -> FullscreenMedia? {
+        guard let raw = urlString?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty, let url = URL(string: raw) else { return nil }
+        let before = beforeUrlString
+            .flatMap { URL(string: $0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        return FullscreenMedia(
+            id: id,
+            source: .remote(url: url, isVideo: isVideo),
+            overlay: overlay,
+            export: ProMediaExportContext(
+                main: .remote(url),
+                before: before.map { .remote($0) },
+                isVideo: isVideo
+            ),
+            exportIdentity: .client(professionalId: professionalId)
+        )
+    }
+
     /// Convenience for a session media row (best full render URL + kind).
     static func session(_ item: ProBookingMediaItem) -> FullscreenMedia? {
         remote(id: item.id, urlString: item.displayUrl, isVideo: item.mediaType == .video)
@@ -166,7 +199,7 @@ struct MediaFullscreenViewer: View {
             if let export = media.export {
                 VStack {
                     Spacer()
-                    ProMediaExportBar(context: export)
+                    ProMediaExportBar(context: export, identity: media.exportIdentity)
                 }
             }
         }
@@ -176,20 +209,23 @@ struct MediaFullscreenViewer: View {
 
 // MARK: - Save + export bar
 
-/// The PRO's two ways out with their own work, as one bar — used by the
-/// fullscreen viewer and the practice-shot detail so both offer exactly the same
-/// thing in the same words.
+/// Save + export, as one bar — used by the fullscreen viewer and the
+/// practice-shot detail so both offer exactly the same thing in the same
+/// words. `identity` (`.own` — a pro's own work; `.client` — a client
+/// exporting a pro's) decides which of the two buttons show; see
+/// `MediaExportIdentity`.
 ///
 /// 🔴 "Save to Photos" and "Make a post" are deliberately separate buttons rather
 /// than one action with options. They produce different files: a save is the
-/// pro's ORIGINAL (untouched bytes, EXIF intact, never watermarked, on any tier)
-/// and an export is a new, cropped, signed picture. Collapsing them into one
-/// control is how a pro ends up with a watermark on the photo they meant to
-/// archive.
+/// ORIGINAL (untouched bytes, EXIF intact, never watermarked) and an export is
+/// a new, cropped, signed picture. Collapsing them into one control is how a
+/// pro ends up with a watermark on the photo they meant to archive — the same
+/// reason `.client` never offers Save at all (see `MediaExportIdentity`).
 struct ProMediaExportBar: View {
     @Environment(SessionModel.self) private var session
 
     let context: ProMediaExportContext
+    var identity: MediaExportIdentity = .own
 
     @State private var model = ProMediaExportModel()
     @State private var exporting = false
@@ -203,20 +239,28 @@ struct ProMediaExportBar: View {
             }
 
             HStack(spacing: 10) {
-                Button {
-                    Task { await model.saveOriginal(context.main) }
-                } label: {
-                    label("Save to Photos", systemImage: "square.and.arrow.down")
+                if case .own = identity {
+                    Button {
+                        Task { await model.saveOriginal(context.main) }
+                    } label: {
+                        label("Save to Photos", systemImage: "square.and.arrow.down")
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isWorking)
                 }
-                .buttonStyle(.plain)
-                .disabled(isWorking)
 
-                if context.canExport {
+                if showsExportButton {
                     Button { exporting = true } label: {
-                        label("Make a post", systemImage: "wand.and.stars")
+                        label(exportButtonTitle, systemImage: "wand.and.stars")
                     }
                     .buttonStyle(.plain)
                 }
+            }
+
+            if case .client = identity, model.identityLoaded, !model.clientExportIsEnabled {
+                Text("This pro has turned off sharing.")
+                    .font(BrandFont.body(12))
+                    .foregroundStyle(.white.opacity(0.7))
             }
         }
         .padding(.horizontal, 16)
@@ -229,15 +273,38 @@ struct ProMediaExportBar: View {
             )
             .ignoresSafeArea()
         )
-        .task { await model.loadIdentity(session.client) }
+        .task {
+            switch identity {
+            case .own:
+                await model.loadIdentity(session.client)
+            case let .client(professionalId):
+                await model.loadIdentity(session.client, forProfessionalId: professionalId)
+            }
+        }
         .sheet(isPresented: $exporting) {
-            ProSocialExportSheet(context: context, model: model)
+            ProSocialExportSheet(context: context, model: model, identity: identity)
         }
     }
 
     private var isWorking: Bool {
         if case .working = model.phase { return true }
         return false
+    }
+
+    /// Hidden entirely once a `.client` load confirms the pro turned sharing
+    /// off, rather than offering a button that would just refuse the tap.
+    /// Shows optimistically before that load resolves (generous default,
+    /// `ProMediaExportModel.clientExportIsEnabled`) — in practice this task
+    /// finishes well before the fullscreen viewer's open animation does.
+    private var showsExportButton: Bool {
+        guard context.canExport else { return false }
+        if case .client = identity { return model.clientExportIsEnabled }
+        return true
+    }
+
+    private var exportButtonTitle: String {
+        if case .client = identity { return "Share" }
+        return "Make a post"
     }
 
     private var statusLine: String? {

@@ -42,6 +42,22 @@ public struct ProProfile: Decodable, Sendable {
     }
 }
 
+/// Whether a CLIENT may export/share this pro's media with the pro's handle
+/// watermarked on it. Mirrors `PublicProfileHeaderDto.clientExport`
+/// (lib/profiles/publicProfileMappers.ts) — `enabled` is the pro's own opt-out
+/// toggle, `dropsPlatformMark` mirrors `ProMembership.exportsUnbranded` for the
+/// SAME pro (resolved server-side so a client viewer never needs that pro's
+/// pro-authed `/pro/membership/status`).
+public struct ProClientExportSettings: Decodable, Sendable, Equatable {
+    public let enabled: Bool
+    public let dropsPlatformMark: Bool
+
+    public init(enabled: Bool, dropsPlatformMark: Bool) {
+        self.enabled = enabled
+        self.dropsPlatformMark = dropsPlatformMark
+    }
+}
+
 public struct ProProfileHeader: Decodable, Sendable {
     public let id: String
     public let displayName: String
@@ -60,6 +76,36 @@ public struct ProProfileHeader: Decodable, Sendable {
     public let instagramHandle: String?
     public let tiktokHandle: String?
     public let websiteUrl: String?
+    /// Absent on an older (not-yet-deployed) backend → defaults generous
+    /// (enabled, unbranded), matching `SocialExportPolicy.dropsPlatformMark`'s
+    /// own missing-signal default.
+    public let clientExport: ProClientExportSettings
+
+    private enum CodingKeys: String, CodingKey {
+        case id, displayName, businessName, bio, avatarUrl, professionLabel
+        case location, handle, displayHandle, isPremium, isLicenseVerified
+        case instagramHandle, tiktokHandle, websiteUrl, clientExport
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        displayName = try c.decode(String.self, forKey: .displayName)
+        businessName = try c.decodeIfPresent(String.self, forKey: .businessName)
+        bio = try c.decodeIfPresent(String.self, forKey: .bio)
+        avatarUrl = try c.decodeIfPresent(String.self, forKey: .avatarUrl)
+        professionLabel = try c.decode(String.self, forKey: .professionLabel)
+        location = try c.decodeIfPresent(String.self, forKey: .location)
+        handle = try c.decodeIfPresent(String.self, forKey: .handle)
+        displayHandle = try c.decodeIfPresent(String.self, forKey: .displayHandle)
+        isPremium = try c.decodeIfPresent(Bool.self, forKey: .isPremium) ?? false
+        isLicenseVerified = try c.decodeIfPresent(Bool.self, forKey: .isLicenseVerified) ?? false
+        instagramHandle = try c.decodeIfPresent(String.self, forKey: .instagramHandle)
+        tiktokHandle = try c.decodeIfPresent(String.self, forKey: .tiktokHandle)
+        websiteUrl = try c.decodeIfPresent(String.self, forKey: .websiteUrl)
+        clientExport = try c.decodeIfPresent(ProClientExportSettings.self, forKey: .clientExport)
+            ?? ProClientExportSettings(enabled: true, dropsPlatformMark: true)
+    }
 }
 
 public struct ProProfileStats: Decodable, Sendable {

@@ -569,10 +569,11 @@ struct ProProfileView: View {
             .buttonStyle(.plain)
         } else {
             Button {
-                fullscreenMedia = FullscreenMedia.remote(
+                fullscreenMedia = FullscreenMedia.clientExportable(
                     id: tile.id,
                     urlString: tile.src,
                     isVideo: tile.isVideo,
+                    professionalId: professionalId,
                     overlay: MediaCaptionOverlay.make(
                         caption: tile.caption,
                         serviceNames: tile.serviceNames
@@ -637,8 +638,9 @@ struct ProProfileView: View {
                         busy: helpfulBusy.contains(review.id),
                         onToggleHelpful: { Task { await toggleHelpful(review) } },
                         onOpenMedia: { media in
-                            fullscreenMedia = FullscreenMedia.remote(
-                                id: media.id, urlString: media.url, isVideo: media.isVideo
+                            fullscreenMedia = FullscreenMedia.clientExportable(
+                                id: media.id, urlString: media.url, isVideo: media.isVideo,
+                                professionalId: professionalId
                             )
                         }
                     )
