@@ -206,7 +206,14 @@ final class CameraController: NSObject {
     /// Capture a still → JPEG `Data`.
     func capturePhoto() async throws -> Data {
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Data, Error>) in
-            sessionQueue.async {
+            // `[self]` is explicit, and strong on purpose: this block owns the
+            // continuation, so the controller has to outlive it or the caller
+            // awaits forever. The watchdog nested below is deliberately `[weak
+            // self]` instead — it fires seconds after this block has returned,
+            // long past the lifetime this capture covers. Spelling the outer
+            // capture out is what tells the compiler (and the next reader) the
+            // two differ by intent rather than by accident.
+            sessionQueue.async { [self] in
                 // One capture at a time — a second call would overwrite the
                 // stored continuation and strand the first caller forever.
                 guard self.captureContinuation == nil else {

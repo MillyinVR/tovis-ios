@@ -629,8 +629,15 @@ final class SessionModel {
               let userId = SessionToken.userId(from: token)
         else { return }
 
-        await realtime.start(channels: ["user:\(userId)"]) {
-            Task { @MainActor [weak self] in self?.signalRefresh() }
+        // The weak capture belongs on the OUTER closure: realtime stores this
+        // callback for the life of the subscription, so an implicit strong
+        // capture here would pin SessionModel regardless of what the inner Task
+        // said. Bind `self` before the Task for the same reason the push
+        // callbacks below do — reading the captured optional from concurrently-
+        // executing code is an error under the Swift 6 language mode.
+        await realtime.start(channels: ["user:\(userId)"]) { [weak self] in
+            guard let self else { return }
+            Task { @MainActor in self.signalRefresh() }
         }
     }
 
