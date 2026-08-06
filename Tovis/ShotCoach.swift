@@ -40,11 +40,23 @@ struct CoachSignal: Sendable {
     /// would add after it, surfaced in the dimensions drawer. Nil where the
     /// message speaks for itself — or where there is no message at all.
     let why: String?
+    /// The stable tag a `CoachVoice` renders this signal's line from. Nil
+    /// where `message` is nil (nothing to say) or where the message is
+    /// intentionally pack-neutral (`PoseRule.tip`). `message`/`why` stay the
+    /// canonical Calm Mentor text either way — this only ever ADDS a render
+    /// hook, never changes what's decided.
+    let moment: CoachMoment?
+    /// Interpolation values for the rare moment whose canonical text has a
+    /// `\(...)` in it (see `CoachPhraseContext`).
+    let phraseCtx: CoachPhraseContext?
 
-    init(score: Double, message: String?, why: String? = nil) {
+    init(score: Double, message: String?, why: String? = nil,
+         moment: CoachMoment? = nil, phraseCtx: CoachPhraseContext? = nil) {
         self.score = score
         self.message = message
         self.why = why
+        self.moment = moment
+        self.phraseCtx = phraseCtx
     }
 }
 
@@ -52,6 +64,16 @@ struct CoachSignal: Sendable {
 struct CoachNudge: Sendable, Equatable {
     let category: CoachCategory
     let message: String
+    let moment: CoachMoment?
+    let phraseCtx: CoachPhraseContext?
+
+    init(category: CoachCategory, message: String,
+         moment: CoachMoment? = nil, phraseCtx: CoachPhraseContext? = nil) {
+        self.category = category
+        self.message = message
+        self.moment = moment
+        self.phraseCtx = phraseCtx
+    }
 }
 
 /// One fundamental's live status, for the at-a-glance checklist HUD.
@@ -63,13 +85,22 @@ struct CoachStatus: Sendable, Equatable, Identifiable {
     /// Why that tip matters — shown under it in the dimensions drawer, which is
     /// the one surface the pro opened on purpose to ask "why won't it go green?"
     let why: String?
+    /// The moment this status's `message` renders through, when there's a
+    /// message. Nil (not `category.goodMoment`) when the fundamental is
+    /// passing — the drawer derives the passing moment from `category`
+    /// itself, since there's no signal to tag there.
+    let moment: CoachMoment?
+    let phraseCtx: CoachPhraseContext?
     var id: String { category.rawValue }
 
-    init(category: CoachCategory, score: Double, message: String?, why: String? = nil) {
+    init(category: CoachCategory, score: Double, message: String?, why: String? = nil,
+         moment: CoachMoment? = nil, phraseCtx: CoachPhraseContext? = nil) {
         self.category = category
         self.score = score
         self.message = message
         self.why = why
+        self.moment = moment
+        self.phraseCtx = phraseCtx
     }
 }
 
@@ -315,7 +346,8 @@ enum CoachAggregate {
             : signals.reduce(0.0) { $0 + $1.1.score * $1.0.weight } / totalWeight
         let outcome = arbiter.select(from: signals, now: now)
         let statuses = signals.map {
-            CoachStatus(category: $0.0, score: $0.1.score, message: $0.1.message, why: $0.1.why)
+            CoachStatus(category: $0.0, score: $0.1.score, message: $0.1.message, why: $0.1.why,
+                       moment: $0.1.moment, phraseCtx: $0.1.phraseCtx)
         }
         return Verdict(readiness: readiness, nudge: outcome.nudge,
                        statuses: statuses, cleared: outcome.cleared)
@@ -371,7 +403,10 @@ struct CoachTipArbiter: Sendable {
             CoachAggregate.deficit($0.0, $0.1) < CoachAggregate.deficit($1.0, $1.1)
         }
         let best = challenger.flatMap { entry in
-            entry.1.message.map { CoachNudge(category: entry.0, message: $0) }
+            entry.1.message.map {
+                CoachNudge(category: entry.0, message: $0,
+                          moment: entry.1.moment, phraseCtx: entry.1.phraseCtx)
+            }
         }
 
         guard let held = incumbent else {
@@ -389,7 +424,8 @@ struct CoachTipArbiter: Sendable {
         }
 
         let currentNudge = current.1.message.map {
-            CoachNudge(category: current.0, message: $0)
+            CoachNudge(category: current.0, message: $0,
+                      moment: current.1.moment, phraseCtx: current.1.phraseCtx)
         } ?? held
         let stillWarm = now - heldSince < CoachTuning.tipDwellSeconds
         let beatsMargin = best.map { candidate in
@@ -462,7 +498,8 @@ struct LightingCoach: ShotCoach {
             return CoachSignal(
                 score: 0.35,
                 message: "Light’s behind them — turn them to face the window",
-                why: "The light is behind your client, so the camera exposes for the window and leaves their face in shadow.")
+                why: "The light is behind your client, so the camera exposes for the window and leaves their face in shadow.",
+                moment: .lightingBacklit)
         }
 
         // Expose for the skin when there is skin to expose for; the whole frame
@@ -476,14 +513,16 @@ struct LightingCoach: ShotCoach {
                 message: onFace ? "Their face is too dark — turn them toward the light"
                                 : "Too dark — move toward the light",
                 why: onFace ? "Skin that's underexposed loses its true tone, and lifting it later brings up noise instead."
-                            : "There isn't enough light on the work to hold detail.")
+                            : "There isn't enough light on the work to hold detail.",
+                moment: .lightingTooDark)
         }
         if subject > CoachTuning.lumaTooBright {
             return CoachSignal(
                 score: 0.4,
                 message: onFace ? "Their face is blown out — turn away from the bright light"
                                 : "Blown out — turn away from the bright light",
-                why: "Clipped highlights are gone for good — there's nothing left in the file to pull back.")
+                why: "Clipped highlights are gone for good — there's nothing left in the file to pull back.",
+                moment: .lightingBlownOut)
         }
         // Score falls off smoothly away from the ideal exposure.
         let dist = abs(subject - CoachTuning.lumaIdeal)
@@ -523,15 +562,16 @@ struct CompositionCoach: ShotCoach {
                 : "The 9:16 feed crop takes ~40% of the width off this — what looks filled here won't be once it's published."
             if let band = expects?.fillBand {
                 if fill < band.lowerBound {
-                    return CoachSignal(score: 0.5, message: closer, why: closerWhy)
+                    return CoachSignal(score: 0.5, message: closer, why: closerWhy, moment: .compositionTooFar)
                 }
                 if fill > band.upperBound {
                     return CoachSignal(
                         score: 0.55, message: "Too tight — step back a touch",
-                        why: "This shot wants the same framing as its pair; too tight and the two stop being comparable.")
+                        why: "This shot wants the same framing as its pair; too tight and the two stop being comparable.",
+                        moment: .compositionTooClose)
                 }
             } else if expects?.isDetail != true, fill < CoachTuning.minSubjectFill {
-                return CoachSignal(score: 0.5, message: closer, why: closerWhy)
+                return CoachSignal(score: 0.5, message: closer, why: closerWhy, moment: .compositionTooFar)
             }
         }
 
@@ -544,7 +584,8 @@ struct CompositionCoach: ShotCoach {
             if expects?.face == .required {
                 return CoachSignal(
                     score: 0.6, message: "Frame their face for this shot",
-                    why: "This step's whole job is the face — its pair on the other side of the booking has one.")
+                    why: "This step's whole job is the face — its pair on the other side of the booking has one.",
+                    moment: .compositionFaceRequired)
             }
             return CoachSignal(score: 1.0, message: nil)
         }
@@ -557,7 +598,8 @@ struct CompositionCoach: ShotCoach {
             guard crop.contains(center) else {
                 return CoachSignal(
                     score: 0.45, message: "They’re outside the feed crop — center them",
-                    why: "The bright box is what the feed publishes; anything outside it is cut off there even though you can see it here.")
+                    why: "The bright box is what the feed publishes; anything outside it is cut off there even though you can see it here.",
+                    moment: .compositionOffFrame)
             }
         }
         let face = crop.map { PublishCrop.inCropSpace(frameFace, crop: $0) } ?? frameFace
@@ -570,12 +612,14 @@ struct CompositionCoach: ShotCoach {
         if topY < CoachTuning.minHeadroom {
             return CoachSignal(
                 score: 0.45, message: "Leave a little headroom — lower the camera",
-                why: "Hair cropped at the top of the frame reads as an accident rather than a choice.")
+                why: "Hair cropped at the top of the frame reads as an accident rather than a choice.",
+                moment: .compositionNoHeadroom)
         }
         if midY > CoachTuning.maxSubjectLow {
             return CoachSignal(
                 score: 0.5, message: "Raise the camera — subject’s too low",
-                why: "Empty space above the head pulls the eye away from the work.")
+                why: "Empty space above the head pulls the eye away from the work.",
+                moment: .compositionTooLow)
         }
         // Horizontal placement: comfortable near center or a third.
         let nearCenter = abs(centerX - 0.5) < CoachTuning.centerTolerance
@@ -584,7 +628,8 @@ struct CompositionCoach: ShotCoach {
         if !nearCenter && !nearThird {
             return CoachSignal(
                 score: 0.55, message: "Center your subject",
-                why: "Sitting between centre and a third reads as neither — the eye can't settle.")
+                why: "Sitting between centre and a third reads as neither — the eye can't settle.",
+                moment: .compositionRecenter)
         }
 
         // Reward good framing; small deviation → small penalty.
@@ -610,12 +655,14 @@ struct SharpnessCoach: ShotCoach {
         if s < CoachTuning.sharpnessSoft * factor {
             return CoachSignal(
                 score: 0.3, message: "Hold steady — shot looks soft",
-                why: "Softness is the one thing no edit fixes, and it shows up full-size long after the shoot.")
+                why: "Softness is the one thing no edit fixes, and it shows up full-size long after the shoot.",
+                moment: .sharpnessHoldSteady)
         }
         if s < CoachTuning.sharpnessSlightlySoft * factor {
             return CoachSignal(
                 score: 0.6, message: "Tap to focus — a touch soft",
-                why: "The camera may be focused behind them; a tap puts it on the work.")
+                why: "The camera may be focused behind them; a tap puts it on the work.",
+                moment: .sharpnessTapToFocus)
         }
         // Clearly sharp; reward it.
         return CoachSignal(score: min(1.0, 0.7 + s * 0.5), message: nil)
@@ -639,7 +686,8 @@ struct BackgroundCoach: ShotCoach {
         if clutter > CoachTuning.clutterBusy {
             return CoachSignal(
                 score: 0.5, message: "Busy background — find a cleaner backdrop",
-                why: "Shelves and product bottles compete with the work for attention, and they crop badly.")
+                why: "Shelves and product bottles compete with the work for attention, and they crop badly.",
+                moment: .backgroundBusy)
         }
         let score = max(0.7, 1.0 - clutter)
         return CoachSignal(score: score, message: nil)
@@ -691,7 +739,8 @@ struct PoseCoach: ShotCoach {
         if let pose = ctx.pose, pose.edgeClipped {
             return CoachSignal(
                 score: 0.5, message: "Subject’s getting clipped — pull back",
-                why: "A shoulder or hand cut by the frame edge reads as a mistake, and there's no room left to crop.")
+                why: "A shoulder or hand cut by the frame edge reads as a mistake, and there's no room left to crop.",
+                moment: .poseClipped)
         }
 
         let rules = ctx.expectations?.poseRules ?? []
@@ -774,12 +823,14 @@ struct LevelCoach: ShotCoach {
             let dir = tilt > 0 ? "right" : "left"
             return CoachSignal(
                 score: 0.4, message: "Camera’s tilted \(dir) — straighten it",
-                why: "Straightening it afterwards means cropping in, and the ends of the hair are usually what gets lost.")
+                why: "Straightening it afterwards means cropping in, and the ends of the hair are usually what gets lost.",
+                moment: .levelTilted, phraseCtx: CoachPhraseContext(direction: dir))
         }
         if off > CoachTuning.tiltWarnDegrees {
             return CoachSignal(
                 score: 0.7, message: "Almost level — straighten up",
-                why: "A couple of degrees is enough to read as “off” next to its before/after pair.")
+                why: "A couple of degrees is enough to read as “off” next to its before/after pair.",
+                moment: .levelAlmostLevel)
         }
         return CoachSignal(score: 1.0, message: nil)
     }
@@ -806,17 +857,20 @@ struct ColorCoach: ShotCoach {
         if color.mixed > CoachTuning.mixedLightSpread {
             return CoachSignal(
                 score: 0.45, message: "Mixed light — turn off the overheads",
-                why: "Warm bulbs on one side and a cool window on the other can't both be corrected — one half of their skin will read wrong whatever you do after.")
+                why: "Warm bulbs on one side and a cool window on the other can't both be corrected — one half of their skin will read wrong whatever you do after.",
+                moment: .colorMixed)
         }
         if color.greenTint > CoachTuning.greenCastTint {
             return CoachSignal(
                 score: 0.55, message: "Greenish light — switch to one clean source",
-                why: "Fluorescent green sits right where skin tone lives, so it's the cast clients notice first.")
+                why: "Fluorescent green sits right where skin tone lives, so it's the cast clients notice first.",
+                moment: .colorGreenish)
         }
         if color.warmth > CoachTuning.warmCastWarmth {
             return CoachSignal(
                 score: 0.6, message: "Warm/yellow light — daylight reads truer",
-                why: "Warm light pushes blonde and ash tones yellow, which is the colour work the client paid for.")
+                why: "Warm light pushes blonde and ash tones yellow, which is the colour work the client paid for.",
+                moment: .colorWarm)
         }
         // Small penalty for mild mixing; otherwise clean.
         let score = max(0.75, 1.0 - color.mixed)

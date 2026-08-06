@@ -540,7 +540,8 @@ struct ProCapturePhotosView: View {
         .sheet(isPresented: $showDimensions) {
             DimensionsDrawer(headline: laneMessage?.text ?? "Reading the frame…",
                              headlineTone: laneMessage?.tone ?? .neutral,
-                             statuses: coach?.statuses ?? [])
+                             statuses: coach?.statuses ?? [],
+                             voice: settings.personality.voice)
         }
         // Drawer 2 — the tools tray.
         .sheet(isPresented: $showTools) {
@@ -1671,7 +1672,10 @@ struct ProCapturePhotosView: View {
         // (The step chip already says which shot this is.) "On-screen tips" off
         // now silences exactly this tier: failures and the shot's own name still
         // reach the lane, because those aren't coaching.
-        inputs.coachTip = (allStepsDone || !settings.showNudge) ? nil : coach?.nudge?.message
+        let liveNudge = (allStepsDone || !settings.showNudge) ? nil : coach?.nudge
+        inputs.coachTip = liveNudge?.message
+        inputs.coachTipMoment = liveNudge?.moment
+        inputs.coachTipPhraseCtx = liveNudge?.phraseCtx
         inputs.stepHint = (guidedShooting && !allStepsDone) ? currentStep?.hint : nil
         inputs.errorText = errorMessage
         // "Fundamentals checklist" off now means the coach line doesn't offer to
@@ -1680,7 +1684,7 @@ struct ProCapturePhotosView: View {
         return inputs
     }
 
-    private var laneMessage: LaneMessage? { CameraLane.message(laneInputs) }
+    private var laneMessage: LaneMessage? { CameraLane.message(laneInputs, voice: settings.personality.voice) }
 
     /// Work the pro can't act on — a hairline on the lane, never words.
     private var backgroundBusy: Bool {
@@ -2455,6 +2459,23 @@ private struct CoachSettingsSheet: View {
                     Text("How it guides you")
                 } footer: {
                     Text("The AI photographer coaches lighting and composition in real time, one instruction at a time. Swipe the coach line up to see all seven fundamentals at once.")
+                }
+
+                Section {
+                    Picker("Coach personality", selection: $settings.personality) {
+                        ForEach(CoachPersonality.allCases) { personality in
+                            Text(personality.displayName).tag(personality)
+                        }
+                    }
+                    Text(settings.personality.voice.phrase(for: .laneSetComplete, ctx: CoachPhraseContext())
+                         ?? "That’s the full set — beautiful work")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .italic()
+                } header: {
+                    Text("Coach voice")
+                } footer: {
+                    Text("Changes tone only — the same corrections, at the same moments, in a different voice.")
                 }
 
                 Section {

@@ -23,6 +23,11 @@ struct DimensionsDrawer: View {
     let headline: String
     let headlineTone: LaneTone
     let statuses: [CoachStatus]
+    /// The active coaching voice — renders each row's message/goodPhrase and
+    /// gates whether `why` shows (`CoachVoice.includesWhy(for:)`). Defaults
+    /// to Calm Mentor so today's always-on `why` display is unchanged for
+    /// any caller that doesn't pass one.
+    var voice: CoachVoice = CalmMentorVoice()
 
     /// All seven, in the beauty-photography priority order the coach weights by.
     /// Pose is included here even though it stayed out of the old always-on row:
@@ -69,8 +74,9 @@ struct DimensionsDrawer: View {
 
     private func row(_ status: CoachStatus) -> some View {
         let tone = Self.tone(status)
-        let spoken = [status.message, status.message == nil ? nil : status.why]
-            .compactMap { $0 }
+        let text = renderedMessage(status)
+        let shownWhy = self.shownWhy(status)
+        let spoken = [text, shownWhy].compactMap { $0 }
         return HStack(alignment: .top, spacing: 12) {
             Circle().fill(tone.color).frame(width: 7, height: 7)
                 .padding(.top, 5)
@@ -81,15 +87,16 @@ struct DimensionsDrawer: View {
                 .frame(width: 74, alignment: .leading)
                 .padding(.top, 1)
             VStack(alignment: .leading, spacing: 3) {
-                Text(status.message ?? Self.goodPhrase(status.category))
+                Text(text)
                     .font(BrandFont.body(13.5))
                     .foregroundStyle(status.message == nil ? BrandColor.textMuted : BrandColor.textSecondary)
                 // The drawer is the one surface the pro opened on purpose to
                 // ask "why won't it go green?" — so it is where the coach stops
                 // issuing imperatives and explains itself. A photographer says
-                // WHY; a checklist just says what.
-                if let why = status.why, status.message != nil {
-                    Text(why)
+                // WHY; a checklist just says what. Whether it rides along at
+                // all is the voice's chattiness (minimal packs skip it).
+                if let shownWhy {
+                    Text(shownWhy)
                         .font(BrandFont.body(12))
                         .foregroundStyle(BrandColor.textMuted)
                         .fixedSize(horizontal: false, vertical: true)
@@ -106,6 +113,28 @@ struct DimensionsDrawer: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(status.category.spokenName)
         .accessibilityValue(spoken.isEmpty ? "good" : spoken.joined(separator: ". "))
+    }
+
+    /// The row's headline text in the active voice: the issue (tagged with
+    /// `status.moment`) when there is one, else the passing phrase (tagged
+    /// with the category's fixed `goodMoment`) — both fall back to today's
+    /// canonical text when the voice has no override.
+    private func renderedMessage(_ status: CoachStatus) -> String {
+        if let message = status.message {
+            return CoachVoiceRenderer.render(
+                status.moment, fallback: message,
+                ctx: status.phraseCtx ?? CoachPhraseContext(), voice: voice) ?? message
+        }
+        let fallback = Self.goodPhrase(status.category)
+        return CoachVoiceRenderer.render(status.category.goodMoment, fallback: fallback, voice: voice) ?? fallback
+    }
+
+    /// `why` only when there's an issue AND the active voice's chattiness
+    /// includes it for this moment (minimal packs skip it by default).
+    private func shownWhy(_ status: CoachStatus) -> String? {
+        guard let why = status.why, status.message != nil, let moment = status.moment,
+              voice.includesWhy(for: moment) else { return nil }
+        return why
     }
 
     /// Mirrors the pills' tint: good, minor issue, or fix-this-now.

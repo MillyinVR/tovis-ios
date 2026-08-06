@@ -7,6 +7,7 @@
 import CoreGraphics
 import CoreMedia
 import Testing
+import TovisKit
 @testable import Tovis
 
 @Suite struct CameraCompositionTests {
