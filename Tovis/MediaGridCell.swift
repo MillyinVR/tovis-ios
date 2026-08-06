@@ -39,11 +39,20 @@ enum MediaGridLayout {
     /// thumbnail rather than a client-facing crop.
     static let squareAspect: CGFloat = 1.0
 
-    /// Equal flexible columns. Every grid builds its columns here so a cell's
-    /// width is always "the container, minus the gaps, divided evenly" — never
-    /// something a piece of content got to vote on.
+    /// A phone-width content column, used only to translate a phone-tuned
+    /// `count` into an adaptive minimum below — never rendered against.
+    private static let referencePhoneContentWidth: CGFloat = 358
+
+    /// Adaptive columns sized so a phone-width container still lands on
+    /// exactly `count` columns (matching the tuned-for-iPhone look this was
+    /// called with everywhere), while a wider container — iPad — adds more
+    /// columns instead of stretching `count` tiles to fill the extra width.
+    /// Every grid builds its columns here so a cell's width is always "the
+    /// container, minus the gaps, divided evenly" — never something a piece
+    /// of content, or the screen it happens to run on, got to vote on.
     static func columns(count: Int, spacing: CGFloat) -> [GridItem] {
-        Array(repeating: GridItem(.flexible(), spacing: spacing), count: count)
+        let minimum = columnWidth(container: referencePhoneContentWidth, count: count, spacing: spacing)
+        return [GridItem(.adaptive(minimum: minimum), spacing: spacing)]
     }
 
     /// The width one cell gets. Pure arithmetic, exposed so the no-overflow

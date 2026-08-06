@@ -484,7 +484,10 @@ struct LookDetailView: View {
                     .font(BrandFont.mono(11)).tracking(1.2)
                     .foregroundStyle(BrandColor.textSecondary)
                     .padding(.top, 6)
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 6) {
+                // .adaptive keeps 3 columns on a phone-width container and adds
+                // columns on a wider one — iPad — instead of stretching 3 tiles
+                // across the extra width.
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 115), spacing: 6)], spacing: 6) {
                     ForEach(others) { asset in
                         if let url = asset.media.thumbOrFullURL {
                             FocalCoverImage(url: url, focal: asset.media.focalPoint) {

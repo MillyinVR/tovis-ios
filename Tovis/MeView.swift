@@ -492,7 +492,11 @@ struct MeView: View {
     // MARK: - Small pieces
 
     private var twoCol: [GridItem] {
-        [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
+        // .adaptive keeps 2 columns on a phone-width container and adds columns
+        // on a wider one — iPad — instead of stretching 2 tiles across the extra
+        // width (which otherwise produced a single card that's half the iPad's
+        // screen wide).
+        [GridItem(.adaptive(minimum: 171), spacing: 16)]
     }
 
     /// Flip a look's visibility via the backend, returning whether it stuck.

@@ -61,9 +61,33 @@ import Testing
         #expect(MediaGridLayout.columnWidth(container: 10, count: 3, spacing: 40) == 0)
     }
 
-    @Test func columnsBuildsTheRequestedCount() {
-        #expect(MediaGridLayout.columns(count: 3, spacing: 10).count == 3)
-        #expect(MediaGridLayout.columns(count: 2, spacing: 2).count == 2)
+    @Test func columnsBuildsAnAdaptiveColumnThatPacksTheRequestedCountAtPhoneWidth() {
+        // `columns` now hands the grid ONE adaptive GridItem instead of
+        // `count` flexible ones — the grid itself decides how many columns
+        // actually fit, so a wider container (iPad) gets more columns rather
+        // than `count` tiles stretched across the extra width. The `count`
+        // parameter still pins the phone-width behavior: at a phone-sized
+        // container the adaptive minimum must land on exactly `count` columns,
+        // matching how every one of these grids was originally tuned.
+        for (count, spacing) in [(3, CGFloat(10)), (2, CGFloat(2))] {
+            let columns = MediaGridLayout.columns(count: count, spacing: spacing)
+            #expect(columns.count == 1)
+            guard case let .adaptive(minimum, _) = columns[0].size else {
+                Issue.record("expected an adaptive GridItem")
+                continue
+            }
+            #expect(columns[0].spacing == spacing)
+
+            let phoneContainer: CGFloat = 358
+            let phonePacked = Int((phoneContainer + spacing) / (minimum + spacing))
+            #expect(phonePacked == count,
+                    "minimum \(minimum) packs \(phonePacked) columns at phone width, expected \(count)")
+
+            let ipadContainer: CGFloat = 900
+            let ipadPacked = Int((ipadContainer + spacing) / (minimum + spacing))
+            #expect(ipadPacked > count,
+                    "adaptive minimum \(minimum) didn't add columns on a wider container")
+        }
     }
 
     // MARK: - Fill-crop overflows the cell; the cell must not absorb it

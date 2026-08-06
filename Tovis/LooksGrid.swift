@@ -138,7 +138,10 @@ struct LooksGrid: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             LazyVGrid(
-                columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
+                // .adaptive so a phone still lands on 2 columns (minimum computed
+                // from a phone-width container) while a wider container — iPad —
+                // adds columns instead of stretching 2 tiles across the extra width.
+                columns: [GridItem(.adaptive(minimum: 174), spacing: 10)],
                 spacing: 10
             ) {
                 ForEach(looks) { look in

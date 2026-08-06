@@ -79,11 +79,10 @@ struct PublicClientProfileContent: View {
                 Text("No public looks yet.").font(BrandFont.body(13)).foregroundStyle(BrandColor.textMuted)
             } else {
                 LazyVGrid(
-                    columns: [
-                        GridItem(.flexible(), spacing: 10),
-                        GridItem(.flexible(), spacing: 10),
-                        GridItem(.flexible(), spacing: 10),
-                    ],
+                    // .adaptive keeps 3 columns on a phone-width container and
+                    // adds columns on a wider one — iPad — instead of stretching
+                    // 3 tiles across the extra width.
+                    columns: [GridItem(.adaptive(minimum: 113), spacing: 10)],
                     spacing: 10
                 ) {
                     ForEach(looks) { look in

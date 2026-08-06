@@ -341,7 +341,10 @@ struct DiscoverView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         gridSectionHeader("Pros near you")
                         LazyVGrid(
-                            columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
+                            // .adaptive keeps 2 columns on a phone-width container
+                            // and adds columns on a wider one — iPad — instead of
+                            // stretching 2 tiles across the extra width.
+                            columns: [GridItem(.adaptive(minimum: 173), spacing: 12)],
                             spacing: 12
                         ) {
                             ForEach(pros) { pro in

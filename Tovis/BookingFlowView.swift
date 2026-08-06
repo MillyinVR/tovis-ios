@@ -383,7 +383,10 @@ struct BookingFlowView: View {
     }
 
     private func slotGrid(_ boot: AvailabilityBootstrap) -> some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
+        // .adaptive keeps 3 columns on a phone-width container and adds columns
+        // on a wider one — iPad — instead of stretching 3 tiles across the extra
+        // width.
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 113), spacing: 10)], spacing: 10) {
             ForEach(slots, id: \.self) { slot in
                 let isSelected = slot == selectedSlot
                 Button { selectedSlot = slot; bookError = nil } label: {

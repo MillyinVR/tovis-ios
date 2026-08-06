@@ -173,7 +173,10 @@ struct ProFinanceView: View {
     @ViewBuilder
     private func overviewPanel(_ data: ProFinanceResponse) -> some View {
         LazyVGrid(
-            columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
+            // .adaptive keeps 2 columns on a phone-width container and adds
+            // columns on a wider one — iPad — instead of stretching 2 tiles
+            // across the extra width.
+            columns: [GridItem(.adaptive(minimum: 174), spacing: 10)],
             spacing: 10
         ) {
             ForEach(data.finance.summaryCards) { card in
