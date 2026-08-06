@@ -21,6 +21,11 @@ struct HypeBestieVoice: CoachVoice {
     let id: CoachPersonality = .hypeBestie
     let displayName = "Hype Bestie"
     let chattiness: CoachChattiness = .expressive
+    /// Bright and quick — the energy that's ALL exclamation points on the
+    /// page needs a faster, higher voice or it reads flat out loud.
+    let speechRateMultiplier: Float = 1.10
+    let speechPitch: Float = 1.10
+    let preUtteranceDelay: TimeInterval = 0.02
 
     func phrase(for moment: CoachMoment, ctx: CoachPhraseContext) -> String? {
         switch moment {
@@ -176,19 +181,19 @@ struct HypeBestieVoice: CoachVoice {
             let reason = ctx.detail ?? "That one needs a retake"
             return "\(reason) — let's snag that one again!"
         case .sessionGuideNoteMet:
-            let detail = ctx.detail ?? ""
-            return "Bestie, \(detail)"
+            let detail = ctx.detail ?? "That photo's saved."
+            return "\(detail) Nice, bestie!"
         case .sessionGuideNoteOutstanding:
-            let detail = ctx.detail ?? ""
+            let detail = ctx.detail ?? "One photo's still needed."
             return "\(detail) Let's get it, bestie!"
         case .practiceGuideNote:
             return "Bestie, practice shots aren't attached to anyone — shoot as many as you want, attach one later if you feel it!"
         case .sessionOutstandingSentence:
-            let detail = ctx.detail ?? ""
+            let detail = ctx.detail ?? "This one still needs its photo."
             return "\(detail) Let's knock it out, bestie!"
         case .leavingWithoutTitleSession:
             let detail = ctx.detail ?? "Leave without the photo?"
-            return "Wait bestie — \(detail)"
+            return "Wait, bestie — \(detail.prefix(1).lowercased() + detail.dropFirst())"
         case .leavingWithoutTitlePractice:
             return "Heading out, bestie?"
         }
@@ -203,6 +208,11 @@ struct StraightShooterVoice: CoachVoice {
     let id: CoachPersonality = .straightShooter
     let displayName = "Straight Shooter"
     let chattiness: CoachChattiness = .minimal
+    /// Crisp and efficient, not clipped-robotic — a hair brisker than
+    /// default, barely any lead-in, but not sped up enough to sound rushed.
+    let speechRateMultiplier: Float = 1.02
+    let speechPitch: Float = 0.98
+    let preUtteranceDelay: TimeInterval = 0.02
 
     func phrase(for moment: CoachMoment, ctx: CoachPhraseContext) -> String? {
         switch moment {
@@ -310,6 +320,12 @@ struct EditorialDirectorVoice: CoachVoice {
     let id: CoachPersonality = .editorialDirector
     let displayName = "Editorial Director"
     let chattiness: CoachChattiness = .standard
+    /// Composed and deliberate — the slowest, lowest pack, with the longest
+    /// pause before speaking. Reads like someone taking a beat to look
+    /// before they say anything.
+    let speechRateMultiplier: Float = 0.92
+    let speechPitch: Float = 0.94
+    let preUtteranceDelay: TimeInterval = 0.20
 
     func phrase(for moment: CoachMoment, ctx: CoachPhraseContext) -> String? {
         switch moment {
@@ -440,6 +456,12 @@ struct DragQueenBestieVoice: CoachVoice {
     let id: CoachPersonality = .dragQueenBestie
     let displayName = "Drag Queen Bestie"
     let chattiness: CoachChattiness = .expressive
+    /// Expressive and theatrical — a lift in pitch for the flourish, a
+    /// small dramatic beat before the line lands, without the outright
+    /// speed of Hype Bestie.
+    let speechRateMultiplier: Float = 1.02
+    let speechPitch: Float = 1.06
+    let preUtteranceDelay: TimeInterval = 0.08
 
     func phrase(for moment: CoachMoment, ctx: CoachPhraseContext) -> String? {
         switch moment {
@@ -559,8 +581,8 @@ struct DragQueenBestieVoice: CoachVoice {
             let reason = ctx.detail ?? "That one needs a retake"
             return "\(reason), baby — let's get that one again!"
         case .sessionGuideNoteMet:
-            let detail = ctx.detail ?? "that photo is saved"
-            return "Honey, \(detail)"
+            let detail = ctx.detail ?? "That photo's saved."
+            return "\(detail) Gorgeous, honey!"
         case .sessionGuideNoteOutstanding:
             let detail = ctx.detail ?? "One photo is required."
             return "\(detail) We got this, baby!"
@@ -571,7 +593,7 @@ struct DragQueenBestieVoice: CoachVoice {
             return "\(detail) Let's get it, baby!"
         case .leavingWithoutTitleSession:
             let detail = ctx.detail ?? "Leave without the photo?"
-            return "Hold up, baby — \(detail)"
+            return "Hold up, baby — \(detail.prefix(1).lowercased() + detail.dropFirst())"
         case .leavingWithoutTitlePractice:
             return "Leaving already, baby?"
         }

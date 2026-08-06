@@ -303,3 +303,80 @@ import TovisKit
         }
     }
 }
+
+/// Delivery (rate/pitch/lead-in) — the "make it sound natural, not robotic"
+/// pass. Same tone-only guardrail as the words: `CoachEngine.speak` is the
+/// only place these numbers are read, downstream of every decision, same as
+/// `CoachVoiceRenderer`.
+@Suite struct CoachVoiceSpeechDeliveryTests {
+    private let allVoices: [CoachVoice] = [
+        CalmMentorVoice(), HypeBestieVoice(), StraightShooterVoice(), EditorialDirectorVoice(), DragQueenBestieVoice(),
+    ]
+
+    @Test func everyPackHasSpeechParamsInValidAVSpeechRanges() {
+        for voice in allVoices {
+            #expect(voice.speechRateMultiplier > 0)
+            #expect(voice.speechPitch >= 0.5 && voice.speechPitch <= 2.0)
+            #expect(voice.preUtteranceDelay >= 0)
+        }
+    }
+
+    @Test func packsAreDeliveredDistinctlyNotJustWordedDistinctly() {
+        let rates = Set(allVoices.map { $0.speechRateMultiplier })
+        let pitches = Set(allVoices.map { $0.speechPitch })
+        #expect(rates.count > 1, "every pack speaking at the same rate defeats the point of tuning it per personality")
+        #expect(pitches.count > 1)
+    }
+
+    /// The actual bug this whole pass exists to fix: flat default rate and
+    /// neutral pitch with no lead-in is what made even warm WORDS read as a
+    /// machine talking. Calm Mentor gets a deliberate delivery now, same as
+    /// the other four — its TEXT is still the byte-identical launch pack.
+    @Test func calmMentorNoLongerSpeaksAtTheBareSystemDefault() {
+        let calm = CalmMentorVoice()
+        #expect(calm.speechRateMultiplier != 1.0)
+        #expect(calm.speechPitch != 1.0)
+    }
+
+    /// The two ends of the energy spectrum, concretely: Hype Bestie reads
+    /// faster and brighter than Editorial Director's composed, lower pace.
+    @Test func hypeBestieIsBriskerAndBrighterThanEditorialDirector() {
+        let hype = HypeBestieVoice()
+        let editorial = EditorialDirectorVoice()
+        #expect(hype.speechRateMultiplier > editorial.speechRateMultiplier)
+        #expect(hype.speechPitch > editorial.speechPitch)
+        #expect(hype.preUtteranceDelay < editorial.preUtteranceDelay)
+    }
+}
+
+/// The regression this suite exists to pin: rendering a QC reason through
+/// its OWN moment and then splicing that already-flourished line into
+/// ANOTHER flourished wrapper stacks two personality treatments into one
+/// utterance — which reads (and sounds, spoken) like a machine repeating
+/// itself: "It came out too dark, bestie — one more! — retake while
+/// they're right there, bestie?". The fix: the wrapping moment always gets
+/// the CANONICAL reason, so exactly one flourish happens per utterance.
+@Suite struct CoachVoiceRetakeCompositionTests {
+    private let newPacks: [CoachVoice] = [
+        HypeBestieVoice(), StraightShooterVoice(), EditorialDirectorVoice(), DragQueenBestieVoice(),
+    ]
+
+    @Test func retakeConfirmRendersTheCanonicalReasonExactlyOnce() {
+        let canonicalReason = "Their face came out too dark"
+        for voice in newPacks {
+            let confirm = voice.phrase(for: .retakeConfirm, ctx: CoachPhraseContext(detail: canonicalReason))
+            #expect(confirm?.contains(canonicalReason) == true, "\(voice.displayName) dropped or re-flourished the reason")
+            guard let confirm else { continue }
+            let mentions = confirm.lowercased().components(separatedBy: "retake").count - 1
+            #expect(mentions <= 1, "\(voice.displayName) mentions retaking more than once: \(confirm)")
+        }
+    }
+
+    @Test func retakeAnnounceRendersTheCanonicalReasonExactlyOnce() {
+        let canonicalReason = "It came out soft"
+        for voice in newPacks {
+            let announce = voice.phrase(for: .retakeAnnounce, ctx: CoachPhraseContext(detail: canonicalReason))
+            #expect(announce?.contains(canonicalReason) == true, "\(voice.displayName) dropped or re-flourished the reason")
+        }
+    }
+}

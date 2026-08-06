@@ -159,11 +159,11 @@ struct ProCapturePhotosView: View {
         let id = UUID()
         let data: Data
         /// Canonical QC reason (Calm Mentor text) — the RetakeDialog message
-        /// renders this through `moment`/`phraseCtx` at display time, same
-        /// pattern as `CoachSignal` (docs/design/camera-personality-packs.md §4).
+        /// renders this through `.retakeConfirm` at display time, docs/design/
+        /// camera-personality-packs.md §4. Deliberately the CANONICAL reason,
+        /// not a pack-flourished one — `.retakeConfirm`'s own copy is where
+        /// this utterance's one flourish happens.
         let reason: String
-        let moment: CoachMoment?
-        let phraseCtx: CoachPhraseContext?
         /// Whether keeping this shot should also complete the current guided step
         /// — carried from the capture decision so a kept-anyway shot advances the
         /// guide exactly as an accepted one would (and a freeform grab doesn't).
@@ -737,10 +737,10 @@ struct ProCapturePhotosView: View {
     private struct RetakeDialog: ViewModifier {
         @Binding var pendingRetake: PendingRetake?
         let keep: (PendingRetake) -> Void
-        /// The active coaching voice — renders the QC reason (`shot.moment`)
-        /// and the dialog's own wrapping sentence (`.retakeConfirm`). Defaults
-        /// to Calm Mentor so any caller that doesn't pass one keeps seeing
-        /// today's text unchanged.
+        /// The active coaching voice — renders the dialog's wrapping sentence
+        /// (`.retakeConfirm`) around the canonical QC reason. Defaults to Calm
+        /// Mentor so any caller that doesn't pass one keeps seeing today's
+        /// text unchanged.
         var voice: CoachVoice = CalmMentorVoice()
 
         func body(content: Content) -> some View {
@@ -765,11 +765,17 @@ struct ProCapturePhotosView: View {
         }
 
         private func message(_ shot: PendingRetake) -> String {
-            let reason = CoachVoiceRenderer.render(
-                shot.moment, fallback: shot.reason, ctx: shot.phraseCtx ?? CoachPhraseContext(), voice: voice) ?? shot.reason
+            // The CANONICAL reason, not a pack-rendered one — `.retakeConfirm`'s
+            // own copy already does the one flourish this sentence gets.
+            // Rendering `shot.reason` through its own QC moment first and THEN
+            // splicing that already-flourished line into another flourished
+            // wrapper was the original approach here, and it reads exactly as
+            // bad out loud as it sounds on paper — "It came out too dark,
+            // bestie — one more! — retake while they're right there, bestie?".
+            // One flourish per utterance, not two stacked.
             let fallback = "\(shot.reason). Retake it while they’re still in position?"
             return CoachVoiceRenderer.render(
-                .retakeConfirm, fallback: fallback, ctx: CoachPhraseContext(detail: reason), voice: voice) ?? fallback
+                .retakeConfirm, fallback: fallback, ctx: CoachPhraseContext(detail: shot.reason), voice: voice) ?? fallback
         }
     }
 
@@ -2139,7 +2145,6 @@ struct ProCapturePhotosView: View {
         let focal = MediaFocalPoint(faceCenter: qc.focalPoint)
         if let reason = qc.retakeReason {
             pendingRetake = PendingRetake(data: data, reason: reason,
-                                          moment: qc.retakeMoment, phraseCtx: qc.retakePhraseCtx,
                                           advanceGuide: advancesGuide, focal: focal)
             return false
         }
@@ -2165,16 +2170,23 @@ struct ProCapturePhotosView: View {
         guard best.qc.passed else {
             if let reason = best.qc.retakeReason {
                 let voice = settings.personality.voice
-                let renderedReason = CoachVoiceRenderer.render(
-                    best.qc.retakeMoment, fallback: reason,
-                    ctx: best.qc.retakePhraseCtx ?? CoachPhraseContext(), voice: voice) ?? reason
+                // The SPOKEN line gets exactly one flourish, from
+                // `.retakeAnnounce` itself, around the canonical reason —
+                // not a pack-rendered reason re-wrapped in another pack
+                // flourish (that stacks two flourishes into one run-on).
                 if settings.speak {
                     let fallback = "\(reason) — let’s take that one again."
                     let line = CoachVoiceRenderer.render(
                         .retakeAnnounce, fallback: fallback,
-                        ctx: CoachPhraseContext(detail: renderedReason), voice: voice) ?? fallback
+                        ctx: CoachPhraseContext(detail: reason), voice: voice) ?? fallback
                     coach?.announce(line)
                 }
+                // The ON-SCREEN lane text stands alone — no wrapper moment
+                // stacks on top of it — so rendering the QC moment directly
+                // here is the correct single flourish for this string.
+                let renderedReason = CoachVoiceRenderer.render(
+                    best.qc.retakeMoment, fallback: reason,
+                    ctx: best.qc.retakePhraseCtx ?? CoachPhraseContext(), voice: voice) ?? reason
                 errorMessage = "\(renderedReason) — holding for another try."
             }
             return false

@@ -591,7 +591,16 @@ final class CoachEngine {
         }
         if priority == .tip, synthesizer.isSpeaking { return }
         let utterance = AVSpeechUtterance(string: text)
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+        // The best Enhanced/Premium voice actually installed for this device
+        // (CoachSpeechVoice) — personalities never pick a DIFFERENT voice,
+        // only how it's paced (rate/pitch/lead-in), same as everywhere else
+        // "tone only" applies. `nil` here (no voice installed at all, never
+        // happens in practice) just leaves AVSpeechUtterance's own default.
+        utterance.voice = CoachSpeechVoice.best
+        let rawRate = AVSpeechUtteranceDefaultSpeechRate * voice.speechRateMultiplier
+        utterance.rate = min(max(rawRate, AVSpeechUtteranceMinimumSpeechRate), AVSpeechUtteranceMaximumSpeechRate)
+        utterance.pitchMultiplier = min(max(voice.speechPitch, 0.5), 2.0)
+        utterance.preUtteranceDelay = voice.preUtteranceDelay
         synthesizer.speak(utterance)
     }
 
