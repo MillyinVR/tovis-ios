@@ -769,6 +769,41 @@ whose row carries no `thumbUrl` was rendering the placeholder sheen instead of
 its own image. Worth remembering the next time a nil-coalescing warning gets
 waved through as tidy-up: the compiler was reporting a bug, not a style note.
 
+> 🛠 **Check warnings with the beta toolchain, or the count is fiction.**
+> #279's "0 warnings" was measured on the wrong compiler. Two Xcodes are
+> installed: `xcode-select -p` → `/Applications/Xcode.app` (26.6, Swift 6.3.3),
+> which is what a bare `xcodebuild` picks up, while Tori works in
+> `/Applications/Xcode-beta.app` (27.0, Swift 6.4). Diagnostic groups that only
+> exist in 6.4 — confirmed case `#ImplicitStrongCapture` — are invisible to
+> 6.3.3. On the same commit: IDE 2 warnings, from-clean 6.3.3 build 0.
+>
+> This is **not** a stale-derived-data problem, so cleaning does not fix it. It
+> reproduces on a clean build with a fresh `-derivedDataPath`. Use:
+>
+> ```bash
+> DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer \
+>   xcodebuild build -project tovis-ios.xcodeproj -scheme Tovis \
+>   -configuration Debug -destination 'generic/platform=iOS Simulator' \
+>   -derivedDataPath /tmp/dd-beta
+> ```
+>
+> `Debug` because that is what the Tovis scheme's Run and Test actions use — a
+> bare `xcodebuild` with no `-configuration` defaults to Release. Ignore the
+> three `ld: warning: address=… points before section(N) start` lines: linker
+> noise from prebuilt binary dependencies, not source issues, and not shown in
+> the IDE. Re-confirm the beta path when it is eventually replaced by a release.
+
+**The last two closed in #280.** `ContentView`'s `startRealtime` was the third
+instance of the shape #279 fixed in `startPush` — an `@escaping @Sendable`
+callback that realtime stores for the life of the subscription, capturing self
+implicitly and strongly, with a decorative `[weak self]` on the inner `Task`.
+#279 assessed it as "already correct" without reading it. `CameraController`'s
+watchdog was a *different* case wearing the same message: both its strong outer
+capture (it owns the continuation) and its weak inner one (it fires long after
+the outer block returns) were already correct, and the fix was to spell the
+outer capture `[self]` so the contrast is explicit rather than accidental. Not
+every instance of this diagnostic wants the weak moved outward.
+
 ### 2026-08-05 — build 37 STILL crashes; the crash log names white balance
 
 > 🔴 **Tori must archive BUILD 38.** Build 37's camera is dead on every
