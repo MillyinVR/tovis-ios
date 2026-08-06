@@ -101,6 +101,12 @@ extension FullscreenMedia {
     /// `beforeUrlString`, when the surface has one, unlocks the diptych
     /// formats — the before/after payoff is the natural thing to share, same
     /// as `.proOwned`.
+    ///
+    /// `isVideo` gets no bar at all rather than an export bar with nothing to
+    /// offer — video export is unbuilt for EVERY identity (`ProMediaExportContext
+    /// .canExport` is false for it), and unlike the `.own` path there is no
+    /// Save button to keep the bar non-empty on the client path (see
+    /// `MediaExportIdentity.client`'s doc for why Save is never offered here).
     static func clientExportable(
         id: String,
         urlString: String?,
@@ -111,16 +117,19 @@ extension FullscreenMedia {
     ) -> FullscreenMedia? {
         guard let raw = urlString?.trimmingCharacters(in: .whitespacesAndNewlines),
               !raw.isEmpty, let url = URL(string: raw) else { return nil }
+        if isVideo {
+            return FullscreenMedia(id: id, source: .remote(url: url, isVideo: true), overlay: overlay)
+        }
         let before = beforeUrlString
             .flatMap { URL(string: $0.trimmingCharacters(in: .whitespacesAndNewlines)) }
         return FullscreenMedia(
             id: id,
-            source: .remote(url: url, isVideo: isVideo),
+            source: .remote(url: url, isVideo: false),
             overlay: overlay,
             export: ProMediaExportContext(
                 main: .remote(url),
                 before: before.map { .remote($0) },
-                isVideo: isVideo
+                isVideo: false
             ),
             exportIdentity: .client(professionalId: professionalId)
         )
