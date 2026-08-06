@@ -139,7 +139,11 @@ struct AftercareInboxView: View {
                 .foregroundStyle(BrandColor.textSecondary)
 
             if let media = item.beforeAfter, media.hasAny {
-                AftercareBeforeAfterPair(beforeUrl: media.beforeUrl, afterUrl: media.afterUrl)
+                AftercareBeforeAfterPair(
+                    beforeUrl: media.beforeUrl,
+                    afterUrl: media.afterUrl,
+                    clientExportProfessionalId: item.proId
+                )
             }
 
             Text(hintLabel(item.hint))

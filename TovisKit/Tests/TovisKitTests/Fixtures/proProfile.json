@@ -9,6 +9,10 @@
       "handle": "dana",
       "displayHandle": "@dana",
       "isPremium": true,
+      "clientExport": {
+        "enabled": true,
+        "dropsPlatformMark": true
+      },
       "isLicenseVerified": true,
       "displayName": "Dana Lee",
       "businessName": "Plume Studio",

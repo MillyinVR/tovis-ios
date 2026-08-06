@@ -28,9 +28,31 @@ enum ProExportImageRef {
     case bytes(Data)
 }
 
-/// What a surface hands over when it offers save/export. Built by the pro-side
-/// media surfaces only — a client viewing their own chart photo is the follow-up
-/// card, not this (see HANDOFF-camera-redesign.md).
+/// Whose export this is — decides both which identity `ProMediaExportModel`
+/// loads and which affordances the bar/sheet offer.
+///
+/// `.own` is the pro exporting their own work: unchanged from before this case
+/// existed — Save (their clean original) AND Make a post (signed with their
+/// own handle), loaded via `loadIdentity(_:)`.
+///
+/// `.client` is a CLIENT exporting a pro's media (their own aftercare
+/// before/after, or the pro's portfolio/Looks/review work) — the follow-up
+/// card from HANDOFF-camera-redesign.md, built here. Signed-export ONLY, no
+/// plain unmarked save: for the pro's portfolio/Looks/review content a plain
+/// save would hand out the pro's professional photography with no
+/// attribution at all, defeating the point of a discovery channel. One rule
+/// for both rather than a case-by-case judgment (client's-own-photo vs.
+/// pro's-portfolio-photo) keeps this a single, obviously-correct affordance.
+/// Loaded via `loadIdentity(_:forProfessionalId:)`.
+enum MediaExportIdentity: Equatable {
+    case own
+    case client(professionalId: String)
+}
+
+/// What a surface hands over when it offers save/export. Built by pro-side
+/// media surfaces (self export) and client-facing media surfaces (exporting a
+/// pro's work, see `MediaExportIdentity.client`) alike — this struct only ever
+/// describes IMAGES, never whose name goes on them.
 struct ProMediaExportContext {
     /// The shot itself — the "after" when there is a pair.
     let main: ProExportImageRef
@@ -45,6 +67,15 @@ struct ProMediaExportContext {
 
     var canExport: Bool { !isVideo }
     var hasPair: Bool { before != nil && !isVideo }
+}
+
+/// A different pro's public signature, loaded for a CLIENT export — see
+/// `ProMediaExportModel.loadIdentity(_:forProfessionalId:)`.
+struct ClientExportTargetIdentity: Equatable {
+    let handle: String?
+    let businessName: String?
+    let dropsPlatformMark: Bool
+    let enabled: Bool
 }
 
 /// Loads the pro's identity once, then saves and renders on demand.
@@ -62,10 +93,25 @@ final class ProMediaExportModel {
     }
 
     private(set) var phase: Phase = .idle
-    /// The pro's own signature + tier, loaded once per sheet.
+    /// The pro's own signature + tier, loaded once per sheet. Set only by
+    /// `loadIdentity(_:)` — the `.own` identity path. Stays nil for a CLIENT
+    /// export (`clientExportTarget` below is that path's identity instead).
     private(set) var membership: ProMembership?
     private(set) var profile: ProMyProfile?
     private(set) var identityLoaded = false
+
+    /// A DIFFERENT pro's public signature — set only by
+    /// `loadIdentity(_:forProfessionalId:)`, the `.client` identity path (a
+    /// client exporting that pro's work). Never touches `membership`/`profile`
+    /// above, which stay reserved for a pro exporting their OWN work.
+    private(set) var clientExportTarget: ClientExportTargetIdentity?
+
+    /// Whether the pro being exported has allowed client-side export at all.
+    /// Generous (`true`) before `clientExportTarget` loads or for the `.own`
+    /// path, where the question doesn't apply — the bar checks
+    /// `identityLoaded` alongside this to avoid offering (then immediately
+    /// hiding) the button.
+    var clientExportIsEnabled: Bool { clientExportTarget?.enabled ?? true }
 
     /// Decoded sources, keyed so a re-render doesn't re-download.
     private var decoded: [String: CGImage] = [:]
@@ -76,16 +122,30 @@ final class ProMediaExportModel {
     /// one is a small lie they discover by dragging.
     private(set) var mainPixelSize: CGSize?
 
-    /// The watermark this pro's exports carry right now — also what the sheet
-    /// shows them, so the preview cannot disagree with the file.
+    /// The watermark this export carries right now — also what the sheet shows,
+    /// so the preview cannot disagree with the file. Branches on WHICH identity
+    /// loaded (`clientExportTarget` set → a client exporting a different pro's
+    /// work; else → the pro's own `membership`/`profile`), but both paths
+    /// funnel through the same `SocialExportPolicy.watermark` — one signing
+    /// rule, never a second driftable copy.
     var exportWatermark: ExportWatermark {
-        SocialExportPolicy.watermark(
+        let empty = ExportWatermark(signature: nil, showsPlatformMark: false, platformMark: TovisBrand.displayName)
+        if let target = clientExportTarget {
+            return SocialExportPolicy.watermark(
+                for: .socialExport,
+                dropsPlatformMark: target.dropsPlatformMark,
+                handle: target.handle,
+                businessName: target.businessName,
+                platformMark: TovisBrand.displayName
+            ) ?? empty
+        }
+        return SocialExportPolicy.watermark(
             for: .socialExport,
             membership: membership,
             handle: profile?.handle,
             businessName: profile?.businessName,
             platformMark: TovisBrand.displayName
-        ) ?? ExportWatermark(signature: nil, showsPlatformMark: false, platformMark: TovisBrand.displayName)
+        ) ?? empty
     }
 
     /// True when the pro has no handle and no business name — the sheet nudges
@@ -105,6 +165,37 @@ final class ProMediaExportModel {
         async let mine = try? client.proProfile.myProfile()
         membership = await status
         profile = await mine
+    }
+
+    /// Loads a DIFFERENT pro's public signature — for a CLIENT exporting that
+    /// pro's work (`MediaExportIdentity.client`). Reads the SAME public
+    /// endpoint (`GET /professionals/{id}`) every client viewer of that pro
+    /// already hits — no pro-authed call, and never touches
+    /// `membership`/`profile`, which stay reserved for `loadIdentity(_:)`
+    /// above.
+    ///
+    /// A failed load (offline, 404) resolves `dropsPlatformMark` the same
+    /// generous way a missing membership already does, but `enabled`
+    /// resolves FALSE — unlike the platform mark (cosmetic; failing generous
+    /// costs a paying pro a little reach at worst), whether a client may
+    /// export at all is a consent gate, and a gate this code could not
+    /// actually confirm must default closed, not open.
+    func loadIdentity(_ client: TovisClient, forProfessionalId professionalId: String) async {
+        guard !identityLoaded else { return }
+        identityLoaded = true
+        guard let profile = try? await client.profiles.professional(id: professionalId) else {
+            clientExportTarget = ClientExportTargetIdentity(
+                handle: nil, businessName: nil, dropsPlatformMark: true, enabled: false
+            )
+            return
+        }
+        let header = profile.header
+        clientExportTarget = ClientExportTargetIdentity(
+            handle: header.handle,
+            businessName: header.businessName,
+            dropsPlatformMark: header.clientExport.dropsPlatformMark,
+            enabled: header.clientExport.enabled
+        )
     }
 
     // MARK: - Save (never marked, never re-encoded)
@@ -264,6 +355,15 @@ final class ProMediaExportModel {
         """.utf8)
         membership = try? JSONDecoder().decode(ProMembership.self, from: membershipJSON)
         profile = try? JSONDecoder().decode(ProMyProfile.self, from: profileJSON)
+    }
+
+    /// DEBUG/TEST ONLY — the `.client` counterpart of `applyDebugIdentity`
+    /// above: seeds `clientExportTarget` directly rather than hitting
+    /// `GET /professionals/{id}`, so `ProMediaExportModelTests` can drive
+    /// `exportWatermark`/`clientExportIsEnabled` without a network mock.
+    func applyDebugClientExportTarget(_ target: ClientExportTargetIdentity) {
+        identityLoaded = true
+        clientExportTarget = target
     }
     #endif
 

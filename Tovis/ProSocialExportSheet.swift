@@ -19,6 +19,7 @@ struct ProSocialExportSheet: View {
     /// Shared with the presenting surface so identity is loaded once and the
     /// sources are decoded once.
     let model: ProMediaExportModel
+    var identity: MediaExportIdentity = .own
 
     @State private var format: SocialExportFormat = .instagram45
     @State private var asPair = true
@@ -58,7 +59,7 @@ struct ProSocialExportSheet: View {
                 .padding(.bottom, 96)
             }
             .background(BrandColor.bgPrimary.ignoresSafeArea())
-            .navigationTitle("Make a post")
+            .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -69,7 +70,12 @@ struct ProSocialExportSheet: View {
         }
         .tint(BrandColor.accent)
         .task {
-            await model.loadIdentity(session.client)
+            switch identity {
+            case .own:
+                await model.loadIdentity(session.client)
+            case let .client(professionalId):
+                await model.loadIdentity(session.client, forProfessionalId: professionalId)
+            }
             asPair = context.hasPair
             await refreshPreview()
         }
@@ -172,6 +178,22 @@ struct ProSocialExportSheet: View {
     /// source rather than assumed.
     private var sliderIsVertical: Bool { model.cropTravelIsVertical(for: format) }
 
+    private var navigationTitle: String {
+        if case .client = identity { return "Share" }
+        return "Make a post"
+    }
+
+    /// Distinct copy for the two identities: for `.own` the missing signature
+    /// is something the viewer can fix (their own profile); for `.client` it
+    /// is the PRO's handle that's missing, nothing the client viewing it can
+    /// act on.
+    private var noSignatureMessage: String {
+        if case .client = identity {
+            return "This pro hasn't set a handle yet, so their exports go unsigned."
+        }
+        return "Set a handle on your profile and your exports will be signed with it."
+    }
+
     @ViewBuilder
     private var signatureNote: some View {
         let watermark = model.exportWatermark
@@ -184,7 +206,7 @@ struct ProSocialExportSheet: View {
                     .font(BrandFont.display(14, .semibold))
                     .foregroundStyle(BrandColor.textPrimary)
             } else {
-                Text("Set a handle on your profile and your exports will be signed with it.")
+                Text(noSignatureMessage)
                     .font(BrandFont.body(12))
                     .foregroundStyle(BrandColor.textMuted)
             }

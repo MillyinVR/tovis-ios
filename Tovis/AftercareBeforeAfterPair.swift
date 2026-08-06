@@ -17,6 +17,11 @@ struct AftercareBeforeAfterPair: View {
     let afterUrl: String?
     /// Height of the compare slider shown when both photos are present.
     var compareHeight: CGFloat = 220
+    /// The visit's pro, when this pair is shown to a CLIENT — offers signed
+    /// export/share on the fullscreen photo, crediting that pro. `nil` for the
+    /// pro-side callers (their own aftercare list/authoring screen), which
+    /// offer no save/export here at all, unchanged from before this existed.
+    var clientExportProfessionalId: String?
 
     @State private var viewingMedia: FullscreenMedia?
 
@@ -29,8 +34,17 @@ struct AftercareBeforeAfterPair: View {
         if let beforeStr = beforeUrl, let afterStr = afterUrl,
             let beforeURL = URL(string: beforeStr), let afterURL = URL(string: afterStr)
         {
+            // The slider owns every drag inside its frame (BeforeAfterCompareView
+            // claims the full contentShape for the wipe gesture), so the share
+            // affordance sits OUTSIDE it as a corner overlay with its own tap
+            // target rather than a tap-through on the slider itself.
             BeforeAfterCompareView(
                 beforeURL: beforeURL, afterURL: afterURL, height: compareHeight)
+                .overlay(alignment: .topTrailing) {
+                    if let professionalId = clientExportProfessionalId {
+                        shareButton(before: beforeStr, after: afterStr, professionalId: professionalId)
+                    }
+                }
         } else if beforeUrl != nil || afterUrl != nil {
             HStack(spacing: 8) {
                 thumb(beforeUrl, label: "BEFORE")
@@ -39,9 +53,37 @@ struct AftercareBeforeAfterPair: View {
         }
     }
 
+    /// The compare-slider case's only way to reach export — the slider itself
+    /// has no tap-to-fullscreen (it's a drag surface, reused across the app in
+    /// contexts where tapping should NOT open a sheet). Opens straight into
+    /// the before/after diptych export rather than routing through fullscreen
+    /// first, since there is nothing to zoom into that the slider doesn't
+    /// already show.
+    private func shareButton(before: String, after: String, professionalId: String) -> some View {
+        Button {
+            viewingMedia = FullscreenMedia.clientExportable(
+                id: after, urlString: after, isVideo: false,
+                professionalId: professionalId, beforeUrlString: before
+            )
+        } label: {
+            Image(systemName: "square.and.arrow.up")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 32, height: 32)
+                .background(.black.opacity(0.45), in: Circle())
+        }
+        .padding(10)
+        .accessibilityLabel("Share")
+    }
+
     private func thumb(_ urlString: String?, label: String) -> some View {
         Button {
-            viewingMedia = FullscreenMedia.remote(
+            viewingMedia = clientExportProfessionalId.flatMap { professionalId in
+                FullscreenMedia.clientExportable(
+                    id: urlString ?? label, urlString: urlString, isVideo: false,
+                    professionalId: professionalId
+                )
+            } ?? FullscreenMedia.remote(
                 id: urlString ?? label, urlString: urlString, isVideo: false)
         } label: {
             ZStack(alignment: .bottomLeading) {
