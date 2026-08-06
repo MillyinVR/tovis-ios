@@ -183,41 +183,8 @@ struct ProSocialExportSheet: View {
         return "Make a post"
     }
 
-    /// Distinct copy for the two identities: for `.own` the missing signature
-    /// is something the viewer can fix (their own profile); for `.client` it
-    /// is the PRO's handle that's missing, nothing the client viewing it can
-    /// act on.
-    private var noSignatureMessage: String {
-        if case .client = identity {
-            return "This pro hasn't set a handle yet, so their exports go unsigned."
-        }
-        return "Set a handle on your profile and your exports will be signed with it."
-    }
-
-    @ViewBuilder
     private var signatureNote: some View {
-        let watermark = model.exportWatermark
-        VStack(alignment: .leading, spacing: 4) {
-            fieldLabel("Signed")
-            if let signature = watermark.signature {
-                Text(watermark.showsPlatformMark
-                     ? "\(signature) · \(watermark.platformMark.uppercased())"
-                     : signature)
-                    .font(BrandFont.display(14, .semibold))
-                    .foregroundStyle(BrandColor.textPrimary)
-            } else {
-                Text(noSignatureMessage)
-                    .font(BrandFont.body(12))
-                    .foregroundStyle(BrandColor.textMuted)
-            }
-            // Said plainly rather than sold: the export is theirs either way, and
-            // the membership only changes whether the small mark rides along.
-            if watermark.showsPlatformMark {
-                Text("Members’ exports carry their handle only.")
-                    .font(BrandFont.body(11))
-                    .foregroundStyle(BrandColor.textMuted)
-            }
-        }
+        MediaExportSignatureNote(watermark: model.exportWatermark, identity: identity)
     }
 
     // MARK: - Actions
@@ -317,7 +284,58 @@ struct ProSocialExportSheet: View {
 /// The rendered file, wrapped so `.sheet(item:)` can key on it — a bare `URL`
 /// would need a retroactive `Identifiable` conformance on a Foundation type,
 /// which is exactly the kind of thing that collides with somebody else's later.
-private struct ExportFile: Identifiable {
+/// Shared with `ProVideoExportSheet`, which renders a file too rather than `Data`.
+struct ExportFile: Identifiable {
     let url: URL
     var id: String { url.absoluteString }
+}
+
+/// The "Signed" field both export sheets show — the pro's signature (or a
+/// nudge to set one) plus the membership note when the platform mark rides
+/// along. Shared between `ProSocialExportSheet` and `ProVideoExportSheet` so
+/// the copy can't drift between the image and video paths.
+struct MediaExportSignatureNote: View {
+    let watermark: ExportWatermark
+    let identity: MediaExportIdentity
+
+    /// Distinct copy for the two identities: for `.own` the missing signature
+    /// is something the viewer can fix (their own profile); for `.client` it
+    /// is the PRO's handle that's missing, nothing the client viewing it can
+    /// act on.
+    private var noSignatureMessage: String {
+        if case .client = identity {
+            return "This pro hasn't set a handle yet, so their exports go unsigned."
+        }
+        return "Set a handle on your profile and your exports will be signed with it."
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            fieldLabel("Signed")
+            if let signature = watermark.signature {
+                Text(watermark.showsPlatformMark
+                     ? "\(signature) · \(watermark.platformMark.uppercased())"
+                     : signature)
+                    .font(BrandFont.display(14, .semibold))
+                    .foregroundStyle(BrandColor.textPrimary)
+            } else {
+                Text(noSignatureMessage)
+                    .font(BrandFont.body(12))
+                    .foregroundStyle(BrandColor.textMuted)
+            }
+            // Said plainly rather than sold: the export is theirs either way, and
+            // the membership only changes whether the small mark rides along.
+            if watermark.showsPlatformMark {
+                Text("Members’ exports carry their handle only.")
+                    .font(BrandFont.body(11))
+                    .foregroundStyle(BrandColor.textMuted)
+            }
+        }
+    }
+
+    private func fieldLabel(_ text: String) -> some View {
+        Text(text)
+            .font(BrandFont.mono(11)).tracking(1.2).textCase(.uppercase)
+            .foregroundStyle(BrandColor.textMuted)
+    }
 }

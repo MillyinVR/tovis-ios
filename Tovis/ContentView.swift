@@ -1159,6 +1159,11 @@ struct RootView: View {
     /// all come from the real renderer.
     @State private var debugExport = ProcessInfo.processInfo
         .environment["TOVIS_DEBUG_OPEN_EXPORT"] == "1"
+    /// DEBUG ONLY — the VIDEO counterpart, via
+    /// `SIMCTL_CHILD_TOVIS_DEBUG_OPEN_VIDEO_EXPORT=1`. Same reasoning as
+    /// `debugExport` above.
+    @State private var debugVideoExport = ProcessInfo.processInfo
+        .environment["TOVIS_DEBUG_OPEN_VIDEO_EXPORT"] == "1"
     /// DEBUG ONLY — open "All coaching settings" (the personality picker +
     /// every other coach toggle) straight from the root, same reasoning as
     /// `debugExport` above: no camera, no session, no booking, so the
@@ -1210,6 +1215,9 @@ struct RootView: View {
                 context: DebugExportSample.context(),
                 model: DebugExportSample.model()
             )
+        }
+        .fullScreenCover(isPresented: $debugVideoExport) {
+            DebugVideoExportHost()
         }
         .fullScreenCover(isPresented: $debugCoachSettings) {
             CoachSettingsSheet(settings: CoachSettings())

@@ -63,7 +63,8 @@ struct FullscreenMedia: Identifiable {
     ///
     /// `beforeUrlString` is the paired "before" when the surface knows of one,
     /// which is what unlocks the diptych — an unpaired shot still exports as a
-    /// single. Videos get save only; the still pack is stills.
+    /// single. Video never pairs (`ProMediaExportContext.hasPair` is false for
+    /// it) but otherwise gets the same save + export affordances a photo does.
     static func proOwned(
         id: String,
         urlString: String?,
@@ -102,11 +103,9 @@ extension FullscreenMedia {
     /// formats — the before/after payoff is the natural thing to share, same
     /// as `.proOwned`.
     ///
-    /// `isVideo` gets no bar at all rather than an export bar with nothing to
-    /// offer — video export is unbuilt for EVERY identity (`ProMediaExportContext
-    /// .canExport` is false for it), and unlike the `.own` path there is no
-    /// Save button to keep the bar non-empty on the client path (see
-    /// `MediaExportIdentity.client`'s doc for why Save is never offered here).
+    /// A video gets no diptych (there is no paired "before" clip), same as the
+    /// `.proOwned` path — otherwise identical: same `ProMediaExportContext`,
+    /// same `.client` identity, same bar.
     static func clientExportable(
         id: String,
         urlString: String?,
@@ -117,19 +116,16 @@ extension FullscreenMedia {
     ) -> FullscreenMedia? {
         guard let raw = urlString?.trimmingCharacters(in: .whitespacesAndNewlines),
               !raw.isEmpty, let url = URL(string: raw) else { return nil }
-        if isVideo {
-            return FullscreenMedia(id: id, source: .remote(url: url, isVideo: true), overlay: overlay)
-        }
-        let before = beforeUrlString
+        let before = isVideo ? nil : beforeUrlString
             .flatMap { URL(string: $0.trimmingCharacters(in: .whitespacesAndNewlines)) }
         return FullscreenMedia(
             id: id,
-            source: .remote(url: url, isVideo: false),
+            source: .remote(url: url, isVideo: isVideo),
             overlay: overlay,
             export: ProMediaExportContext(
                 main: .remote(url),
                 before: before.map { .remote($0) },
-                isVideo: false
+                isVideo: isVideo
             ),
             exportIdentity: .client(professionalId: professionalId)
         )
@@ -250,7 +246,7 @@ struct ProMediaExportBar: View {
             HStack(spacing: 10) {
                 if case .own = identity {
                     Button {
-                        Task { await model.saveOriginal(context.main) }
+                        Task { await model.saveOriginal(context.main, isVideo: context.isVideo) }
                     } label: {
                         label("Save to Photos", systemImage: "square.and.arrow.down")
                     }
@@ -291,7 +287,11 @@ struct ProMediaExportBar: View {
             }
         }
         .sheet(isPresented: $exporting) {
-            ProSocialExportSheet(context: context, model: model, identity: identity)
+            if context.isVideo {
+                ProVideoExportSheet(context: context, model: model, identity: identity)
+            } else {
+                ProSocialExportSheet(context: context, model: model, identity: identity)
+            }
         }
     }
 

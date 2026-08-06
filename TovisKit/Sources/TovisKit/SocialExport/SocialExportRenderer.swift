@@ -142,8 +142,6 @@ public enum SocialExportRenderer {
         format: SocialExportFormat,
         in context: CGContext
     ) {
-        guard !watermark.isEmpty else { return }
-
         let pointSize = min(canvas.width, canvas.height) * signaturePointFraction
         // The planner speaks top-left like the rest of the geometry; the context
         // draws bottom-left. Flip once, here, so `box.minY` really is the baseline.
@@ -151,6 +149,23 @@ public enum SocialExportRenderer {
             SocialExportPlanner.signatureBox(in: canvas.size, format: format),
             in: canvas
         )
+        drawSignature(watermark, pointSize: pointSize, box: box, in: context)
+    }
+
+    /// The signature + platform mark, right-aligned along the bottom of `box`
+    /// (already in the context's bottom-left space), shared baselines so the
+    /// mark sits ON the signature's line rather than beside it at its own
+    /// height. The one place either caller of this file's watermark drawing
+    /// touches text — `draw(_:canvas:format:in:)` for a full picture composite
+    /// and `watermarkOverlay(_:canvasSize:)` for a standalone overlay both
+    /// funnel through here so there is exactly one copy of the visual design.
+    private static func drawSignature(
+        _ watermark: ExportWatermark,
+        pointSize: CGFloat,
+        box: CGRect,
+        in context: CGContext
+    ) {
+        guard !watermark.isEmpty else { return }
 
         var runs: [TextRun] = []
         if let signature = watermark.signature {
@@ -175,14 +190,54 @@ public enum SocialExportRenderer {
         let widths = runs.map { $0.width }
         let total = widths.reduce(0, +) + gap * CGFloat(max(0, runs.count - 1))
 
-        // Right-aligned along the bottom of the safe box, baselines shared so the
-        // mark sits ON the signature's line rather than beside it at its own height.
         var x = box.maxX - total
         let baselineY = box.minY
         for (run, width) in zip(runs, widths) {
             run.draw(at: CGPoint(x: x, y: baselineY), in: context)
             x += width + gap
         }
+    }
+
+    /// The signature + platform mark alone, on an otherwise transparent canvas
+    /// — for a caller that composites onto something this file has no picture
+    /// path for (video frames; see `SocialVideoExportRenderer` in the app
+    /// target). Same drawing code as the image path's `draw(_:canvas:format:in:)`
+    /// via `drawSignature`, so the mark is pixel-for-pixel the same design; the
+    /// only difference is where the safe box sits — a plain inset from the
+    /// canvas edge rather than `SocialExportPlanner.signatureBox`'s
+    /// format-specific cover-safe band, since a video clip ships at its own
+    /// source aspect rather than one of the two known export canvases.
+    ///
+    /// Nil only on a degenerate `canvasSize` (matches `render`'s own guard).
+    /// An empty watermark returns a fully transparent image rather than nil —
+    /// still a valid image to composite, it just adds nothing.
+    public static func watermarkOverlay(
+        _ watermark: ExportWatermark,
+        canvasSize: CGSize
+    ) -> CGImage? {
+        let width = Int(canvasSize.width.rounded())
+        let height = Int(canvasSize.height.rounded())
+        guard width > 0, height > 0,
+              let context = CGContext(
+                  data: nil,
+                  width: width,
+                  height: height,
+                  bitsPerComponent: 8,
+                  bytesPerRow: 0,
+                  space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+              )
+        else { return nil }
+
+        let canvas = CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height))
+        let pointSize = min(canvas.width, canvas.height) * signaturePointFraction
+        let inset = min(canvas.width, canvas.height) * SocialExportPlanner.signatureInsetFraction
+        // Symmetric inset needs no top-left/bottom-left flip — unlike the
+        // planner's format-specific box, `insetBy` reads the same in either space.
+        let box = canvas.insetBy(dx: inset, dy: inset)
+        drawSignature(watermark, pointSize: pointSize, box: box, in: context)
+
+        return context.makeImage()
     }
 
     private static func drawPairLabels(

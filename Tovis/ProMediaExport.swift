@@ -61,11 +61,13 @@ struct ProMediaExportContext {
     /// The paired "before". Present → the diptych formats are offered.
     var before: ProExportImageRef?
     var beforeFocal: MediaFocalPoint?
-    /// Videos can be saved but not exported — the still pack is stills. Clip
-    /// export is a follow-up (HANDOFF-camera-redesign.md).
+    /// Whether `main` (and `before`, when present) is video rather than a
+    /// still. Video exports as its own clip, watermarked corner only — no
+    /// diptych, no crop/format picker (`hasPair` stays false for it below;
+    /// clip length/crop UI is a follow-up, HANDOFF-camera-redesign.md).
     var isVideo: Bool = false
 
-    var canExport: Bool { !isVideo }
+    var canExport: Bool { true }
     var hasPair: Bool { before != nil && !isVideo }
 }
 
@@ -206,21 +208,54 @@ final class ProMediaExportModel {
     /// Decoding and re-encoding here would strip the capture date, the
     /// orientation tag the web gallery reads, the lens and the colour profile —
     /// and the photo would still look fine, so nobody would notice for months.
-    func saveOriginal(_ ref: ProExportImageRef) async {
+    ///
+    /// `isVideo` routes to `PhotoLibrarySaver.saveVideo`, which needs a file
+    /// URL rather than the raw `Data` the photo path hands over — the bytes
+    /// still go through untouched either way, just via a temp file for video
+    /// (removed once Photos has ingested it) instead of straight to
+    /// `addResource`.
+    func saveOriginal(_ ref: ProExportImageRef, isVideo: Bool = false) async {
         phase = .working("Saving…")
         do {
             let data: Data = switch ref {
             case let .remote(url): try await OriginalMediaBytes.fetch(url)
             case let .bytes(data): data
             }
-            guard await PhotoLibrarySaver.save(data) else {
+            let saved: Bool
+            if isVideo {
+                let tmp = try Self.temporaryVideoFile(for: data, sourceRef: ref)
+                defer { try? FileManager.default.removeItem(at: tmp) }
+                saved = await PhotoLibrarySaver.saveVideo(fileURL: tmp)
+            } else {
+                saved = await PhotoLibrarySaver.save(data)
+            }
+            guard saved else {
                 phase = .failed("Couldn’t save to your photos — check Tovis has photo access.")
                 return
             }
             phase = .done("Saved to your photos")
         } catch {
-            phase = .failed("Couldn’t fetch that photo to save. Try again.")
+            phase = .failed(isVideo
+                ? "Couldn’t fetch that clip to save. Try again."
+                : "Couldn’t fetch that photo to save. Try again.")
         }
+    }
+
+    /// A temp file for original video bytes, extensioned from the source URL
+    /// when there is one (the server may serve `.mp4`) and `mov` otherwise —
+    /// `PHAssetCreationRequest`'s video resource needs a real container
+    /// extension to import from, unlike the photo path's raw `Data`.
+    private static func temporaryVideoFile(for data: Data, sourceRef ref: ProExportImageRef) throws -> URL {
+        let ext: String = if case let .remote(url) = ref, !url.pathExtension.isEmpty {
+            url.pathExtension
+        } else {
+            "mov"
+        }
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tovis-original-\(UUID().uuidString)")
+            .appendingPathExtension(ext)
+        try data.write(to: url, options: .atomic)
+        return url
     }
 
     // MARK: - Export
@@ -266,6 +301,34 @@ final class ProMediaExportModel {
         return try await Task.detached(priority: .userInitiated) {
             try SocialExportRenderer.render(plan: plan, images: images, watermark: watermark)
         }.value
+    }
+
+    /// Render a signed video export from `context`'s video source, watermarked
+    /// with the current identity's signature — the video counterpart to
+    /// `renderExport`. Returns a local temp-file URL rather than `Data`: a
+    /// video export IS a file (`SocialVideoExportRenderer` writes it via
+    /// `AVAssetExportSession`), so unlike the image path there is no bytes
+    /// blob to wrap in `temporaryFile(for:named:)` afterward — the share sheet
+    /// and `savePhotosCopyVideo` both take this URL directly.
+    ///
+    /// `context.main` is always `.remote` for video today — every video call
+    /// site hands over a server-hosted asset, never not-yet-uploaded bytes —
+    /// so `.bytes` here would be a caller bug, not a real runtime case.
+    func renderVideoExport(_ context: ProMediaExportContext) async throws -> URL {
+        guard case let .remote(url) = context.main else {
+            throw SocialVideoExportRenderError.unsupportedSource
+        }
+        return try await SocialVideoExportRenderer.render(sourceURL: url, watermark: exportWatermark)
+    }
+
+    /// Save an already-rendered video export to Photos — the video counterpart
+    /// to `savePhotosCopy(of data:)`, distinct from `saveOriginal` for the same
+    /// reason: this one IS marked.
+    func savePhotosCopyVideo(of fileURL: URL) async {
+        phase = .working("Saving…")
+        phase = await PhotoLibrarySaver.saveVideo(fileURL: fileURL)
+            ? .done("Export saved to your photos")
+            : .failed("Couldn’t save to your photos — check Tovis has photo access.")
     }
 
     /// Write export bytes to a temp file so the share sheet can hand a real
