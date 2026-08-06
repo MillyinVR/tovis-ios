@@ -73,7 +73,11 @@ import Testing
     private func frames() -> [FrameContext] {
         [
             ctx(),
-            ctx(luma: 0.10, faceLuma: 0.10),
+            // `backgroundLuma` explicit and equal to `faceLuma` — left at the
+            // default (0.5) this reads as BACKLIT (0.10 < 0.5 × 0.6), not
+            // too dark, which would make the "too dark" fixture below the
+            // one actually exercising `lightingBacklit` instead.
+            ctx(luma: 0.10, faceLuma: 0.10, backgroundLuma: 0.10),
             ctx(tilt: 8),
             ctx(mixed: 0.20, clutter: 0.70),
             ctx(luma: 0.36, faceLuma: 0.24, backgroundLuma: 0.42),

@@ -2439,7 +2439,10 @@ struct ProCapturePhotosView: View {
 }
 
 /// How the AI photographer guides the pro — the toggle sheet (gear in the camera).
-private struct CoachSettingsSheet: View {
+/// Not `private` — `RootView`'s `TOVIS_DEBUG_OPEN_COACH_SETTINGS` hook (DEBUG
+/// only) presents this straight from the root, no camera/session/booking
+/// required, for the same reason as `DebugExportSample`.
+struct CoachSettingsSheet: View {
     @Bindable var settings: CoachSettings
     /// DEBUG tuning console entry — dismisses this sheet and opens the console
     /// over the LIVE camera (this sheet pauses it; tuning needs frames).
