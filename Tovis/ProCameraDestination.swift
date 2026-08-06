@@ -83,33 +83,48 @@ enum ProCameraDestination: Equatable, Hashable {
 
     /// The guide sheet's note about what's actually required. Practice says
     /// plainly that nothing is.
-    func guideNote(requirementMet met: Bool) -> String {
+    ///
+    /// `voice` renders the personality-tagged line (docs/design/camera-
+    /// personality-packs.md §4 site I); it defaults to Calm Mentor so every
+    /// existing caller — tests, previews — keeps seeing exactly today's text.
+    func guideNote(requirementMet met: Bool, voice: CoachVoice = CalmMentorVoice()) -> String {
         switch self {
         case let .session(_, phase):
-            return met
+            let fallback = met
                 ? ProSessionPhotoRequirement.metDetail(phase)
                 : ProSessionPhotoRequirement.guideNote(phase)
+            let moment: CoachMoment = met ? .sessionGuideNoteMet : .sessionGuideNoteOutstanding
+            return CoachVoiceRenderer.render(
+                moment, fallback: fallback, ctx: CoachPhraseContext(detail: fallback), voice: voice) ?? fallback
         case .practice:
-            return "Practice shots aren’t attached to anyone. Shoot as many as you like — you can attach one to a client or a look later."
+            let fallback = "Practice shots aren’t attached to anyone. Shoot as many as you like — you can attach one to a client or a look later."
+            return CoachVoiceRenderer.render(.practiceGuideNote, fallback: fallback, voice: voice) ?? fallback
         }
     }
 
     /// The exit dialog's title when nothing is at risk but the shoot is short of
     /// what it owes. Never reached for practice (`owesAPhoto` is false).
-    var leavingWithoutTitle: String {
+    func leavingWithoutTitle(voice: CoachVoice = CalmMentorVoice()) -> String {
         switch self {
         case let .session(_, phase):
-            return ProSessionPhotoRequirement.leavingWithoutTitle(phase)
+            let fallback = ProSessionPhotoRequirement.leavingWithoutTitle(phase)
+            return CoachVoiceRenderer.render(
+                .leavingWithoutTitleSession, fallback: fallback,
+                ctx: CoachPhraseContext(detail: fallback), voice: voice) ?? fallback
         case .practice:
-            return "Leave the camera?"
+            let fallback = "Leave the camera?"
+            return CoachVoiceRenderer.render(.leavingWithoutTitlePractice, fallback: fallback, voice: voice) ?? fallback
         }
     }
 
     /// The one sentence naming the outstanding photo. Empty for practice.
-    var outstandingSentence: String {
+    func outstandingSentence(voice: CoachVoice = CalmMentorVoice()) -> String {
         switch self {
         case let .session(_, phase):
-            return ProSessionPhotoRequirement.outstandingSentence(phase)
+            let fallback = ProSessionPhotoRequirement.outstandingSentence(phase)
+            return CoachVoiceRenderer.render(
+                .sessionOutstandingSentence, fallback: fallback,
+                ctx: CoachPhraseContext(detail: fallback), voice: voice) ?? fallback
         case .practice:
             return ""
         }

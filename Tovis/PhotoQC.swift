@@ -11,7 +11,16 @@ import TovisKit
 
 struct PhotoQCReport: Sendable {
     /// Human phrasing of the single blocking problem; nil when the shot passes.
+    /// Canonical Calm Mentor text — unchanged by personality (see `retakeMoment`).
     let retakeReason: String?
+    /// The stable tag a `CoachVoice` renders `retakeReason` from — nil exactly
+    /// when `retakeReason` is nil. `retakeReason` itself never changes with
+    /// personality; this only ever adds a render hook (docs/design/
+    /// camera-personality-packs.md §2.1).
+    let retakeMoment: CoachMoment?
+    /// Interpolation for the moments whose canonical text has a `\(...)` in
+    /// it (the QC subject noun, "It" / "Their face").
+    let retakePhraseCtx: CoachPhraseContext?
     /// Normalized sharpness of the capture (same scale as the live coach).
     let sharpness: Double
     /// Whole-image luma.
@@ -32,6 +41,24 @@ struct PhotoQCReport: Sendable {
     /// (harvested still) — the parity the C6 design calls for.
     let focalPoint: CGPoint?
     var passed: Bool { retakeReason == nil }
+
+    /// `retakeMoment`/`retakePhraseCtx` default to nil — a hand-written init
+    /// (rather than in-line property defaults) so they still get a default
+    /// value in the memberwise call while `evaluatePooled` can pass them
+    /// explicitly. In-line defaults on stored `let`s drop the property from
+    /// Swift's synthesized memberwise init entirely, which isn't what we want
+    /// here (existing callers, e.g. `PhotoQCTests`, construct this directly).
+    nonisolated init(retakeReason: String?, retakeMoment: CoachMoment? = nil, retakePhraseCtx: CoachPhraseContext? = nil,
+                     sharpness: Double, luma: Double, faceLuma: Double?, eyesClosed: Bool, focalPoint: CGPoint?) {
+        self.retakeReason = retakeReason
+        self.retakeMoment = retakeMoment
+        self.retakePhraseCtx = retakePhraseCtx
+        self.sharpness = sharpness
+        self.luma = luma
+        self.faceLuma = faceLuma
+        self.eyesClosed = eyesClosed
+        self.focalPoint = focalPoint
+    }
 }
 
 extension MediaFocalPoint {
@@ -120,22 +147,35 @@ enum PhotoQC {
         let subject = faceLuma == nil ? "It" : "Their face"
 
         let reason: String?
+        let moment: CoachMoment?
+        let phraseCtx: CoachPhraseContext?
         if checkBlink, eyesClosed {
             reason = "Their eyes were closed"
+            moment = .qcEyesClosed
+            phraseCtx = nil
         } else if sharpness < CoachTuning.qcSharpnessMin {
             reason = "It came out soft"
+            moment = .qcSoft
+            phraseCtx = nil
         } else if exposure < CoachTuning.qcLumaMin {
             reason = "\(subject) came out too dark"
+            moment = .qcTooDark
+            phraseCtx = CoachPhraseContext(subjectNoun: subject)
         } else if exposure > CoachTuning.qcLumaMax {
             reason = "\(subject) came out blown out"
+            moment = .qcBlownOut
+            phraseCtx = CoachPhraseContext(subjectNoun: subject)
         } else {
             reason = nil
+            moment = nil
+            phraseCtx = nil
         }
         // Focal = the center of the face rect (already normalized top-left in the
         // upright frame). object-position auto-clamps at the edges, so no clamping
         // is needed here; no face → nil → center.
         let focalPoint = faceRect.map { CGPoint(x: $0.midX, y: $0.midY) }
-        return PhotoQCReport(retakeReason: reason, sharpness: sharpness, luma: luma,
+        return PhotoQCReport(retakeReason: reason, retakeMoment: moment, retakePhraseCtx: phraseCtx,
+                             sharpness: sharpness, luma: luma,
                              faceLuma: faceLuma, eyesClosed: eyesClosed, focalPoint: focalPoint)
     }
 }

@@ -121,6 +121,76 @@ struct HypeBestieVoice: CoachVoice {
             let noun = ctx.subjectNoun ?? "That"
             return pick(["\(noun) — we got it, YES!",
                         "\(noun) is fixed, bestie, look at that!"])
+
+        // MARK: Phase 4 (E–I)
+        case .qcEyesClosed:
+            return pick(["Bestie, blink alert! Let's catch those eyes open!",
+                        "Eyes closed on that one — let's get 'em open!"])
+        case .qcSoft:
+            return pick(["Ooh a lil soft, let's get it crisp!",
+                        "Just a touch blurry, one more for the crisp!"])
+        case .qcTooDark:
+            let noun = ctx.subjectNoun ?? "It"
+            return "\(noun) came out a lil dark, bestie — one more!"
+        case .qcBlownOut:
+            let noun = ctx.subjectNoun ?? "It"
+            return "\(noun) got blown out, bestie — let's dial it back!"
+        case .lightMatched:
+            let noun = ctx.subjectNoun ?? "the reference"
+            return "Light's matching the \(noun), we're SO good!"
+        case .lightBrighterThan:
+            let noun = ctx.subjectNoun ?? "the reference"
+            return "A touch brighter than the \(noun) — dim it juuust a hair!"
+        case .lightDarkerThan:
+            let noun = ctx.subjectNoun ?? "the reference"
+            return "A bit darker than the \(noun) — let's add some glow!"
+        case .lightWarmerThan:
+            let noun = ctx.subjectNoun ?? "the reference"
+            return "Warmer than the \(noun) — let's cool it down!"
+        case .lightCoolerThan:
+            let noun = ctx.subjectNoun ?? "the reference"
+            return "Cooler than the \(noun) — warm it up a touch!"
+        case .shotStepHint:
+            let hint = ctx.detail ?? "the next shot"
+            return "\(hint), bestie!"
+        case .shotStepAnnounce:
+            let title = ctx.subjectNoun ?? "the next shot"
+            let hint = ctx.detail ?? ""
+            return "Next up: \(title)! \(hint)"
+        case .shotCaptured:
+            let title = ctx.subjectNoun ?? "That one"
+            return "Got the \(title), let's gooo!"
+        case .trendingSetIntro:
+            let name = ctx.subjectNoun ?? "this set"
+            let tagline = ctx.detail ?? ""
+            return "Ooh trending: \(name)! \(tagline)"
+        case .matchingReferenceLook:
+            return "Matching that reference look, let's gooo!"
+        case .aiDirectionReady:
+            let line = ctx.detail ?? "Let's shoot!"
+            return "Direction's in, bestie! \(line)"
+        case .retakeConfirm:
+            let reason = ctx.detail ?? "That one needs a retake"
+            return "\(reason) — retake while they're right there, bestie?"
+        case .retakeAnnounce:
+            let reason = ctx.detail ?? "That one needs a retake"
+            return "\(reason) — let's snag that one again!"
+        case .sessionGuideNoteMet:
+            let detail = ctx.detail ?? ""
+            return "Bestie, \(detail)"
+        case .sessionGuideNoteOutstanding:
+            let detail = ctx.detail ?? ""
+            return "\(detail) Let's get it, bestie!"
+        case .practiceGuideNote:
+            return "Bestie, practice shots aren't attached to anyone — shoot as many as you want, attach one later if you feel it!"
+        case .sessionOutstandingSentence:
+            let detail = ctx.detail ?? ""
+            return "\(detail) Let's knock it out, bestie!"
+        case .leavingWithoutTitleSession:
+            let detail = ctx.detail ?? "Leave without the photo?"
+            return "Wait bestie — \(detail)"
+        case .leavingWithoutTitlePractice:
+            return "Heading out, bestie?"
         }
     }
 }
@@ -174,6 +244,60 @@ struct StraightShooterVoice: CoachVoice {
         case .dimensionCleared:
             let noun = ctx.subjectNoun ?? "Fixed"
             return "\(noun). Fixed."
+
+        // MARK: Phase 4 (E–I)
+        case .qcEyesClosed: return "Eyes closed. Retake."
+        case .qcSoft: return "Soft. Retake."
+        case .qcTooDark:
+            let noun = ctx.subjectNoun ?? "It"
+            return "\(noun) too dark. Retake."
+        case .qcBlownOut:
+            let noun = ctx.subjectNoun ?? "It"
+            return "\(noun) blown out. Retake."
+        case .lightMatched:
+            let noun = ctx.subjectNoun ?? "reference"
+            return "Light matches \(noun)."
+        case .lightBrighterThan:
+            let noun = ctx.subjectNoun ?? "reference"
+            return "Brighter than \(noun). Dim it."
+        case .lightDarkerThan:
+            let noun = ctx.subjectNoun ?? "reference"
+            return "Darker than \(noun). Add light."
+        case .lightWarmerThan:
+            let noun = ctx.subjectNoun ?? "reference"
+            return "Warmer than \(noun). Cool it."
+        case .lightCoolerThan:
+            let noun = ctx.subjectNoun ?? "reference"
+            return "Cooler than \(noun). Warm it."
+        case .shotStepHint:
+            return ctx.detail ?? "Next shot."
+        case .shotStepAnnounce:
+            let title = ctx.subjectNoun ?? "Next shot"
+            let hint = ctx.detail ?? ""
+            return "\(title). \(hint)"
+        case .shotCaptured:
+            let title = ctx.subjectNoun ?? "That one"
+            return "\(title). Got it."
+        case .trendingSetIntro:
+            let name = ctx.subjectNoun ?? "Trending set"
+            let tagline = ctx.detail ?? ""
+            return "Trending set: \(name). \(tagline)"
+        case .matchingReferenceLook: return "Matching reference look."
+        case .aiDirectionReady:
+            let line = ctx.detail ?? "Ready."
+            return "Direction ready. \(line)"
+        case .retakeConfirm:
+            let reason = ctx.detail ?? "Retake needed"
+            return "\(reason). Retake now?"
+        case .retakeAnnounce:
+            let reason = ctx.detail ?? "Retake needed"
+            return "\(reason). Take it again."
+        case .sessionGuideNoteMet: return ctx.detail ?? "Photo saved."
+        case .sessionGuideNoteOutstanding: return ctx.detail ?? "One photo required."
+        case .practiceGuideNote: return "Practice shots. Not attached to anyone. Shoot freely."
+        case .sessionOutstandingSentence: return ctx.detail ?? "Photo still needed."
+        case .leavingWithoutTitleSession: return ctx.detail ?? "Leave without the photo?"
+        case .leavingWithoutTitlePractice: return "Leave camera?"
         }
     }
 }
@@ -248,6 +372,62 @@ struct EditorialDirectorVoice: CoachVoice {
         case .dimensionCleared:
             let noun = ctx.subjectNoun ?? "That"
             return "\(noun) — clean. Moving on."
+
+        // MARK: Phase 4 (E–I)
+        case .qcEyesClosed: return "Eyes were closed on that one — we need them open."
+        case .qcSoft: return "That one's soft — we need it sharp."
+        case .qcTooDark:
+            let noun = ctx.subjectNoun ?? "It"
+            return "\(noun) came out dark — let's take it again in better light."
+        case .qcBlownOut:
+            let noun = ctx.subjectNoun ?? "It"
+            return "\(noun) blew out — we need one more take off that light."
+        case .lightMatched:
+            let noun = ctx.subjectNoun ?? "reference"
+            return "Light reads true to the \(noun)."
+        case .lightBrighterThan:
+            let noun = ctx.subjectNoun ?? "reference"
+            return "Reading brighter than the \(noun) — dim it slightly."
+        case .lightDarkerThan:
+            let noun = ctx.subjectNoun ?? "reference"
+            return "Reading darker than the \(noun) — bring in more light."
+        case .lightWarmerThan:
+            let noun = ctx.subjectNoun ?? "reference"
+            return "Reading warmer than the \(noun) — cool the light source."
+        case .lightCoolerThan:
+            let noun = ctx.subjectNoun ?? "reference"
+            return "Reading cooler than the \(noun) — warm the light source."
+        case .shotStepHint:
+            let hint = ctx.detail ?? "Next shot"
+            return "\(hint)."
+        case .shotStepAnnounce:
+            let title = ctx.subjectNoun ?? "the next shot"
+            let hint = ctx.detail ?? ""
+            return "Moving to \(title). \(hint)"
+        case .shotCaptured:
+            let title = ctx.subjectNoun ?? "That one"
+            return "\(title) — got it."
+        case .trendingSetIntro:
+            let name = ctx.subjectNoun ?? "this set"
+            let tagline = ctx.detail ?? ""
+            return "This set is trending: \(name). \(tagline)"
+        case .matchingReferenceLook: return "Matching the reference look now."
+        case .aiDirectionReady:
+            let line = ctx.detail ?? "Ready to shoot."
+            return "Direction's ready: \(line)"
+        case .retakeConfirm:
+            let reason = ctx.detail ?? "That one needs a retake"
+            return "\(reason). Retake while they're still in position?"
+        case .retakeAnnounce:
+            let reason = ctx.detail ?? "That one needs a retake"
+            return "\(reason) — we're taking that one again."
+        case .sessionGuideNoteMet: return ctx.detail ?? "That photo is saved."
+        case .sessionGuideNoteOutstanding: return ctx.detail ?? "One photo is required."
+        case .practiceGuideNote:
+            return "Practice shots aren't attached to anyone — shoot freely, attach one to a client or look later."
+        case .sessionOutstandingSentence: return ctx.detail ?? "This session still needs its photo."
+        case .leavingWithoutTitleSession: return ctx.detail ?? "Leave without the photo?"
+        case .leavingWithoutTitlePractice: return "Leaving the camera?"
         }
     }
 }
@@ -326,6 +506,74 @@ struct DragQueenBestieVoice: CoachVoice {
         case .dimensionCleared:
             let noun = ctx.subjectNoun ?? "That"
             return "\(noun), honey — fixed and fabulous!"
+
+        // MARK: Phase 4 (E–I)
+        case .qcEyesClosed:
+            return "Honey, those lashes blinked at the wrong moment — let's catch you wide-eyed!"
+        case .qcSoft:
+            return "That shot came out soft as a Sunday morning, baby — let's sharpen it up!"
+        case .qcTooDark:
+            let noun = ctx.subjectNoun ?? "It"
+            return "\(noun) came out dark, baby — let's chase that light one more time!"
+        case .qcBlownOut:
+            let noun = ctx.subjectNoun ?? "It"
+            return "\(noun) went full spotlight, honey — a touch too much! One more take."
+        case .lightMatched:
+            let noun = ctx.subjectNoun ?? "reference"
+            return "Light is matching the \(noun) perfectly, baby — flawless!"
+        case .lightBrighterThan:
+            let noun = ctx.subjectNoun ?? "reference"
+            return "We're brighter than the \(noun), baby — ease that light down a touch!"
+        case .lightDarkerThan:
+            let noun = ctx.subjectNoun ?? "reference"
+            return "We dipped darker than the \(noun), honey — add a little light!"
+        case .lightWarmerThan:
+            let noun = ctx.subjectNoun ?? "reference"
+            return "We're running warm next to the \(noun), baby — cool that light off!"
+        case .lightCoolerThan:
+            let noun = ctx.subjectNoun ?? "reference"
+            return "A little cool next to the \(noun), honey — warm that light up!"
+        case .shotStepHint:
+            let hint = ctx.detail ?? "the next shot"
+            return "\(hint), gorgeous!"
+        case .shotStepAnnounce:
+            let title = ctx.subjectNoun ?? "the next shot"
+            let hint = ctx.detail ?? ""
+            return "Next look, baby: \(title). \(hint)"
+        case .shotCaptured:
+            let title = ctx.subjectNoun ?? "that one"
+            return "Got the \(title), baby — gorgeous!"
+        case .trendingSetIntro:
+            let name = ctx.subjectNoun ?? "this set"
+            let tagline = ctx.detail ?? ""
+            return "Trending, baby: \(name)! \(tagline)"
+        case .matchingReferenceLook:
+            return "Matching your reference look, baby — let's recreate that magic!"
+        case .aiDirectionReady:
+            let line = ctx.detail ?? "let's shoot."
+            return "Your direction just landed, baby: \(line)"
+        case .retakeConfirm:
+            let reason = ctx.detail ?? "That one needs a retake"
+            return "\(reason), honey. Retake while they're still right there?"
+        case .retakeAnnounce:
+            let reason = ctx.detail ?? "That one needs a retake"
+            return "\(reason), baby — let's get that one again!"
+        case .sessionGuideNoteMet:
+            let detail = ctx.detail ?? "that photo is saved"
+            return "Honey, \(detail)"
+        case .sessionGuideNoteOutstanding:
+            let detail = ctx.detail ?? "One photo is required."
+            return "\(detail) We got this, baby!"
+        case .practiceGuideNote:
+            return "Honey, these practice shots aren't tied to anybody — shoot as many as you like, we'll attach one later if she's the one!"
+        case .sessionOutstandingSentence:
+            let detail = ctx.detail ?? "This session still needs its photo."
+            return "\(detail) Let's get it, baby!"
+        case .leavingWithoutTitleSession:
+            let detail = ctx.detail ?? "Leave without the photo?"
+            return "Hold up, baby — \(detail)"
+        case .leavingWithoutTitlePractice:
+            return "Leaving already, baby?"
         }
     }
 }

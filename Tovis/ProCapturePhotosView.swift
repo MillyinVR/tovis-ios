@@ -158,7 +158,12 @@ struct ProCapturePhotosView: View {
     private struct PendingRetake: Identifiable {
         let id = UUID()
         let data: Data
+        /// Canonical QC reason (Calm Mentor text) — the RetakeDialog message
+        /// renders this through `moment`/`phraseCtx` at display time, same
+        /// pattern as `CoachSignal` (docs/design/camera-personality-packs.md §4).
         let reason: String
+        let moment: CoachMoment?
+        let phraseCtx: CoachPhraseContext?
         /// Whether keeping this shot should also complete the current guided step
         /// — carried from the capture decision so a kept-anyway shot advances the
         /// guide exactly as an accepted one would (and a freeform grab doesn't).
@@ -445,7 +450,15 @@ struct ProCapturePhotosView: View {
             }
             // The photographer calls the next shot.
             if settings.speak, !allStepsDone, let step = currentStep {
-                coach?.announce("Next, the \(step.title). \(step.hint)")
+                let voice = settings.personality.voice
+                let renderedHint = CoachVoiceRenderer.render(
+                    .shotStepHint, fallback: step.hint,
+                    ctx: CoachPhraseContext(subjectNoun: step.title, detail: step.hint), voice: voice) ?? step.hint
+                let fallback = "Next, the \(step.title). \(step.hint)"
+                let line = CoachVoiceRenderer.render(
+                    .shotStepAnnounce, fallback: fallback,
+                    ctx: CoachPhraseContext(subjectNoun: step.title, detail: renderedHint), voice: voice) ?? fallback
+                coach?.announce(line)
             }
             // …and the lane says it for a beat before handing back to the coach.
             announceStepInLane()
@@ -573,7 +586,7 @@ struct ProCapturePhotosView: View {
                 guide: guide,
                 currentStepID: currentStepID,
                 completedStepIDs: completedStepIDs,
-                requirementNote: destination.guideNote(requirementMet: requirementMet),
+                requirementNote: destination.guideNote(requirementMet: requirementMet, voice: settings.personality.voice),
                 standardGuideName: standardGuide.name,
                 trendingPacks: trendingPacks,
                 activePackID: activePackID,
@@ -584,7 +597,8 @@ struct ProCapturePhotosView: View {
                 onSelectStep: { currentStepID = $0 },
                 onSelectPack: selectPack,
                 onMatchAPhoto: { presentAfterDrawer { showLookPicker = true } },
-                onAdvanceDirection: advanceLookDirection
+                onAdvanceDirection: advanceLookDirection,
+                voice: settings.personality.voice
             )
         }
         #if DEBUG
@@ -628,7 +642,7 @@ struct ProCapturePhotosView: View {
                 await finalize(retake.data, advanceGuide: retake.advanceGuide, focal: retake.focal)
                 uploading = false
             }
-        }))
+        }, voice: settings.personality.voice))
         .modifier(TerminalUploadDialog(
             isPresented: $showTerminalDecision,
             count: terminalUploads.count,
@@ -667,7 +681,7 @@ struct ProCapturePhotosView: View {
         // The requirement, when it's outstanding — said once, plainly, with the
         // way out named. Extras are never mentioned: they are not owed.
         if destination.owesAPhoto && !requirementMet {
-            lines.append(destination.outstandingSentence)
+            lines.append(destination.outstandingSentence(voice: settings.personality.voice))
             lines.append("You can come back and take it any time.")
         }
         if hasUnsavedWork { lines.append("You still have \(unsavedWorkSummary).") }
@@ -723,6 +737,11 @@ struct ProCapturePhotosView: View {
     private struct RetakeDialog: ViewModifier {
         @Binding var pendingRetake: PendingRetake?
         let keep: (PendingRetake) -> Void
+        /// The active coaching voice — renders the QC reason (`shot.moment`)
+        /// and the dialog's own wrapping sentence (`.retakeConfirm`). Defaults
+        /// to Calm Mentor so any caller that doesn't pass one keeps seeing
+        /// today's text unchanged.
+        var voice: CoachVoice = CalmMentorVoice()
 
         func body(content: Content) -> some View {
             content.confirmationDialog(
@@ -741,8 +760,16 @@ struct ProCapturePhotosView: View {
                     keep(retake)
                 }
             } message: { shot in
-                Text("\(shot.reason). Retake it while they’re still in position?")
+                Text(message(shot))
             }
+        }
+
+        private func message(_ shot: PendingRetake) -> String {
+            let reason = CoachVoiceRenderer.render(
+                shot.moment, fallback: shot.reason, ctx: shot.phraseCtx ?? CoachPhraseContext(), voice: voice) ?? shot.reason
+            let fallback = "\(shot.reason). Retake it while they’re still in position?"
+            return CoachVoiceRenderer.render(
+                .retakeConfirm, fallback: fallback, ctx: CoachPhraseContext(detail: reason), voice: voice) ?? fallback
         }
     }
 
@@ -780,7 +807,7 @@ struct ProCapturePhotosView: View {
     private var exitDialogTitle: String {
         hasUnsavedWork
             ? "Leave with work unfinished?"
-            : destination.leavingWithoutTitle
+            : destination.leavingWithoutTitle(voice: settings.personality.voice)
     }
 
     /// Plain-language list of what's at risk, for the exit dialog. Refused photos
@@ -933,7 +960,7 @@ struct ProCapturePhotosView: View {
             .accessibilityLabel("Shot \(currentStepIndex + 1) of \(guide.steps.count), \(currentStep?.title ?? guide.name)")
             // "1 of 5" spoken alone is a quota. The value says what the count
             // actually means: one photo is owed, the set is a suggestion.
-            .accessibilityValue(destination.guideNote(requirementMet: requirementMet))
+            .accessibilityValue(destination.guideNote(requirementMet: requirementMet, voice: settings.personality.voice))
             .accessibilityHint("Opens the shot guide")
         } else {
             Text("\(phaseLabel) photos".uppercased())
@@ -1387,7 +1414,14 @@ struct ProCapturePhotosView: View {
             // shot leaves the green ring — and a client holding perfectly still
             // is precisely the case where it never does. (See GuidedCaptureArm.)
             autoArm.captureFinished(kept: kept)
-            if kept, settings.speak, let title { coach?.announce("Got the \(title).") }
+            if kept, settings.speak, let title {
+                let voice = settings.personality.voice
+                let fallback = "Got the \(title)."
+                let line = CoachVoiceRenderer.render(
+                    .shotCaptured, fallback: fallback,
+                    ctx: CoachPhraseContext(subjectNoun: title), voice: voice) ?? fallback
+                coach?.announce(line)
+            }
         }
     }
 
@@ -1514,7 +1548,12 @@ struct ProCapturePhotosView: View {
         setCompleteDismissed = false   // a new shot list gets its own completion moment
         currentStepID = guide.steps.first?.id
         if settings.speak, let pack {
-            coach?.announce("Trending set: \(pack.name). \(pack.tagline)")
+            let voice = settings.personality.voice
+            let fallback = "Trending set: \(pack.name). \(pack.tagline)"
+            let line = CoachVoiceRenderer.render(
+                .trendingSetIntro, fallback: fallback,
+                ctx: CoachPhraseContext(subjectNoun: pack.name, detail: pack.tagline), voice: voice) ?? fallback
+            coach?.announce(line)
         }
     }
 
@@ -1529,7 +1568,9 @@ struct ProCapturePhotosView: View {
         lookDirectionIndex = 0
         onionEnabled = true   // the ghost is the point
         if settings.speak {
-            coach?.announce("Matching your reference look.")
+            let fallback = "Matching your reference look."
+            coach?.announce(CoachVoiceRenderer.render(
+                .matchingReferenceLook, fallback: fallback, voice: settings.personality.voice) ?? fallback)
         }
     }
 
@@ -1567,7 +1608,11 @@ struct ProCapturePhotosView: View {
                 guide = enhanced.guide
                 lookDirectionIndex = 0
                 if settings.speak, let first = enhanced.directionLines.first {
-                    coach?.announce("AI direction ready. \(first)")
+                    let fallback = "AI direction ready. \(first)"
+                    let line = CoachVoiceRenderer.render(
+                        .aiDirectionReady, fallback: fallback,
+                        ctx: CoachPhraseContext(detail: first), voice: settings.personality.voice) ?? fallback
+                    coach?.announce(line)
                 }
             } catch {
                 // The measured on-device brief is already driving the shoot —
@@ -1645,7 +1690,12 @@ struct ProCapturePhotosView: View {
         let live = LightMatch.Reading(luma: coach.frameLuma, warmth: coach.frameWarmth,
                                       backgroundLuma: coach.frameBackgroundLuma,
                                       backgroundWarmth: coach.frameWarmth)
-        return LightMatch.verdict(live: live, target: target, noun: noun)
+        let verdict = LightMatch.verdict(live: live, target: target, noun: noun)
+        let voice = settings.personality.voice
+        let rendered = CoachVoiceRenderer.render(
+            verdict.moment, fallback: verdict.label,
+            ctx: CoachPhraseContext(subjectNoun: noun), voice: voice) ?? verdict.label
+        return (label: rendered, ok: verdict.ok)
     }
 
     // MARK: - The lane
@@ -1677,6 +1727,8 @@ struct ProCapturePhotosView: View {
         inputs.coachTipMoment = liveNudge?.moment
         inputs.coachTipPhraseCtx = liveNudge?.phraseCtx
         inputs.stepHint = (guidedShooting && !allStepsDone) ? currentStep?.hint : nil
+        inputs.stepPhraseCtx = (guidedShooting && !allStepsDone)
+            ? currentStep.map { CoachPhraseContext(subjectNoun: $0.title, detail: $0.hint) } : nil
         inputs.errorText = errorMessage
         // "Fundamentals checklist" off now means the coach line doesn't offer to
         // expand into the seven — the pills' setting, following the pills.
@@ -2087,6 +2139,7 @@ struct ProCapturePhotosView: View {
         let focal = MediaFocalPoint(faceCenter: qc.focalPoint)
         if let reason = qc.retakeReason {
             pendingRetake = PendingRetake(data: data, reason: reason,
+                                          moment: qc.retakeMoment, phraseCtx: qc.retakePhraseCtx,
                                           advanceGuide: advancesGuide, focal: focal)
             return false
         }
@@ -2110,10 +2163,20 @@ struct ProCapturePhotosView: View {
             return false
         }
         guard best.qc.passed else {
-            if settings.speak, let reason = best.qc.retakeReason {
-                coach?.announce("\(reason) — let’s take that one again.")
+            if let reason = best.qc.retakeReason {
+                let voice = settings.personality.voice
+                let renderedReason = CoachVoiceRenderer.render(
+                    best.qc.retakeMoment, fallback: reason,
+                    ctx: best.qc.retakePhraseCtx ?? CoachPhraseContext(), voice: voice) ?? reason
+                if settings.speak {
+                    let fallback = "\(reason) — let’s take that one again."
+                    let line = CoachVoiceRenderer.render(
+                        .retakeAnnounce, fallback: fallback,
+                        ctx: CoachPhraseContext(detail: renderedReason), voice: voice) ?? fallback
+                    coach?.announce(line)
+                }
+                errorMessage = "\(renderedReason) — holding for another try."
             }
-            errorMessage = best.qc.retakeReason.map { "\($0) — holding for another try." }
             return false
         }
         shutterFeedback()

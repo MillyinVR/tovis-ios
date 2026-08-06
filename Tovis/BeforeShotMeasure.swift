@@ -129,8 +129,13 @@ enum LightMatch {
     /// Compare live against target. Background-scoped only when BOTH sides have
     /// a background reading — comparing a background luma against a whole-frame
     /// one would invent a mismatch out of nothing.
+    ///
+    /// `moment` is the stable tag a `CoachVoice` renders `label` from — see
+    /// docs/design/camera-personality-packs.md §2.1. `label` itself stays the
+    /// canonical Calm Mentor text (pinned by `LightMatchTests`); rendering
+    /// happens downstream, at the call site that actually shows/speaks it.
     static func verdict(live: Reading, target: Reading, noun: String)
-        -> (label: String, ok: Bool) {
+        -> (label: String, ok: Bool, moment: CoachMoment) {
         let scoped = live.backgroundLuma != nil && target.backgroundLuma != nil
         let liveLuma = (scoped ? live.backgroundLuma : nil) ?? live.luma
         let targetLuma = (scoped ? target.backgroundLuma : nil) ?? target.luma
@@ -146,14 +151,16 @@ enum LightMatch {
         let lumaSeverity = abs(dLuma) / CoachTuning.lightMatchLumaTolerance
         let warmthSeverity = abs(dWarmth) / CoachTuning.lightMatchWarmthTolerance
         if lumaSeverity <= 1, warmthSeverity <= 1 {
-            return ("Light matches the \(noun)", true)
+            return ("Light matches the \(noun)", true, .lightMatched)
         }
         if lumaSeverity >= warmthSeverity {
-            return (dLuma > 0 ? "Brighter than the \(noun) — dim a touch"
-                              : "Darker than the \(noun) — add light", false)
+            return dLuma > 0
+                ? ("Brighter than the \(noun) — dim a touch", false, .lightBrighterThan)
+                : ("Darker than the \(noun) — add light", false, .lightDarkerThan)
         }
-        return (dWarmth > 0 ? "Warmer than the \(noun) — cool the light"
-                            : "Cooler than the \(noun) — warm the light", false)
+        return dWarmth > 0
+            ? ("Warmer than the \(noun) — cool the light", false, .lightWarmerThan)
+            : ("Cooler than the \(noun) — warm the light", false, .lightCoolerThan)
     }
 }
 

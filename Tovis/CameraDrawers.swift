@@ -406,6 +406,10 @@ struct ShotGuideDrawer: View {
     let onSelectPack: (ProShotPack?) -> Void
     let onMatchAPhoto: () -> Void
     let onAdvanceDirection: () -> Void
+    /// The active coaching voice — renders the current step's hint
+    /// (`.shotStepHint`). Defaults to Calm Mentor so any caller that doesn't
+    /// pass one keeps seeing today's text unchanged.
+    var voice: CoachVoice = CalmMentorVoice()
 
     @Environment(\.dismiss) private var dismiss
 
@@ -528,6 +532,13 @@ struct ShotGuideDrawer: View {
         .accessibilityLabel("Shot packs")
     }
 
+    /// The current step's how-to, in the active voice (`.shotStepHint`).
+    private func renderedHint(_ step: ShotStep) -> String {
+        CoachVoiceRenderer.render(
+            .shotStepHint, fallback: step.hint,
+            ctx: CoachPhraseContext(subjectNoun: step.title, detail: step.hint), voice: voice) ?? step.hint
+    }
+
     private func stepRow(_ step: ShotStep) -> some View {
         let done = completedStepIDs.contains(step.id)
         let current = step.id == currentStepID
@@ -555,7 +566,7 @@ struct ShotGuideDrawer: View {
                         .font(current ? BrandFont.display(15, .semibold) : BrandFont.body(14.5))
                         .foregroundStyle(done ? BrandColor.textMuted : BrandColor.textPrimary)
                     if current {
-                        Text(step.hint)
+                        Text(renderedHint(step))
                             .font(BrandFont.body(13))
                             .foregroundStyle(BrandColor.textSecondary)
                             .multilineTextAlignment(.leading)

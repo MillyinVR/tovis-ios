@@ -39,6 +39,33 @@ enum CoachMoment: Hashable, CaseIterable, Sendable {
     case laneHoldShooting, laneSetComplete, laneCalibrationDrift
 
     case dimensionCleared
+
+    // MARK: - Phase 4 (docs/design/camera-personality-packs.md §4, sites E–I)
+    // Deferred-scope moments: post-capture QC, before/after light matching,
+    // the directed-shoot step hint, the camera's spoken announcements/dialogs,
+    // and the session-vs-practice framing copy. Same architecture as A–D —
+    // these just reach three more decision layers downstream of the live coach.
+
+    /// E — `PhotoQC`'s post-capture retake verdict.
+    case qcEyesClosed, qcSoft, qcTooDark, qcBlownOut
+
+    /// F — `BeforeShotMeasure.LightMatch`'s before/after light verdict.
+    case lightMatched, lightBrighterThan, lightDarkerThan, lightWarmerThan, lightCoolerThan
+
+    /// G — `ShotGuide.ShotStep.hint`, wherever it's shown as the standing
+    /// how-to (the guide sheet's current-step row, the lane's resting/transient
+    /// step text). `title` stays canonical everywhere — it's also the step's
+    /// `Identifiable` id.
+    case shotStepHint
+
+    /// H — `ProCapturePhotosView`'s `coach?.announce(...)` call sites and the
+    /// photographer-check retake dialog.
+    case shotStepAnnounce, shotCaptured, trendingSetIntro, matchingReferenceLook, aiDirectionReady
+    case retakeConfirm, retakeAnnounce
+
+    /// I — `ProCameraDestination`'s session/practice framing copy.
+    case sessionGuideNoteMet, sessionGuideNoteOutstanding, practiceGuideNote
+    case sessionOutstandingSentence, leavingWithoutTitleSession, leavingWithoutTitlePractice
 }
 
 extension CoachCategory {
@@ -60,18 +87,27 @@ extension CoachCategory {
 /// Interpolation payload for the handful of moments whose canonical text has
 /// a `\(...)` in it — covers every one seen in the launch scope without a
 /// pack needing to know `FrameContext` internals.
-struct CoachPhraseContext: Sendable, Equatable {
+nonisolated struct CoachPhraseContext: Sendable, Equatable {
     /// `LevelCoach`'s tilt direction ("left"/"right").
     var direction: String?
-    /// The cleared dimension's spoken name, for `.dimensionCleared`.
+    /// The cleared dimension's spoken name, for `.dimensionCleared`; the shot
+    /// title, the light-match noun ("before"/"reference"), the QC subject
+    /// ("It"/"Their face") for the Phase 4 moments that name a thing.
     var subjectNoun: String?
     /// Reserved for a future moment that needs a count.
     var count: Int?
+    /// A second interpolated string for Phase 4 moments that wrap ANOTHER
+    /// already-rendered line rather than just naming a thing — a step's hint,
+    /// a pack's tagline, an AI direction line, a QC retake reason already run
+    /// through its own moment. Keeps the wrapping moment's pack copy from
+    /// re-authoring content that another render call already owns.
+    var detail: String?
 
-    init(direction: String? = nil, subjectNoun: String? = nil, count: Int? = nil) {
+    init(direction: String? = nil, subjectNoun: String? = nil, count: Int? = nil, detail: String? = nil) {
         self.direction = direction
         self.subjectNoun = subjectNoun
         self.count = count
+        self.detail = detail
     }
 }
 
