@@ -68,6 +68,15 @@ public struct LooksFeedItem: Decodable, Sendable, Identifiable {
     /// degrades to nil rather than a bad crop.
     public var focalPoint: MediaFocalPoint? { MediaFocalPoint(x: focalX, y: focalY) }
 
+    /// Thumb when the row has one, else the full asset — the grid tile's source.
+    /// Same shape as `LookDetail.thumbOrFullURL`, and it lives here rather than
+    /// in the view for a reason: written at the call site as
+    /// `(thumbUrl ?? url).flatMap(URL.init(string:))` the type-checker resolves
+    /// the `??` at `String??`, where the left side can never be nil — so `url`
+    /// is silently never used and a look with no thumbnail renders the
+    /// placeholder instead of its own image. Coalesce first, THEN parse.
+    public var thumbOrFullURL: URL? { URL(string: thumbUrl ?? url) }
+
     /// The before/after pair to render, when the primary is a paired image.
     /// Nil for videos or unpaired looks (fall back to the single-image slide).
     public var beforeAfterPair: (before: URL, after: URL)? {

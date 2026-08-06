@@ -641,11 +641,17 @@ final class SessionModel {
         await PushManager.shared.enable(
             client: client,
             deviceId: client.deviceId,
+            // Bind the weak reference HERE, not inside the Task — referencing the
+            // captured optional from concurrently-executing code is an error under
+            // the Swift 6 language mode. Same shape as CameraController's
+            // interruption observers and CoachEngine's analyzer sink.
             onActivity: { [weak self] in
-                Task { @MainActor in self?.signalRefresh() }
+                guard let self else { return }
+                Task { @MainActor in self.signalRefresh() }
             },
             onDeepLink: { [weak self] href in
-                Task { @MainActor in self?.handlePushDeepLink(href: href) }
+                guard let self else { return }
+                Task { @MainActor in self.handlePushDeepLink(href: href) }
             }
         )
     }

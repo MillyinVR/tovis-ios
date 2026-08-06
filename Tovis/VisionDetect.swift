@@ -7,7 +7,10 @@
 import CoreGraphics
 import Vision
 
-enum VisionDetect {
+/// `nonisolated` as a whole: both callers named above run off the main actor
+/// (the live frame queue and the analyzer's detached task), and nothing here
+/// holds state — the handler comes in as an argument.
+nonisolated enum VisionDetect {
     /// Largest face, normalized with a TOP-LEFT origin in the handler's
     /// (oriented) space. Nil when no face is found.
     static func largestFace(performing handler: VNImageRequestHandler) -> CGRect? {

@@ -100,7 +100,7 @@ enum SessionByteVault {
     }
 
     /// Read spilled bytes back (for upload). Nil if the file is gone.
-    static func read(_ url: URL) -> Data? {
+    nonisolated static func read(_ url: URL) -> Data? {
         try? Data(contentsOf: url)
     }
 

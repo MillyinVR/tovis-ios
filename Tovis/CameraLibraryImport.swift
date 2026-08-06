@@ -30,12 +30,12 @@ enum CameraLibraryImport {
     /// Long-edge budget for an imported photo. Matches the order of a full-frame
     /// still from the capture path, so a library import isn't visibly softer in
     /// the gallery next to shots taken in-app.
-    static let maxPixel: CGFloat = 4032
+    nonisolated static let maxPixel: CGFloat = 4032
 
     /// Hard ceiling for the encoded bytes. The signing route rejects anything
     /// over 30MB (`UPLOAD_MAX_BYTES`) before a byte is transferred, so an
     /// oversized import must be re-encoded here rather than fail at presign.
-    static let maxBytes = 24 * 1024 * 1024
+    nonisolated static let maxBytes = 24 * 1024 * 1024
 
     /// A library photo, made ready for the existing upload pipeline.
     struct Imported: Sendable {

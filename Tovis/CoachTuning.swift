@@ -26,7 +26,7 @@ enum CoachTuning {
     static let heavyFPS: Double = 2.5
     /// Longest side the CoreImage / Vision aggregate math runs at — full-res frames
     /// are needless cost for luma/edge/segmentation averages.
-    static let workingMaxDim: CGFloat = 480
+    nonisolated static let workingMaxDim: CGFloat = 480
     /// Minimum spacing between auto-harvested keepers (seconds).
     static let minHarvestInterval: Double = 2.5
     /// Cap on the UNREVIEWED auto-harvest tray (reviewing re-opens headroom).
@@ -127,7 +127,7 @@ enum CoachTuning {
     // MARK: - Pose
 
     /// Minimum Vision joint confidence to trust a body point.
-    static let poseJointConfidence: Float = 0.3
+    nonisolated static let poseJointConfidence: Float = 0.3
     /// A confident joint within this normalized distance of any edge = clipping.
     nonisolated(unsafe) static var poseEdgePad: Double = 0.02
 

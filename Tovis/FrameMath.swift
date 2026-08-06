@@ -6,10 +6,16 @@
 // queue; everything else shares `FrameMath.context`).
 import CoreImage
 
-enum FrameMath {
+/// `nonisolated` as a whole: every member is a pure function of its arguments
+/// with no state to protect, and every caller that matters (the frame queue, the
+/// QC/reference detached tasks) runs off the main actor. Under the project's
+/// default main-actor isolation the whole namespace would otherwise belong to
+/// the main actor, which is exactly backwards for the one file guaranteed never
+/// to touch main-actor state.
+nonisolated enum FrameMath {
     /// Shared low-priority context for off-frame-queue callers (QC, reference
     /// light stamps). CIContext is thread-safe.
-    nonisolated(unsafe) static let context = CIContext(options: [.priorityRequestLow: true])
+    static let context = CIContext(options: [.priorityRequestLow: true])
 
     /// Average color of an image (CIAreaAverage → one pixel), each channel 0…1.
     /// Nil when the extent is degenerate.

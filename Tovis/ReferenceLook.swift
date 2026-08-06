@@ -43,13 +43,13 @@ enum ReferenceLookAnalyzer {
         await Task.detached(priority: .userInitiated) { analyzeSync(data) }.value
     }
 
-    private static func analyzeSync(_ data: Data) -> ReferenceLook? {
+    nonisolated private static func analyzeSync(_ data: Data) -> ReferenceLook? {
         autoreleasepool { analyzePooled(data) }
     }
 
     /// Full-res CoreImage/Vision on a detached-task thread — pooled by
     /// `analyzeSync` so the intermediates drain when the analysis ends.
-    private static func analyzePooled(_ data: Data) -> ReferenceLook? {
+    nonisolated private static func analyzePooled(_ data: Data) -> ReferenceLook? {
         // The ghost only ever renders at screen size — a full-res library pick
         // (or 48 MP still) would otherwise stay decoded for the whole shoot.
         guard let uiImage = ImageDownsample.thumbnailSync(
@@ -102,7 +102,7 @@ enum ReferenceLookAnalyzer {
     /// Synthesize the shot brief: what the reference measurably IS becomes
     /// what the coach directs toward — big body geometry first, hands after
     /// (direction order = rule order).
-    private static func brief(
+    nonisolated private static func brief(
         face: CGRect?, pose: PoseSignal?, fill: Double?, aspect: Double, eyesClosed: Bool
     ) -> ShotStep {
         var rules: [PoseRule] = []
