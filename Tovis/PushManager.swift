@@ -52,6 +52,16 @@ final class PushManager {
             onDeepLink(pendingDeepLinkHref)
         }
 
+        #if DEBUG
+        // DEBUG ONLY — the Simulator has no synthetic-tap path (see
+        // `ContentView`'s `TOVIS_DEBUG_OPEN_EXPORT` and friends), so the
+        // system permission alert this triggers is a modal nothing on this
+        // machine can dismiss — it blocks every screen behind it, forever.
+        // Skipping it here (not at the `startPush()` call site) keeps
+        // `enable`'s actual contract — ask, then register — untouched for
+        // every other caller and for Release, where this branch doesn't exist.
+        if ProcessInfo.processInfo.environment["TOVIS_DEBUG_SKIP_PUSH_PROMPT"] == "1" { return }
+        #endif
         let center = UNUserNotificationCenter.current()
         let granted =
             (try? await center.requestAuthorization(options: [.alert, .badge, .sound]))

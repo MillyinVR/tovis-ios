@@ -1159,6 +1159,18 @@ struct RootView: View {
     /// all come from the real renderer.
     @State private var debugExport = ProcessInfo.processInfo
         .environment["TOVIS_DEBUG_OPEN_EXPORT"] == "1"
+    /// DEBUG ONLY — open "All coaching settings" (the personality picker +
+    /// every other coach toggle) straight from the root, same reasoning as
+    /// `debugExport` above: no camera, no session, no booking, so the
+    /// personality picker stays reachable and — presented full-screen rather
+    /// than as its usual half-height sheet — fully on screen without a
+    /// scroll this machine can't perform.
+    @State private var debugCoachSettings = ProcessInfo.processInfo
+        .environment["TOVIS_DEBUG_OPEN_COACH_SETTINGS"] == "1"
+    /// DEBUG ONLY — see `CoachVoiceDebugPreview`: the coach lane / dimensions
+    /// drawer, personality-rendered, with no camera or CoreMotion required.
+    @State private var debugCoachPreview = ProcessInfo.processInfo
+        .environment["TOVIS_DEBUG_OPEN_COACH_PREVIEW"] == "1"
     #endif
 
     var body: some View {
@@ -1198,6 +1210,12 @@ struct RootView: View {
                 context: DebugExportSample.context(),
                 model: DebugExportSample.model()
             )
+        }
+        .fullScreenCover(isPresented: $debugCoachSettings) {
+            CoachSettingsSheet(settings: CoachSettings())
+        }
+        .fullScreenCover(isPresented: $debugCoachPreview) {
+            CoachVoiceDebugPreview()
         }
         #endif
         .onOpenURL { url in
