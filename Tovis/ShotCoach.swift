@@ -118,7 +118,7 @@ enum CoachDebug {
 }
 
 /// Key body joints the pose engine reasons about (subset of Vision's set).
-enum PoseJoint: Sendable, Hashable {
+nonisolated enum PoseJoint: Sendable, Hashable {
     case leftShoulder, rightShoulder, leftWrist, rightWrist, leftHip, rightHip, neck, nose
 }
 
@@ -127,7 +127,7 @@ enum PoseJoint: Sendable, Hashable {
 /// (top-left normalized). (Camera tilt is judged by `LevelCoach` from the
 /// device's gravity vector — far more reliable than inferring it from the
 /// subject's shoulders.)
-struct PoseSignal: Sendable {
+nonisolated struct PoseSignal: Sendable {
     /// A confidently-detected joint sits hard against a frame edge → subject is
     /// being clipped.
     let edgeClipped: Bool
@@ -139,7 +139,7 @@ struct PoseSignal: Sendable {
 /// fixed app-side (these kinds map to evaluators in `PoseCoach`); the server
 /// composes current trends from it, and unknown kinds are dropped at parse
 /// time so the server can ship new vocabulary ahead of old app builds.
-struct PoseRule: Sendable, Equatable {
+nonisolated struct PoseRule: Sendable, Equatable {
     enum Kind: String, Sendable {
         /// A wrist within `maxFaceHeights` of the face center.
         case handNearFace
@@ -163,7 +163,7 @@ struct PoseRule: Sendable, Equatable {
 /// #1 real-world beauty-photo killer; a strong green (fluorescent) or warm/yellow
 /// (incandescent) cast misrepresents skin tone and the work. Daylight (~neutral) is
 /// the target. All values from the frame's average color; no reference card.
-struct ColorSignal: Sendable {
+nonisolated struct ColorSignal: Sendable {
     /// Spread of warm↔cool across the frame, 0…~1 — high = mixed light sources.
     let mixed: Double
     /// Global green tint, signed (+green / −magenta). Strong + = fluorescent.
@@ -652,7 +652,7 @@ struct BackgroundCoach: ShotCoach {
 /// by the frame's w/h aspect before angles/distances mean anything physical.
 /// Shared by the live PoseCoach (3:4 frame) and the reference-look analyzer
 /// (the reference image's own aspect).
-enum PoseGeometry {
+nonisolated enum PoseGeometry {
     /// The live camera's upright frame aspect (w/h, .photo preset).
     static let liveFrameAspect = 3.0 / 4.0
 

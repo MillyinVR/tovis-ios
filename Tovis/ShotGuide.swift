@@ -14,7 +14,7 @@ import TovisKit
 /// for THIS shot" (a back-of-cut wants no face and a filled frame; a detail
 /// shot wants extra sharpness and doesn't care about the backdrop) instead of
 /// scoring every frame like a generic portrait.
-struct ShotExpectations: Sendable, Equatable {
+nonisolated struct ShotExpectations: Sendable, Equatable {
     enum Face: Sendable, Equatable {
         /// The subject's face belongs in this shot (front / profile work).
         case required
@@ -56,7 +56,7 @@ struct ShotExpectations: Sendable, Equatable {
 }
 
 /// One directed shot in a guide.
-struct ShotStep: Identifiable, Sendable, Equatable {
+nonisolated struct ShotStep: Identifiable, Sendable, Equatable {
     let id: String
     let title: String   // e.g. "Left profile"
     let hint: String    // e.g. "45° to the window, chin slightly down"
@@ -75,7 +75,7 @@ struct ShotStep: Identifiable, Sendable, Equatable {
 }
 
 /// A named, ordered set of shots for a kind of service.
-struct ShotGuide: Sendable, Equatable {
+nonisolated struct ShotGuide: Sendable, Equatable {
     let name: String
     let steps: [ShotStep]
 
@@ -101,7 +101,7 @@ struct ShotGuide: Sendable, Equatable {
     /// the existing guide machinery (expectations condition the coaches; pose
     /// rules gate readiness). Unknown pose-rule kinds are dropped here — the
     /// server can ship new vocabulary ahead of this build.
-    init(pack: ProShotPack) {
+    nonisolated init(pack: ProShotPack) {
         self.name = pack.name
         self.steps = pack.steps.map { step in
             let face: ShotExpectations.Face

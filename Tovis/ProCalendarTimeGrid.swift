@@ -998,7 +998,7 @@ struct ProCalendarTimeGrid: View {
                         // thing pushed off a tight tile — acceptable for a
                         // warning that degrades, wrong for a fact that simply
                         // disappears without saying so.
-                        if let recurring {
+                        if recurring != nil {
                             // The WORDS ride the tile's own accessibility
                             // label (the tile combines its children), so the
                             // glyph itself is hidden rather than announcing a

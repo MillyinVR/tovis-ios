@@ -28,8 +28,8 @@ enum CameraVisionPayload {
     /// Downscale + JPEG-encode an image for an analysis request body. Claude
     /// reads nothing above ~1568 px on the long edge, and the request has to
     /// stay well under the server's body cap — so shrink before base64.
-    static func imagePayload(_ image: UIImage, maxDimension: CGFloat,
-                             quality: CGFloat) -> ProCameraVisionImage? {
+    nonisolated static func imagePayload(_ image: UIImage, maxDimension: CGFloat,
+                                         quality: CGFloat) -> ProCameraVisionImage? {
         let size = image.size
         guard size.width > 0, size.height > 0 else { return nil }
 

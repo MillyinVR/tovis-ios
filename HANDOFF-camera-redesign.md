@@ -755,6 +755,20 @@ nil-coalescing, `ProCalendarTimeGrid` unused var). **None of them touch
 `AVCaptureDevice` or the session queue**, which is where the scope line was
 drawn. Filed as a follow-up.
 
+**Follow-up closed in #279 — whole app is now at 0 warnings.** Same line held:
+no `@preconcurrency import`, `nonisolated` at the type level where the type is
+genuinely pure (`FrameMath`, `VisionDetect`, the pose vocabulary, the shot-guide
+value types), per-declaration where it isn't. `FrameMath.context` lost its
+`nonisolated(unsafe)` — CIContext is Sendable, so the qualifier was claiming an
+audit the type doesn't need.
+
+⚠️ One of the two "genuinely cosmetic" ones was not cosmetic. `LooksGrid`'s
+`(look.thumbUrl ?? look.url).flatMap(URL.init(string:))` resolves the `??` at
+`String??`, so the left side can never be nil and `look.url` is dead — a look
+whose row carries no `thumbUrl` was rendering the placeholder sheen instead of
+its own image. Worth remembering the next time a nil-coalescing warning gets
+waved through as tidy-up: the compiler was reporting a bug, not a style note.
+
 ### 2026-08-05 — build 37 STILL crashes; the crash log names white balance
 
 > 🔴 **Tori must archive BUILD 38.** Build 37's camera is dead on every

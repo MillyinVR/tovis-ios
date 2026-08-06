@@ -44,7 +44,7 @@ struct LookGridCard: View {
             VStack(alignment: .leading, spacing: 0) {
                 ZStack(alignment: .topLeading) {
                     Group {
-                        if let url = (look.thumbUrl ?? look.url).flatMap(URL.init(string:)) {
+                        if let url = look.thumbOrFullURL {
                             // Focal-aware cover crop (camera C6c) — center the 3:4
                             // tile on the subject; null focal → centered fill.
                             FocalCoverImage(url: url, focal: look.focalPoint) { CardSheen() }

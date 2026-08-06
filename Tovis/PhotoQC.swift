@@ -66,7 +66,7 @@ enum PhotoQC {
     /// Whether the largest face in an image reads as eyes-closed — used by the
     /// reference-look analyzer so a closed-eye reference (shimmer looks) doesn't
     /// get blink-blocked when the pro recreates it.
-    static func eyesClosedRead(in image: CIImage) -> Bool {
+    nonisolated static func eyesClosedRead(in image: CIImage) -> Bool {
         guard let detector = faceDetector else { return false }
         let faces = detector.features(in: image, options: [CIDetectorEyeBlink: true])
             .compactMap { $0 as? CIFaceFeature }
@@ -74,14 +74,14 @@ enum PhotoQC {
         return face.leftEyeClosed && face.rightEyeClosed
     }
 
-    private static func evaluateSync(_ jpeg: Data, checkBlink: Bool) -> PhotoQCReport {
+    nonisolated private static func evaluateSync(_ jpeg: Data, checkBlink: Bool) -> PhotoQCReport {
         // Full-res CoreImage/detector work on a detached-task thread — pool it
         // so the autoreleased intermediates drain per evaluation (bursts run
         // several back-to-back), same reasoning as the live coach's pool.
         autoreleasepool { evaluatePooled(jpeg, checkBlink: checkBlink) }
     }
 
-    private static func evaluatePooled(_ jpeg: Data, checkBlink: Bool) -> PhotoQCReport {
+    nonisolated private static func evaluatePooled(_ jpeg: Data, checkBlink: Bool) -> PhotoQCReport {
         guard let full = CIImage(data: jpeg, options: [.applyOrientationProperty: true]) else {
             // Unreadable bytes → don't block the flow; upload will surface it.
             return PhotoQCReport(retakeReason: nil, sharpness: 1, luma: 0.5,

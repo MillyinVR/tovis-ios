@@ -45,7 +45,7 @@ enum CardScanner {
         }.value
     }
 
-    private static func readSync(jpeg: Data, cardRegion: CGRect, target: CalibrationTarget) -> Reading? {
+    nonisolated private static func readSync(jpeg: Data, cardRegion: CGRect, target: CalibrationTarget) -> Reading? {
         guard let full = CIImage(data: jpeg, options: [.applyOrientationProperty: true]) else {
             return nil
         }
@@ -70,7 +70,7 @@ enum CardScanner {
     /// Find the target-shaped rectangle and warp it flat. Nil = no candidate.
     /// The aspect band comes from the target (CR-80 card ≈ 0.63; a ColorChecker's
     /// 6×4 patch array ≈ 1.5), so detection is tuned to whatever's being scanned.
-    private static func detectAndRectify(_ image: CIImage, target: CalibrationTarget) -> CIImage? {
+    nonisolated private static func detectAndRectify(_ image: CIImage, target: CalibrationTarget) -> CIImage? {
         let request = VNDetectRectanglesRequest()
         request.minimumAspectRatio = Float(target.detectionAspectMin)
         request.maximumAspectRatio = Float(target.detectionAspectMax)
@@ -100,7 +100,7 @@ enum CardScanner {
 
     /// Sample the swatch grid + neutral region from a flattened target image,
     /// using the target's own geometry.
-    private static func sampleGrid(_ card: CIImage, target: CalibrationTarget) -> Reading? {
+    nonisolated private static func sampleGrid(_ card: CIImage, target: CalibrationTarget) -> Reading? {
         guard card.extent.width > 8, card.extent.height > 8 else { return nil }
         func sample(_ rect: CGRect) -> RGB {
             let cell = FrameMath.crop(card, normalizedTopLeft: rect)
@@ -128,7 +128,7 @@ enum CardCorrection {
         }.value
     }
 
-    private static func applySync(_ matrix: ColorMatrix3x3, to jpeg: Data) -> Data? {
+    nonisolated private static func applySync(_ matrix: ColorMatrix3x3, to jpeg: Data) -> Data? {
         guard let image = CIImage(data: jpeg, options: [.applyOrientationProperty: true]) else {
             return nil
         }

@@ -44,7 +44,7 @@ struct BeforeShotStamp: Equatable, Sendable {
 enum BeforeShotMeasure {
     /// Working resolution for the stamp. Larger than the old light-only stamp's
     /// 240 px because segmentation and face detection are now part of it.
-    static let workingMaxDim: CGFloat = 480
+    nonisolated static let workingMaxDim: CGFloat = 480
 
     /// Measure a before-reference's bytes. Nil when they don't decode.
     /// Runs off the caller's actor.
@@ -54,7 +54,7 @@ enum BeforeShotMeasure {
         }.value
     }
 
-    private static func measureSync(_ data: Data) -> BeforeShotStamp? {
+    nonisolated private static func measureSync(_ data: Data) -> BeforeShotStamp? {
         guard let full = CIImage(data: data, options: [.applyOrientationProperty: true])
         else { return nil }
         let working = FrameMath.downscaled(full, maxDim: workingMaxDim)
@@ -98,7 +98,7 @@ enum BeforeShotMeasure {
     /// around the reference's own number, clamped to a sane range — the same
     /// derivation "match a look" already used, in one place so the two can't
     /// drift into disagreeing about what "same framing" means.
-    static func fillBand(matching fill: Double, tolerance: Double = 0.12)
+    nonisolated static func fillBand(matching fill: Double, tolerance: Double = 0.12)
         -> ClosedRange<Double>? {
         guard fill > 0.02 else { return nil }
         let lower = max(0.05, fill - tolerance)

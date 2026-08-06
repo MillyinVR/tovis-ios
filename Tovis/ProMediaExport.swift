@@ -270,5 +270,5 @@ final class ProMediaExportModel {
     /// Long-edge budget for a source about to be cropped into a 1920-tall canvas.
     /// Generous enough that a 9:16 crop of a wide source still oversamples, small
     /// enough that two of them fit comfortably in memory.
-    private static let exportMaxPixel: CGFloat = 3000
+    nonisolated private static let exportMaxPixel: CGFloat = 3000
 }

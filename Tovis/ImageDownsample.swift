@@ -10,7 +10,7 @@ import UIKit
 
 enum ImageDownsample {
     /// Long-edge budget for a full-screen ghost/preview (≈ 3x display scale).
-    static let screenMaxPixel: CGFloat = UprightImageDecode.screenMaxPixel
+    nonisolated static let screenMaxPixel: CGFloat = UprightImageDecode.screenMaxPixel
 
     /// Decode `data` to at most `maxPixel` on its long edge, applying EXIF
     /// orientation. Nil when the bytes don't decode.
