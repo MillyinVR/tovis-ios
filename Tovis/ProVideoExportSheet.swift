@@ -63,7 +63,7 @@ struct ProVideoExportSheet: View {
             await loadPreview()
         }
         .sheet(item: $sharing) { file in
-            ShareSheet(items: [file.url])
+            ShareSheet(items: [file.url]) { try? FileManager.default.removeItem(at: file.url) }
         }
     }
 
@@ -181,6 +181,7 @@ struct ProVideoExportSheet: View {
         defer { rendering = false }
         do {
             let url = try await model.renderVideoExport(context)
+            defer { try? FileManager.default.removeItem(at: url) }
             await model.savePhotosCopyVideo(of: url)
         } catch {
             model.setFailure("Couldn’t build that export. Try again.")
