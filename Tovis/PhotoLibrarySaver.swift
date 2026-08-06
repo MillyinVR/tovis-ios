@@ -31,6 +31,23 @@ enum PhotoLibrarySaver {
         }
     }
 
+    /// Save one video, from a FILE URL rather than `Data` — unlike a photo
+    /// resource, Photos needs a real container on disk to import a video from;
+    /// the raw-`Data` overload has no file-extension hint for it to read the
+    /// format from. `false` covers both a declined prompt and a failed write,
+    /// same as `save(_:)` — the caller keeps custody of the file either way.
+    static func saveVideo(fileURL: URL) async -> Bool {
+        guard await authorized() else { return false }
+        return await withCheckedContinuation { continuation in
+            PHPhotoLibrary.shared().performChanges {
+                PHAssetCreationRequest.forAsset()
+                    .addResource(with: .video, fileURL: fileURL, options: nil)
+            } completionHandler: { success, _ in
+                continuation.resume(returning: success)
+            }
+        }
+    }
+
     /// Current add-only permission, prompting once if the pro hasn't been asked.
     private static func authorized() async -> Bool {
         let current = PHPhotoLibrary.authorizationStatus(for: .addOnly)

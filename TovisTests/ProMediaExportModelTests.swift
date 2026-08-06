@@ -91,4 +91,27 @@ struct ProMediaExportModelTests {
         #expect(model.exportWatermark.signature == "@tori")
         #expect(model.exportWatermark.showsPlatformMark == false)
     }
+
+    // Video can now export, for every identity — the PR #285 follow-up that
+    // hardcoded `canExport` to `!isVideo` is gone. It still never pairs: there
+    // is no diptych format for a clip, so `hasPair` stays false even when a
+    // `before` happens to be set.
+    @Test func canExportIsTrueForVideo() {
+        let context = ProMediaExportContext(main: .bytes(Data()), isVideo: true)
+        #expect(context.canExport == true)
+    }
+
+    @Test func hasPairStaysFalseForVideoEvenWithABeforeSet() {
+        let context = ProMediaExportContext(
+            main: .bytes(Data()), before: .bytes(Data()), isVideo: true
+        )
+        #expect(context.hasPair == false)
+    }
+
+    @Test func hasPairIsTrueForAPhotoWithABeforeSet() {
+        let context = ProMediaExportContext(
+            main: .bytes(Data()), before: .bytes(Data()), isVideo: false
+        )
+        #expect(context.hasPair == true)
+    }
 }
