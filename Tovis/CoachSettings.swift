@@ -3,6 +3,25 @@
 // the on-screen ring). Mirrors the "real photographer guiding you" intent.
 import SwiftUI
 
+/// Which voice renders the coach's tips — tone only (see CoachVoice.swift).
+/// The decisions (what's wrong, when to act) never change with this.
+enum CoachPersonality: String, CaseIterable, Identifiable, Hashable, Sendable {
+    case calmMentor, hypeBestie, straightShooter, editorialDirector, dragQueenBestie
+    var id: String { rawValue }
+
+    var voice: CoachVoice {
+        switch self {
+        case .calmMentor: return CalmMentorVoice()
+        case .hypeBestie: return HypeBestieVoice()
+        case .straightShooter: return StraightShooterVoice()
+        case .editorialDirector: return EditorialDirectorVoice()
+        case .dragQueenBestie: return DragQueenBestieVoice()
+        }
+    }
+
+    var displayName: String { voice.displayName }
+}
+
 @Observable
 final class CoachSettings {
     /// Show the single prioritized coaching tip as an on-screen chip.
@@ -38,9 +57,17 @@ final class CoachSettings {
     /// hands, light direction). Consent-gated on first use — the photo is
     /// analyzed in-flight and never stored.
     var aiEnhanceLooks: Bool { didSet { persist(\.aiEnhanceLooks, "aiEnhanceLooks") } }
+    /// Which voice renders the coach's tips. Device-local, per-pro, same as
+    /// every other coach preference — no server-synced preferences model
+    /// exists for camera behavior yet.
+    var personality: CoachPersonality {
+        didSet { UserDefaults.standard.set(personality.rawValue, forKey: Self.key("personality")) }
+    }
 
     init() {
         let d = UserDefaults.standard
+        personality = (d.string(forKey: Self.key("personality"))
+            .flatMap(CoachPersonality.init(rawValue:))) ?? .calmMentor
         showNudge = d.object(forKey: Self.key("showNudge")) as? Bool ?? true
         showChecklist = d.object(forKey: Self.key("showChecklist")) as? Bool ?? true
         showGuides = d.object(forKey: Self.key("showGuides")) as? Bool ?? true

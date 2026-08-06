@@ -401,6 +401,25 @@ final class CoachEngine {
     /// ring). Read live (not captured) so the tuning console applies instantly.
     var isReady: Bool { readiness >= CoachTuning.readyThreshold }
 
+    /// The pro's chosen coaching voice — read live off `settings` so changing
+    /// it mid-session takes effect on the very next tip, same as every other
+    /// coach toggle.
+    var voice: CoachVoice { settings.personality.voice }
+
+    /// The nudge's line, in the active voice, with `why` appended when the
+    /// voice's chattiness calls for it (`CoachVoice.includesWhy(for:)`) — the
+    /// corrective itself is always canonical-or-personality text; only
+    /// whether the reasoning rides along varies by pack.
+    private func spokenLine(for nudge: CoachNudge) -> String {
+        let rendered = CoachVoiceRenderer.render(
+            nudge.moment, fallback: nudge.message,
+            ctx: nudge.phraseCtx ?? CoachPhraseContext(), voice: voice) ?? nudge.message
+        guard let moment = nudge.moment, voice.includesWhy(for: moment),
+              let why = statuses.first(where: { $0.category == nudge.category })?.why
+        else { return rendered }
+        return "\(rendered) \(why)"
+    }
+
     init(settings: CoachSettings) {
         self.settings = settings
         // A new engine == a fresh camera session. Sweep the session-scoped byte
@@ -489,7 +508,11 @@ final class CoachEngine {
         // that was holding the line just cleared. Spoken before the replacement
         // tip so the pro hears "got it" about the thing they actually just fixed.
         if let cleared = result.cleared, settings.speak {
-            speak("\(cleared.spokenName) — got it", priority: .tip)
+            let fallback = "\(cleared.spokenName) — got it"
+            let line = CoachVoiceRenderer.render(
+                .dimensionCleared, fallback: fallback,
+                ctx: CoachPhraseContext(subjectNoun: cleared.spokenName), voice: voice) ?? fallback
+            speak(line, priority: .tip)
         }
 
         if result.nudge != nudge {
@@ -508,7 +531,7 @@ final class CoachEngine {
                     lastNudgeHapticAt = now
                     tap(.warning)
                 }
-                if settings.speak { speak(nudge.message, priority: .tip) }
+                if settings.speak { speak(spokenLine(for: nudge), priority: .tip) }
             }
         }
 

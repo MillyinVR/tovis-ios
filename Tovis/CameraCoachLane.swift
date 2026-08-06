@@ -106,8 +106,16 @@ enum CameraLane {
         var setComplete = false
         /// The coach reads the frame as good to shoot.
         var isReady = false
-        /// The coach's single prioritized fix, already phrased as an instruction.
+        /// The coach's single prioritized fix, already phrased as an instruction
+        /// (Calm Mentor / canonical text — the fallback if `coachTipMoment`
+        /// has no override in the active voice).
         var coachTip: String?
+        /// The moment `coachTip` renders through, so the active `CoachVoice`
+        /// can re-phrase it. Nil when there's no tip, or when the caller
+        /// (tests, previews) doesn't set one — `message(_:)` then just shows
+        /// `coachTip` verbatim, same as before personalities existed.
+        var coachTipMoment: CoachMoment?
+        var coachTipPhraseCtx: CoachPhraseContext?
         /// The current shot's how-to, the resting line when the coach is quiet.
         var stepHint: String?
         /// A hard failure worth words — a capture that didn't happen, a spill
@@ -136,6 +144,8 @@ enum CameraLane {
                 && a.setComplete == b.setComplete
                 && a.isReady == b.isReady
                 && a.coachTip == b.coachTip
+                && a.coachTipMoment == b.coachTipMoment
+                && a.coachTipPhraseCtx == b.coachTipPhraseCtx
                 && a.stepHint == b.stepHint
                 && a.errorText == b.errorText
                 && a.aiDisclosure == b.aiDisclosure
@@ -154,7 +164,11 @@ enum CameraLane {
     ///
     /// Returns nil when the camera genuinely has nothing to say; the lane keeps
     /// its height and draws empty.
-    static func message(_ i: Inputs) -> LaneMessage? {
+    ///
+    /// `voice` renders the personality-tagged lines (§2.2 of the design doc);
+    /// it defaults to Calm Mentor so every existing caller — tests, previews —
+    /// keeps seeing exactly today's text without passing anything new.
+    static func message(_ i: Inputs, voice: CoachVoice = CalmMentorVoice()) -> LaneMessage? {
         // 1 — the server refused these bytes. No retry: it can never work.
         if i.terminalCount > 0 {
             return LaneMessage(
@@ -202,8 +216,9 @@ enum CameraLane {
         // actionable warning after two seconds would be a regression on what
         // the drift pill already did.
         if i.lightDrifted {
+            let fallback = "Light’s changed — re-scan the card"
             return LaneMessage(
-                text: "Light’s changed — re-scan the card",
+                text: CoachVoiceRenderer.render(.laneCalibrationDrift, fallback: fallback, voice: voice) ?? fallback,
                 tone: .warn,
                 action: LaneAction(label: "FIX", kind: .recalibrate),
                 pulses: true
@@ -227,15 +242,19 @@ enum CameraLane {
         }
         // 6 — the resting state. Instructions, never scores.
         if i.setComplete {
-            return LaneMessage(text: "That’s the full set — beautiful work",
+            let fallback = "That’s the full set — beautiful work"
+            return LaneMessage(text: CoachVoiceRenderer.render(.laneSetComplete, fallback: fallback, voice: voice) ?? fallback,
                                tone: .accent, expandable: i.hasDimensions)
         }
         if i.isReady {
-            return LaneMessage(text: "Hold it — shooting", tone: .accent,
-                               expandable: i.hasDimensions)
+            let fallback = "Hold it — shooting"
+            return LaneMessage(text: CoachVoiceRenderer.render(.laneHoldShooting, fallback: fallback, voice: voice) ?? fallback,
+                               tone: .accent, expandable: i.hasDimensions)
         }
         if let tip = i.coachTip {
-            return LaneMessage(text: tip, tone: .warn,
+            let rendered = CoachVoiceRenderer.render(
+                i.coachTipMoment, fallback: tip, ctx: i.coachTipPhraseCtx ?? CoachPhraseContext(), voice: voice) ?? tip
+            return LaneMessage(text: rendered, tone: .warn,
                                expandable: i.hasDimensions, pulses: true)
         }
         if let hint = i.stepHint {
