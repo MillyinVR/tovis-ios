@@ -52,17 +52,21 @@ enum CoachTuning {
     // takes to read a line and start acting on it, not by what the sensor
     // measures. The salon pass doesn't invalidate them — a stopwatch would.
 
-    /// Minimum time (seconds) a tip holds the one on-screen line before any
-    /// challenger may take it. Roughly the length of the spoken tip plus a beat
-    /// to start acting: below this the pro is being told a new thing before
-    /// they've finished the last one.
-    nonisolated(unsafe) static var tipDwellSeconds: Double = 2.5
-    /// How much better a challenger's weighted deficit must be to take the line
-    /// from an incumbent that has served its dwell. Sized against the spread of
-    /// real deficits (~0.4 for a busy background, ~1.1 for a lighting failure):
-    /// big enough that two near-tied coaches stop alternating, small enough that
-    /// a genuinely worse problem still wins immediately.
-    nonisolated(unsafe) static var tipSwitchMargin: Double = 0.15
+    /// How long (seconds) the locked focus-ladder rung must read continuously
+    /// PASSING before the coach advances off it (docs/design's sequential
+    /// focus coaching, 2026-08-06). A momentary good reading — sensor noise,
+    /// not a real fix — must not advance the ladder prematurely; this is what
+    /// makes "stable-good" mean something. Longer than a single analyzed
+    /// frame, short enough the pro isn't left hanging once they've actually
+    /// fixed it.
+    nonisolated(unsafe) static var focusStabilityWindow: Double = 1.5
+    /// How long (seconds) a rung EARLIER than the current lock must read
+    /// continuously BROKEN before the ladder jumps back to it. Shorter than
+    /// `focusStabilityWindow` — a real regression (they moved and lighting's
+    /// genuinely bad again) deserves a fairly quick correction — but still
+    /// long enough that two borderline rungs can't ping-pong the lock between
+    /// them.
+    nonisolated(unsafe) static var focusRegressionWindow: Double = 1.0
     /// Minimum spacing (seconds) between coaching haptics. The buzz is for
     /// news; without a floor, a re-rank storm is felt as a continuous vibration.
     nonisolated(unsafe) static var nudgeHapticMinInterval: Double = 2.0

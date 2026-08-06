@@ -125,7 +125,7 @@ struct DimensionsDrawer: View {
                 status.moment, fallback: message,
                 ctx: status.phraseCtx ?? CoachPhraseContext(), voice: voice) ?? message
         }
-        let fallback = Self.goodPhrase(status.category)
+        let fallback = status.category.canonicalGoodPhrase
         return CoachVoiceRenderer.render(status.category.goodMoment, fallback: fallback, voice: voice) ?? fallback
     }
 
@@ -143,19 +143,6 @@ struct DimensionsDrawer: View {
         return s.score < 0.5 ? .alert : .warn
     }
 
-    /// What a passing fundamental says. Deliberately plain: it's derived from
-    /// the score being good, so it must not claim a measurement we didn't make.
-    private static func goodPhrase(_ c: CoachCategory) -> String {
-        switch c {
-        case .lighting: return "Good light"
-        case .color: return "Colour is true"
-        case .level: return "Level"
-        case .composition: return "Framed"
-        case .sharpness: return "Sharp"
-        case .background: return "Background is clean"
-        case .pose: return "Pose reads"
-        }
-    }
 }
 
 // MARK: - Drawer 2 — the tools tray
