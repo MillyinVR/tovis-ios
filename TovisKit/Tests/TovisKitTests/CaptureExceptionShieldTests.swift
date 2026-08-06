@@ -81,10 +81,34 @@ struct CaptureExceptionShieldTests {
 
     @Test func caughtExceptionsAreReportedToTheLogSink() {
         // A crash that becomes a silent degradation is a crash you never fix.
-        final class Sink: @unchecked Sendable { var seen: [(String, CaptureWriteOutcome)] = [] }
+        //
+        // 🔴 `onCaughtException` is a single PROCESS-WIDE slot — every
+        // AVFoundation write in the app routes through it, including this
+        // suite's own `catchingIsReusableAndDoesNotLeaveTheShieldPoisoned`
+        // loop and every `GuardedWhiteBalanceTests` write, and swift-testing
+        // runs suites concurrently by default. While this sink is installed,
+        // one of those unrelated raises can fire it on another thread at the
+        // same instant this test's two calls do. A plain `[T]` getting
+        // `append`ed from two threads at once isn't just a wrong count, it's
+        // a data race — so `Sink` serializes its own writes with a lock — and
+        // the assertions below only look at entries carrying this test's own
+        // two unique labels, so a stray entry from a concurrently-running
+        // test can't flip `sink.seen.count == 1` into a flake either.
+        final class Sink: @unchecked Sendable {
+            private let lock = NSLock()
+            private var entries: [(String, CaptureWriteOutcome)] = []
+            func record(_ label: String, _ outcome: CaptureWriteOutcome) {
+                lock.lock(); defer { lock.unlock() }
+                entries.append((label, outcome))
+            }
+            func entries(labeled label: String) -> [(String, CaptureWriteOutcome)] {
+                lock.lock(); defer { lock.unlock() }
+                return entries.filter { $0.0 == label }
+            }
+        }
         let sink = Sink()
         CaptureExceptionShield.onCaughtException = { label, outcome in
-            sink.seen.append((label, outcome))
+            sink.record(label, outcome)
         }
         defer { CaptureExceptionShield.onCaughtException = nil }
 
@@ -93,8 +117,9 @@ struct CaptureExceptionShieldTests {
         }
         CaptureExceptionShield.perform("fine") {}
 
-        #expect(sink.seen.count == 1)                    // only the throw reports
-        #expect(sink.seen.first?.0 == "videoZoomFactor") // named, so it is findable
-        #expect(sink.seen.first?.1.reason == "zoom out of range")
+        let mine = sink.entries(labeled: "videoZoomFactor")
+        #expect(mine.count == 1)                    // only the throw reports
+        #expect(mine.first?.1.reason == "zoom out of range")
+        #expect(sink.entries(labeled: "fine").isEmpty) // the non-throwing call never reports
     }
 }
