@@ -123,11 +123,10 @@ struct BoardDetailView: View {
             }
         } else {
             LazyVGrid(
-                columns: [
-                    GridItem(.flexible(), spacing: 10),
-                    GridItem(.flexible(), spacing: 10),
-                    GridItem(.flexible(), spacing: 10),
-                ],
+                // .adaptive keeps 3 columns on a phone-width container and adds
+                // columns on a wider one — iPad — instead of stretching 3 tiles
+                // across the extra width.
+                columns: [GridItem(.adaptive(minimum: 113), spacing: 10)],
                 spacing: 10
             ) {
                 ForEach(board.items) { item in
@@ -530,11 +529,10 @@ private struct BoardRecommendationsSection: View {
                     }
 
                     LazyVGrid(
-                        columns: [
-                            GridItem(.flexible(), spacing: 10),
-                            GridItem(.flexible(), spacing: 10),
-                            GridItem(.flexible(), spacing: 10),
-                        ],
+                        // .adaptive keeps 3 columns on a phone-width container
+                        // and adds columns on a wider one — iPad — instead of
+                        // stretching 3 tiles across the extra width.
+                        columns: [GridItem(.adaptive(minimum: 113), spacing: 10)],
                         spacing: 10
                     ) {
                         ForEach(items) { item in

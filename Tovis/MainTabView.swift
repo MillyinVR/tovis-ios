@@ -17,7 +17,7 @@ import TovisKit
 
 struct MainTabView: View {
     @Environment(SessionModel.self) private var session
-    @State private var tab: ClientTab.ID = .looks
+    @State private var tab: ClientTab.ID = Self.launchTab
     @State private var messagesBadge: String?
     /// A booking surfaced by a tapped push (`tovis://`-style `href` deep link),
     /// presented over the shell. nil when nothing is being deep-linked.
@@ -48,6 +48,24 @@ struct MainTabView: View {
     private struct OffersPresentation: Identifiable {
         let id = UUID()
         let highlight: String?
+    }
+
+    /// The tab a launch starts on — Looks, unless a DEBUG build was launched
+    /// with `TOVIS_DEBUG_OPEN_TAB` naming another one. Same mechanism and same
+    /// reasoning as `ProMainTabView.launchTab`: this machine can't drive the
+    /// simulator with synthetic taps, so Home/Discover/Inbox/Me were otherwise
+    /// unreachable in an automated pass. Accepts a `ClientTab.ID` raw value
+    /// (`home` · `discover` · `looks` · `inbox` · `me`); anything else lands on
+    /// Looks as usual.
+    ///
+    ///     SIMCTL_CHILD_TOVIS_DEBUG_OPEN_TAB=discover xcrun simctl launch …
+    private static var launchTab: ClientTab.ID {
+        #if DEBUG
+        let raw = ProcessInfo.processInfo.environment["TOVIS_DEBUG_OPEN_TAB"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if let raw, let wanted = ClientTab.ID(rawValue: raw) { return wanted }
+        #endif
+        return .looks
     }
 
     var body: some View {

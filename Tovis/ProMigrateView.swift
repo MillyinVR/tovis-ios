@@ -89,7 +89,10 @@ struct ProMigrateView: View {
             Text("WHERE ARE YOU COMING FROM?")
                 .font(BrandFont.mono(11)).tracking(0.8)
                 .foregroundStyle(BrandColor.textMuted)
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+            // .adaptive keeps 2 columns on a phone-width container and adds
+            // columns on a wider one — iPad — instead of stretching 2 tiles
+            // across the extra width.
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 175))], spacing: 10) {
                 ForEach(migrationSourceApps, id: \.self) { app in
                     sourceButton(app)
                 }

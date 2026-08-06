@@ -339,10 +339,10 @@ struct ProClientChartView: View {
     private func relationshipIntelligenceSection(
         _ intel: ProChartRelationshipIntelligence
     ) -> some View {
-        let columns = [
-            GridItem(.flexible(), spacing: 10),
-            GridItem(.flexible(), spacing: 10),
-        ]
+        // .adaptive keeps 2 columns on a phone-width container and adds columns
+        // on a wider one — iPad — instead of stretching 2 tiles across the extra
+        // width.
+        let columns = [GridItem(.adaptive(minimum: 174), spacing: 10)]
         let hasContact = intel.preferredContactMethod?.isEmpty == false
         let hasSource = intel.referralSource?.isEmpty == false
         return BrandSurface {
@@ -635,7 +635,10 @@ struct ProClientChartView: View {
             if chart.photos.isEmpty {
                 emptyTab("No photos yet.")
             } else {
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+                // .adaptive keeps 3 columns on a phone-width container and adds
+                // columns on a wider one — iPad — instead of stretching 3 tiles
+                // across the extra width.
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 113), spacing: 10)], spacing: 10) {
                     ForEach(chart.photos) { photo in
                         Button {
                             viewingMedia = FullscreenMedia.remote(id: photo.id, urlString: photo.imageUrl, isVideo: false)

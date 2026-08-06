@@ -277,7 +277,10 @@ struct ProAftercareAuthorView: View {
     }
 
     private var featureGridColumns: [GridItem] {
-        Array(repeating: GridItem(.flexible(), spacing: 8), count: 3)
+        // .adaptive keeps 3 columns on a phone-width container and adds columns
+        // on a wider one — iPad — instead of stretching 3 tiles across the extra
+        // width.
+        [GridItem(.adaptive(minimum: 114), spacing: 8)]
     }
 
     @ViewBuilder

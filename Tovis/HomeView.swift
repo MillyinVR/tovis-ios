@@ -770,7 +770,10 @@ private struct FavoriteProsCard: View {
         HomeCard {
             VStack(alignment: .leading, spacing: 14) {
                 Eyebrow(text: "Favorite pros · \(favoritePros.count)")
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 11), GridItem(.flexible(), spacing: 11)], spacing: 11) {
+                // .adaptive keeps 2 columns on a phone-width container and adds
+                // columns on a wider one — iPad — instead of stretching 2 tiles
+                // across the extra width.
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 173), spacing: 11)], spacing: 11) {
                     ForEach(pros) { pro in
                         NavigationLink {
                             ProProfileView(professionalId: pro.id, fallbackName: pro.displayName)

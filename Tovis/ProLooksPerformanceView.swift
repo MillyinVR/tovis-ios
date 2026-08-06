@@ -60,7 +60,10 @@ struct ProLooksPerformanceView: View {
             ("Shares", t.shares, "arrowshape.turn.up.right"),
             ("Booked", t.bookings, "calendar.badge.plus"),
         ]
-        return LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+        // .adaptive keeps 3 columns on a phone-width container and adds columns
+        // on a wider one — iPad — instead of stretching 3 tiles across the extra
+        // width.
+        return LazyVGrid(columns: [GridItem(.adaptive(minimum: 114))], spacing: 10) {
             ForEach(tiles, id: \.0) { tile in
                 BrandSurface {
                     VStack(alignment: .leading, spacing: 6) {
