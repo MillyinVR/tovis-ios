@@ -110,7 +110,7 @@ import TovisKit
     private func decide(personality: CoachPersonality) -> [FrameDecision] {
         var arbiter = CoachTipArbiter()
         return frames().enumerated().map { index, frame in
-            let now = Double(index) * (CoachTuning.tipDwellSeconds + 1)
+            let now = Double(index) * (CoachTuning.focusStabilityWindow + 1)
             let verdict = CoachAggregate.evaluate(coaches, frame, arbiter: &arbiter, now: now)
             return FrameDecision(
                 readiness: verdict.readiness,
@@ -377,6 +377,84 @@ import TovisKit
         for voice in newPacks {
             let announce = voice.phrase(for: .retakeAnnounce, ctx: CoachPhraseContext(detail: canonicalReason))
             #expect(announce?.contains(canonicalReason) == true, "\(voice.displayName) dropped or re-flourished the reason")
+        }
+    }
+}
+
+/// Sequential focus coaching (docs/design, 2026-08-06) — the SAME §0
+/// guardrail applied to a new decision: `CoachTipArbiter` never sees a
+/// `CoachVoice`, so which rung advances, and when, is identical no matter
+/// which pack ends up speaking the compliment+next line.
+@Suite struct CoachFocusLadderVoiceTests {
+    private let coaches: [ShotCoach] = [
+        LightingCoach(), CompositionCoach(), SharpnessCoach(),
+        BackgroundCoach(), PoseCoach(), LevelCoach(), ColorCoach(),
+    ]
+    private let face = CGRect(x: 0.35, y: 0.15, width: 0.30, height: 0.25)
+    private var pose: PoseSignal {
+        PoseSignal(edgeClipped: false, joints: [
+            .leftShoulder: CGPoint(x: 0.32, y: 0.48),
+            .rightShoulder: CGPoint(x: 0.68, y: 0.48),
+        ])
+    }
+
+    private func ctx(luma: Double = 0.47, faceLuma: Double? = nil, backgroundLuma: Double? = 0.5,
+                     mixed: Double = 0.0) -> FrameContext {
+        FrameContext(avgLuma: luma, faceBounds: face, faceLuma: faceLuma ?? luma,
+                    backgroundLuma: backgroundLuma, sharpness: 0.6,
+                    backgroundClutter: 0, subjectFill: 0.5, pose: pose, deviceTilt: 0,
+                    color: ColorSignal(mixed: mixed, greenTint: 0, warmth: 0.15),
+                    expectations: .portrait)
+    }
+
+    /// Lighting broken (alongside a still-broken color) → fixed → held stable
+    /// past `focusStabilityWindow` — the ladder must advance from lighting to
+    /// color. Runs the REAL pipeline (`CoachAggregate.evaluate` +
+    /// `CoachTipArbiter`), then renders the resulting `advanced` event the
+    /// same way `CoachEngine.apply` does, in `voice`.
+    private func advanceEvent(voice: CoachVoice) -> (category: CoachCategory, line: String)? {
+        var arbiter = CoachTipArbiter()
+        _ = CoachAggregate.evaluate(
+            coaches, ctx(luma: 0.15, faceLuma: 0.15, backgroundLuma: 0.15, mixed: 0.20),
+            arbiter: &arbiter, now: 0)
+        _ = CoachAggregate.evaluate(coaches, ctx(mixed: 0.20), arbiter: &arbiter, now: 1)
+        let verdict = CoachAggregate.evaluate(
+            coaches, ctx(mixed: 0.20), arbiter: &arbiter, now: 1 + CoachTuning.focusStabilityWindow + 0.1)
+        guard let advanced = verdict.advanced, let nudge = verdict.nudge else { return nil }
+
+        let complimentFallback = advanced.canonicalGoodPhrase
+        let compliment = CoachVoiceRenderer.render(advanced.goodMoment, fallback: complimentFallback, voice: voice)
+            ?? complimentFallback
+        let next = CoachVoiceRenderer.render(
+            nudge.moment, fallback: nudge.message, ctx: nudge.phraseCtx ?? CoachPhraseContext(), voice: voice)
+            ?? nudge.message
+        let fallback = "\(compliment) \(next)"
+        let line = CoachVoiceRenderer.render(
+            .focusRungAdvanced, fallback: fallback,
+            ctx: CoachPhraseContext(subjectNoun: compliment, detail: next), voice: voice) ?? fallback
+        return (advanced, line)
+    }
+
+    @Test func theAdvanceEventFiresForTheSameRungAtTheSameMomentAcrossEveryPersonality() {
+        let events = CoachPersonality.allCases.map { advanceEvent(voice: $0.voice) }
+        #expect(events.allSatisfy { $0 != nil }, "every personality must see the SAME decision fire")
+        let categories = Set(events.compactMap { $0?.category })
+        #expect(categories.count == 1, "the ladder decision changed between personalities — it must not")
+        #expect(categories.first == .lighting)
+    }
+
+    @Test func everyNewPackRendersADistinctFocusRungAdvancedLine() {
+        guard let calm = advanceEvent(voice: CalmMentorVoice())?.line else {
+            Issue.record("Calm Mentor produced no advance event")
+            return
+        }
+        for personality in CoachPersonality.allCases where personality != .calmMentor {
+            guard let line = advanceEvent(voice: personality.voice)?.line else {
+                Issue.record("\(personality) produced no advance event")
+                continue
+            }
+            #expect(!line.isEmpty)
+            #expect(line != calm, "\(personality) must not silently fall back to Calm Mentor's transition line")
         }
     }
 }

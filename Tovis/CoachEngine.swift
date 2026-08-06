@@ -226,7 +226,7 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                               faceCenter: face.map { CGPoint(x: $0.midX, y: $0.midY) },
                               frameLuma: avgLuma, frameWarmth: cachedColor?.warmth,
                               frameBackgroundLuma: cachedBackgroundLuma,
-                              cleared: verdict.cleared,
+                              cleared: verdict.cleared, advanced: verdict.advanced,
                               debug: debug))
 
             // Harvest a keeper when quality peaks (rate-limited + capped). Reserve
@@ -514,21 +514,31 @@ final class CoachEngine: NSObject {
         if let debug = result.debug { debugSignals = debug }
         onFaceCenter?(result.faceCenter)
 
-        // The coach heard being SATISFIED, not only dissatisfied: the dimension
-        // that was holding the line just cleared. Spoken before the replacement
-        // tip so the pro hears "got it" about the thing they actually just fixed.
-        //
-        // `categoryCleared` only trusts this if it's been a beat since that
-        // fundamental was last actually spoken about — a clear landing faster
-        // than that is the sensor flickering the signal, not a person fixing a
-        // shot in a fraction of a second. An untrusted clear stays quiet
-        // entirely (no "got it" for a fix that's about to un-fix itself next
-        // frame) AND leaves the repeat cooldown running, so a flap can't use
-        // its own noise to keep resetting the very suppression meant to
-        // silence it.
-        if let cleared = result.cleared,
-           speechScheduler.categoryCleared(cleared, now: Date().timeIntervalSinceReferenceDate),
-           settings.speak {
+        // Sequential focus coaching: the ladder just moved off a rung that
+        // read stable-good. `CoachTipArbiter` only reports either of these on
+        // the single frame it happens — the debouncing (was this REALLY
+        // fixed, not a flicker?) already happened at the decision layer, via
+        // its own stability window, so neither needs a speech-side trust
+        // guard the way the old un-debounced arbiter did.
+        if let advanced = result.advanced, let nudge = result.nudge {
+            // Compliment the rung that just cleared, then redirect to the
+            // next one — ONE utterance, built from two ALREADY fully-voiced
+            // complete sentences (this voice's own `goodMoment` line, this
+            // voice's own line for `nudge`), never re-flourished against
+            // each other. See `CoachMoment.focusRungAdvanced`.
+            let complimentFallback = advanced.canonicalGoodPhrase
+            let complimentRendered = CoachVoiceRenderer.render(
+                advanced.goodMoment, fallback: complimentFallback, voice: voice) ?? complimentFallback
+            let nextRendered = spokenLine(for: nudge)
+            let fallback = "\(complimentRendered) \(nextRendered)"
+            if settings.speak {
+                let line = CoachVoiceRenderer.render(
+                    .focusRungAdvanced, fallback: fallback,
+                    ctx: CoachPhraseContext(subjectNoun: complimentRendered, detail: nextRendered),
+                    voice: voice) ?? fallback
+                speakSchedulerTip(line, category: nudge.category)
+            }
+        } else if let cleared = result.cleared, settings.speak {
             let fallback = "\(cleared.spokenName) — got it"
             let line = CoachVoiceRenderer.render(
                 .dimensionCleared, fallback: fallback,
@@ -552,7 +562,9 @@ final class CoachEngine: NSObject {
                     lastNudgeHapticAt = now
                     tap(.warning)
                 }
-                if settings.speak { speakTip(nudge) }
+                // Skip on an advance frame — the combined compliment+next
+                // line above already spoke this exact nudge once.
+                if settings.speak, result.advanced == nil { speakTip(nudge) }
             }
         }
 
@@ -599,9 +611,17 @@ final class CoachEngine: NSObject {
     /// of `speak` (`announce`, the `.dimensionCleared` line) aren't subject to
     /// per-fundamental repeat suppression, only the ongoing correction is.
     private func speakTip(_ nudge: CoachNudge) {
+        speakSchedulerTip(spokenLine(for: nudge), category: nudge.category)
+    }
+
+    /// The per-category-cooldown speech path with pre-built text — used by
+    /// `speakTip` for an ordinary nudge, and by the focus ladder's advance
+    /// handling for the combined compliment+next line (which is ABOUT the
+    /// next rung's category, for cooldown purposes, even though its text is
+    /// two sentences).
+    private func speakSchedulerTip(_ text: String, category: CoachCategory) {
         ensureAudioSessionConfigured()
-        let action = speechScheduler.requestTip(
-            spokenLine(for: nudge), category: nudge.category, now: Date().timeIntervalSinceReferenceDate)
+        let action = speechScheduler.requestTip(text, category: category, now: Date().timeIntervalSinceReferenceDate)
         perform(action)
     }
 

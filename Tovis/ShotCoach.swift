@@ -127,8 +127,13 @@ struct CoachResult: Sendable {
     /// a dark-to-blonde colour service legitimately changes whole-frame luma —
     /// that IS the work — and the matcher used to call it a light mismatch.
     let frameBackgroundLuma: Double?
-    /// The dimension that just stopped complaining, on the one frame it does.
+    /// The rung the focus ladder just fully cleared, with nothing left broken
+    /// to move to. Mutually exclusive with `advanced`.
     let cleared: CoachCategory?
+    /// The rung the focus ladder just advanced OFF of, onto a next broken one
+    /// (`nudge` is that next rung's tip) — the "compliment, then redirect"
+    /// moment. Mutually exclusive with `cleared`.
+    let advanced: CoachCategory?
     /// Raw perception values for the DEBUG tuning console. Nil unless the
     /// console is open (`CoachDebug.captureSignals`) — zero cost otherwise.
     let debug: [DebugSignal]?
@@ -311,29 +316,38 @@ enum CoachAggregate {
         let readiness: Double
         let nudge: CoachNudge?
         let statuses: [CoachStatus]
-        /// The dimension that was holding the one coach line and has just
-        /// stopped complaining — the moment the coach can be heard being
-        /// SATISFIED rather than only dissatisfied. Nil on every other frame.
+        /// The rung the ladder was locked on and has just fully cleared, with
+        /// NOTHING else broken to move to — the moment the coach can be heard
+        /// being SATISFIED rather than only dissatisfied. Nil on every other
+        /// frame, and mutually exclusive with `advanced`.
         let cleared: CoachCategory?
+        /// The rung the ladder just moved OFF of, because it read stable-good
+        /// AND there's a next broken rung to introduce (`nudge` is that next
+        /// rung's tip). Nil on every other frame, and mutually exclusive with
+        /// `cleared`. This is the "compliment, then redirect" moment —
+        /// "lighting's gorgeous — now step back a touch to center them."
+        let advanced: CoachCategory?
 
         init(readiness: Double, nudge: CoachNudge?, statuses: [CoachStatus],
-             cleared: CoachCategory? = nil) {
+             cleared: CoachCategory? = nil, advanced: CoachCategory? = nil) {
             self.readiness = readiness
             self.nudge = nudge
             self.statuses = statuses
             self.cleared = cleared
+            self.advanced = advanced
         }
     }
 
     /// How badly one coach drags readiness down: its weight × how far short it
-    /// scored. This is what ranks the tips — the biggest weighted deficiency
-    /// wins the single on-screen line.
+    /// scored. Still what the READINESS number (the ring) is built from —
+    /// no longer what picks the on-screen tip, which follows the fixed focus
+    /// ladder instead (see CoachFocusLadder.swift / `CoachTipArbiter`).
     static func deficit(_ category: CoachCategory, _ signal: CoachSignal) -> Double {
         category.weight * (1 - signal.score)
     }
 
-    /// Rank + arbitrate in one pass. `arbiter` carries the dwell/margin state
-    /// across frames; `now` is a monotonic clock in seconds.
+    /// Rank + arbitrate in one pass. `arbiter` carries the focus-ladder lock
+    /// state across frames; `now` is a monotonic clock in seconds.
     static func evaluate(
         _ coaches: [ShotCoach], _ ctx: FrameContext,
         arbiter: inout CoachTipArbiter, now: TimeInterval
@@ -341,6 +355,9 @@ enum CoachAggregate {
         let signals = coaches.map { ($0.category, $0.evaluate(ctx)) }
         // Readiness is the importance-weighted mean — light + focus count for more
         // than a clean backdrop, per the beauty-photography priority order.
+        // Unchanged by the focus ladder: this is a measurement of the WHOLE
+        // frame's quality, not of which one thing the coach is currently
+        // talking about.
         let totalWeight = signals.reduce(0.0) { $0 + $1.0.weight }
         let readiness = totalWeight == 0 ? 0
             : signals.reduce(0.0) { $0 + $1.1.score * $1.0.weight } / totalWeight
@@ -349,8 +366,8 @@ enum CoachAggregate {
             CoachStatus(category: $0.0, score: $0.1.score, message: $0.1.message, why: $0.1.why,
                        moment: $0.1.moment, phraseCtx: $0.1.phraseCtx)
         }
-        return Verdict(readiness: readiness, nudge: outcome.nudge,
-                       statuses: statuses, cleared: outcome.cleared)
+        return Verdict(readiness: readiness, nudge: outcome.nudge, statuses: statuses,
+                       cleared: outcome.cleared, advanced: outcome.advanced)
     }
 
     /// Single-frame evaluation with no memory — the raw ranking, which is what
@@ -363,95 +380,144 @@ enum CoachAggregate {
     }
 }
 
-/// Keeps the one coach line still long enough to be worth acting on.
+/// Sequential focus coaching: locks onto the highest-priority BROKEN rung of
+/// `FocusRung`'s fixed big-to-small order and shows/speaks only that
+/// correction, instead of re-ranking every analyzed frame by weighted
+/// deficit. Three rules:
 ///
-/// Without this the winner is a plain `max` over weighted deficits recomputed
-/// every analyzed frame — six times a second. Two coaches with near-equal
-/// deficits therefore ALTERNATE, and each alternation used to fire a warning
-/// haptic and restart the spoken tip from the top: a continuous buzz and a
-/// sentence that never finishes. That is a code-level mechanism for "it feels
-/// like nagging", independent of whether the tips are right.
+///  • **Lock** — when nothing is locked (session start, or just cleared), the
+///    ladder locks onto the earliest rung that's currently broken. Everything
+///    before it in ladder order is, by construction, currently passing.
+///  • **Advance, stability-gated** — the locked rung only lets go once it's
+///    read continuously PASSING for `CoachTuning.focusStabilityWindow`. A
+///    momentary good reading (sensor noise, not a real fix) doesn't advance
+///    it — the SAME flapping problem `CoachSpeechScheduler` guards on the
+///    speech side, guarded here at the source instead. Advancing reports
+///    which rung just cleared (`advanced`) so the pro hears it complimented
+///    before the next correction, or — if nothing else is broken — reports a
+///    plain `cleared` with nothing to redirect to.
+///  • **Regression, hysteresis-guarded** — if a rung EARLIER than the current
+///    lock (one the ladder already passed as good) reads continuously BROKEN
+///    for `CoachTuning.focusRegressionWindow`, the lock jumps back to it — no
+///    compliment, just a normal corrective redirect. Guarded the same way as
+///    advancing: a momentary bad reading doesn't jump the lock, or two
+///    borderline rungs would ping-pong the coach between them.
 ///
-/// Two rules, both pure arithmetic:
-///
-///  • **Dwell** — a tip that takes the line holds it for `tipDwellSeconds`,
-///    long enough for the pro to read it, hear it out, and start acting.
-///  • **Margin** — after the dwell, a challenger only takes the line if it
-///    beats the incumbent's CURRENT deficit by `tipSwitchMargin`. A tie, or a
-///    hair's difference, leaves the incumbent alone.
-///
-/// The incumbent yields IMMEDIATELY — no dwell, no margin — the moment its own
-/// coach stops complaining. A problem the pro just fixed must never keep the
-/// line, and that hand-back is what `cleared` reports so the coach can say so.
+/// This is the decision Tori asked changed once, for everyone: nothing here
+/// reads `CoachVoice`/`CoachPersonality`, so the ladder order and its timing
+/// are identical no matter which pack ends up speaking it.
 struct CoachTipArbiter: Sendable {
     struct Outcome: Sendable {
         let nudge: CoachNudge?
-        /// Set on the single frame where the incumbent's dimension went quiet.
         let cleared: CoachCategory?
+        let advanced: CoachCategory?
     }
 
-    private var incumbent: CoachNudge?
-    private var heldSince: TimeInterval = 0
+    private var lockedRung: FocusRung?
+    /// The last-known tip for the locked rung, kept even after it starts
+    /// reading good — the ladder is waiting out the stability window before
+    /// admitting that, and the pro shouldn't see the line go blank or the
+    /// coach fall silent while that's happening.
+    private var lockedNudge: CoachNudge?
+    /// When the locked rung FIRST started reading continuously good — nil
+    /// whenever it's currently reading bad. `now - this >= focusStabilityWindow`
+    /// is what actually triggers an advance.
+    private var stableGoodSince: TimeInterval?
+    /// The current regression candidate (the earliest rung before the lock
+    /// that's currently broken) and when IT first started reading
+    /// continuously bad. Reset whenever the candidate identity changes, so a
+    /// flickering "something's wrong above me" never accumulates enough
+    /// continuous time to actually jump the lock.
+    private var regression: (rung: FocusRung, badSince: TimeInterval)?
 
     init() {}
 
     mutating func select(
         from signals: [(CoachCategory, CoachSignal)], now: TimeInterval
     ) -> Outcome {
-        let speaking = signals.filter { $0.1.message != nil }
-        let challenger = speaking.max {
-            CoachAggregate.deficit($0.0, $0.1) < CoachAggregate.deficit($1.0, $1.1)
+        // At most one broken entry per rung per frame: each category
+        // contributes exactly one signal, and composition's OWN internal
+        // precedence (unchanged by this) picks which one moment — framing or
+        // centering — it's reporting this frame, if any.
+        var byRung: [FocusRung: CoachNudge] = [:]
+        for (category, signal) in signals {
+            guard let message = signal.message else { continue }
+            let rung = signal.moment?.focusRung ?? category.defaultFocusRung
+            byRung[rung] = CoachNudge(category: category, message: message,
+                                      moment: signal.moment, phraseCtx: signal.phraseCtx)
         }
-        let best = challenger.flatMap { entry in
-            entry.1.message.map {
-                CoachNudge(category: entry.0, message: $0,
-                          moment: entry.1.moment, phraseCtx: entry.1.phraseCtx)
+        let broken = FocusRung.allCases.filter { byRung[$0] != nil }
+
+        guard let locked = lockedRung else {
+            // Nothing locked: lock onto the earliest broken rung, if any.
+            guard let first = broken.first else { return Outcome(nudge: nil, cleared: nil, advanced: nil) }
+            lock(onto: first, nudge: byRung[first], now: now)
+            return Outcome(nudge: byRung[first], cleared: nil, advanced: nil)
+        }
+
+        // Regression check: is something EARLIER than the lock also broken?
+        if let candidate = broken.first(where: { $0 < locked }) {
+            if regression?.rung != candidate { regression = (candidate, now) }
+            if now - regression!.badSince >= CoachTuning.focusRegressionWindow {
+                // Trusted — jump back. Not a completion, so no compliment.
+                lock(onto: candidate, nudge: byRung[candidate], now: now)
+                return Outcome(nudge: byRung[candidate], cleared: nil, advanced: nil)
             }
+            // Not trusted yet; keep working the current lock below.
+        } else {
+            regression = nil
         }
 
-        guard let held = incumbent else {
-            adopt(best, now: now)
-            return Outcome(nudge: best, cleared: nil)
+        if let current = byRung[locked] {
+            // Still broken (however it's currently worded) — hold the line.
+            lockedNudge = current
+            stableGoodSince = nil
+            return Outcome(nudge: current, cleared: nil, advanced: nil)
         }
 
-        // Is the incumbent's dimension still unhappy? (Its wording may have
-        // moved on — "a touch soft" → "clearly soft" — which is the same tip
-        // getting worse, not a different tip.)
-        guard let current = speaking.first(where: { $0.0 == held.category }) else {
-            // Fixed. Hand the line over at once and report the good news.
-            adopt(best, now: now)
-            return Outcome(nudge: best, cleared: held.category)
+        // Reads good this frame. Only trust it once it's held for the whole
+        // stability window.
+        if stableGoodSince == nil { stableGoodSince = now }
+        guard now - stableGoodSince! >= CoachTuning.focusStabilityWindow else {
+            // Not stable yet — keep showing the last known correction rather
+            // than going quiet over what might be a flicker.
+            return Outcome(nudge: lockedNudge, cleared: nil, advanced: nil)
         }
 
-        let currentNudge = current.1.message.map {
-            CoachNudge(category: current.0, message: $0,
-                      moment: current.1.moment, phraseCtx: current.1.phraseCtx)
-        } ?? held
-        let stillWarm = now - heldSince < CoachTuning.tipDwellSeconds
-        let beatsMargin = best.map { candidate in
-            candidate.category != held.category
-                && CoachAggregate.deficit(current.0, current.1) + CoachTuning.tipSwitchMargin
-                    < deficit(of: candidate, in: speaking)
-        } ?? false
-
-        if stillWarm || !beatsMargin {
-            // Keep the line. Re-wording within the same dimension doesn't
-            // restart the clock — it's the same tip, said more precisely.
-            incumbent = currentNudge
-            return Outcome(nudge: currentNudge, cleared: nil)
+        // Stable. Advance to the next broken rung, or fully clear.
+        if let next = broken.first(where: { $0 > locked }) {
+            lock(onto: next, nudge: byRung[next], now: now)
+            return Outcome(nudge: byRung[next], cleared: nil, advanced: locked.category)
         }
-        adopt(best, now: now)
-        return Outcome(nudge: best, cleared: nil)
+        lockedRung = nil
+        lockedNudge = nil
+        stableGoodSince = nil
+        regression = nil
+        return Outcome(nudge: nil, cleared: locked.category, advanced: nil)
     }
 
-    private mutating func adopt(_ nudge: CoachNudge?, now: TimeInterval) {
-        incumbent = nudge
-        heldSince = now
+    private mutating func lock(onto rung: FocusRung, nudge: CoachNudge?, now: TimeInterval) {
+        lockedRung = rung
+        lockedNudge = nudge
+        stableGoodSince = nil
+        regression = nil
     }
+}
 
-    private func deficit(of nudge: CoachNudge, in signals: [(CoachCategory, CoachSignal)]) -> Double {
-        guard let entry = signals.first(where: { $0.0 == nudge.category }) else { return 0 }
-        return CoachAggregate.deficit(entry.0, entry.1)
+private extension FocusRung {
+    /// The category a rung's tip is reported under — every rung maps to
+    /// exactly one category (composition's split is the only many-to-one
+    /// case, and both its rungs still report as `.composition`).
+    var category: CoachCategory {
+        switch self {
+        case .lighting: return .lighting
+        case .color: return .color
+        case .framing, .centering: return .composition
+        case .level: return .level
+        case .background: return .background
+        case .pose: return .pose
+        case .sharpness: return .sharpness
+        }
     }
 }
 

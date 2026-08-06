@@ -196,6 +196,10 @@ struct HypeBestieVoice: CoachVoice {
             return "Wait, bestie — \(detail.prefix(1).lowercased() + detail.dropFirst())"
         case .leavingWithoutTitlePractice:
             return "Heading out, bestie?"
+        case .focusRungAdvanced:
+            let compliment = ctx.subjectNoun ?? "Nice!"
+            let next = ctx.detail ?? "Let's keep going!"
+            return "\(compliment) Now: \(next)"
         }
     }
 }
@@ -308,6 +312,10 @@ struct StraightShooterVoice: CoachVoice {
         case .sessionOutstandingSentence: return ctx.detail ?? "Photo still needed."
         case .leavingWithoutTitleSession: return ctx.detail ?? "Leave without the photo?"
         case .leavingWithoutTitlePractice: return "Leave camera?"
+        case .focusRungAdvanced:
+            let compliment = ctx.subjectNoun ?? "Good."
+            let next = ctx.detail ?? "Next."
+            return "\(compliment) \(next)"
         }
     }
 }
@@ -444,6 +452,10 @@ struct EditorialDirectorVoice: CoachVoice {
         case .sessionOutstandingSentence: return ctx.detail ?? "This session still needs its photo."
         case .leavingWithoutTitleSession: return ctx.detail ?? "Leave without the photo?"
         case .leavingWithoutTitlePractice: return "Leaving the camera?"
+        case .focusRungAdvanced:
+            let compliment = ctx.subjectNoun ?? "Good."
+            let next = ctx.detail ?? "Next."
+            return "\(compliment) Next: \(next)"
         }
     }
 }
@@ -596,6 +608,10 @@ struct DragQueenBestieVoice: CoachVoice {
             return "Hold up, baby — \(detail.prefix(1).lowercased() + detail.dropFirst())"
         case .leavingWithoutTitlePractice:
             return "Leaving already, baby?"
+        case .focusRungAdvanced:
+            let compliment = ctx.subjectNoun ?? "Gorgeous!"
+            let next = ctx.detail ?? "Let's keep going, baby!"
+            return "\(compliment) Now, honey: \(next)"
         }
     }
 }
