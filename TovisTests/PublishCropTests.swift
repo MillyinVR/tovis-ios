@@ -4,6 +4,7 @@
 // one thing while the green ring approves another.
 import CoreGraphics
 import Testing
+import TovisKit
 @testable import Tovis
 
 @Suite struct PublishCropTests {
