@@ -48,24 +48,15 @@ struct CoachSpeechScheduler: Sendable {
 
     /// How long a fundamental's tip stays suppressed after being spoken once.
     private let tipRepeatCooldown: TimeInterval
-    /// How long a fundamental must have gone unspoken before a "cleared"
-    /// signal for it is trusted to reset the cooldown early. A clear landing
-    /// almost instantly after speaking is the SAME flapping the cooldown
-    /// exists to silence, seen from the other side — sensor noise briefly
-    /// reading as "fixed" between two frames faster than a person could have
-    /// reacted, not a real correction. Trusting it would let the flap reset
-    /// its own cooldown every time. A clear that holds longer than this is
-    /// plausibly real, and gets the early reset.
-    private let clearResetGuard: TimeInterval
 
-    init(tipRepeatCooldown: TimeInterval = 9, clearResetGuard: TimeInterval = 2) {
+    init(tipRepeatCooldown: TimeInterval = 9) {
         self.tipRepeatCooldown = tipRepeatCooldown
-        self.clearResetGuard = clearResetGuard
     }
 
-    /// A directive, or a non-suppressed line (the `.dimensionCleared`
-    /// congratulation) — not subject to per-category repeat suppression;
-    /// only `requestTip` is.
+    /// A directive, or a non-suppressed line (a "cleared"/"advanced"
+    /// transition — debounced upstream, at the decision layer, by the focus
+    /// ladder's own stability window) — not subject to per-category repeat
+    /// suppression; only `requestTip` is.
     mutating func request(_ text: String, priority: Priority) -> Action {
         guard let current = currentPriority else {
             currentPriority = priority
@@ -88,20 +79,6 @@ struct CoachSpeechScheduler: Sendable {
         }
         lastSpokenTipAt[category] = now
         return request(text, priority: .tip)
-    }
-
-    /// `category` reads as clear now. Resets its cooldown (so a later genuine
-    /// re-trigger isn't stuck waiting out a stale window) only when trusted —
-    /// see `clearResetGuard`. Returns whether the reset was trusted, so the
-    /// caller knows whether to actually speak the "got it" line: celebrating
-    /// a fix that's about to un-fix itself next frame is its own flavor of
-    /// the same annoyance.
-    @discardableResult
-    mutating func categoryCleared(_ category: CoachCategory, now: TimeInterval) -> Bool {
-        guard let last = lastSpokenTipAt[category] else { return true }
-        guard now - last >= clearResetGuard else { return false }
-        lastSpokenTipAt.removeValue(forKey: category)
-        return true
     }
 
     /// The channel just freed — an utterance finished, or an interrupt
