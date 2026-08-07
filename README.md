@@ -156,7 +156,7 @@ against it (`arm64-apple-ios17.0-simulator`).
 
 ## Key references
 
-- Open work: `BACKLOG.md` · pro API contracts: `docs/PRO-BACKEND-CONTRACTS.md`
+- Open work: `BACKLOG.md` · pro API contracts: CI's wire-contract fixtures (`scripts/contract/`, see retired `docs/PRO-BACKEND-CONTRACTS.md`)
 - Backend native-readiness + push runbook: `tovis-app/docs/mobile/`
 - Brand source of truth: `tovis-app/lib/brand/brands/tovis.ts`, `lib/brand/eyeSvg.ts`
 - Wire contract: `tovis-app/schema/api/tovis-api.schema.json` (+ `lib/dto/`)

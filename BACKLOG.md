@@ -4,8 +4,9 @@
 > by consolidating `HANDOFF.md`, `HANDOFF-PRO-CAMERA.md`, and `docs/PRO-WEB-PARITY.md`.
 > The **client** app is feature-complete + on TestFlight; the **pro** side + AI camera
 > are the active build track. Backend/DTO counterpart work lives in `tovis-app/docs/BACKLOG.md`.
-> Evergreen reference stays put: `README.md` (setup + services map), `docs/PRO-BACKEND-CONTRACTS.md`
-> (pro `/api/v1` contract index), `docs/calibration/README.md`, `scripts/contract/README.md`.
+> Evergreen reference stays put: `README.md` (setup + services map), `docs/calibration/README.md`,
+> `scripts/contract/README.md` (pro `/api/v1` wire-contract fixtures — source of truth in CI;
+> `docs/PRO-BACKEND-CONTRACTS.md` is retired).
 >
 > `[ ]` open · `[~]` partial · **(device)** needs a real device (sim has no camera/APNs).
 
