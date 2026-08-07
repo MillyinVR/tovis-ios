@@ -71,10 +71,10 @@ import TovisKit
     }
 
     @Test func practiceHasNoOutstandingSentenceToSay() {
-        #expect(ProCameraDestination.practice.outstandingSentence.isEmpty)
+        #expect(ProCameraDestination.practice.outstandingSentence().isEmpty)
         #expect(
             !ProCameraDestination.session(bookingId: "bk_1", phase: .after)
-                .outstandingSentence.isEmpty
+                .outstandingSentence().isEmpty
         )
     }
 

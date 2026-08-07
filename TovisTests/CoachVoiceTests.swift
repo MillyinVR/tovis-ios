@@ -10,6 +10,7 @@
 // personality, decides identically — only the rendered string differs).
 import CoreGraphics
 import Testing
+import TovisKit
 @testable import Tovis
 
 @Suite struct CoachVoiceCoverageTests {
@@ -158,5 +159,224 @@ import Testing
         #expect(StraightShooterVoice().includesWhy(for: .lightingTooDark) == false)
         #expect(CalmMentorVoice().includesWhy(for: .lightingTooDark) == true)
         #expect(HypeBestieVoice().includesWhy(for: .lightingTooDark) == true)
+    }
+}
+
+/// Phase 4 (docs/design/camera-personality-packs.md §4, sites E–I): the same
+/// §0 guardrail, for the copy sites that sit downstream of `ShotCoach` rather
+/// than inside it. None of `PhotoQC.evaluate`, `LightMatch.verdict`, or
+/// `ProCameraDestination`'s decision surface (`passed`, `sharpness`, `ok`,
+/// `owesAPhoto`, `requirementMet`) takes a `CoachVoice` at all — personality
+/// only reaches the STRING, at the render call downstream of the decision.
+/// These tests pin that: the decision is fixed before a voice is ever
+/// involved, and every new pack still renders a real line for it.
+@Suite struct CoachVoicePhase4GuardrailTests {
+    private let newPacks: [CoachVoice] = [
+        HypeBestieVoice(), StraightShooterVoice(), EditorialDirectorVoice(), DragQueenBestieVoice(),
+    ]
+
+    // MARK: - E, PhotoQC
+
+    /// `PhotoQCReport`'s decision fields don't mention `CoachVoice` in their
+    /// type at all — this is the architectural guarantee, not just a runtime
+    /// coincidence. Rendering `retakeMoment` for every personality must not
+    /// touch `passed`/`sharpness`/`luma`/`focalPoint`.
+    @Test func photoQCDecisionFieldsAreUnreachableFromAnyVoice() {
+        let report = PhotoQCReport(retakeReason: "\("Their face") came out too dark",
+                                   retakeMoment: .qcTooDark,
+                                   retakePhraseCtx: CoachPhraseContext(subjectNoun: "Their face"),
+                                   sharpness: 0.7, luma: 0.2, faceLuma: 0.2, eyesClosed: false, focalPoint: nil)
+        for personality in CoachPersonality.allCases {
+            _ = CoachVoiceRenderer.render(report.retakeMoment, fallback: report.retakeReason,
+                                          ctx: report.retakePhraseCtx ?? CoachPhraseContext(),
+                                          voice: personality.voice)
+            #expect(report.sharpness == 0.7)
+            #expect(report.luma == 0.2)
+            #expect(report.focalPoint == nil)
+            #expect(!report.passed)
+        }
+    }
+
+    @Test func everyNewPackRendersEveryQCRetakeMoment() {
+        for voice in newPacks {
+            for moment in [CoachMoment.qcEyesClosed, .qcSoft, .qcTooDark, .qcBlownOut] {
+                let phrase = voice.phrase(for: moment, ctx: CoachPhraseContext(subjectNoun: "It"))
+                #expect(phrase?.isEmpty == false, "\(voice.displayName) has no line for \(moment)")
+            }
+        }
+    }
+
+    @Test func calmMentorLeavesTheQCReasonByteIdentical() {
+        let canonical = "It came out soft"
+        let report = PhotoQCReport(retakeReason: canonical, retakeMoment: .qcSoft,
+                                   sharpness: 0.1, luma: 0.5, faceLuma: nil, eyesClosed: false, focalPoint: nil)
+        let rendered = CoachVoiceRenderer.render(report.retakeMoment, fallback: report.retakeReason,
+                                                 ctx: report.retakePhraseCtx ?? CoachPhraseContext(),
+                                                 voice: CalmMentorVoice()) ?? report.retakeReason
+        #expect(rendered == canonical)
+    }
+
+    // MARK: - F, BeforeShotMeasure.LightMatch
+
+    /// `LightMatch.verdict`'s `ok` is decided before any voice renders
+    /// `label` — proven by rendering the SAME verdict through all five
+    /// personalities and confirming `ok` never moves.
+    @Test func lightMatchOKIsIndependentOfVoice() {
+        let before = LightMatch.Reading(luma: 0.42, warmth: 0.02, backgroundLuma: 0.55, backgroundWarmth: 0.02)
+        let after = LightMatch.Reading(luma: 0.58, warmth: 0.02, backgroundLuma: 0.55, backgroundWarmth: 0.02)
+        let verdict = LightMatch.verdict(live: after, target: before, noun: "before")
+        for personality in CoachPersonality.allCases {
+            let rendered = CoachVoiceRenderer.render(verdict.moment, fallback: verdict.label,
+                                                      ctx: CoachPhraseContext(subjectNoun: "before"),
+                                                      voice: personality.voice) ?? verdict.label
+            #expect(!rendered.isEmpty)
+        }
+        #expect(verdict.ok)
+        #expect(verdict.moment == .lightMatched)
+    }
+
+    @Test func everyNewPackRendersEveryLightMatchMoment() {
+        for voice in newPacks {
+            for moment in [CoachMoment.lightMatched, .lightBrighterThan, .lightDarkerThan,
+                          .lightWarmerThan, .lightCoolerThan] {
+                let phrase = voice.phrase(for: moment, ctx: CoachPhraseContext(subjectNoun: "before"))
+                #expect(phrase?.isEmpty == false, "\(voice.displayName) has no line for \(moment)")
+            }
+        }
+    }
+
+    // MARK: - I, ProCameraDestination
+
+    /// `owesAPhoto`/`requirementMet` never take a voice — the "what's owed"
+    /// decision and the "how it's said" render are different call surfaces
+    /// entirely. This pins that a session's decision is identical whichever
+    /// voice later renders `guideNote`/`leavingWithoutTitle`.
+    @Test func sessionDestinationDecisionIsIndependentOfVoice() {
+        let destination = ProCameraDestination.session(bookingId: "bk_1", phase: .before)
+        for personality in CoachPersonality.allCases {
+            let note = destination.guideNote(requirementMet: true, voice: personality.voice)
+            #expect(!note.isEmpty)
+            #expect(destination.owesAPhoto)
+            #expect(destination.requirementMet(captured: 1))
+        }
+    }
+
+    @Test func calmMentorLeavesSessionDestinationCopyByteIdentical() {
+        let destination = ProCameraDestination.session(bookingId: "bk_1", phase: .after)
+        #expect(destination.guideNote(requirementMet: true) == ProSessionPhotoRequirement.metDetail(.after))
+        #expect(destination.guideNote(requirementMet: false) == ProSessionPhotoRequirement.guideNote(.after))
+        #expect(destination.leavingWithoutTitle() == ProSessionPhotoRequirement.leavingWithoutTitle(.after))
+        #expect(destination.outstandingSentence() == ProSessionPhotoRequirement.outstandingSentence(.after))
+    }
+
+    @Test func everyNewPackRendersEverySessionAndPracticeMoment() {
+        let momentsWithDetail: [CoachMoment] = [
+            .sessionGuideNoteMet, .sessionGuideNoteOutstanding, .sessionOutstandingSentence,
+            .leavingWithoutTitleSession,
+        ]
+        let momentsWithoutCtx: [CoachMoment] = [.practiceGuideNote, .leavingWithoutTitlePractice]
+        for voice in newPacks {
+            for moment in momentsWithDetail {
+                let phrase = voice.phrase(for: moment, ctx: CoachPhraseContext(detail: "One before photo is required."))
+                #expect(phrase?.isEmpty == false, "\(voice.displayName) has no line for \(moment)")
+            }
+            for moment in momentsWithoutCtx {
+                let phrase = voice.phrase(for: moment, ctx: CoachPhraseContext())
+                #expect(phrase?.isEmpty == false, "\(voice.displayName) has no line for \(moment)")
+            }
+        }
+    }
+
+    // MARK: - G/H, ShotGuide + ProCapturePhotosView announcements
+
+    @Test func everyNewPackRendersEveryShotGuideAndAnnounceMoment() {
+        let moments: [CoachMoment] = [
+            .shotStepHint, .shotStepAnnounce, .shotCaptured, .trendingSetIntro,
+            .matchingReferenceLook, .aiDirectionReady, .retakeConfirm, .retakeAnnounce,
+        ]
+        for voice in newPacks {
+            for moment in moments {
+                let phrase = voice.phrase(for: moment,
+                                          ctx: CoachPhraseContext(subjectNoun: "Front", detail: "Square to the camera"))
+                #expect(phrase?.isEmpty == false, "\(voice.displayName) has no line for \(moment)")
+            }
+        }
+    }
+}
+
+/// Delivery (rate/pitch/lead-in) — the "make it sound natural, not robotic"
+/// pass. Same tone-only guardrail as the words: `CoachEngine.speak` is the
+/// only place these numbers are read, downstream of every decision, same as
+/// `CoachVoiceRenderer`.
+@Suite struct CoachVoiceSpeechDeliveryTests {
+    private let allVoices: [CoachVoice] = [
+        CalmMentorVoice(), HypeBestieVoice(), StraightShooterVoice(), EditorialDirectorVoice(), DragQueenBestieVoice(),
+    ]
+
+    @Test func everyPackHasSpeechParamsInValidAVSpeechRanges() {
+        for voice in allVoices {
+            #expect(voice.speechRateMultiplier > 0)
+            #expect(voice.speechPitch >= 0.5 && voice.speechPitch <= 2.0)
+            #expect(voice.preUtteranceDelay >= 0)
+        }
+    }
+
+    @Test func packsAreDeliveredDistinctlyNotJustWordedDistinctly() {
+        let rates = Set(allVoices.map { $0.speechRateMultiplier })
+        let pitches = Set(allVoices.map { $0.speechPitch })
+        #expect(rates.count > 1, "every pack speaking at the same rate defeats the point of tuning it per personality")
+        #expect(pitches.count > 1)
+    }
+
+    /// The actual bug this whole pass exists to fix: flat default rate and
+    /// neutral pitch with no lead-in is what made even warm WORDS read as a
+    /// machine talking. Calm Mentor gets a deliberate delivery now, same as
+    /// the other four — its TEXT is still the byte-identical launch pack.
+    @Test func calmMentorNoLongerSpeaksAtTheBareSystemDefault() {
+        let calm = CalmMentorVoice()
+        #expect(calm.speechRateMultiplier != 1.0)
+        #expect(calm.speechPitch != 1.0)
+    }
+
+    /// The two ends of the energy spectrum, concretely: Hype Bestie reads
+    /// faster and brighter than Editorial Director's composed, lower pace.
+    @Test func hypeBestieIsBriskerAndBrighterThanEditorialDirector() {
+        let hype = HypeBestieVoice()
+        let editorial = EditorialDirectorVoice()
+        #expect(hype.speechRateMultiplier > editorial.speechRateMultiplier)
+        #expect(hype.speechPitch > editorial.speechPitch)
+        #expect(hype.preUtteranceDelay < editorial.preUtteranceDelay)
+    }
+}
+
+/// The regression this suite exists to pin: rendering a QC reason through
+/// its OWN moment and then splicing that already-flourished line into
+/// ANOTHER flourished wrapper stacks two personality treatments into one
+/// utterance — which reads (and sounds, spoken) like a machine repeating
+/// itself: "It came out too dark, bestie — one more! — retake while
+/// they're right there, bestie?". The fix: the wrapping moment always gets
+/// the CANONICAL reason, so exactly one flourish happens per utterance.
+@Suite struct CoachVoiceRetakeCompositionTests {
+    private let newPacks: [CoachVoice] = [
+        HypeBestieVoice(), StraightShooterVoice(), EditorialDirectorVoice(), DragQueenBestieVoice(),
+    ]
+
+    @Test func retakeConfirmRendersTheCanonicalReasonExactlyOnce() {
+        let canonicalReason = "Their face came out too dark"
+        for voice in newPacks {
+            let confirm = voice.phrase(for: .retakeConfirm, ctx: CoachPhraseContext(detail: canonicalReason))
+            #expect(confirm?.contains(canonicalReason) == true, "\(voice.displayName) dropped or re-flourished the reason")
+            guard let confirm else { continue }
+            let mentions = confirm.lowercased().components(separatedBy: "retake").count - 1
+            #expect(mentions <= 1, "\(voice.displayName) mentions retaking more than once: \(confirm)")
+        }
+    }
+
+    @Test func retakeAnnounceRendersTheCanonicalReasonExactlyOnce() {
+        let canonicalReason = "It came out soft"
+        for voice in newPacks {
+            let announce = voice.phrase(for: .retakeAnnounce, ctx: CoachPhraseContext(detail: canonicalReason))
+            #expect(announce?.contains(canonicalReason) == true, "\(voice.displayName) dropped or re-flourished the reason")
+        }
     }
 }

@@ -39,6 +39,33 @@ enum CoachMoment: Hashable, CaseIterable, Sendable {
     case laneHoldShooting, laneSetComplete, laneCalibrationDrift
 
     case dimensionCleared
+
+    // MARK: - Phase 4 (docs/design/camera-personality-packs.md §4, sites E–I)
+    // Deferred-scope moments: post-capture QC, before/after light matching,
+    // the directed-shoot step hint, the camera's spoken announcements/dialogs,
+    // and the session-vs-practice framing copy. Same architecture as A–D —
+    // these just reach three more decision layers downstream of the live coach.
+
+    /// E — `PhotoQC`'s post-capture retake verdict.
+    case qcEyesClosed, qcSoft, qcTooDark, qcBlownOut
+
+    /// F — `BeforeShotMeasure.LightMatch`'s before/after light verdict.
+    case lightMatched, lightBrighterThan, lightDarkerThan, lightWarmerThan, lightCoolerThan
+
+    /// G — `ShotGuide.ShotStep.hint`, wherever it's shown as the standing
+    /// how-to (the guide sheet's current-step row, the lane's resting/transient
+    /// step text). `title` stays canonical everywhere — it's also the step's
+    /// `Identifiable` id.
+    case shotStepHint
+
+    /// H — `ProCapturePhotosView`'s `coach?.announce(...)` call sites and the
+    /// photographer-check retake dialog.
+    case shotStepAnnounce, shotCaptured, trendingSetIntro, matchingReferenceLook, aiDirectionReady
+    case retakeConfirm, retakeAnnounce
+
+    /// I — `ProCameraDestination`'s session/practice framing copy.
+    case sessionGuideNoteMet, sessionGuideNoteOutstanding, practiceGuideNote
+    case sessionOutstandingSentence, leavingWithoutTitleSession, leavingWithoutTitlePractice
 }
 
 extension CoachCategory {
@@ -60,18 +87,30 @@ extension CoachCategory {
 /// Interpolation payload for the handful of moments whose canonical text has
 /// a `\(...)` in it — covers every one seen in the launch scope without a
 /// pack needing to know `FrameContext` internals.
-struct CoachPhraseContext: Sendable, Equatable {
+nonisolated struct CoachPhraseContext: Sendable, Equatable {
     /// `LevelCoach`'s tilt direction ("left"/"right").
     var direction: String?
-    /// The cleared dimension's spoken name, for `.dimensionCleared`.
+    /// The cleared dimension's spoken name, for `.dimensionCleared`; the shot
+    /// title, the light-match noun ("before"/"reference"), the QC subject
+    /// ("It"/"Their face") for the Phase 4 moments that name a thing.
     var subjectNoun: String?
     /// Reserved for a future moment that needs a count.
     var count: Int?
+    /// A second interpolated string for Phase 4 moments that wrap a piece of
+    /// existing text rather than just naming a thing — a step's hint, a
+    /// pack's tagline, an AI direction line, a QC retake reason, a session
+    /// requirement sentence. Deliberately the CANONICAL text, never another
+    /// moment's already-flourished render: stacking two packs' flourishes
+    /// into one utterance is how "It came out too dark, bestie — one more!
+    /// — retake while they're right there, bestie?" happens. One flourish
+    /// per utterance, from whichever moment is doing the wrapping.
+    var detail: String?
 
-    init(direction: String? = nil, subjectNoun: String? = nil, count: Int? = nil) {
+    init(direction: String? = nil, subjectNoun: String? = nil, count: Int? = nil, detail: String? = nil) {
         self.direction = direction
         self.subjectNoun = subjectNoun
         self.count = count
+        self.detail = detail
     }
 }
 
@@ -96,6 +135,27 @@ protocol CoachVoice: Sendable {
     /// Whether the corrective's WHY rides along when this moment is spoken /
     /// shown. Defaults to the pack's chattiness — minimal packs skip it.
     func includesWhy(for moment: CoachMoment) -> Bool
+
+    // MARK: - Delivery (how it SOUNDS, never what fires)
+    //
+    // `CoachEngine.speak` multiplies these onto the one system voice
+    // `CoachSpeechVoice` resolves (the best Enhanced/Premium voice actually
+    // installed) — personalities never pick a different underlying voice,
+    // only how it's paced. Same guardrail as the words themselves: nothing
+    // here can be seen from `ShotCoach`/`CoachAggregate`/`CoachTuning`, so a
+    // pack has no way to reach the decision layer through delivery either.
+
+    /// Multiplies `AVSpeechUtteranceDefaultSpeechRate`. 1.0 = system default;
+    /// under 1 is slower/warmer, over 1 is brisker.
+    var speechRateMultiplier: Float { get }
+    /// `AVSpeechUtterance.pitchMultiplier` (0.5–2.0). 1.0 = unchanged; under 1
+    /// reads lower/composed, over 1 reads brighter/lifted.
+    var speechPitch: Float { get }
+    /// A small breath before the utterance starts — composed packs pause
+    /// longer, eager ones jump right in. Real speech rarely starts on a
+    /// dead cut, which is a good part of why raw default-rate TTS reads as
+    /// robotic even with a natural-sounding voice underneath it.
+    var preUtteranceDelay: TimeInterval { get }
 }
 
 extension CoachVoice {
@@ -120,9 +180,18 @@ enum CoachVoiceRenderer {
 /// IS today's Calm Mentor string, unchanged by this feature. This is what
 /// keeps the pinned tests and every existing on-screen/spoken line exactly
 /// as they were before personalities existed.
+///
+/// Delivery is the one thing that's deliberately NOT byte-identical to
+/// before: raw `AVSpeechUtteranceDefaultSpeechRate` at neutral pitch with no
+/// lead-in is what made the coach sound like a machine even saying warm
+/// words. A touch slower, a touch lower, a short breath first — measured and
+/// warm, not flat.
 struct CalmMentorVoice: CoachVoice {
     let id: CoachPersonality = .calmMentor
     let displayName = "Calm Mentor"
     let chattiness: CoachChattiness = .standard
+    let speechRateMultiplier: Float = 0.94
+    let speechPitch: Float = 0.96
+    let preUtteranceDelay: TimeInterval = 0.15
     func phrase(for moment: CoachMoment, ctx: CoachPhraseContext) -> String? { nil }
 }

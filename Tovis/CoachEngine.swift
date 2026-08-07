@@ -354,7 +354,7 @@ struct HarvestedShot: Identifiable {
 
 @Observable
 @MainActor
-final class CoachEngine {
+final class CoachEngine: NSObject {
     private(set) var readiness: Double = 0
     private(set) var nudge: CoachNudge?
     /// Per-fundamental live status for the checklist HUD (light/level/frame/…).
@@ -396,6 +396,11 @@ final class CoachEngine {
     /// Whether we've claimed the audio session for spoken tips (lazily, on the
     /// first utterance — so camera sessions with voice off never touch audio).
     private var audioSessionConfigured = false
+    /// Pacing/coalescing/priority-interrupt + per-category repeat suppression
+    /// — the whole "when does a request actually reach the synthesizer, and
+    /// does it repeat itself" policy, pulled out into a pure type so it's
+    /// testable without a live `AVSpeechSynthesizer` (see CoachSpeechScheduler.swift).
+    private var speechScheduler = CoachSpeechScheduler()
 
     /// Readiness at/above the tuning threshold reads as "good to shoot" (green
     /// ring). Read live (not captured) so the tuning console applies instantly.
@@ -430,6 +435,11 @@ final class CoachEngine {
             LightingCoach(), CompositionCoach(), SharpnessCoach(),
             BackgroundCoach(), PoseCoach(), LevelCoach(), ColorCoach(),
         ])
+        super.init()
+        // `didFinish`/`didCancel` is the only place a coalesced pending
+        // utterance ever actually starts playing (`speechChannelFreed`) — see
+        // the AVSpeechSynthesizerDelegate conformance below.
+        synthesizer.delegate = self
         analyzer.autoHarvestEnabled = settings.autoHarvest
         analyzer.sink = { [weak self] result in
             // Bind the weak reference before the Task — referencing the captured
@@ -507,7 +517,18 @@ final class CoachEngine {
         // The coach heard being SATISFIED, not only dissatisfied: the dimension
         // that was holding the line just cleared. Spoken before the replacement
         // tip so the pro hears "got it" about the thing they actually just fixed.
-        if let cleared = result.cleared, settings.speak {
+        //
+        // `categoryCleared` only trusts this if it's been a beat since that
+        // fundamental was last actually spoken about — a clear landing faster
+        // than that is the sensor flickering the signal, not a person fixing a
+        // shot in a fraction of a second. An untrusted clear stays quiet
+        // entirely (no "got it" for a fix that's about to un-fix itself next
+        // frame) AND leaves the repeat cooldown running, so a flap can't use
+        // its own noise to keep resetting the very suppression meant to
+        // silence it.
+        if let cleared = result.cleared,
+           speechScheduler.categoryCleared(cleared, now: Date().timeIntervalSinceReferenceDate),
+           settings.speak {
             let fallback = "\(cleared.spokenName) — got it"
             let line = CoachVoiceRenderer.render(
                 .dimensionCleared, fallback: fallback,
@@ -531,7 +552,7 @@ final class CoachEngine {
                     lastNudgeHapticAt = now
                     tap(.warning)
                 }
-                if settings.speak { speak(spokenLine(for: nudge), priority: .tip) }
+                if settings.speak { speakTip(nudge) }
             }
         }
 
@@ -560,42 +581,90 @@ final class CoachEngine {
         isSteadyReady = false
     }
 
-    /// What a spoken line is allowed to do to one already in flight.
-    private enum SpeechPriority {
-        /// A coaching tip. Never interrupts — if the coach is mid-sentence this
-        /// one is dropped, because the tip is on screen anyway and a sentence
-        /// that never finishes is worse than a sentence not said. (Every tip
-        /// used to cancel the last one, which with a re-ranked winner meant the
-        /// pro heard the first three words of everything and the whole of
-        /// nothing.)
-        case tip
-        /// A deliberate directive the pro is waiting on — the next guided shot,
-        /// a capture confirmation. Queued behind whatever is speaking rather
-        /// than cutting it off, and never dropped.
-        case directive
-    }
-
     /// Speak a one-off line (guided directives / capture confirmations). The caller
     /// decides whether voice is enabled.
     func announce(_ text: String) { speak(text, priority: .directive) }
 
-    private func speak(_ text: String, priority: SpeechPriority) {
-        // `.playback` sounds through the silent switch — a salon phone is almost
-        // always on silent, which would otherwise mute every spoken tip. Duck
-        // (don't stop) any music playing in the salon.
-        if !audioSessionConfigured {
-            audioSessionConfigured = true
-            let session = AVAudioSession.sharedInstance()
-            try? session.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers])
-            try? session.setActive(true)
+    /// Ask `speechScheduler` what to do with a request, then carry it out —
+    /// the only place this class actually touches `AVSpeechSynthesizer` to
+    /// START something. What TEXT gets said is decided entirely by the
+    /// callers above (`apply`, `announce`); this only ever decides WHEN a
+    /// request actually reaches the synthesizer, never what fires.
+    private func speak(_ text: String, priority: CoachSpeechScheduler.Priority) {
+        ensureAudioSessionConfigured()
+        perform(speechScheduler.request(text, priority: priority))
+    }
+
+    /// The coaching tip's speech path specifically — `apply`'s other callers
+    /// of `speak` (`announce`, the `.dimensionCleared` line) aren't subject to
+    /// per-fundamental repeat suppression, only the ongoing correction is.
+    private func speakTip(_ nudge: CoachNudge) {
+        ensureAudioSessionConfigured()
+        let action = speechScheduler.requestTip(
+            spokenLine(for: nudge), category: nudge.category, now: Date().timeIntervalSinceReferenceDate)
+        perform(action)
+    }
+
+    /// `.playback` sounds through the silent switch — a salon phone is almost
+    /// always on silent, which would otherwise mute every spoken tip. Duck
+    /// (don't stop) any music playing in the salon.
+    private func ensureAudioSessionConfigured() {
+        guard !audioSessionConfigured else { return }
+        audioSessionConfigured = true
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers])
+        try? session.setActive(true)
+    }
+
+    /// Carry out whatever `CoachSpeechScheduler` decided. `.interruptThenSpeak`
+    /// only stops the current utterance here — `didCancel` → `speechChannelFreed`
+    /// is the only place a new utterance ever actually STARTS, so there's
+    /// exactly one code path that begins one, regardless of how it got there.
+    private func perform(_ action: CoachSpeechScheduler.Action) {
+        switch action {
+        case let .speak(text): startSpeaking(text)
+        case .interruptThenSpeak: synthesizer.stopSpeaking(at: .immediate)
+        case .none: break
         }
-        if priority == .tip, synthesizer.isSpeaking { return }
+    }
+
+    private func startSpeaking(_ text: String) {
         let utterance = AVSpeechUtterance(string: text)
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+        // The best Enhanced/Premium voice actually installed for this device
+        // (CoachSpeechVoice) — personalities never pick a DIFFERENT voice,
+        // only how it's paced (rate/pitch/lead-in), same as everywhere else
+        // "tone only" applies. `nil` here (no voice installed at all, never
+        // happens in practice) just leaves AVSpeechUtterance's own default.
+        utterance.voice = CoachSpeechVoice.best
+        let rawRate = AVSpeechUtteranceDefaultSpeechRate * voice.speechRateMultiplier
+        utterance.rate = min(max(rawRate, AVSpeechUtteranceMinimumSpeechRate), AVSpeechUtteranceMaximumSpeechRate)
+        utterance.pitchMultiplier = min(max(voice.speechPitch, 0.5), 2.0)
+        utterance.preUtteranceDelay = voice.preUtteranceDelay
         synthesizer.speak(utterance)
+    }
+
+    /// The channel just freed up (an utterance finished or was interrupted) —
+    /// play whatever's coalesced behind it, if anything.
+    private func speechChannelFreed() {
+        perform(speechScheduler.channelFreed())
     }
 
     private func tap(_ type: UINotificationFeedbackGenerator.FeedbackType) {
         UINotificationFeedbackGenerator().notificationOccurred(type)
+    }
+}
+
+extension CoachEngine: AVSpeechSynthesizerDelegate {
+    /// Delivered off the main thread — same cross-actor pattern as every
+    /// other AVFoundation callback this engine handles (`CoachAnalyzer.sink`).
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        Task { @MainActor in self.speechChannelFreed() }
+    }
+
+    /// Fires when `stopSpeaking(at:)` interrupts an utterance (the directive-
+    /// over-tip case in `speak(_:priority:)`) — the channel is just as free as
+    /// on a normal finish, so the same handler applies.
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        Task { @MainActor in self.speechChannelFreed() }
     }
 }

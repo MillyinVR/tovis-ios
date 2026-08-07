@@ -118,6 +118,12 @@ enum CameraLane {
         var coachTipPhraseCtx: CoachPhraseContext?
         /// The current shot's how-to, the resting line when the coach is quiet.
         var stepHint: String?
+        /// The current step's title + hint, for rendering `stepTransient`/
+        /// `stepHint` through the active `CoachVoice` (`.shotStepHint`, docs/
+        /// design/camera-personality-packs.md §4 site G). Nil when there's no
+        /// current step — `message(_:)` then shows `stepTransient`/`stepHint`
+        /// verbatim, same as before personalities existed.
+        var stepPhraseCtx: CoachPhraseContext?
         /// A hard failure worth words — a capture that didn't happen, a spill
         /// that couldn't be kept. Not background work.
         var errorText: String?
@@ -147,6 +153,7 @@ enum CameraLane {
                 && a.coachTipMoment == b.coachTipMoment
                 && a.coachTipPhraseCtx == b.coachTipPhraseCtx
                 && a.stepHint == b.stepHint
+                && a.stepPhraseCtx == b.stepPhraseCtx
                 && a.errorText == b.errorText
                 && a.aiDisclosure == b.aiDisclosure
                 && a.hasDimensions == b.hasDimensions
@@ -232,8 +239,10 @@ enum CameraLane {
         }
         // 5 — the shot just changed; say what it is, then get out of the way.
         if let hint = i.stepTransient {
+            let rendered = CoachVoiceRenderer.render(
+                .shotStepHint, fallback: hint, ctx: i.stepPhraseCtx ?? CoachPhraseContext(), voice: voice) ?? hint
             return LaneMessage(
-                text: hint,
+                text: rendered,
                 tone: .neutral,
                 trailing: i.stepProgress.map { "\($0.index + 1)/\($0.total)" },
                 expandable: i.hasDimensions,
@@ -258,7 +267,9 @@ enum CameraLane {
                                expandable: i.hasDimensions, pulses: true)
         }
         if let hint = i.stepHint {
-            return LaneMessage(text: hint, tone: .neutral,
+            let rendered = CoachVoiceRenderer.render(
+                .shotStepHint, fallback: hint, ctx: i.stepPhraseCtx ?? CoachPhraseContext(), voice: voice) ?? hint
+            return LaneMessage(text: rendered, tone: .neutral,
                                expandable: i.hasDimensions, showsDot: false)
         }
         return nil
