@@ -80,7 +80,7 @@ struct ProSocialExportSheet: View {
             await refreshPreview()
         }
         .sheet(item: $sharing) { file in
-            ShareSheet(items: [file.url])
+            ShareSheet(items: [file.url]) { try? FileManager.default.removeItem(at: file.url) }
         }
     }
 
