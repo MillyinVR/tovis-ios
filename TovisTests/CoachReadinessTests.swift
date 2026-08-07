@@ -93,12 +93,17 @@ import Testing
     }
 
     // MARK: - Which tip wins the one on-screen line
+    //
+    // `deficit` no longer PICKS the surfaced tip — sequential focus coaching
+    // (docs/design, 2026-08-06) locks onto the earliest broken rung of a
+    // fixed big-to-small order instead (`CoachTipArbiter` / `FocusRung`).
+    // It's still exactly what READINESS (the ring) is the weighted mean of,
+    // which is what these arithmetic assertions below actually pin.
 
-    /// Where the mixed-light penalty sits in the tip ranking. `ColorCoach` scores
-    /// 0.45 on mixed light at weight 1.1 → deficit 0.605, which outranks every
-    /// other coach's tip except an outright lighting failure or a clearly soft
-    /// frame. Step 2 reduced the camera to ONE coach line, so whichever tip wins
-    /// here is very nearly the whole coaching voice.
+    /// Where the mixed-light penalty sits in the READINESS weighting.
+    /// `ColorCoach` scores 0.45 on mixed light at weight 1.1 → deficit 0.605,
+    /// which drags the ring down more than every other coach's shortfall
+    /// except an outright lighting failure or a clearly soft frame.
     @Test func mixedLightOutranksEveryTipExceptHardLightOrFocusFailure() {
         let mixedLight = CoachAggregate.deficit(.color, CoachSignal(score: 0.45, message: "x"))
 
@@ -114,9 +119,12 @@ import Testing
         #expect(mixedLight > CoachAggregate.deficit(.pose, CoachSignal(score: 0.50, message: "x")))
     }
 
-    /// The consequence: the frame is amber because it is SOFT, and the one line
-    /// the pro is shown tells them to turn off the overheads. Both problems are
-    /// real; the coach surfaces the one they usually cannot act on.
+    /// The frame is amber because it is SOFT, but the one line the pro is
+    /// shown tells them to turn off the overheads. Both problems are real —
+    /// color comes before sharpness on the focus ladder (fixing the room's
+    /// light is the bigger adjustment; holding the shot still for a crisp
+    /// capture is the last, finest step), so it's what the pro hears about,
+    /// even though sharpness is what's actually failing THIS frame.
     @Test func theCoachTalksAboutLightWhileTheFrameIsFailingOnFocus() {
         let v = CoachAggregate.evaluate(coaches, ctx(sharpness: 0.30, mixed: 0.20,
                                                      tilt: 3.5, clutter: 0.70))

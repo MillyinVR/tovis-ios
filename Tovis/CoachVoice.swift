@@ -66,11 +66,22 @@ enum CoachMoment: Hashable, CaseIterable, Sendable {
     /// I — `ProCameraDestination`'s session/practice framing copy.
     case sessionGuideNoteMet, sessionGuideNoteOutstanding, practiceGuideNote
     case sessionOutstandingSentence, leavingWithoutTitleSession, leavingWithoutTitlePractice
+
+    /// Sequential focus coaching (docs/design, 2026-08-06): the coach just
+    /// advanced off a rung that read stable-good, onto a next broken one —
+    /// compliment the finished rung, then redirect. `ctx.subjectNoun` carries
+    /// the ALREADY-rendered compliment (this voice's own `goodMoment` line);
+    /// `ctx.detail` carries the ALREADY-rendered next correction (this
+    /// voice's own line for whatever moment comes next). Both are complete
+    /// sentences in this voice already — a pack's template for this moment
+    /// only ever supplies the bridge between them, never re-flourishes either
+    /// half (see the retake-flow note in `CoachPhraseContext.detail`).
+    case focusRungAdvanced
 }
 
 extension CoachCategory {
     /// The moment a fundamental's passing state renders through — the
-    /// personality-flavored counterpart to `DimensionsDrawer.goodPhrase`.
+    /// personality-flavored counterpart to `canonicalGoodPhrase`.
     var goodMoment: CoachMoment {
         switch self {
         case .lighting: return .goodLighting
@@ -80,6 +91,23 @@ extension CoachCategory {
         case .sharpness: return .goodSharpness
         case .background: return .goodBackground
         case .pose: return .goodPose
+        }
+    }
+
+    /// The canonical (Calm Mentor) text for this fundamental passing —
+    /// `goodMoment`'s plain-English fallback. Shared between the dimensions
+    /// drawer's always-on-screen row and the focus ladder's compliment-on-
+    /// advance line, so there's exactly one "it's good" sentence per
+    /// fundamental rather than two that can drift apart.
+    var canonicalGoodPhrase: String {
+        switch self {
+        case .lighting: return "Good light"
+        case .color: return "Colour is true"
+        case .level: return "Level"
+        case .composition: return "Framed"
+        case .sharpness: return "Sharp"
+        case .background: return "Background is clean"
+        case .pose: return "Pose reads"
         }
     }
 }

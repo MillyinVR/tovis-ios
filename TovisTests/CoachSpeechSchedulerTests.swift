@@ -89,7 +89,7 @@ import Testing
     /// again well inside the cooldown, is suppressed — not re-spoken, not
     /// even coalesced (there's nothing useful to add).
     @Test func aTipForTheSameCategoryIsSuppressedWithinTheCooldown() {
-        var scheduler = CoachSpeechScheduler(tipRepeatCooldown: 9, clearResetGuard: 2)
+        var scheduler = CoachSpeechScheduler(tipRepeatCooldown: 9)
         let first = scheduler.requestTip("Hold steady — shot looks soft", category: .sharpness, now: 0)
         #expect(first == .speak("Hold steady — shot looks soft"))
         _ = scheduler.channelFreed()   // finish speaking it
@@ -104,7 +104,7 @@ import Testing
     /// would let this alternation straight through, which is the actual bug
     /// reported ("hears the same line repeatedly").
     @Test func aDifferentlyWordedTipForTheSameCategoryIsAlsoSuppressed() {
-        var scheduler = CoachSpeechScheduler(tipRepeatCooldown: 9, clearResetGuard: 2)
+        var scheduler = CoachSpeechScheduler(tipRepeatCooldown: 9)
         _ = scheduler.requestTip("Hold steady — shot looks soft", category: .sharpness, now: 0)
         _ = scheduler.channelFreed()
 
@@ -115,7 +115,7 @@ import Testing
     /// Once the cooldown elapses, the same category is free to speak again —
     /// suppression is temporary, not permanent silence.
     @Test func theSameCategorySpeaksAgainOnceTheCooldownElapses() {
-        var scheduler = CoachSpeechScheduler(tipRepeatCooldown: 9, clearResetGuard: 2)
+        var scheduler = CoachSpeechScheduler(tipRepeatCooldown: 9)
         _ = scheduler.requestTip("Hold steady", category: .sharpness, now: 0)
         _ = scheduler.channelFreed()
 
@@ -129,7 +129,7 @@ import Testing
     /// A DIFFERENT fundamental is never suppressed by another one's cooldown
     /// — lighting and sharpness cooling down independently.
     @Test func differentCategoriesHaveIndependentCooldowns() {
-        var scheduler = CoachSpeechScheduler(tipRepeatCooldown: 9, clearResetGuard: 2)
+        var scheduler = CoachSpeechScheduler(tipRepeatCooldown: 9)
         _ = scheduler.requestTip("Hold steady", category: .sharpness, now: 0)
         _ = scheduler.channelFreed()
 
@@ -137,50 +137,4 @@ import Testing
         #expect(lighting == .speak("Turn toward the light"))
     }
 
-    // MARK: - Reset-on-clear, guarded against flapping
-
-    /// A clear that lands well after the fundamental was last spoken about is
-    /// trusted — the cooldown resets, so a later genuine re-trigger isn't
-    /// stuck waiting out a stale window.
-    @Test func aClearLongAfterSpeakingResetsTheCooldown() {
-        var scheduler = CoachSpeechScheduler(tipRepeatCooldown: 9, clearResetGuard: 2)
-        _ = scheduler.requestTip("Hold steady", category: .sharpness, now: 0)
-        _ = scheduler.channelFreed()
-
-        let trusted = scheduler.categoryCleared(.sharpness, now: 3)
-        #expect(trusted)
-
-        // Cooldown reset → speaks again immediately, well inside the
-        // ORIGINAL 9s window, because this is a fresh occurrence.
-        let action = scheduler.requestTip("Hold steady", category: .sharpness, now: 3.1)
-        #expect(action == .speak("Hold steady"))
-    }
-
-    /// The flapping regression this whole guard exists for: a clear landing
-    /// almost instantly after speaking is sensor noise, not a real fix —
-    /// NOT trusted, cooldown keeps running, and the very next re-trigger is
-    /// still suppressed.
-    @Test func aClearImmediatelyAfterSpeakingIsNotTrustedAndStaysSuppressed() {
-        var scheduler = CoachSpeechScheduler(tipRepeatCooldown: 9, clearResetGuard: 2)
-        _ = scheduler.requestTip("Hold steady", category: .sharpness, now: 0)
-        _ = scheduler.channelFreed()
-
-        // Signal flickered clear one frame later (166ms at 6fps).
-        let trusted = scheduler.categoryCleared(.sharpness, now: 0.166)
-        #expect(!trusted, "an instant clear must not be trusted as a real fix")
-
-        // Flapped back to bad on the very next frame — still suppressed,
-        // because the untrusted clear did NOT reset the cooldown.
-        let action = scheduler.requestTip("Hold steady", category: .sharpness, now: 0.33)
-        #expect(action == .none, "the flap must not have reset its own cooldown")
-    }
-
-    /// A clear for a category that was never spoken about (repeat suppression
-    /// never engaged) is trivially trusted — nothing to reset, nothing to
-    /// distrust.
-    @Test func aClearForAnUnspokenCategoryIsTrusted() {
-        var scheduler = CoachSpeechScheduler()
-        let trusted = scheduler.categoryCleared(.lighting, now: 0)
-        #expect(trusted)
-    }
 }

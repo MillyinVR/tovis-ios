@@ -1,138 +1,258 @@
-// The one coach line's DWELL and SWITCHING MARGIN.
+// Sequential focus coaching — the ladder LOCK, the stability-gated ADVANCE,
+// and the hysteresis-guarded REGRESSION. Founder-directed product change
+// (2026-08-06 live device feedback): the coach used to re-rank by weighted
+// deficit every analyzed frame, which meant firing whichever fundamental was
+// worst RIGHT NOW rather than working through problems big-adjustment-first.
+// It now locks onto ONE rung of `FocusRung`'s fixed order and stays there
+// until that rung reads stable-good, then moves on.
 //
-// The camera shows a single coaching line, and before this the winner was a
-// plain `max` over weighted deficits recomputed on every analyzed frame — six
-// times a second. Two coaches with near-equal deficits therefore alternated,
-// and each alternation fired a warning haptic and restarted the spoken tip from
-// the beginning. That is a concrete, code-level mechanism for "it feels like
-// nagging", independent of whether the tips themselves are correct.
-//
-// These pin the arithmetic that fixed it. No camera, no thresholds from the
-// device pass — just: does the line hold still, and does it hand over when it
-// should?
+// These pin the arithmetic. No camera, no thresholds from the device pass —
+// just: does the lock hold, does it advance/regress at the right moment, and
+// does the order match the ladder.
 import Testing
 @testable import Tovis
 
 @Suite struct CoachTipArbiterTests {
-    private func signal(_ category: CoachCategory, score: Double, message: String? = "x")
-        -> (CoachCategory, CoachSignal) {
-        (category, CoachSignal(score: score, message: message))
+    private func signal(_ category: CoachCategory, score: Double, message: String? = "x",
+                        moment: CoachMoment? = nil) -> (CoachCategory, CoachSignal) {
+        (category, CoachSignal(score: score, message: message, moment: moment))
     }
 
-    /// Two coaches sitting within a hair of each other — the exact condition
-    /// that produced the alternating buzz. Deficits here are colour 1.1 × 0.55 =
-    /// 0.605 and composition 1.0 × 0.55 = 0.55, a gap of 0.055: real, and well
-    /// under the switching margin.
-    private var nearTie: [(CoachCategory, CoachSignal)] {
-        [signal(.color, score: 0.45), signal(.composition, score: 0.45)]
-    }
+    // MARK: - Lock: earliest broken rung in ladder order, not the worst deficit
 
-    @Test func aNearTieNoLongerAlternatesEveryFrame() {
+    /// The behavior change this whole rewrite is for: with lighting AND
+    /// sharpness both broken, the OLD deficit-based arbiter could pick
+    /// whichever scored worse. The ladder always picks lighting — it's
+    /// earlier in the fixed order — regardless of which one is "worse".
+    @Test func locksOntoTheEarliestBrokenRungRegardlessOfSeverity() {
         var arbiter = CoachTipArbiter()
-        let first = arbiter.select(from: nearTie, now: 0)
-        #expect(first.nudge?.category == .color)
-
-        // 30 seconds of frames at the analysis rate. Long past the dwell, so
-        // only the margin is holding the line now.
-        var line: [CoachCategory] = []
-        for frame in 1...180 {
-            let t = Double(frame) / CoachTuning.analysisFPS
-            if let category = arbiter.select(from: nearTie, now: t).nudge?.category {
-                line.append(category)
-            }
-        }
-        #expect(line.count == 180)
-        #expect(Set(line) == [.color])   // it never flips
+        // Sharpness scored far worse (0.1) than lighting (0.4), which would
+        // have won outright under the old weighted-deficit ranking.
+        let outcome = arbiter.select(
+            from: [signal(.sharpness, score: 0.1), signal(.lighting, score: 0.4)], now: 0)
+        #expect(outcome.nudge?.category == .lighting)
     }
 
-    @Test func theDwellHoldsTheLineEvenAgainstAClearlyWorseProblem() {
+    @Test func colorComesRightAfterLightingBeforeAnyFraming() {
         var arbiter = CoachTipArbiter()
-        _ = arbiter.select(from: [signal(.background, score: 0.5)], now: 0)
-
-        // A hard lighting failure arrives immediately: deficit 1.6 × 0.7 = 1.12
-        // against the background's 0.8 × 0.5 = 0.4. It still waits its turn.
-        let contested = [signal(.background, score: 0.5), signal(.lighting, score: 0.3)]
-        let midDwell = arbiter.select(from: contested, now: CoachTuning.tipDwellSeconds - 0.01)
-        #expect(midDwell.nudge?.category == .background)
-
-        // …and takes the line the moment the dwell is served.
-        let after = arbiter.select(from: contested, now: CoachTuning.tipDwellSeconds + 0.01)
-        #expect(after.nudge?.category == .lighting)
+        let outcome = arbiter.select(
+            from: [signal(.composition, score: 0.3), signal(.color, score: 0.3)], now: 0)
+        #expect(outcome.nudge?.category == .color)
     }
 
-    @Test func aChallengerMustBeatTheIncumbentByTheMarginNotMerelyBeatIt() {
+    @Test func sharpnessIsAlwaysLastEvenAgainstEverythingElseBroken() {
         var arbiter = CoachTipArbiter()
-        _ = arbiter.select(from: [signal(.composition, score: 0.45)], now: 0)
-        let incumbentDeficit = CoachAggregate.deficit(.composition, CoachSignal(score: 0.45, message: "x"))
-
-        // A challenger that wins by less than the margin: still not enough.
-        let justUnder = incumbentDeficit + CoachTuning.tipSwitchMargin - 0.02
-        let weak = [signal(.composition, score: 0.45),
-                    signal(.level, score: 1 - justUnder / CoachCategory.level.weight)]
-        #expect(arbiter.select(from: weak, now: 10).nudge?.category == .composition)
-
-        // Clear the margin and it takes the line.
-        let justOver = incumbentDeficit + CoachTuning.tipSwitchMargin + 0.02
-        let strong = [signal(.composition, score: 0.45),
-                      signal(.level, score: 1 - justOver / CoachCategory.level.weight)]
-        #expect(arbiter.select(from: strong, now: 20).nudge?.category == .level)
+        let everythingBroken: [(CoachCategory, CoachSignal)] = [
+            signal(.sharpness, score: 0.1), signal(.lighting, score: 0.5),
+            signal(.color, score: 0.5), signal(.composition, score: 0.5),
+            signal(.level, score: 0.5), signal(.background, score: 0.5),
+            signal(.pose, score: 0.5),
+        ]
+        let outcome = arbiter.select(from: everythingBroken, now: 0)
+        #expect(outcome.nudge?.category == .lighting, "the earliest rung, not sharpness, must win")
     }
 
-    /// The one case that must NOT wait: the pro fixed the thing they were told
-    /// to fix. A tip that is no longer true has no claim on the line, dwell or
-    /// not — and the hand-back is reported so the coach can say "got it".
-    @Test func aFixedDimensionYieldsTheLineImmediatelyAndSaysSo() {
+    /// Composition's moment decides which of the two composition rungs it
+    /// lands on — `.compositionTooFar` is a framing (distance) problem,
+    /// which comes before centering.
+    @Test func compositionSplitsIntoFramingAndCenteringByMoment() {
+        var framingArbiter = CoachTipArbiter()
+        let framing = framingArbiter.select(
+            from: [signal(.composition, score: 0.4, moment: .compositionTooFar)], now: 0)
+        #expect(framing.nudge?.moment == .compositionTooFar)
+
+        var centeringArbiter = CoachTipArbiter()
+        let centering = centeringArbiter.select(
+            from: [signal(.composition, score: 0.4, moment: .compositionRecenter)], now: 0)
+        #expect(centering.nudge?.moment == .compositionRecenter)
+    }
+
+    /// A framing problem outranks a centering one — distance is the bigger
+    /// adjustment, fine centering is the detail polish.
+    @Test func framingOutranksCenteringWhenBothAreImpossibleSimultaneously() {
+        // (Can't literally happen from one CompositionCoach signal, but the
+        // ladder ordering itself — framing < centering — is what's pinned.)
+        #expect(FocusRung.framing < FocusRung.centering)
+    }
+
+    // MARK: - Advance: gated on the stability window, not the first good frame
+
+    /// The core new behavior: a rung reading good for the first time does
+    /// NOT advance the ladder immediately — a momentary good reading might
+    /// be sensor noise, not a real fix. The last-known correction keeps
+    /// showing until the reading has held continuously for the full window.
+    @Test func aMomentaryGoodReadingDoesNotAdvancePrematurely() {
         var arbiter = CoachTipArbiter()
-        _ = arbiter.select(from: [signal(.sharpness, score: 0.3),
-                                  signal(.background, score: 0.5)], now: 0)
+        _ = arbiter.select(from: [signal(.lighting, score: 0.3), signal(.color, score: 0.3)], now: 0)
 
-        // Focus fixed a tenth of a second later — deep inside the dwell.
-        let fixed = arbiter.select(from: [signal(.sharpness, score: 1.0, message: nil),
-                                          signal(.background, score: 0.5)], now: 0.1)
-        #expect(fixed.cleared == .sharpness)
-        #expect(fixed.nudge?.category == .background)
+        // Lighting reads good for the first time at t=1 — starts the clock.
+        let firstGood = arbiter.select(from: [signal(.color, score: 0.3)], now: 1)
+        #expect(firstGood.nudge?.category == .lighting, "must keep showing lighting until it's PROVEN stable")
+        #expect(firstGood.advanced == nil)
+
+        // Still well under the stability window a moment later.
+        let stillWaiting = arbiter.select(from: [signal(.color, score: 0.3)], now: 1.2)
+        #expect(stillWaiting.nudge?.category == .lighting)
+        #expect(stillWaiting.advanced == nil)
     }
 
-    @Test func clearingIsReportedOnceNotOnEveryFrameAfter() {
+    /// Once the stability window elapses with the rung continuously good, the
+    /// ladder advances — and reports which rung just cleared, so the coach
+    /// can compliment it.
+    @Test func advancesOnceTheStabilityWindowElapses() {
+        var arbiter = CoachTipArbiter()
+        _ = arbiter.select(from: [signal(.lighting, score: 0.3), signal(.color, score: 0.3)], now: 0)
+        // Lighting starts reading good at t=1 — this is when the clock starts.
+        _ = arbiter.select(from: [signal(.color, score: 0.3)], now: 1)
+
+        let midWindow = arbiter.select(
+            from: [signal(.color, score: 0.3)], now: 1 + CoachTuning.focusStabilityWindow - 0.1)
+        #expect(midWindow.nudge?.category == .lighting)
+        #expect(midWindow.advanced == nil)
+
+        let advanced = arbiter.select(
+            from: [signal(.color, score: 0.3)], now: 1 + CoachTuning.focusStabilityWindow + 0.1)
+        #expect(advanced.advanced == .lighting)
+        #expect(advanced.nudge?.category == .color)
+        #expect(advanced.cleared == nil)
+    }
+
+    /// A flicker resets the stability clock: good for a moment, bad again,
+    /// good again — the SECOND good streak has to serve the full window on
+    /// its own, not inherit progress from the first.
+    @Test func aFlickerBackToBadResetsTheStabilityClock() {
+        var arbiter = CoachTipArbiter()
+        _ = arbiter.select(from: [signal(.lighting, score: 0.3)], now: 0)
+
+        // Good starting at t=1...
+        _ = arbiter.select(from: [], now: 1.0)
+        // ...bad again at t=1.2, well under the ORIGINAL window from t=1.
+        _ = arbiter.select(from: [signal(.lighting, score: 0.3)], now: 1.2)
+        // Good again — if the clock had NOT reset at 1.2, elapsed since t=1
+        // would already exceed the window by now; since it DID reset, this
+        // fresh streak (started at 1.2) has only served `stabilityWindow - 0.1`.
+        let recheck = arbiter.select(from: [], now: 1.2 + CoachTuning.focusStabilityWindow - 0.1)
+        #expect(recheck.advanced == nil, "the flicker must not have let stability accumulate across the gap")
+    }
+
+    /// Re-wording within the SAME rung ("hold steady" → "tap to focus", both
+    /// sharpness) is still "broken" — it must not read as a good frame and
+    /// start the stability clock.
+    @Test func rewordingWithinTheSameRungNeverCountsAsGood() {
+        var arbiter = CoachTipArbiter()
+        _ = arbiter.select(from: [signal(.sharpness, score: 0.3, moment: .sharpnessHoldSteady)], now: 0)
+        let reworded = arbiter.select(
+            from: [signal(.sharpness, score: 0.6, moment: .sharpnessTapToFocus)], now: 1.0)
+        #expect(reworded.nudge?.moment == .sharpnessTapToFocus)
+        #expect(reworded.advanced == nil)
+
+        // Still treated as broken, not stabilizing: even well past the
+        // stability window, still no advance while it keeps reporting
+        // (whatever the wording).
+        let stillReworded = arbiter.select(
+            from: [signal(.sharpness, score: 0.6, moment: .sharpnessTapToFocus)],
+            now: 1.0 + CoachTuning.focusStabilityWindow + 1)
+        #expect(stillReworded.advanced == nil)
+    }
+
+    // MARK: - Full clear: advance with nothing left broken
+
+    @Test func clearsCompletelyWhenTheLastRungStabilizesWithNothingElseBroken() {
         var arbiter = CoachTipArbiter()
         _ = arbiter.select(from: [signal(.sharpness, score: 0.3)], now: 0)
-        let quiet: [(CoachCategory, CoachSignal)] = [signal(.sharpness, score: 1.0, message: nil)]
-
-        #expect(arbiter.select(from: quiet, now: 0.1).cleared == .sharpness)
-        #expect(arbiter.select(from: quiet, now: 0.2).cleared == nil)
-        #expect(arbiter.select(from: quiet, now: 0.3).cleared == nil)
+        _ = arbiter.select(from: [], now: 1)   // sharpness starts reading good
+        let cleared = arbiter.select(from: [], now: 1 + CoachTuning.focusStabilityWindow + 0.1)
+        #expect(cleared.cleared == .sharpness)
+        #expect(cleared.nudge == nil)
+        #expect(cleared.advanced == nil)
     }
 
-    /// Re-wording within one dimension ("a touch soft" → "clearly soft") is the
-    /// same tip getting more urgent, not a new tip. It must not restart the
-    /// dwell, or a steadily-worsening signal would hold the line forever.
-    @Test func rewordingWithinADimensionDoesNotRestartTheDwell() {
-        var arbiter = CoachTipArbiter()
-        _ = arbiter.select(from: [(CoachCategory.sharpness,
-                                   CoachSignal(score: 0.6, message: "Tap to focus — a touch soft"))],
-                           now: 0)
-        // Same dimension, worse wording, mid-dwell.
-        let worse = arbiter.select(
-            from: [(CoachCategory.sharpness,
-                    CoachSignal(score: 0.3, message: "Hold steady — shot looks soft"))],
-            now: 1.0)
-        #expect(worse.nudge?.message == "Hold steady — shot looks soft")
+    // MARK: - Regression: hysteresis-guarded jump back
 
-        // The clock still started at 0, so a challenger that clears the margin
-        // gets in on schedule rather than serving a second dwell.
-        // (Sharpness 0.3 → deficit 0.98; lighting 0.25 → 1.20, which beats
-        // 0.98 + 0.15.)
-        let contested = [signal(.sharpness, score: 0.3),
-                         signal(.lighting, score: 0.25)]
-        #expect(arbiter.select(from: contested,
-                               now: CoachTuning.tipDwellSeconds + 0.01).nudge?.category == .lighting)
+    /// The described product behavior: working a lower rung, a previously-
+    /// fixed higher rung breaks badly enough for long enough — the lock
+    /// jumps back. No compliment (nothing was completed), just a redirect.
+    @Test func jumpsBackToAHigherRungThatBreaksAgainAfterTheRegressionWindow() {
+        var arbiter = CoachTipArbiter()
+        _ = arbiter.select(from: [signal(.lighting, score: 0.3), signal(.composition, score: 0.3)], now: 0)
+        _ = arbiter.select(from: [signal(.composition, score: 0.3)], now: 1)   // lighting starts reading good
+        let advanced = arbiter.select(
+            from: [signal(.composition, score: 0.3)], now: 1 + CoachTuning.focusStabilityWindow + 0.1)
+        #expect(advanced.nudge?.category == .composition)
+        let advanceTime = 1 + CoachTuning.focusStabilityWindow + 0.1
+
+        // Lighting breaks again — first observed bad a beat later.
+        let firstBad = advanceTime + 1
+        _ = arbiter.select(
+            from: [signal(.composition, score: 0.3), signal(.lighting, score: 0.2)], now: firstBad)
+
+        let stillGuarded = arbiter.select(
+            from: [signal(.composition, score: 0.3), signal(.lighting, score: 0.2)],
+            now: firstBad + CoachTuning.focusRegressionWindow - 0.1)
+        #expect(stillGuarded.nudge?.category == .composition, "not trusted yet — still inside the regression window")
+
+        let jumpedBack = arbiter.select(
+            from: [signal(.composition, score: 0.3), signal(.lighting, score: 0.2)],
+            now: firstBad + CoachTuning.focusRegressionWindow + 0.1)
+        #expect(jumpedBack.nudge?.category == .lighting)
+        #expect(jumpedBack.advanced == nil, "a regression is a redirect, not a completion — no compliment")
+        #expect(jumpedBack.cleared == nil)
     }
 
-    /// The memory-free `evaluate` the bench and the scoring tests use must be
-    /// the same selection rule with a fresh state — not a second implementation.
-    @Test func theStatelessEvaluateIsTheRawRanking() {
+    /// The hysteresis this exists for: a higher rung that's merely
+    /// FLICKERING bad (not continuously) never accumulates enough time to
+    /// trip the jump — this is what stops two borderline rungs from
+    /// ping-ponging the lock.
+    @Test func aFlickeringHigherRungNeverTripsTheJumpBack() {
         var arbiter = CoachTipArbiter()
-        let picked = arbiter.select(from: nearTie, now: 0).nudge
-        #expect(picked?.category == .color)   // the larger weighted deficit wins outright
+        _ = arbiter.select(from: [signal(.lighting, score: 0.3), signal(.composition, score: 0.3)], now: 0)
+        _ = arbiter.select(from: [signal(.composition, score: 0.3)], now: 1)
+        _ = arbiter.select(
+            from: [signal(.composition, score: 0.3)], now: 1 + CoachTuning.focusStabilityWindow + 0.1)
+        let advanceTime = 1 + CoachTuning.focusStabilityWindow + 0.1
+
+        // Lighting goes bad, tracked...
+        let firstBad = advanceTime + 1
+        _ = arbiter.select(from: [signal(.composition, score: 0.3), signal(.lighting, score: 0.2)], now: firstBad)
+        // ...then recovers before the regression window elapses...
+        _ = arbiter.select(from: [signal(.composition, score: 0.3)], now: firstBad + 0.2)
+        // ...then goes bad again — a NEW bad streak, not a continuation.
+        let secondBad = firstBad + 0.4
+        _ = arbiter.select(from: [signal(.composition, score: 0.3), signal(.lighting, score: 0.2)], now: secondBad)
+        let stillNoJump = arbiter.select(
+            from: [signal(.composition, score: 0.3), signal(.lighting, score: 0.2)],
+            now: secondBad + CoachTuning.focusRegressionWindow - 0.1)
+        #expect(stillNoJump.nudge?.category == .composition, "the flicker must not have accumulated toward the jump")
+    }
+
+    /// The candidate identity mattering, not just "something is broken above
+    /// me": if lighting's bad streak is interrupted by color becoming the
+    /// candidate instead, lighting's clock doesn't carry over to color.
+    @Test func switchingWhichHigherRungIsBadResetsTheRegressionClock() {
+        var arbiter = CoachTipArbiter()
+        _ = arbiter.select(from: [signal(.lighting, score: 0.3), signal(.pose, score: 0.3)], now: 0)
+        _ = arbiter.select(from: [signal(.pose, score: 0.3)], now: 1)
+        _ = arbiter.select(from: [signal(.pose, score: 0.3)], now: 1 + CoachTuning.focusStabilityWindow + 0.1)
+        let advanceTime = 1 + CoachTuning.focusStabilityWindow + 0.1
+
+        // Lighting is the candidate for a while, not long enough to trip.
+        let lightingBadAt = advanceTime + 1
+        _ = arbiter.select(from: [signal(.pose, score: 0.3), signal(.lighting, score: 0.2)], now: lightingBadAt)
+        let switchAt = lightingBadAt + CoachTuning.focusRegressionWindow - 0.2
+        // Color goes bad INSTEAD of lighting (lighting recovered) — a new candidate.
+        _ = arbiter.select(from: [signal(.pose, score: 0.3), signal(.color, score: 0.2)], now: switchAt)
+        let stillNoJump = arbiter.select(
+            from: [signal(.pose, score: 0.3), signal(.color, score: 0.2)],
+            now: switchAt + CoachTuning.focusRegressionWindow - 0.1)
+        #expect(stillNoJump.nudge?.category == .pose, "color just became the candidate — it hasn't served its own window yet")
+    }
+
+    // MARK: - The memory-free evaluate is the same rule with fresh state
+
+    @Test func theStatelessEvaluateIsTheSameLadderLock() {
+        var arbiter = CoachTipArbiter()
+        let picked = arbiter.select(
+            from: [signal(.sharpness, score: 0.1), signal(.lighting, score: 0.4)], now: 0).nudge
+        #expect(picked?.category == .lighting)
     }
 }
