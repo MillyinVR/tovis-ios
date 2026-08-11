@@ -31,16 +31,41 @@ struct TovisTabBar: View {
         .frame(minHeight: barHeight, alignment: .top)
         // The raised center button pokes above the bar's top edge — measured from
         // the top like the web's margin-top lift (coin top = 16pt above bar top).
+        //
+        // The overlay REPLICATES the row's slot geometry (same spacing, same
+        // horizontal padding, same equal-width slots) instead of simply centering
+        // the mark. With five tabs the centre tab's slot and the bar's midpoint
+        // were the same point, so a plain `.top` (centre-aligned) overlay landed
+        // correctly by coincidence. With the six tabs the web now carries they
+        // diverge — slot 3 of 6 spans 33%–50% of the width, so a centred mark
+        // would sit ~8% of the bar to the right of the gap reserved for it.
+        // Deriving the position from ClientNav.tabs keeps it right at any count.
         .overlay(alignment: .top) {
-            Button {
-                selected = .looks
-            } label: {
-                LooksMark(size: centerSize)
-                    .offset(y: -centerTopLift)
+            HStack(alignment: .top, spacing: 0) {
+                ForEach(ClientNav.tabs) { tab in
+                    Group {
+                        if tab.center {
+                            Button {
+                                selected = .looks
+                            } label: {
+                                LooksMark(size: centerSize)
+                                    .offset(y: -centerTopLift)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(tab.label)
+                            .accessibilityAddTraits(selected == .looks ? [.isSelected] : [])
+                        } else {
+                            // Spacers only — they must not swallow taps meant for
+                            // the real nav buttons in the row underneath.
+                            Color.clear
+                                .frame(height: 1)
+                                .allowsHitTesting(false)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                }
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Looks")
-            .accessibilityAddTraits(selected == .looks ? [.isSelected] : [])
+            .padding(.horizontal, 16)
         }
         // surface + hairline top border (--bg-surface / --line)
         .background(
