@@ -678,13 +678,29 @@ private struct UpcomingCard: View {
     let booking: HomeBooking?
     let upcomingCount: Int
 
+    // BOTH states push AppointmentsView, and both say so with an "All bookings →"
+    // line. The empty state used to be inert text, which was survivable only
+    // while the footer carried a Bookings tab; bookings now live in the home area
+    // (see ClientTab), and AppointmentsView is the only surface listing PENDING
+    // bookings — which is exactly what a client staring at "No approved bookings
+    // yet" has. An inert empty card here means they cannot open, or cancel, their
+    // own request. Neither branch may become conditional.
     var body: some View {
-        if let booking {
-            NavigationLink { AppointmentsView() } label: { card(booking) }
-                .buttonStyle(.plain)
-        } else {
-            empty
+        NavigationLink {
+            AppointmentsView()
+        } label: {
+            if let booking { card(booking) } else { empty }
         }
+        .buttonStyle(.plain)
+    }
+
+    /// The row both states share: names what else is waiting when there is more
+    /// than one upcoming, and otherwise just names the destination.
+    private func allBookingsLine(more: Int) -> some View {
+        Text(more > 0 ? "\(more) more upcoming →" : "All bookings →")
+            .font(BrandFont.body(12.5, .semibold))
+            .foregroundStyle(BrandColor.textMuted)
+            .frame(maxWidth: .infinity)
     }
 
     private func card(_ booking: HomeBooking) -> some View {
@@ -739,12 +755,7 @@ private struct UpcomingCard: View {
                     Rectangle().fill(BrandColor.textPrimary.opacity(0.10)).frame(height: 1)
                 }
 
-                if more > 0 {
-                    Text("\(more) more upcoming →")
-                        .font(BrandFont.body(12.5, .semibold))
-                        .foregroundStyle(BrandColor.textMuted)
-                        .frame(maxWidth: .infinity)
-                }
+                allBookingsLine(more: more)
             }
         }
     }
@@ -757,6 +768,8 @@ private struct UpcomingCard: View {
                     .font(BrandFont.body(13, .semibold)).foregroundStyle(BrandColor.textPrimary)
                 Text("When a pro approves your booking, it’ll show up here.")
                     .font(BrandFont.body(11.5)).foregroundStyle(BrandColor.textMuted)
+                allBookingsLine(more: 0)
+                    .padding(.top, 8)
             }
         }
     }

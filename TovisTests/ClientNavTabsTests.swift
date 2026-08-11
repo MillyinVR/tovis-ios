@@ -3,34 +3,36 @@ import Testing
 @testable import Tovis
 
 /// The client footer is a 1:1 port of the web's `CLIENT_TABS`
-/// (tovis-app `app/config/clientNav.ts`), and it silently drifted: web added a
-/// Bookings tab, iOS did not.
+/// (tovis-app `app/config/clientNav.ts`), and it has drifted from it before —
+/// web added a Bookings tab, iOS did not — so the list is pinned here.
 ///
-/// That drift was not cosmetic. `AppointmentsView` is the only surface listing a
-/// client's PENDING bookings, and the two data-driven routes to it both exclude
-/// PENDING server-side — the home Upcoming card needs an ACCEPTED/IN_PROGRESS
-/// booking, and Me → History filters to ACCEPTED/IN_PROGRESS/COMPLETED. With no
-/// tab, a client whose only booking was still awaiting their pro's approval fell
-/// through to the home card's "No approved bookings yet" empty state, which is
-/// text with no link: they could not open, or cancel, their own request.
+/// Bookings has since left the footer on BOTH platforms: it lives in the home
+/// area. That drop is safe only because the constraint moved with it.
+/// `AppointmentsView` is the only surface listing a client's PENDING bookings,
+/// and the two data-driven routes to it both exclude PENDING server-side — the
+/// home Upcoming card is fed an ACCEPTED/IN_PROGRESS booking, and Me → History
+/// filters to ACCEPTED/IN_PROGRESS/COMPLETED. So a client whose only booking is
+/// still awaiting their pro's approval lands on the home card's "No approved
+/// bookings yet" empty state, and `HomeView.UpcomingCard` therefore pushes
+/// `AppointmentsView` from that empty state as well as the populated one.
 ///
-/// So this pins the list itself. A tab quietly dropped here is a client losing
-/// the door to their own appointments, and nothing else in the project fails.
+/// Read together: this suite pins the tab list, and that unconditional push is
+/// what keeps a client able to open — and cancel — their own request. A tab
+/// quietly re-added or dropped here is a client's door moving, and nothing else
+/// in the project fails.
 @Suite struct ClientNavTabsTests {
     /// Order and identity, matching web CLIENT_TABS exactly.
     @Test func matchesTheWebTabOrder() {
-        #expect(ClientNav.tabs.map(\.id) == [.home, .discover, .looks, .bookings, .inbox, .me])
+        #expect(ClientNav.tabs.map(\.id) == [.home, .discover, .looks, .inbox, .me])
     }
 
-    /// The regression this suite exists for. Named on its own so a failure says
-    /// which tab went missing rather than just "the array changed".
-    @Test func alwaysOffersBookings() {
-        let bookings = ClientNav.tabs.first { $0.id == .bookings }
-        #expect(bookings != nil)
-        #expect(bookings?.label == "Bookings")
-        // Nothing may make this tab conditional: it is the unconditional route to
-        // a client's own appointments, pending ones included.
-        #expect(bookings?.center == false)
+    /// The footer deliberately carries no bookings tab. Named on its own so a
+    /// failure says the bar regrew a door rather than just "the array changed" —
+    /// and so re-adding one is a decision, taken with the home-card route in view
+    /// rather than by accident.
+    @Test func carriesNoBookingsTab() {
+        #expect(ClientNav.tabs.allSatisfy { $0.label.lowercased() != "bookings" })
+        #expect(ClientNav.tabs.count == 5)
     }
 
     /// `TovisTabBar` reserves an empty slot for the centre mark and draws the
