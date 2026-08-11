@@ -9,7 +9,7 @@ import CoreImage
 import Foundation
 import TovisKit
 
-struct PhotoQCReport: Sendable {
+nonisolated struct PhotoQCReport: Sendable {
     /// Human phrasing of the single blocking problem; nil when the shot passes.
     /// Canonical Calm Mentor text — unchanged by personality (see `retakeMoment`).
     let retakeReason: String?

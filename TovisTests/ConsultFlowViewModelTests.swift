@@ -171,6 +171,26 @@ private actor MockConsultService: ConsultServicing {
     }
 }
 
+private actor FirstSoftThenPassingConsultQC: ConsultPhotoQCEvaluating {
+    private var first = true
+
+    func evaluate(_ jpeg: Data, checkBlink: Bool) async -> PhotoQCReport {
+        defer { first = false }
+        return PhotoQCReport(
+            retakeReason: first ? "It came out soft" : nil,
+            sharpness: first ? 0.05 : 0.8,
+            luma: 0.5,
+            faceLuma: nil,
+            eyesClosed: false,
+            focalPoint: nil
+        )
+    }
+}
+
+nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing {
+    func prepare(_ source: Data) async -> Data? { source }
+}
+
 @Suite(.serialized) @MainActor struct ConsultFlowViewModelTests {
     private func fixtureRoot() throws -> [String: Any] {
         let repo = URL(fileURLWithPath: #filePath)
@@ -184,7 +204,7 @@ private actor MockConsultService: ConsultServicing {
         )
     }
 
-    @Test func completeMockedBookingConsultResultsFlowIncludesRetakeAndLockedTeaser() async throws {
+    @Test func completeMockedGuidedBookingConsultFlowIncludesLocalAndServerRetakes() async throws {
         let service = MockConsultService(root: try fixtureRoot())
         let openMockGate = ConsultExposurePolicy(
             founderProfessionalIDs: ["cmq9p645v0002jp04fttoatlq"],
@@ -224,12 +244,47 @@ private actor MockConsultService: ConsultServicing {
 
         let shots = try #require(model.captureState?.shotPack.shots)
         let back = try #require(shots.first { $0.key == .hairBack })
-        await model.submitPhoto(Data("first-back".utf8), for: back)
+        let guidedPipeline = ConsultTransientPhotoPipeline(
+            quality: FirstSoftThenPassingConsultQC(),
+            preparation: IdentityConsultJPEGPreparation()
+        )
+        let localFailure = await guidedPipeline.process(
+            Data("soft-back".utf8),
+            expectations: ConsultShotGuidance.expectations(for: back.key)
+        )
+        #expect(localFailure == .retake("It came out soft"))
+        #expect(await service.receivedByteCounts.isEmpty)
+
+        let firstBack = await guidedPipeline.process(
+            Data("first-back".utf8),
+            expectations: ConsultShotGuidance.expectations(for: back.key)
+        )
+        guard case let .accepted(firstBackJPEG) = firstBack else {
+            Issue.record("Guided post-capture QC should accept the retry")
+            return
+        }
+        await model.submitPhoto(firstBackJPEG, for: back)
         #expect(model.captureState?.slots.first { $0.shotKey == .hairBack }?.state == .rejected)
         #expect(model.captureState?.slots.first { $0.shotKey == .hairBack }?.retakeTip != nil)
-        await model.submitPhoto(Data("retake-back".utf8), for: back)
+        let serverRetake = await guidedPipeline.process(
+            Data("retake-back".utf8),
+            expectations: ConsultShotGuidance.expectations(for: back.key)
+        )
+        guard case let .accepted(serverRetakeJPEG) = serverRetake else {
+            Issue.record("Guided QC should accept the server-requested retake")
+            return
+        }
+        await model.submitPhoto(serverRetakeJPEG, for: back)
         for shot in shots where shot.key != .hairBack {
-            await model.submitPhoto(Data("photo-\(shot.key.rawValue)".utf8), for: shot)
+            let outcome = await guidedPipeline.process(
+                Data("photo-\(shot.key.rawValue)".utf8),
+                expectations: ConsultShotGuidance.expectations(for: shot.key)
+            )
+            guard case let .accepted(jpeg) = outcome else {
+                Issue.record("Every deterministic guided shot should pass local QC")
+                return
+            }
+            await model.submitPhoto(jpeg, for: shot)
         }
         #expect(model.stage == .analysis)
 
@@ -244,6 +299,7 @@ private actor MockConsultService: ConsultServicing {
         #expect(model.teaserTapped)
         #expect(await service.teaserRecorded)
         #expect(await service.receivedByteCounts.count == 5)
+        #expect(await guidedPipeline.retainedByteCount() == 0)
         let keys = await service.captureKeys
         #expect(Set(keys.map(\.issue)).count == 5)
         #expect(model.failure == nil)

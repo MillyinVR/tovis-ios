@@ -10,51 +10,6 @@
 import Foundation
 import TovisKit
 
-/// What the current directed shot should contain — lets the coach judge "ready
-/// for THIS shot" (a back-of-cut wants no face and a filled frame; a detail
-/// shot wants extra sharpness and doesn't care about the backdrop) instead of
-/// scoring every frame like a generic portrait.
-nonisolated struct ShotExpectations: Sendable, Equatable {
-    enum Face: Sendable, Equatable {
-        /// The subject's face belongs in this shot (front / profile work).
-        case required
-        /// The face should NOT drive judgment (back-of-head; a stray mirror
-        /// face must not trigger headroom/centering rules).
-        case absent
-        /// Face optional — judge it when present, don't miss it when not.
-        case either
-    }
-
-    let face: Face
-    /// Target subject-fill band (person segmentation), nil = don't judge fill.
-    let fillBand: ClosedRange<Double>?
-    /// Detail/macro shot: demand extra sharpness, ignore the backdrop.
-    let isDetail: Bool
-    /// Closed eyes are intended here (lash work) — post-capture QC skips the
-    /// blink check.
-    let allowsClosedEyes: Bool
-    /// Pose rules (from a trending shot pack) the coach enforces — readiness
-    /// holds until the subject is actually in the pose. Empty = no pose brief.
-    let poseRules: [PoseRule]
-
-    init(face: Face, fillBand: ClosedRange<Double>?, isDetail: Bool,
-         allowsClosedEyes: Bool = false, poseRules: [PoseRule] = []) {
-        self.face = face
-        self.fillBand = fillBand
-        self.isDetail = isDetail
-        self.allowsClosedEyes = allowsClosedEyes
-        self.poseRules = poseRules
-    }
-
-    static let portrait = ShotExpectations(face: .required, fillBand: 0.22...0.85, isDetail: false)
-    static let backOfHead = ShotExpectations(face: .absent, fillBand: 0.22...0.9, isDetail: false)
-    static let detail = ShotExpectations(face: .either, fillBand: nil, isDetail: true)
-    static let neutral = ShotExpectations(face: .either, fillBand: nil, isDetail: false)
-    /// Close eye work (lash/brow) — detail-sharp, closed lids intended.
-    static let eyesClosed = ShotExpectations(face: .either, fillBand: nil, isDetail: true,
-                                             allowsClosedEyes: true)
-}
-
 /// One directed shot in a guide.
 nonisolated struct ShotStep: Identifiable, Sendable, Equatable {
     let id: String
