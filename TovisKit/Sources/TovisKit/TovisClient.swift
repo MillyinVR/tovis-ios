@@ -16,6 +16,9 @@ public final class TovisClient: Sendable {
     public let devices: DeviceService
     public let home: HomeService
     public let bookings: BookingsService
+    /// Client booking-attached hair-color consult. All app entries additionally
+    /// fail closed through `ConsultExposurePolicy.production`.
+    public let consult: ConsultService
     public let profiles: ProfileService
     public let me: MeService
     /// BOTH workspaces — self-serve account deletion (App Store 5.1.1(v)).
@@ -167,6 +170,12 @@ public final class TovisClient: Sendable {
         self.devices = DeviceService(api: api)
         self.home = HomeService(api: api)
         self.bookings = BookingsService(api: api)
+        self.consult = ConsultService(
+            api: api,
+            uploadSession: resolvedSession,
+            supabaseURL: config.supabaseURL,
+            supabaseKey: config.supabaseAnonKey
+        )
         self.profiles = ProfileService(api: api)
         self.me = MeService(api: api)
         self.accountDeletion = AccountDeletionService(api: api)

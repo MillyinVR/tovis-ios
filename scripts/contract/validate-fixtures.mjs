@@ -22,6 +22,13 @@ const schemaPath = process.env.TOVIS_API_SCHEMA || defaultSchema
 // the object(s) to validate against the named backend schema definition.
 const CHECKS = [
   { file: 'clientHome.json', def: 'ClientHomeDTO', pick: (d) => [d.home] },
+  { file: 'consultFlow.json', def: 'ConsultSessionDTO', pick: (d) => [d.session.consult] },
+  { file: 'consultFlow.json', def: 'ConsultAgreementStateDTO', pick: (d) => [d.agreements.agreementState] },
+  { file: 'consultFlow.json', def: 'ConsultIntakeStateDTO', pick: (d) => [d.intake.intake] },
+  { file: 'consultFlow.json', def: 'ConsultCaptureStateDTO', pick: (d) => [d.capture.capture, d.captureRejected] },
+  { file: 'consultFlow.json', def: 'ConsultAnalysisStateDTO', pick: (d) => [d.analysis.analysis] },
+  { file: 'consultFlow.json', def: 'ConsultClientResultsDTO', pick: (d) => [d.results.results] },
+  { file: 'consultFlow.json', def: 'ConsultMeCardTeaserTapResponseDTO', pick: (d) => [d.teaser] },
   { file: 'clientMe.json', def: 'ClientMePageDTO', pick: (d) => [d.me] },
   // Validate the whole feed (not just the rows) so `unreadCount` +
   // `markReadEventKeys` — the bell's badge and the mark-read allowlist — are
