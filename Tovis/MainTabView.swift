@@ -1,14 +1,13 @@
 // The signed-in shell: the custom Tovis footer over the client surfaces.
 //
 // Matches the web client footer 1:1 — Home · Discover · Looks(center feather) ·
-// Bookings · Inbox · Me (see ClientTab + TovisTabBar).
+// Inbox · Me (see ClientTab + TovisTabBar).
 //
-// Bookings IS a footer tab. It previously was not, on the reasoning that "the web
-// reaches bookings from the home cards and the Me tab, not the footer" — that
-// stopped being true when the web added the tab, and it had never been safe here
-// either: HomeView only pushes AppointmentsView from the Upcoming card's non-nil
-// branch, so a client whose sole booking was PENDING hit the card's empty state
-// and had no way in. See ClientTab for the full reasoning.
+// Bookings is NOT a footer tab on either platform: it lives in the home area.
+// AppointmentsView is therefore reached by a push from HomeView's Upcoming card,
+// which links from BOTH its populated and its empty state — the empty state
+// being the one a client whose sole booking is still PENDING actually sees, and
+// the reason this must never become conditional. See ClientTab.
 //
 // Social-first landing: clients open on the Looks feed (the center feather),
 // matching the web, where login/verify default a client to `/looks`. Tovis is a
@@ -58,10 +57,10 @@ struct MainTabView: View {
     /// The tab a launch starts on — Looks, unless a DEBUG build was launched
     /// with `TOVIS_DEBUG_OPEN_TAB` naming another one. Same mechanism and same
     /// reasoning as `ProMainTabView.launchTab`: this machine can't drive the
-    /// simulator with synthetic taps, so Home/Discover/Bookings/Inbox/Me were
-    /// otherwise unreachable in an automated pass. Accepts a `ClientTab.ID` raw
-    /// value (`home` · `discover` · `looks` · `bookings` · `inbox` · `me`);
-    /// anything else lands on Looks as usual.
+    /// simulator with synthetic taps, so Home/Discover/Inbox/Me were otherwise
+    /// unreachable in an automated pass. Accepts a `ClientTab.ID` raw value
+    /// (`home` · `discover` · `looks` · `inbox` · `me`); anything else lands on
+    /// Looks as usual.
     ///
     ///     SIMCTL_CHILD_TOVIS_DEBUG_OPEN_TAB=discover xcrun simctl launch …
     private static var launchTab: ClientTab.ID {
@@ -83,15 +82,6 @@ struct MainTabView: View {
 
             LooksView()
                 .tag(ClientTab.ID.looks)
-
-            // AppointmentsView owns no NavigationStack (it is also PUSHED from
-            // Home and from Me, and nesting stacks breaks those pushes), so the
-            // stack belongs to the tab that roots it — same shape as every other
-            // tab, which each own theirs internally.
-            NavigationStack {
-                AppointmentsView()
-            }
-            .tag(ClientTab.ID.bookings)
 
             InboxView()
                 .tag(ClientTab.ID.inbox)

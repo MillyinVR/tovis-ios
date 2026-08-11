@@ -1,8 +1,9 @@
 // The signed-in client footer — a native rebuild of the web's
 // `ClientSessionFooter` (+ `FooterNavItem`, `BadgeDot`, `styles/footers.css`).
 //
-// Same five tabs, same raised feather center, same mono-uppercase labels and the
-// little accent "active dot" — so a user moving between web and iOS sees the
+// Same tabs (Home · Discover · Looks · Inbox · Me — bookings live in the home
+// area, not the bar), same raised feather center, same mono-uppercase labels and
+// the little accent "active dot", so a user moving between web and iOS sees the
 // exact same bar. Selection is driven from MainTabView.
 import SwiftUI
 
@@ -34,11 +35,11 @@ struct TovisTabBar: View {
         //
         // The overlay REPLICATES the row's slot geometry (same spacing, same
         // horizontal padding, same equal-width slots) instead of simply centering
-        // the mark. With five tabs the centre tab's slot and the bar's midpoint
-        // were the same point, so a plain `.top` (centre-aligned) overlay landed
-        // correctly by coincidence. With the six tabs the web now carries they
-        // diverge — slot 3 of 6 spans 33%–50% of the width, so a centred mark
-        // would sit ~8% of the bar to the right of the gap reserved for it.
+        // the mark. With today's five tabs the centre tab's slot and the bar's
+        // midpoint coincide, so a plain `.top` (centre-aligned) overlay would
+        // land correctly — by coincidence. At the six tabs this carried before,
+        // they diverged: slot 3 of 6 spans 33%–50% of the width, so a centred
+        // mark sat ~8% of the bar to the right of the gap reserved for it.
         // Deriving the position from ClientNav.tabs keeps it right at any count.
         .overlay(alignment: .top) {
             HStack(alignment: .top, spacing: 0) {
