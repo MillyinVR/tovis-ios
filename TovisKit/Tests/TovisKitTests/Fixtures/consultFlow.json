@@ -1,0 +1,201 @@
+{
+  "session": {
+    "ok": true,
+    "consult": {
+      "id": "consult_fixture_1",
+      "status": "CONSENT_REQUIRED",
+      "bookingId": "booking_fixture_1",
+      "professionalId": "cmq9p645v0002jp04fttoatlq",
+      "serviceCategoryId": "category_hair_color_1",
+      "createdAt": "2026-08-11T18:00:00.000Z"
+    }
+  },
+  "agreements": {
+    "ok": true,
+    "agreementState": {
+      "consultId": "consult_fixture_1",
+      "status": "INTAKE_READY",
+      "requirements": [
+        {
+          "kind": "SENSITIVE_DATA_CONSENT",
+          "requiredVersion": {
+            "id": "agreement_sensitive_v1",
+            "kind": "SENSITIVE_DATA_CONSENT",
+            "version": 1,
+            "title": "AI consult sensitive-data consent",
+            "body": "I agree that my booking intake and temporary hair photos may be processed for this consult.",
+            "publishedAt": "2026-08-07T00:00:00.000Z"
+          },
+          "currentAcceptance": {
+            "id": "acceptance_sensitive_1",
+            "agreementVersionId": "agreement_sensitive_v1",
+            "version": 1,
+            "acceptedAt": "2026-08-11T18:01:00.000Z"
+          },
+          "latestRevocation": null
+        },
+        {
+          "kind": "ADULT_18_PLUS_ATTESTATION",
+          "requiredVersion": {
+            "id": "agreement_adult_v1",
+            "kind": "ADULT_18_PLUS_ATTESTATION",
+            "version": 1,
+            "title": "18+ confirmation",
+            "body": "I confirm that I am at least 18 years old.",
+            "publishedAt": "2026-08-07T00:00:00.000Z"
+          },
+          "currentAcceptance": {
+            "id": "acceptance_adult_1",
+            "agreementVersionId": "agreement_adult_v1",
+            "version": 1,
+            "acceptedAt": "2026-08-11T18:02:00.000Z"
+          },
+          "latestRevocation": null
+        }
+      ]
+    }
+  },
+  "intake": {
+    "ok": true,
+    "intake": {
+      "consultId": "consult_fixture_1",
+      "status": "INTAKE_READY",
+      "questionPack": {
+        "id": "hair-color",
+        "categorySlug": "hair-color",
+        "version": 1,
+        "schemaVersion": 1,
+        "questions": [
+          {"key":"current_color","label":"Your current color?","kind":"SINGLE_SELECT","requirement":"REQUIRED","options":[{"value":"dark-brown","label":"Dark brown"}]},
+          {"key":"desired_color","label":"Your dream color?","kind":"SINGLE_SELECT","requirement":"REQUIRED","options":[{"value":"copper","label":"Copper"}]},
+          {"key":"change_scale","label":"How big a change are you after?","kind":"SINGLE_SELECT","requirement":"REQUIRED","options":[{"value":"noticeable","label":"Noticeable"}]},
+          {"key":"box_dye_history","label":"When did you last use box dye on your hair?","kind":"SINGLE_SELECT","requirement":"REQUIRED","options":[{"value":"within-6-months","label":"Within 6 months"}]},
+          {"key":"prior_lightening","label":"When was your hair last lightened?","kind":"SINGLE_SELECT","requirement":"REQUIRED","options":[{"value":"6-12-months","label":"6–12 months ago"}]},
+          {"key":"last_color_service_timing","label":"When was your last color service?","kind":"SINGLE_SELECT","requirement":"REQUIRED","options":[{"value":"4-6-months","label":"4–6 months ago"}]},
+          {"key":"prior_reaction","label":"Have you ever had a reaction during or after a hair color service?","kind":"SINGLE_SELECT","requirement":"REQUIRED","options":[{"value":"no","label":"No"}]},
+          {"key":"event_timing","label":"Do you have an event or deadline?","kind":"SINGLE_SELECT","requirement":"SKIPPABLE","options":[{"value":"1-3-months","label":"1–3 months"}]},
+          {"key":"budget","label":"What budget would you like to stay within?","kind":"SINGLE_SELECT","requirement":"SKIPPABLE","options":[{"value":"251-400","label":"$251–$400"}]}
+        ]
+      },
+      "prefillSuggestions": [
+        {"questionKey":"desired_color","value":"copper","provenance":[{"source":"SAVED_LOOK","sourceId":"look_fixture_1"}]}
+      ],
+      "prefillSignals": [
+        {"source":"SELF_PROFILE","available":true},
+        {"source":"BOARD","available":false},
+        {"source":"SAVED_LOOK","available":true},
+        {"source":"TASTE_VECTOR","available":true},
+        {"source":"BOOKING_HISTORY","available":true}
+      ],
+      "latestRevision": null
+    }
+  },
+  "capture": {
+    "ok": true,
+    "capture": {
+      "consultId": "consult_fixture_1",
+      "status": "ANALYSIS_PENDING",
+      "shotPack": {
+        "id": "hair-color-daylight",
+        "categorySlug": "hair-color",
+        "version": 1,
+        "schemaVersion": 1,
+        "shots": [
+          {"key":"hair_back","title":"Hair back","instruction":"Face away from the camera in indirect daylight.","requirement":"REQUIRED"},
+          {"key":"hair_left","title":"Left side","instruction":"Turn the left side toward the camera in indirect daylight.","requirement":"REQUIRED"},
+          {"key":"hair_right","title":"Right side","instruction":"Turn the right side toward the camera in indirect daylight.","requirement":"REQUIRED"},
+          {"key":"hair_crown","title":"Crown","instruction":"Angle the crown toward the camera in indirect daylight.","requirement":"REQUIRED"}
+        ]
+      },
+      "slots": [
+        {"shotKey":"hair_back","state":"ACCEPTED","captureId":"capture_back_2","qualityReasonCode":"PASS","retakeTip":null,"rawExpiresAt":"2026-08-12T18:00:00.000Z","purgedAt":null},
+        {"shotKey":"hair_left","state":"ACCEPTED","captureId":"capture_left_1","qualityReasonCode":"PASS","retakeTip":null,"rawExpiresAt":"2026-08-12T18:00:00.000Z","purgedAt":null},
+        {"shotKey":"hair_right","state":"ACCEPTED","captureId":"capture_right_1","qualityReasonCode":"PASS","retakeTip":null,"rawExpiresAt":"2026-08-12T18:00:00.000Z","purgedAt":null},
+        {"shotKey":"hair_crown","state":"ACCEPTED","captureId":"capture_crown_1","qualityReasonCode":"PASS","retakeTip":null,"rawExpiresAt":"2026-08-12T18:00:00.000Z","purgedAt":null}
+      ]
+    }
+  },
+  "captureRejected": {
+    "consultId": "consult_fixture_1",
+    "status": "MEDIA_READY",
+    "shotPack": {
+      "id": "hair-color-daylight",
+      "categorySlug": "hair-color",
+      "version": 1,
+      "schemaVersion": 1,
+      "shots": [
+        {"key":"hair_back","title":"Hair back","instruction":"Face away from the camera in indirect daylight.","requirement":"REQUIRED"},
+        {"key":"hair_left","title":"Left side","instruction":"Turn the left side toward the camera in indirect daylight.","requirement":"REQUIRED"},
+        {"key":"hair_right","title":"Right side","instruction":"Turn the right side toward the camera in indirect daylight.","requirement":"REQUIRED"},
+        {"key":"hair_crown","title":"Crown","instruction":"Angle the crown toward the camera in indirect daylight.","requirement":"REQUIRED"}
+      ]
+    },
+    "slots": [
+      {"shotKey":"hair_back","state":"REJECTED","captureId":"capture_back_1","qualityReasonCode":"WARM_INDOOR_LIGHT","retakeTip":"Move near a window and face the daylight.","rawExpiresAt":null,"purgedAt":"2026-08-11T18:10:00.000Z"},
+      {"shotKey":"hair_left","state":"EMPTY","captureId":null,"qualityReasonCode":null,"retakeTip":null,"rawExpiresAt":null,"purgedAt":null},
+      {"shotKey":"hair_right","state":"EMPTY","captureId":null,"qualityReasonCode":null,"retakeTip":null,"rawExpiresAt":null,"purgedAt":null},
+      {"shotKey":"hair_crown","state":"EMPTY","captureId":null,"qualityReasonCode":null,"retakeTip":null,"rawExpiresAt":null,"purgedAt":null}
+    ]
+  },
+  "analysis": {
+    "ok": true,
+    "analysis": {
+      "consultId": "consult_fixture_1",
+      "status": "COMPLETED",
+      "schemaVersion": 1,
+      "promptVersion": "hair-color-analysis-v1",
+      "result": null
+    },
+    "replayed": false
+  },
+  "results": {
+    "ok": true,
+    "results": {
+      "consultId": "consult_fixture_1",
+      "bookingId": "booking_fixture_1",
+      "serviceCategoryId": "category_hair_color_1",
+      "briefRevisionId": "revision_brief_3",
+      "briefRevision": 3,
+      "analysisRevisionId": "revision_analysis_2",
+      "analysisRevision": 2,
+      "intakeRevisionId": "revision_intake_1",
+      "clientIntake": [
+        {"questionKey":"desired_color","question":"Your dream color?","answerCode":"copper","answer":"Copper"},
+        {"questionKey":"box_dye_history","question":"When did you last use box dye on your hair?","answerCode":"within-6-months","answer":"Within 6 months"},
+        {"questionKey":"prior_reaction","question":"Have you ever had a reaction during or after a hair color service?","answerCode":"no","answer":"No"}
+      ],
+      "aiObservations": {
+        "currentLevel":{"min":4,"max":5,"confidence":{"min":0.72,"max":0.88},"evidence":["hair_back","hair_crown"]},
+        "currentTone":{"value":"NEUTRAL","confidence":{"min":0.68,"max":0.82},"evidence":["hair_left","hair_right"]},
+        "visibleCondition":{"value":"POSSIBLE_COMPROMISE","confidence":{"min":0.6,"max":0.76},"evidence":["hair_crown"]},
+        "density":{"value":"MEDIUM","confidence":{"min":0.65,"max":0.8},"evidence":["hair_back"]},
+        "texture":{"value":"WAVY","confidence":{"min":0.7,"max":0.84},"evidence":["hair_left","hair_right"]},
+        "goalSummary":"The client wants a noticeable copper result.",
+        "historySummary":"The client reports box dye within six months.",
+        "constraintsSummary":"Preserve visible condition and discuss strand testing.",
+        "maintenanceSummary":"The client is open to maintenance.",
+        "appointmentContextSummary":"No near-term event deadline."
+      },
+      "safetyFlags": [
+        {"code":"RECENT_BOX_DYE","summary":"Recent box dye may affect lift and color predictability.","discussWithProfessional":true}
+      ],
+      "achievabilityDirection": {
+        "direction":"Discuss strand testing and a staged plan with your professional.",
+        "assessment":"LIKELY_MULTI_APPOINTMENT",
+        "context":"Recent color history and visible condition may make a staged approach more realistic.",
+        "discussWithProfessional":true
+      },
+      "recommendationDirections": [
+        {"title":"Dimensional copper","why":"Adds copper while keeping some depth.","direction":"Discuss a dimensional copper plan.","reference":{"type":"SERVICE","serviceId":"service_color_1","serviceCategoryId":"category_hair_color_1"},"discussWithProfessional":true},
+        {"title":"Copper gloss first","why":"A lower-lift first step may help assess condition and tone.","direction":"Discuss starting with a gloss.","reference":{"type":"SERVICE_CATEGORY","serviceId":null,"serviceCategoryId":"category_hair_color_1"},"discussWithProfessional":true}
+      ],
+      "meCardTeaser":{"locked":true,"tapped":false},
+      "createdAt":"2026-08-11T18:20:00.000Z"
+    }
+  },
+  "teaser": {
+    "ok": true,
+    "teaser":{"locked":true,"tapped":true},
+    "replayed":false
+  }
+}

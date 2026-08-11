@@ -40,7 +40,7 @@ struct BookingFlowView: View {
         case needsAddress
         case failed(String)
         /// Carries the (re)scheduled instant ISO — works for finalize + reschedule.
-        case success(String)
+        case success(scheduledFor: String, bookingId: String?, professionalId: String?)
     }
 
     @State private var phase: Phase = .loading
@@ -53,6 +53,7 @@ struct BookingFlowView: View {
     @State private var selectedSlot: String?
     @State private var booking = false
     @State private var bookError: String?
+    @State private var showConsult = false
     /// Guards the one-time preselect so a later date change / manual pick wins.
     @State private var didApplyPreselect = false
 
@@ -133,8 +134,8 @@ struct BookingFlowView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 case let .failed(message):
                     failure(message)
-                case let .success(scheduledFor):
-                    success(scheduledFor)
+                case let .success(scheduledFor, bookingId, professionalId):
+                    success(scheduledFor, bookingId: bookingId, professionalId: professionalId)
                 case .needsAddress:
                     addressGate
                 case let .ready(boot):
@@ -150,6 +151,11 @@ struct BookingFlowView: View {
                     // keep showing "couldn't load" over a list that now has one.
                     addressLoadFailed = false
                     selectAddress(newAddress.id)
+                }
+            }
+            .sheet(isPresented: $showConsult) {
+                if case let .success(_, bookingId?, professionalId?) = phase {
+                    ConsultFlowView(bookingId: bookingId, professionalId: professionalId)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -447,7 +453,8 @@ struct BookingFlowView: View {
 
     // MARK: - Success / failure
 
-    private func success(_ scheduledFor: String) -> some View {
+    private func success(_ scheduledFor: String, bookingId: String?,
+                         professionalId: String?) -> some View {
         VStack(spacing: 16) {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 56)).foregroundStyle(BrandColor.accent)
@@ -462,6 +469,22 @@ struct BookingFlowView: View {
                  : "\(proName) will confirm your booking. You’ll find it under Appointments.")
                 .font(BrandFont.body(13)).foregroundStyle(BrandColor.textMuted)
                 .multilineTextAlignment(.center)
+            if !isReschedule,
+               ConsultExposurePolicy.production.allows(professionalId: professionalId),
+               bookingId != nil {
+                Button { showConsult = true } label: {
+                    Label("Add hair color consult", systemImage: "sparkles")
+                        .font(BrandFont.body(16, .semibold))
+                        .foregroundStyle(BrandColor.accent)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 13)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(BrandColor.accent, lineWidth: 1)
+                        )
+                }
+                .accessibilityIdentifier("booking-add-ai-consult")
+            }
             Button { dismiss() } label: {
                 Text("Done").font(BrandFont.body(16, .semibold)).foregroundStyle(BrandColor.onAccent)
                     .frame(maxWidth: .infinity).padding(.vertical, 14)
@@ -633,6 +656,7 @@ struct BookingFlowView: View {
                 rescheduleBookingId: rescheduleBookingId
             )
             let scheduledFor: String
+            var finalizedBooking: FinalizedBooking?
             if let rescheduleBookingId {
                 let result = try await session.client.booking.reschedule(
                     bookingId: rescheduleBookingId, holdId: hold.id,
@@ -646,9 +670,14 @@ struct BookingFlowView: View {
                     cancellationPolicyAccepted: policyAccepted
                 )
                 scheduledFor = result.scheduledFor
+                finalizedBooking = result
             }
             session.signalRefresh() // surface the change in Appointments/Home
-            phase = .success(scheduledFor)
+            phase = .success(
+                scheduledFor: scheduledFor,
+                bookingId: finalizedBooking?.id,
+                professionalId: finalizedBooking?.professionalId
+            )
         } catch let error as APIError {
             bookError = error.userMessage
         } catch {
