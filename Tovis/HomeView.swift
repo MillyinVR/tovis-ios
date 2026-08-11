@@ -541,21 +541,26 @@ private struct InvitesCard: View {
                             }
                         }
                     }
-
-                    // The full claim surface — priority offers with live countdowns
-                    // + any pro-proposed waitlist times (the /client/offers page).
-                    NavigationLink { PriorityOffersView() } label: {
-                        HStack(spacing: 4) {
-                            Text("Your priority offers")
-                            Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
-                        }
-                        .font(BrandFont.body(12.5, .semibold))
-                        .foregroundStyle(BrandColor.accent)
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 4)
-                    }
-                    .buttonStyle(.plain)
                 }
+
+                // The full claim surface — priority offers with live countdowns
+                // + any pro-proposed waitlist times (the /client/offers page).
+                //
+                // OUTSIDE the invites branch on purpose: those are two different
+                // feeds, so a client can have a pro-proposed time waiting with
+                // zero last-minute invites. Nested in the non-empty branch, this
+                // door shut exactly when the only thing behind it was the offer.
+                NavigationLink { PriorityOffersView() } label: {
+                    HStack(spacing: 4) {
+                        Text("Your priority offers")
+                        Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
+                    }
+                    .font(BrandFont.body(12.5, .semibold))
+                    .foregroundStyle(BrandColor.accent)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 4)
+                }
+                .buttonStyle(.plain)
             }
         }
     }
