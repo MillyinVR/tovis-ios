@@ -387,7 +387,10 @@ final class CoachEngine: NSObject {
     private(set) var debugSignals: [DebugSignal] = []
 
     let analyzer: CoachAnalyzer
-    private let settings: CoachSettings
+    /// Read on the main actor for each result so persisted pro toggles remain
+    /// live, while an immutable caller can reuse the engine without touching
+    /// those defaults.
+    private let runtimeOptions: @MainActor () -> CoachRuntimeOptions
     private let synthesizer = AVSpeechSynthesizer()
     private let level = DeviceLevelProvider()
     private var wasReady = false
@@ -409,7 +412,7 @@ final class CoachEngine: NSObject {
     /// The pro's chosen coaching voice — read live off `settings` so changing
     /// it mid-session takes effect on the very next tip, same as every other
     /// coach toggle.
-    var voice: CoachVoice { settings.personality.voice }
+    var voice: CoachVoice { runtimeOptions().personality.voice }
 
     /// The nudge's line, in the active voice, with `why` appended when the
     /// voice's chattiness calls for it (`CoachVoice.includesWhy(for:)`) — the
@@ -425,12 +428,24 @@ final class CoachEngine: NSObject {
         return "\(rendered) \(why)"
     }
 
-    init(settings: CoachSettings) {
-        self.settings = settings
+    convenience init(settings: CoachSettings) {
+        self.init(runtimeOptions: { settings.runtimeOptions },
+                  resetsProSessionByteVault: true)
+    }
+
+    /// Reuse the live analyzer/engine with memory-only behavior. This path does
+    /// not sweep or stage the pro camera's disk-backed byte vault.
+    convenience init(runtimeOptions: CoachRuntimeOptions) {
+        self.init(runtimeOptions: { runtimeOptions }, resetsProSessionByteVault: false)
+    }
+
+    private init(runtimeOptions: @escaping @MainActor () -> CoachRuntimeOptions,
+                 resetsProSessionByteVault: Bool) {
+        self.runtimeOptions = runtimeOptions
         // A new engine == a fresh camera session. Sweep the session-scoped byte
         // store so best-shot / failed-upload spills stranded by a previous
         // dismiss or crash don't accumulate (they're discarded on exit anyway).
-        SessionByteVault.reset()
+        if resetsProSessionByteVault { SessionByteVault.reset() }
         self.analyzer = CoachAnalyzer(coaches: [
             LightingCoach(), CompositionCoach(), SharpnessCoach(),
             BackgroundCoach(), PoseCoach(), LevelCoach(), ColorCoach(),
@@ -440,7 +455,7 @@ final class CoachEngine: NSObject {
         // utterance ever actually starts playing (`speechChannelFreed`) — see
         // the AVSpeechSynthesizerDelegate conformance below.
         synthesizer.delegate = self
-        analyzer.autoHarvestEnabled = settings.autoHarvest
+        analyzer.autoHarvestEnabled = runtimeOptions().autoHarvest
         analyzer.sink = { [weak self] result in
             // Bind the weak reference before the Task — referencing the captured
             // optional from concurrently-executing code is an error under the
@@ -504,7 +519,8 @@ final class CoachEngine: NSObject {
 
     private func apply(_ result: CoachResult) {
         // Keep the harvest gate in sync with the live toggle.
-        analyzer.autoHarvestEnabled = settings.autoHarvest
+        let options = runtimeOptions()
+        analyzer.autoHarvestEnabled = options.autoHarvest
         readiness = result.readiness
         statuses = result.statuses
         centerSample = (result.centerR, result.centerG, result.centerB)
@@ -531,14 +547,14 @@ final class CoachEngine: NSObject {
                 advanced.goodMoment, fallback: complimentFallback, voice: voice) ?? complimentFallback
             let nextRendered = spokenLine(for: nudge)
             let fallback = "\(complimentRendered) \(nextRendered)"
-            if settings.speak {
+            if options.speak {
                 let line = CoachVoiceRenderer.render(
                     .focusRungAdvanced, fallback: fallback,
                     ctx: CoachPhraseContext(subjectNoun: complimentRendered, detail: nextRendered),
                     voice: voice) ?? fallback
                 speakSchedulerTip(line, category: nudge.category)
             }
-        } else if let cleared = result.cleared, settings.speak {
+        } else if let cleared = result.cleared, options.speak {
             let fallback = "\(cleared.spokenName) — got it"
             let line = CoachVoiceRenderer.render(
                 .dimensionCleared, fallback: fallback,
@@ -557,19 +573,19 @@ final class CoachEngine: NSObject {
                 let now = Date()
                 let sinceLast = lastNudgeHapticAt.map { now.timeIntervalSince($0) }
                     ?? .greatestFiniteMagnitude
-                if settings.haptics, nudge.category != previous?.category,
+                if options.haptics, nudge.category != previous?.category,
                    sinceLast >= CoachTuning.nudgeHapticMinInterval {
                     lastNudgeHapticAt = now
                     tap(.warning)
                 }
                 // Skip on an advance frame — the combined compliment+next
                 // line above already spoke this exact nudge once.
-                if settings.speak, result.advanced == nil { speakTip(nudge) }
+                if options.speak, result.advanced == nil { speakTip(nudge) }
             }
         }
 
         let nowReady = isReady
-        if nowReady && !wasReady && settings.haptics { tap(.success) }
+        if nowReady && !wasReady && options.haptics { tap(.success) }
         wasReady = nowReady
 
         // Track how long the shot has held good, for auto-capture + the filling ring.

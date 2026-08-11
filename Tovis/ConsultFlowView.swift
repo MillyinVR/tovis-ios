@@ -189,8 +189,8 @@ struct ConsultFlowView: View {
         VStack(alignment: .leading, spacing: 18) {
             consultHeader(
                 eyebrow: "Four daylight views",
-                title: "Choose clear photos of your hair",
-                body: "Use unfiltered photos in indirect daylight. Each stays local only while it uploads through the private, expiring consult contract."
+                title: "Take guided photos of your hair",
+                body: "The native camera checks light and framing live, then checks the chosen JPEG once more before the private upload. Preview frames never leave your device."
             )
             if let capture = model.captureState {
                 ForEach(capture.shotPack.shots) { shot in
@@ -477,6 +477,9 @@ private struct ConsultPhotoPickerSlot: View {
 
     @State private var pick: PhotosPickerItem?
     @State private var preparationError: ConsultClientFailure?
+    @State private var localRetakeReason: String?
+    @State private var showGuidedCamera = false
+    @State private var pipeline = ConsultTransientPhotoPipeline()
 
     var body: some View {
         BrandSurface {
@@ -503,34 +506,80 @@ private struct ConsultPhotoPickerSlot: View {
                         .font(BrandFont.body(12))
                         .foregroundStyle(BrandColor.ember)
                 }
-
-                if slot?.state != .accepted {
-                    PhotosPicker(selection: $pick, matching: .images) {
-                        Label(slot?.state == .rejected ? "Choose a retake" : "Choose photo",
-                              systemImage: "photo.badge.plus")
-                            .font(BrandFont.body(13, .semibold))
-                            .foregroundStyle(disabled ? BrandColor.textMuted : BrandColor.accent)
-                    }
-                    .disabled(disabled)
+                if let localRetakeReason {
+                    Text(localRetakeReason)
+                        .font(BrandFont.body(12, .semibold))
+                        .foregroundStyle(BrandColor.amber)
                 }
+
+                Button { showGuidedCamera = true } label: {
+                    Label(guidedButtonTitle, systemImage: "camera.viewfinder")
+                        .font(BrandFont.body(13, .semibold))
+                        .foregroundStyle(BrandColor.onAccent)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 11)
+                        .background(BrandColor.accent)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .disabled(disabled)
+
+                PhotosPicker(selection: $pick, matching: .images) {
+                    Label(pickerButtonTitle, systemImage: "photo.on.rectangle")
+                        .font(BrandFont.body(12, .semibold))
+                        .foregroundStyle(disabled ? BrandColor.textMuted : BrandColor.textSecondary)
+                }
+                .disabled(disabled)
             }
+        }
+        .fullScreenCover(isPresented: $showGuidedCamera) {
+            ConsultGuidedCaptureView(shot: shot, onJPEG: onJPEG)
         }
         .onChange(of: pick) { _, item in
             guard let item else { return }
             Task {
                 defer { pick = nil }
                 do {
-                    guard let source = try await item.loadTransferable(type: Data.self),
-                          let jpeg = await ConsultPhotoPreparation.jpeg(from: source) else {
+                    guard let source = try await item.loadTransferable(type: Data.self) else {
                         preparationError = .invalidPhoto
                         return
                     }
-                    preparationError = nil
-                    await onJPEG(jpeg)
+                    switch await pipeline.process(
+                        source,
+                        expectations: ConsultShotGuidance.expectations(for: shot.key)
+                    ) {
+                    case let .accepted(jpeg):
+                        preparationError = nil
+                        localRetakeReason = nil
+                        await onJPEG(jpeg)
+                    case let .retake(reason):
+                        preparationError = nil
+                        localRetakeReason = reason
+                    case .invalid:
+                        localRetakeReason = nil
+                        preparationError = .invalidPhoto
+                    case .cancelled:
+                        break
+                    }
                 } catch {
                     preparationError = .invalidPhoto
                 }
             }
+        }
+    }
+
+    private var guidedButtonTitle: String {
+        switch slot?.state {
+        case .accepted: return "Retake with guided camera"
+        case .rejected: return "Take guided retake"
+        default: return "Open guided camera"
+        }
+    }
+
+    private var pickerButtonTitle: String {
+        switch slot?.state {
+        case .accepted: return "Replace from Photos instead"
+        case .rejected: return "Choose a retake from Photos instead"
+        default: return "Choose from Photos instead"
         }
     }
 

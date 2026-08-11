@@ -86,4 +86,13 @@ final class CoachSettings {
     private func persist(_ keyPath: KeyPath<CoachSettings, Bool>, _ name: String) {
         UserDefaults.standard.set(self[keyPath: keyPath], forKey: Self.key(name))
     }
+
+    var runtimeOptions: CoachRuntimeOptions {
+        CoachRuntimeOptions(
+            speak: speak,
+            haptics: haptics,
+            autoHarvest: autoHarvest,
+            personality: personality
+        )
+    }
 }
