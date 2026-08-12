@@ -27,6 +27,9 @@ public final class TovisClient: Sendable {
     /// Client account settings — the editable identity profile (name / phone /
     /// birthday / avatar) behind the Settings hub. Distinct from `me` (dashboard).
     public let clientSettings: ClientSettingsService
+    /// Who can read this client's chart, and taking it back. The client's own
+    /// side of W5 consent — the pro's side is `proClients.chartShare`.
+    public let clientChartShares: ClientChartSharesService
     public let clientPublicProfile: ClientPublicProfileService
     /// Support tickets — file a request from the in-app contact form. Any
     /// signed-in role; filing through the API is what attaches the real user, so
@@ -180,6 +183,7 @@ public final class TovisClient: Sendable {
         self.me = MeService(api: api)
         self.accountDeletion = AccountDeletionService(api: api)
         self.clientSettings = ClientSettingsService(api: api)
+        self.clientChartShares = ClientChartSharesService(api: api)
         self.clientPublicProfile = ClientPublicProfileService(api: api)
         self.support = SupportService(api: api)
         self.clientSelfProfile = ClientSelfProfileService(api: api)

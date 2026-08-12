@@ -58,6 +58,44 @@ final class ProChartShareURLProtocol: URLProtocol {
         ProChartShareURLProtocol.responseBody = Data(body.utf8)
     }
 
+    /// 🔴 The state this suite never covered.
+    ///
+    /// Every other fixture here omits `requestedAt`, so the field was only ever
+    /// decoded as null — and `requestedAt` is null right up until a pro asks,
+    /// which is the only moment this model matters. Typed as `Date?` against
+    /// `APIClient`'s plain `JSONDecoder()` (default `.deferredToDate`, which
+    /// expects a NUMBER), the ISO string the backend actually sends threw and
+    /// took the whole chart screen with it.
+    @Test func aPendingAskCarriesAnIsoTimestamp() async throws {
+        reset(body: #"""
+        {"ok":true,"chartShare":{"status":"REQUESTED",
+         "requestedAt":"2026-08-11T18:30:00.000Z","respondedAt":null,"revokedAt":null,
+         "canViewChart":false,"canRequest":false,"requestBlockedReason":"REQUEST_PENDING"}}
+        """#)
+
+        let share = try await makeService().chartShare(clientId: "cl_1")
+
+        #expect(share.status == .requested)
+        #expect(share.requestedAt == "2026-08-11T18:30:00.000Z")
+    }
+
+    /// A granted-then-revoked row carries all three timestamps at once.
+    @Test func aRevokedShareCarriesEveryTimestamp() async throws {
+        reset(body: #"""
+        {"ok":true,"chartShare":{"status":"REVOKED",
+         "requestedAt":"2026-08-01T10:00:00.000Z","respondedAt":"2026-08-02T10:00:00.000Z",
+         "revokedAt":"2026-08-09T10:00:00.000Z","canViewChart":false,
+         "canRequest":false,"requestBlockedReason":"COOLDOWN"}}
+        """#)
+
+        let share = try await makeService().chartShare(clientId: "cl_1")
+
+        #expect(share.status == .revoked)
+        #expect(share.requestedAt == "2026-08-01T10:00:00.000Z")
+        #expect(share.respondedAt == "2026-08-02T10:00:00.000Z")
+        #expect(share.revokedAt == "2026-08-09T10:00:00.000Z")
+    }
+
     @Test func chartShareGetsTheShareRoute() async throws {
         reset(body: #"{"ok":true,"chartShare":{"status":"REQUESTED","canRequest":false,"requestBlockedReason":"REQUEST_PENDING"}}"#)
 

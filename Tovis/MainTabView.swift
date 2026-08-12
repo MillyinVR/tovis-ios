@@ -39,6 +39,9 @@ struct MainTabView: View {
     /// The activity feed surfaced by a `/client/activity` push, presented over the
     /// shell. Mirrors HomeView's own notifications sheet.
     @State private var showActivity = false
+    /// The chart-consent surface, surfaced by a `/client/settings/chart-sharing`
+    /// push (a pro asking to read this client's chart).
+    @State private var showChartAccess = false
     /// (The Me tab's header bell presents the same screen from its own state.)
     /// The priority-offers screen surfaced by a `/client/offers` push, presented
     /// over the shell. Carries the `?accept=` recipient id to float + highlight.
@@ -155,6 +158,21 @@ struct MainTabView: View {
         // the transactional notification centre instead of the engagement feed it
         // named.
         .sheet(isPresented: $showActivity) { ClientActivityView() }
+        // ClientChartAccessView is normally PUSHED from the Settings hub, so it
+        // owns no stack of its own — wrap it plus a Done button, like the
+        // booking and offers sheets.
+        .sheet(isPresented: $showChartAccess) {
+            NavigationStack {
+                ClientChartAccessView()
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Done") { showChartAccess = false }
+                                .tint(BrandColor.textSecondary)
+                        }
+                    }
+            }
+            .tint(BrandColor.accent)
+        }
         // PriorityOffersView owns no stack (it's also pushed from Home), so wrap it
         // in one + a Done button when presenting from a push, like the booking sheet.
         .sheet(item: $offersPresentation) { presentation in
@@ -210,6 +228,12 @@ struct MainTabView: View {
             tab = .me
         case .activity:
             showActivity = true
+        case .chartAccess:
+            // A pro asked to read this client's chart. Present the consent
+            // surface itself — this push is a QUESTION, and dropping the client
+            // on Home (which is where it landed before `.chartAccess` existed)
+            // leaves them with the buzz and no way to answer it.
+            showChartAccess = true
         case .clientHome:
             tab = .home
         // Pro-shell targets are handled by the workspace switch above; unreachable

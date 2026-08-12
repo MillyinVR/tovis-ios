@@ -95,6 +95,16 @@ struct ClientSettingsHubView: View {
                             subtitle: "Saved cards for no-show fees"
                         ) { PaymentMethodsView() }
 
+                        // W5: the client's own side of chart consent. Web has
+                        // carried this at /client/settings/chart-sharing since
+                        // #838; iOS could be ASKED (the request is a push) with
+                        // nowhere to answer, and no way to see or revoke access.
+                        SettingsLinkRow(
+                            icon: "eye",
+                            title: "Who can see your chart",
+                            subtitle: "Allergies, formulas & notes your pro keeps"
+                        ) { ClientChartAccessView() }
+
                         SettingsLinkRow(
                             icon: "bell.badge",
                             title: "Notifications",
