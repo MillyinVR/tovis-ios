@@ -13,5 +13,19 @@
 		<string>applinks:tovis.app</string>
 		<string>applinks:www.tovis.app</string>
 	</array>
+	<!-- App Attest. Without this key the capability is not signed into the
+	     product, DCAppAttestService never produces an attestation, and
+	     TovisKit's DeviceCheckAppAttestProvider.attest() returns nil — which
+	     the backend rejects on any deployed runtime, 400-ing EVERY native
+	     signup (client and pro). See tovis-app REV-041 / TOV-REL-005.
+
+	     `production`, not `development`, on purpose: a development-environment
+	     attestation carries the development aaguid, and the server's
+	     developmentAaguidAllowed() (tovis-app lib/auth/appAttest.ts:418)
+	     returns false on a deployed runtime unless
+	     APPLE_APP_ATTEST_ALLOW_DEVELOPMENT=1 — which is NOT set in production.
+	     So a `development` value would ship the same 400 this fixes. -->
+	<key>com.apple.developer.devicecheck.appattest-environment</key>
+	<string>production</string>
 </dict>
 </plist>

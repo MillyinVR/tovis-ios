@@ -94,35 +94,42 @@ jobs:
 
   # Everything under TovisTests/ — 33 files, 278 tests across 43 suites,
   # including NotificationDeepLinkTests, which pins where a tapped push row
-  # navigates. NONE of it runs above: the `ios` job builds TovisKit only, so
-  # `Tovis/` is not even COMPILED in CI and a Swift error in the app target
-  # ships green.
+  # navigates. NONE of it runs in the jobs above: the `ios` job builds TovisKit
+  # only. THIS job is the only thing in CI that compiles `Tovis/` at all —
+  # without it a Swift error in the app target ships green.
   #
-  # 🔴 Deliberately `workflow_dispatch` only — this is the job that exhausted the
-  # account's Actions allowance on 2026-07-19 and refused every workflow across
-  # BOTH repos for hours. macOS bills at 10x on private repos, so it is not
-  # arm-able without knowing the current spending limit.
+  # ARMED on every PR and every push to main as of 2026-08-12 (TOV-REL-001).
+  #
+  # It was `workflow_dispatch`-only because this is the job that exhausted the
+  # Actions allowance on 2026-07-19 and refused every workflow across BOTH repos
+  # for hours — macOS bills at 10x on PRIVATE repos. That reason is now dead:
+  # `gh repo view` reports BOTH MillyinVR/tovis-ios and MillyinVR/tovis-app as
+  # PUBLIC (checked 2026-08-12), and GitHub's standard runners — macos-latest
+  # included — are free for public repositories. There is no allowance left to
+  # exhaust; the only remaining ceiling is the concurrent-job limit, which the
+  # `concurrency:` block above already keeps to one run per ref.
+  #
+  # Arming it is not cosmetic. While this job was dispatch-only, `Tovis/` was
+  # not COMPILED by any PR, which is how the missing App Attest entitlement
+  # (tovis-app REV-041) reached a signed TestFlight build and 400'd every native
+  # signup with CI fully green.
   #
   # Measured 2026-08-11 on an Apple Silicon Mac, clean DerivedData:
   #   build-for-testing     87s   <- dominates
   #   test-without-building  27s
   # A GitHub macOS runner is roughly 2.5-3.5x slower and must also resolve the
   # app target's remote SPM dependencies (Stripe, GoogleSignIn, AppAuth,
-  # AppCheck, GoogleUtilities — none of which existed when this job was last
-  # costed at ~9 min), so budget ~5-7 min wall => ~50-70 BILLABLE minutes/run.
+  # AppCheck, GoogleUtilities), so budget ~5-7 min wall.
   #
   # Note what the split says: the build dominates and the tests ride along for
   # ~24% more. So a "cheaper" compile-only job is a false economy — once you pay
   # for the build, run the tests.
   #
-  # TO ARM IT (Tori's call — it spends the Actions allowance):
-  #   * every PR    -> delete the `if:` line below
-  #   * merges only -> change it to: if: github.event_name != 'pull_request'
-  #   * app changes -> keep the `if:` and add a paths filter for Tovis/**,
-  #                    TovisTests/**, tovis-ios.xcodeproj/**
+  # ⚠️ If either repo is ever made private again, this job starts billing at 10x
+  # and must be re-gated (`if: github.event_name != 'pull_request'`, or a paths
+  # filter for Tovis/**, TovisTests/**, tovis-ios.xcodeproj/**).
   app:
     name: App target (Tovis + TovisTests)
-    if: github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
