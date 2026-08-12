@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -90,3 +91,79 @@ jobs:
             exit 1
           fi
           echo "TovisKit tests executed: $count" >> "$GITHUB_STEP_SUMMARY"
+
+  # Everything under TovisTests/ — 33 files, 278 tests across 43 suites,
+  # including NotificationDeepLinkTests, which pins where a tapped push row
+  # navigates. NONE of it runs above: the `ios` job builds TovisKit only, so
+  # `Tovis/` is not even COMPILED in CI and a Swift error in the app target
+  # ships green.
+  #
+  # 🔴 Deliberately `workflow_dispatch` only — this is the job that exhausted the
+  # account's Actions allowance on 2026-07-19 and refused every workflow across
+  # BOTH repos for hours. macOS bills at 10x on private repos, so it is not
+  # arm-able without knowing the current spending limit.
+  #
+  # Measured 2026-08-11 on an Apple Silicon Mac, clean DerivedData:
+  #   build-for-testing     87s   <- dominates
+  #   test-without-building  27s
+  # A GitHub macOS runner is roughly 2.5-3.5x slower and must also resolve the
+  # app target's remote SPM dependencies (Stripe, GoogleSignIn, AppAuth,
+  # AppCheck, GoogleUtilities — none of which existed when this job was last
+  # costed at ~9 min), so budget ~5-7 min wall => ~50-70 BILLABLE minutes/run.
+  #
+  # Note what the split says: the build dominates and the tests ride along for
+  # ~24% more. So a "cheaper" compile-only job is a false economy — once you pay
+  # for the build, run the tests.
+  #
+  # TO ARM IT (Tori's call — it spends the Actions allowance):
+  #   * every PR    -> delete the `if:` line below
+  #   * merges only -> change it to: if: github.event_name != 'pull_request'
+  #   * app changes -> keep the `if:` and add a paths filter for Tovis/**,
+  #                    TovisTests/**, tovis-ios.xcodeproj/**
+  app:
+    name: App target (Tovis + TovisTests)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Show toolchain
+        run: xcodebuild -version
+
+      # Picked dynamically: hardcoding a device name breaks whenever GitHub
+      # rolls the Xcode image.
+      - name: Pick a simulator
+        id: sim
+        run: |
+          set -o pipefail
+          json=$(xcrun simctl list devices available -j)
+          udid=$(echo "$json" | jq -r '[.devices | to_entries[] | select(.key|test("iOS")) | .value[] | select(.isAvailable and (.name|startswith("iPhone")))] | last | .udid')
+          name=$(echo "$json" | jq -r '[.devices | to_entries[] | select(.key|test("iOS")) | .value[] | select(.isAvailable and (.name|startswith("iPhone")))] | last | .name')
+          if [ -z "$udid" ] || [ "$udid" = "null" ]; then
+            echo "::error::No available iPhone simulator on this runner"
+            exit 1
+          fi
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+          echo "Simulator: $name ($udid)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: App target — xcodebuild test
+        run: |
+          set -o pipefail
+          log="$RUNNER_TEMP/xcodebuild-test.log"
+          xcodebuild test \
+            -project tovis-ios.xcodeproj \
+            -scheme Tovis \
+            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \
+            -skipPackagePluginValidation -skipMacroValidation \
+            2>&1 | tee "$log"
+          # TovisTests uses Swift Testing, not XCTest, so xcodebuild's legacy
+          # summary ALWAYS prints "Executed 0 tests" even on a good run — on exit
+          # code alone an empty run is indistinguishable from success. Assert the
+          # Swift Testing count instead, same as the TovisKit job above.
+          count=$(grep -oE 'Test run with [0-9]+ test' "$log" \
+            | grep -oE '[0-9]+' | tail -1)
+          if [ -z "$count" ] || [ "$count" -lt 1 ]; then
+            echo "::error::App target reported success but ran no tests"
+            exit 1
+          fi
+          echo "App-target tests executed: $count" >> "$GITHUB_STEP_SUMMARY"
