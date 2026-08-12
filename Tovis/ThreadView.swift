@@ -100,6 +100,13 @@ struct ThreadView: View {
     @State private var resolvingBooking = false
     @State private var contextError: String?
 
+    /// W5, CLIENT viewer only: whether THIS pro can read the client's chart.
+    ///
+    /// The thread is where a client already knows who the pro is, so it is the
+    /// honest place to say what that pro can see. nil = not loaded, or the
+    /// viewer is the pro (whose own chart affordance is `showsClientChartLink`).
+    @State private var chartShare: ClientChartShare?
+
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
@@ -145,7 +152,17 @@ struct ThreadView: View {
                 myUserId = await session.client.currentUserId()
                 if !loaded { await load(scroll: proxy) }
             }
-            .onChange(of: session.refreshTick) { Task { await load(scroll: proxy) } }
+            // Secondary and best-effort — kept off the load path above so a
+            // failed share lookup can never stop the conversation rendering.
+            .task { await loadChartShare() }
+            .onChange(of: session.refreshTick) {
+                Task {
+                    await load(scroll: proxy)
+                    // A grant/revoke made on the settings screen should be true
+                    // here when the client comes back, not stale until relaunch.
+                    await loadChartShare()
+                }
+            }
             .task { await poll(proxy) }
         }
         .navigationTitle(thread.counterpartyName)
@@ -182,7 +199,7 @@ struct ThreadView: View {
     /// context with no destination.
     @ViewBuilder
     private var contextBar: some View {
-        if thread.contextDestination != nil || thread.showsClientChartLink {
+        if thread.contextDestination != nil || thread.showsClientChartLink || chartShare != nil {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 18) {
                     contextDestinationLink
@@ -199,6 +216,9 @@ struct ThreadView: View {
                     }
                     Spacer(minLength: 0)
                 }
+
+                clientChartAccessRow
+
                 if let contextError {
                     Text(contextError)
                         .font(BrandFont.body(11.5))
@@ -249,6 +269,58 @@ struct ThreadView: View {
                 .buttonStyle(.plain)
             }
         }
+    }
+
+    /// W5, CLIENT viewer: what this pro can see of the client's chart, said
+    /// where the client already knows who the pro is.
+    ///
+    /// ⚠️ Renders ONLY for a real share row. A pro with no row can still see the
+    /// record of work they did for this client — that is the baseline, not
+    /// "chart access" — so labelling every thread would be false either way it
+    /// was worded. Silence here means "nothing beyond the baseline", which is
+    /// what the settings screen also says.
+    @ViewBuilder
+    private var clientChartAccessRow: some View {
+        if let share = chartShare, let status = share.status {
+            NavigationLink { ClientChartAccessView() } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: status.grantsAccess ? "eye" : "eye.slash")
+                        .font(.system(size: 10.5, weight: .semibold))
+                    Text(status.grantsAccess
+                         ? "Has access to your chart"
+                         : status.clientCopy)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                }
+                .font(BrandFont.body(11.5, .semibold))
+                // An OPEN ASK is the one state that wants the client's attention;
+                // granted is a fact, not an alert, so it stays quiet.
+                .foregroundStyle(
+                    status == .requested ? BrandColor.accent : BrandColor.textMuted
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(
+                status.grantsAccess
+                ? "\(thread.professional.displayName) has access to your chart. Manage chart access."
+                : "\(thread.professional.displayName): \(status.clientCopy). Manage chart access."
+            )
+        }
+    }
+
+    /// Load this pro's share row — client viewer only.
+    ///
+    /// Best-effort and silent on failure: this is a label beside a conversation,
+    /// and a thread that refuses to open because a secondary GET failed would be
+    /// a worse bug than the missing label. The authoritative surface is the
+    /// settings screen this row links to.
+    private func loadChartShare() async {
+        guard !thread.isViewerPro else { return }
+        let proId = thread.professional.id
+        guard !proId.isEmpty else { return }
+
+        let shares = try? await session.client.clientChartShares.list()
+        chartShare = shares?.first { $0.professionalId == proId }
     }
 
     private func contextLinkLabel(_ title: String, working: Bool = false) -> some View {

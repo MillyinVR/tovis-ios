@@ -11,23 +11,27 @@ import Foundation
 /// 🔴 `granted` is the ONLY status that opens the chart. `requested` grants
 /// nothing; a pro asking is not a pro allowed.
 public struct ProClientChartShare: Decodable, Sendable, Equatable {
-    public enum Status: String, Decodable, Sendable {
-        /// The pro asked; the client hasn't answered. Grants nothing.
-        case requested = "REQUESTED"
-        /// The client said yes. The only value that opens the chart.
-        case granted = "GRANTED"
-        /// The client said no. Terminal — the pro cannot ask again.
-        case declined = "DECLINED"
-        /// The client granted, then took it back. Re-askable after a cooldown.
-        case revoked = "REVOKED"
-    }
+    /// One enum for both sides of the pair — see `ChartShareStatus`. Kept as a
+    /// nested alias so existing `ProClientChartShare.Status` references still
+    /// compile.
+    public typealias Status = ChartShareStatus
 
     /// Null when the pair has no row at all — nobody has asked and nobody has
     /// shared. Distinct from `.declined`, which is an answer.
     public let status: Status?
-    public let requestedAt: Date?
-    public let respondedAt: Date?
-    public let revokedAt: Date?
+
+    // 🔴 ISO-8601 STRINGS, not `Date`.
+    //
+    // `APIClient` decodes with a plain `JSONDecoder()`, whose default date
+    // strategy is `.deferredToDate` — it expects a number. The backend sends
+    // `share.requestedAt?.toISOString()`, so typing these as `Date?` made the
+    // WHOLE response throw the moment a timestamp stopped being null — i.e.
+    // the moment a pro actually asked, which is the only time this model is
+    // interesting. Every other TovisKit model types timestamps as `String` for
+    // this reason. Pinned by ProChartShareWireTests.
+    public let requestedAt: String?
+    public let respondedAt: String?
+    public let revokedAt: String?
     /// Whether the chart is open right now. Sent by the server so the client
     /// never re-derives the visibility policy — see the route's comment.
     public let canViewChart: Bool?
@@ -50,9 +54,9 @@ public struct ProClientChartShare: Decodable, Sendable, Equatable {
 
     public init(
         status: Status? = nil,
-        requestedAt: Date? = nil,
-        respondedAt: Date? = nil,
-        revokedAt: Date? = nil,
+        requestedAt: String? = nil,
+        respondedAt: String? = nil,
+        revokedAt: String? = nil,
         canViewChart: Bool? = nil,
         canRequest: Bool? = nil,
         requestBlockedReason: String? = nil

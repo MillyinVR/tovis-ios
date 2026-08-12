@@ -74,6 +74,31 @@ struct ClientNotificationDeepLinkTests {
         )
         // CLIENT_FOLLOW
         #expect(try clientNotification(href: "/client/activity").deepLink?.target == .activity)
+        // CHART_ACCESS_REQUESTED — a pro asking to read this client's chart.
+        //
+        // 🔴 This one used to fall through to `.clientHome`: the client's phone
+        // buzzed with a question about their medical-adjacent record and the tap
+        // dropped them on Home with no way to answer. `CHART_SHARE_SETTINGS_HREF`
+        // in lib/notifications/chartAccessNotifications.ts is the emitter.
+        #expect(
+            try clientNotification(href: "/client/settings/chart-sharing").deepLink?.target
+                == .chartAccess
+        )
+        // The pre-split href, still stored on already-sent rows. Web kept the
+        // anchor id on its settings hub for exactly this reason; the fragment
+        // must survive the parse here too or those taps stay dead.
+        #expect(
+            try clientNotification(href: "/client/settings#chart-sharing").deepLink?.target
+                == .chartAccess
+        )
+        // Any OTHER settings path is still just the client shell — the parser
+        // must not claim the whole settings tree for the chart screen.
+        #expect(
+            try clientNotification(href: "/client/settings").deepLink?.target == .clientHome
+        )
+        #expect(
+            try clientNotification(href: "/client/settings/profile").deepLink?.target == .clientHome
+        )
         // REFERRAL_CONFIRMED / REFERRAL_CONVERTED
         #expect(try clientNotification(href: "/client/referrals").deepLink?.target == .referrals)
         // REFERRAL_TAP_RECEIVED

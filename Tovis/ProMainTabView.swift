@@ -338,7 +338,7 @@ struct ProMainTabView: View {
             tab = .overview
         // Client-shell targets are handled by the workspace switch above;
         // unreachable here, but the switch must stay exhaustive.
-        case .booking, .offers, .referrals, .activity, .clientHome:
+        case .booking, .offers, .referrals, .activity, .chartAccess, .clientHome:
             break
         }
         session.clearPushDeepLink()

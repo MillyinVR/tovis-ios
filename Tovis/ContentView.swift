@@ -89,6 +89,15 @@ struct PushDeepLink: Equatable {
         case offers(accept: String?)         // /client/offers?accept={recipientId}
         case referrals                       // /client/referrals
         case activity                        // /client/activity
+        /// /client/settings/chart-sharing — and the pre-split
+        /// /client/settings#chart-sharing, which is stored on notification rows
+        /// that were minted before the web settings hub existed.
+        ///
+        /// 🔴 This case is load-bearing, not a nicety. CHART_ACCESS_REQUESTED
+        /// ships as a PUSH: a pro asks to read the client's chart and the phone
+        /// buzzes. Without it the href fell through to `.clientHome`, so the tap
+        /// dropped the client on Home with no explanation and no way to answer.
+        case chartAccess
         case clientHome                      // any other /client/*
 
         // Pro-shell targets.
@@ -114,7 +123,7 @@ struct PushDeepLink: Equatable {
         switch target {
         case .thread, .look:
             return nil
-        case .booking, .offers, .referrals, .activity, .clientHome:
+        case .booking, .offers, .referrals, .activity, .chartAccess, .clientHome:
             return .client
         case .proBooking, .proReviews, .membership, .proProfile, .proCalendar, .proHome:
             return .pro
@@ -159,6 +168,19 @@ struct PushDeepLink: Equatable {
                 target = .offers(accept: comps.queryItems?.first(where: { $0.name == "accept" })?.value)
             case "referrals": target = .referrals
             case "activity":  target = .activity
+            case "settings":
+                // Web split settings into a hub of sub-routes, so the chart
+                // consent surface is `/client/settings/chart-sharing`. Rows
+                // minted before that split carry `/client/settings` with a
+                // `#chart-sharing` FRAGMENT instead — accept both, or every
+                // already-sent chart-access push stays a dead tap.
+                if parts.count >= 3 && parts[2] == "chart-sharing" {
+                    target = .chartAccess
+                } else if fragment == "chart-sharing" {
+                    target = .chartAccess
+                } else {
+                    target = .clientHome
+                }
             default:          target = .clientHome
             }
             return
@@ -531,6 +553,25 @@ final class SessionModel {
 
     /// Acknowledge a deep link once the shell has routed it.
     func clearPushDeepLink() { pushDeepLink = nil }
+
+    /// DEBUG: open a deep link at launch, as if a push had been tapped.
+    ///
+    /// Same reasoning as `TOVIS_DEBUG_OPEN_TAB` — this machine cannot drive the
+    /// simulator with synthetic taps, so a screen reachable ONLY by tapping a
+    /// push (the chart-consent surface) could otherwise never be looked at
+    /// before shipping. Feeding the href through the real `PushDeepLink` parser
+    /// exercises the routing too, rather than presenting the screen directly.
+    ///
+    ///     SIMCTL_CHILD_TOVIS_DEBUG_OPEN_DEEP_LINK=/client/settings/chart-sharing \
+    ///       xcrun simctl launch …
+    func applyDebugDeepLinkIfRequested() {
+        #if DEBUG
+        let raw = ProcessInfo.processInfo.environment["TOVIS_DEBUG_OPEN_DEEP_LINK"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let raw, !raw.isEmpty else { return }
+        handlePushDeepLink(href: raw)
+        #endif
+    }
 
     let client: TovisClient
     private let realtime: SupabaseRealtime?
@@ -1199,6 +1240,8 @@ struct RootView: View {
                     ProMainTabView()
                 } else {
                     MainTabView()
+                        // DEBUG-only launch hook — see applyDebugDeepLinkIfRequested.
+                        .task { session.applyDebugDeepLinkIfRequested() }
                 }
             }
         }
