@@ -56,7 +56,7 @@ struct AppointmentsView: View {
             .padding(.bottom, 40)
         }
         .background(BrandColor.bgPrimary.ignoresSafeArea())
-        .navigationTitle("Appointments")
+        .navigationTitle("Bookings")
         .navigationBarTitleDisplayMode(.large)
         .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
         // Same destination the web aftercare rows link to
@@ -170,7 +170,7 @@ struct AppointmentsView: View {
 
     /// Aftercare counts toward "is there anything here" — same as the web list. A
     /// summary that outlives its booking row would otherwise sit underneath a
-    /// "No appointments yet" card claiming the screen is empty.
+    /// "No bookings yet" card claiming the screen is empty.
     private func isEmpty(_ b: ClientBookingBuckets) -> Bool {
         b.upcoming.isEmpty && b.pending.isEmpty && b.prebooked.isEmpty &&
             b.past.isEmpty && b.waitlist.isEmpty && aftercare.isEmpty
@@ -185,10 +185,10 @@ struct AppointmentsView: View {
 
     private var emptyState: some View {
         VStack(spacing: 10) {
-            Text("No appointments yet")
+            Text("No bookings yet")
                 .font(BrandFont.display(20, .semibold))
                 .foregroundStyle(BrandColor.textPrimary)
-            Text("Once you book, your appointments show up here.")
+            Text("Once you book, everything you’ve booked shows up here.")
                 .font(BrandFont.body(14))
                 .foregroundStyle(BrandColor.textMuted)
                 .multilineTextAlignment(.center)
