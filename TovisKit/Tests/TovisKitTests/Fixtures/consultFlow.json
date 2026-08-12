@@ -66,17 +66,18 @@
         "version": 1,
         "schemaVersion": 1,
         "questions": [
-          {"key":"current_color","label":"Your current color?","kind":"SINGLE_SELECT","requirement":"REQUIRED","options":[{"value":"dark-brown","label":"Dark brown"}]},
-          {"key":"desired_color","label":"Your dream color?","kind":"SINGLE_SELECT","requirement":"REQUIRED","options":[{"value":"copper","label":"Copper"}]},
-          {"key":"change_scale","label":"How big a change are you after?","kind":"SINGLE_SELECT","requirement":"REQUIRED","options":[{"value":"noticeable","label":"Noticeable"}]},
-          {"key":"box_dye_history","label":"When did you last use box dye on your hair?","kind":"SINGLE_SELECT","requirement":"REQUIRED","options":[{"value":"within-6-months","label":"Within 6 months"}]},
-          {"key":"prior_lightening","label":"When was your hair last lightened?","kind":"SINGLE_SELECT","requirement":"REQUIRED","options":[{"value":"6-12-months","label":"6–12 months ago"}]},
-          {"key":"last_color_service_timing","label":"When was your last color service?","kind":"SINGLE_SELECT","requirement":"REQUIRED","options":[{"value":"4-6-months","label":"4–6 months ago"}]},
-          {"key":"prior_reaction","label":"Have you ever had a reaction during or after a hair color service?","kind":"SINGLE_SELECT","requirement":"REQUIRED","options":[{"value":"no","label":"No"}]},
-          {"key":"event_timing","label":"Do you have an event or deadline?","kind":"SINGLE_SELECT","requirement":"SKIPPABLE","options":[{"value":"1-3-months","label":"1–3 months"}]},
-          {"key":"budget","label":"What budget would you like to stay within?","kind":"SINGLE_SELECT","requirement":"SKIPPABLE","options":[{"value":"251-400","label":"$251–$400"}]}
+          {"key":"current_color","label":"Your current color?","helpText":null,"kind":"SINGLE_SELECT","requirement":"REQUIRED","options":[{"value":"dark-brown","label":"Dark brown"}]},
+          {"key":"desired_color","label":"Your dream color?","helpText":null,"kind":"SINGLE_SELECT","requirement":"REQUIRED","options":[{"value":"copper","label":"Copper"}]},
+          {"key":"change_scale","label":"How big a change are you after?","helpText":null,"kind":"SINGLE_SELECT","requirement":"REQUIRED","options":[{"value":"noticeable","label":"Noticeable"}]},
+          {"key":"box_dye_history","label":"When did you last use box dye on your hair?","helpText":"Treatments besides hair color can change how your hair responds and what result is safely achievable.","kind":"SINGLE_SELECT","requirement":"REQUIRED","options":[{"value":"within-6-months","label":"Within 6 months"}]},
+          {"key":"prior_lightening","label":"When was your hair last lightened?","helpText":"Treatments besides hair color can change how your hair responds and what result is safely achievable.","kind":"SINGLE_SELECT","requirement":"REQUIRED","options":[{"value":"6-12-months","label":"6–12 months ago"}]},
+          {"key":"last_color_service_timing","label":"When was your last color service?","helpText":null,"kind":"SINGLE_SELECT","requirement":"REQUIRED","options":[{"value":"4-6-months","label":"4–6 months ago"}]},
+          {"key":"prior_reaction","label":"Have you ever had a reaction during or after a hair color service?","helpText":null,"kind":"SINGLE_SELECT","requirement":"REQUIRED","options":[{"value":"no","label":"No"}]},
+          {"key":"event_timing","label":"Do you have an event or deadline?","helpText":null,"kind":"SINGLE_SELECT","requirement":"SKIPPABLE","options":[{"value":"1-3-months","label":"1–3 months"}]},
+          {"key":"budget","label":"What budget would you like to stay within?","helpText":null,"kind":"SINGLE_SELECT","requirement":"SKIPPABLE","options":[{"value":"251-400","label":"$251–$400"}]}
         ]
       },
+      "progress": {"canComplete":false,"nextQuestionKey":"current_color","blocker":"REQUIRED_ANSWERS_MISSING"},
       "prefillSuggestions": [
         {"questionKey":"desired_color","value":"copper","provenance":[{"source":"SAVED_LOOK","sourceId":"look_fixture_1"}]}
       ],
