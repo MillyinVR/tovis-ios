@@ -13,8 +13,16 @@ struct ClientHomeResponse: Decodable, Sendable {
 }
 
 public struct ClientHome: Decodable, Sendable {
+    /// What the greeting calls this client — the server's answer, not ours.
+    /// Optional only because the field is optional on the wire; when it is
+    /// missing the header falls back rather than inventing a name from the
+    /// email, which is what it used to do (`demo-maya@` → "Demo").
+    public let displayName: String?
     public let upcoming: HomeBooking?
     public let upcomingCount: Int
+    /// Visible-review aggregate for the pro on the next-booking card, or nil
+    /// when they have none — no star at all beats an empty one.
+    public let upcomingProRating: HomeRating?
     public let action: HomeAction?
     public let invites: [HomeInvite]
     public let waitlists: [HomeWaitlist]
@@ -22,6 +30,16 @@ public struct ClientHome: Decodable, Sendable {
     public let favoriteServices: [HomeFavoriteService]
     public let viralLive: [HomeViral]
     public let viralPending: [HomeViral]
+}
+
+public struct HomeRating: Decodable, Sendable {
+    public let average: Double
+    public let count: Int
+
+    /// One decimal, the way the frame prints it ("4.9").
+    public var display: String {
+        String(format: "%.1f", average)
+    }
 }
 
 // MARK: - Shared references
@@ -108,11 +126,25 @@ public struct HomeLocation: Decodable, Sendable, Identifiable {
 
 // MARK: - Action banner (tagged union on `kind`)
 
+/// The pro's before/after pair for a visit, as the home action card shows it.
+/// Every field is optional: a pro who photographed only one phase still has a
+/// card worth rendering.
+public struct HomeBeforeAfter: Decodable, Sendable {
+    public let beforeUrl: String?
+    public let afterUrl: String?
+
+    public var hasAny: Bool { beforeUrl != nil || afterUrl != nil }
+}
+
 public enum HomeAction: Decodable, Sendable {
     case pendingConsultation(booking: HomeBooking)
-    case aftercarePaymentDue(booking: HomeBooking, aftercare: HomeAftercare)
+    case aftercarePaymentDue(
+        booking: HomeBooking,
+        aftercare: HomeAftercare,
+        beforeAfter: HomeBeforeAfter?
+    )
 
-    private enum CodingKeys: String, CodingKey { case kind, booking, aftercare }
+    private enum CodingKeys: String, CodingKey { case kind, booking, aftercare, beforeAfter }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -123,7 +155,8 @@ public enum HomeAction: Decodable, Sendable {
         case "AFTERCARE_PAYMENT_DUE":
             self = .aftercarePaymentDue(
                 booking: try c.decode(HomeBooking.self, forKey: .booking),
-                aftercare: try c.decode(HomeAftercare.self, forKey: .aftercare)
+                aftercare: try c.decode(HomeAftercare.self, forKey: .aftercare),
+                beforeAfter: try c.decodeIfPresent(HomeBeforeAfter.self, forKey: .beforeAfter)
             )
         default:
             throw DecodingError.dataCorruptedError(
@@ -207,6 +240,12 @@ public struct HomeOpeningOffering: Decodable, Sendable {
 public struct HomeWaitlist: Decodable, Sendable, Identifiable {
     public let id: String
     public let status: String
+    /// The client's real FIFO place in this pro's queue for this service, as the
+    /// pro's own waitlist ranks it. nil when the server could not establish it —
+    /// the row then shows no place at all. NOT the row's index: this screen used
+    /// to print `#index + 1`, so a client on one waitlist always read "#1 in
+    /// line" however many people were actually ahead of them.
+    public let queuePosition: Int?
     public let service: HomeServiceRef?
     public let professional: HomeProfessional?
 }
