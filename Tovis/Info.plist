@@ -19,6 +19,17 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<!--
+		Schemes we ASK ABOUT before handing off. Choosing a payment method opens
+		that provider's app straight away, and `canOpenURL` silently answers
+		false for any scheme not listed here — so without this entry the
+		hand-off would be permanently inert rather than merely unavailable.
+		Only the providers `buildPaymentDeepLink` can emit an appHref for.
+	-->
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>venmo</string>
+	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
