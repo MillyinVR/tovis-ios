@@ -69,7 +69,16 @@ public struct ClientBooking: Decodable, Sendable, Identifiable {
 
     public let timeZone: String?
     public let locationType: String?
+    /// Human label for the place — an address, a salon name, or a city. Display
+    /// only: it is NOT safe to hand a maps app, which is what `locationAddress`
+    /// is for.
     public let locationLabel: String?
+    /// The appointment's actual street address — the pro's location for SALON,
+    /// the CLIENT's for MOBILE. Optional so pre-field responses still decode.
+    public let locationAddress: String?
+    /// Coordinates for that address, when the booking's snapshot captured them.
+    public let locationLat: Double?
+    public let locationLng: Double?
 
     public let professional: BookingProfessional?
     public let bookedLocation: BookingLocation?
