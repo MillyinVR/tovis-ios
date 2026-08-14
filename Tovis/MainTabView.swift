@@ -78,7 +78,7 @@ struct MainTabView: View {
 
     var body: some View {
         TabView(selection: $tab) {
-            HomeView(onOpenInbox: { tab = .inbox })
+            HomeView()
                 .tag(ClientTab.ID.home)
 
             DiscoverView()

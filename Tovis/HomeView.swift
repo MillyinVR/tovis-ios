@@ -18,8 +18,6 @@ struct HomeView: View {
     /// web shell's `grid-cols-1 md:grid-cols-2` (phones stay single-column).
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
-    /// Switch the shell to the Inbox tab (the header bell), set by MainTabView.
-    var onOpenInbox: () -> Void = {}
 
     private enum Phase {
         case loading
@@ -91,15 +89,17 @@ struct HomeView: View {
                     .font(BrandFont.mono(10)).tracking(1.6)
                     .textCase(.uppercase)
                     .foregroundStyle(BrandColor.textMuted)
-                Text("\(displayName).")
+                Text(displayName)
                     .font(BrandFont.display(34, .semibold).italic())
                     .foregroundStyle(BrandColor.textPrimary)
             }
             Spacer()
-            HStack(spacing: 10) {
-                notificationsBell
-                inboxBell
-            }
+            // The bell only. The envelope beside it was a second door onto the
+            // Inbox, which the footer already carries its own tab (and unread
+            // badge) for — the web header has never had one either (Tori,
+            // 2026-08-14). Notifications keep a bell because the footer has no
+            // tab for them.
+            notificationsBell
         }
         .padding(.top, 4)
     }
@@ -127,19 +127,6 @@ struct HomeView: View {
         .accessibilityLabel("Notifications")
     }
 
-    /// Messages entry point — envelope in a circle (links to the Inbox tab).
-    private var inboxBell: some View {
-        Button(action: onOpenInbox) {
-            Image(systemName: "envelope")
-                .font(.system(size: 16))
-                .foregroundStyle(BrandColor.textMuted)
-                .frame(width: 38, height: 38)
-                .overlay(Circle().stroke(BrandColor.textPrimary.opacity(0.16), lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Messages")
-    }
-
     private var greeting: String {
         let hour = Calendar.current.component(.hour, from: Date())
         if hour < 12 { return "Good morning" }
@@ -147,15 +134,21 @@ struct HomeView: View {
         return "Good evening"
     }
 
+    /// The greeting line. The NAME comes from the server (`ClientHome.displayName`
+    /// — the client's own first name, else their email), so the phone and the web
+    /// greet the same person the same way.
+    ///
+    /// 🔴 It used to be derived here from the email's local part, which made
+    /// `demo-maya@tovis.app` read "Demo." — and, because `session.currentUser` is
+    /// nil until the session loads, every COLD LAUNCH fell through to
+    /// "Welcome back." That fallback survives only for the moment before the home
+    /// payload lands; nothing is invented from an address any more.
     private var displayName: String {
-        guard let email = session.currentUser?.email,
-              let local = email.split(separator: "@").first else { return "Welcome back" }
-        let token = local.split(whereSeparator: { $0 == "." || $0 == "_" || $0 == "-" })
-            .first.map(String.init) ?? String(local)
-        let letters = String(token.prefix(while: { !$0.isNumber }))
-        let base = letters.isEmpty ? token : letters
-        guard let first = base.first else { return "Welcome back" }
-        return first.uppercased() + base.dropFirst()
+        if case let .loaded(home) = phase {
+            let name = home.displayName?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let name, !name.isEmpty { return "\(name)." }
+        }
+        return "Welcome back."
     }
 
     // MARK: - Loaded content (web section order + two-column at regular width)
@@ -175,8 +168,7 @@ struct HomeView: View {
             rightColumn(home)
         }
 
-        ViralLooksBand(live: home.viralLive.first, pending: home.viralPending.first,
-                       liveMore: max(0, home.viralLive.count - 1),
+        ViralLooksBand(liveLooks: home.viralLive, pending: home.viralPending.first,
                        pendingMore: max(0, home.viralPending.count - 1),
                        onSubmitted: { await load() })
             .padding(.top, 6)
@@ -188,17 +180,22 @@ struct HomeView: View {
             ActionCard(action: action, onChanged: { await load() })
         }
         InvitesCard(invites: home.invites, onChanged: { await load() })
-        UpcomingCard(booking: home.upcoming, upcomingCount: home.upcomingCount)
+        UpcomingCard(
+            booking: home.upcoming,
+            upcomingCount: home.upcomingCount,
+            proRating: home.upcomingProRating,
+        )
     }
 
+    // Every section keeps its heading and explains itself when it is empty
+    // (Tori, 2026-08-14) — so a client on day one sees the shape of the whole
+    // home rather than a screen that grows cards as they use it. These two used
+    // to be hidden when empty, which is why the phone and the web showed
+    // DIFFERENT sets of sections to the same account.
     @ViewBuilder
     private func rightColumn(_ home: ClientHome) -> some View {
-        if !home.favoritePros.isEmpty {
-            FavoriteProsCard(favoritePros: home.favoritePros)
-        }
-        if !home.favoriteServices.isEmpty {
-            FavoritedServicesCard(services: home.favoriteServices)
-        }
+        FavoriteProsCard(favoritePros: home.favoritePros)
+        FavoritedServicesCard(services: home.favoriteServices)
         WaitlistCard(waitlists: home.waitlists)
         if let inviteLink {
             ClientInviteCard(invite: inviteLink)
@@ -258,6 +255,43 @@ struct HomeView: View {
 }
 
 // MARK: - Shared building blocks
+
+/// The copy + CTA an empty home section shows. Every section keeps its heading
+/// and explains itself rather than disappearing (Tori, 2026-08-14), so a client
+/// on day one sees the shape of the whole screen. Mirrors the web sections'
+/// empty states, which read the same way.
+private struct HomeEmptyState: View {
+    let title: String
+    /// Named `message`, not `body` — `body` is `View`'s own requirement.
+    let message: String
+    let cta: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(BrandFont.body(13, .semibold))
+                .foregroundStyle(BrandColor.textPrimary)
+            Text(message)
+                .font(BrandFont.body(11.5))
+                .foregroundStyle(BrandColor.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+            NavigationLink {
+                DiscoverView()
+            } label: {
+                Text(cta)
+                    .font(BrandFont.body(11.5, .bold))
+                    .foregroundStyle(BrandColor.textSecondary)
+                    .padding(.horizontal, 16).padding(.vertical, 8)
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(BrandColor.textPrimary.opacity(0.16), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 6)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 
 /// A home card surface — rounded, hairline border, surface fill (web "rounded-card
 /// border border-textPrimary/10 bg-bgSurface p-[18px]").
@@ -374,8 +408,8 @@ private struct ActionCard: View {
         switch action {
         case let .pendingConsultation(booking):
             pendingConsultation(booking)
-        case let .aftercarePaymentDue(booking, aftercare):
-            aftercarePayment(booking, aftercare)
+        case let .aftercarePaymentDue(booking, aftercare, beforeAfter):
+            aftercarePayment(booking, aftercare, beforeAfter)
         }
     }
 
@@ -438,18 +472,31 @@ private struct ActionCard: View {
         }
     }
 
-    private func aftercarePayment(_ booking: HomeBooking, _ aftercare: HomeAftercare) -> some View {
+    private func aftercarePayment(
+        _ booking: HomeBooking,
+        _ aftercare: HomeAftercare,
+        _ beforeAfter: HomeBeforeAfter?,
+    ) -> some View {
         let title = booking.service?.name ?? "Your visit"
         let due = Wire.money(booking.totalAmount)
         let proName = booking.professional?.displayName ?? "your pro"
         let notes = aftercare.notes?.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Which visit this is — the web card has always said. Without it the
+        // card names a service and a pro and leaves the client to guess the day.
+        let when = Wire.dateTime(booking.scheduledFor, timeZone: booking.resolvedTimeZone)
+        let place = booking.location?.name ?? booking.location?.city
+        let subLine = [when, place].compactMap { $0 }.joined(separator: " · ")
 
+        // 🔴 Accent is the ACCENT, not ember. "Your summary is ready" is good
+        // news, and ember is what this app paints an error in — the web card has
+        // always used terra here, so the same state read as an alarm on the phone
+        // and as a result on the desktop (Tori, 2026-08-14: teal on both).
         return NavigationLink { AftercareInboxView() } label: {
-            HomeCard(accentEdge: BrandColor.ember) {
+            HomeCard(accentEdge: BrandColor.accent) {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(spacing: 10) {
-                        iconChip("doc.text", tint: BrandColor.ember)
-                        Pill(text: "Summary ready", color: BrandColor.ember)
+                        iconChip("doc.text", tint: BrandColor.accent)
+                        Pill(text: "Summary ready", color: BrandColor.accent)
                         if let due { Pill(text: "\(due) due", color: BrandColor.gold, filled: false) }
                         Spacer()
                     }
@@ -460,18 +507,60 @@ private struct ActionCard: View {
                             "Before & after, care notes, and your receipt are waiting.")
                         .font(BrandFont.body(13.5))
                         .foregroundStyle(BrandColor.textSecondary)
-                    Text("\(title) with \(proName)")
-                        .font(BrandFont.body(13, .semibold))
-                        .foregroundStyle(BrandColor.textPrimary)
-                        .padding(.horizontal, 14).padding(.vertical, 11)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(BrandColor.textPrimary.opacity(0.04))
-                        .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                    // The pro's own before/after, the strongest thing in the
+                    // card and the reason to open it. Two thumbs rather than the
+                    // web's drag-slider: the whole card is one tap into the
+                    // summary, where the full comparison lives.
+                    if let beforeAfter, beforeAfter.hasAny {
+                        HStack(spacing: 8) {
+                            beforeAfterThumb(beforeAfter.beforeUrl, label: "BEFORE")
+                            beforeAfterThumb(beforeAfter.afterUrl, label: "AFTER")
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("\(title) with \(proName)")
+                            .font(BrandFont.body(13, .semibold))
+                            .foregroundStyle(BrandColor.textPrimary)
+                        if !subLine.isEmpty {
+                            Text(subLine)
+                                .font(BrandFont.mono(11))
+                                .foregroundStyle(BrandColor.textMuted)
+                                .lineLimit(1)
+                        }
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 11)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(BrandColor.textPrimary.opacity(0.04))
+                    .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
                     primaryLabel(due != nil ? "View summary & pay \(due!) →" : "View summary →")
                 }
             }
         }
         .buttonStyle(.plain)
+    }
+
+    /// One half of the before/after pair. A missing phase renders its own empty
+    /// tile rather than collapsing the row, so BEFORE and AFTER stay in the same
+    /// places whichever one the pro actually shot.
+    @ViewBuilder
+    private func beforeAfterThumb(_ url: String?, label: String) -> some View {
+        ZStack(alignment: .topLeading) {
+            Rectangle().fill(BrandColor.textPrimary.opacity(0.06))
+            if let url, let parsed = URL(string: url) {
+                AsyncImage(url: parsed) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
+            }
+            Text(label)
+                .font(BrandFont.mono(9)).tracking(0.8)
+                .foregroundStyle(BrandColor.textPrimary)
+                .padding(.horizontal, 7).padding(.vertical, 3)
+                .background(BrandColor.bgPrimary.opacity(0.6))
+                .clipShape(Capsule())
+                .padding(7)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 132)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private func iconChip(_ symbol: String, tint: Color) -> some View {
@@ -675,32 +764,100 @@ private struct InviteRow: View {
 // MARK: - Next booking
 
 private struct UpcomingCard: View {
+    @Environment(SessionModel.self) private var session
+
     let booking: HomeBooking?
     let upcomingCount: Int
+    let proRating: HomeRating?
 
-    // BOTH states push AppointmentsView, and both say so with an "All bookings →"
-    // line. The empty state used to be inert text, which was survivable only
-    // while the footer carried a Bookings tab; bookings now live in the home area
-    // (see ClientTab), and AppointmentsView is the only surface listing PENDING
+    /// The resolved booking behind "View booking", and the resolved thread behind
+    /// the message button. Both are resolved on tap because there is no
+    /// single-booking client GET (see `BookingsService.booking(id:)`) — the same
+    /// pattern AftercareInboxView and PriorityOffersView already use.
+    @State private var bookingNav: ClientBookingNav?
+    @State private var threadNav: MessageThreadNav?
+    @State private var resolving: Resolve?
+    @State private var resolveError: String?
+
+    private enum Resolve { case booking, thread }
+
+    // BOTH states reach AppointmentsView through the "All bookings →" line. The
+    // empty state used to be inert text, which was survivable only while the
+    // footer carried a Bookings tab; bookings now live in the home area (see
+    // ClientTab), and AppointmentsView is the only surface listing PENDING
     // bookings — which is exactly what a client staring at "No approved bookings
     // yet" has. An inert empty card here means they cannot open, or cancel, their
-    // own request. Neither branch may become conditional.
+    // own request. Neither branch may lose that line.
     var body: some View {
-        NavigationLink {
-            AppointmentsView()
-        } label: {
+        Group {
             if let booking { card(booking) } else { empty }
         }
-        .buttonStyle(.plain)
+        .navigationDestination(item: $bookingNav) { nav in
+            BookingDetailView(booking: nav.booking)
+        }
+        .navigationDestination(item: $threadNav) { nav in
+            ThreadView(thread: nav.thread)
+        }
     }
 
     /// The row both states share: names what else is waiting when there is more
     /// than one upcoming, and otherwise just names the destination.
     private func allBookingsLine(more: Int) -> some View {
-        Text(more > 0 ? "\(more) more upcoming →" : "All bookings →")
-            .font(BrandFont.body(12.5, .semibold))
-            .foregroundStyle(BrandColor.textMuted)
-            .frame(maxWidth: .infinity)
+        NavigationLink {
+            AppointmentsView()
+        } label: {
+            Text(more > 0 ? "\(more) more upcoming →" : "All bookings →")
+                .font(BrandFont.body(12.5, .semibold))
+                .foregroundStyle(BrandColor.textMuted)
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Where the pro works — studio AND city when both exist, as the web card
+    /// reads it ("Halo Studio · Brooklyn"). The name alone does not tell a client
+    /// whether this is the salon near them.
+    private func placeLine(_ booking: HomeBooking) -> String? {
+        let parts = [booking.location?.name, booking.location?.city]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        if !parts.isEmpty { return parts.joined(separator: " · ") }
+        return booking.professional?.location
+    }
+
+    /// Resolves the full booking, then pushes its detail. The card cannot build a
+    /// `ClientBooking` from the home payload — it carries a different, smaller
+    /// shape — so the id is exchanged for the real thing first.
+    private func openBooking(_ id: String) async {
+        resolving = .booking
+        resolveError = nil
+        defer { resolving = nil }
+        do {
+            if let full = try await session.client.bookings.booking(id: id) {
+                bookingNav = ClientBookingNav(booking: full)
+            } else {
+                resolveError = "We couldn’t open that booking. Pull to refresh."
+            }
+        } catch {
+            resolveError = "We couldn’t open that booking. Pull to refresh."
+        }
+    }
+
+    private func openThread(_ bookingId: String) async {
+        resolving = .thread
+        resolveError = nil
+        defer { resolving = nil }
+        do {
+            if let thread = try await session.client.messages.openBookingThread(
+                bookingId: bookingId,
+            ) {
+                threadNav = MessageThreadNav(thread: thread)
+            } else {
+                resolveError = "We couldn’t open that conversation."
+            }
+        } catch {
+            resolveError = "We couldn’t open that conversation."
+        }
     }
 
     private func card(_ booking: HomeBooking) -> some View {
@@ -708,7 +865,7 @@ private struct UpcomingCard: View {
         let total = Wire.money(booking.totalAmount)
         let when = Wire.dateTime(booking.scheduledFor, timeZone: booking.resolvedTimeZone)
         let duration = formatDuration(booking.totalDurationMinutes)
-        let location = booking.location?.name ?? booking.location?.city ?? pro?.location
+        let location = placeLine(booking)
         let more = max(0, upcomingCount - 1)
 
         return HomeCard {
@@ -730,8 +887,24 @@ private struct UpcomingCard: View {
                         Text(pro?.displayName ?? homeProFallbackName)
                             .font(BrandFont.body(17, .semibold)).foregroundStyle(BrandColor.textPrimary)
                             .lineLimit(1)
-                        if let location {
-                            Text(location).font(BrandFont.body(12.5)).foregroundStyle(BrandColor.textMuted).lineLimit(1)
+                        if location != nil || proRating != nil {
+                            HStack(spacing: 5) {
+                                if let location {
+                                    Text(location).lineLimit(1)
+                                }
+                                if location != nil, proRating != nil {
+                                    Text("·")
+                                }
+                                if let proRating {
+                                    Text("\(proRating.display)★")
+                                        .foregroundStyle(BrandColor.textSecondary)
+                                        .accessibilityLabel(
+                                            "\(proRating.display) out of 5, from \(proRating.count) reviews",
+                                        )
+                                }
+                            }
+                            .font(BrandFont.body(12.5))
+                            .foregroundStyle(BrandColor.textMuted)
                         }
                     }
                     Spacer()
@@ -753,6 +926,59 @@ private struct UpcomingCard: View {
                 .padding(.top, 14)
                 .overlay(alignment: .top) {
                     Rectangle().fill(BrandColor.textPrimary.opacity(0.10)).frame(height: 1)
+                }
+
+                // The two actions the web card has always had. Without them the
+                // only route out of this card was the bookings LIST — from their
+                // own home a client could not open the appointment itself, and
+                // could not message the pro at all.
+                HStack(spacing: 10) {
+                    Button {
+                        Task { await openBooking(booking.id) }
+                    } label: {
+                        Group {
+                            if resolving == .booking {
+                                ProgressView().tint(BrandColor.onAccent)
+                            } else {
+                                Text("View booking")
+                                    .font(BrandFont.body(15, .semibold))
+                                    .foregroundStyle(BrandColor.onAccent)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                        .background(BrandColor.accent)
+                        .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                        .opacity(resolving != nil ? 0.6 : 1)
+                    }
+                    .disabled(resolving != nil)
+
+                    Button {
+                        Task { await openThread(booking.id) }
+                    } label: {
+                        Group {
+                            if resolving == .thread {
+                                ProgressView().tint(BrandColor.textSecondary)
+                            } else {
+                                Image(systemName: "bubble.left")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundStyle(BrandColor.textSecondary)
+                            }
+                        }
+                        .frame(width: 44, height: 44)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                .stroke(BrandColor.textPrimary.opacity(0.16), lineWidth: 1),
+                        )
+                    }
+                    .disabled(resolving != nil)
+                    .accessibilityLabel("Message \(pro?.displayName ?? "your pro")")
+                }
+
+                if let resolveError {
+                    Text(resolveError)
+                        .font(BrandFont.body(12))
+                        .foregroundStyle(BrandColor.ember)
                 }
 
                 allBookingsLine(more: more)
@@ -781,47 +1007,120 @@ private struct FavoriteProsCard: View {
     let favoritePros: [HomeFavoritePro]
 
     private var pros: [HomeProfessional] {
-        favoritePros.compactMap { $0.professional }.prefix(6).map { $0 }
+        favoritePros.compactMap { $0.professional }.prefix(12).map { $0 }
     }
 
     var body: some View {
         HomeCard {
             VStack(alignment: .leading, spacing: 14) {
-                Eyebrow(text: "Favorite pros · \(favoritePros.count)")
-                // .adaptive keeps 2 columns on a phone-width container and adds
-                // columns on a wider one — iPad — instead of stretching 2 tiles
-                // across the extra width.
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 173), spacing: 11)], spacing: 11) {
-                    ForEach(pros) { pro in
-                        NavigationLink {
-                            ProProfileView(professionalId: pro.id, fallbackName: pro.displayName)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 8) {
-                                GradientAvatar(name: pro.displayName, url: pro.avatarUrl, size: 40, corner: 20)
-                                Text(pro.displayName)
-                                    .font(BrandFont.body(13.5, .semibold)).foregroundStyle(BrandColor.textPrimary)
-                                    .lineLimit(1)
-                                if let craft = pro.professionType {
-                                    Text(craft.capitalized).font(BrandFont.body(11)).foregroundStyle(BrandColor.textMuted).lineLimit(1)
+                Eyebrow(
+                    text: favoritePros.isEmpty
+                        ? "Favorite pros"
+                        : "Favorite pros · \(favoritePros.count)",
+                )
+                if pros.isEmpty {
+                    HomeEmptyState(
+                        title: "No favorite pros yet.",
+                        message: "Favorite pros from Looks or Discover and they’ll show up here.",
+                        cta: "Find pros",
+                    )
+                } else {
+                    // A picture-led card that scrolls left to right (Tori,
+                    // 2026-08-14). The rail keeps every card the same size
+                    // however many there are, so a third favourite no longer
+                    // leaves a half-empty second row of a two-up grid.
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 11) {
+                            ForEach(Array(pros.enumerated()), id: \.element.id) { index, pro in
+                                NavigationLink {
+                                    ProProfileView(professionalId: pro.id, fallbackName: pro.displayName)
+                                } label: {
+                                    FavoriteTile(
+                                        imageUrl: pro.avatarUrl,
+                                        fallbackText: initials(pro.displayName),
+                                        fallbackTint: nil,
+                                        index: index,
+                                        title: pro.displayName,
+                                        subtitle: pro.professionType?.capitalized,
+                                    )
                                 }
-                                Text("Book")
-                                    .font(BrandFont.body(11.5, .bold)).foregroundStyle(BrandColor.onAccent)
-                                    .frame(maxWidth: .infinity).padding(.vertical, 7)
-                                    .background(BrandColor.accent).clipShape(Capsule())
-                                    .padding(.top, 2)
+                                .buttonStyle(.plain)
                             }
-                            .padding(13)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(BrandColor.textPrimary.opacity(0.04))
-                            .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
-                                .stroke(BrandColor.textPrimary.opacity(0.10), lineWidth: 1))
                         }
-                        .buttonStyle(.plain)
+                        .padding(.horizontal, 1)
                     }
+                    // Let the rail run to the card's edges while the cards keep
+                    // their inset — the same trick the web rail uses.
+                    .padding(.horizontal, -16)
+                    .padding(.leading, 16)
                 }
             }
         }
+    }
+
+    private func initials(_ name: String) -> String {
+        let parts = name.split(separator: " ").prefix(2)
+        let letters = parts.compactMap { $0.first }.map(String.init).joined()
+        return letters.isEmpty ? "?" : letters.uppercased()
+    }
+}
+
+/// One card in a favourites rail: the picture, then the info, then Book. Shared
+/// by pros and services so the two rails cannot drift into different shapes.
+private struct FavoriteTile: View {
+    let imageUrl: String?
+    /// Drawn over the gradient when there is no picture (a pro's initials).
+    let fallbackText: String?
+    /// Drawn over the tint when there is no picture (a service's heart).
+    let fallbackTint: Color?
+    let index: Int
+    let title: String
+    let subtitle: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ZStack {
+                if let fallbackTint {
+                    fallbackTint.opacity(0.15)
+                } else {
+                    gradientAvatar(index)
+                }
+                if let imageUrl, let parsed = URL(string: imageUrl) {
+                    AsyncImage(url: parsed) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
+                } else if let fallbackTint {
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 22)).foregroundStyle(fallbackTint)
+                } else if let fallbackText {
+                    Text(fallbackText)
+                        .font(BrandFont.display(20, .semibold))
+                        .foregroundStyle(BrandColor.onAccent)
+                }
+            }
+            .frame(width: 152, height: 112)
+            .clipped()
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(BrandFont.body(13.5, .semibold)).foregroundStyle(BrandColor.textPrimary)
+                    .lineLimit(1)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(BrandFont.body(11)).foregroundStyle(BrandColor.textMuted)
+                        .lineLimit(1)
+                }
+                Text("Book")
+                    .font(BrandFont.body(11.5, .bold)).foregroundStyle(BrandColor.onAccent)
+                    .frame(maxWidth: .infinity).padding(.vertical, 7)
+                    .background(BrandColor.accent).clipShape(Capsule())
+                    .padding(.top, 6)
+            }
+            .padding(12)
+        }
+        .frame(width: 152, alignment: .leading)
+        .background(BrandColor.textPrimary.opacity(0.04))
+        .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
+            .stroke(BrandColor.textPrimary.opacity(0.10), lineWidth: 1))
     }
 }
 
@@ -832,47 +1131,61 @@ private struct FavoritedServicesCard: View {
 
     var body: some View {
         HomeCard {
-            VStack(alignment: .leading, spacing: 10) {
-                Eyebrow(text: "Favorited services · \(services.count)")
-                VStack(spacing: 0) {
-                    let rows = Array(services.prefix(5).enumerated())
-                    ForEach(rows, id: \.element.id) { idx, fav in
-                        if let service = fav.service {
-                            row(service, index: idx)
-                            if idx < rows.count - 1 { Divider().overlay(BrandColor.textPrimary.opacity(0.10)) }
+            VStack(alignment: .leading, spacing: 14) {
+                Eyebrow(
+                    text: services.isEmpty
+                        ? "Favorited services"
+                        : "Favorited services · \(services.count)",
+                )
+                if services.isEmpty {
+                    HomeEmptyState(
+                        title: "No favorited services yet.",
+                        message: "Tap the heart on a service and it’ll be one tap from booking here.",
+                        cta: "Find services",
+                    )
+                } else {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 11) {
+                            let rows = Array(services.prefix(12).enumerated())
+                            ForEach(rows, id: \.element.id) { index, fav in
+                                if let service = fav.service {
+                                    NavigationLink {
+                                        DiscoverView()
+                                    } label: {
+                                        FavoriteTile(
+                                            imageUrl: service.defaultImageUrl,
+                                            fallbackText: nil,
+                                            fallbackTint: tint(index),
+                                            index: index,
+                                            title: service.name,
+                                            subtitle: meta(service),
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
                         }
+                        .padding(.horizontal, 1)
                     }
+                    .padding(.horizontal, -16)
+                    .padding(.leading, 16)
                 }
             }
         }
     }
 
-    private func row(_ service: HomeFavoriteServiceRef, index: Int) -> some View {
+    private func tint(_ index: Int) -> Color {
         let tints = [BrandColor.accent, BrandColor.gold, BrandColor.iris]
-        let tint = tints[index % tints.count]
-        let meta = [service.category?.name,
-                    Wire.money(service.minPrice).map { "from \($0)" },
-                    formatDuration(service.defaultDurationMinutes)]
-            .compactMap { $0 }.joined(separator: " · ")
-        return HStack(spacing: 12) {
-            ZStack {
-                tint.opacity(0.15)
-                if let url = service.defaultImageUrl, let parsed = URL(string: url) {
-                    AsyncImage(url: parsed) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
-                } else {
-                    Image(systemName: "heart.fill").font(.system(size: 14)).foregroundStyle(tint)
-                }
-            }
-            .frame(width: 34, height: 34)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        return tints[index % tints.count]
+    }
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(service.name).font(BrandFont.body(14, .semibold)).foregroundStyle(BrandColor.textPrimary).lineLimit(1)
-                Text(meta).font(BrandFont.body(11.5)).foregroundStyle(BrandColor.textMuted).lineLimit(1)
-            }
-            Spacer()
-        }
-        .padding(.vertical, 12)
+    /// A STARTING price, never a bare figure — the pro re-quotes at the chair.
+    private func meta(_ service: HomeFavoriteServiceRef) -> String? {
+        let parts = [service.category?.name,
+                     Wire.money(service.minPrice).map { "from \($0)" },
+                     formatDuration(service.defaultDurationMinutes)]
+            .compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }
 
@@ -892,8 +1205,11 @@ private struct WaitlistCard: View {
                     }
                 }
                 if waitlists.isEmpty {
-                    Text("You’re not on any waitlists. Join one and we’ll hold your place here.")
-                        .font(BrandFont.body(12.5)).foregroundStyle(BrandColor.textMuted)
+                    HomeEmptyState(
+                        title: "You’re not on any waitlists.",
+                        message: "Join one and we’ll hold your place here.",
+                        cta: "Find services",
+                    )
                 } else {
                     VStack(spacing: 0) {
                         let rows = Array(waitlists.prefix(6).enumerated())
@@ -920,10 +1236,18 @@ private struct WaitlistCard: View {
                 }
             }
             Spacer()
-            Text("#\(index + 1) IN LINE")
-                .font(BrandFont.mono(10)).tracking(0.6).foregroundStyle(BrandColor.accent)
-                .padding(.horizontal, 10).padding(.vertical, 5)
-                .background(BrandColor.accent.opacity(0.10)).clipShape(Capsule())
+            // The client's REAL place in this pro's queue, from the server. It
+            // used to be `index + 1` — this row's position in the viewer's own
+            // list — so a client on a single waitlist always read "#1 IN LINE"
+            // however many people were ahead of them, while the pro looking at
+            // the same entry could be seeing #7. nil means the server could not
+            // establish it, and no badge is honest where a number would not be.
+            if let position = entry.queuePosition {
+                Text("#\(position) IN LINE")
+                    .font(BrandFont.mono(10)).tracking(0.6).foregroundStyle(BrandColor.accent)
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(BrandColor.accent.opacity(0.10)).clipShape(Capsule())
+            }
         }
         .padding(.vertical, 10)
 
@@ -939,10 +1263,20 @@ private struct WaitlistCard: View {
 // MARK: - Viral Looks band
 
 private struct ViralLooksBand: View {
-    let live: HomeViral?
+    /// Every approved look, not just the first: with more than one they list as
+    /// strips (see `liveStrips`), which a single hero could never do.
+    let liveLooks: [HomeViral]
     let pending: HomeViral?
-    let liveMore: Int
     let pendingMore: Int
+
+    /// Board-style rows, used only once there is more than one live look.
+    private static let maxLiveStrips = 4
+
+    private var live: HomeViral? { liveLooks.first }
+    private var liveStrips: [HomeViral] {
+        liveLooks.count > 1 ? Array(liveLooks.prefix(Self.maxLiveStrips)) : []
+    }
+    private var liveOverflow: Int { max(0, liveLooks.count - liveStrips.count) }
     /// Refreshes home after a submit so the new request appears in `pendingHero`.
     var onSubmitted: () async -> Void = {}
 
@@ -965,13 +1299,84 @@ private struct ViralLooksBand: View {
 
             // Web's band is a three-cell grid: live, pending, submit — each cell
             // always present, each with its own empty state.
-            if let live { liveHero(live) } else { liveEmpty }
+            // One live look keeps the hero — it has room to sell the look. TWO
+            // OR MORE list like the client's boards (Tori, 2026-08-14): a hero
+            // can only show the first, and "+N more in the feed" sends them
+            // somewhere else to find looks already approved for them.
+            if !liveStrips.isEmpty {
+                VStack(spacing: 12) {
+                    ForEach(Array(liveStrips.enumerated()), id: \.element.id) { index, look in
+                        liveStrip(look, index: index)
+                    }
+                    if liveOverflow > 0 {
+                        Text("+\(liveOverflow) more live in the feed →")
+                            .font(BrandFont.body(12, .semibold))
+                            .foregroundStyle(BrandColor.textSecondary)
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+            } else if let live {
+                liveHero(live)
+            } else {
+                liveEmpty
+            }
             if let pending { pendingHero(pending) } else { pendingEmpty }
             submitCard
         }
         .sheet(isPresented: $showSubmit) {
             SubmitViralLookView(onSubmitted: onSubmitted)
         }
+    }
+
+    /// One approved look as the wide strip the client already knows from their
+    /// boards (`BoardStripCard` on web): the 2.05:1 card, a left-weighted scrim,
+    /// the name over a meta line. Gradient rather than photographs because a
+    /// viral request carries no media of its own — it is a NAME the platform got
+    /// vetted and matched.
+    private func liveStrip(_ look: HomeViral, index: Int) -> some View {
+        ZStack(alignment: .bottomLeading) {
+            gradientAvatar(index)
+            LinearGradient(
+                colors: [BrandColor.bgPrimary.opacity(0.85),
+                         BrandColor.bgPrimary.opacity(0.25),
+                         .clear],
+                startPoint: .leading, endPoint: .trailing,
+            )
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    HStack(spacing: 6) {
+                        Circle().fill(BrandColor.ember).frame(width: 6, height: 6)
+                        Text("LIVE NOW").font(BrandFont.mono(9.5)).tracking(1.4)
+                            .foregroundStyle(BrandColor.textPrimary)
+                    }
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(BrandColor.bgPrimary.opacity(0.5)).clipShape(Capsule())
+                    .overlay(Capsule().stroke(BrandColor.ember.opacity(0.55), lineWidth: 1))
+                    Spacer()
+                    if let platform = look.platform {
+                        Text("via \(platform)").font(BrandFont.mono(9.5)).tracking(1.0)
+                            .foregroundStyle(BrandColor.textSecondary)
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(BrandColor.bgPrimary.opacity(0.5)).clipShape(Capsule())
+                    }
+                }
+                Spacer()
+                Text(look.name)
+                    .font(BrandFont.body(17, .bold)).foregroundStyle(BrandColor.textPrimary)
+                    .lineLimit(1)
+                Text(look.fanOutCount > 0
+                        ? "\(look.fanOutCount) \(look.fanOutCount == 1 ? "pro" : "pros") now offer this"
+                        : "Newly approved")
+                    .font(BrandFont.mono(10)).tracking(1.0)
+                    .foregroundStyle(BrandColor.textSecondary)
+                    .padding(.top, 6)
+            }
+            .padding(14)
+        }
+        .aspectRatio(2.05, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
+            .stroke(BrandColor.textPrimary.opacity(0.10), lineWidth: 1))
     }
 
     private func liveHero(_ look: HomeViral) -> some View {
@@ -1003,11 +1408,6 @@ private struct ViralLooksBand: View {
                      ? "\(look.fanOutCount) \(look.fanOutCount == 1 ? "pro" : "pros") now offer this"
                      : "Newly approved — pros are picking it up now.")
                     .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
-                if liveMore > 0 {
-                    Text("+\(liveMore) more live in the feed →")
-                        .font(BrandFont.body(12, .semibold)).foregroundStyle(BrandColor.textSecondary)
-                        .padding(.top, 2)
-                }
             }
             .padding(16)
         }
