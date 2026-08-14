@@ -153,6 +153,10 @@ struct BookingDetailView: View {
         let professionalId: String
         let proName: String
         let locationType: String
+        /// Rebook only: the "yyyy-MM-dd" the picker opens on (the pro's
+        /// recommended window start). Nil for a reschedule, and nil whenever the
+        /// window has already begun — see `RebookWindowAnchor`.
+        var initialStartDate: String? = nil
     }
 
     /// A generated `.ics` file on disk, handed to the share sheet.
@@ -404,13 +408,16 @@ struct BookingDetailView: View {
         }
         .sheet(item: $rebookSheet) { ctx in
             // Aftercare rebook opens the booking flow as a NEW appointment (no
-            // rescheduleBookingId) so the client picks a fresh slot in the pro's
-            // suggested window.
+            // rescheduleBookingId), with the day scroller starting on the pro's
+            // recommended window — `initialStartDate` is what makes that window
+            // reachable at all, since the scroller only spans seven days from
+            // wherever it begins.
             BookingFlowView(
                 professionalId: ctx.professionalId,
                 proName: ctx.proName,
                 offering: ctx.offering,
-                locationType: ctx.locationType
+                locationType: ctx.locationType,
+                initialStartDate: ctx.initialStartDate
             )
             .onDisappear { Task { await onDecision() } }
         }
@@ -1265,7 +1272,7 @@ struct BookingDetailView: View {
                     .font(BrandFont.body(14)).foregroundStyle(BrandColor.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                Button { Task { await beginRebook() } } label: {
+                Button { Task { await beginRebook(rebook) } } label: {
                     Group {
                         if loadingRebook { ProgressView().tint(BrandColor.onAccent) }
                         else { Text("Rebook now").font(BrandFont.body(16, .semibold)) }
@@ -1325,16 +1332,23 @@ struct BookingDetailView: View {
     }
 
     /// Resolve the base offering + present the booking flow as a new appointment.
-    private func beginRebook() async {
+    private func beginRebook(_ rebook: ClientAftercareRebook) async {
         guard !loadingRebook, booking.professional != nil else { return }
         loadingRebook = true
         rebookCTAError = nil
         defer { loadingRebook = false }
         do {
-            guard let ctx = try await resolveBookingOffering() else {
+            guard var ctx = try await resolveBookingOffering() else {
                 rebookCTAError = "This service isn’t open for self-booking. Message your pro to rebook."
                 return
             }
+            // Open on the window the card just told the client about, rather
+            // than on today with their pro's dates seven days off the end of the
+            // scroller.
+            ctx.initialStartDate = RebookWindowAnchor.openingDay(
+                windowStartISO: rebook.windowStart,
+                timeZone: booking.timeZone
+            )
             rebookSheet = ctx
         } catch let error as APIError {
             rebookCTAError = error.userMessage
@@ -2860,7 +2874,27 @@ struct BookingDetailView: View {
                         text: Wire.dateTime(booking.scheduledFor, timeZone: booking.timeZone))
                 infoRow(icon: "clock", text: "\(booking.totalDurationMinutes) min")
                 if let place = booking.locationLabel {
-                    infoRow(icon: "mappin.and.ellipse", text: place)
+                    // Tori's standing rule: an address on a client surface opens
+                    // Maps. The link is built from `locationAddress`, never the
+                    // LABEL beside it — the label can be a salon name or a city,
+                    // which Maps would open on the wrong place. No address on the
+                    // booking means the label still renders, just not tappable.
+                    if let mapsURL = MapsLink.url(
+                        address: booking.locationAddress,
+                        lat: booking.locationLat,
+                        lng: booking.locationLng
+                    ) {
+                        Button { openURL(mapsURL) } label: {
+                            Label(place, systemImage: "mappin.and.ellipse")
+                                .font(BrandFont.body(14))
+                                .foregroundStyle(BrandColor.accent)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .multilineTextAlignment(.leading)
+                        }
+                        .accessibilityHint("Opens in Maps")
+                    } else {
+                        infoRow(icon: "mappin.and.ellipse", text: place)
+                    }
                 }
 
                 HStack(spacing: 10) {

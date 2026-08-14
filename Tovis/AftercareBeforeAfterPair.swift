@@ -38,9 +38,17 @@ struct AftercareBeforeAfterPair: View {
             // claims the full contentShape for the wipe gesture), so the share
             // affordance sits OUTSIDE it as a corner overlay with its own tap
             // target rather than a tap-through on the slider itself.
+            //
+            // ⚠️ BOTTOM-trailing, not top: the slider pins its own "AFTER" capsule
+            // to the TOP-trailing corner, and this overlay drew straight over it —
+            // the client's care plan read "AFTE⃝" with the share circle sitting on
+            // the last letter. The pro callers never saw it, because they pass no
+            // `clientExportProfessionalId` and so get no button. Bottom-trailing is
+            // the one free corner (BEFORE is top-leading, the grab handle is dead
+            // centre).
             BeforeAfterCompareView(
                 beforeURL: beforeURL, afterURL: afterURL, height: compareHeight)
-                .overlay(alignment: .topTrailing) {
+                .overlay(alignment: .bottomTrailing) {
                     if let professionalId = clientExportProfessionalId {
                         shareButton(before: beforeStr, after: afterStr, professionalId: professionalId)
                     }

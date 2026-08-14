@@ -48,6 +48,7 @@ public final class BookingService: Sendable {
         clientAddressId: String? = nil,
         mediaId: String? = nil,
         days: Int = 7,
+        startDate: String? = nil,
         rescheduleBookingId: String? = nil
     ) async throws -> AvailabilityBootstrap {
         var query = [
@@ -59,6 +60,13 @@ public final class BookingService: Sendable {
         ]
         if let mediaId, !mediaId.isEmpty {
             query.append(URLQueryItem(name: "mediaId", value: mediaId))
+        }
+        // Moves the whole `days` window to start here instead of today — the
+        // aftercare rebook opens on the pro's recommended window. ⚠️ The route
+        // REFUSES a past date rather than falling back to today, so callers
+        // resolve it through `RebookWindowAnchor`, never by hand.
+        if let startDate, !startDate.isEmpty {
+            query.append(URLQueryItem(name: "startDate", value: startDate))
         }
         if let clientAddressId, !clientAddressId.isEmpty {
             query.append(URLQueryItem(name: "clientAddressId", value: clientAddressId))

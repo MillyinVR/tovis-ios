@@ -38,6 +38,13 @@ struct BookingFlowView: View {
     /// availability drives the hold, so a slot that's no longer open simply
     /// isn't picked and the client chooses another time.
     var preselectedSlot: String? = nil
+    /// When set, the day scroller's window STARTS on this "yyyy-MM-dd" (in the
+    /// location's zone) instead of today — the aftercare rebook opens on the
+    /// window the pro recommended. Resolve it with `RebookWindowAnchor`: the
+    /// route refuses a past date outright, and the window is only seven days
+    /// wide, so a rebook eight weeks out is not merely mis-anchored without it,
+    /// it is entirely outside the days the scroller can reach.
+    var initialStartDate: String? = nil
     /// The primary MediaAsset id of the LOOK this booking started from. It is
     /// what the server resolves the sheet's cover photo and look name from
     /// (`lib/booking/bookingCover.ts`) — without it the sheet cannot say which
@@ -996,6 +1003,7 @@ struct BookingFlowView: View {
                 locationType: mode,
                 clientAddressId: isMobile ? selectedAddressId : nil,
                 mediaId: lookMediaId,
+                startDate: initialStartDate,
                 rescheduleBookingId: rescheduleBookingId
             )
             // Open on the preselected slot's day when the feed handed us one, else

@@ -356,7 +356,7 @@ struct ProBookingDetailView: View {
     private func directionsTile(_ booking: ProBookingDetail) -> some View {
         if let addr = booking.locationAddressSnapshot, !addr.isEmpty {
             let isMobile = booking.locationType.uppercased() == "MOBILE"
-            let url = mapsURL(address: addr, lat: booking.locationLatSnapshot, lng: booking.locationLngSnapshot)
+            let url = MapsLink.url(address: addr, lat: booking.locationLatSnapshot, lng: booking.locationLngSnapshot)
             let tile = HStack(spacing: 10) {
                 Image(systemName: "mappin.and.ellipse")
                     .font(.system(size: 14))
@@ -847,14 +847,6 @@ struct ProBookingDetailView: View {
         }
         if ac?.isDraft == true { return "Draft saved" }
         return "Snapshot saved on the booking (if provided)."
-    }
-
-    private func mapsURL(address: String, lat: Double?, lng: Double?) -> URL? {
-        if let lat, let lng {
-            return URL(string: "http://maps.apple.com/?ll=\(lat),\(lng)&q=\(address.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")")
-        }
-        guard let q = address.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else { return nil }
-        return URL(string: "http://maps.apple.com/?q=\(q)")
     }
 
     private func primaryLabel(_ title: String) -> some View {

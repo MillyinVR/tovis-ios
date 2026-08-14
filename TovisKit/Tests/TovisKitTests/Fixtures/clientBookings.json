@@ -36,6 +36,9 @@
         "timeZone": "America/Los_Angeles",
         "timeZoneSource": "LOCATION",
         "locationLabel": "1 Main St, Los Angeles",
+        "locationAddress": "1 Main St, Los Angeles, CA 90012",
+        "locationLat": 34.0537,
+        "locationLng": -118.2428,
         "professional": {
           "id": "pro_1", "businessName": null, "firstName": "Dana", "lastName": "Lee",
           "handle": "dana", "nameDisplay": "REAL_NAME", "location": "LA", "timeZone": "America/Los_Angeles"
@@ -113,6 +116,9 @@
         "timeZone": "America/Los_Angeles",
         "timeZoneSource": "LOCATION",
         "locationLabel": "1 Main St, Los Angeles",
+        "locationAddress": "1 Main St, Los Angeles, CA 90012",
+        "locationLat": 34.0537,
+        "locationLng": -118.2428,
         "professional": {
           "id": "pro_1", "businessName": null, "firstName": "Dana", "lastName": "Lee",
           "handle": "dana", "nameDisplay": "REAL_NAME", "location": "LA", "timeZone": "America/Los_Angeles"
@@ -211,6 +217,9 @@
         "timeZone": "America/Los_Angeles",
         "timeZoneSource": "LOCATION",
         "locationLabel": "1 Main St, Los Angeles",
+        "locationAddress": "1 Main St, Los Angeles, CA 90012",
+        "locationLat": 34.0537,
+        "locationLng": -118.2428,
         "professional": {
           "id": "pro_1", "businessName": null, "firstName": "Dana", "lastName": "Lee",
           "handle": "dana", "nameDisplay": "REAL_NAME", "location": "LA", "timeZone": "America/Los_Angeles"
