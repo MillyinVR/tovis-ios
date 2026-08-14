@@ -36,6 +36,7 @@ struct MainTabView: View {
     /// Link) or a look push, presented over the shell. Carries only the id — the
     /// detail screen self-fetches, so nothing has to be resolved before routing.
     @State private var deepLinkLook: LookPresentation?
+    @State private var deepLinkPublicClient: PublicClientPresentation?
     /// The activity feed surfaced by a `/client/activity` push, presented over the
     /// shell. Mirrors HomeView's own notifications sheet.
     @State private var showActivity = false
@@ -152,6 +153,13 @@ struct MainTabView: View {
             }
             .tint(BrandColor.accent)
         }
+        // PublicClientViewerView brings its own back-button top bar and hides the
+        // navigation bar, so it is presented bare — a toolbar "Done" here would
+        // render a second, competing dismiss control in the same corner.
+        .sheet(item: $deepLinkPublicClient) { profile in
+            NavigationStack { PublicClientViewerView(handle: profile.handle) }
+                .tint(BrandColor.accent)
+        }
         // ClientActivityView brings its own NavigationStack + Done button (same as
         // HomeView's notifications sheet) — present it bare. This used to open
         // NotificationsView as a placeholder, so a /client/activity push landed on
@@ -218,6 +226,9 @@ struct MainTabView: View {
         case let .look(id):
             // A shared look (Universal Link) or a look push → the native detail.
             deepLinkLook = LookPresentation(id: id)
+        case let .publicClient(handle):
+            // A shared /u/{handle} link → the native creator profile.
+            deepLinkPublicClient = PublicClientPresentation(handle: handle)
         case let .offers(accept):
             // The full priority-offers + waitlist-offers screen (countdown claim/
             // pass + pro-proposed-time confirm/decline). `accept` floats + highlights

@@ -83,6 +83,16 @@ struct PushDeepLink: Equatable {
         // Shared — either shell resolves these in place (no workspace switch).
         case thread(id: String)              // /messages/thread/{id}
         case look(id: String)                // /looks/{id}
+        /// /u/{handle} — a creator's public profile.
+        ///
+        /// 🔴 Load-bearing: this is the link the client Share sheet promises
+        /// ("a Recreate this look link back to your profile") and the link the
+        /// public profile's own share control emits. `PublicClientViewerView`
+        /// has existed with eight in-app entry points the whole time, but a
+        /// TAPPED /u/{handle} Universal Link fell through to `nil` — so the one
+        /// route a stranger actually arrives by bounced out to Safari, while the
+        /// narrower /u/{handle}/boards/{slug} opened natively.
+        case publicClient(handle: String)
 
         // Client-shell targets.
         case booking(id: String, step: String?)  // /client/bookings/{id}?step=… (#review → "review")
@@ -121,7 +131,9 @@ struct PushDeepLink: Equatable {
     /// mounted shell consumes it.
     var role: Role? {
         switch target {
-        case .thread, .look:
+        // A public profile is readable from either shell — a pro opens the same
+        // screen from their client roster (ProClientsView).
+        case .thread, .look, .publicClient:
             return nil
         case .booking, .offers, .referrals, .activity, .chartAccess, .clientHome:
             return .client
@@ -212,7 +224,19 @@ struct PushDeepLink: Equatable {
             }
             return
 
-        // /terms, /u/{handle}, external links, /admin/*, etc. → no native surface.
+        // /u/{handle} → the native public creator profile. A deeper
+        // /u/{handle}/boards/{slug} is NOT claimed here: that share link has its
+        // own parser (`PublicBoardLink`) and its own native screen, and stealing
+        // it would land the visitor on the profile instead of the board they
+        // were sent to.
+        case "u":
+            guard parts.count == 2 else { return nil }
+            let handle = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !handle.isEmpty else { return nil }
+            target = .publicClient(handle: handle)
+            return
+
+        // /terms, external links, /admin/*, etc. → no native surface.
         default:
             return nil
         }

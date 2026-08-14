@@ -1,9 +1,9 @@
-// The shared public-creator-profile render — avatar · @handle · follow stats ·
-// bio · published-looks grid. Used by BOTH the standalone `/u/{handle}` viewer
+// The shared public-creator-profile render — identity + standing · follow ·
+// a Looks/Boards switcher. Used by BOTH the standalone `/u/{handle}` viewer
 // (`PublicClientViewerView`, with an interactive follow control) and the pro
 // client chart's read-only "public profile" toggle (`ProClientPublicProfileView`,
-// mode `.hidden`). One view, two surfaces — the native mirror of the web's shared
-// `PublicProfileView` + `ProfileStats` (house rule: no duplicate logic).
+// mode `.hidden`). One view, two surfaces — the native mirror of the web's
+// `PublicProfileView` (house rule: no duplicate logic).
 //
 // Padding- and scroll-free by design: the host supplies the ScrollView + insets
 // (the pro chart already wraps it in one; the viewer adds its own).
@@ -41,123 +41,154 @@ struct PublicClientProfileContent: View {
     /// hosts (the pro chart).
     var toggleFollow: (() async throws -> FollowState)? = nil
 
+    private enum Tab: String, CaseIterable {
+        case looks = "LOOKS"
+        case boards = "BOARDS"
+    }
+    @State private var tab: Tab
+
+    /// DEBUG: start on a named tab, so the Boards panel can be photographed
+    /// before shipping. Same reasoning as `TOVIS_DEBUG_OPEN_TAB` and
+    /// `TOVIS_DEBUG_OPEN_DEEP_LINK` — this machine can't drive the simulator
+    /// with synthetic taps, so a panel reachable ONLY by tapping would otherwise
+    /// never be looked at. Release always starts on Looks.
+    ///
+    ///     SIMCTL_CHILD_TOVIS_DEBUG_PROFILE_TAB=boards xcrun simctl launch …
+    private static var initialTab: Tab {
+        #if DEBUG
+        let raw = ProcessInfo.processInfo.environment["TOVIS_DEBUG_PROFILE_TAB"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        if raw == "boards" { return .boards }
+        #endif
+        return .looks
+    }
+
+    @State private var follow: FollowToggle
+    @State private var errorText: String?
+
+    init(
+        profile: ProClientPublicProfile,
+        followMode: PublicProfileFollowMode,
+        toggleFollow: (() async throws -> FollowState)? = nil
+    ) {
+        self.profile = profile
+        self.followMode = followMode
+        self.toggleFollow = toggleFollow
+        _tab = State(initialValue: Self.initialTab)
+        _follow = State(
+            initialValue: FollowToggle(
+                following: followMode.initialFollowing,
+                followerCount: profile.counts.followers
+            )
+        )
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 16) {
             header
-            looksSection(profile.looks)
+            if let bio = profile.bio, !bio.isEmpty {
+                Text(bio)
+                    .font(BrandFont.body(14))
+                    .foregroundStyle(BrandColor.textSecondary)
+            }
+            // The design frame pairs Follow with a Message button. Message is
+            // omitted deliberately: client↔client threads don't exist, and a
+            // control that opens nothing is worse than no control.
+            if followMode.showsFollowControl {
+                followButton
+                if let errorText {
+                    Text(errorText)
+                        .font(BrandFont.body(11, .semibold))
+                        .foregroundStyle(BrandColor.ember)
+                        .accessibilityLabel(errorText)
+                }
+            }
+            tabBar
+            switch tab {
+            case .looks: looksPanel
+            case .boards: boardsPanel
+            }
         }
     }
 
     // MARK: - Header
 
     private var header: some View {
-        BrandSurface {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 14) {
-                    BrandAvatar(name: profile.handle, avatarUrl: profile.avatarUrl, size: 56)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(profile.displayName)
-                            .font(BrandFont.display(20, .semibold)).foregroundStyle(BrandColor.textPrimary)
-                        Text("Public creator profile")
-                            .font(BrandFont.mono(9)).tracking(0.8).foregroundStyle(BrandColor.textMuted)
-                    }
-                    Spacer()
+        HStack(alignment: .top, spacing: 14) {
+            ZStack(alignment: .bottomTrailing) {
+                BrandAvatar(name: profile.handle, avatarUrl: profile.avatarUrl, size: 72)
+                if profile.standing.tier == .tastemaker {
+                    // Decorative twin of the Tastemaker pill below, which carries
+                    // the accessible text — this must not repeat it to VoiceOver.
+                    Circle()
+                        .fill(BrandColor.bgPrimary)
+                        .frame(width: 24, height: 24)
+                        .overlay(
+                            Circle().fill(BrandColor.gold).frame(width: 19, height: 19)
+                                .overlay(Text("✦").font(.system(size: 10)).foregroundStyle(BrandColor.onAccent))
+                        )
+                        .offset(x: 2, y: 2)
+                        .accessibilityHidden(true)
                 }
-                if let bio = profile.bio, !bio.isEmpty {
-                    Text(bio).font(BrandFont.body(13)).foregroundStyle(BrandColor.textSecondary)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(profile.displayName)
+                    .font(BrandFont.display(24, .semibold))
+                    .foregroundStyle(BrandColor.textPrimary)
+                    .lineLimit(1)
+                standingRow
+                statsRow
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    @ViewBuilder
+    private var standingRow: some View {
+        if profile.standing.tier != .none {
+            // "top 5% saver · Brooklyn" — each half only appears when it's real.
+            let detail = [
+                profile.standing.topPercent.map { "top \($0)% saver" },
+                profile.standing.city,
+            ]
+            .compactMap { $0 }
+            .joined(separator: " · ")
+
+            HStack(spacing: 8) {
+                HStack(spacing: 4) {
+                    Text("✦")
+                    Text(profile.standing.tier == .tastemaker ? "TASTEMAKER" : "RISING")
                 }
-                PublicProfileStats(counts: profile.counts, mode: followMode, toggle: toggleFollow)
+                .font(BrandFont.mono(9)).fontWeight(.bold)
+                .tracking(1)
+                .foregroundStyle(BrandColor.gold)
+                .padding(.horizontal, 9).padding(.vertical, 3)
+                .overlay(Capsule().stroke(BrandColor.gold, lineWidth: 1))
+
+                if !detail.isEmpty {
+                    Text(detail)
+                        .font(BrandFont.body(12))
+                        .foregroundStyle(BrandColor.textMuted)
+                        .lineLimit(1)
+                }
             }
         }
     }
 
-    // MARK: - Looks grid
-
-    private func looksSection(_ looks: [ProClientPublicLook]) -> some View {
-        BrandSection(title: "Public looks", trailing: looks.isEmpty ? nil : "\(looks.count)") {
-            if looks.isEmpty {
-                Text("No public looks yet.").font(BrandFont.body(13)).foregroundStyle(BrandColor.textMuted)
-            } else {
-                LazyVGrid(
-                    // .adaptive keeps 3 columns on a phone-width container and
-                    // adds columns on a wider one — iPad — instead of stretching
-                    // 3 tiles across the extra width.
-                    columns: [GridItem(.adaptive(minimum: 113), spacing: 10)],
-                    spacing: 10
-                ) {
-                    ForEach(looks) { look in
-                        // §19f — a public-looks tile IS a look, so tapping it opens
-                        // the look post rather than a bare image, matching web and
-                        // the pro portfolio grid. `id` is the look-post id.
-                        NavigationLink {
-                            LookDetailView(lookId: look.id)
-                        } label: {
-                            lookTile(look)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
+    private var statsRow: some View {
+        HStack(spacing: 16) {
+            stat("\(follow.followerCount)", "FOLLOWERS")
+            stat("\(profile.counts.following)", "FOLLOWING")
+            stat("\(profile.counts.looks)", "LOOKS")
         }
     }
 
-    private func lookTile(_ look: ProClientPublicLook) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            ZStack(alignment: .bottomLeading) {
-                BrandColor.bgSecondary
-                if let url = look.imageUrl, let parsed = URL(string: url) {
-                    AsyncImage(url: parsed) { $0.resizable().scaledToFill() } placeholder: { ProgressView().tint(BrandColor.accent) }
-                }
-                HStack(spacing: 3) {
-                    Image(systemName: "heart.fill").font(.system(size: 8)).foregroundStyle(.white)
-                    Text("\(look.saveCount)").font(BrandFont.mono(8)).foregroundStyle(.white)
-                }
-                .padding(.horizontal, 6).padding(.vertical, 3).background(.black.opacity(0.5)).clipShape(Capsule())
-                .padding(6)
-            }
-            .frame(height: 110).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            Text(look.name).font(BrandFont.body(11, .semibold)).foregroundStyle(BrandColor.textSecondary).lineLimit(1)
-        }
-    }
-}
-
-/// The follower / following / looks stat row + the follow control — the native
-/// mirror of the web `ProfileStats`. Owns the follower count + following flag so a
-/// follow toggle can update optimistically, then reconcile with server truth.
-private struct PublicProfileStats: View {
-    let counts: ProClientPublicCounts
-    let mode: PublicProfileFollowMode
-    let toggle: (() async throws -> FollowState)?
-
-    @State private var follow: FollowToggle
-    @State private var errorText: String?
-
-    init(counts: ProClientPublicCounts, mode: PublicProfileFollowMode, toggle: (() async throws -> FollowState)?) {
-        self.counts = counts
-        self.mode = mode
-        self.toggle = toggle
-        _follow = State(
-            initialValue: FollowToggle(
-                following: mode.initialFollowing,
-                followerCount: counts.followers
-            )
-        )
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                statTile("\(follow.followerCount)", "Followers")
-                statTile("\(counts.following)", "Following")
-                statTile("\(counts.looks)", "Looks")
-            }
-            if mode.showsFollowControl {
-                followButton
-                if let errorText {
-                    Text(errorText).font(BrandFont.body(11, .semibold)).foregroundStyle(BrandColor.ember)
-                        .accessibilityLabel(errorText)
-                }
-            }
+    private func stat(_ value: String, _ label: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            Text(value).font(BrandFont.body(15, .bold)).foregroundStyle(BrandColor.textPrimary)
+            Text(label).font(BrandFont.mono(9)).tracking(0.8).foregroundStyle(BrandColor.textMuted)
         }
     }
 
@@ -166,16 +197,15 @@ private struct PublicProfileStats: View {
             Task { await performToggle() }
         } label: {
             Text(follow.following ? "Following" : "Follow")
-                .font(BrandFont.body(13, .semibold))
+                .font(BrandFont.body(14, .semibold))
                 .foregroundStyle(follow.following ? BrandColor.textPrimary : BrandColor.onAccent)
-                .frame(minWidth: 120)
-                .padding(.vertical, 9).padding(.horizontal, 18)
+                .frame(maxWidth: .infinity, minHeight: 46)
                 .background(
-                    follow.following ? AnyShapeStyle(BrandColor.bgPrimary) : AnyShapeStyle(BrandColor.accent),
-                    in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    follow.following ? AnyShapeStyle(BrandColor.bgSecondary) : AnyShapeStyle(BrandColor.accent),
+                    in: RoundedRectangle(cornerRadius: 14, style: .continuous)
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .stroke(BrandColor.textMuted.opacity(follow.following ? 0.3 : 0), lineWidth: 1)
                 )
         }
@@ -185,20 +215,262 @@ private struct PublicProfileStats: View {
         .accessibilityLabel(follow.following ? "Unfollow" : "Follow")
     }
 
-    private func statTile(_ value: String, _ label: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(value).font(BrandFont.body(15, .semibold)).foregroundStyle(BrandColor.textPrimary).lineLimit(1)
-            Text(label.uppercased()).font(BrandFont.mono(8)).tracking(0.6).foregroundStyle(BrandColor.textMuted)
+    // MARK: - Tabs
+
+    private var tabBar: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 28) {
+                ForEach(Tab.allCases, id: \.self) { entry in
+                    Button { tab = entry } label: {
+                        VStack(spacing: 8) {
+                            Text(entry.rawValue)
+                                .font(BrandFont.body(12, .bold))
+                                .tracking(0.8)
+                                .foregroundStyle(tab == entry ? BrandColor.textPrimary : BrandColor.textMuted)
+                            Rectangle()
+                                .fill(tab == entry ? BrandColor.accent : Color.clear)
+                                .frame(height: 2)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(tab == entry ? [.isSelected, .isButton] : .isButton)
+                }
+                Spacer(minLength: 0)
+            }
+            Divider().overlay(BrandColor.textMuted.opacity(0.2))
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10).background(BrandColor.bgPrimary).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
+    // MARK: - Looks
+
+    @ViewBuilder
+    private var looksPanel: some View {
+        if profile.looks.isEmpty {
+            Text("No public looks yet.")
+                .font(BrandFont.body(13)).foregroundStyle(BrandColor.textMuted)
+        } else {
+            // One column on a phone: each card carries a title, a pro line, a
+            // price and a full-width CTA, which a 3-up grid would clip to
+            // unreadable — the same reason the web frame drops to one column.
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 16)], spacing: 16) {
+                ForEach(profile.looks) { look in
+                    lookCard(look)
+                }
+            }
+        }
+    }
+
+    private func lookCard(_ look: ProClientPublicLook) -> some View {
+        VStack(spacing: 0) {
+            NavigationLink {
+                LookDetailView(lookId: look.id)
+            } label: {
+                // 🔴 The photo is an OVERLAY on a sized, clipped spacer, not a
+                // sibling in a ZStack. `.scaledToFill()` inflates its own layout
+                // size, so as a ZStack child it grew the stack past the card's
+                // frame and pushed the title + pro line out of the clip — the
+                // caption rendered half-cut. As an overlay the image is sized BY
+                // the container instead of sizing it.
+                Color.clear
+                    .aspectRatio(1.1, contentMode: .fit)
+                    .frame(maxWidth: .infinity)
+                    .background(BrandColor.bgSecondary)
+                    .overlay {
+                        if let url = look.imageUrl, let parsed = URL(string: url) {
+                            AsyncImage(url: parsed) { $0.resizable().scaledToFill() } placeholder: {
+                                ProgressView().tint(BrandColor.accent)
+                            }
+                        }
+                    }
+                    .clipped()
+                    .overlay {
+                        LinearGradient(
+                            colors: [
+                                BrandColor.bgPrimary.opacity(0.85),
+                                .clear,
+                                BrandColor.bgPrimary.opacity(0.45),
+                            ],
+                            startPoint: .bottom, endPoint: .top
+                        )
+                    }
+                    .overlay(alignment: .bottomLeading) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(look.name)
+                                .font(BrandFont.display(18, .semibold))
+                                .foregroundStyle(BrandColor.textPrimary)
+                                .lineLimit(1)
+                            let proLine = [look.proName, look.serviceName]
+                                .compactMap { $0 }
+                                .joined(separator: " · ")
+                            if !proLine.isEmpty {
+                                Text(proLine.uppercased())
+                                    .font(BrandFont.mono(9)).tracking(0.8)
+                                    .foregroundStyle(BrandColor.textSecondary)
+                                    .lineLimit(1)
+                            }
+                        }
+                        .padding(14)
+                    }
+                    .overlay(alignment: .top) {
+                        HStack(alignment: .top) {
+                            if look.spotlighted {
+                                HStack(spacing: 4) {
+                                    Circle().fill(BrandColor.gold).frame(width: 5, height: 5)
+                                    Text("SPOTLIGHT")
+                                }
+                                .font(BrandFont.mono(9)).fontWeight(.bold).tracking(1)
+                                .foregroundStyle(BrandColor.gold)
+                                .padding(.horizontal, 8).padding(.vertical, 4)
+                                .background(BrandColor.bgPrimary.opacity(0.6), in: Capsule())
+                                .overlay(Capsule().stroke(BrandColor.gold.opacity(0.6), lineWidth: 1))
+                            }
+                            Spacer(minLength: 0)
+                            HStack(spacing: 4) {
+                                Image(systemName: "heart.fill").font(.system(size: 9))
+                                Text("\(look.saveCount)").font(BrandFont.mono(9)).fontWeight(.bold)
+                            }
+                            .foregroundStyle(BrandColor.textPrimary)
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(BrandColor.bgPrimary.opacity(0.6), in: Capsule())
+                        }
+                        .padding(11)
+                    }
+            }
+            .buttonStyle(.plain)
+
+            VStack(spacing: 11) {
+                HStack {
+                    Text("\(look.recreatedCount) recreated this")
+                        .font(BrandFont.mono(10)).foregroundStyle(BrandColor.textMuted)
+                    Spacer()
+                    // ⚠️ Server-composed "From $250" — a STARTING price. Rendered
+                    // verbatim; never reformatted into a bare figure.
+                    if let priceLabel = look.priceLabel {
+                        Text(priceLabel)
+                            .font(BrandFont.body(12.5, .semibold))
+                            .foregroundStyle(BrandColor.accent)
+                    }
+                }
+                NavigationLink {
+                    LookDetailView(lookId: look.id, autoStartBooking: true)
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 12, weight: .bold))
+                        Text("Recreate this look").font(BrandFont.body(13, .semibold))
+                    }
+                    .foregroundStyle(BrandColor.onAccent)
+                    .frame(maxWidth: .infinity, minHeight: 42)
+                    .background(BrandColor.accent, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(13)
+        }
+        .background(BrandColor.bgSecondary)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(BrandColor.textMuted.opacity(0.15), lineWidth: 1)
+        )
+    }
+
+    // MARK: - Boards
+
+    @ViewBuilder
+    private var boardsPanel: some View {
+        if profile.boards.isEmpty {
+            Text("No shared boards yet.")
+                .font(BrandFont.body(13)).foregroundStyle(BrandColor.textMuted)
+        } else {
+            // Wide strips stack one per row on a phone; a wider container (iPad)
+            // fits two before a card would stretch out of proportion.
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 16)], spacing: 11) {
+                ForEach(profile.boards) { board in
+                    NavigationLink {
+                        PublicBoardView(handle: profile.handle, slug: board.slug)
+                    } label: {
+                        boardCard(board)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    /// A board reads as one wide strip of its looks with the name sitting ON the
+    /// artwork — the treatment from `Tovis Boards Prep Aftercare.dc.html`, not
+    /// the 2×2 quadrant mosaic the profile frame sketched. The scrim runs
+    /// left-to-right so the label has a dark field while the right-hand looks
+    /// stay bright.
+    private func boardCard(_ board: ProClientPublicBoard) -> some View {
+        Color.clear
+            .aspectRatio(2.05, contentMode: .fit)
+            .frame(maxWidth: .infinity)
+            .background(BrandColor.bgSecondary)
+            .overlay {
+                // One column per look the board ACTUALLY has, capped at four. A
+                // fixed four-cell strip leaves dead cells on a two-look board,
+                // which reads as a broken image rather than as a small board.
+                HStack(spacing: 0) {
+                    ForEach(Array(board.tileImageUrls.prefix(4).enumerated()), id: \.offset) { _, url in
+                        boardTile(url)
+                    }
+                }
+            }
+            .clipped()
+            .overlay {
+                LinearGradient(
+                    stops: [
+                        .init(color: BrandColor.bgPrimary.opacity(0.9), location: 0.28),
+                        .init(color: BrandColor.bgPrimary.opacity(0.3), location: 0.7),
+                        .init(color: BrandColor.bgPrimary.opacity(0.1), location: 1),
+                    ],
+                    startPoint: .leading, endPoint: .trailing
+                )
+            }
+            .overlay(alignment: .bottomLeading) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(board.name)
+                        .font(BrandFont.display(17, .semibold))
+                        .foregroundStyle(BrandColor.textPrimary)
+                        .lineLimit(1)
+                    // No "SHARED" chip: this grid only ever lists SHARED boards,
+                    // so the badge would be true of every row.
+                    Text("\(board.itemCount) \(board.itemCount == 1 ? "LOOK" : "LOOKS")")
+                        .font(BrandFont.mono(10)).tracking(1)
+                        .foregroundStyle(BrandColor.textSecondary)
+                }
+                .padding(14)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(BrandColor.textMuted.opacity(0.15), lineWidth: 1)
+            )
+    }
+
+    private func boardTile(_ url: String) -> some View {
+        // Same shape as the look card's cover: the photo is an OVERLAY on a
+        // flexible cell, never a ZStack sibling. `.scaledToFill()` sizes its own
+        // layout, so as a sibling it drove the cell instead of filling it and the
+        // strip came out ragged.
+        BrandColor.bgPrimary
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay {
+                if let parsed = URL(string: url) {
+                    AsyncImage(url: parsed) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
+                }
+            }
+            .clipped()
+    }
+
+    // MARK: - Follow
+
     private func performToggle() async {
-        guard let toggle, follow.begin() != nil else { return }
+        guard let toggleFollow, follow.begin() != nil else { return }
         errorText = nil
         do {
-            follow.finish(try await toggle())
+            follow.finish(try await toggleFollow())
         } catch {
             follow.fail()
             errorText = "Couldn’t update follow."

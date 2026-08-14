@@ -14,6 +14,14 @@
 import SwiftUI
 import TovisKit
 
+/// Identifiable box so a bare handle can drive a `.sheet(item:)`, mirroring
+/// `LookPresentation`. Both shells present a tapped `/u/{handle}` Universal Link
+/// this way, so the box is shared rather than restated in each.
+struct PublicClientPresentation: Identifiable, Equatable {
+    let handle: String
+    var id: String { handle }
+}
+
 struct PublicClientViewerView: View {
     @Environment(SessionModel.self) private var session
     @Environment(\.dismiss) private var dismiss
@@ -113,9 +121,17 @@ struct PublicClientViewerView: View {
 
     /// Mirrors the web `page.tsx` gate: only a signed-in CLIENT (who isn't the
     /// owner) can follow; a pro/admin viewer sees no control.
+    ///
+    /// 🔴 Reads `activeRole`, NOT `currentUser?.role`. `currentUser` is populated
+    /// only by an auth RESPONSE (login/signup/Apple) — on a cold launch from a
+    /// stored token it stays nil until some screen happens to load /me. This
+    /// screen is reachable by cold launch (a tapped `/u/{handle}` Universal
+    /// Link), so keying on `currentUser` silently hid the Follow button from a
+    /// signed-in client arriving the most common way. `activeRole` is decoded
+    /// from the JWT during `restore()`, so it is always available here.
     private func followMode(for profile: ProClientPublicProfile) -> PublicProfileFollowMode {
         if profile.viewer.isOwn { return .own }
-        if session.currentUser?.role == .client {
+        if session.activeRole == .client {
             return .client(initialFollowing: profile.viewer.following)
         }
         return .hidden

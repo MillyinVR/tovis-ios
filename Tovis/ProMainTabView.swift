@@ -23,6 +23,7 @@ struct ProMainTabView: View {
     /// Link) or a look push, presented over the pro shell. A look is role-less —
     /// a pro tapping a shared look opens it without leaving their workspace.
     @State private var deepLinkLook: LookPresentation?
+    @State private var deepLinkPublicClient: PublicClientPresentation?
     /// A pro booking surfaced by a `/pro/bookings/{id}` push, presented over the
     /// shell (id-based self-fetch). nil when nothing is being deep-linked.
     @State private var deepLinkProBooking: DeepLinkBookingRef?
@@ -179,6 +180,13 @@ struct ProMainTabView: View {
             }
             .tint(BrandColor.accent)
         }
+        // A tapped `/u/{handle}` share link → the native creator profile. It
+        // brings its own back-button top bar and hides the navigation bar, so it
+        // is presented bare rather than with a competing toolbar "Done".
+        .sheet(item: $deepLinkPublicClient) { profile in
+            NavigationStack { PublicClientViewerView(handle: profile.handle) }
+                .tint(BrandColor.accent)
+        }
         #if DEBUG
         .sheet(item: $debugSeriesId) { ref in
             NavigationStack {
@@ -320,6 +328,10 @@ struct ProMainTabView: View {
         case let .look(id):
             // A shared look (Universal Link) or a look push → the native detail.
             deepLinkLook = LookPresentation(id: id)
+        case let .publicClient(handle):
+            // A shared /u/{handle} link → the native creator profile. Readable
+            // from this shell too: a pro opens the same screen from their roster.
+            deepLinkPublicClient = PublicClientPresentation(handle: handle)
         case let .proBooking(id, step):
             // Carry the `step` so the detail scrolls to that section (aftercare);
             // the booking detail also links onward to the session hub.
