@@ -63,7 +63,7 @@ struct ClientNotificationDeepLinkTests {
         // LOOK_LIKED / LOOK_SAVED / LOOK_COMMENTED / LOOK_COMMENT_REPLIED /
         // LOOK_MILESTONE_REACHED / LOOK_NEW_FROM_FOLLOWED_PRO /
         // SAVED_LOOK_AVAILABILITY_OPENED / SAVED_LOOK_PRICE_ALTERNATIVE
-        #expect(try clientNotification(href: "/looks/look_1").deepLink?.target == .look(id: "look_1"))
+        #expect(try clientNotification(href: "/looks/look_1").deepLink?.target == .look(id: "look_1", book: false))
         // WAITLIST_TIME_OFFERED
         #expect(try clientNotification(href: "/client/offers").deepLink?.target == .offers(accept: nil))
         // LAST_MINUTE_OPENING_AVAILABLE (priority/waitlist tier) — the recipient
