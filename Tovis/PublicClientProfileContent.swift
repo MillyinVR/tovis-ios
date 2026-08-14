@@ -382,7 +382,9 @@ struct PublicClientProfileContent: View {
             Text("No shared boards yet.")
                 .font(BrandFont.body(13)).foregroundStyle(BrandColor.textMuted)
         } else {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 16)], spacing: 18) {
+            // Wide strips stack one per row on a phone; a wider container (iPad)
+            // fits two before a card would stretch out of proportion.
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 16)], spacing: 11) {
                 ForEach(profile.boards) { board in
                     NavigationLink {
                         PublicBoardView(handle: profile.handle, slug: board.slug)
@@ -395,50 +397,67 @@ struct PublicClientProfileContent: View {
         }
     }
 
+    /// A board reads as one wide strip of its looks with the name sitting ON the
+    /// artwork — the treatment from `Tovis Boards Prep Aftercare.dc.html`, not
+    /// the 2×2 quadrant mosaic the profile frame sketched. The scrim runs
+    /// left-to-right so the label has a dark field while the right-hand looks
+    /// stay bright.
     private func boardCard(_ board: ProClientPublicBoard) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // Always four cells so a part-filled board keeps the mosaic's shape
-            // instead of stretching one image across the whole tile.
-            VStack(spacing: 2) {
-                ForEach(0..<2, id: \.self) { row in
-                    HStack(spacing: 2) {
-                        ForEach(0..<2, id: \.self) { column in
-                            boardTile(board.tileImageUrls, index: row * 2 + column)
-                        }
+        Color.clear
+            .aspectRatio(2.05, contentMode: .fit)
+            .frame(maxWidth: .infinity)
+            .background(BrandColor.bgSecondary)
+            .overlay {
+                // One column per look the board ACTUALLY has, capped at four. A
+                // fixed four-cell strip leaves dead cells on a two-look board,
+                // which reads as a broken image rather than as a small board.
+                HStack(spacing: 0) {
+                    ForEach(Array(board.tileImageUrls.prefix(4).enumerated()), id: \.offset) { _, url in
+                        boardTile(url)
                     }
-                    // Each row takes half the square; without this the rows are
-                    // sized by their content and the quadrants come out uneven.
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-            .aspectRatio(1, contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .clipped()
+            .overlay {
+                LinearGradient(
+                    stops: [
+                        .init(color: BrandColor.bgPrimary.opacity(0.9), location: 0.28),
+                        .init(color: BrandColor.bgPrimary.opacity(0.3), location: 0.7),
+                        .init(color: BrandColor.bgPrimary.opacity(0.1), location: 1),
+                    ],
+                    startPoint: .leading, endPoint: .trailing
+                )
+            }
+            .overlay(alignment: .bottomLeading) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(board.name)
+                        .font(BrandFont.display(17, .semibold))
+                        .foregroundStyle(BrandColor.textPrimary)
+                        .lineLimit(1)
+                    // No "SHARED" chip: this grid only ever lists SHARED boards,
+                    // so the badge would be true of every row.
+                    Text("\(board.itemCount) \(board.itemCount == 1 ? "LOOK" : "LOOKS")")
+                        .font(BrandFont.mono(10)).tracking(1)
+                        .foregroundStyle(BrandColor.textSecondary)
+                }
+                .padding(14)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .stroke(BrandColor.textMuted.opacity(0.15), lineWidth: 1)
             )
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(board.name)
-                    .font(BrandFont.body(14, .semibold))
-                    .foregroundStyle(BrandColor.textPrimary)
-                    .lineLimit(1)
-                Text("\(board.itemCount) SAVED")
-                    .font(BrandFont.mono(9)).tracking(1)
-                    .foregroundStyle(BrandColor.textMuted)
-            }
-        }
     }
 
-    private func boardTile(_ urls: [String], index: Int) -> some View {
+    private func boardTile(_ url: String) -> some View {
         // Same shape as the look card's cover: the photo is an OVERLAY on a
         // flexible cell, never a ZStack sibling. `.scaledToFill()` sizes its own
         // layout, so as a sibling it drove the cell instead of filling it and the
-        // quadrants came out ragged.
+        // strip came out ragged.
         BrandColor.bgPrimary
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay {
-                if index < urls.count, let parsed = URL(string: urls[index]) {
+                if let parsed = URL(string: url) {
                     AsyncImage(url: parsed) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
                 }
             }
