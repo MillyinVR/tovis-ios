@@ -1330,12 +1330,15 @@ private struct ViralLooksBand: View {
 
     /// One approved look as the wide strip the client already knows from their
     /// boards (`BoardStripCard` on web): the 2.05:1 card, a left-weighted scrim,
-    /// the name over a meta line. Gradient rather than photographs because a
-    /// viral request carries no media of its own — it is a NAME the platform got
-    /// vetted and matched.
+    /// the name over a meta line. The picture is the reviewer's cover when there
+    /// is one (set in /admin/viral-requests) and a gradient when there is not —
+    /// a look can be published before anyone has a shot of it.
     private func liveStrip(_ look: HomeViral, index: Int) -> some View {
         ZStack(alignment: .bottomLeading) {
             gradientAvatar(index)
+            if let cover = look.coverImage, let parsed = URL(string: cover) {
+                AsyncImage(url: parsed) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
+            }
             LinearGradient(
                 colors: [BrandColor.bgPrimary.opacity(0.85),
                          BrandColor.bgPrimary.opacity(0.25),
@@ -1383,6 +1386,9 @@ private struct ViralLooksBand: View {
         ZStack(alignment: .bottomLeading) {
             LinearGradient(colors: [BrandColor.accent.opacity(0.55), BrandColor.bgPrimary],
                            startPoint: .topLeading, endPoint: .bottomTrailing)
+            if let cover = look.coverImage, let parsed = URL(string: cover) {
+                AsyncImage(url: parsed) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
+            }
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     HStack(spacing: 6) {

@@ -284,7 +284,15 @@ public struct HomeViral: Decodable, Sendable, Identifiable {
     /// REQUESTED / IN_REVIEW for pending looks (drives the review pipeline).
     public let status: String?
 
-    private enum CodingKeys: String, CodingKey { case id, name, sourceUrl, status, count = "_count" }
+    /// The picture this look is shown by — the reviewer's cover, else the photo
+    /// the submitter attached. The SERVER picks between the two so the phone,
+    /// the web and the admin queue cannot each show a different one; nil means
+    /// there is no picture yet and the card draws its own gradient.
+    public let coverImage: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, sourceUrl, status, coverImage, count = "_count"
+    }
     private struct Count: Decodable, Sendable { let approvalFanOuts: Int }
 
     public let fanOutCount: Int
@@ -295,6 +303,7 @@ public struct HomeViral: Decodable, Sendable, Identifiable {
         name = try c.decode(String.self, forKey: .name)
         sourceUrl = try c.decodeIfPresent(String.self, forKey: .sourceUrl)
         status = try c.decodeIfPresent(String.self, forKey: .status)
+        coverImage = try c.decodeIfPresent(String.self, forKey: .coverImage)
         fanOutCount = (try c.decodeIfPresent(Count.self, forKey: .count))?.approvalFanOuts ?? 0
     }
 
