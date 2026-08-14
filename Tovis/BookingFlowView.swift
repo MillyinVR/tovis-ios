@@ -453,46 +453,179 @@ struct BookingFlowView: View {
 
     // MARK: - Success / failure
 
+    /// Matches the web confirmation screen (`app/booking/[id]/page.tsx`): the
+    /// honest hero, a summary card, then the three "what happens next" steps.
+    /// A RESCHEDULE is already confirmed, so it keeps the hero and the card but
+    /// drops the pending pill and the steps — nothing is waiting on the pro.
     private func success(_ scheduledFor: String, bookingId: String?,
                          professionalId: String?) -> some View {
-        VStack(spacing: 16) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 56)).foregroundStyle(BrandColor.accent)
-            Text(isReschedule ? "Time updated" : "Request sent")
-                .font(BrandFont.display(24, .semibold)).foregroundStyle(BrandColor.textPrimary)
-            Text("\(offering.name) with \(proName)")
-                .font(BrandFont.body(15)).foregroundStyle(BrandColor.textSecondary)
-            Text(Wire.dateTime(scheduledFor, timeZone: nil))
-                .font(BrandFont.body(14)).foregroundStyle(BrandColor.textSecondary)
-            Text(isReschedule
-                 ? "Your appointment was moved. \(proName) will be notified."
-                 : "\(proName) will confirm your booking. You’ll find it under Appointments.")
-                .font(BrandFont.body(13)).foregroundStyle(BrandColor.textMuted)
-                .multilineTextAlignment(.center)
-            if !isReschedule,
-               ConsultExposurePolicy.production.allows(professionalId: professionalId),
-               bookingId != nil {
-                Button { showConsult = true } label: {
-                    Label("Add hair color consult", systemImage: "sparkles")
-                        .font(BrandFont.body(16, .semibold))
-                        .foregroundStyle(BrandColor.accent)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 13)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .stroke(BrandColor.accent, lineWidth: 1)
-                        )
+        ScrollView {
+            VStack(spacing: 16) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 56)).foregroundStyle(BrandColor.accent)
+
+                Text(isReschedule ? "Time updated" : "Request sent")
+                    .font(BrandFont.display(24, .semibold)).foregroundStyle(BrandColor.textPrimary)
+
+                Text(isReschedule
+                     ? "Your booking was moved. \(proName) will be notified."
+                     : "\(proName) has your request — nothing’s charged until they confirm.")
+                    .font(BrandFont.body(14)).foregroundStyle(BrandColor.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if !isReschedule {
+                    HStack(spacing: 7) {
+                        Circle().fill(BrandColor.gold).frame(width: 6, height: 6)
+                        Text("PENDING CONFIRMATION")
+                            .font(BrandFont.mono(10)).tracking(1.2)
+                            .foregroundStyle(BrandColor.gold)
+                    }
+                    .padding(.horizontal, 13).padding(.vertical, 7)
+                    .overlay(Capsule().stroke(BrandColor.gold.opacity(0.4), lineWidth: 1))
                 }
-                .accessibilityIdentifier("booking-add-ai-consult")
+
+                successSummaryCard(scheduledFor)
+
+                if !isReschedule { successNextSteps }
+
+                if !isReschedule,
+                   ConsultExposurePolicy.production.allows(professionalId: professionalId),
+                   bookingId != nil {
+                    Button { showConsult = true } label: {
+                        Label("Add hair color consult", systemImage: "sparkles")
+                            .font(BrandFont.body(16, .semibold))
+                            .foregroundStyle(BrandColor.accent)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 13)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .stroke(BrandColor.accent, lineWidth: 1)
+                            )
+                    }
+                    .accessibilityIdentifier("booking-add-ai-consult")
+                }
+
+                Button { dismiss() } label: {
+                    Text("Done").font(BrandFont.body(16, .semibold)).foregroundStyle(BrandColor.onAccent)
+                        .frame(maxWidth: .infinity).padding(.vertical, 14)
+                        .background(BrandColor.accent).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .padding(.top, 4)
             }
-            Button { dismiss() } label: {
-                Text("Done").font(BrandFont.body(16, .semibold)).foregroundStyle(BrandColor.onAccent)
-                    .frame(maxWidth: .infinity).padding(.vertical, 14)
-                    .background(BrandColor.accent).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            }
-            .padding(.top, 8)
+            .padding(28)
         }
-        .padding(28)
+    }
+
+    /// Service · price · duration, then WHEN / WHERE — the same rows the web
+    /// summary card shows, in the same order.
+    private func successSummaryCard(_ scheduledFor: String) -> some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(offering.name)
+                        .font(BrandFont.display(16, .semibold))
+                        .foregroundStyle(BrandColor.textPrimary)
+                    Text("with \(proName)")
+                        .font(BrandFont.body(12.5)).foregroundStyle(BrandColor.textSecondary)
+                }
+                Spacer(minLength: 8)
+                VStack(alignment: .trailing, spacing: 2) {
+                    // ⚠️ Already a STARTING price ("From $250") — the pro sets the
+                    // final one. Never render a bare figure here.
+                    if let price = offering.priceFromLabel {
+                        Text(price)
+                            .font(BrandFont.display(17, .bold))
+                            .foregroundStyle(BrandColor.accent)
+                    }
+                    Text("\(totalDuration) min")
+                        .font(BrandFont.mono(11)).foregroundStyle(BrandColor.textMuted)
+                }
+            }
+            .padding(14)
+
+            Divider().overlay(BrandColor.textPrimary.opacity(0.1))
+
+            VStack(spacing: 9) {
+                successSummaryRow("WHEN", Wire.dateTime(scheduledFor, timeZone: nil))
+                if let place = successPlaceLabel {
+                    successSummaryRow("WHERE", place)
+                }
+            }
+            .padding(14)
+        }
+        .background(BrandColor.bgSurface)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(BrandColor.textPrimary.opacity(0.12), lineWidth: 1)
+        )
+    }
+
+    private func successSummaryRow(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            Text(label)
+                .font(BrandFont.mono(10)).tracking(1.2)
+                .foregroundStyle(BrandColor.textMuted)
+            Spacer(minLength: 8)
+            Text(value)
+                .font(BrandFont.body(13, .semibold))
+                .foregroundStyle(BrandColor.textPrimary)
+                .multilineTextAlignment(.trailing)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// "In salon" / "Mobile · <address>" — whichever this booking actually is.
+    /// Uses `ClientAddress.displayLine`, the same one-liner the picker shows, so
+    /// the confirmation names the address exactly as the client chose it.
+    private var successPlaceLabel: String? {
+        guard isMobile else { return "In salon" }
+        guard let address = addresses.first(where: { $0.id == selectedAddressId }) else {
+            return "Mobile"
+        }
+        return "Mobile · \(address.displayLine)"
+    }
+
+    private var successNextSteps: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("WHAT HAPPENS NEXT")
+                .font(BrandFont.mono(10)).tracking(1.4)
+                .foregroundStyle(BrandColor.textMuted)
+
+            ForEach(Self.successSteps(proName: proName), id: \.text) { step in
+                HStack(spacing: 12) {
+                    Image(systemName: step.symbol)
+                        .font(.system(size: 15))
+                        .foregroundStyle(BrandColor.accent)
+                        .frame(width: 30, height: 30)
+                        .background(BrandColor.accent.opacity(0.12))
+                        .clipShape(Circle())
+                    Text(step.text)
+                        .font(BrandFont.body(13.5)).foregroundStyle(BrandColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(BrandColor.bgSurface)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(BrandColor.textPrimary.opacity(0.12), lineWidth: 1)
+        )
+    }
+
+    /// Kept in lock-step with `COPY.bookingConfirmation` on the web. The pro's
+    /// pronouns are unknown, so every line says "they".
+    static func successSteps(proName: String) -> [(symbol: String, text: String)] {
+        [
+            ("clock", "\(proName) reviews within a few hours."),
+            ("bell.badge", "We’ll notify you the moment they confirm."),
+            ("checkmark.shield", "No charge until they confirm."),
+        ]
     }
 
     private func failure(_ message: String) -> some View {
