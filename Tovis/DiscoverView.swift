@@ -144,7 +144,8 @@ struct DiscoverView: View {
             BookingFlowView(
                 professionalId: launch.pro.id,
                 proName: launch.pro.displayName,
-                offering: launch.offering
+                offering: launch.offering,
+                lookMediaId: launch.lookMediaId
             )
         }
         // Wrapped in its own stack + Done button, like the deep-link look sheets
@@ -713,7 +714,9 @@ struct DiscoverView: View {
                 fallbackToProfile()
                 return
             }
-            bookLaunch = DiscoverBookLaunch(pro: pro, offering: offering)
+            bookLaunch = DiscoverBookLaunch(
+                pro: pro, offering: offering, lookMediaId: look.primaryMediaId
+            )
         } catch {
             fallbackToProfile()
         }
@@ -1276,5 +1279,7 @@ private struct ProGridCard: View {
 private struct DiscoverBookLaunch: Identifiable {
     let pro: LooksProfessional
     let offering: ProOffering
+    /// The look's primary media — the booking sheet's cover comes from it.
+    let lookMediaId: String?
     var id: String { pro.id }
 }

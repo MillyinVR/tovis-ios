@@ -27,12 +27,27 @@ public final class BookingService: Sendable {
     /// the server resolves the width itself and ignores the query value.
     // ⚠️ No `durationMinutes` param — same story as `day()` below: the route
     // derives the width itself and never read it.
+    ///
+    /// `days` sizes the SUMMARY WINDOW — how many days come back in
+    /// `availableDays` for the sheet's day scroller. Sent explicitly, and matching
+    /// web's `INITIAL_WINDOW_DAYS`: an omitted `days` used to resolve to a
+    /// ONE-day window server-side, so the scroller was empty whenever today was
+    /// booked out. (Web has always sent it, which is why the defect only ever
+    /// showed here.)
+    ///
+    /// `mediaId` is the look's primary media asset — what the server resolves the
+    /// sheet's COVER from (`lib/booking/bookingCover.ts`). Omitting it is not a
+    /// smaller request, it is a sheet with no photo and the service's name where
+    /// the look's name belongs. `nil` for a booking started from a pro's profile
+    /// rather than from a look, which is the cover-less header the frame draws.
     public func bootstrap(
         professionalId: String,
         serviceId: String,
         offeringId: String,
         locationType: String = "SALON",
         clientAddressId: String? = nil,
+        mediaId: String? = nil,
+        days: Int = 7,
         rescheduleBookingId: String? = nil
     ) async throws -> AvailabilityBootstrap {
         var query = [
@@ -40,7 +55,11 @@ public final class BookingService: Sendable {
             URLQueryItem(name: "serviceId", value: serviceId),
             URLQueryItem(name: "offeringId", value: offeringId),
             URLQueryItem(name: "locationType", value: locationType),
+            URLQueryItem(name: "days", value: String(days)),
         ]
+        if let mediaId, !mediaId.isEmpty {
+            query.append(URLQueryItem(name: "mediaId", value: mediaId))
+        }
         if let clientAddressId, !clientAddressId.isEmpty {
             query.append(URLQueryItem(name: "clientAddressId", value: clientAddressId))
         }
@@ -155,6 +174,41 @@ public final class BookingService: Sendable {
             "/holds", method: .post, body: payload
         )
         return response.hold
+    }
+
+    /// PATCH /api/v1/holds/{id} — re-size an existing hold to a new add-on
+    /// selection.
+    ///
+    /// The two-step flow picks the time BEFORE the add-ons, so the hold starts
+    /// base-sized and this is how it grows to cover what finalize will demand
+    /// (B1-A). The server re-runs the finalize gate, so a throw here is the same
+    /// refusal the client would otherwise have hit at the end of checkout — it
+    /// arrives while the add-on can still be un-ticked, and the hold is left at
+    /// its previous size. Callers must un-tick on a throw rather than book a
+    /// selection the reservation does not cover.
+    public func updateHoldAddOns(
+        holdId: String,
+        addOnIds: [String]
+    ) async throws -> BookingHoldSizing {
+        let payload = try JSONEncoder.canonical.encode(
+            UpdateHoldAddOnsRequest(addOnIds: addOnIds)
+        )
+        let response: UpdateHoldAddOnsResponse = try await api.request(
+            "/holds/\(holdId)", method: .patch, body: payload
+        )
+        return response.hold
+    }
+
+    /// DELETE /api/v1/holds/{id} — give a reservation back before it expires.
+    ///
+    /// Best effort by design, and never surfaced: the client has already moved
+    /// on (picked another time, or closed the sheet), and the hold expires on
+    /// its own anyway. Failing loudly here would only interrupt them to report
+    /// something that fixes itself.
+    public func releaseHold(holdId: String) async {
+        let trimmed = holdId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        _ = try? await api.requestVoid("/holds/\(trimmed)", method: .delete)
     }
 
     /// POST /api/v1/bookings/finalize — turn a hold into a booking. Idempotent:

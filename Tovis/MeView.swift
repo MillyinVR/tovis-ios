@@ -48,6 +48,9 @@ struct MeView: View {
     @State private var showingCreateBoard = false
     /// Drives the Activity feed sheet from the header bell.
     @State private var showActivity = false
+    /// Board id → the visibility its switch has flipped to, ahead of the next
+    /// `/api/v1/me`. Cleared on every load, so the server always wins in the end.
+    @State private var boardVisibilityOverrides: [String: Bool] = [:]
 
     var body: some View {
         NavigationStack {
@@ -104,7 +107,7 @@ struct MeView: View {
             switch tab {
             case .boards: boardsTab(me.boards, handle: me.profile.handle)
             case .following: followingTab(me.following.items)
-            case .history: historyTab(me.history)
+            case .history: historyTab(me.history, creator: me.creator)
             }
         }
         .padding(.top, 18)
@@ -392,23 +395,13 @@ struct MeView: View {
             if boards.isEmpty {
                 emptyState("No boards yet", "Create a board or save looks from the feed to start building.")
             } else {
-                LazyVGrid(columns: twoCol, spacing: 18) {
+                // The same wide strips a visitor sees on the public profile, so a
+                // board looks like the same object to its owner and to everyone
+                // else. Wide strips stack one per row on a phone; a wider
+                // container (iPad) fits two.
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 16)], spacing: 11) {
                     ForEach(boards) { board in
-                        NavigationLink {
-                            BoardDetailView(board: board, ownerHandle: handle)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 8) {
-                                boardPreview(board.previewImageUrls)
-                                Text(board.name)
-                                    .font(BrandFont.body(14, .semibold))
-                                    .foregroundStyle(BrandColor.textPrimary)
-                                    .lineLimit(1)
-                                Text("\(board.itemCount) SAVED")
-                                    .font(BrandFont.mono(9)).tracking(1.2)
-                                    .foregroundStyle(BrandColor.textSecondary)
-                            }
-                        }
-                        .buttonStyle(.plain)
+                        ownedBoardStrip(board, handle: handle)
                     }
                 }
             }
@@ -420,6 +413,44 @@ struct MeView: View {
         // presented bare (same as HomeView's notifications sheet). Marking read there
         // signalRefreshes, which reloads this screen and drops the bell's badge.
         .sheet(isPresented: $showActivity) { ClientActivityView() }
+    }
+
+    /// One of the client's OWN boards: the shared strip, plus the two things only
+    /// an owner gets — whether it is shared, and the switch to change that.
+    ///
+    /// The switch is a SIBLING of the navigation link, never inside its label: a
+    /// control inside a link's label is not its own tap target, so tapping it
+    /// would open the board instead of flipping it.
+    private func ownedBoardStrip(_ board: ClientMeBoard, handle: String?) -> some View {
+        ZStack(alignment: .topTrailing) {
+            NavigationLink {
+                BoardDetailView(board: board, ownerHandle: handle)
+            } label: {
+                BoardStripCard(
+                    name: board.name,
+                    itemCount: board.itemCount,
+                    tileImageUrls: board.previewImageUrls,
+                    sharedBadge: boardIsShared(board)
+                )
+            }
+            .buttonStyle(.plain)
+
+            BoardVisibilitySwitch(
+                boardId: board.id,
+                isShared: Binding(
+                    get: { boardIsShared(board) },
+                    set: { boardVisibilityOverrides[board.id] = $0 }
+                )
+            )
+            .padding(12)
+        }
+    }
+
+    /// What this board's visibility is RIGHT NOW: the switch's optimistic answer
+    /// when it has one, otherwise what `/api/v1/me` said. Held here rather than
+    /// inside the switch so the strip's SHARED badge follows the flip too.
+    private func boardIsShared(_ board: ClientMeBoard) -> Bool {
+        boardVisibilityOverrides[board.id] ?? board.isShared
     }
 
     @ViewBuilder
@@ -481,7 +512,80 @@ struct MeView: View {
     }
 
     @ViewBuilder
-    private func historyTab(_ items: [ClientMeHistoryItem]) -> some View {
+    private func historyTab(
+        _ items: [ClientMeHistoryItem],
+        creator: ClientMeCreator
+    ) -> some View {
+        // Above the list, exactly where web puts it (ClientMeDashboard:827) —
+        // and outside the isEmpty branch, because a creator whose looks other
+        // people have booked has something to show here even before they have
+        // any bookings of their own.
+        VStack(alignment: .leading, spacing: 18) {
+            if !creator.remixes.isEmpty {
+                remixesCard(creator.remixes)
+            }
+
+            historyList(items)
+        }
+    }
+
+    /// "Your looks, remixed" — appointments other people booked from this
+    /// client's looks. The native twin of web's `RemixesCard`.
+    private func remixesCard(_ remixes: [ClientMeRemix]) -> some View {
+        BrandSurface(tint: BrandColor.bgSecondary) {
+            VStack(alignment: .leading, spacing: 6) {
+                Label("YOUR LOOKS, REMIXED", systemImage: "arrow.triangle.2.circlepath")
+                    .font(BrandFont.mono(10)).tracking(1.6)
+                    .foregroundStyle(BrandColor.textSecondary)
+                    .labelStyle(.titleAndIcon)
+
+                Text("Bookings others made, inspired by a look in your history.")
+                    .font(BrandFont.body(12.5))
+                    .foregroundStyle(BrandColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                VStack(spacing: 0) {
+                    ForEach(Array(remixes.enumerated()), id: \.element.id) { index, remix in
+                        remixRow(remix)
+                        if index != remixes.count - 1 {
+                            Divider().overlay(BrandColor.textMuted.opacity(0.12))
+                        }
+                    }
+                }
+                .padding(.top, 4)
+            }
+        }
+    }
+
+    private func remixRow(_ remix: ClientMeRemix) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                // "<who> booked your <look>" — the look in accent, as on web.
+                (
+                    Text(remix.who).font(BrandFont.body(13.5, .bold))
+                        + Text(" booked your ").font(BrandFont.body(13.5))
+                        + Text(remix.lookName).font(BrandFont.body(13.5, .semibold))
+                            .foregroundColor(BrandColor.accent)
+                )
+                .foregroundStyle(BrandColor.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+
+                Text("with \(remix.proName) · \(RelativeDayAgo.label(remix.bookedAt))")
+                    .font(BrandFont.body(11.5))
+                    .foregroundStyle(BrandColor.textSecondary)
+            }
+
+            Spacer(minLength: 8)
+
+            Text("+1 ✦")
+                .font(BrandFont.mono(10)).tracking(0.8)
+                .foregroundStyle(BrandColor.accent)
+        }
+        .padding(.vertical, 10)
+    }
+
+    @ViewBuilder
+    private func historyList(_ items: [ClientMeHistoryItem]) -> some View {
         if items.isEmpty {
             emptyState("No history yet", "Your upcoming and past bookings will appear here.")
         } else {
@@ -526,41 +630,6 @@ struct MeView: View {
         } catch {
             return false
         }
-    }
-
-    /// 2×2 thumbnail mosaic for a board (mirrors the web PrototypeThumb).
-    private func boardPreview(_ urls: [String]) -> some View {
-        let four = Array(urls.prefix(4))
-        return ZStack {
-            BrandColor.bgSecondary
-            if four.isEmpty {
-                Text("No preview")
-                    .font(BrandFont.body(12, .semibold))
-                    .foregroundStyle(BrandColor.textSecondary)
-            } else {
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 1), GridItem(.flexible(), spacing: 1)], spacing: 1) {
-                    ForEach(0..<4, id: \.self) { i in
-                        ZStack {
-                            BrandColor.bgPrimary
-                            if i < four.count, let u = URL(string: four[i]) {
-                                AsyncImage(url: u) { img in
-                                    img.resizable().scaledToFill()
-                                } placeholder: { Color.clear }
-                            }
-                        }
-                        .aspectRatio(1, contentMode: .fill)
-                        .clipped()
-                    }
-                }
-            }
-        }
-        .aspectRatio(1, contentMode: .fill)
-        .frame(maxWidth: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(BrandColor.textMuted.opacity(0.12), lineWidth: 1)
-        )
     }
 
     private func emptyState(_ title: String, _ body: String) -> some View {
@@ -643,6 +712,9 @@ struct MeView: View {
         if case .loaded = phase {} else { phase = .loading }
         do {
             let me = try await session.client.me.fetch()
+            // The server has just told us what every board's visibility is, so
+            // the switches' optimistic answers are spent.
+            boardVisibilityOverrides = [:]
             phase = .loaded(me)
         } catch let error as APIError {
             phase = .failed(error.userMessage)
