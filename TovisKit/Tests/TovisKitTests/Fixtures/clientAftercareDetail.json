@@ -4,6 +4,18 @@
   "aftercare": {
     "id": "ac_1",
     "notes": "Rinse with cool water for 48h.",
+    "careSections": [
+      {
+        "id": "cs_1",
+        "label": "First 48 hours",
+        "body": "Cool water only, and skip the gym until Thursday."
+      },
+      {
+        "id": "cs_2",
+        "label": "Washing",
+        "body": "Twice a week, sulfate-free. Anything else strips the toner."
+      }
+    ],
     "sentToClientAt": "2026-07-02T15:00:00.000Z"
   },
   "beforeAfter": {

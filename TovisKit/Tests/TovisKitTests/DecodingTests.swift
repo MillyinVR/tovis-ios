@@ -1614,6 +1614,27 @@ func fixture(_ name: String) throws -> Data {
         let options = try #require(booking.paymentOptions)
         #expect(options.methods.map(\.key) == ["cash", "venmo", "zelle"])
         #expect(options.methods.first(where: { $0.key == "venmo" })?.handle == "@amara")
+
+        // "Before you go" — the prep bundle. Asserted with REAL values, not just
+        // non-nil: an all-empty bump passes the contract and the decode while
+        // the field is never actually read.
+        let prep = try #require(booking.prep)
+        #expect(prep.items.map(\.id) == ["pi_1", "pi_2"])
+        #expect(prep.checkedItemIds == ["pi_1"])
+        #expect(prep.note?.contains("Park in the lot") == true)
+        #expect(prep.writable)
+        #expect(prep.hasContent)
+        // 🔴 The countdown is the SERVER's answer, rendered verbatim — the rule
+        // is calendar days in the appointment's zone, never recomputed here.
+        #expect(prep.countdown?.label == "In 3 days")
+        #expect(prep.countdown?.tone == .near)
+        #expect(prep.countdown?.days == 3)
+        #expect(booking.sharedBoardIds == ["board_1"])
+
+        // A booking the server did not load prep for decodes with prep absent —
+        // nil means "nothing to prep here", never "failed to load".
+        #expect(b.prebooked.first?.prep == nil)
+        #expect(b.prebooked.first?.sharedBoardIds == nil)
         #expect(options.tipsEnabled)
         #expect(options.allowCustomTip)
         #expect(options.tipSuggestions == [18, 20, 25])
@@ -2057,6 +2078,15 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.canShowAftercare == true)
         #expect(res.checkoutProductsEditable == true)
         #expect(res.recommendedProducts.count == 2)
+
+        // The pro's care PLAN — labelled blocks in the order they wrote them.
+        // 🔴 The labels are the pro's own text, so they are asserted VERBATIM:
+        // the moment anything here starts mapping them onto a known set, this
+        // breaks for every profession that isn't hairdressing.
+        #expect(res.careSections.map(\.label) == ["First 48 hours", "Washing"])
+        #expect(res.careSections.first?.body.contains("Cool water only") == true)
+        // A plan on its own is content, even with no closing note.
+        #expect(res.hasContent)
 
         // rp_1 is external (link-out only); rp_2 is an in-app product.
         #expect(res.externalRecommendations.map(\.id) == ["rp_1"])

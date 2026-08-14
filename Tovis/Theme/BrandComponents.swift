@@ -126,6 +126,13 @@ struct BrandSection<Content: View>: View {
 struct FlowLayout: Layout {
     var spacing: CGFloat = 8
     var lineSpacing: CGFloat = 8
+    /// How each WRAPPED ROW sits in the available width.
+    ///
+    /// `.leading` (the default, and what every existing caller gets) packs rows
+    /// to the left, which leaves a lone trailing chip stranded in the corner —
+    /// four tip chips wrap 3 + 1, and the orphan reads as a mistake rather than
+    /// as the last option. `.center` balances each row instead.
+    var rowAlignment: HorizontalAlignment = .leading
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) -> CGSize {
         let maxWidth = proposal.width ?? .infinity
@@ -152,20 +159,48 @@ struct FlowLayout: Layout {
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) {
-        var x = bounds.minX
-        var y = bounds.minY
-        var rowHeight: CGFloat = 0
+        // Group into rows FIRST. Centering needs a row's total width before any
+        // of its members can be placed, which a single streaming pass can't know.
+        var rows: [[(index: Int, size: CGSize)]] = []
+        var row: [(index: Int, size: CGSize)] = []
+        var rowWidth: CGFloat = 0
 
-        for subview in subviews {
+        for (index, subview) in subviews.enumerated() {
             let size = subview.sizeThatFits(.unspecified)
-            if x > bounds.minX, x + size.width > bounds.maxX {
-                x = bounds.minX
-                y += rowHeight + lineSpacing
-                rowHeight = 0
+            let widthWithThis = rowWidth + (row.isEmpty ? 0 : spacing) + size.width
+            if !row.isEmpty, widthWithThis > bounds.width {
+                rows.append(row)
+                row = [(index, size)]
+                rowWidth = size.width
+            } else {
+                row.append((index, size))
+                rowWidth = widthWithThis
             }
-            subview.place(at: CGPoint(x: x, y: y), anchor: .topLeading, proposal: ProposedViewSize(size))
-            x += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
+        }
+        if !row.isEmpty { rows.append(row) }
+
+        var y = bounds.minY
+        for row in rows {
+            let contentWidth = row.reduce(CGFloat(0)) { $0 + $1.size.width }
+                + spacing * CGFloat(max(0, row.count - 1))
+            var x = bounds.minX
+            if rowAlignment == .center {
+                x += max(0, (bounds.width - contentWidth) / 2)
+            } else if rowAlignment == .trailing {
+                x += max(0, bounds.width - contentWidth)
+            }
+
+            var rowHeight: CGFloat = 0
+            for item in row {
+                subviews[item.index].place(
+                    at: CGPoint(x: x, y: y),
+                    anchor: .topLeading,
+                    proposal: ProposedViewSize(item.size)
+                )
+                x += item.size.width + spacing
+                rowHeight = max(rowHeight, item.size.height)
+            }
+            y += rowHeight + lineSpacing
         }
     }
 }

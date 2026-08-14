@@ -110,6 +110,18 @@ public struct ClientBooking: Decodable, Sendable, Identifiable {
     /// responses still decode; nil is treated as "no options loaded" by the checkout.
     public let paymentOptions: ClientBookingPaymentOptions?
 
+    /// "Before you go" — the pro's checklist, their note, this client's ticks and
+    /// the countdown. Optional and ABSENT unless the server loaded it, which it
+    /// only does for a booking that can still be prepared for; nil therefore means
+    /// "nothing to prep here", not "failed to load".
+    public let prep: ClientBookingPrep?
+
+    /// Boards this client has handed to the pro FOR THIS BOOKING (a scoped grant —
+    /// `Board.visibility` is never touched, so a private board shared here stays
+    /// private everywhere else). nil means the payload can't say; [] means nothing
+    /// is shared.
+    public let sharedBoardIds: [String]?
+
     /// The client's own view of K11's confirmation state — the SAME badge, from
     /// the same helper, that the pro sees.
     ///
@@ -137,6 +149,82 @@ public struct ClientBooking: Decodable, Sendable, Identifiable {
         status?.uppercased() == "PENDING"
             && source?.uppercased() == "AFTERCARE"
             && rebookOfBookingId != nil
+    }
+}
+
+// MARK: - Appointment prep ("Before you go")
+
+/// One row of the pro's prep checklist. Ticking is a per-booking write:
+/// POST /client/bookings/{id}/prep { prepItemId, checked }.
+public struct ClientBookingPrepItem: Decodable, Sendable, Identifiable {
+    public let id: String
+    public let text: String
+}
+
+/// How the countdown hero reads. Unknown values fall back so a new tone on the
+/// backend can never fail a whole bookings decode.
+public enum PrepCountdownTone: String, Decodable, Sendable {
+    /// Today or tomorrow — the emphasised hero.
+    case urgent
+    /// Inside a fortnight — the standard hero.
+    case near
+    /// Beyond a fortnight — one quiet line, and the board card is promoted above
+    /// the checklist (six weeks out, sending your looks is the useful thing).
+    case far
+    /// The appointment has already happened.
+    case past
+    case unknown
+
+    public init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = PrepCountdownTone(rawValue: raw) ?? .unknown
+    }
+}
+
+/// "Tomorrow" / "In 3 days" / "In 6 weeks".
+///
+/// 🔴 Rendered from the SERVER's `label`, never recomputed here. The rule is
+/// calendar days in the APPOINTMENT's zone, not 24h blocks — 11pm Monday to 9am
+/// Wednesday is "in 2 days", which a naive hours/24 calls "tomorrow". One
+/// implementation, on the backend, is the whole point.
+public struct ClientBookingPrepCountdown: Decodable, Sendable {
+    public let days: Int
+    public let tone: PrepCountdownTone
+    public let label: String
+}
+
+/// The client's prep bundle for one booking. Fields past `items` are defensively
+/// optional: a decode failure in here would fail the whole booking, and then the
+/// whole bucket list, over a supplementary section.
+public struct ClientBookingPrep: Decodable, Sendable {
+    public let items: [ClientBookingPrepItem]
+    /// Ids of `items` this client has already ticked.
+    public let checkedItemIds: [String]
+    public let note: String?
+    /// Whether a tick would be ACCEPTED right now — the server's own answer, from
+    /// the same predicate its write path re-checks. Defaults to false when absent
+    /// so a control the server would refuse is never drawn.
+    public let writable: Bool
+    public let countdown: ClientBookingPrepCountdown?
+
+    private enum CodingKeys: String, CodingKey {
+        case items, checkedItemIds, note, writable, countdown
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        items = try c.decodeIfPresent([ClientBookingPrepItem].self, forKey: .items) ?? []
+        checkedItemIds = try c.decodeIfPresent([String].self, forKey: .checkedItemIds) ?? []
+        note = try c.decodeIfPresent(String.self, forKey: .note)
+        writable = try c.decodeIfPresent(Bool.self, forKey: .writable) ?? false
+        countdown = try c.decodeIfPresent(ClientBookingPrepCountdown.self, forKey: .countdown)
+    }
+
+    /// Something for the client to look at — rows, a note, or a countdown worth
+    /// showing. An empty bundle still renders the "nothing to prep" state, so the
+    /// caller gates on the booking being preparable, not on this.
+    public var hasContent: Bool {
+        !items.isEmpty || (note?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
     }
 }
 
@@ -374,6 +462,30 @@ public struct RebookedBooking: Decodable, Sendable, Identifiable {
     public let id: String
     public let status: String
     public let scheduledFor: String
+}
+
+// MARK: - Prep tick (POST /api/v1/client/bookings/{id}/prep)
+
+struct PrepCheckRequest: Encodable, Sendable {
+    let prepItemId: String
+    let checked: Bool
+}
+
+/// The server's authoritative tick state after the write — adopt this rather
+/// than assuming the tap landed, since the route can still refuse.
+struct PrepCheckResponse: Decodable, Sendable {
+    let checkedItemIds: [String]
+}
+
+// MARK: - Board hand-off (POST /api/v1/client/bookings/{id}/board)
+
+struct BookingBoardShareRequest: Encodable, Sendable {
+    let boardId: String
+    let shared: Bool
+}
+
+struct BookingBoardShareResponse: Decodable, Sendable {
+    let sharedBoardIds: [String]
 }
 
 // MARK: - Media-use consent (POST /api/v1/client/bookings/{id}/media-consent)

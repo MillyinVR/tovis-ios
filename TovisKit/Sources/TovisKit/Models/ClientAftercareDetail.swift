@@ -68,17 +68,28 @@ public struct ClientAftercareDetail: Decodable, Sendable {
         checkoutProductsEditable = try c.decodeIfPresent(Bool.self, forKey: .checkoutProductsEditable) ?? false
     }
 
-    /// True when there's something to render — care notes, at least one photo,
-    /// at least one product recommendation, or a rebook affordance (recommended
-    /// window / active coupled next booking). (`canShowAftercare` can be true for
-    /// a COMPLETED booking with none of these yet.) Including the rebook keeps a
-    /// rebook-only summary from being suppressed (PF6) — mirrors the render gate.
+    /// True when there's something to render — the pro's care-plan sections,
+    /// care notes, at least one photo, at least one product recommendation, or a
+    /// rebook affordance (recommended window / active coupled next booking).
+    /// (`canShowAftercare` can be true for a COMPLETED booking with none of these
+    /// yet.) Including the rebook keeps a rebook-only summary from being
+    /// suppressed (PF6) — mirrors the render gate.
+    ///
+    /// 🔴 careSections counts on its own: a pro who wrote a labelled plan but no
+    /// closing note has said plenty, and leaving it out of this gate would hide
+    /// the whole section behind an empty `notes`.
     public var hasContent: Bool {
         let hasNotes = (aftercare?.notes?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
         return hasNotes
+            || !careSections.isEmpty
             || beforeAfter.hasAny
             || !recommendedProducts.isEmpty
             || (rebook?.hasRenderableRebook ?? false)
+    }
+
+    /// The pro's labelled care-plan blocks (empty when they wrote none).
+    public var careSections: [ClientAftercareCareSection] {
+        aftercare?.careSections ?? []
     }
 
     /// In-app recommendations that can be added to the booking checkout.
@@ -97,8 +108,37 @@ public struct ClientAftercareSummary: Decodable, Sendable, Identifiable {
     public let id: String
     /// Free-text care instructions the pro wrote for the client.
     public let notes: String?
+    /// The pro's labelled care-plan blocks, in the order they wrote them.
+    /// Rendered ABOVE `notes`: the sections are the plan, the note is the
+    /// sign-off. Additive — an older backend that omits it decodes to an empty
+    /// plan rather than failing the whole aftercare read.
+    public let careSections: [ClientAftercareCareSection]
     /// ISO instant the pro sent this aftercare to the client.
     public let sentToClientAt: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, notes, careSections, sentToClientAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        notes = try c.decodeIfPresent(String.self, forKey: .notes)
+        careSections =
+            try c.decodeIfPresent([ClientAftercareCareSection].self, forKey: .careSections) ?? []
+        sentToClientAt = try c.decodeIfPresent(String.self, forKey: .sentToClientAt)
+    }
+}
+
+/// One labelled block of the pro's care plan.
+///
+/// 🔴 `label` is TEXT THE PRO WROTE, never an enum — the app is for every beauty
+/// pro, and a nail tech's headings are not a colourist's. Render it verbatim and
+/// never map it onto a known set.
+public struct ClientAftercareCareSection: Decodable, Sendable, Identifiable {
+    public let id: String
+    public let label: String
+    public let body: String
 }
 
 /// The client's own review of this booking (text + attached photos). Mirrors

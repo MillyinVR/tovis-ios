@@ -86,6 +86,64 @@ public final class BookingsService: Sendable {
         return response.mediaUseConsent
     }
 
+    /// POST /api/v1/client/bookings/{id}/prep — tick (or untick) one row of the
+    /// pro's "Before you go" checklist. CLIENT-only, ownership-gated.
+    ///
+    /// Returns the SERVER's resulting `checkedItemIds` — adopt it rather than
+    /// toggling locally, because the route can refuse: it re-reads the booking
+    /// inside its transaction and answers `409 PREP_NOT_WRITABLE` if the
+    /// appointment has been cancelled or completed since the screen rendered,
+    /// and `404` for a row belonging to another of the pro's services.
+    ///
+    /// Deliberately carries NO idempotency key: the route enforces none, and the
+    /// write is an upsert/delete keyed on (booking, item), so a double tap of the
+    /// same state is already a no-op and a change of mind must not collide with
+    /// the client's own earlier tap.
+    @discardableResult
+    public func setPrepCheck(
+        bookingId: String,
+        prepItemId: String,
+        checked: Bool
+    ) async throws -> [String] {
+        let payload = try JSONEncoder.canonical.encode(
+            PrepCheckRequest(prepItemId: prepItemId, checked: checked)
+        )
+        let response: PrepCheckResponse = try await api.request(
+            "/client/bookings/\(bookingId)/prep",
+            method: .post,
+            body: payload
+        )
+        return response.checkedItemIds
+    }
+
+    /// POST /api/v1/client/bookings/{id}/board — hand one of the client's own
+    /// inspiration boards to the pro for THIS booking, or take it back.
+    ///
+    /// 🔴 A scoped disclosure, not a visibility change: the board's own
+    /// `visibility` is never written, so a private board shared here stays
+    /// private to everyone but this pro, on this booking, until it is revoked.
+    ///
+    /// Granting is refused (`409 PREP_NOT_WRITABLE`) once the appointment can no
+    /// longer be prepared for; REVOKING is always allowed, whatever state the
+    /// booking reached — a client must be able to withdraw a disclosure.
+    /// Returns the server's resulting shared-board id list.
+    @discardableResult
+    public func setBoardShare(
+        bookingId: String,
+        boardId: String,
+        shared: Bool
+    ) async throws -> [String] {
+        let payload = try JSONEncoder.canonical.encode(
+            BookingBoardShareRequest(boardId: boardId, shared: shared)
+        )
+        let response: BookingBoardShareResponse = try await api.request(
+            "/client/bookings/\(bookingId)/board",
+            method: .post,
+            body: payload
+        )
+        return response.sharedBoardIds
+    }
+
     /// GET /api/v1/client/waitlist-offers → the client's outstanding pro-proposed
     /// waitlist times (PENDING only), shown alongside priority offers on the
     /// offers screen. Confirm/decline via `respondToWaitlistOffer`. Envelope

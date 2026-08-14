@@ -318,6 +318,23 @@ struct BookingDetailView: View {
                     rebookCard
                 }
 
+                // "Before you go" — the pro's checklist, their note and the
+                // board hand-off, for a booking that is still ahead of the
+                // client. The DTO carries `prep` only for a booking the server
+                // would still accept a tick on, so its presence IS the gate;
+                // the section itself decides whether it has anything to draw.
+                if let prep = booking.prep {
+                    AppointmentPrepSection(
+                        bookingId: booking.id,
+                        proDisplayName: booking.professional?.displayName ?? "Your pro",
+                        prep: prep,
+                        initialSharedBoardIds: booking.sharedBoardIds ?? [],
+                        // The appointment's own zone, never the device's — a
+                        // 9:00 AM New York appointment must not read 6:00 AM.
+                        whenLabel: Wire.dateTime(booking.scheduledFor, timeZone: booking.timeZone)
+                    )
+                }
+
                 if !booking.items.isEmpty {
                     BrandSection(title: "Services") {
                         VStack(spacing: 10) {
@@ -680,9 +697,16 @@ struct BookingDetailView: View {
 
                 if tipsEnabled {
                     if !tipPresetPercents.isEmpty {
-                        FlowLayout(spacing: 8, lineSpacing: 8) {
+                        // Centred: the chips carry their dollar amount, so four
+                        // of them wrap 3 + 1 at phone width and a left-packed
+                        // orphan reads as a layout bug rather than as the last
+                        // option. How MANY chips there are is the pro's call
+                        // (Suggested tip options, /pro/profile/public-profile),
+                        // so this has to look right at any count.
+                        FlowLayout(spacing: 8, lineSpacing: 8, rowAlignment: .center) {
                             ForEach(tipPresetPercents, id: \.self) { percent in tipChip(percent) }
                         }
+                        .frame(maxWidth: .infinity)
                     }
 
                     if allowCustomTip {
@@ -726,41 +750,115 @@ struct BookingDetailView: View {
         .disabled(checkoutBusy)
     }
 
+    /// The pro's approved methods as a DROPDOWN (Tori, 2026-08-14) rather than a
+    /// stack of full-width rows.
+    ///
+    /// A pro who takes five methods used to push the Pay button most of a screen
+    /// down, and every unpicked option shouted as loudly as the picked one. A
+    /// menu states the CHOICE — one line, the selected method and its handle —
+    /// and keeps the alternatives one tap away.
     private var methodCard: some View {
         BrandSurface {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Payment method").font(BrandFont.body(14, .semibold)).foregroundStyle(BrandColor.textPrimary)
-                ForEach(acceptedMethods) { method in methodRow(method) }
+
+                if acceptedMethods.isEmpty {
+                    // The server's Cash-only fallback means this is practically
+                    // unreachable, but an empty menu would be a dead control.
+                    Text("No payment methods are enabled yet for this provider.")
+                        .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
+                } else {
+                    Menu {
+                        // `Picker` inside a `Menu` gives the checkmark on the
+                        // active row for free, and keeps the selection bound to
+                        // one piece of state rather than a button per option.
+                        Picker("Payment method", selection: methodSelection) {
+                            ForEach(acceptedMethods) { method in
+                                Text(methodMenuLabel(method)).tag(method.key)
+                            }
+                        }
+                    } label: {
+                        methodMenuLabelView
+                    }
+                    .disabled(checkoutBusy)
+                }
             }
         }
     }
 
-    private func methodRow(_ method: ClientBookingPaymentMethod) -> some View {
-        let active = method.key == selectedMethodKey
-        return Button {
-            checkoutError = nil
-            checkoutSuccess = nil
-            selectedMethodKey = method.key
-        } label: {
-            HStack(alignment: .top, spacing: 10) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(method.label).font(BrandFont.body(14, .semibold))
-                        .foregroundStyle(active ? BrandColor.onAccent : BrandColor.textPrimary)
-                    if let handle = method.handle, !handle.isEmpty {
-                        Text(handle).font(BrandFont.body(12))
-                            .foregroundStyle(active ? BrandColor.onAccent.opacity(0.85) : BrandColor.textSecondary)
-                    }
-                }
-                Spacer(minLength: 0)
-                Text(active ? "Selected" : "Choose").font(BrandFont.body(11, .semibold))
-                    .foregroundStyle(active ? BrandColor.onAccent : BrandColor.textMuted)
+    /// Writes through the same reset the row buttons did — picking a different
+    /// method must clear a stale error/success from the previous attempt — and
+    /// then HANDS OFF to that provider's app.
+    ///
+    /// 🔴 Choosing the method opens the app straight away (Tori, 2026-08-14).
+    /// The client shouldn't have to hunt for a second button to do the thing
+    /// they just said they wanted to do.
+    ///
+    /// Two guards make that safe rather than startling:
+    ///   · only when the selection actually CHANGED, so re-picking the current
+    ///     method (or the menu re-rendering) never relaunches anything;
+    ///   · only for a method that resolves to a real app link — cash, card
+    ///     rails and Stripe have nothing to open.
+    /// The explicit "Pay $X with …" button below STAYS: the client has to come
+    /// back here to confirm, and after returning it is the only way to reopen.
+    private var methodSelection: Binding<String> {
+        Binding(
+            get: { selectedMethodKey },
+            set: { next in
+                checkoutError = nil
+                checkoutSuccess = nil
+
+                let changed = next != selectedMethodKey
+                selectedMethodKey = next
+                guard changed else { return }
+
+                guard
+                    let method = acceptedMethods.first(where: { $0.key == next }),
+                    // Quotes the SAME amount the button does — the live total,
+                    // so a tip typed a moment ago is already in it.
+                    let action = buildPaymentDeepLink(
+                        methodKey: method.key, handle: method.handle,
+                        amountDue: liveTotal, note: deepLinkNote
+                    )
+                else { return }
+
+                handOffToPaymentApp(action)
             }
-            .padding(.horizontal, 14).padding(.vertical, 12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(active ? BrandColor.accent : BrandColor.bgSecondary)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        )
+    }
+
+    /// "Venmo · @noor-haddad" — the handle belongs ON the row, because it is
+    /// what tells the client WHICH account they are about to pay.
+    private func methodMenuLabel(_ method: ClientBookingPaymentMethod) -> String {
+        guard let handle = method.handle, !handle.isEmpty else { return method.label }
+        return "\(method.label) · \(handle)"
+    }
+
+    private var methodMenuLabelView: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(selectedMethod?.label ?? "Choose a payment method")
+                    .font(BrandFont.body(14, .semibold))
+                    .foregroundStyle(BrandColor.textPrimary)
+                if let handle = selectedMethod?.handle, !handle.isEmpty {
+                    Text(handle)
+                        .font(BrandFont.body(12))
+                        .foregroundStyle(BrandColor.textSecondary)
+                }
+            }
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(BrandColor.textMuted)
         }
-        .disabled(checkoutBusy)
+        .padding(.horizontal, 14).padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(BrandColor.bgSecondary)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(BrandColor.textMuted.opacity(0.25), lineWidth: 1)
+        )
     }
 
     private var payActionCard: some View {
@@ -856,6 +954,38 @@ struct BookingDetailView: View {
     /// reports whether the scheme was actually handled, which is the only way to
     /// tell — `canOpenURL` would need the scheme declared in
     /// LSApplicationQueriesSchemes, and silently returns false without it.
+    /// Open the provider's app for a method the client just PICKED.
+    ///
+    /// Deliberately more conservative than the explicit "Pay $X with …" button,
+    /// because this fires off a selection rather than off a tap that says
+    /// "pay":
+    ///
+    /// · a custom scheme (Venmo) opens ONLY when the app is actually installed.
+    ///   Handing `venmo://` to a device without Venmo lands the client in
+    ///   Safari on an "address is invalid" alert — a bad answer to "I chose a
+    ///   payment method", and one they didn't ask for. `canOpenURL` needs the
+    ///   scheme declared in `LSApplicationQueriesSchemes` or it always says no.
+    /// · a universal link (paypal.me) opens as-is: it resolves to the app when
+    ///   installed and the provider's own page otherwise, so either way it is
+    ///   the right destination.
+    /// · a `.copy` action (Zelle, Apple Cash) has no target at all — those are
+    ///   handle-and-amount instructions, and the chips below are the affordance.
+    ///
+    /// Whatever happens here, the explicit button stays on screen: the client
+    /// has to come back to confirm, and it is their only way to reopen.
+    private func handOffToPaymentApp(_ action: PaymentDeepLink) {
+        switch action {
+        case let .link(href, appHref, _):
+            if let appHref {
+                if UIApplication.shared.canOpenURL(appHref) { openURL(appHref) }
+            } else {
+                openURL(href)
+            }
+        case .copy:
+            break
+        }
+    }
+
     private func openPayLink(href: URL, appHref: URL?) {
         guard let appHref else {
             openURL(href)
@@ -1188,6 +1318,12 @@ struct BookingDetailView: View {
                             clientExportProfessionalId: booking.professional?.id
                         )
                         aftercarePrivacyNote
+                    }
+
+                    // The pro's own labelled blocks — the PLAN — above the
+                    // closing note, exactly as the web care plan orders them.
+                    if !detail.careSections.isEmpty {
+                        carePlanCard(detail.careSections)
                     }
 
                     if let notes = detail.aftercare?.notes,
@@ -2255,10 +2391,41 @@ struct BookingDetailView: View {
         }
     }
 
+    /// The pro's care PLAN — their own labelled blocks, in the order they wrote
+    /// them.
+    ///
+    /// 🔴 `label` is text the pro typed, never an enum: this app is for every
+    /// beauty pro, and "Wash" / "Heat & styling" mean nothing to a nail tech or
+    /// an electrologist. Render it verbatim and never map it onto a known set.
+    private func carePlanCard(_ sections: [ClientAftercareCareSection]) -> some View {
+        BrandSurface {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("\(booking.professional?.displayName ?? "Your pro")’s plan for you")
+                    .font(BrandFont.mono(10))
+                    .tracking(1.8)
+                    .textCase(.uppercase)
+                    .foregroundStyle(BrandColor.textMuted)
+
+                ForEach(sections) { section in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(section.label)
+                            .font(BrandFont.body(14, .semibold))
+                            .foregroundStyle(BrandColor.textPrimary)
+                        Text(section.body)
+                            .font(BrandFont.body(13))
+                            .foregroundStyle(BrandColor.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+    }
+
     private func careNotesCard(_ notes: String) -> some View {
         BrandSurface {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Care instructions")
+                Text("Note from \(booking.professional?.displayName ?? "your pro")")
                     .font(BrandFont.body(13, .semibold))
                     .foregroundStyle(BrandColor.textPrimary)
                 Text(notes)

@@ -78,7 +78,18 @@
           "tipSuggestions": [18, 20, 25],
           "paymentNote": "Cash or Venmo preferred, thank you!",
           "collectPaymentAt": "AFTER_SERVICE"
-        }
+        },
+        "prep": {
+          "items": [
+            { "id": "pi_1", "text": "Arrive with clean, dry hair" },
+            { "id": "pi_2", "text": "Bring photos of what you're after" }
+          ],
+          "checkedItemIds": ["pi_1"],
+          "note": "Park in the lot behind the building — the meter out front is a trap.",
+          "writable": true,
+          "countdown": { "days": 3, "tone": "near", "label": "In 3 days" }
+        },
+        "sharedBoardIds": ["board_1"]
       }
     ],
     "pending": [
