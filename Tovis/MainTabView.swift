@@ -143,7 +143,7 @@ struct MainTabView: View {
         }
         .sheet(item: $deepLinkLook) { look in
             NavigationStack {
-                LookDetailView(lookId: look.id)
+                LookDetailView(lookId: look.id, autoStartBooking: look.book)
                     .toolbar {
                         ToolbarItem(placement: .topBarLeading) {
                             Button("Done") { deepLinkLook = nil }
@@ -223,9 +223,9 @@ struct MainTabView: View {
             }
         case let .thread(id):
             deepLinkThread = try? await session.client.messages.thread(id: id)
-        case let .look(id):
+        case let .look(id, book):
             // A shared look (Universal Link) or a look push → the native detail.
-            deepLinkLook = LookPresentation(id: id)
+            deepLinkLook = LookPresentation(id: id, book: book)
         case let .publicClient(handle):
             // A shared /u/{handle} link → the native creator profile.
             deepLinkPublicClient = PublicClientPresentation(handle: handle)

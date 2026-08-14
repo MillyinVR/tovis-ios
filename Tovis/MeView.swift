@@ -20,8 +20,26 @@ struct MeView: View {
         case history = "HISTORY"
     }
 
+    /// DEBUG: start on a named panel, so BOARDS / FOLLOWING / HISTORY can each be
+    /// photographed before shipping. Same mechanism and same reasoning as
+    /// `TOVIS_DEBUG_OPEN_TAB` and `TOVIS_DEBUG_PROFILE_TAB` — this machine cannot
+    /// drive the simulator with synthetic taps, so a panel reachable ONLY by
+    /// tapping would otherwise never be looked at. Release always starts on
+    /// BOARDS.
+    ///
+    ///     SIMCTL_CHILD_TOVIS_DEBUG_ME_TAB=history xcrun simctl launch …
+    private static var initialTab: MeTab {
+        #if DEBUG
+        let raw = ProcessInfo.processInfo.environment["TOVIS_DEBUG_ME_TAB"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .uppercased()
+        if let raw, let wanted = MeTab(rawValue: raw) { return wanted }
+        #endif
+        return .boards
+    }
+
     @State private var phase: Phase = .loading
-    @State private var tab: MeTab = .boards
+    @State private var tab: MeTab = Self.initialTab
     /// The client's shareable invite link. Loaded best-effort: until the
     /// backend ships GET /client/referrals/invite-link this 404s and the
     /// invite card simply stays hidden.

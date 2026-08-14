@@ -640,6 +640,8 @@ struct LookDetailView: View {
 /// so the box is shared rather than restated in each.
 struct LookPresentation: Identifiable, Equatable {
     let id: String
+    /// Carried from `/looks/{id}?book=1` — open the availability sheet on arrival.
+    var book: Bool = false
 }
 
 private struct DetailBookLaunch: Identifiable {

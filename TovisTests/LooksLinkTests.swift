@@ -98,13 +98,36 @@ struct LooksLinkTests {
 struct PushDeepLinkLooksTests {
     @Test("A /looks/{id} href targets the look")
     func parsesLookHref() {
-        #expect(PushDeepLink(href: "/looks/look_123")?.target == .look(id: "look_123"))
+        #expect(PushDeepLink(href: "/looks/look_123")?.target == .look(id: "look_123", book: false))
     }
 
     @Test("A tag href does not target a look")
     func rejectsTagHref() {
         // Previously produced `.look(id: "tags")`.
         #expect(PushDeepLink(href: "/looks/tags/balayage") == nil)
+    }
+
+    // ⚠️ `?book=1` is the web's open-the-availability-sheet-on-arrival flag, and
+    // it is what "Recreate this look" links to. It used to be dropped here, so
+    // the same link opened the sheet on web and stopped at the look on a phone.
+    @Test("book=1 asks for the booking sheet")
+    func parsesBookFlag() {
+        #expect(
+            PushDeepLink(href: "/looks/look_123?book=1")?.target
+                == .look(id: "look_123", book: true),
+        )
+    }
+
+    @Test("Any other book value is not a booking request")
+    func ignoresOtherBookValues() {
+        #expect(
+            PushDeepLink(href: "/looks/look_123?book=0")?.target
+                == .look(id: "look_123", book: false),
+        )
+        #expect(
+            PushDeepLink(href: "/looks/look_123?book=yes")?.target
+                == .look(id: "look_123", book: false),
+        )
     }
 
     @Test("Either shell opens a look — no workspace switch")

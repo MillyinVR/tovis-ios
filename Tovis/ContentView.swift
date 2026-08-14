@@ -82,7 +82,15 @@ struct PushDeepLink: Equatable {
     enum Target: Equatable {
         // Shared — either shell resolves these in place (no workspace switch).
         case thread(id: String)              // /messages/thread/{id}
-        case look(id: String)                // /looks/{id}
+        /// /looks/{id}, and /looks/{id}?book=1 with `book` true.
+        ///
+        /// `book=1` is the web's "open the availability sheet on arrival" flag —
+        /// it is what the public creator profile's "Recreate this look" button
+        /// links to. Dropping it made the SAME link behave differently by
+        /// platform: on web it landed on the look with the booking sheet open,
+        /// on a phone it landed on the look and stopped, one silent tap short of
+        /// the thing the link was sent to do.
+        case look(id: String, book: Bool)    // /looks/{id}[?book=1]
         /// /u/{handle} — a creator's public profile.
         ///
         /// 🔴 Load-bearing: this is the link the client Share sheet promises
@@ -162,9 +170,15 @@ struct PushDeepLink: Equatable {
             return nil
 
         // /looks/{id} → the single-look detail. Both roles use this path; the
-        // active shell pushes `LookDetailView`.
+        // active shell pushes `LookDetailView`. `?book=1` additionally opens the
+        // availability sheet on arrival, matching the web route.
         case "looks":
-            if let id = LooksPath.lookId(from: parts) { target = .look(id: id); return }
+            if let id = LooksPath.lookId(from: parts) {
+                let book =
+                    comps.queryItems?.first(where: { $0.name == "book" })?.value == "1"
+                target = .look(id: id, book: book)
+                return
+            }
             return nil
 
         case "client":
@@ -299,6 +313,10 @@ enum LooksPath {
 /// shared look merely foregrounded the app.
 struct LooksLink: Equatable {
     let id: String
+    /// `?book=1` — open the availability sheet on arrival, as the web route does.
+    /// This is the flag "Recreate this look" puts on the link it shares, so it is
+    /// the Universal-Link path (not the push path) that most needs to honour it.
+    let book: Bool
 
     init?(url: URL) {
         guard url.scheme?.lowercased() == "https" else { return nil }
@@ -309,6 +327,11 @@ struct LooksLink: Equatable {
             return nil
         }
         self.id = id
+        self.book =
+            URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?
+            .first(where: { $0.name == "book" })?
+            .value == "1"
     }
 }
 
@@ -530,7 +553,7 @@ final class SessionModel {
         // A shared look. Routed through the same `.look(id:)` target a push uses,
         // so both entry points land on one handler in the shells.
         if let look = LooksLink(url: url) {
-            pushDeepLink = PushDeepLink(target: .look(id: look.id))
+            pushDeepLink = PushDeepLink(target: .look(id: look.id, book: look.book))
             return
         }
         // A client-referral link (`/c/<shortCode>`). The web tap-funnel is web-only by
