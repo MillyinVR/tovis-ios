@@ -1,7 +1,20 @@
-// Booking flow (v1, request-to-book) — pick a date + time for an offering,
-// optionally add add-ons, then hold + finalize. Opened as a sheet from the pro
-// profile. Salon mode, no in-app payment (handled per the pro's settings / at
-// appointment); Stripe checkout lands via the tovis:// deep-link return.
+// Booking flow (v1, request-to-book) — pick a date + time for an offering, hold
+// it, then add add-ons on their own screen and finalize. Opened as a sheet from
+// the pro profile / a look. Salon + mobile, no in-app payment (handled per the
+// pro's settings / at appointment); Stripe checkout lands via the tovis://
+// deep-link return.
+//
+// Built to `BookingSheetFrame`, and to the web AvailabilityDrawer it mirrors:
+// a cover photo of the look being booked, the service line with the pro's
+// rating, the reassurance chips, a horizontal day scroller carrying each day's
+// remaining supply, Morning · Afternoon · Evening tabs, the held-time recap with
+// its countdown, then one sticky CTA.
+//
+// ⚠️ Picking a time PLACES A HOLD, exactly as tapping a slot does on web. The
+// selection and the reservation are the same thing here — there is no state
+// where a slot looks chosen but is not actually reserved — so every path that
+// abandons a selection (a new pick, a placement change, closing the sheet) has
+// to give the old hold back.
 import SwiftUI
 import TovisKit
 
@@ -13,16 +26,25 @@ struct BookingFlowView: View {
     let proName: String
     let offering: ProOffering
     /// When set, this flow RESCHEDULES that booking (hold → reschedule) instead
-    /// of creating a new one (hold → finalize). The picker is otherwise identical.
+    /// of creating a new one (hold → add-ons → finalize). The picker is
+    /// otherwise identical; a reschedule keeps the booking's original add-ons,
+    /// so it never reaches the add-ons step.
     var rescheduleBookingId: String? = nil
     /// The booking's location mode, preserved across a reschedule. Defaults to SALON.
     var locationType: String = "SALON"
-    /// When set, the flow opens on this ISO instant's day and pre-selects it as the
-    /// time slot when it's still bookable — used by the openings feed to land the
-    /// client on the freed-up slot (mirrors the web `?scheduledFor=` deep-link).
-    /// General availability drives the hold, so a slot that's no longer open simply
-    /// isn't preselected and the client picks another time.
+    /// When set, the flow opens on this ISO instant's day and picks it when it's
+    /// still bookable — used by the openings feed to land the client on the
+    /// freed-up slot (mirrors the web `?scheduledFor=` deep-link). General
+    /// availability drives the hold, so a slot that's no longer open simply
+    /// isn't picked and the client chooses another time.
     var preselectedSlot: String? = nil
+    /// The primary MediaAsset id of the LOOK this booking started from. It is
+    /// what the server resolves the sheet's cover photo and look name from
+    /// (`lib/booking/bookingCover.ts`) — without it the sheet cannot say which
+    /// look you are booking, and falls back to the service's name over a plain
+    /// header. `nil` when the flow was entered from a pro's profile, an
+    /// appointment or an opening rather than from a look.
+    var lookMediaId: String? = nil
     /// The `LastMinuteOpening.id` when this flow is CLAIMING a last-minute opening
     /// (openings feed / priority offer). Passed through to `finalize` so the server
     /// consumes the opening and applies the tier incentive the client was shown —
@@ -43,28 +65,61 @@ struct BookingFlowView: View {
         case success(scheduledFor: String, bookingId: String?, professionalId: String?)
     }
 
+    /// The one pushed step. The add-ons screen reads the hold + bootstrap out of
+    /// this view's state, so the route itself carries nothing.
+    private enum Route: Hashable { case addOns }
+
     @State private var phase: Phase = .loading
-    @State private var selectedDate = Date()
+    @State private var path: [Route] = []
+
+    /// The day the grid is showing — a YYYY-MM-DD in the LOCATION's zone, which
+    /// is what `availableDays` and the `day` request both speak.
+    @State private var selectedYMD: String?
     @State private var slots: [String] = []
+    @State private var period: BookingSheetPresentation.DayPeriod = .morning
     @State private var loadingSlots = false
     /// Non-nil when the availability fetch itself failed (vs. a genuinely empty
     /// day) — surfaced with a retry instead of a misleading "no openings".
     @State private var slotError: String?
-    @State private var selectedSlot: String?
+
+    /// The reservation. `selectedSlot` is derived from it: on this screen a slot
+    /// is selected exactly when it is held.
+    @State private var hold: BookingHold?
+    @State private var holdExpiresAt: Date?
+    /// Set once the hold has become a booking — it must NOT be released then.
+    @State private var holdConsumed = false
+    @State private var holding = false
+
     @State private var booking = false
     @State private var bookError: String?
+    /// The APPOINTMENT's timezone (the booking location's), kept out of `phase`
+    /// so the success screen still has it after `.ready(boot)` is gone.
+    ///
+    /// ⚠️ The confirmation used to render its WHEN row with `timeZone: nil`,
+    /// i.e. the DEVICE's zone — a 9:00 AM New York appointment read "6:00 AM" on
+    /// a simulator set to Los Angeles. A booking's time belongs to where it
+    /// happens, never to where the phone happens to be.
+    @State private var appointmentTimeZone: String?
+    /// The salon this booking is going to, remembered from the bootstrap for the
+    /// same reason as the timezone: the success screen outlives `.ready(boot)`.
+    @State private var salonAddressLine: String?
+    /// Minutes of add-ons the client actually booked, reported back by the
+    /// add-ons step. The base width alone under-states the appointment on the
+    /// confirmation card (a 180-minute service booked with 45 minutes of add-ons
+    /// is a 225-minute appointment).
+    @State private var bookedAddOnMinutes = 0
     @State private var showConsult = false
-    /// Guards the one-time preselect so a later date change / manual pick wins.
+    /// Guards the one-time preselect so a later day change / manual pick wins.
     @State private var didApplyPreselect = false
 
-    // Add-ons (new bookings only — reschedule keeps the original add-ons).
+    // Add-ons (new bookings only — reschedule keeps the original add-ons). Loaded
+    // here so the CTA knows whether there is a second step at all.
     @State private var addOns: [BookingAddOn] = []
-    @State private var selectedAddOnIds: Set<String> = []
 
     // M15: the pro's no-show/late-cancel fee policy the client must agree to
-    // before booking. nil → the pro charges no fees → no gate.
+    // before booking. nil → the pro charges no fees → no gate. Presented on the
+    // add-ons step, where the booking is actually completed.
     @State private var cancellationPolicy: String?
-    @State private var policyAccepted = false
 
     // Location mode (SALON / MOBILE). New bookings can choose when the offering
     // offers both; reschedule keeps the original. MOBILE needs a service address.
@@ -80,6 +135,8 @@ struct BookingFlowView: View {
     private var duration: Int { offering.durationMinutes ?? 60 }
 
     private var isMobile: Bool { mode.uppercased() == "MOBILE" }
+
+    private var selectedSlot: String? { hold?.scheduledFor }
 
     /// Show the SALON/MOBILE switch only for a new booking on an offering that
     /// supports both. A reschedule preserves the original mode.
@@ -104,29 +161,35 @@ struct BookingFlowView: View {
     /// A mobile booking can't proceed until a service address is chosen.
     private var addressRequiredButMissing: Bool { isMobile && selectedAddressId == nil }
 
-    /// Base duration + the minutes of every selected add-on. The server is the
-    /// source of truth for the number; availability and the hold are both asked
-    /// for this same window, so the times on screen are the times that can
-    /// actually be booked with these add-ons (B1-A).
-    private var totalDuration: Int {
-        duration + addOns.filter { selectedAddOnIds.contains($0.id) }.reduce(0) { $0 + $1.minutes }
-    }
-
     /// The width to SHOW. A reschedule commits the booking's own duration, which
     /// drifts from the offering's base whenever the pro edits the service — so
     /// showing the base put "60 min" above a 90-minute appointment and made the
     /// (correctly narrowed) grid look wrong (B3-A). The server echoes the width
     /// it actually sized the offer with, so read that once it has answered.
     ///
-    /// Only on a reschedule: a NEW booking's add-ons are ticked after bootstrap,
-    /// and `totalDuration` is what keeps the pill live as they are toggled.
+    /// Add-ons no longer widen this number on the PICKER: they are chosen on the
+    /// next step, and the hold is re-sized there. The confirmation is a
+    /// different question — see `bookedDuration`.
     private var displayDuration: Int {
-        guard isReschedule, case let .ready(boot) = phase else { return totalDuration }
+        guard case let .ready(boot) = phase else { return baseDuration }
         return boot.request.durationMinutes
     }
 
+    /// The width of the appointment that was actually BOOKED — the base plus the
+    /// add-ons the client kept. `phase` is `.success` by the time this renders,
+    /// so it cannot read the bootstrap echo.
+    private var bookedDuration: Int { baseDuration + bookedAddOnMinutes }
+
+    /// The base width the bootstrap echoed, remembered across the phase change.
+    @State private var baseDurationState: Int?
+
+    private var baseDuration: Int {
+        if case let .ready(boot) = phase { return boot.request.durationMinutes }
+        return baseDurationState ?? duration
+    }
+
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             Group {
                 switch phase {
                 case .loading:
@@ -139,7 +202,7 @@ struct BookingFlowView: View {
                 case .needsAddress:
                     addressGate
                 case let .ready(boot):
-                    form(boot)
+                    sheet(boot)
                 }
             }
             // Attached above the phase switch so the "add an address" route works
@@ -160,42 +223,87 @@ struct BookingFlowView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(BrandColor.bgPrimary.ignoresSafeArea())
-            .navigationTitle(isReschedule ? "Reschedule" : "Book")
+            .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar(showsNavigationBar ? .visible : .hidden, for: .navigationBar)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }.tint(BrandColor.textSecondary)
+                if showsNavigationBar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Cancel") { close() }.tint(BrandColor.textSecondary)
+                    }
+                }
+            }
+            .navigationDestination(for: Route.self) { route in
+                switch route {
+                case .addOns:
+                    addOnsStep
                 }
             }
             .task { if case .loading = phase { await loadBootstrap() } }
         }
         .tint(BrandColor.accent)
+        // The sheet's own hold is a reservation somebody else could be waiting
+        // for. Give it back the moment this flow goes away without booking.
+        .onDisappear { releaseHoldInBackground() }
     }
 
-    // MARK: - Form
+    /// The picker draws its own header with a ✕ over the cover, as the frame does,
+    /// so it hides the bar. Every other phase keeps the bar for its way out.
+    private var showsNavigationBar: Bool {
+        if case .ready = phase { return false }
+        return true
+    }
 
-    /// Offering summary + mode switch + address picker — the part of the flow that
-    /// must render BEFORE availability is known, because on MOBILE the address is
-    /// an INPUT to the availability request rather than a later step.
-    @ViewBuilder
-    private var placementHeader: some View {
-        // Offering summary
-        BrandSurface {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(offering.name)
-                    .font(BrandFont.body(17, .semibold)).foregroundStyle(BrandColor.textPrimary)
-                Text("with \(proName)")
-                    .font(BrandFont.body(13)).foregroundStyle(BrandColor.textSecondary)
-                HStack(spacing: 10) {
-                    BrandPill(text: "\(displayDuration) min")
-                    if let price = offering.priceFromLabel {
-                        BrandPill(text: "from \(price)", tint: BrandColor.accent)
+    private var navigationTitle: String { isReschedule ? "Reschedule" : "Book" }
+
+    // MARK: - The sheet
+
+    private func sheet(_ boot: AvailabilityBootstrap) -> some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    BookingSheetCover(
+                        cover: boot.cover,
+                        trust: boot.trust,
+                        serviceName: boot.serviceName ?? offering.name,
+                        proName: proName,
+                        proAvatarUrl: boot.primaryPro?.avatarUrl,
+                        priceFromLabel: offering.priceFromLabel,
+                        durationMinutes: displayDuration,
+                        onClose: { close() }
+                    )
+
+                    VStack(alignment: .leading, spacing: 20) {
+                        placementControls
+
+                        Text("When works?")
+                            .font(BrandFont.display(28, .semibold))
+                            .foregroundStyle(BrandColor.textPrimary)
+
+                        dayScroller(boot)
+
+                        timesSection(boot)
+
+                        heldRecap(boot)
+
+                        if let bookError {
+                            BrandErrorBanner(message: bookError)
+                        }
                     }
+                    .padding(.horizontal, 20)
                 }
-                .padding(.top, 2)
+                .padding(.bottom, 20)
             }
-        }
 
+            stickyCTA(boot)
+        }
+    }
+
+    /// Mode switch + address picker — the part of the flow that must render
+    /// BEFORE availability is known, because on MOBILE the address is an INPUT to
+    /// the availability request rather than a later step.
+    @ViewBuilder
+    private var placementControls: some View {
         if canChooseMode {
             BrandSection(title: "Where") {
                 Picker("Where", selection: $mode) {
@@ -220,7 +328,16 @@ struct BookingFlowView: View {
     private var addressGate: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                placementHeader
+                BrandSurface {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(offering.name)
+                            .font(BrandFont.body(17, .semibold)).foregroundStyle(BrandColor.textPrimary)
+                        Text("with \(proName)")
+                            .font(BrandFont.body(13)).foregroundStyle(BrandColor.textSecondary)
+                    }
+                }
+
+                placementControls
 
                 if !addressLoadFailed {
                     // No pro-name interpolation — some entry points open this flow
@@ -233,98 +350,314 @@ struct BookingFlowView: View {
         }
     }
 
-    private func form(_ boot: AvailabilityBootstrap) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                placementHeader
+    // MARK: - Day scroller
 
-                BrandSection(title: "Pick a date") {
-                    DatePicker("", selection: $selectedDate, in: Date()...maxDate(boot),
-                               displayedComponents: .date)
-                        .datePickerStyle(.graphical)
-                        .tint(BrandColor.accent)
-                        // Pinned to the LOCATION's zone — the availability `date`
-                        // param is serialized in it (ymdString), so an unpinned
-                        // picker fetches the wrong day whenever the device zone
-                        // straddles midnight against the location's.
-                        .environment(\.timeZone, TimeZone(identifier: boot.timeZone) ?? .current)
-                        .onChange(of: selectedDate) { Task { await loadSlots(boot) } }
-                }
-
-                BrandSection(title: "Pick a time", trailing: timeZoneLabel(boot)) {
-                    if loadingSlots {
-                        ProgressView().tint(BrandColor.accent).frame(maxWidth: .infinity).padding(.vertical, 20)
-                    } else if let slotError {
-                        // A failed fetch is not an empty day — say so, and offer a retry.
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(slotError)
-                                .font(BrandFont.body(13)).foregroundStyle(BrandColor.ember)
-                            Button("Try again") { Task { await loadSlots(boot) } }
-                                .font(BrandFont.body(13, .semibold)).tint(BrandColor.accent)
-                        }
-                        .padding(.vertical, 8)
-                    } else if slots.isEmpty {
-                        Text("No openings on this day. Try another date.")
-                            .font(BrandFont.body(13)).foregroundStyle(BrandColor.textMuted)
-                            .padding(.vertical, 8)
-                    } else {
-                        slotGrid(boot)
+    @ViewBuilder
+    private func dayScroller(_ boot: AvailabilityBootstrap) -> some View {
+        if boot.availableDays.isEmpty {
+            Text("No open days in the next few weeks. Try another service or check back soon.")
+                .font(BrandFont.body(13)).foregroundStyle(BrandColor.textMuted)
+        } else {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(boot.availableDays) { day in
+                        dayButton(day, boot: boot)
                     }
                 }
-
-                if !isReschedule && !addOns.isEmpty {
-                    BrandSection(title: "Add-ons", trailing: "Optional") {
-                        VStack(spacing: 10) {
-                            ForEach(addOns) { addOn in
-                                addOnRow(addOn)
-                            }
-                        }
-                    }
-                }
-
-                if let cancellationPolicy {
-                    BrandSection(title: "Cancellation policy") {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text(cancellationPolicy)
-                                .font(BrandFont.body(13))
-                                .foregroundStyle(BrandColor.textSecondary)
-                            Toggle(isOn: $policyAccepted) {
-                                Text("I agree to this cancellation policy")
-                                    .font(BrandFont.body(13, .semibold))
-                                    .foregroundStyle(BrandColor.textPrimary)
-                            }
-                            .tint(BrandColor.accent)
-                        }
-                    }
-                }
-
-                if let bookError {
-                    Text(bookError).font(BrandFont.body(13)).foregroundStyle(BrandColor.ember)
-                }
-
-                Button { Task { await requestToBook(boot) } } label: {
-                    Group {
-                        if booking { ProgressView().tint(BrandColor.onAccent) }
-                        else {
-                            Text(isReschedule ? "Confirm new time" : "Request to book")
-                                .font(BrandFont.body(17, .semibold))
-                        }
-                    }
-                    .frame(maxWidth: .infinity).padding(.vertical, 16)
-                    .foregroundStyle(BrandColor.onAccent)
-                    .background(bookDisabled ? BrandColor.textMuted.opacity(0.4) : BrandColor.accent)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                }
-                .disabled(bookDisabled)
+                .padding(.vertical, 2)
             }
-            .padding(20)
         }
-        .task { if slots.isEmpty { await loadSlots(boot) } }
     }
 
-    private var bookDisabled: Bool {
-        selectedSlot == nil || booking || addressRequiredButMissing
-            || (cancellationPolicy != nil && !policyAccepted)
+    private func dayButton(_ day: AvailabilityDaySummary, boot: AvailabilityBootstrap) -> some View {
+        let active = day.date == selectedYMD
+        let scarce = BookingSheetPresentation.daySupplyIsScarce(slotCount: day.slotCount)
+        return Button {
+            guard day.date != selectedYMD else { return }
+            selectedYMD = day.date
+            Task {
+                // The chosen time belongs to the old day, so the reservation does
+                // too — give it back rather than leaving it parked.
+                await releaseCurrentHold()
+                await loadSlots(boot)
+            }
+        } label: {
+            VStack(spacing: 4) {
+                Text(dayWeekday(day.date, tz: boot.timeZone))
+                    .font(BrandFont.mono(10)).tracking(0.8)
+                    .foregroundStyle(active ? BrandColor.onAccent : BrandColor.textSecondary)
+                Text(dayNumber(day.date, tz: boot.timeZone))
+                    .font(BrandFont.body(18, .bold))
+                    .foregroundStyle(active ? BrandColor.onAccent : BrandColor.textPrimary)
+                Text(BookingSheetPresentation.daySupplyLabel(slotCount: day.slotCount))
+                    .font(BrandFont.mono(9)).tracking(0.4)
+                    .foregroundStyle(supplyTint(active: active, scarce: scarce))
+            }
+            .frame(minWidth: 58)
+            .padding(.vertical, 10).padding(.horizontal, 10)
+            .background(active ? BrandColor.accent : BrandColor.bgSurface)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(active ? Color.clear : BrandColor.textMuted.opacity(0.18), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(
+            "\(dayWeekday(day.date, tz: boot.timeZone)) \(dayNumber(day.date, tz: boot.timeZone)), "
+            + BookingSheetPresentation.daySupplyLabel(slotCount: day.slotCount)
+        )
+    }
+
+    private func supplyTint(active: Bool, scarce: Bool) -> Color {
+        if active { return BrandColor.onAccent.opacity(0.75) }
+        return scarce ? BrandColor.gold : BrandColor.textMuted
+    }
+
+    // MARK: - Times
+
+    @ViewBuilder
+    private func timesSection(_ boot: AvailabilityBootstrap) -> some View {
+        let grouped = BookingSheetPresentation.groupSlotsByPeriod(slots, timeZone: boot.timeZone)
+
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 6) {
+                ForEach(BookingSheetPresentation.DayPeriod.allCases, id: \.self) { item in
+                    periodButton(item, empty: (grouped[item] ?? []).isEmpty)
+                }
+            }
+
+            if let timeZoneLabel = timeZoneLabel(boot) {
+                Text("Times shown in \(timeZoneLabel)")
+                    .font(BrandFont.body(11)).foregroundStyle(BrandColor.textMuted)
+            }
+
+            if loadingSlots {
+                ProgressView().tint(BrandColor.accent)
+                    .frame(maxWidth: .infinity).padding(.vertical, 20)
+            } else if let slotError {
+                // A failed fetch is not an empty day — say so, and offer a retry.
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(slotError)
+                        .font(BrandFont.body(13)).foregroundStyle(BrandColor.ember)
+                    Button("Try again") { Task { await loadSlots(boot) } }
+                        .font(BrandFont.body(13, .semibold)).tint(BrandColor.accent)
+                }
+                .padding(.vertical, 8)
+            } else {
+                slotGrid(grouped[period] ?? [], boot: boot, dayIsEmpty: slots.isEmpty)
+            }
+        }
+    }
+
+    private func periodButton(
+        _ item: BookingSheetPresentation.DayPeriod,
+        empty: Bool
+    ) -> some View {
+        let active = item == period
+        return Button {
+            guard !empty, !active else { return }
+            period = item
+        } label: {
+            Text(item.label)
+                .font(BrandFont.mono(10)).tracking(1)
+                .textCase(.uppercase)
+                .foregroundStyle(active ? BrandColor.onAccent : BrandColor.textSecondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(active ? BrandColor.accent : BrandColor.bgSurface)
+                .clipShape(Capsule())
+                .overlay(
+                    Capsule().stroke(active ? Color.clear : BrandColor.textMuted.opacity(0.18), lineWidth: 1)
+                )
+                .opacity(empty ? 0.4 : 1)
+        }
+        .buttonStyle(.plain)
+        .disabled(empty)
+    }
+
+    @ViewBuilder
+    private func slotGrid(
+        _ visible: [String],
+        boot: AvailabilityBootstrap,
+        dayIsEmpty: Bool
+    ) -> some View {
+        if visible.isEmpty {
+            Text(dayIsEmpty ? "No available times for this day." : period.emptyCopy)
+                .font(BrandFont.body(13)).foregroundStyle(BrandColor.textMuted)
+                .padding(.vertical, 8)
+        } else {
+            // .adaptive keeps 3 columns on a phone-width container and adds columns
+            // on a wider one — iPad — instead of stretching 3 tiles across the extra
+            // width.
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 8)], spacing: 8) {
+                ForEach(visible, id: \.self) { slot in
+                    let isSelected = slot == selectedSlot
+                    Button { Task { await pickSlot(slot, boot: boot) } } label: {
+                        Text(slotLabel(slot, tz: boot.timeZone))
+                            .font(BrandFont.body(13, .semibold))
+                            .foregroundStyle(isSelected ? BrandColor.onAccent : BrandColor.textPrimary)
+                            .frame(maxWidth: .infinity).padding(.vertical, 10)
+                            .background(isSelected ? BrandColor.accent : BrandColor.bgSurface)
+                            .clipShape(Capsule())
+                            .overlay(
+                                Capsule().stroke(
+                                    isSelected ? Color.clear : BrandColor.textMuted.opacity(0.18),
+                                    lineWidth: 1
+                                )
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(holding || booking)
+                }
+            }
+            .opacity(holding ? 0.6 : 1)
+        }
+    }
+
+    // MARK: - Held recap
+
+    @ViewBuilder
+    private func heldRecap(_ boot: AvailabilityBootstrap) -> some View {
+        if holding {
+            BrandSurface {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Holding your time…")
+                        .font(BrandFont.body(13, .semibold)).foregroundStyle(BrandColor.textPrimary)
+                    Text("Please wait while we reserve this slot.")
+                        .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
+                }
+            }
+        } else if let hold, let holdExpiresAt {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Time held · \(Wire.dateTime(hold.scheduledFor, timeZone: boot.timeZone))")
+                    .font(BrandFont.body(13, .semibold)).foregroundStyle(BrandColor.textPrimary)
+
+                // A live countdown, so the client can see how long they have —
+                // TimelineView re-renders this text alone, once a second.
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    let remaining = Int(holdExpiresAt.timeIntervalSince(context.date).rounded(.down))
+                    if remaining > 0 {
+                        HStack(spacing: 4) {
+                            Text("Continue before")
+                                .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
+                            Text(BookingSheetPresentation.holdCountdownLabel(secondsRemaining: remaining))
+                                .font(BrandFont.mono(12))
+                                .foregroundStyle(
+                                    BookingSheetPresentation.holdIsUrgent(secondsRemaining: remaining)
+                                        ? BrandColor.ember : BrandColor.textPrimary
+                                )
+                                .monospacedDigit()
+                        }
+                    } else {
+                        Text("That hold expired. Pick a new time.")
+                            .font(BrandFont.body(12, .semibold)).foregroundStyle(BrandColor.ember)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(BrandColor.accent.opacity(0.10))
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(BrandColor.accent.opacity(0.35), lineWidth: 1)
+            )
+        }
+    }
+
+    // MARK: - CTA
+
+    private func stickyCTA(_ boot: AvailabilityBootstrap) -> some View {
+        VStack(spacing: 8) {
+            if let selectedSlot {
+                Text("Held: \(Wire.dateTime(selectedSlot, timeZone: boot.timeZone))")
+                    .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
+            }
+
+            Button { Task { await advance(boot) } } label: {
+                Group {
+                    if booking || holding {
+                        ProgressView().tint(BrandColor.onAccent)
+                    } else {
+                        Text(ctaLabel).font(BrandFont.body(16, .semibold))
+                    }
+                }
+                .frame(maxWidth: .infinity).padding(.vertical, 15)
+                .foregroundStyle(ctaDisabled ? BrandColor.textMuted : BrandColor.onAccent)
+                .background(ctaDisabled ? BrandColor.textMuted.opacity(0.18) : BrandColor.accent)
+                .clipShape(Capsule())
+            }
+            .disabled(ctaDisabled)
+
+            if hold == nil {
+                Text("No charge yet · The pro confirms first")
+                    .font(BrandFont.body(11)).foregroundStyle(BrandColor.textMuted)
+            }
+        }
+        .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 16)
+        .frame(maxWidth: .infinity)
+        .background(BrandColor.bgPrimary)
+        .overlay(alignment: .top) {
+            Rectangle().fill(BrandColor.textMuted.opacity(0.15)).frame(height: 1)
+        }
+    }
+
+    private var ctaLabel: String {
+        if hold == nil { return "Pick a time to continue" }
+        return isReschedule ? "Confirm new time" : "Continue to add-ons"
+    }
+
+    private var ctaDisabled: Bool {
+        hold == nil || holding || booking || addressRequiredButMissing
+    }
+
+    // MARK: - Add-ons step
+
+    @ViewBuilder
+    private var addOnsStep: some View {
+        if case let .ready(boot) = phase, let hold, let holdExpiresAt {
+            BookingAddOnsView(
+                context: BookingAddOnsContext(
+                    coverImageUrl: boot.cover?.imageUrl,
+                    lookName: boot.cover?.lookName,
+                    serviceName: boot.serviceName ?? offering.name,
+                    proName: proName,
+                    whenLabel: Wire.dateTime(hold.scheduledFor, timeZone: boot.timeZone)
+                ),
+                holdId: hold.id,
+                holdExpiresAt: holdExpiresAt,
+                offeringId: offering.id,
+                locationType: mode,
+                addOns: addOns,
+                cancellationPolicy: cancellationPolicy,
+                openingId: openingId,
+                onBooked: { booked, addOnMinutes in
+                    holdConsumed = true
+                    bookedAddOnMinutes = addOnMinutes
+                    session.signalRefresh() // surface the change in Appointments/Home
+                    phase = .success(
+                        scheduledFor: booked.scheduledFor,
+                        bookingId: booked.id,
+                        professionalId: booked.professionalId
+                    )
+                    path.removeAll()
+                }
+            )
+        } else {
+            // Only reachable if the hold went away under the push (expired and
+            // cleared). Say so rather than showing an add-ons screen that cannot
+            // book anything.
+            VStack(spacing: 12) {
+                Text("That hold is no longer available.")
+                    .font(BrandFont.body(15)).foregroundStyle(BrandColor.textSecondary)
+                Button("Pick another time") { path.removeAll() }
+                    .font(BrandFont.body(15, .semibold)).tint(BrandColor.accent)
+            }
+            .padding(40)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(BrandColor.bgPrimary.ignoresSafeArea())
+        }
     }
 
     // MARK: - Address picker (mobile)
@@ -376,69 +709,6 @@ struct BookingFlowView: View {
                     }
                 }
                 Spacer(minLength: 8)
-            }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(BrandColor.bgSurface)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(isSelected ? BrandColor.accent.opacity(0.6) : BrandColor.textMuted.opacity(0.18),
-                        lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func slotGrid(_ boot: AvailabilityBootstrap) -> some View {
-        // .adaptive keeps 3 columns on a phone-width container and adds columns
-        // on a wider one — iPad — instead of stretching 3 tiles across the extra
-        // width.
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 113), spacing: 10)], spacing: 10) {
-            ForEach(slots, id: \.self) { slot in
-                let isSelected = slot == selectedSlot
-                Button { selectedSlot = slot; bookError = nil } label: {
-                    Text(slotLabel(slot, tz: boot.timeZone))
-                        .font(BrandFont.body(14, .medium))
-                        .foregroundStyle(isSelected ? BrandColor.onAccent : BrandColor.textPrimary)
-                        .frame(maxWidth: .infinity).padding(.vertical, 10)
-                        .background(isSelected ? BrandColor.accent : BrandColor.bgSurface)
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .stroke(BrandColor.textMuted.opacity(isSelected ? 0 : 0.18), lineWidth: 1))
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
-    private func addOnRow(_ addOn: BookingAddOn) -> some View {
-        let isSelected = selectedAddOnIds.contains(addOn.id)
-        return Button {
-            if isSelected { selectedAddOnIds.remove(addOn.id) }
-            else { selectedAddOnIds.insert(addOn.id) }
-            bookError = nil
-            // The add-on changes how long the appointment runs, so the offered
-            // times are no longer the right ones — re-ask for the new window
-            // rather than letting the client pick a start that no longer fits.
-            if case let .ready(boot) = phase { Task { await loadSlots(boot) } }
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 20))
-                    .foregroundStyle(isSelected ? BrandColor.accent : BrandColor.textMuted.opacity(0.5))
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 6) {
-                        Text(addOn.title)
-                            .font(BrandFont.body(15, .medium)).foregroundStyle(BrandColor.textPrimary)
-                        if addOn.isRecommended {
-                            BrandPill(text: "Popular", tint: BrandColor.accent)
-                        }
-                    }
-                    Text("+\(addOn.minutes) min")
-                        .font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
-                }
-                Spacer(minLength: 8)
-                Text(priceLabel(addOn.price))
-                    .font(BrandFont.body(14, .semibold)).foregroundStyle(BrandColor.textSecondary)
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -531,14 +801,16 @@ struct BookingFlowView: View {
                 }
                 Spacer(minLength: 8)
                 VStack(alignment: .trailing, spacing: 2) {
-                    // ⚠️ Already a STARTING price ("From $250") — the pro sets the
-                    // final one. Never render a bare figure here.
-                    if let price = offering.priceFromLabel {
+                    // ⚠️ A STARTING price — the pro sets the final one. The wire
+                    // sends a bare "$250", so the word comes from here. This card
+                    // rendered the figure alone until 2026-08-14; the comment that
+                    // used to sit here claimed the server had already added it.
+                    if let price = StartingPrice.label(offering.priceFromLabel) {
                         Text(price)
                             .font(BrandFont.display(17, .bold))
                             .foregroundStyle(BrandColor.accent)
                     }
-                    Text("\(totalDuration) min")
+                    Text("\(bookedDuration) min")
                         .font(BrandFont.mono(11)).foregroundStyle(BrandColor.textMuted)
                 }
             }
@@ -547,7 +819,11 @@ struct BookingFlowView: View {
             Divider().overlay(BrandColor.textPrimary.opacity(0.1))
 
             VStack(spacing: 9) {
-                successSummaryRow("WHEN", Wire.dateTime(scheduledFor, timeZone: nil))
+                // ⚠️ The APPOINTMENT's zone, never the device's — see
+                // `appointmentTimeZone`.
+                successSummaryRow(
+                    "WHEN", Wire.dateTime(scheduledFor, timeZone: appointmentTimeZone)
+                )
                 if let place = successPlaceLabel {
                     // Tap the address to open it in Maps. `ClientAddress.mapsURL`
                     // is the same helper the saved-address list uses, and mirrors
@@ -607,22 +883,33 @@ struct BookingFlowView: View {
         return addresses.first { $0.id == selectedAddressId }
     }
 
-    /// "In salon" / "Mobile · <street address>" — whichever this booking is.
+    /// "In salon · <address>" / "Mobile · <street address>" — whichever this
+    /// booking is, and in BOTH cases the address itself, not just the mode.
     ///
-    /// Deliberately NOT `displayLine`: that prefers the saved LABEL ("Home"),
-    /// which is the right shorthand in a picker where the client is choosing
-    /// between their own saved places, and the wrong thing on a confirmation,
-    /// which has to state where the pro is actually going. `detailLine` is the
-    /// street address whenever a label exists; `displayLine` is already the
-    /// address when it doesn't. Matches web, which reads the formatted address
-    /// out of the booking's client-address snapshot.
+    /// 🔴 Tori's rule: every address is a maps link, and a booking has two
+    /// possible addresses belonging to different people — an in-salon booking
+    /// goes to the PRO's location, a mobile one to the CLIENT's. This row said a
+    /// bare "In salon" for the salon case until 2026-08-14: a client who had
+    /// just booked could not see, let alone navigate to, where they were going.
+    ///
+    /// Deliberately NOT the client address's `displayLine`: that prefers the
+    /// saved LABEL ("Home"), which is the right shorthand in a picker where the
+    /// client is choosing between their own saved places, and the wrong thing on
+    /// a confirmation, which has to state where the pro is actually going. Same
+    /// reason the salon side prefers `addressLine` over the salon's NAME.
     private var successPlaceLabel: String? {
-        guard isMobile else { return "In salon" }
+        guard isMobile else {
+            guard let address = salonAddressLine else { return "In salon" }
+            return "In salon · \(address)"
+        }
         guard let address = successAddress else { return "Mobile" }
         return "Mobile · \(address.detailLine ?? address.displayLine)"
     }
 
-    private var successPlaceURL: URL? { successAddress?.mapsURL }
+    private var successPlaceURL: URL? {
+        if isMobile { return successAddress?.mapsURL }
+        return MapsLink.url(address: salonAddressLine)
+    }
 
     private var successNextSteps: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -677,8 +964,9 @@ struct BookingFlowView: View {
 
     // MARK: - Data
 
-    private func maxDate(_ boot: AvailabilityBootstrap) -> Date {
-        Calendar.current.date(byAdding: .day, value: 90, to: Date()) ?? Date()
+    private func close() {
+        releaseHoldInBackground()
+        dismiss()
     }
 
     private func loadBootstrap() async {
@@ -686,11 +974,10 @@ struct BookingFlowView: View {
         if mode.isEmpty { mode = initialMode }
         // Every reload means the PLACEMENT changed (mode, or the address it's
         // measured from), so the times on screen belong to the old one. Without
-        // this the form's `if slots.isEmpty` guard sees a full list and keeps it —
-        // e.g. salon's 15-minute grid rendered under Mobile, whose slots the hold
-        // would then refuse.
+        // this the grid keeps a full list — e.g. salon's 15-minute grid rendered
+        // under Mobile, whose slots the hold would then refuse.
         slots = []
-        selectedSlot = nil
+        await releaseCurrentHold()
         // MOBILE availability is computed against the CLIENT's address (the pro's
         // travel radius from it), so the address has to be resolved BEFORE the
         // request — without it the server refuses bootstrap AND day outright with
@@ -708,17 +995,30 @@ struct BookingFlowView: View {
                 offeringId: offering.id,
                 locationType: mode,
                 clientAddressId: isMobile ? selectedAddressId : nil,
+                mediaId: lookMediaId,
                 rescheduleBookingId: rescheduleBookingId
             )
             // Open on the preselected slot's day when the feed handed us one, else
             // the server's suggested first day.
             if let iso = preselectedSlot, let instant = Wire.date(iso) {
-                selectedDate = ymd(ymdString(instant, tz: boot.timeZone), tz: boot.timeZone) ?? selectedDate
-            } else if let first = boot.selectedDay?.date ?? boot.availableDays.first?.date,
-                      let d = ymd(first, tz: boot.timeZone) {
-                selectedDate = d
+                selectedYMD = ymdString(instant, tz: boot.timeZone)
+            } else {
+                selectedYMD = boot.selectedDay?.date ?? boot.availableDays.first?.date
             }
             phase = .ready(boot)
+            // Remembered for the success screen, which outlives `.ready(boot)`.
+            appointmentTimeZone = boot.timeZone
+            baseDurationState = boot.request.durationMinutes
+            salonAddressLine = boot.bookableLocation()?.addressLine
+
+            // bootstrap already carries the suggested day's slots — use them
+            // rather than asking for the same day again on first paint.
+            if let seeded = boot.selectedDay, seeded.date == selectedYMD {
+                applySlots(seeded.slots, boot: boot)
+                await applyPreselect(boot)
+            } else {
+                await loadSlots(boot)
+            }
             await loadAddOns()
         } catch let error as APIError {
             phase = .failed(error.userMessage)
@@ -728,8 +1028,9 @@ struct BookingFlowView: View {
     }
 
     /// Add-ons apply to new bookings only (a reschedule keeps the original ones).
-    /// Best-effort: a failure just hides the section, never blocks booking. The
-    /// same call carries the pro's cancellation-policy disclosure (M15).
+    /// Best-effort: a failure just means the second step has nothing to offer,
+    /// never a blocked booking. The same call carries the pro's
+    /// cancellation-policy disclosure (M15), which the add-ons step gates on.
     private func loadAddOns() async {
         guard !isReschedule else { return }
         let result = try? await session.client.booking.addOns(
@@ -769,26 +1070,22 @@ struct BookingFlowView: View {
     }
 
     private func loadSlots(_ boot: AvailabilityBootstrap) async {
+        guard let date = selectedYMD else { return }
         loadingSlots = true
         slotError = nil
-        // Keep the client's choice across an add-on toggle when it still fits;
-        // clear it when it doesn't, because that start is no longer bookable.
-        let previouslySelected = selectedSlot
-        selectedSlot = nil
-        let date = ymdString(selectedDate, tz: boot.timeZone)
         do {
             let day = try await session.client.booking.day(
                 professionalId: professionalId, serviceId: offering.serviceId,
                 offeringId: offering.id, locationId: boot.request.locationId,
                 date: date, locationType: mode,
                 clientAddressId: isMobile ? selectedAddressId : nil,
-                addOnIds: Array(selectedAddOnIds),
+                // Add-ons are chosen on the NEXT step, so this grid is sized for
+                // the base service — same as the web drawer, whose hold is then
+                // re-sized when an add-on is ticked.
+                addOnIds: [],
                 rescheduleBookingId: rescheduleBookingId
             )
-            slots = day.slots
-            if let previouslySelected, day.slots.contains(previouslySelected) {
-                selectedSlot = previouslySelected
-            }
+            applySlots(day.slots, boot: boot)
         } catch let error as APIError {
             slots = []
             slotError = error.userMessage
@@ -796,66 +1093,129 @@ struct BookingFlowView: View {
             slots = []
             slotError = "Couldn’t load open times. Check your connection and try again."
         }
-        // One-time: land on the freed-up slot if it's still bookable on this day.
-        if !didApplyPreselect {
-            if let pre = preselectedSlot, slots.contains(pre) { selectedSlot = pre }
-            didApplyPreselect = true
-        }
         loadingSlots = false
+        await applyPreselect(boot)
     }
 
-    private func requestToBook(_ boot: AvailabilityBootstrap) async {
-        guard let slot = selectedSlot, !booking else { return }
+    /// Adopt a day's slots and open on a daypart that actually has times in it.
+    private func applySlots(_ next: [String], boot: AvailabilityBootstrap) {
+        slots = next
+        let grouped = BookingSheetPresentation.groupSlotsByPeriod(next, timeZone: boot.timeZone)
+        period = BookingSheetPresentation.firstNonEmptyPeriod(grouped, preferred: period)
+    }
+
+    /// One-time: land on the freed-up slot the openings feed sent us to, if it is
+    /// still bookable on this day.
+    ///
+    /// This PLACES THE HOLD, because picking a time is what holding is on this
+    /// screen — the client arrived from a "this slot just opened" push, and a
+    /// slot that merely looked selected would be a lie about what is reserved.
+    /// It is given back on dismiss like any other, and only ever fires once.
+    private func applyPreselect(_ boot: AvailabilityBootstrap) async {
+        guard !didApplyPreselect else { return }
+        didApplyPreselect = true
+        guard let pre = preselectedSlot, slots.contains(pre) else { return }
+        await pickSlot(pre, boot: boot)
+    }
+
+    /// Reserve a slot. Any previous reservation is handed back first — the client
+    /// only ever holds one time.
+    private func pickSlot(_ slot: String, boot: AvailabilityBootstrap) async {
+        guard !holding, !booking else { return }
+        if slot == hold?.scheduledFor { return }
         if addressRequiredButMissing {
             bookError = "Add a service address for a mobile booking."
             return
         }
-        booking = true
+
         bookError = nil
+        holding = true
+        defer { holding = false }
+
+        await releaseCurrentHold()
+
         do {
-            // A reschedule commits the BOOKING's duration, not the offering's,
-            // and the two drift whenever a duration is edited — so the hold has
-            // to be sized from the booking or it reserves less than the move
-            // will take (B3). `selectedAddOnIds` is empty on this path (add-ons
-            // are not offered for a reschedule), which the server requires.
-            let hold = try await session.client.booking.createHold(
+            let created = try await session.client.booking.createHold(
                 offeringId: offering.id, locationId: boot.request.locationId,
                 scheduledFor: slot, locationType: mode,
                 clientAddressId: isMobile ? selectedAddressId : nil,
-                addOnIds: Array(selectedAddOnIds),
+                // Base-sized on purpose: the add-ons step re-sizes this hold as
+                // each one is ticked (B1-A), which is where a widened window can
+                // still be refused while the add-on can be un-ticked.
+                addOnIds: [],
                 rescheduleBookingId: rescheduleBookingId
             )
-            let scheduledFor: String
-            var finalizedBooking: FinalizedBooking?
-            if let rescheduleBookingId {
-                let result = try await session.client.booking.reschedule(
-                    bookingId: rescheduleBookingId, holdId: hold.id,
-                    locationType: mode
-                )
-                scheduledFor = result.scheduledFor
-            } else {
-                let result = try await session.client.booking.finalize(
-                    holdId: hold.id, offeringId: offering.id, locationType: mode,
-                    addOnIds: Array(selectedAddOnIds), openingId: openingId,
-                    cancellationPolicyAccepted: policyAccepted
-                )
-                scheduledFor = result.scheduledFor
-                finalizedBooking = result
-            }
+            hold = created
+            holdExpiresAt = Wire.date(created.expiresAt)
+            holdConsumed = false
+        } catch let error as APIError {
+            bookError = error.userMessage
+        } catch {
+            bookError = "Couldn’t hold that time. Try another slot."
+        }
+    }
+
+    /// The CTA: a reschedule commits here, a new booking moves to the add-ons step.
+    private func advance(_ boot: AvailabilityBootstrap) async {
+        guard let hold, !booking, !holding else { return }
+
+        if let holdExpiresAt, holdExpiresAt <= Date() {
+            bookError = "That hold expired. Pick a new time."
+            self.hold = nil
+            self.holdExpiresAt = nil
+            return
+        }
+
+        guard isReschedule else {
+            path.append(.addOns)
+            return
+        }
+
+        booking = true
+        bookError = nil
+        defer { booking = false }
+
+        do {
+            // A reschedule commits the BOOKING's duration, not the offering's,
+            // and the two drift whenever a duration is edited — the hold above
+            // was already sized from the booking for that reason (B3).
+            let result = try await session.client.booking.reschedule(
+                bookingId: rescheduleBookingId ?? "", holdId: hold.id,
+                locationType: mode
+            )
+            holdConsumed = true
             session.signalRefresh() // surface the change in Appointments/Home
             phase = .success(
-                scheduledFor: scheduledFor,
-                bookingId: finalizedBooking?.id,
-                professionalId: finalizedBooking?.professionalId
+                scheduledFor: result.scheduledFor, bookingId: nil, professionalId: nil
             )
         } catch let error as APIError {
             bookError = error.userMessage
         } catch {
-            bookError = isReschedule
-                ? "Couldn’t reschedule. Try again."
-                : "Couldn’t complete the booking. Try again."
+            bookError = "Couldn’t reschedule. Try again."
         }
-        booking = false
+    }
+
+    /// Hand the current reservation back and forget it. No-op once it has become
+    /// a booking — releasing then would be cancelling the appointment.
+    private func releaseCurrentHold() async {
+        guard let id = hold?.id, !holdConsumed else {
+            hold = nil
+            holdExpiresAt = nil
+            return
+        }
+        hold = nil
+        holdExpiresAt = nil
+        await session.client.booking.releaseHold(holdId: id)
+    }
+
+    /// Fire-and-forget release for teardown paths (dismiss / disappear), where
+    /// there is no longer a view to await on.
+    private func releaseHoldInBackground() {
+        guard let id = hold?.id, !holdConsumed else { return }
+        hold = nil
+        holdExpiresAt = nil
+        let bookingService = session.client.booking
+        Task { await bookingService.releaseHold(holdId: id) }
     }
 
     // MARK: - Formatting
@@ -864,32 +1224,41 @@ struct BookingFlowView: View {
         boot.timeZone.split(separator: "/").last.map { $0.replacingOccurrences(of: "_", with: " ") }
     }
 
-    /// Add-on prices arrive as a bare decimal string ("25.00"); render with a
-    /// currency symbol and drop a trailing ".00" to match the offering pills.
-    private func priceLabel(_ raw: String) -> String {
-        let trimmed = raw.hasSuffix(".00") ? String(raw.dropLast(3)) : raw
-        let hasSymbol = trimmed.first.map { !$0.isNumber } ?? false
-        return hasSymbol ? trimmed : "$\(trimmed)"
+    private func slotLabel(_ iso: String, tz: String) -> String {
+        Wire.timeOnly(iso, timeZone: tz)
     }
 
-    private func slotLabel(_ iso: String, tz: String) -> String {
-        guard let date = Wire.date(iso) else { return "" }
+    /// "MON" for a YYYY-MM-DD in the location's zone.
+    private func dayWeekday(_ ymd: String, tz: String) -> String {
+        guard let date = parseYMD(ymd, tz: tz) else { return "" }
+        return formatted(date, tz: tz, pattern: "EEE").uppercased()
+    }
+
+    /// "06" for a YYYY-MM-DD in the location's zone.
+    private func dayNumber(_ ymd: String, tz: String) -> String {
+        guard let date = parseYMD(ymd, tz: tz) else { return "" }
+        return formatted(date, tz: tz, pattern: "dd")
+    }
+
+    private func formatted(_ date: Date, tz: String, pattern: String) -> String {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US")
         f.timeZone = TimeZone(identifier: tz)
-        f.dateFormat = "h:mm a"
+        f.dateFormat = pattern
         return f.string(from: date)
     }
 
     private func ymdString(_ date: Date, tz: String) -> String {
         let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
         f.timeZone = TimeZone(identifier: tz)
         f.dateFormat = "yyyy-MM-dd"
         return f.string(from: date)
     }
 
-    private func ymd(_ string: String, tz: String) -> Date? {
+    private func parseYMD(_ string: String, tz: String) -> Date? {
         let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
         f.timeZone = TimeZone(identifier: tz)
         f.dateFormat = "yyyy-MM-dd"
         return f.date(from: string)

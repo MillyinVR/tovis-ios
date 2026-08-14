@@ -414,7 +414,8 @@ struct ProProfileTabView: View {
                         HStack {
                             Text(o.name).font(BrandFont.body(14, .semibold)).foregroundStyle(BrandColor.textPrimary)
                             Spacer()
-                            if let price = o.priceFromLabel {
+                            // ⚠️ Prices are STARTING prices — never a bare figure.
+                            if let price = StartingPrice.label(o.priceFromLabel) {
                                 Text(price).font(BrandFont.body(13)).foregroundStyle(BrandColor.textSecondary)
                             }
                         }

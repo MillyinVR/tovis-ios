@@ -14,6 +14,17 @@ struct LooksFeedResponse: Decodable, Sendable {
 
 public struct LooksFeedItem: Decodable, Sendable, Identifiable {
     public let id: String
+
+    /// The primary MediaAsset's id — NOT this look's (`id` above is the
+    /// LookPost). The booking flow threads it through as `mediaId`, which is
+    /// what resolves the sheet's COVER photo; without it the sheet opened on the
+    /// look you tapped and could not say which look that was.
+    ///
+    /// Optional so a server that predates the field still decodes — the sheet
+    /// then draws its cover-less header, which is the same thing it does for a
+    /// booking started from a pro's profile.
+    public let primaryMediaId: String?
+
     public let url: String
     public let thumbUrl: String?
     public let mediaType: String        // "IMAGE" | "VIDEO"
@@ -51,7 +62,7 @@ public struct LooksFeedItem: Decodable, Sendable, Identifiable {
     public var tags: [LooksTag] { tagsRaw ?? [] }
 
     private enum CodingKeys: String, CodingKey {
-        case id, url, thumbUrl, mediaType, caption, createdAt
+        case id, primaryMediaId, url, thumbUrl, mediaType, caption, createdAt
         case professional, clientAuthor
         case count = "_count"
         case viewerLiked, viewerSaved, viewerFollows

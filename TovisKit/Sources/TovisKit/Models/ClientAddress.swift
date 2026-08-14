@@ -54,24 +54,12 @@ public struct ClientAddress: Decodable, Sendable, Identifiable, Hashable {
     /// have them, else the formatted/typed address text. Mirrors the web card's
     /// `mapsHref`; nil when there's nothing to locate.
     public var mapsURL: URL? {
-        let query: String
-        if let lat, let lng {
-            query = "\(lat),\(lng)"
-        } else {
-            let text = formattedAddress
-                ?? [addressLine1, addressLine2, city, state, postalCode]
-                    .compactMap { $0 }
-                    .filter { !$0.isEmpty }
-                    .joined(separator: ", ")
-            guard !text.isEmpty else { return nil }
-            query = text
-        }
-        var components = URLComponents(string: "https://www.google.com/maps/search/")
-        components?.queryItems = [
-            URLQueryItem(name: "api", value: "1"),
-            URLQueryItem(name: "query", value: query),
-        ]
-        return components?.url
+        let text = formattedAddress
+            ?? [addressLine1, addressLine2, city, state, postalCode]
+                .compactMap { $0 }
+                .filter { !$0.isEmpty }
+                .joined(separator: ", ")
+        return MapsLink.url(address: text, lat: lat, lng: lng)
     }
 }
 

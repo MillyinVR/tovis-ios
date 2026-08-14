@@ -161,7 +161,8 @@ struct LooksView: View {
             BookingFlowView(
                 professionalId: launch.pro.id,
                 proName: launch.pro.displayName,
-                offering: launch.offering
+                offering: launch.offering,
+                lookMediaId: launch.lookMediaId
             )
         }
         // Wrapped in its own stack + Done button, like the deep-link look sheets
@@ -543,7 +544,9 @@ struct LooksView: View {
             fallbackToProfile()
             return
         }
-        bookLaunch = BookLaunch(pro: pro, offering: offering)
+        bookLaunch = BookLaunch(
+            pro: pro, offering: offering, lookMediaId: item.primaryMediaId
+        )
     }
 
     private func toggleLike(_ item: LooksFeedItem) async {
@@ -655,6 +658,8 @@ struct LooksView: View {
 private struct BookLaunch: Identifiable {
     let pro: LooksProfessional
     let offering: ProOffering
+    /// The look's primary media — the booking sheet's cover comes from it.
+    let lookMediaId: String?
     var id: String { pro.id }
 }
 

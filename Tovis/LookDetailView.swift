@@ -102,7 +102,8 @@ struct LookDetailView: View {
                 BookingFlowView(
                     professionalId: launch.professionalId,
                     proName: launch.proName,
-                    offering: launch.offering
+                    offering: launch.offering,
+                    lookMediaId: launch.lookMediaId
                 )
             }
             .navigationDestination(item: $proProfileFor) { id in
@@ -630,7 +631,8 @@ struct LookDetailView: View {
         bookLaunch = DetailBookLaunch(
             professionalId: look.professional.id,
             proName: look.professional.displayName,
-            offering: offering
+            offering: offering,
+            lookMediaId: look.primaryMedia.id
         )
     }
 }
@@ -648,5 +650,7 @@ private struct DetailBookLaunch: Identifiable {
     let professionalId: String
     let proName: String
     let offering: ProOffering
+    /// The look's primary media — the booking sheet's cover comes from it.
+    let lookMediaId: String?
     var id: String { professionalId + offering.id }
 }

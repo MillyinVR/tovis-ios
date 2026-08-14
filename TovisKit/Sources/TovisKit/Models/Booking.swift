@@ -13,6 +13,96 @@ public struct AvailabilityBootstrap: Decodable, Sendable {
     public let availableDays: [AvailabilityDaySummary]
     public let selectedDay: AvailabilitySelectedDay?
     public let offering: AvailabilityOffering?
+
+    /// The look this booking started from — the sheet's cover photo and the
+    /// add-ons step's context thumbnail. Null when the flow was entered from a
+    /// pro's profile rather than from a look, which the sheet renders as its
+    /// cover-less header rather than an empty photo well.
+    ///
+    /// Optional (not just nullable) because a server that predates web #889 omits
+    /// the key entirely — an absent cover must degrade to the plain header, never
+    /// to a decode failure that takes the whole booking flow down.
+    public let cover: AvailabilityCover?
+
+    /// Reassurance chips under the service line (`lib/booking/trustSignals.ts`).
+    /// Optional for the same reason as `cover`.
+    public let trust: AvailabilityTrust?
+
+    /// The pro this sheet is booking with. Only the bits the header renders —
+    /// the caller already carries the display name.
+    public let primaryPro: AvailabilityPrimaryPro?
+
+    /// The pro's bookable salon/suite options. Match on `request.locationId` to
+    /// find the one this booking is going to — an in-salon appointment's address
+    /// belongs to the pro's LOCATION, and without it a confirmation can only say
+    /// "In salon", which is a mode and not somewhere you can navigate to.
+    /// Empty for a mobile booking, whose address is the client's own.
+    public let locationOptions: [AvailabilityLocationOption]?
+
+    /// Where this booking is actually going, when the pro has a salon row for it.
+    public func bookableLocation() -> AvailabilityLocationOption? {
+        locationOptions?.first { $0.id == request.locationId }
+    }
+}
+
+/// One bookable salon/suite for the primary pro. Wire twin of
+/// `AvailabilityLocationOption`.
+public struct AvailabilityLocationOption: Decodable, Sendable, Identifiable {
+    public let id: String
+    public let name: String?
+    public let city: String?
+    public let state: String?
+    public let formattedAddress: String?
+
+    /// The full street address when the server has one, else whatever locates
+    /// this place — never the salon's NAME, which is a label and not an address.
+    public var addressLine: String? {
+        if let formatted = formattedAddress?.trimmedOrNil { return formatted }
+        let parts = [city?.trimmedOrNil, state?.trimmedOrNil].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: ", ")
+    }
+}
+
+/// Wire twin of `AvailabilityCover` (the drawer's `types.ts`).
+public struct AvailabilityCover: Decodable, Sendable {
+    public let imageUrl: String?
+    public let lookName: String?
+}
+
+/// Wire twin of `AvailabilityTrust`. Every field is nullable on purpose: a chip
+/// whose signal is unknown is not rendered, rather than rendered as a zero.
+public struct AvailabilityTrust: Decodable, Sendable {
+    public let verified: Bool
+    public let completedBookings: Int?
+    public let rating: AvailabilityTrustRating?
+    public let freeCancellationHours: Int?
+
+    public init(
+        verified: Bool,
+        completedBookings: Int? = nil,
+        rating: AvailabilityTrustRating? = nil,
+        freeCancellationHours: Int? = nil
+    ) {
+        self.verified = verified
+        self.completedBookings = completedBookings
+        self.rating = rating
+        self.freeCancellationHours = freeCancellationHours
+    }
+}
+
+public struct AvailabilityTrustRating: Decodable, Sendable {
+    public let average: Double
+    public let count: Int
+
+    public init(average: Double, count: Int) {
+        self.average = average
+        self.count = count
+    }
+}
+
+public struct AvailabilityPrimaryPro: Decodable, Sendable {
+    public let id: String
+    public let avatarUrl: String?
 }
 
 /// Echo of the resolved request — notably `locationId`, which bootstrap resolves
@@ -129,6 +219,28 @@ public struct BookingHold: Decodable, Sendable, Identifiable {
     /// excluding the location buffer. Optional so an older server that predates
     /// the field still decodes.
     public let durationMinutes: Int?
+}
+
+// MARK: - Hold re-sizing (PATCH /api/v1/holds/{id})
+
+struct UpdateHoldAddOnsRequest: Encodable, Sendable {
+    let addOnIds: [String]
+}
+
+struct UpdateHoldAddOnsResponse: Decodable, Sendable {
+    let hold: BookingHoldSizing
+}
+
+/// What the hold now RESERVES after a re-size. A narrower shape than
+/// `BookingHold` on purpose — the PATCH route answers with the sizing fields
+/// only (no `locationType`/`locationId`), because nothing about the placement
+/// can change once the hold exists.
+public struct BookingHoldSizing: Decodable, Sendable, Identifiable {
+    public let id: String
+    public let scheduledFor: String
+    public let expiresAt: String
+    public let durationMinutes: Int
+    public let endsAt: String
 }
 
 // MARK: - Finalize (POST /api/v1/bookings/finalize)

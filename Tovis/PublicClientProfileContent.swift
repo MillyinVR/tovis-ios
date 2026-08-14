@@ -389,79 +389,18 @@ struct PublicClientProfileContent: View {
                     NavigationLink {
                         PublicBoardView(handle: profile.handle, slug: board.slug)
                     } label: {
-                        boardCard(board)
+                        // No SHARED badge: this grid only ever lists SHARED
+                        // boards, so it would be true of every row.
+                        BoardStripCard(
+                            name: board.name,
+                            itemCount: board.itemCount,
+                            tileImageUrls: board.tileImageUrls
+                        )
                     }
                     .buttonStyle(.plain)
                 }
             }
         }
-    }
-
-    /// A board reads as one wide strip of its looks with the name sitting ON the
-    /// artwork — the treatment from `Tovis Boards Prep Aftercare.dc.html`, not
-    /// the 2×2 quadrant mosaic the profile frame sketched. The scrim runs
-    /// left-to-right so the label has a dark field while the right-hand looks
-    /// stay bright.
-    private func boardCard(_ board: ProClientPublicBoard) -> some View {
-        Color.clear
-            .aspectRatio(2.05, contentMode: .fit)
-            .frame(maxWidth: .infinity)
-            .background(BrandColor.bgSecondary)
-            .overlay {
-                // One column per look the board ACTUALLY has, capped at four. A
-                // fixed four-cell strip leaves dead cells on a two-look board,
-                // which reads as a broken image rather than as a small board.
-                HStack(spacing: 0) {
-                    ForEach(Array(board.tileImageUrls.prefix(4).enumerated()), id: \.offset) { _, url in
-                        boardTile(url)
-                    }
-                }
-            }
-            .clipped()
-            .overlay {
-                LinearGradient(
-                    stops: [
-                        .init(color: BrandColor.bgPrimary.opacity(0.9), location: 0.28),
-                        .init(color: BrandColor.bgPrimary.opacity(0.3), location: 0.7),
-                        .init(color: BrandColor.bgPrimary.opacity(0.1), location: 1),
-                    ],
-                    startPoint: .leading, endPoint: .trailing
-                )
-            }
-            .overlay(alignment: .bottomLeading) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(board.name)
-                        .font(BrandFont.display(17, .semibold))
-                        .foregroundStyle(BrandColor.textPrimary)
-                        .lineLimit(1)
-                    // No "SHARED" chip: this grid only ever lists SHARED boards,
-                    // so the badge would be true of every row.
-                    Text("\(board.itemCount) \(board.itemCount == 1 ? "LOOK" : "LOOKS")")
-                        .font(BrandFont.mono(10)).tracking(1)
-                        .foregroundStyle(BrandColor.textSecondary)
-                }
-                .padding(14)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(BrandColor.textMuted.opacity(0.15), lineWidth: 1)
-            )
-    }
-
-    private func boardTile(_ url: String) -> some View {
-        // Same shape as the look card's cover: the photo is an OVERLAY on a
-        // flexible cell, never a ZStack sibling. `.scaledToFill()` sizes its own
-        // layout, so as a sibling it drove the cell instead of filling it and the
-        // strip came out ragged.
-        BrandColor.bgPrimary
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .overlay {
-                if let parsed = URL(string: url) {
-                    AsyncImage(url: parsed) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
-                }
-            }
-            .clipped()
     }
 
     // MARK: - Follow

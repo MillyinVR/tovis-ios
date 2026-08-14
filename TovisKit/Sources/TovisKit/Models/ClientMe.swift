@@ -74,6 +74,15 @@ public struct ClientMeBoard: Decodable, Sendable, Identifiable {
     public let itemCount: Int
     public let items: [ClientMeBoardItem]
 
+    /// `PRIVATE` | `SHARED`. Without it a client could not tell their own
+    /// private boards from the ones anyone with the link can open — the same
+    /// gap web #889 closed on `/client/me`, which dropped the field when it
+    /// mapped a board to its card.
+    public let visibility: String
+
+    /// Whether anyone with the link can open this board.
+    public var isShared: Bool { visibility.uppercased() == "SHARED" }
+
     /// Up to 4 preview thumbnails — mirrors the web `buildBoardPreviewImageUrls`
     /// (prefer the thumb, else the full URL).
     public var previewImageUrls: [String] {
