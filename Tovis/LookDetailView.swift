@@ -17,6 +17,15 @@ struct LookDetailView: View {
     @Environment(SessionModel.self) private var session
 
     let lookId: String
+    /// Open the booking flow as soon as the look loads. This is what makes
+    /// "Recreate this look" on a public creator profile a booking action rather
+    /// than a relabelled tap onto the same screen the tile already opened — the
+    /// native twin of the web's `/looks/{id}?book=1`.
+    var autoStartBooking = false
+
+    /// One-shot latch: `load()` also runs on retry, and re-opening the booking
+    /// sheet after the visitor dismissed it would trap them on this screen.
+    @State private var didAutoStartBooking = false
 
     private enum Phase {
         case loading
@@ -541,6 +550,10 @@ struct LookDetailView: View {
             // Fire-and-forget, tagged DETAIL so it doesn't land in the §5.6
             // aggregate as a feed impression.
             Task { try? await session.client.looks.recordViews(lookIds: [look.id], source: .detail) }
+            if autoStartBooking && !didAutoStartBooking {
+                didAutoStartBooking = true
+                await startBooking(look)
+            }
             await hydrateFollow(professionalId: look.professional.id)
         } catch let error as APIError {
             phase = .failed(error.userMessage)
