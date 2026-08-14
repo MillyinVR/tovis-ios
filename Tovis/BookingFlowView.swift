@@ -1166,7 +1166,7 @@ struct BookingFlowView: View {
             return
         }
 
-        guard isReschedule else {
+        guard let rescheduleBookingId else {
             path.append(.addOns)
             return
         }
@@ -1180,7 +1180,7 @@ struct BookingFlowView: View {
             // and the two drift whenever a duration is edited — the hold above
             // was already sized from the booking for that reason (B3).
             let result = try await session.client.booking.reschedule(
-                bookingId: rescheduleBookingId ?? "", holdId: hold.id,
+                bookingId: rescheduleBookingId, holdId: hold.id,
                 locationType: mode
             )
             holdConsumed = true
