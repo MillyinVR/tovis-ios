@@ -549,7 +549,19 @@ struct BookingFlowView: View {
             VStack(spacing: 9) {
                 successSummaryRow("WHEN", Wire.dateTime(scheduledFor, timeZone: nil))
                 if let place = successPlaceLabel {
-                    successSummaryRow("WHERE", place)
+                    // Tap the address to open it in Maps. `ClientAddress.mapsURL`
+                    // is the same helper the saved-address list uses, and mirrors
+                    // the web page's `mapsHref`; nil when there's nothing to
+                    // locate (in-salon, or an address with no text or pin), in
+                    // which case the row stays plain text.
+                    if let url = successPlaceURL {
+                        Link(destination: url) {
+                            successSummaryRow("WHERE", place, isLink: true)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        successSummaryRow("WHERE", place)
+                    }
                 }
             }
             .padding(14)
@@ -562,7 +574,8 @@ struct BookingFlowView: View {
         )
     }
 
-    private func successSummaryRow(_ label: String, _ value: String) -> some View {
+    private func successSummaryRow(_ label: String, _ value: String,
+                                   isLink: Bool = false) -> some View {
         HStack(alignment: .top, spacing: 14) {
             Text(label)
                 .font(BrandFont.mono(10)).tracking(1.2)
@@ -570,22 +583,46 @@ struct BookingFlowView: View {
             Spacer(minLength: 8)
             Text(value)
                 .font(BrandFont.body(13, .semibold))
-                .foregroundStyle(BrandColor.textPrimary)
+                .foregroundStyle(isLink ? BrandColor.accent : BrandColor.textPrimary)
                 .multilineTextAlignment(.trailing)
                 .fixedSize(horizontal: false, vertical: true)
+            if isLink {
+                Image(systemName: "arrow.up.right.square")
+                    .font(.system(size: 12))
+                    .foregroundStyle(BrandColor.accent)
+                    .accessibilityHidden(true)
+            }
         }
+        // The whole row is the tap target, so it clears 44pt even when the
+        // address wraps to a single short line.
+        .contentShape(Rectangle())
+        .frame(minHeight: isLink ? 30 : 0)
     }
 
-    /// "In salon" / "Mobile · <address>" — whichever this booking actually is.
-    /// Uses `ClientAddress.displayLine`, the same one-liner the picker shows, so
-    /// the confirmation names the address exactly as the client chose it.
+    /// The service address this booking is going to, when it has one. Only a
+    /// MOBILE booking does — an in-salon booking's address belongs to the pro's
+    /// location, which this flow does not carry.
+    private var successAddress: ClientAddress? {
+        guard isMobile else { return nil }
+        return addresses.first { $0.id == selectedAddressId }
+    }
+
+    /// "In salon" / "Mobile · <street address>" — whichever this booking is.
+    ///
+    /// Deliberately NOT `displayLine`: that prefers the saved LABEL ("Home"),
+    /// which is the right shorthand in a picker where the client is choosing
+    /// between their own saved places, and the wrong thing on a confirmation,
+    /// which has to state where the pro is actually going. `detailLine` is the
+    /// street address whenever a label exists; `displayLine` is already the
+    /// address when it doesn't. Matches web, which reads the formatted address
+    /// out of the booking's client-address snapshot.
     private var successPlaceLabel: String? {
         guard isMobile else { return "In salon" }
-        guard let address = addresses.first(where: { $0.id == selectedAddressId }) else {
-            return "Mobile"
-        }
-        return "Mobile · \(address.displayLine)"
+        guard let address = successAddress else { return "Mobile" }
+        return "Mobile · \(address.detailLine ?? address.displayLine)"
     }
+
+    private var successPlaceURL: URL? { successAddress?.mapsURL }
 
     private var successNextSteps: some View {
         VStack(alignment: .leading, spacing: 12) {
