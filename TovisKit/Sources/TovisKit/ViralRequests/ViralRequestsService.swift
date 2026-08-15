@@ -18,9 +18,25 @@ import Foundation
 /// twice, so **the caller owns the debounce** (same shape as `reportComment`).
 public final class ViralRequestsService: Sendable {
     private let api: APIClient
+    /// Supabase project URL + publishable key — the same public creds every other
+    /// native uploader signs with. Nil disables attaching; submitting still works.
+    private let supabaseURL: URL?
+    private let supabaseKey: String?
+    /// Ephemeral (no cookie jar) so the RLS-critical signed PUT stays clean.
+    /// Injectable for tests — the PUT is the leg most worth asserting on, and a
+    /// session built in here can only ever reach the real network.
+    private let uploadSession: URLSession
 
-    public init(api: APIClient) {
+    public init(
+        api: APIClient,
+        uploadSession: URLSession? = nil,
+        supabaseURL: URL? = nil,
+        supabaseKey: String? = nil
+    ) {
         self.api = api
+        self.supabaseURL = supabaseURL
+        self.supabaseKey = supabaseKey
+        self.uploadSession = uploadSession ?? URLSession(configuration: .ephemeral)
     }
 
     /// POST /api/v1/viral-service-requests → the created request (201).
@@ -56,5 +72,84 @@ public final class ViralRequestsService: Sendable {
     public func submit(draft: ViralLookDraft) async throws -> ViralRequestSubmission? {
         guard let name = draft.trimmedName else { return nil }
         return try await submit(name: name, sourceUrl: draft.trimmedSourceUrl)
+    }
+
+    /// Sends the photo or video the submitter picked, in the only order the
+    /// server allows: **sign → PUT → record**.
+    ///
+    /// The signing route is keyed on the request id, so the file can only go up
+    /// after the request exists — which is why this is a second call rather than
+    /// a field on `submit`. The final PATCH is what actually puts the file in
+    /// front of a reviewer: bytes in the bucket that nothing points at are
+    /// invisible, which is exactly the state the route shipped in.
+    ///
+    /// 🔴 Attaching does NOT publish anything. The file is evidence in
+    /// `/admin/viral-requests`; only an admin promotes one to the picture a look
+    /// is shown by.
+    ///
+    /// Each call mints a fresh object name, so a retry after a failed PUT cannot
+    /// collide with a half-written object (the signed token is `upsert: false`).
+    /// The cost is an unreferenced object per failed attempt, which is cheaper
+    /// than a retry that can never succeed.
+    @discardableResult
+    public func attach(
+        requestId: String,
+        attachment: ViralLookAttachment
+    ) async throws -> ViralRequestSubmission {
+        guard supabaseURL != nil, supabaseKey != nil else {
+            throw APIError.transport("Storage configuration missing.")
+        }
+
+        let initPayload = try JSONEncoder.canonical.encode(
+            ViralRequestUploadInitRequest(
+                requestId: requestId,
+                fileName: Self.uploadFileName(fileExtension: attachment.fileExtension),
+                contentType: attachment.contentType,
+                size: attachment.data.count))
+
+        let target: ViralRequestUploadInit = try await api.request(
+            "/viral-service-requests/upload",
+            method: .post,
+            body: initPayload)
+
+        try await SupabaseSignedUpload.put(
+            session: uploadSession,
+            supabaseURL: supabaseURL,
+            supabaseKey: supabaseKey,
+            data: attachment.data,
+            bucket: target.bucket,
+            path: target.path,
+            token: target.token,
+            contentType: attachment.contentType,
+            // Must match what the route signed with, or storage refuses the PUT.
+            upsert: false)
+
+        let attachPayload = try JSONEncoder.canonical.encode(
+            ViralRequestAttachMediaRequest(mediaUrl: target.publicUrl))
+
+        let response: ViralRequestCreateResponse = try await api.request(
+            "/viral-service-requests/\(requestId)",
+            method: .patch,
+            body: attachPayload)
+
+        return response.request
+    }
+
+    /// The object name each attach mints: `attachment-<8 hex>.<ext>`.
+    ///
+    /// The server sanitizes it again (lowercased, directories stripped), so this
+    /// only has to be unique and extension-bearing — the extension is what makes
+    /// the admin queue draw a video as a player rather than a broken image.
+    static func uploadFileName(
+        fileExtension: String,
+        nonce: String = UUID().uuidString
+    ) -> String {
+        let ext = fileExtension.lowercased().filter { $0.isLetter || $0.isNumber }
+        let stem = nonce
+            .replacingOccurrences(of: "-", with: "")
+            .prefix(8)
+            .lowercased()
+
+        return ext.isEmpty ? "attachment-\(stem)" : "attachment-\(stem).\(ext)"
     }
 }

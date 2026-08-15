@@ -212,7 +212,11 @@ public final class TovisClient: Sendable {
             supabaseKey: config.supabaseAnonKey
         )
         self.referrals = ReferralsService(api: api)
-        self.viralRequests = ViralRequestsService(api: api)
+        self.viralRequests = ViralRequestsService(
+            api: api,
+            supabaseURL: config.supabaseURL,
+            supabaseKey: config.supabaseAnonKey
+        )
         self.presence = PresenceService(api: api)
         self.paymentMethods = PaymentMethodsService(api: api)
         self.publicClient = PublicClientService(api: api)

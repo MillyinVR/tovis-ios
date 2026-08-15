@@ -28,6 +28,65 @@ struct ViralRequestCreateResponse: Decodable, Sendable {
     let request: ViralRequestSubmission
 }
 
+/// A photo or video the submitter picked to send with their look.
+///
+/// Lives in TovisKit, not the view, so `swift test` can reach the cap and the
+/// content-type rules — the same reason `ViralLookDraft` does.
+public struct ViralLookAttachment: Sendable, Equatable {
+    /// The signing route's own cap (`UPLOAD_MAX_BYTES`, 30MB). Checked at pick
+    /// time so the person learns before the upload, not after a 400.
+    public static let maxBytes = 30 * 1024 * 1024
+    public static let maxLabel = "30MB"
+
+    public let data: Data
+    /// Sent as-is and validated server-side: `image/*` or `video/*` only.
+    public let contentType: String
+    /// Extension for the stored object's name. The server sanitizes it again.
+    public let fileExtension: String
+
+    public init(data: Data, contentType: String, fileExtension: String) {
+        self.data = data
+        self.contentType = contentType
+        self.fileExtension = fileExtension
+    }
+
+    public var isVideo: Bool { contentType.hasPrefix("video/") }
+    public var isOverCap: Bool { data.count > Self.maxBytes }
+}
+
+/// `POST /api/v1/viral-service-requests/upload` → where to PUT the submitter's
+/// file.
+///
+/// Its own type rather than `MediaUploadInit`/`PublicUploadInit`: this route mints
+/// no UploadSession, and `publicUrl` is REQUIRED here — it is the value the attach
+/// PATCH persists, so a response without one must fail to decode rather than
+/// quietly upload bytes nothing will ever point at.
+struct ViralRequestUploadInit: Decodable, Sendable {
+    let bucket: String
+    let path: String
+    let token: String
+    let publicUrl: String
+}
+
+/// The upload-signing payload. `size` lets the server refuse an over-cap file
+/// before any bytes move.
+struct ViralRequestUploadInitRequest: Encodable, Sendable {
+    let requestId: String
+    let fileName: String
+    let contentType: String
+    let size: Int
+}
+
+/// `PATCH /api/v1/viral-service-requests/{id}` — records an upload on the
+/// submitter's own request.
+///
+/// 🔴 This is EVIDENCE for the review queue, not a published picture: only an
+/// admin sets the cover a look is shown by. The server accepts nothing but a URL
+/// it minted for this very request.
+struct ViralRequestAttachMediaRequest: Encodable, Sendable {
+    let mediaUrl: String
+}
+
 /// The create payload. `sourceUrl` is optional and, when nil, is OMITTED from the
 /// body rather than sent as `null` or `""` — the same shape the web form puts on
 /// the wire (`sourceUrl: trimmedSourceUrl || undefined`). Swift's synthesized
