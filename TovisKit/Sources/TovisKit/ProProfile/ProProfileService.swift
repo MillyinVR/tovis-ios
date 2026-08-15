@@ -40,6 +40,34 @@ public final class ProProfileService: Sendable {
         try await api.requestVoid("/pro/reviews/\(reviewId)/reply", method: .delete)
     }
 
+    /// GET /api/v1/pro/portfolio — the pro's ONE media library, whose top zone
+    /// IS the public portfolio.
+    ///
+    /// The route shares `buildProPortfolioModel` with the web RSC page, so the
+    /// zones, counts and consent holds here are the same values a browser shows
+    /// — that shared builder is the anti-drift rule, and this screen is why it
+    /// exists (native used to render an entirely different "My media" model
+    /// against `/pro/media`).
+    ///
+    /// `filter` mirrors the web chips (`PUBLIC` / `PRIVATE` / `WAITING` /
+    /// `VIDEO`) plus the two zone keys `UPLOADS` / `SESSIONS`, which are where a
+    /// group's "Show N more" points; `query` searches captions and client names.
+    public func portfolio(filter: String? = nil, query: String? = nil) async throws -> ProLibraryPageModel {
+        var items: [URLQueryItem] = []
+        if let filter, !filter.isEmpty { items.append(URLQueryItem(name: "filter", value: filter)) }
+        if let query, !query.isEmpty { items.append(URLQueryItem(name: "q", value: query)) }
+
+        var path = "/pro/portfolio"
+        if !items.isEmpty {
+            var components = URLComponents()
+            components.queryItems = items
+            if let suffix = components.percentEncodedQuery { path += "?\(suffix)" }
+        }
+
+        let response: ProLibraryResponse = try await api.request(path)
+        return response.portfolio
+    }
+
     /// POST / DELETE /api/v1/pro/media/{id}/portfolio — feature (POST) or
     /// un-feature (DELETE) `mediaId` (the "after" asset) in the pro's public
     /// portfolio. Mirrors the web `MediaPortfolioToggle` on `/pro/reviews`, which

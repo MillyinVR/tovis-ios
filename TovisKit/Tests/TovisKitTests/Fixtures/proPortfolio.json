@@ -1,0 +1,379 @@
+{
+    "ok": true,
+    "portfolio": {
+        "brandDisplayName": "TOVIS",
+        "routes": {
+            "portfolio": "/pro/portfolio",
+            "uploadNew": "/pro/media/new",
+            "proHome": "/pro"
+        },
+        "title": "Portfolio",
+        "subtitle": "5 public \u00b7 19 only you.",
+        "counts": {
+            "total": 24,
+            "publicCount": 5,
+            "privateCount": 19,
+            "heldCount": 8
+        },
+        "filters": [
+            {
+                "key": "ALL",
+                "label": "All",
+                "count": 24,
+                "active": true
+            },
+            {
+                "key": "PUBLIC",
+                "label": "Public",
+                "count": 5,
+                "active": false
+            },
+            {
+                "key": "PRIVATE",
+                "label": "Only you",
+                "count": 19,
+                "active": false
+            },
+            {
+                "key": "WAITING",
+                "label": "Waiting",
+                "count": 8,
+                "active": false
+            }
+        ],
+        "showSearch": false,
+        "activeFilter": "ALL",
+        "searchQuery": null,
+        "publicTiles": [
+            {
+                "id": "demoseed-media-pro-lived-in",
+                "src": "http://localhost:3000/seed-demo/lived-in-blonde.jpg",
+                "caption": "Lived-in blonde, six weeks after the first pass.",
+                "isVideo": false,
+                "mediaType": "IMAGE",
+                "serviceIds": [
+                    "cmstbr5f1000xpo3g6yx47t7r"
+                ],
+                "before": null,
+                "mark": null,
+                "engagement": {
+                    "views": 0,
+                    "likes": 142,
+                    "saves": 0,
+                    "comments": 6,
+                    "shares": 0,
+                    "booked": 3
+                },
+                "hold": null,
+                "publishedAt": "2026-08-13T00:00:00.000Z"
+            },
+            {
+                "id": "demoseed-media-pro-colour-correction",
+                "src": "http://localhost:3000/seed-demo/cherry-cola-balayage.jpg",
+                "caption": "Two sessions from box black to this.",
+                "isVideo": false,
+                "mediaType": "IMAGE",
+                "serviceIds": [
+                    "cmstbr5f1000xpo3g6yx47t7r"
+                ],
+                "before": {
+                    "id": "demoseed-media-pro-colour-correction-before",
+                    "thumbUrl": "http://localhost:3000/seed-demo/cherry-cola-balayage.jpg",
+                    "fullUrl": "http://localhost:3000/seed-demo/cherry-cola-balayage.jpg"
+                },
+                "mark": null,
+                "engagement": {
+                    "views": 0,
+                    "likes": 331,
+                    "saves": 0,
+                    "comments": 41,
+                    "shares": 0,
+                    "booked": 5
+                },
+                "hold": null,
+                "publishedAt": "2026-08-13T03:00:00.000Z"
+            },
+            {
+                "id": "demoseed-media-pro-face-frame",
+                "src": "http://localhost:3000/seed-demo/money-piece-blonde.jpg",
+                "caption": "Soft money-piece around the face.",
+                "isVideo": false,
+                "mediaType": "IMAGE",
+                "serviceIds": [
+                    "cmstbr5fn0029po3gf19f2jgl"
+                ],
+                "before": null,
+                "mark": null,
+                "engagement": {
+                    "views": 0,
+                    "likes": 96,
+                    "saves": 0,
+                    "comments": 4,
+                    "shares": 0,
+                    "booked": 0
+                },
+                "hold": null,
+                "publishedAt": "2026-08-13T06:00:00.000Z"
+            },
+            {
+                "id": "demoseed-media-pro-copper-gloss",
+                "src": "http://localhost:3000/seed-demo/cherry-cola-balayage.jpg",
+                "caption": "Copper on a natural level 5 \u2014 no lift, all gloss.",
+                "isVideo": false,
+                "mediaType": "IMAGE",
+                "serviceIds": [
+                    "cmstbr5f1000xpo3g6yx47t7r"
+                ],
+                "before": null,
+                "mark": "COVER",
+                "engagement": {
+                    "views": 0,
+                    "likes": 168,
+                    "saves": 0,
+                    "comments": 9,
+                    "shares": 0,
+                    "booked": 7
+                },
+                "hold": null,
+                "publishedAt": "2026-08-13T09:00:00.000Z"
+            },
+            {
+                "id": "demoseed-media-pro-root-melt",
+                "src": "http://localhost:3000/seed-demo/lived-in-blonde.jpg",
+                "caption": "Grown-out root, hand-painted so she can go 4 months between visits.",
+                "isVideo": false,
+                "mediaType": "IMAGE",
+                "serviceIds": [
+                    "cmstbr5f1000xpo3g6yx47t7r"
+                ],
+                "before": {
+                    "id": "demoseed-media-pro-root-melt-before",
+                    "thumbUrl": "http://localhost:3000/seed-demo/lived-in-blonde.jpg",
+                    "fullUrl": "http://localhost:3000/seed-demo/lived-in-blonde.jpg"
+                },
+                "mark": "SIGNATURE",
+                "engagement": {
+                    "views": 0,
+                    "likes": 214,
+                    "saves": 0,
+                    "comments": 18,
+                    "shares": 0,
+                    "booked": 12
+                },
+                "hold": null,
+                "publishedAt": "2026-08-13T12:00:00.000Z"
+            }
+        ],
+        "lead": null,
+        "groups": [
+            {
+                "zone": "UPLOADS",
+                "title": "Your uploads",
+                "blurb": "Shot and posted by you. Yours to publish whenever.",
+                "count": 9,
+                "note": null,
+                "tiles": [
+                    {
+                        "id": "demoseed-media-pro-colour-correction-before",
+                        "src": "http://localhost:3000/seed-demo/cherry-cola-balayage.jpg",
+                        "caption": null,
+                        "isVideo": false,
+                        "mediaType": "IMAGE",
+                        "serviceIds": [],
+                        "before": null,
+                        "mark": null,
+                        "engagement": null,
+                        "hold": null,
+                        "publishedAt": null
+                    },
+                    {
+                        "id": "demoseed-media-pro-root-melt-before",
+                        "src": "http://localhost:3000/seed-demo/lived-in-blonde.jpg",
+                        "caption": null,
+                        "isVideo": false,
+                        "mediaType": "IMAGE",
+                        "serviceIds": [],
+                        "before": null,
+                        "mark": null,
+                        "engagement": null,
+                        "hold": null,
+                        "publishedAt": null
+                    },
+                    {
+                        "id": "demoseed-media-upload-balcony-gloss",
+                        "src": "http://localhost:3000/seed-demo/cherry-cola-balayage.jpg",
+                        "caption": "Gloss refresh in the window light.",
+                        "isVideo": false,
+                        "mediaType": "IMAGE",
+                        "serviceIds": [],
+                        "before": null,
+                        "mark": null,
+                        "engagement": null,
+                        "hold": null,
+                        "publishedAt": null
+                    },
+                    {
+                        "id": "demoseed-media-upload-root-shadow",
+                        "src": "http://localhost:3000/seed-demo/lived-in-blonde.jpg",
+                        "caption": "Root shadow melt, shot on the way out.",
+                        "isVideo": false,
+                        "mediaType": "IMAGE",
+                        "serviceIds": [],
+                        "before": null,
+                        "mark": null,
+                        "engagement": null,
+                        "hold": null,
+                        "publishedAt": null
+                    },
+                    {
+                        "id": "demoseed-media-upload-face-frame-two",
+                        "src": "http://localhost:3000/seed-demo/money-piece-blonde.jpg",
+                        "caption": "Face-frame variation I want to try again.",
+                        "isVideo": false,
+                        "mediaType": "IMAGE",
+                        "serviceIds": [],
+                        "before": null,
+                        "mark": null,
+                        "engagement": null,
+                        "hold": null,
+                        "publishedAt": null
+                    },
+                    {
+                        "id": "demoseed-media-upload-brow-detail",
+                        "src": "http://localhost:3000/seed-demo/brow-lamination.jpg",
+                        "caption": "Brow detail \u2014 good light, bad angle.",
+                        "isVideo": false,
+                        "mediaType": "IMAGE",
+                        "serviceIds": [],
+                        "before": null,
+                        "mark": null,
+                        "engagement": null,
+                        "hold": null,
+                        "publishedAt": null
+                    }
+                ],
+                "remaining": 3
+            },
+            {
+                "zone": "SESSIONS",
+                "title": "From sessions",
+                "blurb": "Taken at the chair. Private between you and your client until they allow it.",
+                "count": 10,
+                "note": "8 waiting",
+                "tiles": [
+                    {
+                        "id": "demoseed-media-own-after",
+                        "src": "http://localhost:3000/seed-demo/lived-in-blonde.jpg",
+                        "caption": null,
+                        "isVideo": false,
+                        "mediaType": "IMAGE",
+                        "serviceIds": [],
+                        "before": null,
+                        "mark": null,
+                        "engagement": null,
+                        "hold": {
+                            "clientFirstName": "Maya",
+                            "bookingId": "demoseed-booking-own-past",
+                            "canNudge": true,
+                            "nudgeBlock": null
+                        },
+                        "publishedAt": null
+                    },
+                    {
+                        "id": "demoseed-media-own-before",
+                        "src": "http://localhost:3000/seed-demo/money-piece-blonde.jpg",
+                        "caption": null,
+                        "isVideo": false,
+                        "mediaType": "IMAGE",
+                        "serviceIds": [],
+                        "before": null,
+                        "mark": null,
+                        "engagement": null,
+                        "hold": {
+                            "clientFirstName": "Maya",
+                            "bookingId": "demoseed-booking-own-past",
+                            "canNudge": true,
+                            "nudgeBlock": null
+                        },
+                        "publishedAt": null
+                    },
+                    {
+                        "id": "demoseed-media-held-priya",
+                        "src": "http://localhost:3000/seed-demo/lived-in-blonde.jpg",
+                        "caption": null,
+                        "isVideo": false,
+                        "mediaType": "IMAGE",
+                        "serviceIds": [],
+                        "before": null,
+                        "mark": null,
+                        "engagement": null,
+                        "hold": {
+                            "clientFirstName": "Priya",
+                            "bookingId": "demoseed-libbooking-priya",
+                            "canNudge": true,
+                            "nudgeBlock": null
+                        },
+                        "publishedAt": null
+                    },
+                    {
+                        "id": "demoseed-media-held-danielle",
+                        "src": "http://localhost:3000/seed-demo/cherry-cola-balayage.jpg",
+                        "caption": null,
+                        "isVideo": false,
+                        "mediaType": "IMAGE",
+                        "serviceIds": [],
+                        "before": null,
+                        "mark": null,
+                        "engagement": null,
+                        "hold": {
+                            "clientFirstName": "Danielle",
+                            "bookingId": "demoseed-libbooking-danielle",
+                            "canNudge": true,
+                            "nudgeBlock": null
+                        },
+                        "publishedAt": null
+                    },
+                    {
+                        "id": "demoseed-media-held-renee",
+                        "src": "http://localhost:3000/seed-demo/money-piece-blonde.jpg",
+                        "caption": null,
+                        "isVideo": false,
+                        "mediaType": "IMAGE",
+                        "serviceIds": [],
+                        "before": null,
+                        "mark": null,
+                        "engagement": null,
+                        "hold": {
+                            "clientFirstName": "Renee",
+                            "bookingId": "demoseed-libbooking-renee",
+                            "canNudge": true,
+                            "nudgeBlock": null
+                        },
+                        "publishedAt": null
+                    },
+                    {
+                        "id": "demoseed-media-held-yusuf",
+                        "src": "http://localhost:3000/seed-demo/lived-in-blonde.jpg",
+                        "caption": null,
+                        "isVideo": false,
+                        "mediaType": "IMAGE",
+                        "serviceIds": [],
+                        "before": null,
+                        "mark": null,
+                        "engagement": null,
+                        "hold": {
+                            "clientFirstName": "Yusuf",
+                            "bookingId": "demoseed-libbooking-yusuf",
+                            "canNudge": false,
+                            "nudgeBlock": "NO_CONTACT"
+                        },
+                        "publishedAt": null
+                    }
+                ],
+                "remaining": 4
+            }
+        ],
+        "isBlank": false,
+        "publicProfileHref": "/professionals/demoseed-pro-noor"
+    }
+}

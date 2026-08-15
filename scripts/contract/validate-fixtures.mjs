@@ -42,6 +42,12 @@ const CHECKS = [
   { file: 'availabilityBootstrap.json', def: 'AvailabilityBootstrapOk', pick: (d) => [d] },
   { file: 'availabilityDay.json', def: 'AvailabilityDayOk', pick: (d) => [d] },
   { file: 'proProfile.json', def: 'ProPublicProfileDto', pick: (d) => [d.professional] },
+  // The pro's own library (GET /api/v1/pro/portfolio). Captured from a running
+  // dev server rather than hand-written, so it models the CURRENT server: it
+  // carries both marks (Signature and Cover), a before/after pairing, both
+  // private zones, and a consent hold whose nudge is blocked for NO_CONTACT —
+  // the branch a hand-built fixture would never have thought to include.
+  { file: 'proPortfolio.json', def: 'ProPortfolioPageModel', pick: (d) => [d.portfolio] },
   {
     file: 'clientBookings.json',
     def: 'ClientBookingDTO',
