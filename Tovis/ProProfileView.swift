@@ -1,11 +1,27 @@
 // Public professional profile — loads GET /api/v1/professionals/{id} and renders
-// the same surface as the web profile page (app/professionals/[id]): a full-bleed
-// hero (avatar image + gradient, @handle, display name, verified/license badges,
-// subtext), a bio quote, a 4-up stats strip, a Book / Message CTA row, an
-// accepted-payments card, and Portfolio / Services / Reviews tabs. Pushed from any
-// pro name/avatar across the app.
+// the same surface as the web profile page (app/professionals/[id]). Pushed from
+// any pro name/avatar across the app.
+//
+// Screen 6 redesign — "a profile you scroll, not a listing you scan":
+//   - The header is a brand BAND, not a photograph. The old full-bleed hero
+//     stretched `avatarUrl` behind the identity block — the exact thing web's
+//     own code comment forbids — because iOS never decoded `coverUrl`. The band
+//     retires that hero, so on THIS surface the coverUrl gap stops mattering;
+//     the field still feeds share cards and search.
+//   - The 4-up stats strip is GONE. "Nothing — and that is the answer." Trust
+//     moves to the licence chip, the verified tick, the grid and the reviews.
+//   - Booking lives in exactly two quiet places: an outline action on the
+//     Signature post, and a slim bar between the end of the scroll and the
+//     footer. Nothing floats and nothing follows the scroll.
+//   - Urgency chips render on a BRAND-NEW pro only (Tori, 2026-08-15).
 import SwiftUI
 import TovisKit
+
+/// Identifies a pro profile opened from a tapped `/professionals/{id}` link.
+struct PublicProPresentation: Identifiable, Equatable {
+    let professionalId: String
+    var id: String { professionalId }
+}
 
 struct ProProfileView: View {
     @Environment(SessionModel.self) private var session
@@ -33,7 +49,13 @@ struct ProProfileView: View {
         }
     }
 
-    private let heroHeight: CGFloat = 360
+    /// The header band. Short by design — the first PHOTOGRAPH on the page
+    /// should be the pro's work, not their face stretched behind their name.
+    private let bandHeight: CGFloat = 132
+
+    /// How far the shell's tab bar reaches past the bottom safe area it reports.
+    /// See the `safeAreaInset` below for the measurement this comes from.
+    private let shellFooterShortfall: CGFloat = 32
 
     @State private var phase: Phase = .loading
     @State private var selectedTab: ProfileTab = .portfolio
@@ -94,6 +116,32 @@ struct ProProfileView: View {
         }
         .background(BrandColor.bgPrimary)
         .ignoresSafeArea(edges: .top)
+        // ⚠️ PINNED, which departs from the design frame's "nothing floats and
+        // nothing follows the scroll". Tori's call (2026-08-15): at 200 looks
+        // the grid is long enough that a bar only at the very end is a bar
+        // nobody finds. `safeAreaInset` rather than an overlay so the scroll's
+        // own content can still end above it instead of underneath.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if case let .loaded(profile) = phase {
+                VStack(spacing: 0) {
+                    bookBar(profile)
+                    // 🔴 The shell's tab bar paints ~114pt up from the screen
+                    // bottom, but hands a PUSHED screen only 83pt of bottom safe
+                    // area — so this bar laid out UNDER it and the CTA was
+                    // clipped. MEASURED on an iPhone 17 Pro rather than guessed:
+                    // screen 874, this container 62…791, safe-area bottom 83.
+                    // 791 − (874 − 114) = 31pt short, so 32 clears it.
+                    //
+                    // Padding the VIEWPORT (this inset), not the scrolled
+                    // content: padding inside the scroll would sit above the bar
+                    // and change nothing. And NOT `hidesShellFooter()` — the
+                    // other fix shape this repo has — because a client browsing
+                    // a profile still needs the nav to leave it (Tori,
+                    // 2026-08-15).
+                    Color.clear.frame(height: shellFooterShortfall)
+                }
+            }
+        }
         .toolbar(.hidden, for: .navigationBar)
         .overlay(alignment: .topLeading) {
             if !isLoaded {
@@ -123,134 +171,81 @@ struct ProProfileView: View {
     @ViewBuilder
     private func content(_ profile: ProProfile) -> some View {
         VStack(spacing: 0) {
-            heroImageBlock(profile)
+            headerBand(profile.header)
 
-            // Bio / stats / CTA — full-bleed blocks with hairline dividers, matching
-            // the web hero card's stacked sections.
-            if let bio = profile.header.bio, !bio.isEmpty {
-                hairline
-                bioQuote(bio)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 14)
-            }
-
-            hairline
-            statsStrip(profile.stats)
+            identityRail(profile)
                 .padding(.horizontal, 20)
-                .padding(.vertical, 14)
+                .padding(.top, 14)
 
-            hairline
-            ctaRow(profile)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 14)
-
-            if !profile.acceptedPayments.isEmpty {
-                acceptedPaymentsCard(profile.acceptedPayments)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 16)
-            }
-
-            hairline.padding(.top, 16)
             tabsBar()
                 .padding(.horizontal, 20)
-                .padding(.top, 12)
+                .padding(.top, 22)
             hairline
 
             tabContent(profile)
                 .padding(.horizontal, 16)
                 .padding(.top, 16)
-                .padding(.bottom, 44)
+                .padding(.bottom, 24)
         }
     }
 
-    // MARK: - Hero
+    // MARK: - Header band
 
-    private func heroImageBlock(_ profile: ProProfile) -> some View {
-        ZStack(alignment: .bottomLeading) {
-            heroBackground(profile.header.avatarUrl)
-                .frame(height: heroHeight)
-                .frame(maxWidth: .infinity)
-                .clipped()
-
+    /// No photograph sits behind the avatar on any profile now — the header is
+    /// always a section band carrying the brand mark and the handle in small
+    /// mono. That removes the no-cover state as a problem rather than solving
+    /// it, and keeps the first photograph on the page the Signature post.
+    private func headerBand(_ header: ProProfileHeader) -> some View {
+        ZStack {
             LinearGradient(
-                stops: [
-                    .init(color: BrandColor.bgPrimary.opacity(0.38), location: 0),
-                    .init(color: .clear, location: 0.32),
-                    .init(color: BrandColor.bgPrimary.opacity(0.98), location: 1.0),
+                colors: [
+                    BrandColor.accent.opacity(0.16),
+                    BrandColor.bgSecondary,
                 ],
-                startPoint: .top,
-                endPoint: .bottom
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
             )
 
-            heroBottomContent(profile.header, stats: profile.stats)
-                .padding(.horizontal, 20)
-                .padding(.bottom, 18)
+            VStack(spacing: 8) {
+                // The brand's primary lockup — the Eye plus the wordmark, the
+                // same thing web's `BrandWordmark` renders here. Plain text set
+                // in the display face is not the mark.
+                BrandWordmarkLockup(size: 22)
+                if let handle = header.displayHandle, !handle.isEmpty {
+                    Text(handle)
+                        .font(BrandFont.mono(10))
+                        .tracking(2)
+                        .textCase(.uppercase)
+                        .foregroundStyle(BrandColor.textMuted)
+                }
+            }
+            .padding(.top, 22)
         }
-        .frame(height: heroHeight)
+        .frame(height: bandHeight)
         .frame(maxWidth: .infinity)
         .clipped()
-        .overlay(alignment: .top) {
-            heroActions(profile.header)
-                .padding(.horizontal, 16)
+        .overlay(alignment: .topLeading) {
+            ghostCircleButton(system: "chevron.left") { dismiss() }
+                .padding(.leading, 16)
                 .padding(.top, 54)
         }
     }
 
-    @ViewBuilder
-    private func heroBackground(_ avatarUrl: String?) -> some View {
-        if let raw = avatarUrl, let url = URL(string: raw) {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case let .success(image):
-                    image.resizable().scaledToFill()
-                default:
-                    heroFallback
-                }
-            }
-        } else {
-            heroFallback
-        }
-    }
+    // MARK: - Identity rail
 
-    private var heroFallback: some View {
-        LinearGradient(
-            colors: [
-                BrandColor.accent.opacity(0.35),
-                BrandColor.bgSecondary,
-                BrandColor.iris.opacity(0.35),
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
+    private func identityRail(_ profile: ProProfile) -> some View {
+        let header = profile.header
 
-    private func heroActions(_ header: ProProfileHeader) -> some View {
-        HStack(spacing: 8) {
-            ghostCircleButton(system: "chevron.left") { dismiss() }
-            Spacer()
-            if let url = shareURL {
-                ShareLink(item: url) {
-                    ghostPillLabel(system: "square.and.arrow.up", text: "Share")
-                }
-                .buttonStyle(.plain)
-            }
-            favoriteButton
-        }
-    }
-
-    private func heroBottomContent(_ header: ProProfileHeader, stats: ProProfileStats) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if let handle = header.displayHandle, !handle.isEmpty {
-                Text(handle)
-                    .font(BrandFont.mono(10))
-                    .tracking(1.2)
-                    .textCase(.uppercase)
-                    .foregroundStyle(BrandColor.textMuted)
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .bottom) {
+                avatarCircle(header.avatarUrl, name: header.displayName)
+                Spacer(minLength: 12)
+                followPill
             }
 
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(header.displayName)
-                    .font(BrandFont.display(32, .semibold))
+                    .font(BrandFont.display(28, .semibold))
                     .italic()
                     .foregroundStyle(BrandColor.textPrimary)
                     .lineLimit(1)
@@ -258,22 +253,226 @@ struct ProProfileView: View {
                 if header.isPremium {
                     Image(systemName: "checkmark.seal.fill")
                         .font(.system(size: 15))
-                        .foregroundStyle(BrandColor.iris)
+                        .foregroundStyle(BrandColor.accent)
                         .accessibilityLabel("Verified professional")
                 }
             }
+            .padding(.top, 14)
 
-            if header.isLicenseVerified {
-                licenseBadge
+            Text(handleAndFollowers(header))
+                .font(BrandFont.mono(11))
+                .tracking(1)
+                .foregroundStyle(BrandColor.textMuted)
+                .padding(.top, 6)
+
+            Text(header.professionLabel)
+                .font(BrandFont.body(13))
+                .foregroundStyle(BrandColor.textSecondary)
+                .padding(.top, 6)
+
+            // Tori's standing rule: every location on either client opens the
+            // device's maps app. A public profile carries a display CITY, not a
+            // street address and no coordinates, so this searches by text.
+            if let location = header.location, !location.isEmpty {
+                locationLine(location)
+                    .padding(.top, 8)
             }
 
-            subtextRow(header, stats: stats)
+            chipRow(profile)
 
-            followRow
+            if let bio = header.bio, !bio.isEmpty {
+                Text(bio)
+                    .font(BrandFont.body(14))
+                    .foregroundStyle(BrandColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 14)
+            }
+
+            socialActionRow
+                .padding(.top, 16)
 
             socialChips(header)
+                .padding(.top, 10)
+
+            // Accepted payments moved UP, under the location: it answers a
+            // practical question at the moment someone is working out whether
+            // they can get to this pro. Handles stay hidden until checkout.
+            if !profile.acceptedPayments.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    hairline
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("ACCEPTS")
+                            .font(BrandFont.mono(9))
+                            .tracking(1.6)
+                            .foregroundStyle(BrandColor.textMuted)
+                        Text(profile.acceptedPayments.joined(separator: " · "))
+                            .font(BrandFont.body(12))
+                            .foregroundStyle(BrandColor.textMuted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(.top, 16)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func locationLine(_ location: String) -> some View {
+        let label = HStack(spacing: 6) {
+            Image(systemName: "mappin.and.ellipse")
+                .font(.system(size: 11))
+                .foregroundStyle(BrandColor.accent)
+            Text(location)
+                .font(BrandFont.body(13))
+                .foregroundStyle(BrandColor.textSecondary)
+        }
+
+        // MapsLink returns nil when there is nothing to locate; the line stays
+        // plain text then, rather than a link that goes nowhere.
+        if let url = MapsLink.url(address: location) {
+            Link(destination: url) { label.underline() }
+                .accessibilityLabel("\(location) — open in maps")
+        } else {
+            label
+        }
+    }
+
+    /// "@dana · 4,208 followers" — but the count only joins the line once there
+    /// IS one. "@dana · 0 followers" states an absence nobody asked about.
+    private func handleAndFollowers(_ header: ProProfileHeader) -> String {
+        let count = follow.followerCount
+        let handle = header.displayHandle.flatMap { $0.isEmpty ? nil : $0 }
+        let followers = count > 0
+            ? (count == 1 ? "1 follower" : "\(count) followers")
+            : nil
+        return [handle, followers].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    @ViewBuilder
+    private func avatarCircle(_ avatarUrl: String?, name: String) -> some View {
+        Group {
+            if let raw = avatarUrl, let url = URL(string: raw) {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case let .success(image):
+                        image.resizable().scaledToFill()
+                    default:
+                        avatarFallback(name)
+                    }
+                }
+            } else {
+                avatarFallback(name)
+            }
+        }
+        .frame(width: 80, height: 80)
+        .clipShape(Circle())
+        .overlay(Circle().stroke(BrandColor.bgPrimary, lineWidth: 3))
+        .offset(y: -34)
+        .padding(.bottom, -34)
+    }
+
+    private func avatarFallback(_ name: String) -> some View {
+        ZStack {
+            BrandColor.bgSecondary
+            Text(String(name.prefix(1)).uppercased())
+                .font(BrandFont.display(30, .semibold))
+                .foregroundStyle(BrandColor.textPrimary)
+        }
+    }
+
+    /// The licence / pending chips, plus the availability + "New to {brand}"
+    /// chips — the latter two ONLY on a brand-new pro. On an established pro
+    /// `signals.chips` is empty, which is the design and not a failed read.
+    @ViewBuilder
+    private func chipRow(_ profile: ProProfile) -> some View {
+        let chips = profile.signals.chips
+        if profile.header.isLicenseVerified || !chips.isEmpty {
+            FlowLayout(spacing: 6, lineSpacing: 6) {
+                if profile.header.isLicenseVerified {
+                    licenseBadge
+                }
+                ForEach(chips) { chip in
+                    signalChip(chip.label)
+                }
+            }
+            .padding(.top, 12)
+        }
+    }
+
+    private func signalChip(_ label: String) -> some View {
+        Text(label)
+            .font(BrandFont.mono(10))
+            .textCase(.uppercase)
+            .tracking(0.5)
+            .foregroundStyle(BrandColor.accent)
+            .padding(.vertical, 4)
+            .padding(.horizontal, 8)
+            .background(BrandColor.accent.opacity(0.12), in: Capsule())
+            .overlay(Capsule().stroke(BrandColor.accent.opacity(0.4), lineWidth: 1))
+    }
+
+    /// Message / Save / Share — the loud actions on this page are the SOCIAL
+    /// ones. Booking is deliberately absent here.
+    private var socialActionRow: some View {
+        HStack(spacing: 8) {
+            Button {
+                Task { await openMessageThread() }
+            } label: {
+                socialActionLabel(system: "bubble.left", text: "Message", busy: messageWorking)
+            }
+            .buttonStyle(.plain)
+            .disabled(messageWorking)
+
+            Button {
+                Task { await toggleFavorite() }
+            } label: {
+                socialActionLabel(
+                    system: isFavorited ? "heart.fill" : "heart",
+                    text: isFavorited ? "Saved" : "Save",
+                    tint: isFavorited ? BrandColor.ember : nil
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(favoriteWorking)
+
+            if let url = shareURL {
+                ShareLink(item: url) {
+                    socialActionLabel(system: "square.and.arrow.up", text: "Share")
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func socialActionLabel(
+        system: String,
+        text: String,
+        busy: Bool = false,
+        tint: Color? = nil
+    ) -> some View {
+        HStack(spacing: 6) {
+            if busy {
+                ProgressView().tint(BrandColor.textPrimary).scaleEffect(0.7)
+            } else {
+                Image(systemName: system)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(tint ?? BrandColor.textPrimary)
+            }
+            Text(text)
+                .font(BrandFont.body(13, .semibold))
+                .foregroundStyle(BrandColor.textPrimary)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 42)
+        .background(
+            BrandColor.bgSurface.opacity(0.6),
+            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(BrandColor.textMuted.opacity(0.2), lineWidth: 1)
+        )
     }
 
     /// Outbound social-presence chips — the web SocialLinkChips (PR #478).
@@ -318,170 +517,103 @@ struct ProProfileView: View {
             .font(BrandFont.mono(10))
             .textCase(.uppercase)
             .tracking(0.5)
-            .foregroundStyle(BrandColor.iris)
+            // Accent, not iris: the licence chip now sits in a ROW with the
+            // availability / "New to {brand}" chips, and two different hues for
+            // the same kind of small factual badge reads as two categories.
+            .foregroundStyle(BrandColor.accent)
             .padding(.vertical, 4)
             .padding(.horizontal, 8)
-            .background(BrandColor.iris.opacity(0.14), in: Capsule())
-            .overlay(Capsule().stroke(BrandColor.iris.opacity(0.4), lineWidth: 1))
+            .background(BrandColor.accent.opacity(0.12), in: Capsule())
+            .overlay(Capsule().stroke(BrandColor.accent.opacity(0.4), lineWidth: 1))
     }
 
-    private func subtextRow(_ header: ProProfileHeader, stats: ProProfileStats) -> some View {
-        var parts: [String] = [header.professionLabel]
-        if let location = header.location, !location.isEmpty { parts.append(location) }
-        if let rating = stats.averageRatingLabel { parts.append("★ \(rating)") }
-
-        return Text(parts.joined(separator: "   ·   "))
-            .font(BrandFont.body(12))
-            .foregroundStyle(BrandColor.textSecondary)
-            .lineLimit(2)
-    }
-
-    /// Follow pill + follower count — web ProfileHero parity (A3). Reuses the
-    /// same /pros/{id}/follow endpoint as the feed's FOLLOW pill.
-    private var followRow: some View {
-        HStack(spacing: 8) {
-            let isFollowing = follow.following
-            Button {
-                Task { await toggleFollow() }
-            } label: {
-                Text(isFollowing ? "FOLLOWING" : "FOLLOW")
-                    .font(BrandFont.mono(10))
-                    .tracking(1)
-                    .foregroundStyle(isFollowing ? .white.opacity(0.7) : .white)
-                    .padding(.vertical, 5).padding(.horizontal, 12)
-                    .background(
-                        isFollowing ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(BrandColor.accent.opacity(0.25)),
-                        in: Capsule()
-                    )
-                    .overlay(Capsule().stroke(isFollowing ? .white.opacity(0.35) : BrandColor.accent.opacity(0.6), lineWidth: 1))
-            }
-            .buttonStyle(.plain)
-            .disabled(follow.isWorking)
-            .accessibilityLabel(isFollowing ? "Unfollow" : "Follow")
-
-            if follow.followerCount > 0 {
-                Text(follow.followerCount == 1 ? "1 follower" : "\(follow.followerCount) followers")
-                    .font(BrandFont.mono(11))
-                    .foregroundStyle(.white.opacity(0.75))
-            }
-        }
-        .padding(.top, 2)
-    }
-
-    private var favoriteButton: some View {
-        Button {
-            Task { await toggleFavorite() }
+    /// Follow pill — the same /pros/{id}/follow endpoint as the feed's FOLLOW
+    /// pill. The follower COUNT moved onto the handle line beside the name, so
+    /// the pill itself is just the action.
+    private var followPill: some View {
+        let isFollowing = follow.following
+        return Button {
+            Task { await toggleFollow() }
         } label: {
-            Image(systemName: isFavorited ? "heart.fill" : "heart")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(isFavorited ? BrandColor.ember : .white)
-                .frame(width: 38, height: 38)
-                .background(BrandColor.bgPrimary.opacity(0.45), in: Circle())
-                .overlay(Circle().stroke(.white.opacity(0.14), lineWidth: 1))
+            Text(isFollowing ? "Following" : "Follow")
+                .font(BrandFont.display(13, .bold))
+                .foregroundStyle(isFollowing ? BrandColor.textPrimary : BrandColor.onAccent)
+                .padding(.vertical, 9).padding(.horizontal, 18)
+                .background(
+                    isFollowing ? AnyShapeStyle(Color.clear) : AnyShapeStyle(BrandColor.textPrimary),
+                    in: Capsule()
+                )
+                .overlay(Capsule().stroke(BrandColor.textMuted.opacity(0.35), lineWidth: 1))
         }
         .buttonStyle(.plain)
-        .disabled(favoriteWorking)
-        .accessibilityLabel(isFavorited ? "Saved" : "Save pro")
+        .disabled(follow.isWorking)
+        .accessibilityLabel(isFollowing ? "Unfollow" : "Follow")
     }
 
-    // MARK: - Bio / stats / CTA
+    // MARK: - Book bar
 
-    private func bioQuote(_ bio: String) -> some View {
-        Text("“\(bio)”")
-            .font(BrandFont.display(15, .regular))
-            .italic()
-            .foregroundStyle(BrandColor.textSecondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private func statsStrip(_ stats: ProProfileStats) -> some View {
-        HStack(spacing: 0) {
-            statCell("From", stats.priceFromLabel ?? "—")
-            statCell("Booked", stats.completedBookingsLabel)
-            statCell("Rating", stats.averageRatingLabel ?? "—")
-            statCell("Saved", stats.favoritesLabel)
-        }
-    }
-
-    private func statCell(_ label: String, _ value: String) -> some View {
-        VStack(spacing: 4) {
-            Text(value)
-                .font(BrandFont.display(19, .semibold))
-                .foregroundStyle(BrandColor.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-            Text(label)
-                .font(BrandFont.mono(10))
-                .textCase(.uppercase)
-                .tracking(0.5)
-                .foregroundStyle(BrandColor.textMuted)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private func ctaRow(_ profile: ProProfile) -> some View {
-        HStack(spacing: 8) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.15)) { selectedTab = .services }
-            } label: {
-                Text("Book now")
-                    .font(BrandFont.body(15, .semibold))
-                    .foregroundStyle(BrandColor.onAccent)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(BrandColor.accent, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    /// The slim bar between the end of the scroll and the footer. It does NOT
+    /// float and does NOT follow the scroll — reached after the work rather than
+    /// hovering over it, which is the whole point of putting booking here.
+    ///
+    /// 🔴 The CTA composes as "Book · From $85". `priceFromLabel` is a bare
+    /// "$85" on purpose: the word "From" is added at the render sites, never in
+    /// the money formatter, which also feeds this label and would then read
+    /// "From From $85".
+    private func bookBar(_ profile: ProProfile) -> some View {
+        let price = profile.stats.priceFromLabel
+        // 🔴 The CHEAPEST offering, not the first one. `stats.priceFromLabel` is
+        // the lowest price across every offering, so pairing it with whichever
+        // offering happens to come first names the wrong service at that price
+        // ("Balayage from $180" when Balayage is $250). Web picks by
+        // `priceFromNumber`; this must agree with it.
+        let cheapest = profile.offerings
+            .compactMap { offering -> (ProOffering, Double)? in
+                guard let value = offering.priceFromNumber else { return nil }
+                return (offering, value)
             }
-            .buttonStyle(.plain)
+            .min { $0.1 < $1.1 }?
+            .0
+        let servicesWord = profile.offerings.count == 1 ? "service" : "services"
+        let subline: String = {
+            guard let name = cheapest?.name, let price else {
+                return "See services and availability"
+            }
+            guard !profile.offerings.isEmpty else { return "\(name) from \(price)" }
+            return "\(name) from \(price) · \(profile.offerings.count) \(servicesWord)"
+        }()
 
-            Button {
-                Task { await openMessageThread() }
-            } label: {
-                HStack(spacing: 6) {
-                    if messageWorking {
-                        ProgressView().tint(BrandColor.textPrimary).scaleEffect(0.75)
-                    }
-                    Text("Message")
+        return VStack(spacing: 0) {
+            hairline
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(profile.signals.availabilityLine ?? "Book with this pro")
+                        .font(BrandFont.mono(9))
+                        .tracking(1.6)
+                        .textCase(.uppercase)
+                        .foregroundStyle(BrandColor.textMuted)
+                    Text(subline)
+                        .font(BrandFont.body(13))
+                        .foregroundStyle(BrandColor.textSecondary)
+                        .lineLimit(1)
                 }
-                .font(BrandFont.body(14, .semibold))
-                .foregroundStyle(BrandColor.textPrimary)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(BrandColor.bgSurface.opacity(0.6), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(BrandColor.textMuted.opacity(0.2), lineWidth: 1)
-                )
-            }
-            .buttonStyle(.plain)
-            .disabled(messageWorking)
-        }
-    }
-
-    private func acceptedPaymentsCard(_ methods: [String]) -> some View {
-        BrandSurface {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Accepted payments")
-                    .font(BrandFont.body(12, .heavy))
-                    .foregroundStyle(BrandColor.textPrimary)
-
-                FlowLayout(spacing: 8, lineSpacing: 8) {
-                    ForEach(methods, id: \.self) { method in
-                        Text(method)
-                            .font(BrandFont.body(12, .heavy))
-                            .foregroundStyle(BrandColor.textPrimary)
-                            .padding(.vertical, 6)
-                            .padding(.horizontal, 12)
-                            .background(BrandColor.bgSecondary, in: Capsule())
-                            .overlay(Capsule().stroke(BrandColor.textMuted.opacity(0.15), lineWidth: 1))
-                    }
+                Spacer(minLength: 8)
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) { selectedTab = .services }
+                } label: {
+                    Text(price.map { "Book · From \($0)" } ?? "Book")
+                        .font(BrandFont.display(14, .bold))
+                        .foregroundStyle(BrandColor.onAccent)
+                        .padding(.vertical, 11)
+                        .padding(.horizontal, 20)
+                        .background(BrandColor.accent, in: Capsule())
                 }
-
-                Text("Payment details are shared at checkout after you book.")
-                    .font(BrandFont.body(11))
-                    .foregroundStyle(BrandColor.textSecondary)
+                .buttonStyle(.plain)
             }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
         }
+        .background(BrandColor.bgSecondary)
     }
 
     // MARK: - Tabs
@@ -512,7 +644,7 @@ struct ProProfileView: View {
     private func tabContent(_ profile: ProProfile) -> some View {
         switch selectedTab {
         case .portfolio:
-            portfolioTab(profile.portfolioTiles)
+            portfolioTab(profile)
         case .services:
             servicesTab(profile)
         case .reviews:
@@ -523,34 +655,192 @@ struct ProProfileView: View {
     // MARK: - Portfolio
 
     @ViewBuilder
-    private func portfolioTab(_ tiles: [ProPortfolioTile]) -> some View {
-        if tiles.isEmpty {
-            emptyCard("No portfolio posts yet.")
-        } else {
-            LazyVGrid(
-                columns: MediaGridLayout.columns(count: 3, spacing: 2),
-                spacing: 2
-            ) {
-                ForEach(Array(tiles.enumerated()), id: \.element.id) { index, tile in
-                    portfolioTile(tile, isFirst: index == 0)
+    private func portfolioTab(_ profile: ProProfile) -> some View {
+        let tiles = profile.portfolioTiles
+
+        VStack(spacing: 14) {
+            // The pro's own chosen highlight leads. The server has already taken
+            // it OUT of `portfolioTiles`, so it never renders twice.
+            if let signature = profile.signature {
+                signatureCard(signature, proName: profile.header.displayName)
+            }
+
+            if tiles.isEmpty {
+                if profile.signature == nil {
+                    emptyCard("No portfolio posts yet.")
+                }
+            } else {
+                LazyVGrid(
+                    columns: MediaGridLayout.columns(count: 3, spacing: 2),
+                    spacing: 2
+                ) {
+                    ForEach(tiles) { tile in
+                        portfolioTile(tile)
+                    }
                 }
             }
         }
     }
 
+    // MARK: - Signature
+
+    /// 🔴 The label is "Signature", never "Spotlight" (that is
+    /// `LookPost.featuredAt`, a SUPER_ADMIN editorial pick) and never "Featured"
+    /// (four other meanings). The design mock says "Spotlight service" here;
+    /// this is the one place the build deliberately departs from it.
     @ViewBuilder
-    private func portfolioTile(_ tile: ProPortfolioTile, isFirst: Bool) -> some View {
+    private func signatureCard(_ signature: ProProfileSignature, proName: String) -> some View {
+        let tile = signature.tile
+
+        // Hand-rolled rather than `BrandSurface`, which hardcodes 14pt of
+        // padding — the media has to reach the card's edges.
+        VStack(alignment: .leading, spacing: 0) {
+                signatureMedia(tile)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .firstTextBaseline) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "sparkles").font(.system(size: 9))
+                            Text("SIGNATURE")
+                                .font(BrandFont.mono(9))
+                                .tracking(1.8)
+                        }
+                        .foregroundStyle(BrandColor.gold)
+
+                        Spacer(minLength: 8)
+
+                        if let priceLine = signature.priceLine {
+                            Text(priceLine)
+                                .font(BrandFont.mono(10))
+                                .foregroundStyle(BrandColor.textSecondary)
+                        }
+                    }
+
+                    if let caption = tile.caption, !caption.isEmpty {
+                        Text(caption)
+                            .font(BrandFont.body(14))
+                            .foregroundStyle(BrandColor.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    if !tile.serviceNames.isEmpty {
+                        FlowLayout(spacing: 6, lineSpacing: 6) {
+                            ForEach(tile.serviceNames, id: \.self) { name in
+                                Text(name)
+                                    .font(BrandFont.mono(10))
+                                    .foregroundStyle(BrandColor.accent)
+                                    .padding(.vertical, 4)
+                                    .padding(.horizontal, 10)
+                                    .overlay(
+                                        Capsule().stroke(BrandColor.accent.opacity(0.35), lineWidth: 1)
+                                    )
+                            }
+                        }
+                    }
+
+                    HStack(spacing: 14) {
+                        signatureCount(system: "heart.fill", value: tile.engagement.likeCount, tint: BrandColor.ember)
+                        signatureCount(system: "bubble.left.fill", value: tile.engagement.commentCount, tint: BrandColor.textMuted)
+
+                        Spacer(minLength: 8)
+
+                        if let lookId = signature.bookLookId {
+                            NavigationLink {
+                                LookDetailView(lookId: lookId, autoStartBooking: true)
+                            } label: {
+                                Text("Book this look")
+                                    .font(BrandFont.display(13, .semibold))
+                                    .foregroundStyle(BrandColor.accent)
+                                    .padding(.vertical, 10)
+                                    .padding(.horizontal, 15)
+                                    .overlay(Capsule().stroke(BrandColor.accent, lineWidth: 1))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    // Zero renders NOTHING — never "0 recreated this".
+                    if tile.engagement.recreatedCount > 0 {
+                        VStack(alignment: .leading, spacing: 10) {
+                            hairline
+                            HStack(spacing: 8) {
+                                Image(systemName: "arrow.triangle.2.circlepath")
+                                    .font(.system(size: 11, weight: .bold))
+                                Text("\(tile.engagement.recreatedCount) RECREATED THIS")
+                                    .font(BrandFont.mono(10))
+                                    .tracking(1.4)
+                            }
+                            .foregroundStyle(BrandColor.gold)
+                        }
+                    }
+                }
+                .padding(16)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(BrandColor.bgSurface)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(BrandColor.textMuted.opacity(0.12), lineWidth: 1)
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(proName) signature work")
+    }
+
+    /// Landscape, unlike the portrait grid tiles — the promoted post is the one
+    /// picture on the page that gets room to breathe.
+    private var signatureAspect: CGFloat { 4.0 / 3.0 }
+
+    /// Sized through `MediaGridCell` rather than a bare `.frame(height:)`:
+    /// `MediaGridImage` fill-crops with `scaledToFill`, whose LAYOUT width
+    /// inflates to the source's, and the cell is what keeps that overflow from
+    /// reaching the card's own geometry.
+    @ViewBuilder
+    private func signatureMedia(_ tile: ProPortfolioTile) -> some View {
         if let before = tile.before,
            let beforeStr = before.displayUrl,
            let beforeURL = URL(string: beforeStr),
            let afterURL = URL(string: tile.displayUrl) {
-            // Paired before/after → the interactive comparison slider fills the
-            // cell (parity with the web public portfolio grid). The slider owns
-            // the tap/drag, so there's no fullscreen button here.
-            MediaGridCompareCell(beforeURL: beforeURL, afterURL: afterURL, cornerRadius: 0)
+            MediaGridCompareCell(
+                beforeURL: beforeURL,
+                afterURL: afterURL,
+                aspectRatio: signatureAspect,
+                cornerRadius: 0,
+                // 🔴 STATIC. The block is the tallest thing on this scroll, and
+                // an interactive wipe owns every drag that starts on it — so an
+                // ordinary upward swipe on the biggest element on the page did
+                // nothing at all. The split still reads (BEFORE | AFTER); the
+                // draggable comparison lives on the look detail, which "Book
+                // this look" and a tap both reach.
+                interactive: false
+            )
         } else {
-            standardPortfolioTile(tile, isFirst: isFirst)
+            MediaGridCell(aspectRatio: signatureAspect, cornerRadius: 0) {
+                MediaGridImage(url: URL(string: tile.displayUrl), showsSpinner: false)
+            }
         }
+    }
+
+    private func signatureCount(system: String, value: Int, tint: Color) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: system).font(.system(size: 11)).foregroundStyle(tint)
+            Text("\(value)")
+                .font(BrandFont.mono(11))
+                .foregroundStyle(BrandColor.textMuted)
+        }
+    }
+
+    /// 🔴 Every grid tile is STATIC, paired or not — a paired one wears the
+    /// "B / A" flag and opens the look, where the comparison slider lives.
+    ///
+    /// It used to render the interactive slider inline, which cost three things
+    /// at once: the BEFORE and AFTER labels collided in a 130pt cell
+    /// ("BEFORAFTER"), the slider swallowed vertical drags so a whole grid row
+    /// could not be scrolled past, and — because the slider owns the gesture —
+    /// a paired tile was the one tile in the grid you could not TAP to open.
+    /// Web's grid made the same change; the frame's grid is flat tiles.
+    private func portfolioTile(_ tile: ProPortfolioTile) -> some View {
+        standardPortfolioTile(tile)
     }
 
     // §19f — a portfolio tile IS a look, so tapping it opens the look post
@@ -559,12 +849,12 @@ struct ProProfileView: View {
     // fallback for a legacy tile with no backing look, mirroring web's own
     // fallback to `/media/[id]`.
     @ViewBuilder
-    private func standardPortfolioTile(_ tile: ProPortfolioTile, isFirst: Bool) -> some View {
+    private func standardPortfolioTile(_ tile: ProPortfolioTile) -> some View {
         if let lookId = tile.lookId {
             NavigationLink {
                 LookDetailView(lookId: lookId)
             } label: {
-                portfolioTileFace(tile, isFirst: isFirst)
+                portfolioTileFace(tile)
             }
             .buttonStyle(.plain)
         } else {
@@ -580,16 +870,16 @@ struct ProProfileView: View {
                     )
                 )
             } label: {
-                portfolioTileFace(tile, isFirst: isFirst)
+                portfolioTileFace(tile)
             }
             .buttonStyle(.plain)
         }
     }
 
-    private func portfolioTileFace(_ tile: ProPortfolioTile, isFirst: Bool) -> some View {
+    private func portfolioTileFace(_ tile: ProPortfolioTile) -> some View {
         // `showsSpinner: false` keeps this grid — the one that was already
         // rendering correctly — pixel-identical to before the tile was shared.
-        PortfolioTileFace(tile: tile, cornerRadius: 0, chrome: .chips, isFirst: isFirst, showsSpinner: false)
+        PortfolioTileFace(tile: tile, cornerRadius: 0, chrome: .chips, showsSpinner: false)
     }
 
     // MARK: - Services

@@ -20,9 +20,6 @@ struct PortfolioTileFace: View {
     var cornerRadius: CGFloat = 12
     /// Badge set to draw over the media.
     var chrome: Chrome = .videoGlyph
-    /// Whether this is the grid's first tile — only the first one may wear the
-    /// "FEAT" chip, matching the web grid.
-    var isFirst: Bool = false
     /// See `MediaGridImage.showsSpinner` — the public profile's mosaic loads
     /// into a plain fill, the pro's spaced grid into a spinner.
     var showsSpinner: Bool = true
@@ -30,7 +27,8 @@ struct PortfolioTileFace: View {
     enum Chrome {
         /// A centred play glyph and nothing else (the pro's own portfolio tab).
         case videoGlyph
-        /// FEAT · VIDEO · SERVICE capsules (the public profile grid).
+        /// The public profile's feed grid: a scrim, the likes/comments counts,
+        /// and the B/A · video · recreate flags.
         case chips
     }
 
@@ -42,9 +40,10 @@ struct PortfolioTileFace: View {
             MediaGridImage(url: URL(string: tile.displayUrl), showsSpinner: showsSpinner)
         }
         .overlay { glyph }
-        .overlay(alignment: .topLeading) { featChip }
-        .overlay(alignment: .topTrailing) { videoChip }
-        .overlay(alignment: .bottomLeading) { serviceChip }
+        .overlay { scrim }
+        .overlay(alignment: .topLeading) { recreatedChip }
+        .overlay(alignment: .topTrailing) { kindChip }
+        .overlay(alignment: .bottom) { counts }
     }
 
     @ViewBuilder
@@ -56,25 +55,83 @@ struct PortfolioTileFace: View {
         }
     }
 
+    /// Top-and-bottom darkening so the counts stay legible on a bright photo.
+    /// This sits over a PHOTOGRAPH in both appearances, so it is fixed black and
+    /// the text on it is fixed white — a theme-following pair would go pale-on-pale
+    /// in light mode.
     @ViewBuilder
-    private var featChip: some View {
-        if case .chips = chrome, isFirst, tile.isFeaturedInPortfolio {
-            chip("★ FEAT", tint: BrandColor.iris).padding(6)
+    private var scrim: some View {
+        if case .chips = chrome {
+            LinearGradient(
+                stops: [
+                    .init(color: .black.opacity(0.20), location: 0),
+                    .init(color: .clear, location: 0.34),
+                    .init(color: .clear, location: 0.5),
+                    .init(color: .black.opacity(0.62), location: 1),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .allowsHitTesting(false)
+        }
+    }
+
+    // 🔴 There is no "★ FEAT" chip here any more. It was gated on
+    // `isFirst && tile.isFeaturedInPortfolio` — and that flag is true of EVERY
+    // tile the public grid renders, so it only ever meant "first in a
+    // newest-first list", dressed up as a curated pick. The pro's real, chosen
+    // highlight is `ProProfile.signature`, promoted above this grid.
+
+    /// "N recreated this", count only. Zero renders NOTHING — never a "0".
+    @ViewBuilder
+    private var recreatedChip: some View {
+        if case .chips = chrome, tile.engagement.recreatedCount > 0 {
+            HStack(spacing: 3) {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 8, weight: .bold))
+                Text("\(tile.engagement.recreatedCount)")
+                    .font(BrandFont.mono(9))
+            }
+            .foregroundStyle(BrandColor.gold)
+            .padding(.vertical, 3)
+            .padding(.horizontal, 6)
+            .background(.black.opacity(0.55), in: Capsule())
+            .padding(6)
+            .accessibilityLabel("\(tile.engagement.recreatedCount) recreated this")
         }
     }
 
     @ViewBuilder
-    private var videoChip: some View {
-        if case .chips = chrome, tile.isVideo {
-            chip("VIDEO", tint: .white).padding(6)
+    private var kindChip: some View {
+        if case .chips = chrome {
+            if tile.before != nil {
+                chip("B / A", tint: .white).padding(6)
+            } else if tile.isVideo {
+                chip("VIDEO", tint: .white).padding(6)
+            }
         }
     }
 
     @ViewBuilder
-    private var serviceChip: some View {
-        if case .chips = chrome, !tile.serviceIds.isEmpty {
-            chip("SERVICE", tint: .white).padding(6)
+    private var counts: some View {
+        if case .chips = chrome {
+            HStack(spacing: 9) {
+                countLabel(systemImage: "heart.fill", value: tile.engagement.likeCount)
+                countLabel(systemImage: "bubble.left.fill", value: tile.engagement.commentCount)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 7)
+            .padding(.bottom, 6)
         }
+    }
+
+    private func countLabel(systemImage: String, value: Int) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: systemImage).font(.system(size: 8))
+            Text("\(value)").font(BrandFont.mono(10))
+        }
+        .foregroundStyle(.white)
+        .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
     }
 
     private func chip(_ text: String, tint: Color) -> some View {

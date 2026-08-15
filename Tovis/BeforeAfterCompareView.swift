@@ -20,6 +20,16 @@ struct BeforeAfterCompareView: View {
     /// wipe owns every drag the instant a finger lands — parity with web's
     /// `passVerticalScroll` prop on BeforeAfterReveal.
     var passVerticalScroll: Bool = false
+    /// Whether the divider can be dragged.
+    ///
+    /// 🔴 `false` where the comparison sits INSIDE a scrolling page. An
+    /// interactive slider claims the drag the instant a finger lands — and
+    /// `passVerticalScroll` is not enough, because an exclusive DragGesture is
+    /// still RECOGNISED and the scroll view never sees the pan. A tall slider
+    /// then becomes a stretch of page you cannot scroll past. The static form
+    /// shows the same split (and is what the design frame draws); the draggable
+    /// one lives on the look detail, one tap away.
+    var interactive: Bool = true
 
     /// How much of the "before" is revealed from the left, 0…1.
     @State private var fraction: CGFloat = 0.5
@@ -40,11 +50,24 @@ struct BeforeAfterCompareView: View {
                 label("BEFORE", align: .leading).opacity(fraction > 0.12 ? 1 : 0)
                 label("AFTER", align: .trailing).opacity(fraction < 0.88 ? 1 : 0)
 
-                // Divider + grab handle.
-                divider.position(x: max(0, min(w, w * fraction)), y: geo.size.height / 2)
+                // Divider, plus the grab handle only when it can actually be
+                // grabbed — a handle on a static split invites a drag that does
+                // nothing.
+                divider
+                    .position(x: max(0, min(w, w * fraction)), y: geo.size.height / 2)
+                    .opacity(interactive ? 1 : 0)
+
+                if !interactive {
+                    Rectangle()
+                        .fill(.white)
+                        .frame(width: 2)
+                        .position(x: max(0, min(w, w * fraction)), y: geo.size.height / 2)
+                        .frame(height: geo.size.height)
+                }
             }
             .contentShape(Rectangle())
-            .gesture(dragGesture(width: w))
+            // Non-interactive mode attaches NO gesture at all — see `interactive`.
+            .gesture(interactive ? dragGesture(width: w) : nil)
         }
         .frame(height: fillContainer ? nil : height)
         .frame(maxWidth: fillContainer ? .infinity : nil,
@@ -98,3 +121,4 @@ struct BeforeAfterCompareView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: align == .leading ? .topLeading : .topTrailing)
     }
 }
+

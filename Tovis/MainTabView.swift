@@ -37,6 +37,7 @@ struct MainTabView: View {
     /// detail screen self-fetches, so nothing has to be resolved before routing.
     @State private var deepLinkLook: LookPresentation?
     @State private var deepLinkPublicClient: PublicClientPresentation?
+    @State private var deepLinkPublicPro: PublicProPresentation?
     /// The activity feed surfaced by a `/client/activity` push, presented over the
     /// shell. Mirrors HomeView's own notifications sheet.
     @State private var showActivity = false
@@ -160,6 +161,13 @@ struct MainTabView: View {
             NavigationStack { PublicClientViewerView(handle: profile.handle) }
                 .tint(BrandColor.accent)
         }
+        // Same treatment as the creator profile above: ProProfileView brings its
+        // own back-button band and hides the navigation bar, so it is presented
+        // bare rather than under a competing "Done".
+        .sheet(item: $deepLinkPublicPro) { pro in
+            NavigationStack { ProProfileView(professionalId: pro.professionalId) }
+                .tint(BrandColor.accent)
+        }
         // ClientActivityView brings its own NavigationStack + Done button (same as
         // HomeView's notifications sheet) — present it bare. This used to open
         // NotificationsView as a placeholder, so a /client/activity push landed on
@@ -229,6 +237,10 @@ struct MainTabView: View {
         case let .publicClient(handle):
             // A shared /u/{handle} link → the native creator profile.
             deepLinkPublicClient = PublicClientPresentation(handle: handle)
+        case let .publicPro(professionalId):
+            // A shared /professionals/{id} link → the native pro profile. This is
+            // the link the profile's own Share control emits.
+            deepLinkPublicPro = PublicProPresentation(professionalId: professionalId)
         case let .offers(accept):
             // The full priority-offers + waitlist-offers screen (countdown claim/
             // pass + pro-proposed-time confirm/decline). `accept` floats + highlights

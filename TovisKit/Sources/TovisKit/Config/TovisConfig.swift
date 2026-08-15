@@ -97,13 +97,46 @@ public struct TovisConfig: Sendable {
     public static let local = TovisConfig(
         // For physical-device testing, temporarily point this at the Mac's LAN
         // IP (`localhost` on-device = the phone itself) — but never commit
-        // that: the IP is machine/network-specific.
-        baseURL: URL(string: "http://localhost:3000/api/v1")!,
+        // that: the IP is machine/network-specific. Prefer the DEBUG launch
+        // override below, which needs no edit at all.
+        baseURL: localBaseURL,
         supabaseURL: supabaseProjectURL,
         supabaseAnonKey: supabasePublishableKey,
         googleClientID: googleIOSClientID,
         googleServerClientID: googleWebClientID
     )
+
+    private static let defaultLocalBaseURL = URL(string: "http://localhost:3000/api/v1")!
+
+    /// The Debug build's API root, overridable at launch by `TOVIS_DEBUG_API_BASE`:
+    ///
+    ///     SIMCTL_CHILD_TOVIS_DEBUG_API_BASE=http://localhost:3100/api/v1 \
+    ///       xcrun simctl launch <udid> app.tovis.Tovis
+    ///
+    /// Why it exists: several dev servers run side by side on this machine
+    /// (one per worktree), so :3000 is routinely another branch's. Without an
+    /// override the only way to point the simulator at YOUR server is to edit
+    /// this file — an edit that then has to be remembered and un-made, and the
+    /// screen goes unlooked-at when it isn't. Same DEBUG-launch-hook convention
+    /// as `TOVIS_DEBUG_TOKEN` / `TOVIS_DEBUG_OPEN_DEEP_LINK`.
+    ///
+    /// `#if DEBUG` twice over: the constant does not exist in a Release binary,
+    /// so a Release build can never be pointed anywhere by an environment
+    /// variable. Must include `/api/v1`, like every other `baseURL` here.
+    private static var localBaseURL: URL {
+        #if DEBUG
+            guard
+                let raw = ProcessInfo.processInfo.environment["TOVIS_DEBUG_API_BASE"]?
+                    .trimmingCharacters(in: .whitespacesAndNewlines),
+                !raw.isEmpty,
+                let url = URL(string: raw),
+                url.scheme == "http" || url.scheme == "https"
+            else { return defaultLocalBaseURL }
+            return url
+        #else
+            return defaultLocalBaseURL
+        #endif
+    }
 
     /// Production — the live backend at tovis.app. We target the canonical
     /// `www.` host directly: the apex `tovis.app` 307-redirects to

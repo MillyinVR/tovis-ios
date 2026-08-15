@@ -132,6 +132,11 @@ struct MediaGridCompareCell: View {
     let afterURL: URL
     var aspectRatio: CGFloat = MediaGridLayout.portraitAspect
     var cornerRadius: CGFloat = 12
+    /// Forwarded to `BeforeAfterCompareView`. Pass `false` whenever the cell
+    /// sits inside a SCROLLING page: an interactive wipe claims every drag the
+    /// instant a finger lands, so the cell becomes a stretch of page that cannot
+    /// be scrolled past.
+    var interactive: Bool = true
 
     var body: some View {
         MediaGridCell(aspectRatio: aspectRatio, cornerRadius: cornerRadius) {
@@ -140,7 +145,8 @@ struct MediaGridCompareCell: View {
                     beforeURL: beforeURL,
                     afterURL: afterURL,
                     height: geo.size.height,
-                    cornerRadius: 0
+                    cornerRadius: 0,
+                    interactive: interactive
                 )
                 .frame(width: geo.size.width, height: geo.size.height)
             }

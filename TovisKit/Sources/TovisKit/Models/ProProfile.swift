@@ -20,13 +20,18 @@ public struct ProProfile: Decodable, Sendable {
     public let offerings: [ProOffering]
     /// Handle-free payment method labels (e.g. "Cash", "Venmo"). Empty when unset.
     public let acceptedPayments: [String]
+    /// The pro's chosen Signature post, promoted above the grid. nil when unset
+    /// (the ordinary state) or on a backend that predates the field.
+    public let signature: ProProfileSignature?
     public let portfolioTiles: [ProPortfolioTile]
     public let reviews: [ProReview]
     public let isFavoritedByMe: Bool
+    /// Availability line for the book bar + the brand-new-pro chips.
+    public let signals: ProProfileSignals
 
     private enum CodingKeys: String, CodingKey {
         case professionalId, header, stats, offerings, acceptedPayments
-        case portfolioTiles, reviews, isFavoritedByMe
+        case signature, portfolioTiles, reviews, isFavoritedByMe, signals
     }
 
     public init(from decoder: Decoder) throws {
@@ -36,10 +41,67 @@ public struct ProProfile: Decodable, Sendable {
         stats = try c.decode(ProProfileStats.self, forKey: .stats)
         offerings = try c.decodeIfPresent([ProOffering].self, forKey: .offerings) ?? []
         acceptedPayments = try c.decodeIfPresent([String].self, forKey: .acceptedPayments) ?? []
+        signature = try c.decodeIfPresent(ProProfileSignature.self, forKey: .signature)
         portfolioTiles = try c.decodeIfPresent([ProPortfolioTile].self, forKey: .portfolioTiles) ?? []
         reviews = try c.decodeIfPresent([ProReview].self, forKey: .reviews) ?? []
         isFavoritedByMe = try c.decodeIfPresent(Bool.self, forKey: .isFavoritedByMe) ?? false
+        signals = try c.decodeIfPresent(ProProfileSignals.self, forKey: .signals)
+            ?? ProProfileSignals(chips: [], availabilityLine: nil)
     }
+}
+
+/// The pro's SIGNATURE post — one optional, pro-chosen piece of their own work,
+/// promoted out of the grid with the profile's only inline booking action.
+/// Mirrors `PublicProfileSignatureDto`.
+///
+/// 🔴 Never render this as "Spotlight" or "Featured". `LookPost.featuredAt` is a
+/// SUPER_ADMIN editorial pick and owns "Spotlight"; "Featured" already means
+/// four other things. This is the pro's own claim about their own work.
+public struct ProProfileSignature: Decodable, Sendable {
+    public let tile: ProPortfolioTile
+    /// Already composed as "Salon: From $250 · 180 min" — never a bare figure.
+    /// nil when the look carries no service the pro currently offers.
+    public let priceLine: String?
+    /// Web path that opens the look with its booking drawer already open
+    /// (`/looks/{id}?book=1`); the native twin drives `LookDetailView`.
+    public let bookHref: String?
+
+    /// The backing look id, parsed out of `bookHref`'s `/looks/{id}` shape so the
+    /// native "Book this look" opens the look sheet rather than a browser.
+    public var bookLookId: String? { tile.lookId }
+}
+
+/// Availability + "New to {brand}" for the profile. Mirrors `ProProfileSignalsDto`.
+///
+/// 🔴 `chips` is EMPTY for an established pro by design (Tori, 2026-08-15) — not
+/// because the read failed. On a page someone reaches because the work already
+/// interested them, urgency signals read as pressure; a brand-new pro keeps them
+/// because availability is the one real advantage they have.
+public struct ProProfileSignals: Decodable, Sendable {
+    public let chips: [ProProfileChip]
+    public let availabilityLine: String?
+
+    public init(chips: [ProProfileChip], availabilityLine: String?) {
+        self.chips = chips
+        self.availabilityLine = availabilityLine
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case chips, availabilityLine
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        chips = try c.decodeIfPresent([ProProfileChip].self, forKey: .chips) ?? []
+        availabilityLine = try c.decodeIfPresent(String.self, forKey: .availabilityLine)
+    }
+}
+
+public struct ProProfileChip: Decodable, Sendable, Identifiable {
+    public let kind: String
+    public let label: String
+
+    public var id: String { kind }
 }
 
 /// Whether a CLIENT may export/share this pro's media with the pro's handle
@@ -133,6 +195,9 @@ public struct ProOffering: Decodable, Sendable, Identifiable {
     public let imageUrl: String?
     public let pricingLines: [String]
     public let priceFromLabel: String?
+    /// The same figure as `priceFromLabel`, as a number — so a caller can pick
+    /// the CHEAPEST offering rather than string-comparing "$180" against "$90".
+    public let priceFromNumber: Double?
     public let durationMinutes: Int?
     public let offersInSalon: Bool
     public let offersMobile: Bool
@@ -141,7 +206,8 @@ public struct ProOffering: Decodable, Sendable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case id, serviceId, name, description, imageUrl, pricingLines
-        case priceFromLabel, durationMinutes, offersInSalon, offersMobile, isFavorited
+        case priceFromLabel, priceFromNumber, durationMinutes
+        case offersInSalon, offersMobile, isFavorited
     }
 
     public init(from decoder: Decoder) throws {
@@ -153,6 +219,7 @@ public struct ProOffering: Decodable, Sendable, Identifiable {
         imageUrl = try c.decodeIfPresent(String.self, forKey: .imageUrl)
         pricingLines = try c.decodeIfPresent([String].self, forKey: .pricingLines) ?? []
         priceFromLabel = try c.decodeIfPresent(String.self, forKey: .priceFromLabel)
+        priceFromNumber = try c.decodeIfPresent(Double.self, forKey: .priceFromNumber)
         durationMinutes = try c.decodeIfPresent(Int.self, forKey: .durationMinutes)
         offersInSalon = try c.decodeIfPresent(Bool.self, forKey: .offersInSalon) ?? false
         offersMobile = try c.decodeIfPresent(Bool.self, forKey: .offersMobile) ?? false
@@ -184,7 +251,11 @@ public struct ProPortfolioTile: Decodable, Sendable, Identifiable {
     public let src: String
     public let thumbUrl: String?
     public let isVideo: Bool
-    /// The first featured tile gets the "FEAT" chip, matching the web grid.
+    /// Whether the media is in the pro's portfolio. Note this is TRUE of every
+    /// tile the public grid renders — being in the portfolio is what puts it
+    /// there — so it can never distinguish one tile from another. It used to
+    /// gate a "★ FEAT" chip on the first tile; that badge was fiction and is
+    /// gone. The pro's real, chosen highlight is `ProProfile.signature`.
     public let isFeaturedInPortfolio: Bool
     /// Services tagged on this post — drives the "SERVICE" chip.
     public let serviceIds: [String]
@@ -194,13 +265,17 @@ public struct ProPortfolioTile: Decodable, Sendable, Identifiable {
     public let serviceNames: [String]
     /// Opt-in before/after pairing → render the comparison slider when present.
     public let before: PairedBeforeMedia?
+    /// Likes, comments and "N recreated this" for the backing look. Always
+    /// present (zeroed on an older backend); a ZERO renders as NOTHING, never as
+    /// a literal "0".
+    public let engagement: ProPortfolioTileEngagement
 
     /// The thumbnail to render (falls back to the full source).
     public var displayUrl: String { thumbUrl ?? src }
 
     private enum CodingKeys: String, CodingKey {
         case id, lookId, caption, src, thumbUrl, isVideo, isFeaturedInPortfolio
-        case serviceIds, serviceNames, before
+        case serviceIds, serviceNames, before, engagement
     }
 
     public init(from decoder: Decoder) throws {
@@ -215,6 +290,35 @@ public struct ProPortfolioTile: Decodable, Sendable, Identifiable {
         serviceIds = try c.decodeIfPresent([String].self, forKey: .serviceIds) ?? []
         serviceNames = try c.decodeIfPresent([String].self, forKey: .serviceNames) ?? []
         before = try c.decodeIfPresent(PairedBeforeMedia.self, forKey: .before)
+        engagement = try c.decodeIfPresent(ProPortfolioTileEngagement.self, forKey: .engagement)
+            ?? ProPortfolioTileEngagement(likeCount: 0, commentCount: 0, recreatedCount: 0)
+    }
+}
+
+/// A grid tile's engagement counts. Mirrors `PublicPortfolioTileEngagement`.
+public struct ProPortfolioTileEngagement: Decodable, Sendable, Equatable {
+    public let likeCount: Int
+    public let commentCount: Int
+    /// Non-cancelled bookings citing this look as their source. Zero renders
+    /// nothing at all — a tile advertising "0 recreated this" is worse than a
+    /// quiet one.
+    public let recreatedCount: Int
+
+    public init(likeCount: Int, commentCount: Int, recreatedCount: Int) {
+        self.likeCount = likeCount
+        self.commentCount = commentCount
+        self.recreatedCount = recreatedCount
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case likeCount, commentCount, recreatedCount
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        likeCount = try c.decodeIfPresent(Int.self, forKey: .likeCount) ?? 0
+        commentCount = try c.decodeIfPresent(Int.self, forKey: .commentCount) ?? 0
+        recreatedCount = try c.decodeIfPresent(Int.self, forKey: .recreatedCount) ?? 0
     }
 }
 
