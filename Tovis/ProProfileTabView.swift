@@ -486,6 +486,11 @@ struct ProProfileTabView: View {
 
             BrandSection(title: "Business") {
                 VStack(spacing: 10) {
+                    // The library the pro decides from — its top zone IS the
+                    // public portfolio. "My media" stays below it because it is
+                    // the ASSET editor (caption, service tags, cover, delete);
+                    // this one is about what is public.
+                    businessLink(icon: "square.grid.2x2", title: "Portfolio") { ProPortfolioView() }
                     businessLink(icon: "photo.on.rectangle", title: "My media") { ProMediaManagerView() }
                     businessLink(icon: "person.2.fill", title: "Clients") { ProClientsView() }
                     businessLink(icon: "person.crop.circle.badge.clock", title: "Waitlist") { ProWaitlistView() }

@@ -1715,6 +1715,51 @@ func fixture(_ name: String) throws -> Data {
         #expect(ticket.createdAt == "2026-07-16T18:51:19.769Z")
     }
 
+    // GET /api/v1/pro/portfolio — Fixtures/proPortfolio.json (schema-validated).
+    // The pro's own library, whose top zone IS the public portfolio.
+    @Test func decodesProPortfolio() throws {
+        let res = try JSONDecoder().decode(ProLibraryResponse.self, from: fixture("proPortfolio"))
+        let p = res.portfolio
+
+        // The public zone is the pro's OWN published work — not every look that
+        // happens to depict it. A client-authored LookPost carries the pro's
+        // `professionalId` too, and counting those made this number claim 54
+        // when her profile grid showed 6.
+        #expect(p.counts.publicCount == p.publicTiles.count)
+        #expect(p.subtitle == "5 public · 19 only you.")
+
+        // At most ONE mark per tile, and only where the pro DECIDED something.
+        #expect(p.publicTiles.contains { $0.mark == .cover })
+        #expect(p.publicTiles.contains { $0.mark == .signature })
+        // A pairing is INDICATED on the tile, so it has to decode.
+        #expect(p.publicTiles.contains { $0.before != nil })
+
+        // Both private zones, grouped by where the photo came from.
+        #expect(p.groups.map(\.zone) == [.uploads, .sessions])
+        let sessions = try #require(p.groups.first { $0.zone == .sessions })
+        // 🔴 A session zone is NOT the same set as "waiting": it also holds
+        // photos the client HAS released. Conflating them is what made
+        // "Show N more" point at a filter with a different count.
+        #expect(sessions.count > sessions.tiles.filter(\.isHeld).count)
+        #expect(sessions.note == "8 waiting")
+        // `remaining` is exact — it comes from a count(), not the capped page.
+        #expect(sessions.remaining == sessions.count - sessions.tiles.count)
+
+        // 🔴 The nudge gate is server-computed, because the write boundary
+        // refuses for more than one reason. This client has an aftercare but no
+        // email or phone, so the sheet must NOT offer the button.
+        let blocked = try #require(
+            p.groups.flatMap(\.tiles).compactMap(\.hold).first { $0.nudgeBlock == .noContact }
+        )
+        #expect(blocked.canNudge == false)
+        #expect(blocked.clientFirstName == "Yusuf")
+
+        // Every held tile names a DIFFERENT client where the fixture has one —
+        // identical names would hide a booking-to-tile mapping bug.
+        let names = Set(p.groups.flatMap(\.tiles).compactMap(\.hold).map(\.clientFirstName))
+        #expect(names.count > 1)
+    }
+
     // GET /api/v1/professionals/{id} — Fixtures/proProfile.json (schema-validated).
     @Test func decodesProProfile() throws {
         let res = try JSONDecoder().decode(ProProfileResponse.self, from: fixture("proProfile"))
