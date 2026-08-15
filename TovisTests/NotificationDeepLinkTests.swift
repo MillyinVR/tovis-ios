@@ -140,6 +140,21 @@ struct ClientNotificationDeepLinkTests {
             try clientNotification(href: "/client/bookings/bk_1").deepLink?.target
                 == .booking(id: "bk_1", step: nil)
         )
+        // REBOOK_CADENCE_DUE / SAVED_LOOK_CONSULT_NUDGE.
+        //
+        // 🔴 This one used to live in `unroutablePathsStayNil` below: the screen
+        // existed the whole time and `PushDeepLink` simply had no /professionals
+        // case, so BOTH of those pushes were a dead tap — the phone buzzed, you
+        // tapped, and the notification centre stayed put. Screen 6 gave the path
+        // a case (it is also what the profile's own Share control emits), which
+        // fixes the pushes as a side effect.
+        #expect(
+            try clientNotification(href: "/professionals/pro_1").deepLink?.target
+                == .publicPro(professionalId: "pro_1")
+        )
+        // ...and either shell may open it — a pro tapping this must not be
+        // bounced into their client workspace.
+        #expect(try clientNotification(href: "/professionals/pro_1").deepLink?.role == nil)
     }
 
     // ⚠️ The half that keeps the fix safe. These screens are SHEETS, so routing
@@ -149,9 +164,6 @@ struct ClientNotificationDeepLinkTests {
     // native surface yet (see the PR notes).
     @Test("Paths with no native surface stay nil so the sheet is not dismissed")
     func unroutablePathsStayNil() throws {
-        // REBOOK_CADENCE_DUE / SAVED_LOOK_CONSULT_NUDGE — `ProProfileView` exists
-        // but `PushDeepLink` has no /professionals case.
-        #expect(try clientNotification(href: "/professionals/pro_1").deepLink == nil)
         // LAST_MINUTE_OPENING_AVAILABLE (broadcast tier).
         #expect(try clientNotification(href: "/offerings/off_1?source=DISCOVERY").deepLink == nil)
         // Legacy rows: the column is `String @default("")`, so "" is reachable
