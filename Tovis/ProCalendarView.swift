@@ -46,6 +46,18 @@ struct ProCalendarView: View {
     @State private var phase: Phase = .loading
     @State private var showNotifications = false
     @State private var hasUnreadNotifications = false
+    /// The account ("⋯") menu — the pro's reach to the workspace switch.
+    ///
+    /// On web the account menu is fixed chrome over EVERY pro page
+    /// (`app/pro/ProHeader.tsx`), so "Switch workspace" is always one tap away.
+    /// Natively it was hosted on the Overview home alone, which is itself behind the
+    /// house control on this bar — and pros LAND here, on Calendar. The only
+    /// other switch affordance sits at the very bottom of the Profile tab, below
+    /// the whole profile and portfolio, so a pro with any media scrolls it off
+    /// screen. Between them a dual-role pro had no visible way back to their
+    /// client account. Presents the same `ProAccountMenuSheet` the Overview home
+    /// uses — no second switch implementation (CLAUDE.md: no duplicate logic).
+    @State private var showAccountMenu = false
 
     // View-switcher state (web `view` / `currentDate`). The timezone is seeded
     // from the device and refined from each response's viewport zone.
@@ -227,12 +239,22 @@ struct ProCalendarView: View {
                         }
                     }
                 }
+                // Bell then account, matching the web header's control order.
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showAccountMenu = true } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 17, weight: .medium))
+                            .foregroundStyle(BrandColor.textPrimary)
+                    }
+                    .accessibilityLabel("Account menu")
+                }
             }
             .sheet(isPresented: $showNotifications, onDismiss: {
                 Task { await loadNotificationSummary() }
             }) {
                 ProNotificationsView()
             }
+            .sheet(isPresented: $showAccountMenu) { ProAccountMenuSheet() }
             .navigationDestination(item: $bookingNav) { nav in
                 ProBookingDetailView(bookingId: nav.id, seriesId: nav.seriesId)
             }
