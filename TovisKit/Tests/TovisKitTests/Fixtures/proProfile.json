@@ -46,10 +46,10 @@
         "description": "Hand-painted highlights.",
         "imageUrl": null,
         "pricingLines": [
-          "Salon from $100",
-          "Mobile from $140"
+          "Salon: From $100 · 90 min",
+          "Mobile: From $140 · 120 min"
         ],
-        "priceFromLabel": "From $100",
+        "priceFromLabel": "$100",
         "priceFromNumber": 100,
         "durationMinutes": 90,
         "offersInSalon": true,

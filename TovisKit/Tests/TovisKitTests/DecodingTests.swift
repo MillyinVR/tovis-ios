@@ -1746,7 +1746,7 @@ func fixture(_ name: String) throws -> Data {
     @Test func decodesProProfileStatsWithoutLooksAndFollowersLabels() throws {
         let json = #"""
         {
-          "priceFromLabel": "From $100",
+          "priceFromLabel": "$100",
           "completedBookingsLabel": "120",
           "favoritesLabel": "45",
           "reviewCountLabel": "30",
