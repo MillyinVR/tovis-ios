@@ -24,6 +24,7 @@ struct ProMainTabView: View {
     /// a pro tapping a shared look opens it without leaving their workspace.
     @State private var deepLinkLook: LookPresentation?
     @State private var deepLinkPublicClient: PublicClientPresentation?
+    @State private var deepLinkPublicPro: PublicProPresentation?
     /// A pro booking surfaced by a `/pro/bookings/{id}` push, presented over the
     /// shell (id-based self-fetch). nil when nothing is being deep-linked.
     @State private var deepLinkProBooking: DeepLinkBookingRef?
@@ -187,6 +188,11 @@ struct ProMainTabView: View {
             NavigationStack { PublicClientViewerView(handle: profile.handle) }
                 .tint(BrandColor.accent)
         }
+        // Same treatment for a tapped /professionals/{id}.
+        .sheet(item: $deepLinkPublicPro) { pro in
+            NavigationStack { ProProfileView(professionalId: pro.professionalId) }
+                .tint(BrandColor.accent)
+        }
         #if DEBUG
         .sheet(item: $debugSeriesId) { ref in
             NavigationStack {
@@ -332,6 +338,11 @@ struct ProMainTabView: View {
             // A shared /u/{handle} link → the native creator profile. Readable
             // from this shell too: a pro opens the same screen from their roster.
             deepLinkPublicClient = PublicClientPresentation(handle: handle)
+        case let .publicPro(professionalId):
+            // A shared /professionals/{id} link → the native pro profile. Also
+            // readable from this shell: a pro looking at another pro's work
+            // should not be bounced into their client workspace to do it.
+            deepLinkPublicPro = PublicProPresentation(professionalId: professionalId)
         case let .proBooking(id, step):
             // Carry the `step` so the detail scrolls to that section (aftercare);
             // the booking detail also links onward to the session hub.

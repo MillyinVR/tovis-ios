@@ -1725,6 +1725,10 @@ func fixture(_ name: String) throws -> Data {
         #expect(p.header.tiktokHandle == "danadoeshair")
         #expect(p.header.websiteUrl == "https://plumestudio.com/")
         #expect(p.offerings.first?.pricingLines.count == 2)
+        // The numeric twin of priceFromLabel — the book bar picks the CHEAPEST
+        // offering with it, so pairing the lowest price with the wrong service
+        // name ("Balayage from $180" when Balayage is $250) can't come back.
+        #expect(p.offerings.first?.priceFromNumber == 100)
         #expect(p.portfolioTiles.first?.displayUrl == "https://x/1t.jpg")
         // §19f — the tile carries its backing look id, so tapping it can open the
         // look post the way web's grid links to /looks/[lookId].
@@ -1738,6 +1742,59 @@ func fixture(_ name: String) throws -> Data {
         #expect(p.stats.looksLabel == "18")
         #expect(p.stats.followersLabel == "45")
         #expect(p.acceptedPayments == ["Cash", "Venmo"])
+
+        // 🔴 A BARE figure. The clients add the word — the book bar composes
+        // "Book · From $100". A wire value of "From $100" would render
+        // "Book · From From $100".
+        #expect(p.stats.priceFromLabel == "$100")
+
+        // Screen 6: every tile carries its engagement, and a zero recreate count
+        // is a real 0 that the grid renders as NOTHING (never a literal "0").
+        #expect(p.portfolioTiles.first?.engagement.likeCount == 214)
+        #expect(p.portfolioTiles.first?.engagement.commentCount == 18)
+        #expect(p.portfolioTiles.first?.engagement.recreatedCount == 0)
+
+        // The pro's own chosen Signature post, promoted above the grid.
+        #expect(p.signature?.tile.lookId == "lp_sig")
+        #expect(p.signature?.priceLine == "Salon: From $100 · 90 min")
+        #expect(p.signature?.bookLookId == "lp_sig")
+        #expect(p.signature?.tile.engagement.recreatedCount == 12)
+
+        // An ESTABLISHED pro carries NO chips — by design, not for want of a
+        // read; the availability line beside it is populated from the same call.
+        #expect(p.signals.chips.isEmpty)
+        #expect(p.signals.availabilityLine == "Available tomorrow")
+    }
+
+    // An older (not-yet-deployed) backend omits the screen-6 fields entirely.
+    // The profile must still decode: no Signature block, no chips, and tiles
+    // whose counts read zero rather than failing the whole payload.
+    @Test func decodesProProfileWithoutScreenSixFields() throws {
+        let json = #"""
+        {
+          "professionalId": "pro_1",
+          "header": {
+            "id": "pro_1",
+            "displayName": "Dana Lee",
+            "professionLabel": "Hair Stylist"
+          },
+          "stats": {
+            "completedBookingsLabel": "120",
+            "favoritesLabel": "45",
+            "reviewCountLabel": "30"
+          },
+          "portfolioTiles": [
+            { "id": "pt_1", "src": "https://x/1.jpg" }
+          ]
+        }
+        """#
+        let p = try JSONDecoder().decode(ProProfile.self, from: Data(json.utf8))
+
+        #expect(p.signature == nil)
+        #expect(p.signals.chips.isEmpty)
+        #expect(p.signals.availabilityLine == nil)
+        #expect(p.portfolioTiles.first?.engagement
+            == ProPortfolioTileEngagement(likeCount: 0, commentCount: 0, recreatedCount: 0))
     }
 
     // The looks/followers labels post-date the native tab, so a backend that

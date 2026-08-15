@@ -28,7 +28,7 @@
       "websiteUrl": "https://plumestudio.com/"
     },
     "stats": {
-      "priceFromLabel": "From $100",
+      "priceFromLabel": "$100",
       "completedBookingsLabel": "120 booked",
       "favoritesLabel": "45 saves",
       "reviewCountLabel": "30 reviews",
@@ -46,8 +46,8 @@
         "description": "Hand-painted highlights.",
         "imageUrl": null,
         "pricingLines": [
-          "Salon: From $100 · 90 min",
-          "Mobile: From $140 · 120 min"
+          "Salon: From $100 \u00b7 90 min",
+          "Mobile: From $140 \u00b7 120 min"
         ],
         "priceFromLabel": "$100",
         "priceFromNumber": 100,
@@ -75,7 +75,12 @@
         "serviceNames": [
           "Balayage"
         ],
-        "before": null
+        "before": null,
+        "engagement": {
+          "likeCount": 214,
+          "commentCount": 18,
+          "recreatedCount": 0
+        }
       }
     ],
     "reviews": [
@@ -97,6 +102,38 @@
     "acceptedPayments": [
       "Cash",
       "Venmo"
-    ]
+    ],
+    "signature": {
+      "tile": {
+        "id": "pt_sig",
+        "lookId": "lp_sig",
+        "caption": "Grown-out root, hand-painted.",
+        "src": "https://x/sig.jpg",
+        "thumbUrl": "https://x/sigt.jpg",
+        "mediaType": "IMAGE",
+        "isVideo": false,
+        "visibility": "PUBLIC",
+        "isEligibleForLooks": true,
+        "isFeaturedInPortfolio": true,
+        "serviceIds": [
+          "svc_1"
+        ],
+        "serviceNames": [
+          "Balayage"
+        ],
+        "before": null,
+        "engagement": {
+          "likeCount": 331,
+          "commentCount": 41,
+          "recreatedCount": 12
+        }
+      },
+      "priceLine": "Salon: From $100 \u00b7 90 min",
+      "bookHref": "/looks/lp_sig?book=1"
+    },
+    "signals": {
+      "chips": [],
+      "availabilityLine": "Available tomorrow"
+    }
   }
 }

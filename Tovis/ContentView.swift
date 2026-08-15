@@ -101,6 +101,15 @@ struct PushDeepLink: Equatable {
         /// route a stranger actually arrives by bounced out to Safari, while the
         /// narrower /u/{handle}/boards/{slug} opened natively.
         case publicClient(handle: String)
+        /// /professionals/{id} — a PRO's public profile.
+        ///
+        /// 🔴 The same defect `publicClient` above fixed, one screen over: the
+        /// pro profile's own Share control emits exactly this path, and a tapped
+        /// one fell through to `nil` and bounced out to Safari — so the link the
+        /// redesigned profile invites you to send opened everywhere except the
+        /// app. `ProProfileView` has had entry points from across the app the
+        /// whole time; the one route a stranger arrives by had none.
+        case publicPro(professionalId: String)
 
         // Client-shell targets.
         case booking(id: String, step: String?)  // /client/bookings/{id}?step=… (#review → "review")
@@ -141,7 +150,7 @@ struct PushDeepLink: Equatable {
         switch target {
         // A public profile is readable from either shell — a pro opens the same
         // screen from their client roster (ProClientsView).
-        case .thread, .look, .publicClient:
+        case .thread, .look, .publicClient, .publicPro:
             return nil
         case .booking, .offers, .referrals, .activity, .chartAccess, .clientHome:
             return .client
@@ -248,6 +257,20 @@ struct PushDeepLink: Equatable {
             let handle = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
             guard !handle.isEmpty else { return nil }
             target = .publicClient(handle: handle)
+            return
+
+        // /professionals/{id} → the pro's public profile. The id-keyed canonical
+        // is what the profile's Share control emits and what the vanity host
+        // rewrites to server-side.
+        //
+        // ⚠️ The handle-keyed mirror /p/{handle} is NOT claimed here: resolving a
+        // handle to a professionalId needs a lookup this parser cannot do, and
+        // guessing would land the tap on the wrong pro. It still opens in Safari.
+        case "professionals":
+            guard parts.count == 2 else { return nil }
+            let professionalId = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !professionalId.isEmpty else { return nil }
+            target = .publicPro(professionalId: professionalId)
             return
 
         // /terms, external links, /admin/*, etc. → no native surface.
