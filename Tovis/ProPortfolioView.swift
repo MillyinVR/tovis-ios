@@ -214,8 +214,13 @@ struct ProPortfolioView: View {
                     .font(BrandFont.mono(8))
                     .foregroundStyle(BrandColor.gold)
                     .padding(.horizontal, 6).padding(.vertical, 3)
-                    .background(BrandColor.gold.opacity(0.15))
-                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    // Tint + border, like web's chip: a bare 15% tint over a
+                    // light photo leaves gold-on-cream with almost no edge.
+                    .background(BrandColor.gold.opacity(0.15), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .stroke(BrandColor.gold.opacity(0.35), lineWidth: 1)
+                    )
                     .padding(6)
             }
         }
@@ -244,16 +249,19 @@ struct ProPortfolioView: View {
                     .clipShape(Circle())
             }
         }
-        .overlay(alignment: .bottomLeading) {
+        .overlay(alignment: .bottom) {
             if let hold = tile.hold {
                 HStack(spacing: 4) {
                     Image(systemName: "lock.fill").font(.system(size: 8))
                     Text("Waiting on \(hold.clientFirstName)".uppercased())
                         .font(BrandFont.mono(8))
-                        .lineLimit(1)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.85)
+                    Spacer(minLength: 0)
                 }
                 .foregroundStyle(BrandColor.gold)
                 .padding(.horizontal, 6).padding(.vertical, 5)
+                .background(tileScrim)
             }
         }
         .overlay(alignment: .bottomTrailing) {
@@ -278,8 +286,28 @@ struct ProPortfolioView: View {
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 6).padding(.vertical, 5)
+                .background(tileScrim)
             }
         }
+        // 🔴 Clips the OVERLAYS, not just the image. `MediaGridCell` clips its own
+        // content, but an `.overlay` applied to the result is not — so the scrim
+        // drew a square-cornered band across the tile's rounded bottom. Invisible
+        // in light mode (scrim ≈ page colour) and obvious in dark.
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    /// 🔴 Not decoration — legibility. These overlays sit directly on a
+    /// PHOTOGRAPH, so `textPrimary` is near-black in light mode and the views /
+    /// likes counts rendered black-on-dark and vanished entirely; only the gold
+    /// "booked" stat survived, which read as "this tile has one number". Web has
+    /// carried the same scrim from the start (`from-bgPrimary/88 to-transparent`)
+    /// — it was the one piece of the tile this port dropped.
+    private var tileScrim: some View {
+        LinearGradient(
+            colors: [BrandColor.bgPrimary.opacity(0.88), BrandColor.bgPrimary.opacity(0)],
+            startPoint: .bottom,
+            endPoint: .top
+        )
     }
 
     private func stat(_ symbol: String, _ value: Int, tint: Color = BrandColor.textPrimary) -> some View {

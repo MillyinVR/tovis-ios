@@ -52,19 +52,20 @@ public final class ProProfileService: Sendable {
     /// `filter` mirrors the web chips (`PUBLIC` / `PRIVATE` / `WAITING` /
     /// `VIDEO`) plus the two zone keys `UPLOADS` / `SESSIONS`, which are where a
     /// group's "Show N more" points; `query` searches captions and client names.
+    /// 🔴 Query goes through `APIClient`'s `query:` parameter, never appended to
+    /// the path. `buildRequest` does `baseURL.appendingPathComponent(path)`,
+    /// which percent-encodes the `?` — so `"/pro/portfolio?filter=WAITING"`
+    /// becomes `/pro/portfolio%3Ffilter=WAITING` and 404s. The unfiltered call
+    /// worked, so this only showed up on a filter chip.
     public func portfolio(filter: String? = nil, query: String? = nil) async throws -> ProLibraryPageModel {
         var items: [URLQueryItem] = []
         if let filter, !filter.isEmpty { items.append(URLQueryItem(name: "filter", value: filter)) }
         if let query, !query.isEmpty { items.append(URLQueryItem(name: "q", value: query)) }
 
-        var path = "/pro/portfolio"
-        if !items.isEmpty {
-            var components = URLComponents()
-            components.queryItems = items
-            if let suffix = components.percentEncodedQuery { path += "?\(suffix)" }
-        }
-
-        let response: ProLibraryResponse = try await api.request(path)
+        let response: ProLibraryResponse = try await api.request(
+            "/pro/portfolio",
+            query: items.isEmpty ? nil : items
+        )
         return response.portfolio
     }
 
