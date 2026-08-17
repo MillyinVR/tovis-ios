@@ -112,7 +112,7 @@
           "locationId": "loc_9",
           "professional": {
             "id": "pro_9", "businessName": null, "displayName": "Alex Rivera", "handle": "alex", "avatarUrl": null,
-            "professionType": "HAIR", "location": "NYC", "timeZone": "America/New_York"
+            "professionType": "HAIR", "professionLabel": "Hair stylist", "location": "NYC", "timeZone": "America/New_York"
           },
           "location": null,
           "services": [
@@ -162,7 +162,7 @@
       {
         "professional": {
           "id": "pro_3", "businessName": "Gloss", "displayName": "Grace Kim", "handle": "gloss", "avatarUrl": null,
-          "professionType": "NAILS", "location": "SF"
+          "professionType": "NAILS", "professionLabel": "Manicurist", "location": "SF"
         }
       }
     ],

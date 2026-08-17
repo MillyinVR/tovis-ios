@@ -342,7 +342,7 @@ struct LookDetailView: View {
     /// "Cosmetologist · Los Angeles, CA" — web renders professionType (falling
     /// back to "Beauty pro") then the location.
     private func proSubtitle(_ look: LookDetail) -> String? {
-        let type = look.professional.professionType?.capitalized ?? "Beauty pro"
+        let type = look.professional.professionLabel?.trimmedOrNil ?? "Beauty pro"
         guard let location = look.professional.location, !location.isEmpty else { return type }
         return "\(type) · \(location)"
     }

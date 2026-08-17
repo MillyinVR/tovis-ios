@@ -1041,7 +1041,7 @@ private struct FavoriteProsCard: View {
                                         fallbackTint: nil,
                                         index: index,
                                         title: pro.displayName,
-                                        subtitle: pro.professionType?.capitalized,
+                                        subtitle: pro.professionLabel?.trimmedOrNil,
                                     )
                                 }
                                 .buttonStyle(.plain)
