@@ -37,6 +37,7 @@ import Testing
               "handle": "tovis-test-pro",
               "avatarUrl": null,
               "professionType": "COSMETOLOGIST",
+              "professionLabel": "Cosmetologist",
               "locationLabel": "Los Angeles, CA",
               "timeZone": "America/Los_Angeles"
             },
