@@ -51,6 +51,10 @@ struct MeView: View {
     /// Board id → the visibility its switch has flipped to, ahead of the next
     /// `/api/v1/me`. Cleared on every load, so the server always wins in the end.
     @State private var boardVisibilityOverrides: [String: Bool] = [:]
+    /// The completed visit whose "Share your look" CTA was tapped on a HISTORY
+    /// card. Presented as a sheet from the scroll view — see the note on the
+    /// Activity sheet below for why it must not hang off one tab's branch.
+    @State private var shareLookFor: ClientBooking?
 
     var body: some View {
         NavigationStack {
@@ -84,6 +88,13 @@ struct MeView: View {
             // read there signalRefreshes, which reloads this screen and drops the
             // badge.
             .sheet(isPresented: $showActivity) { ClientActivityView() }
+            // Same rule as the Activity sheet above: attached to the SCROLL VIEW,
+            // not inside the HISTORY branch of the tab switch. A sheet modifier
+            // that only exists on one panel is a control that silently does
+            // nothing everywhere else.
+            .sheet(item: $shareLookFor) { booking in
+                ShareLookView(booking: booking) { await load() }
+            }
             .task { if case .loading = phase { await load() } }
             .onChange(of: session.refreshTick) { Task { await load() } }
         }
@@ -105,16 +116,17 @@ struct MeView: View {
                 .padding(.top, 24)
         }
 
-        if let invite = inviteLink {
-            ClientInviteCard(invite: invite).padding(.top, 24)
-            referralsLink.padding(.top, 10)
-        }
-
-        if !me.myLooks.isEmpty {
-            yourLooks(me.myLooks).padding(.top, 32)
-        }
-
-        sectionTabs.padding(.top, 32)
+        // Tabs sit DIRECTLY under the Upcoming card (Tori, 2026-08-17). A grid
+        // of "Your looks" used to sit in this gap and pushed BOARDS / FOLLOWING
+        // / HISTORY far below the fold. Each look's visibility switch now rides
+        // the history card for the visit it came out of.
+        //
+        // The invite card moved BELOW the tab content for the same reason: it
+        // is a promo, the tabs are this screen's primary navigation, and on a
+        // phone the card alone was still enough to push all three off-screen.
+        // Web has no such card in this position, so this is also what makes the
+        // two platforms read the same.
+        sectionTabs.padding(.top, 24)
 
         Group {
             switch tab {
@@ -124,6 +136,11 @@ struct MeView: View {
             }
         }
         .padding(.top, 18)
+
+        if let invite = inviteLink {
+            ClientInviteCard(invite: invite).padding(.top, 32)
+            referralsLink.padding(.top, 10)
+        }
     }
 
     // MARK: - Header
@@ -150,6 +167,12 @@ struct MeView: View {
                         .font(BrandFont.display(28, .semibold).italic())
                         .foregroundStyle(BrandColor.textPrimary)
                         .lineLimit(1)
+
+                    // The owner's own tier + "top 2% saver · Brooklyn". Until
+                    // screen 7 this page showed its owner LESS about themselves
+                    // than a stranger visiting /u/{handle} could see.
+                    standingRow(me.standing)
+                        .padding(.top, 8)
 
                     if let since = memberSince(me) {
                         Text("joined \(since)")
@@ -243,16 +266,98 @@ struct MeView: View {
         }
     }
 
+    // MARK: - Standing
+
+    /// "✦ TASTEMAKER · top 2% saver · Brooklyn".
+    ///
+    /// The owner's own standing, which until screen 7 only a VISITOR to their
+    /// public profile could see. Renders nothing below Rising — an unranked
+    /// creator has no standing to state.
+    @ViewBuilder
+    private func standingRow(_ standing: ClientMeStanding?) -> some View {
+        if let standing, standing.isRanked {
+            HStack(spacing: 10) {
+                HStack(spacing: 5) {
+                    Text("✦")
+                    Text(standing.tierLabel.uppercased())
+                }
+                .font(BrandFont.mono(10))
+                .tracking(1.0)
+                .foregroundStyle(BrandColor.amber)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 3)
+                .overlay(
+                    Capsule().stroke(BrandColor.amber, lineWidth: 1)
+                )
+
+                if let detail = standing.detail {
+                    Text(detail)
+                        .font(BrandFont.body(12.5))
+                        .foregroundStyle(BrandColor.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+            }
+        }
+    }
+
     // MARK: - Creator card
 
     private func creatorCard(_ creator: ClientMeCreator) -> some View {
         BrandSurface(tint: BrandColor.bgSecondary) {
             VStack(alignment: .leading, spacing: 14) {
-                Label("YOUR INFLUENCE", systemImage: "sparkles")
-                    .font(BrandFont.mono(10))
-                    .tracking(1.6)
-                    .foregroundStyle(BrandColor.textSecondary)
-                    .labelStyle(.titleAndIcon)
+                HStack(alignment: .center) {
+                    Label("YOUR INFLUENCE", systemImage: "sparkles")
+                        .font(BrandFont.mono(10))
+                        .tracking(1.6)
+                        .foregroundStyle(BrandColor.textSecondary)
+                        .labelStyle(.titleAndIcon)
+
+                    Spacer()
+
+                    // Level 0 shows no pill: nobody has saved or booked a look
+                    // of yours yet, and "Lvl 0" is a grade rather than a start.
+                    if let level = creator.level, level.level > 0 {
+                        Text("LVL \(level.level)")
+                            .font(BrandFont.mono(10))
+                            .tracking(1.0)
+                            .foregroundStyle(BrandColor.accent)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 3)
+                            .background(
+                                Capsule().fill(BrandColor.accent.opacity(0.10))
+                            )
+                            .overlay(
+                                Capsule().stroke(BrandColor.accent.opacity(0.35), lineWidth: 1)
+                            )
+                    }
+                }
+
+                if let level = creator.level {
+                    VStack(alignment: .leading, spacing: 8) {
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                Capsule()
+                                    .fill(BrandColor.textMuted.opacity(0.12))
+                                Capsule()
+                                    .fill(BrandColor.accent)
+                                    .frame(
+                                        width: max(
+                                            0,
+                                            min(1, level.progress) * geo.size.width
+                                        )
+                                    )
+                            }
+                        }
+                        .frame(height: 6)
+
+                        Text(level.progressLabel ?? "Top level reached")
+                            .font(BrandFont.body(11.5))
+                            .foregroundStyle(BrandColor.textSecondary)
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(level.progressLabel ?? "Top level reached")
+                }
 
                 Divider().overlay(BrandColor.textMuted.opacity(0.12))
 
@@ -352,29 +457,6 @@ struct MeView: View {
             }
         }
         .buttonStyle(.plain)
-    }
-
-    // MARK: - Your looks
-
-    private func yourLooks(_ looks: [ClientMeLook]) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("YOUR LOOKS")
-                    .font(BrandFont.mono(11)).tracking(1.4)
-                    .foregroundStyle(BrandColor.textPrimary)
-                Spacer()
-                Text("\(looks.count)")
-                    .font(BrandFont.mono(11)).tracking(1.2)
-                    .foregroundStyle(BrandColor.textSecondary)
-            }
-            LazyVGrid(columns: twoCol, spacing: 18) {
-                ForEach(looks) { look in
-                    MeLookCard(look: look) { id, isPublic in
-                        await setLookVisibility(id, isPublic: isPublic)
-                    }
-                }
-            }
-        }
     }
 
     // MARK: - Tabs
@@ -628,35 +710,69 @@ struct MeView: View {
         } else {
             VStack(spacing: 18) {
                 ForEach(items) { item in
-                    NavigationLink {
-                        BookingDetailView(booking: item.booking, onDecision: { await load() })
-                    } label: {
-                        VStack(alignment: .leading, spacing: 10) {
-                            MediaTile(url: item.heroImageUrl, fallback: item.booking.display.title, aspect: 1.18)
-                            Text(item.booking.display.title)
-                                .font(BrandFont.body(14, .semibold))
-                                .foregroundStyle(BrandColor.textPrimary)
-                                .lineLimit(1)
-                            Text(item.label)
-                                .font(BrandFont.mono(9)).tracking(1.2)
-                                .foregroundStyle(BrandColor.textSecondary)
+                    VStack(alignment: .leading, spacing: 10) {
+                        NavigationLink {
+                            BookingDetailView(booking: item.booking, onDecision: { await load() })
+                        } label: {
+                            VStack(alignment: .leading, spacing: 10) {
+                                // The switch sits ON the photo, like web's, so
+                                // folding it in costs the list no extra rhythm.
+                                MediaTile(url: item.heroImageUrl, fallback: item.booking.display.title, aspect: 1.18)
+                                    .overlay(alignment: .topTrailing) {
+                                        if let look = item.look {
+                                            MeLookVisibilityToggle(look: look) { id, isPublic in
+                                                await setLookVisibility(id, isPublic: isPublic)
+                                            }
+                                            .padding(10)
+                                        }
+                                    }
+                                Text(item.booking.display.title)
+                                    .font(BrandFont.body(14, .semibold))
+                                    .foregroundStyle(BrandColor.textPrimary)
+                                    .lineLimit(1)
+                                Text(item.label)
+                                    .font(BrandFont.mono(9)).tracking(1.2)
+                                    .foregroundStyle(BrandColor.textSecondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+
+                        // A completed visit nobody has posted a look from keeps
+                        // the "Share your look" CTA — the sibling branch of the
+                        // switch above.
+                        //
+                        // Web has had this on the card since screen 7; native
+                        // could only reach ShareLookView by opening the booking
+                        // first. Same sheet, same publish callback — this is the
+                        // missing entry point, not a second implementation.
+                        if item.kind == "completed", item.look == nil {
+                            Button {
+                                shareLookFor = item.booking
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Text("✦")
+                                    Text("Share your look")
+                                }
+                                .font(BrandFont.body(12, .semibold))
+                                .foregroundStyle(BrandColor.accent)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(
+                                    Capsule().fill(BrandColor.accent.opacity(0.08))
+                                )
+                                .overlay(
+                                    Capsule().stroke(BrandColor.accent.opacity(0.30), lineWidth: 1)
+                                )
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
-                    .buttonStyle(.plain)
                 }
             }
         }
     }
 
     // MARK: - Small pieces
-
-    private var twoCol: [GridItem] {
-        // .adaptive keeps 2 columns on a phone-width container and adds columns
-        // on a wider one — iPad — instead of stretching 2 tiles across the extra
-        // width (which otherwise produced a single card that's half the iPad's
-        // screen wide).
-        [GridItem(.adaptive(minimum: 171), spacing: 16)]
-    }
 
     /// Flip a look's visibility via the backend, returning whether it stuck.
     /// The card updates optimistically and reverts on `false`.
@@ -856,10 +972,17 @@ private struct MediaTile: View {
     }
 }
 
-/// One "Your Looks" card with a working Public/Private switch — mirrors the web
-/// MyLookCard: optimistic flip, reverts + shows "COULDN'T SAVE" on failure.
-private struct MeLookCard: View {
-    let look: ClientMeLook
+/// The compact Public/Private switch that rides a history card's photo.
+///
+/// Screen 7 folded this onto the card for the visit the look came out of and
+/// dropped the separate "Your looks" grid — one picture-led list instead of two
+/// lists holding two halves of the same thing. Behaviour is the web switch's:
+/// optimistic flip, reverted on refusal.
+///
+/// A plain `Button`, not a `Toggle`: this sits inside a `NavigationLink`'s
+/// label, where a Toggle's own hit area fights the row's tap.
+private struct MeLookVisibilityToggle: View {
+    let look: ClientMeHistoryLook
     /// Performs the PATCH; returns whether it stuck.
     let onToggle: (String, Bool) async -> Bool
 
@@ -867,36 +990,44 @@ private struct MeLookCard: View {
     @State private var busy = false
     @State private var failed = false
 
-    init(look: ClientMeLook, onToggle: @escaping (String, Bool) async -> Bool) {
+    init(look: ClientMeHistoryLook, onToggle: @escaping (String, Bool) async -> Bool) {
         self.look = look
         self.onToggle = onToggle
         _isPublic = State(initialValue: look.isPublic)
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            MediaTile(url: look.imageUrl, fallback: look.name, aspect: 1)
-
-            HStack(alignment: .center, spacing: 8) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(look.name)
-                        .font(BrandFont.body(13, .semibold))
-                        .foregroundStyle(BrandColor.textPrimary)
-                        .lineLimit(1)
-                    Text(failed ? "COULDN’T SAVE" : (isPublic ? "PUBLIC" : "PRIVATE"))
-                        .font(BrandFont.mono(9)).tracking(1.2)
-                        .foregroundStyle(failed ? BrandColor.ember : BrandColor.textSecondary)
-                }
-                Spacer()
-                Toggle("", isOn: Binding(
-                    get: { isPublic },
-                    set: { _ in Task { await toggle() } }
-                ))
-                .labelsHidden()
-                .tint(BrandColor.accent)
-                .disabled(busy)
+        Button {
+            Task { await toggle() }
+        } label: {
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(isPublic ? BrandColor.accent : BrandColor.textSecondary)
+                    .frame(width: 5, height: 5)
+                Text(failed ? "COULDN’T SAVE" : (isPublic ? "PUBLIC" : "PRIVATE"))
+                    .font(BrandFont.mono(9))
+                    .tracking(0.9)
             }
+            .foregroundStyle(
+                failed
+                    ? BrandColor.ember
+                    : (isPublic ? BrandColor.accent : BrandColor.textSecondary)
+            )
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(BrandColor.bgPrimary.opacity(0.75), in: Capsule())
+            .overlay(
+                Capsule().stroke(
+                    (isPublic ? BrandColor.accent : BrandColor.textMuted).opacity(0.35),
+                    lineWidth: 1
+                )
+            )
+            .opacity(busy ? 0.7 : 1)
         }
+        .buttonStyle(.plain)
+        .disabled(busy)
+        .accessibilityLabel("Look visibility — \(look.name)")
+        .accessibilityValue(isPublic ? "Public" : "Private")
     }
 
     private func toggle() async {

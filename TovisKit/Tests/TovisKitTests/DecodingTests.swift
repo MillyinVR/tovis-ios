@@ -324,6 +324,77 @@ func fixture(_ name: String) throws -> Data {
         #expect(me.creator.isCreator == true)
         #expect(me.creator.remixes.first?.who == "Maya")
         #expect(me.activityUnreadCount == 2)
+
+        // Screen 7: the owner's OWN standing. Until this shipped, /client/me
+        // showed its owner less about themselves than a visitor to their public
+        // profile could see.
+        #expect(me.standing?.isTastemaker == true)
+        #expect(me.standing?.isRanked == true)
+        #expect(me.standing?.detail == "top 2% saver · Brooklyn")
+        #expect(me.standing?.tierLabel == "Tastemaker")
+
+        // The level is resolved SERVER-side and rendered verbatim; the ladders
+        // deliberately do not exist in Swift. This pins the label composition,
+        // which is the only level logic native owns.
+        #expect(me.creator.level?.level == 2)
+        #expect(me.creator.level?.progressLabel == "12 bookings to Lvl 3")
+    }
+
+    @Test func clientMeStandingBelowRisingRendersNothing() throws {
+        // NONE is not a bottom-of-the-table grade — the tier job declines to
+        // rank a creator below its population floors, and the honest rendering
+        // of "unranked" is no pill at all, even when the city is set.
+        let json = #"{"tier":"NONE","topPercent":null,"city":"Brooklyn"}"#
+        let standing = try JSONDecoder().decode(
+            ClientMeStanding.self,
+            from: Data(json.utf8),
+        )
+        #expect(standing.isRanked == false)
+        #expect(standing.isTastemaker == false)
+
+        // An unranked creator has no percent, so the detail is the city alone
+        // rather than a padded "top null%".
+        #expect(standing.detail == "Brooklyn")
+    }
+
+    @Test func clientMeLevelSingularUnitsAndTopOfLadder() throws {
+        // "1 save to Lvl 2", not "1 saves to Lvl 2".
+        let oneJSON = #"""
+        {"level":1,"nextLevel":2,"nextLadder":"saves","nextThreshold":100,
+         "remaining":1,"progress":0.99}
+        """#
+        let one = try JSONDecoder().decode(
+            ClientMeCreatorLevel.self,
+            from: Data(oneJSON.utf8),
+        )
+        #expect(one.progressLabel == "1 save to Lvl 2")
+
+        // At the top there is nothing left to chase, so there is no line and
+        // the view falls back to "Top level reached".
+        let maxedJSON = #"""
+        {"level":5,"nextLevel":null,"nextLadder":null,"nextThreshold":null,
+         "remaining":null,"progress":1}
+        """#
+        let maxed = try JSONDecoder().decode(
+            ClientMeCreatorLevel.self,
+            from: Data(maxedJSON.utf8),
+        )
+        #expect(maxed.progressLabel == nil)
+    }
+
+    @Test func clientMeDecodesWithoutScreenSevenFields() throws {
+        // A pre-screen-7 server sends no `standing`, no `creator.level` and no
+        // `history[].look`. Every one of them is optional precisely so that an
+        // older server degrades to "no standing row / no level bar / no switch"
+        // instead of failing the decode and taking the whole Me tab down.
+        let json = #"""
+        {"isCreator":true,"savesOnYourLooks":14,"bookedFromYou":3,"remixes":[]}
+        """#
+        let creator = try JSONDecoder().decode(
+            ClientMeCreator.self,
+            from: Data(json.utf8),
+        )
+        #expect(creator.level == nil)
     }
 
     // GET /api/v1/client/referrals/invite-link — Fixtures/clientInviteLink.json

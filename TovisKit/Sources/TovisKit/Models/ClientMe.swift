@@ -22,9 +22,46 @@ public struct ClientMe: Decodable, Sendable {
     /// was booked from. Optional so an older server still decodes.
     public let upcomingNotificationHeroImageUrl: String?
     public let history: [ClientMeHistoryItem]
+    /// The client's authored looks.
+    ///
+    /// ⚠️ No longer rendered as its own grid — screen 7 folded each look's
+    /// visibility switch onto the history card for the visit it came out of
+    /// (`ClientMeHistoryItem.look`). Kept because the server still sends it and
+    /// older builds require it; do not resurrect the grid from it.
     public let myLooks: [ClientMeLook]
     public let activityUnreadCount: Int
+    /// The owner's own tier / percentile / city — the standing a VISITOR to
+    /// `/u/{handle}` could already see. Optional so a pre-screen-7 server still
+    /// decodes: absent renders no standing row, which is also the correct
+    /// rendering for an unranked creator.
+    public let standing: ClientMeStanding?
     public let creator: ClientMeCreator
+}
+
+/// "✦ Tastemaker · top 2% saver · Brooklyn".
+public struct ClientMeStanding: Decodable, Sendable {
+    /// `NONE` | `RISING` | `TASTEMAKER`.
+    public let tier: String
+    /// e.g. 2 for "top 2% saver". Null while the creator is unranked.
+    public let topPercent: Int?
+    /// The creator's opt-in public city.
+    public let city: String?
+
+    public var isTastemaker: Bool { tier.uppercased() == "TASTEMAKER" }
+    public var isRising: Bool { tier.uppercased() == "RISING" }
+    /// Below Rising there is no standing to state, and a placeholder pill would
+    /// flatter a creator the tier job deliberately declined to rank.
+    public var isRanked: Bool { isTastemaker || isRising }
+
+    /// "top 2% saver · Brooklyn" — each half only when it is real.
+    public var detail: String? {
+        var parts: [String] = []
+        if let topPercent { parts.append("top \(topPercent)% saver") }
+        if let city = city?.trimmedOrNil { parts.append(city) }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    public var tierLabel: String { isTastemaker ? "Tastemaker" : "Rising" }
 }
 
 public struct ClientMeUser: Decodable, Sendable {
@@ -162,8 +199,24 @@ public struct ClientMeHistoryItem: Decodable, Sendable, Identifiable {
     public let label: String  // "BOOKED" | "UPCOMING"
     public let booking: ClientBooking
     public let heroImageUrl: String?
+    /// The look posted from this visit, when there is one.
+    ///
+    /// Screen 7 folded the public/private switch onto the history card; a visit
+    /// with no look keeps the "Share your look" affordance instead. Optional so
+    /// a pre-screen-7 server still decodes — absent simply means no switch.
+    public let look: ClientMeHistoryLook?
 
     public var id: String { booking.id }
+}
+
+/// The authored look a history card carries.
+public struct ClientMeHistoryLook: Decodable, Sendable {
+    public let id: String
+    public let name: String
+    /// `PUBLIC` | `FOLLOWERS_ONLY` | `UNLISTED`.
+    public let visibility: String
+
+    public var isPublic: Bool { visibility.uppercased() == "PUBLIC" }
 }
 
 // MARK: - My looks
@@ -184,6 +237,42 @@ public struct ClientMeCreator: Decodable, Sendable {
     public let savesOnYourLooks: Int
     public let bookedFromYou: Int
     public let remixes: [ClientMeRemix]
+    /// Level + progress, resolved SERVER-side.
+    ///
+    /// 🔴 The thresholds are deliberately not here. The level is the higher of
+    /// two ladders (saves and bookings) and both platforms render the same
+    /// computed answer — re-typing the ladders in Swift is how the pill and the
+    /// progress line come to disagree the first time either list is edited.
+    /// See `lib/clients/creatorLevel.ts`.
+    public let level: ClientMeCreatorLevel?
+}
+
+/// A creator's level and how far along the next rung they are.
+public struct ClientMeCreatorLevel: Decodable, Sendable {
+    public let level: Int
+    public let nextLevel: Int?
+    /// `saves` | `bookings` — which ladder the progress line is about.
+    public let nextLadder: String?
+    public let nextThreshold: Int?
+    public let remaining: Int?
+    /// 0–1 along the current rung.
+    public let progress: Double
+
+    /// "57 bookings to Lvl 5", or nil at the top of the ladder.
+    ///
+    /// Names the UNIT because the level is the higher of two ladders, so a bare
+    /// "57 to Lvl 5" would not say 57 of what.
+    public var progressLabel: String? {
+        guard let remaining, let nextLevel else { return nil }
+        let one = remaining == 1
+        let unit: String
+        if nextLadder == "bookings" {
+            unit = one ? "booking" : "bookings"
+        } else {
+            unit = one ? "save" : "saves"
+        }
+        return "\(remaining) \(unit) to Lvl \(nextLevel)"
+    }
 }
 
 public struct ClientMeRemix: Decodable, Sendable, Identifiable {
