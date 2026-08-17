@@ -173,6 +173,14 @@ struct CameraToolsDrawer: View {
     /// before/after is THEIR photo, and quietly copying it to the pro's camera
     /// roll is not a toggle to offer in passing.
     var saveToPhotos: Binding<Bool>? = nil
+    /// Opens the photo picker to add before/after shots from the camera roll
+    /// — a rescue for a photo taken before the camera was open, or one the
+    /// live camera can't get (an angle, a detail shot from another device).
+    /// Always available, session or practice: unlike the practice library
+    /// (different custody entirely), this is the same "add a photo" door the
+    /// permission-denied dead-end already offers, just reachable while the
+    /// camera is working too.
+    let onImportFromLibrary: () -> Void
 
     @Environment(\.dismiss) private var dismiss
 
@@ -251,6 +259,29 @@ struct CameraToolsDrawer: View {
                 .accessibilityHint("Every shot you've taken outside a session")
             }
 
+            Button {
+                dismiss()
+                onImportFromLibrary()
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "photo.on.rectangle")
+                        .font(.system(size: 15, weight: .semibold))
+                    Text("Add from library")
+                        .font(BrandFont.body(15, .semibold))
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .bold))
+                }
+                .foregroundStyle(BrandColor.textPrimary)
+                .padding(.horizontal, 14)
+                .frame(height: 48)
+                .frame(maxWidth: .infinity)
+                .background(BrandColor.textPrimary.opacity(0.08),
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Choose before/after photos already in your camera roll")
+
             if ghostAvailable, onionEnabled {
                 HStack(spacing: 14) {
                     Text("GHOST")
@@ -316,7 +347,7 @@ struct CameraToolsDrawer: View {
         .padding(.top, 22)
         .padding(.bottom, 28)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .presentationDetents([.height(ghostAvailable && onionEnabled ? 560 : 510)])
+        .presentationDetents([.height(ghostAvailable && onionEnabled ? 626 : 576)])
         .presentationDragIndicator(.visible)
         .presentationBackground(BrandColor.bgSecondary)
     }

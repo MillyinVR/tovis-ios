@@ -115,7 +115,23 @@ struct ProCapturePhotosView: View {
     /// 4xx the server repeats forever — sat behind a button that could not win,
     /// with no other way out. Terminal ones now get a decision instead of a loop.
     @State private var failedUploads: [FailedUpload] = []
+    /// `uploading` covers only the fast, on-device span of a shot — capture,
+    /// QC, thumbnail, the durable local write. It gates the shutter, so it
+    /// must never include the network: a shot is "done" the moment it's
+    /// safely on disk, not once the server has it.
     @State private var uploading = false
+    /// Custody files currently being sent to the server — covers a fresh
+    /// capture's first attempt AND a retry, the one thing `failedUploads`
+    /// (which only holds shots that have already failed once) doesn't. Backs
+    /// the background hairline (`backgroundBusy`) and the pending-sync badge,
+    /// and is the re-entrancy guard that keeps a retry and an in-flight fresh
+    /// upload of the SAME file from ever racing (see `uploadCorrected`).
+    @State private var uploadsInFlight: Set<URL> = []
+    /// Drives automatic retry-with-backoff of `failedUploads` — a connection
+    /// that stays "satisfied" but times out (flaky salon wifi) never fires
+    /// `ConnectivityMonitor`, so this is the net that catches it either way.
+    @State private var retryScheduler = UploadRetryScheduler()
+    @State private var connectivity = ConnectivityMonitor()
 
     /// A photo still owed to the server. `phase` travels with it: a BEFORE shot
     /// stranded by a crash must still land in BEFORE when it's swept up during a
@@ -150,6 +166,10 @@ struct ProCapturePhotosView: View {
     private struct CapturedShot: Identifiable {
         let id = UUID()
         let image: UIImage
+        /// The vault file this shot is waiting on the server for — nil once
+        /// upload is confirmed (or if the local write itself failed, in which
+        /// case there's nothing left to track). Backs the pending-sync badge.
+        var custodyURL: URL?
     }
 
     /// A manual shot the photographer check flagged — held for the pro's
@@ -382,7 +402,12 @@ struct ProCapturePhotosView: View {
             // a BEFORE photo swept up mid-AFTER shoot still belongs to BEFORE.
             // Re-queued as retryable so the pro gets one honest attempt on the new
             // connection; a repeat refusal re-classifies it as terminal.
-            let owedURLs = Set(failedUploads.map(\.url))
+            // Excludes anything already `uploadsInFlight` too — a file this
+            // SAME session already handed to `scheduleUpload` a moment ago,
+            // genuinely still sending rather than stranded, must not be
+            // double-queued (which would race a second upload session for it
+            // once retried).
+            let owedURLs = Set(failedUploads.map(\.url)).union(uploadsInFlight)
             let owed = SessionByteVault.strandedUploads(bookingId: custodyScope)
                 .filter { !owedURLs.contains($0.url) }
                 .map {
@@ -391,6 +416,23 @@ struct ProCapturePhotosView: View {
                                  reason: "Waiting to finish uploading.")
                 }
             if !owed.isEmpty { failedUploads.append(contentsOf: owed) }
+
+            // Automatic retry-with-backoff. A genuine offline→online edge
+            // (airplane mode off, wifi reassociates) retries right away; a
+            // connection that stays "satisfied" but times out anyway (flaky
+            // salon wifi) never fires that signal, so the scheduler's own
+            // timer — armed on every failure in `requeue` — is what catches
+            // that case instead.
+            connectivity.onReconnect = {
+                guard !failedUploads.isEmpty else { return }
+                retryScheduler.scheduleRetry(resetBackoff: true) { await retryFailedUploads(auto: true) }
+            }
+            connectivity.start()
+            // Anything the sweep above just found waiting is worth an
+            // immediate try, same as a fresh failure would be.
+            if !failedUploads.isEmpty {
+                retryScheduler.scheduleRetry(resetBackoff: true) { await retryFailedUploads(auto: true) }
+            }
         }
         // Keep the coach judging "ready for THIS shot" — expectations follow the
         // current guided step (and clear for freeform / all-done shooting).
@@ -417,7 +459,11 @@ struct ProCapturePhotosView: View {
                 maybeEnhanceLook(look)
             }
         }
-        .onDisappear { camera.stop(); coach?.stop() }
+        .onDisappear {
+            camera.stop(); coach?.stop()
+            connectivity.stop()
+            retryScheduler.stop()
+        }
         // (Clip files are owned by the ClipVault from the moment recording
         // stops — nothing here may delete them; the vault releases each file
         // only after its upload is confirmed.)
@@ -480,8 +526,9 @@ struct ProCapturePhotosView: View {
         // ("try again", "holding for another try") or SHADOWED by a durable
         // queue row that outranks it and doesn't expire — a failed upload is
         // still in `failedUploads`, a failed library save still has its terminal
-        // photos. The one exception sets `errorSticky` (see `queueFailedUpload`):
-        // that photo is genuinely gone, and nothing else on screen says so.
+        // photos. The one exception sets `errorSticky` (see `finalize`'s vault
+        // -write failure branch): that photo is genuinely gone, and nothing
+        // else on screen says so.
         .onChange(of: errorMessage) { _, message in
             guard message != nil else { errorSticky = false; return }
             guard !errorSticky else { return }
@@ -577,7 +624,8 @@ struct ProCapturePhotosView: View {
                 onOpenPracticeLibrary: destination.isPractice
                     ? { presentAfterDrawer { showPracticeLibrary = true } }
                     : nil,
-                saveToPhotos: destination.isPractice ? $savePracticeToPhotos : nil
+                saveToPhotos: destination.isPractice ? $savePracticeToPhotos : nil,
+                onImportFromLibrary: { presentAfterDrawer { showLibraryPicker = true } }
             )
         }
         // Drawer 3 — the guide + packs + the matched look's direction lines.
@@ -1746,7 +1794,7 @@ struct ProCapturePhotosView: View {
 
     /// Work the pro can't act on — a hairline on the lane, never words.
     private var backgroundBusy: Bool {
-        uploading || analyzingLook || enhancingLook || savingClips > 0
+        uploading || analyzingLook || enhancingLook || savingClips > 0 || !uploadsInFlight.isEmpty
     }
 
     /// Say what the new shot is for a beat, then hand the lane back to the coach.
@@ -1987,9 +2035,24 @@ struct ProCapturePhotosView: View {
                             .background(BrandColor.textPrimary, in: RoundedRectangle(cornerRadius: 5))
                             .padding(4)
                     }
+                    // Unobtrusive proof the shot is safe but not server-side
+                    // yet — never a blocker, just a small "still working on
+                    // it" so a pro who glances down mid-service isn't left
+                    // guessing. Clears itself the instant upload confirms.
+                    .overlay(alignment: .topTrailing) {
+                        if shot.custodyURL != nil {
+                            Image(systemName: "icloud.and.arrow.up")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(BrandColor.onAccent)
+                                .padding(4)
+                                .background(BrandColor.textPrimary.opacity(0.85), in: Circle())
+                                .padding(3)
+                        }
+                    }
             }
             .buttonStyle(.plain)
             .accessibilityLabel("\(captured.count) captured this session")
+            .accessibilityValue(shot.custodyURL != nil ? "still saving" : "")
             .accessibilityHint("Opens the last shot")
         }
     }
@@ -2061,9 +2124,10 @@ struct ProCapturePhotosView: View {
 
     // MARK: - "Choose from library instead"
 
-    /// Push photos the pro already has through the SAME presign→PUT→confirm
-    /// pipeline a captured shot uses. Every failure lands in the same durable
-    /// custody a failed capture does, so an import is no more losable than a shot.
+    /// Push photos the pro already has through the SAME persist-then-upload
+    /// pipeline a captured shot uses: durable on disk before anything
+    /// network-shaped, then a background send. An import is no more losable
+    /// than a shot, and no more able to block the camera than one either.
     private func importFromLibrary(_ items: [PhotosPickerItem]) async {
         guard !importingLibrary else { return }
         importingLibrary = true
@@ -2078,13 +2142,20 @@ struct ProCapturePhotosView: View {
                 unreadable += 1
                 continue
             }
-            if let thumb = await ImageDownsample.thumbnail(from: prepared.jpeg, maxPixel: 216) {
-                captured.insert(CapturedShot(image: thumb), at: 0)
+            // Deliberately no card correction: that's a calibration of THIS
+            // camera in THIS light, and a photo taken elsewhere must not have
+            // it applied.
+            guard let custody = SessionByteVault.writePendingUpload(
+                prepared.jpeg, bookingId: custodyScope, phase: phase, focal: prepared.focal
+            ) else {
+                errorSticky = true
+                errorMessage = "Couldn’t save that photo, and it couldn’t be kept to retry."
+                continue
             }
-            // Deliberately NOT `upload(_:focal:)`: the card correction is a
-            // calibration of THIS camera in THIS light, and a photo taken
-            // elsewhere must not have it applied.
-            await uploadCorrected(prepared.jpeg, focal: prepared.focal)
+            if let thumb = await ImageDownsample.thumbnail(from: prepared.jpeg, maxPixel: 216) {
+                captured.insert(CapturedShot(image: thumb, custodyURL: custody), at: 0)
+            }
+            scheduleUpload(prepared.jpeg, focal: prepared.focal, phase: phase, custody: custody)
             added += 1
         }
 
@@ -2220,66 +2291,99 @@ struct ProCapturePhotosView: View {
         activeExpectations != nil && isReady
     }
 
-    /// Keep a shot: thumbnail, optionally complete the guided step, upload.
-    /// `advanceGuide` is decided at the capture site — always true for the guided
-    /// auto-shot (it only fires when ready for the step), and gated on
-    /// `manualShotAdvancesGuide` for a manual tap.
+    /// Keep a shot: thumbnail, optionally complete the guided step, persist
+    /// durably, then hand off to the background uploader. Returns once the
+    /// photo is safely on disk — NEVER waits on the network, so `uploading`
+    /// (which gates the shutter) clears again immediately regardless of
+    /// connectivity. `advanceGuide` is decided at the capture site — always
+    /// true for the guided auto-shot (it only fires when ready for the step),
+    /// and gated on `manualShotAdvancesGuide` for a manual tap.
     private func finalize(_ data: Data, advanceGuide: Bool, focal: MediaFocalPoint?) async {
-        // Strip-sized decode only — holding the full-sensor UIImage here pinned
-        // ~100–200 MB per shot and jetsam-killed real sessions.
-        if let thumb = await ImageDownsample.thumbnail(from: data, maxPixel: 216) {
-            captured.insert(CapturedShot(image: thumb), at: 0)
-        }
-        keptThisSession += 1   // the phase requirement counts kept shots, not thumbnails
-        if advanceGuide { markCurrentCaptured() }   // complete the guided shot + advance
-        await upload(data, focal: focal)
-    }
-
-    /// Upload one captured photo, baking in the card-solved color correction
-    /// when a card has been scanned (an uncorrected photo beats a lost one, so
-    /// a failed render falls back to the original bytes). On failure the
-    /// (already-corrected) bytes join the retry queue — a flaky connection
-    /// must never lose a shot the pro already took.
-    private func upload(_ data: Data, focal: MediaFocalPoint?) async {
+        // Card correction is baked in before persisting — a retry, or the
+        // stranded-upload sweep after a relaunch, must resend exactly these
+        // bytes rather than recompute a correction against whatever
+        // `cardMatrix` happens to be by then.
         var payload = data
         if let cardMatrix, let corrected = await CardCorrection.apply(cardMatrix, to: data) {
             payload = corrected
         }
+        // Durable BEFORE anything network-shaped. This is the one place a
+        // session photo becomes safe — offline, a hung connection, a crash, a
+        // kill, all the same from here on: the bytes are on disk. Everything
+        // after this line is best-effort delivery, not the difference
+        // between the shot existing or not.
+        let custody = SessionByteVault.writePendingUpload(
+            payload, bookingId: custodyScope, phase: phase, focal: focal
+        )
+
+        // Strip-sized decode only — holding the full-sensor UIImage here pinned
+        // ~100–200 MB per shot and jetsam-killed real sessions.
+        if let thumb = await ImageDownsample.thumbnail(from: data, maxPixel: 216) {
+            captured.insert(CapturedShot(image: thumb, custodyURL: custody), at: 0)
+        }
+        keptThisSession += 1   // the phase requirement counts kept shots, not thumbnails
+        if advanceGuide { markCurrentCaptured() }   // complete the guided shot + advance
+
         // A copy in the pro's own camera roll, when they asked for one. The
         // COLOUR-FINAL bytes, so what lands in Photos is what the library shows
         // — and add-only + raw-resource, so the original JPEG (EXIF orientation
         // and all) is preserved rather than re-encoded. A refusal here is
-        // silent on purpose: the shot is still uploading, nothing is lost, and
-        // an error line about a secondary copy would outrank the shoot.
+        // silent on purpose: the shot is already safe (or, on the branch below,
+        // as safe as it's going to get), and an error line about a secondary
+        // copy would outrank the shoot. Independent of the vault write below —
+        // this is a copy on the DEVICE, nothing to do with server custody.
         //
         // Only on this path — a RETRY re-enters `uploadCorrected` directly, and
         // a library import came FROM Photos, so neither double-saves.
         if destination.isPractice && savePracticeToPhotos {
             _ = await PhotoLibrarySaver.save(payload)
         }
-        // Card correction is color-only — geometry (and thus the focal) is unchanged.
-        await uploadCorrected(payload, focal: focal)
+
+        guard let custody else {
+            // Nothing is left holding this photo for the SERVER — no queue
+            // row, no vault file, no retry. It is the ONE message in this
+            // file not backed by state, so it must not time out of the lane
+            // like the recoverable ones do.
+            errorSticky = true
+            errorMessage = "Couldn’t save that photo, and it couldn’t be kept to retry."
+            return
+        }
+
+        scheduleUpload(payload, focal: focal, phase: phase, custody: custody)
     }
 
-    /// Upload bytes that are already color-final (retries must not re-correct). On
-    /// failure the bytes spill to the durable vault and join the owed-photos queue
-    /// — a flaky connection must never lose a shot the pro already took, and the
-    /// bytes mustn't pile up in RAM while the queue drains.
+    /// Fire the network attempt in the background, unstructured — never
+    /// awaited by the capture path, so a hung or offline connection never
+    /// blocks the next shot. Mirrors `uploadClip`'s existing shape for video.
+    private func scheduleUpload(
+        _ payload: Data, focal: MediaFocalPoint?, phase uploadPhase: MediaPhase, custody: URL
+    ) {
+        Task { await uploadCorrected(payload, focal: focal, uploadPhase: uploadPhase, custody: custody) }
+    }
+
+    /// Upload bytes that are already color-final (retries must not re-correct;
+    /// a fresh capture already baked correction in before ever calling this).
+    /// On failure the queue keeps the SAME vault file — the bytes are never
+    /// off disk while the network is in flight, so a crash mid-retry costs
+    /// nothing.
     ///
     /// `uploadPhase` is the phase the SHOT belongs to, which is not always the
     /// phase being shot now: a BEFORE photo stranded by a crash gets swept up
     /// during the AFTER shoot and must still land in BEFORE.
-    /// `custody` is the vault file these bytes are ALREADY spilled to (a retry).
-    /// It's released only once the server has them, and re-queued in place on a
-    /// re-failure — so the bytes are never off disk while the network is in
-    /// flight. A crash mid-retry then costs nothing; deleting first and
-    /// re-spilling after would lose the photo for the whole upload window.
+    /// `custody` is the vault file these bytes are already spilled to — always
+    /// non-nil now that every caller persists before it ever reaches here.
+    ///
+    /// Guards its own re-entrancy on `custody`: a retry (manual, automatic, or
+    /// the stranded sweep) racing an upload already in flight for the SAME
+    /// file would otherwise mint two upload sessions for one photo.
     private func uploadCorrected(
         _ payload: Data,
         focal: MediaFocalPoint?,
         uploadPhase: MediaPhase? = nil,
-        custody: URL? = nil
+        custody: URL
     ) async {
+        guard uploadsInFlight.insert(custody).inserted else { return }
+        defer { uploadsInFlight.remove(custody) }
         let target = uploadPhase ?? phase
         do {
             try await ProCameraUpload.photo(
@@ -2289,76 +2393,74 @@ struct ProCapturePhotosView: View {
                 phaseOverride: target,
                 client: session.client
             )
-            if let custody { SessionByteVault.remove(custody) }   // safe server-side now
-            session.signalRefresh()   // the hub's gallery refreshes
+            SessionByteVault.remove(custody)   // safe server-side now
+            clearCustody(custody)              // drop the thumbnail's pending badge
+            session.signalRefresh()            // the hub's gallery refreshes
+            // Nothing left owed — forget the backoff history. The next
+            // failure (a fresh one) should try again soon, not pick up
+            // wherever a now-irrelevant streak left off.
+            if failedUploads.isEmpty { retryScheduler.stop() }
         } catch let error as APIError {
             // The split that matters: a dropped connection is worth another tap;
             // a refusal will be repeated forever, so it needs a decision instead.
-            requeue(payload, focal: focal, phase: target, custody: custody,
+            requeue(custody, focal: focal, phase: target,
                     retryable: error.isRetryable, reason: error.userMessage)
         } catch {
             // Unknown, so assume transient — never strand a shot on a guess.
-            requeue(payload, focal: focal, phase: target, custody: custody, retryable: true,
+            requeue(custody, focal: focal, phase: target, retryable: true,
                     reason: "Couldn’t save that photo — it’s kept here to retry.")
         }
     }
 
-    /// Put a failed upload back in the queue: reusing its existing vault file when
-    /// this was a retry, or spilling fresh bytes when it's a new capture.
-    private func requeue(
-        _ payload: Data,
-        focal: MediaFocalPoint?,
-        phase uploadPhase: MediaPhase,
-        custody: URL?,
-        retryable: Bool,
-        reason: String
-    ) {
-        if let custody {
-            failedUploads.append(FailedUpload(url: custody, phase: uploadPhase, focal: focal,
-                                              isRetryable: retryable, reason: reason))
-            if retryable { errorMessage = reason } else { showTerminalDecision = true }
-        } else {
-            queueFailedUpload(payload, focal: focal, phase: uploadPhase,
-                              retryable: retryable, reason: reason)
-        }
+    /// Clear the pending-sync badge on whichever thumbnail owns this custody
+    /// file, once its bytes are confirmed server-side.
+    private func clearCustody(_ url: URL) {
+        guard let index = captured.firstIndex(where: { $0.custodyURL == url }) else { return }
+        captured[index].custodyURL = nil
     }
 
-    /// Spill an un-uploaded photo to durable custody and remember it. If even the
-    /// spill fails, surface it rather than silently pinning the bytes in RAM (the
-    /// whole point of spilling).
-    private func queueFailedUpload(
-        _ payload: Data,
+    /// Put a failed upload back in the queue, and arm the automatic-retry
+    /// timer so the pro doesn't have to tap RETRY on their own for a
+    /// connection that's merely dropped, not refused. The ONE place the
+    /// scheduler is armed on failure — a fresh capture's first failure and a
+    /// retry attempt failing again both funnel through here (`uploadCorrected`
+    /// is the only caller), so backoff grows across repeated failures without
+    /// two call sites racing to schedule the same timer.
+    private func requeue(
+        _ custody: URL,
         focal: MediaFocalPoint?,
         phase uploadPhase: MediaPhase,
         retryable: Bool,
         reason: String
     ) {
-        guard let url = SessionByteVault.writePendingUpload(
-            payload, bookingId: custodyScope, phase: uploadPhase, focal: focal
-        ) else {
-            // Nothing is left holding this photo — no queue row, no vault file,
-            // no retry. It is the ONE message in this file not backed by state,
-            // so it must not time out of the lane like the recoverable ones do.
-            errorSticky = true
-            errorMessage = "Couldn’t save that photo, and it couldn’t be kept to retry."
-            return
-        }
-        failedUploads.append(FailedUpload(url: url, phase: uploadPhase, focal: focal,
+        failedUploads.append(FailedUpload(url: custody, phase: uploadPhase, focal: focal,
                                           isRetryable: retryable, reason: reason))
-        // A refusal isn't an error line to squint at — it's a choice to make.
-        if retryable { errorMessage = reason } else { showTerminalDecision = true }
+        if retryable {
+            errorMessage = reason
+            // No `resetBackoff` — repeated failures of a still-struggling
+            // connection should back off further, not retry every 2s
+            // forever. Backoff only resets on a positive signal: a genuine
+            // reconnect (`ConnectivityMonitor`) or the queue fully draining
+            // (`uploadCorrected`'s success branch).
+            retryScheduler.scheduleRetry { await retryFailedUploads(auto: true) }
+        } else {
+            // A refusal isn't an error line to squint at — it's a choice to make.
+            showTerminalDecision = true
+        }
     }
 
     /// Re-attempt the uploads that could still succeed; whatever fails again
-    /// re-spills (and may re-classify as terminal). Refused photos are left
+    /// re-queues via `uploadCorrected` → `requeue`, which re-arms the
+    /// scheduler itself — nothing further to do here. Refused photos are left
     /// alone — re-sending them just reproduces the refusal.
-    private func retryFailedUploads() async {
-        guard !uploading else { return }
-        let pending = retryableUploads
+    ///
+    /// `auto` distinguishes the background scheduler firing from a pro's tap:
+    /// only the tap clears the visible error line, so a silent automatic
+    /// attempt never wipes a message they haven't read yet.
+    private func retryFailedUploads(auto: Bool = false) async {
+        let pending = retryableUploads.filter { !uploadsInFlight.contains($0.url) }
         guard !pending.isEmpty else { return }
-        uploading = true
-        errorMessage = nil
-        defer { uploading = false }
+        if !auto { errorMessage = nil }
         failedUploads.removeAll { entry in pending.contains { $0.id == entry.id } }
         for entry in pending {
             guard let payload = await Task.detached(
