@@ -94,10 +94,16 @@
         "name": "Bright balayage",
         "imageUrl": "https://cdn.example.com/lk_1.jpg",
         "visibility": "PUBLIC",
-        "serviceId": "svc_1"
+        "serviceId": "svc_1",
+        "bookingId": "bk_past_1"
       }
     ],
     "activityUnreadCount": 2,
+    "standing": {
+      "tier": "TASTEMAKER",
+      "topPercent": 2,
+      "city": "Brooklyn"
+    },
     "creator": {
       "isCreator": true,
       "savesOnYourLooks": 14,
@@ -110,7 +116,15 @@
           "proName": "Studio Lux",
           "bookedAt": "2026-02-10T10:00:00.000Z"
         }
-      ]
+      ],
+      "level": {
+        "level": 2,
+        "nextLevel": 3,
+        "nextLadder": "bookings",
+        "nextThreshold": 15,
+        "remaining": 12,
+        "progress": 0.3
+      }
     }
   }
 }
