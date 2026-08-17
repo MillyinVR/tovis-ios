@@ -72,6 +72,18 @@ struct MeView: View {
             .background(BrandColor.bgPrimary.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
             .refreshable { await load() }
+            // 🔴 This MUST hang off the scroll view, not off `boardsTab`. The bell
+            // that sets `showActivity` lives in the header, which is on screen for
+            // every panel — but the sheet used to be attached inside the BOARDS
+            // branch of the tab switch, so on FOLLOWING or HISTORY the modifier was
+            // not in the hierarchy at all and the bell silently did nothing while
+            // its unread badge kept insisting there was something to read.
+            //
+            // ClientActivityView brings its own NavigationStack + Done button, so it
+            // is presented bare (same as HomeView's notifications sheet). Marking
+            // read there signalRefreshes, which reloads this screen and drops the
+            // badge.
+            .sheet(isPresented: $showActivity) { ClientActivityView() }
             .task { if case .loading = phase { await load() } }
             .onChange(of: session.refreshTick) { Task { await load() } }
         }
@@ -89,7 +101,8 @@ struct MeView: View {
         }
 
         if let upcoming = me.upcomingNotificationBooking {
-            upcomingCard(upcoming).padding(.top, 24)
+            upcomingCard(upcoming, heroUrl: me.upcomingNotificationHeroImageUrl)
+                .padding(.top, 24)
         }
 
         if let invite = inviteLink {
@@ -221,6 +234,12 @@ struct MeView: View {
                 .font(BrandFont.mono(10))
                 .tracking(1.6)
                 .foregroundStyle(BrandColor.textSecondary)
+                // Four tracked mono labels do not fit a phone's width, and the
+                // default break put "FOLLOWERS" across two lines as "FOLLOWER /
+                // S". A stat label is one word; let it shrink instead.
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -289,7 +308,10 @@ struct MeView: View {
 
     // MARK: - Upcoming
 
-    private func upcomingCard(_ booking: ClientBooking) -> some View {
+    /// `heroUrl` is the visit's photo — its after-shot, or the look it was booked
+    /// from. iOS rendered no thumbnail here at all while web rendered an empty
+    /// box; the design puts the appointment's picture in this slot.
+    private func upcomingCard(_ booking: ClientBooking, heroUrl: String?) -> some View {
         NavigationLink {
             BookingDetailView(booking: booking, onDecision: { await load() })
         } label: {
@@ -306,9 +328,16 @@ struct MeView: View {
                     .foregroundStyle(BrandColor.accent)
                     .lineLimit(1)
 
-                    Text(booking.display.title)
-                        .font(BrandFont.body(16, .semibold))
-                        .foregroundStyle(BrandColor.textPrimary)
+                    HStack(alignment: .center, spacing: 13) {
+                        MediaTile(url: heroUrl, fallback: "", aspect: 1)
+                            .frame(width: 58, height: 58)
+
+                        Text(booking.display.title)
+                            .font(BrandFont.body(16, .semibold))
+                            .foregroundStyle(BrandColor.textPrimary)
+
+                        Spacer(minLength: 0)
+                    }
 
                     let pieces = [
                         booking.professional?.displayName,
@@ -409,10 +438,6 @@ struct MeView: View {
         .sheet(isPresented: $showingCreateBoard) {
             CreateBoardView { _ in Task { await load() } }
         }
-        // ClientActivityView brings its own NavigationStack + Done button, so it is
-        // presented bare (same as HomeView's notifications sheet). Marking read there
-        // signalRefreshes, which reloads this screen and drops the bell's badge.
-        .sheet(isPresented: $showActivity) { ClientActivityView() }
     }
 
     /// One of the client's OWN boards: the shared strip, plus the two things only
@@ -426,11 +451,15 @@ struct MeView: View {
             NavigationLink {
                 BoardDetailView(board: board, ownerHandle: handle)
             } label: {
+                // No `sharedBadge`: the visibility switch overlaid below already
+                // states it, and rendering both printed the same fact about the
+                // same board twice, eight points apart. Web suppresses it on the
+                // same grounds — the badge is for surfaces with no control.
                 BoardStripCard(
                     name: board.name,
                     itemCount: board.itemCount,
                     tileImageUrls: board.previewImageUrls,
-                    sharedBadge: boardIsShared(board)
+                    sharedBadge: false
                 )
             }
             .buttonStyle(.plain)
@@ -474,38 +503,46 @@ struct MeView: View {
         } else {
             VStack(spacing: 12) {
                 ForEach(items) { item in
-                    NavigationLink {
-                        ProProfileView(professionalId: item.professional.id,
-                                       fallbackName: item.professional.displayName)
-                    } label: {
-                        BrandSurface {
-                            HStack(spacing: 12) {
-                                BrandAvatar(name: item.professional.displayName,
-                                            avatarUrl: item.professional.avatarUrl, size: 52)
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(item.professional.displayName)
-                                        .font(BrandFont.body(15, .semibold))
-                                        .foregroundStyle(BrandColor.textPrimary)
-                                    if let handle = item.professional.handle {
-                                        Text("@\(handle)")
-                                            .font(BrandFont.body(12))
-                                            .foregroundStyle(BrandColor.textSecondary)
+                    // The pill is a SIBLING of the link, never inside its label:
+                    // a control inside a link's label is not its own tap target,
+                    // so tapping it would open the pro instead of unfollowing.
+                    ZStack(alignment: .trailing) {
+                        NavigationLink {
+                            ProProfileView(professionalId: item.professional.id,
+                                           fallbackName: item.professional.displayName)
+                        } label: {
+                            BrandSurface {
+                                HStack(spacing: 12) {
+                                    BrandAvatar(name: item.professional.displayName,
+                                                avatarUrl: item.professional.avatarUrl, size: 52)
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(item.professional.displayName)
+                                            .font(BrandFont.body(15, .semibold))
+                                            .foregroundStyle(BrandColor.textPrimary)
+                                        if let handle = item.professional.handle {
+                                            Text("@\(handle)")
+                                                .font(BrandFont.body(12))
+                                                .foregroundStyle(BrandColor.textSecondary)
+                                        }
+                                        if let subtitle = item.professional.subtitle {
+                                            Text(subtitle)
+                                                .font(BrandFont.body(12))
+                                                .foregroundStyle(BrandColor.textSecondary)
+                                                .lineLimit(1)
+                                        }
                                     }
-                                    if let subtitle = item.professional.subtitle {
-                                        Text(subtitle)
-                                            .font(BrandFont.body(12))
-                                            .foregroundStyle(BrandColor.textSecondary)
-                                            .lineLimit(1)
-                                    }
+                                    Spacer()
+                                    // Room for the pill that sits over this edge.
+                                    Color.clear.frame(width: 92, height: 1)
                                 }
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(BrandColor.textMuted)
                             }
                         }
+                        .buttonStyle(.plain)
+
+                        MeFollowingPill(professionalId: item.professional.id,
+                                        name: item.professional.displayName)
+                            .padding(.trailing, 14)
                     }
-                    .buttonStyle(.plain)
                 }
             }
         }
@@ -728,6 +765,57 @@ struct MeView: View {
 
 // MARK: - Reusable pieces
 
+/// Unfollow (or re-follow) straight from the list of who you follow.
+///
+/// There was no way to unfollow from the ONE screen that lists your follows —
+/// you had to open the pro's profile to find the control. Web has the same pill
+/// now. State lives in the shared `FollowToggle` and the request goes through
+/// `LooksService.toggleFollow(professionalId:)`, so this is chrome over the
+/// existing follow implementation rather than a third one.
+///
+/// Seeded `following: true` because every row on THIS list is, by definition, a
+/// pro the viewer follows — no per-row GET needed to find that out.
+private struct MeFollowingPill: View {
+    let professionalId: String
+    let name: String
+
+    @Environment(SessionModel.self) private var session
+    @State private var follow = FollowToggle(following: true, followerCount: 0)
+
+    var body: some View {
+        Button {
+            Task { await toggle() }
+        } label: {
+            Text(follow.following ? "Following" : "Follow")
+                .font(BrandFont.body(11.5, .bold))
+                .foregroundStyle(follow.following ? BrandColor.textSecondary : BrandColor.onAccent)
+                .padding(.vertical, 7).padding(.horizontal, 13)
+                .background(
+                    follow.following ? AnyShapeStyle(Color.clear) : AnyShapeStyle(BrandColor.accent),
+                    in: Capsule()
+                )
+                .overlay(
+                    Capsule().stroke(
+                        BrandColor.textPrimary.opacity(follow.following ? 0.15 : 0), lineWidth: 1
+                    )
+                )
+        }
+        .buttonStyle(.plain)
+        .disabled(follow.isWorking)
+        .opacity(follow.isWorking ? 0.7 : 1)
+        .accessibilityLabel(follow.following ? "Unfollow \(name)" : "Follow \(name)")
+    }
+
+    private func toggle() async {
+        guard follow.begin() != nil else { return }
+        do {
+            follow.finish(try await session.client.looks.toggleFollow(professionalId: professionalId))
+        } catch {
+            follow.fail()
+        }
+    }
+}
+
 /// A rounded media tile with a branded fallback when there's no image.
 private struct MediaTile: View {
     let url: String?
@@ -743,6 +831,13 @@ private struct MediaTile: View {
                 } placeholder: {
                     ProgressView().tint(BrandColor.accent)
                 }
+            } else if fallback.isEmpty {
+                // No caption to stand in for the photo — say "no picture" with a
+                // glyph rather than with words the card prints anyway. Matches
+                // web's BookingHeroImage.
+                Image(systemName: "camera")
+                    .font(.system(size: 18, weight: .light))
+                    .foregroundStyle(BrandColor.textSecondary.opacity(0.5))
             } else {
                 Text(fallback)
                     .font(BrandFont.body(13, .semibold))

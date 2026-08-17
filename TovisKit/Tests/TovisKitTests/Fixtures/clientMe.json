@@ -75,6 +75,7 @@
             "nameDisplay": "BUSINESS_NAME",
             "location": "Los Angeles",
             "professionType": "HAIRSTYLIST",
+            "professionLabel": "Hair stylist",
             "avatarUrl": null,
             "isPremium": false,
             "verificationStatus": "VERIFIED"
@@ -85,6 +86,7 @@
     },
     "counts": { "boards": 1, "saved": 8, "booked": 3, "following": 1, "followers": 12 },
     "upcomingNotificationBooking": null,
+    "upcomingNotificationHeroImageUrl": null,
     "history": [],
     "myLooks": [
       {

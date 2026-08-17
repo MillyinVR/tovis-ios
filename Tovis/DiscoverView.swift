@@ -1070,7 +1070,7 @@ struct DiscoverView: View {
 
     private func metaLine(_ pro: SearchProItem) -> String? {
         var parts: [String] = []
-        if let craft = pro.professionType { parts.append(craft.capitalized) }
+        if let craft = pro.professionLabel?.trimmedOrNil { parts.append(craft) }
         if let rating = pro.ratingAvg, pro.ratingCount > 0 {
             parts.append("★ \(String(format: "%.1f", rating)) (\(pro.ratingCount))")
         }
@@ -1151,7 +1151,7 @@ private struct TrendingCard: View {
                     .allowsHitTesting(false)
 
                 HStack(alignment: .top) {
-                    if let craft = pro.professionType {
+                    if let craft = pro.professionLabel?.trimmedOrNil {
                         badge(craft.uppercased(), bg: BrandColor.bgPrimary.opacity(0.55))
                     }
                     Spacer()
@@ -1203,7 +1203,7 @@ private struct ProGridCard: View {
                 CardSheen()
                 VStack {
                     HStack {
-                        if let craft = pro.professionType {
+                        if let craft = pro.professionLabel?.trimmedOrNil {
                             Text(craft.uppercased())
                                 .font(BrandFont.mono(9)).tracking(1)
                                 .foregroundStyle(BrandColor.textPrimary)

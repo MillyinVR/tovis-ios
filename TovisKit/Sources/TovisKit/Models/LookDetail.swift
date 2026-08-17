@@ -107,6 +107,11 @@ public struct LookDetailProfessional: Decodable, Sendable, Identifiable, Hashabl
     public let handle: String?
     public let nameDisplay: ProNameDisplay?
     public let professionType: String?
+    /// The craft as WORDS, composed by the server (`formatProfessionLabel`).
+    /// Never derive this from `professionType` on the client: that map lives in
+    /// ONE place, and three separate client-side transforms of the raw enum are
+    /// exactly how "MANICURIST" and "Massage_Therapist" reached real screens.
+    public let professionLabel: String?
     public let avatarUrl: String?
     public let location: String?
 

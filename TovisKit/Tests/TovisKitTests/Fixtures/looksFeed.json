@@ -18,6 +18,7 @@
         "handle": "amarahair",
         "nameDisplay": "BUSINESS_NAME",
         "professionType": "HAIRSTYLIST",
+        "professionLabel": "Hair stylist",
         "avatarUrl": "https://example.supabase.co/storage/v1/object/public/media-public/avatars/pro_1.jpg",
         "location": "Los Angeles, CA",
         "followerCount": 1280

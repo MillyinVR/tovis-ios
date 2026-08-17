@@ -316,7 +316,10 @@ func fixture(_ name: String) throws -> Data {
         #expect(me.boards.first?.previewImageUrls.first == "https://cdn.example.com/lp_1_thumb.jpg")
         // Following resolves the pro's public display name (BUSINESS_NAME mode).
         #expect(me.following.items.first?.professional.displayName == "Studio Lux")
-        #expect(me.following.items.first?.professional.subtitle == "HAIRSTYLIST · Los Angeles")
+        // Was pinned to "HAIRSTYLIST · Los Angeles" — the assertion held the raw
+        // enum in place. The craft is composed server-side now, so the subtitle
+        // reads as words and this test is the thing that would catch a relapse.
+        #expect(me.following.items.first?.professional.subtitle == "Hair stylist · Los Angeles")
         #expect(me.myLooks.first?.isPublic == true)
         #expect(me.creator.isCreator == true)
         #expect(me.creator.remixes.first?.who == "Maya")

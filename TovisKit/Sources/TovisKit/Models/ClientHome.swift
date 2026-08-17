@@ -53,6 +53,11 @@ public struct HomeProfessional: Decodable, Sendable, Identifiable {
     public let handle: String?
     public let avatarUrl: String?
     public let professionType: String?
+    /// The craft as WORDS, composed by the server (`formatProfessionLabel`).
+    /// Never derive this from `professionType` on the client: that map lives in
+    /// ONE place, and three separate client-side transforms of the raw enum are
+    /// exactly how "MANICURIST" and "Massage_Therapist" reached real screens.
+    public let professionLabel: String?
     public let location: String?
     public let timeZone: String?
 
@@ -63,7 +68,7 @@ public struct HomeProfessional: Decodable, Sendable, Identifiable {
     private let serverDisplayName: String?
 
     private enum CodingKeys: String, CodingKey {
-        case id, businessName, handle, avatarUrl, professionType, location, timeZone
+        case id, businessName, handle, avatarUrl, professionType, professionLabel, location, timeZone
         case serverDisplayName = "displayName"
     }
 

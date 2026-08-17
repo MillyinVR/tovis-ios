@@ -18,6 +18,7 @@
       "nameDisplay": "BUSINESS_NAME",
       "avatarUrl": null,
       "professionType": "COSMETOLOGIST",
+      "professionLabel": "Cosmetologist",
       "location": "Los Angeles, CA",
       "verificationStatus": "APPROVED",
       "isPremium": false

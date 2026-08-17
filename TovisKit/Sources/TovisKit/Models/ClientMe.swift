@@ -18,6 +18,9 @@ public struct ClientMe: Decodable, Sendable {
     public let following: ClientMeFollowing
     public let counts: ClientMeCounts
     public let upcomingNotificationBooking: ClientBooking?
+    /// Hero photo for the upcoming card — the visit's after-shot, or the look it
+    /// was booked from. Optional so an older server still decodes.
+    public let upcomingNotificationHeroImageUrl: String?
     public let history: [ClientMeHistoryItem]
     public let myLooks: [ClientMeLook]
     public let activityUnreadCount: Int
@@ -127,6 +130,11 @@ public struct MeProPreview: Decodable, Sendable, Identifiable, ProPublicNameSour
     public let nameDisplay: ProNameDisplay?
     public let location: String?
     public let professionType: String?
+    /// The pro's craft as WORDS — "Manicurist", never the raw `MANICURIST`.
+    /// Composed by the server (`formatProfessionLabel`) so the enum→label map
+    /// has one home. Optional only so an older server still decodes; the
+    /// subtitle falls back to omitting the craft rather than shouting the enum.
+    public let professionLabel: String?
     public let avatarUrl: String?
 
     /// The pro's public name — "Professional" when they have no usable name
@@ -134,9 +142,15 @@ public struct MeProPreview: Decodable, Sendable, Identifiable, ProPublicNameSour
     /// also web's own default fallback).
     public var displayName: String { publicDisplayName(fallback: "Professional") }
 
-    /// "Hairstylist · Los Angeles" — mirrors the web `buildFollowingSubtitle`.
+    /// "Manicurist · Brooklyn, NY".
+    ///
+    /// This used to join the RAW `professionType`, so the row read
+    /// "MANICURIST · Brooklyn, NY" — and `.capitalized` would not have saved it
+    /// either: `MASSAGE_THERAPIST` capitalises to "Massage_Therapist". The label
+    /// is composed server-side now, which is also why web's own hand-rolled
+    /// twin of this could drift without anything noticing.
     public var subtitle: String? {
-        let parts = [professionType?.trimmedOrNil, location?.trimmedOrNil].compactMap { $0 }
+        let parts = [professionLabel?.trimmedOrNil, location?.trimmedOrNil].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }
