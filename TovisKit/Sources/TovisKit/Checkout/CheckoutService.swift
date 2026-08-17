@@ -21,14 +21,25 @@ public final class CheckoutService: Sendable {
 
     /// POST /api/v1/client/bookings/{id}/checkout/stripe-session — post-service
     /// card checkout (optional tip). Returns the hosted Stripe Checkout session.
+    /// - Parameter applyCreatorCredit: put the client's platform credit balance
+    ///   against this bill. Sent on every attempt, `false` included — a `false`
+    ///   RELEASES a balance a previous attempt was holding, so a client who turns
+    ///   the toggle back off gets their credit freed rather than stranded.
     public func createCheckoutSession(
         bookingId: String,
         tipAmount: String? = nil,
+        applyCreatorCredit: Bool = false,
         idempotencyKey: String? = nil
     ) async throws -> ClientCheckoutStart {
         let payload = try JSONEncoder.canonical.encode(
-            CheckoutStripeSessionRequest(tipAmount: tipAmount)
+            CheckoutStripeSessionRequest(
+                tipAmount: tipAmount,
+                applyCreatorCredit: applyCreatorCredit
+            )
         )
+        // The nonce is derived from the whole encoded body, so flipping the
+        // credit toggle already mints a fresh key: a changed charge is a changed
+        // request and must not dedupe against the previous one.
         let key = idempotencyKey ?? buildClientIdempotencyKey(
             scope: "checkout", entityId: bookingId, action: "stripe-session",
             nonce: idempotencyNonce(payload))
@@ -41,12 +52,17 @@ public final class CheckoutService: Sendable {
                 Self.nativeReturnHeader: "native",
             ]
         )
-        // A deposit that covers the whole bill leaves nothing to charge: the
-        // server settled checkout PAID and sent no session. Detect it from the
-        // server's OWN flag first, and fall back to "no session id" so a
-        // response that omits the flag still can't be mistaken for a payable
-        // session (the flag is optional for pre-K10-A servers, which never
-        // return a null id either).
+        // Money that covers the whole bill — a deposit, the client's credit, or
+        // both — leaves nothing to charge: the server settled checkout PAID and
+        // sent no session. Credit is checked FIRST because it is the more
+        // specific claim; a bill it closed also reports no deposit shortfall.
+        if response.settledByCredit == true {
+            return .settledByCredit(creditCents: response.creatorCreditCents)
+        }
+        // Detect the deposit case from the server's OWN flag, and fall back to
+        // "no session id" so a response that omits the flag still can't be
+        // mistaken for a payable session (the flag is optional for pre-K10-A
+        // servers, which never return a null id either).
         if response.settledByDeposit == true || response.stripeCheckout.sessionId == nil {
             return .settledByDeposit(creditCents: response.depositCreditCents)
         }

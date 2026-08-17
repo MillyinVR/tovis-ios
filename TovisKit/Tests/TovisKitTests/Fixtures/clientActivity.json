@@ -94,6 +94,19 @@
                 "followBack": null
             }
         ],
+        "trend": {
+            "lookPostId": "cmrbry49r0063po0dyrjkeq1n",
+            "lookName": "Lived-in blonde",
+            "imageUrl": "https://example.test/looks/lived-in-blonde.jpg",
+            "detail": "+84 saves this week \u00b7 top 3% in Brooklyn",
+            "href": "/looks/cmrbry49r0063po0dyrjkeq1n"
+        },
+        "credit": {
+            "earnedLabel": "$7.50",
+            "earnedDetail": "@ava booked your Lived-in blonde",
+            "balanceLabel": "$30.00",
+            "useHref": "/client/bookings/cmrbry49r0063po0dyrjkeq1z"
+        },
         "unreadCount": 4,
         "markReadEventKeys": [
             "CLIENT_FOLLOW",

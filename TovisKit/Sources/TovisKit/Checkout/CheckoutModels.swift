@@ -25,8 +25,14 @@ public struct StripeCheckoutSession: Decodable, Sendable {
 
 /// Request body for the post-service card checkout. `tipAmount` is an optional
 /// decimal string (matching the wire's string-money convention); nil omits it.
+///
+/// `applyCreatorCredit` is sent on EVERY attempt, `false` included: the server
+/// treats a `false` as a RELEASE of any balance a previous attempt was holding
+/// against this booking, so omitting it when the client turns the toggle back
+/// off would leave their own credit locked up until a sweep expires it.
 struct CheckoutStripeSessionRequest: Encodable, Sendable {
     let tipAmount: String?
+    let applyCreatorCredit: Bool
 }
 
 struct CheckoutStripeSessionResponse: Decodable, Sendable {
@@ -37,19 +43,28 @@ struct CheckoutStripeSessionResponse: Decodable, Sendable {
     /// field must decode fine and read as "not settled", which is exactly what
     /// that older server means.
     let settledByDeposit: Bool?
+    /// True when the client's own platform CREDIT closed the remaining balance.
+    /// Distinct from `settledByDeposit`: they are different money from different
+    /// funders, and telling a client their deposit covered a bill they actually
+    /// spent credit on is the wrong thing to say about where their money went.
+    let settledByCredit: Bool?
     /// Deposit money credited against this bill, in cents (0 when none).
     let depositCreditCents: Int?
+    /// Platform credit applied to this bill, in cents (0 when none).
+    let creatorCreditCents: Int?
 }
 
 /// What starting the final-bill checkout actually produced. An enum rather than
 /// a session with nil fields, so a caller cannot try to open a checkout page
 /// that does not exist — the device-side mirror of the web write boundary's
-/// `STRIPE_SESSION` / `SETTLED_BY_DEPOSIT` union.
+/// `STRIPE_SESSION` / `SETTLED_NOTHING_DUE` union.
 public enum ClientCheckoutStart: Sendable {
     /// Open `session.url` in the in-app browser.
     case session(StripeCheckoutSession)
     /// Nothing to pay — the deposit covered it and the booking is already PAID.
     case settledByDeposit(creditCents: Int?)
+    /// Nothing to pay — the client's credit closed the bill and it is now PAID.
+    case settledByCredit(creditCents: Int?)
 }
 
 // MARK: - POST /client/bookings/{id}/checkout (non-card confirm / save tip)
