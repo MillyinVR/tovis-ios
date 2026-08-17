@@ -84,6 +84,9 @@ struct BookingDetailView: View {
     // past/completed booking (or one with unread aftercare); supplementary, so
     // a load failure just hides the section (§24 AF3b).
     @State private var aftercare: ClientAftercareDetail?
+    /// Whether the client chose to put their platform credit against this bill.
+    /// Off by default and never persisted: redemption is a manual per-booking act.
+    @State private var applyCredit = false
     @State private var loadingAftercare = false
 
     // Aftercare product checkout (§5 A3-prod) — the client's qty selection over
@@ -620,6 +623,51 @@ struct BookingDetailView: View {
     }
     private var selectedMethodIsStripe: Bool { selectedMethodKey == "stripe_card" }
 
+    // MARK: - Native checkout: platform credit
+
+    /// The client's spendable balance, in dollars. Rides the per-booking
+    /// aftercare read and already excludes this booking's own reservation.
+    private var creditBalance: Decimal {
+        let cents = aftercare?.creatorCreditBalanceCents ?? 0
+        guard cents > 0 else { return 0 }
+        return Decimal(cents) / 100
+    }
+
+    /// 🔴 Credit is offered on the CARD path only. The pro is made whole by a
+    /// platform→pro Stripe transfer, and that rail only exists for a pro with a
+    /// connected account taking a card charge. Letting a client hand their
+    /// Venmo-paying pro less cash "because I had credit" would take the discount
+    /// straight out of that pro's pocket with nothing to put it back — the one
+    /// thing platform-funded is defined not to do. Mirrors web's `creditOffered`.
+    private var creditOffered: Bool { creditBalance > 0 && selectedMethodIsStripe }
+
+    /// The client HAS credit, this pro does take card, but they are on another
+    /// method — so the toggle is (correctly) hidden.
+    ///
+    /// 🔴 Without this a client who followed "Use" from the activity banner
+    /// arrives at a checkout with no mention of their balance anywhere, and would
+    /// have to open the payment picker to discover the feature exists. Silent
+    /// when the pro takes no card, because "choose card" would then be advice
+    /// they cannot act on. Mirrors web's `creditNeedsCard`.
+    private var creditNeedsCard: Bool {
+        creditBalance > 0 && !selectedMethodIsStripe
+            && acceptedMethods.contains(where: { $0.key == "stripe_card" })
+    }
+
+    /// What the toggle actually takes off THIS bill — never more than the
+    /// balance, never more than the bill. The server re-derives the same cap
+    /// inside its locked transaction; this is the quote, not the authority.
+    private var creditApplied: Decimal {
+        guard creditOffered, applyCredit else { return 0 }
+        return min(creditBalance, liveTotal)
+    }
+
+    /// What the client still owes once their credit comes off.
+    private var amountDueAfterCredit: Decimal {
+        let due = liveTotal - creditApplied
+        return due < 0 ? 0 : due
+    }
+
     /// Preset tip chips = configured suggestions (fallback 15/20/25), with 0% first.
     private var tipPresetPercents: [Int] {
         guard tipsEnabled, serviceSubtotal > 0 else { return [] }
@@ -646,7 +694,10 @@ struct BookingDetailView: View {
 
     private var confirmCtaTitle: String {
         guard selectedMethod != nil else { return "Choose a payment method" }
-        let total = Wire.money(CheckoutMoney.fixed2(liveTotal)) ?? "$0"
+        // 🔴 The amount actually being charged, not the bill. A client who
+        // applied credit must never be asked to "Pay $250" for a $220 charge —
+        // the button is the last thing they read before the money moves.
+        let total = Wire.money(CheckoutMoney.fixed2(amountDueAfterCredit)) ?? "$0"
         return selectedMethodIsStripe ? "Pay \(total) with card" : "Confirm payment of \(total)"
     }
 
@@ -677,8 +728,55 @@ struct BookingDetailView: View {
                         .font(BrandFont.body(16, .semibold))
                         .foregroundStyle(BrandColor.textPrimary)
                 }
+
+                if creditApplied > 0 {
+                    checkoutSummaryRow("Credit applied", creditApplied, negative: true)
+                    HStack {
+                        Text("Amount due")
+                            .font(BrandFont.body(16, .semibold))
+                            .foregroundStyle(BrandColor.textPrimary)
+                        Spacer()
+                        Text(Wire.money(CheckoutMoney.fixed2(amountDueAfterCredit)) ?? "$0")
+                            .font(BrandFont.body(16, .semibold))
+                            .foregroundStyle(BrandColor.textPrimary)
+                    }
+                }
+
+                if creditNeedsCard {
+                    Text(verbatim: "You have \(Wire.money(CheckoutMoney.fixed2(creditBalance)) ?? "$0") credit — choose card as your payment method to use it on this booking.")
+                        .font(BrandFont.body(12))
+                        .foregroundStyle(BrandColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 4)
+                }
+
+                if creditOffered {
+                    creditToggleRow
+                }
             }
         }
+    }
+
+    /// The platform-credit toggle. Off by default — Tori's call is a MANUAL
+    /// per-booking choice, so nothing here spends a balance for the client, and
+    /// an untouched checkout charges the full bill exactly as it did before.
+    private var creditToggleRow: some View {
+        Toggle(isOn: $applyCredit) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(verbatim: "Use my \(Wire.money(CheckoutMoney.fixed2(creditBalance)) ?? "$0") credit on this booking")
+                    .font(BrandFont.body(13, .semibold))
+                    .foregroundStyle(BrandColor.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Your credit is applied to this appointment only, and your pro is still paid in full. Leave it off to save it for another time.")
+                    .font(BrandFont.body(12))
+                    .foregroundStyle(BrandColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .tint(BrandColor.gold)
+        .disabled(checkoutBusy)
+        .padding(.top, 4)
     }
 
     private func checkoutSummaryRow(_ label: String, _ amount: Decimal, negative: Bool = false) -> some View {
@@ -1150,9 +1248,22 @@ struct BookingDetailView: View {
         do {
             let start = try await session.client.checkout.createCheckoutSession(
                 bookingId: booking.id,
-                tipAmount: CheckoutMoney.fixed2(tipDecimal)
+                tipAmount: CheckoutMoney.fixed2(tipDecimal),
+                // Sent on every attempt, `false` included: a false RELEASES a
+                // balance a previous attempt was holding against this booking.
+                applyCreatorCredit: creditOffered && applyCredit
             )
             switch start {
+            case let .settledByCredit(creditCents):
+                // The client's own credit closed the bill, so there is nothing
+                // to open and nothing to charge — the server settled it PAID
+                // before answering. Same handling as the deposit case; kept a
+                // separate arm because it is different money and a future
+                // surface that explains WHICH money closed the bill must not
+                // have to guess.
+                _ = creditCents
+                paidLocally = true
+                await onDecision()
             case let .settledByDeposit(creditCents):
                 // The deposit already covered the whole bill and the server
                 // settled checkout PAID before answering. There is nothing to
@@ -1276,7 +1387,12 @@ struct BookingDetailView: View {
     /// Fetch aftercare once the session has happened (past/completed) or there's
     /// unread aftercare — the same window the web shows the aftercare tab in.
     private var shouldLoadAftercare: Bool {
-        showsMediaConsent || booking.hasUnreadAftercare
+        // 🔴 `paymentDue` is in here because the checkout section reads this
+        // payload for the client's credit balance. Without it the balance is nil
+        // exactly when the client is paying — for anyone who had already opened
+        // their aftercare — and the credit toggle would silently not render,
+        // which looks identical to a feature that was never built.
+        showsMediaConsent || booking.hasUnreadAftercare || paymentDue
     }
 
     private func loadAftercare() async {

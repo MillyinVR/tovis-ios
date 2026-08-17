@@ -27,6 +27,15 @@ struct ClientActivityView: View {
     @State private var rows: [ClientActivityItem] = []
     @State private var unread = 0
     @State private var markReadEventKeys: [String] = []
+    /// Standings, not events — see `content` for why they sit outside the rows.
+    @State private var trend: ClientActivityTrend?
+    @State private var credit: ClientActivityCredit?
+    /// The credit banner's "Use" resolves a booking id into a whole booking
+    /// before it can push the detail; these hold that hop.
+    @State private var resolvingUseBooking = false
+    @State private var useBookingNav: ClientBookingNav?
+    /// The section to open that booking on, taken from the server's own href.
+    @State private var useBookingStep: String?
     @State private var marking = false
     /// Mark-all-read is idempotent server-side, but there is no reason to re-send
     /// it once it has succeeded for this presentation.
@@ -45,6 +54,9 @@ struct ClientActivityView: View {
                 }
             }
             .background(BrandColor.bgPrimary)
+            .navigationDestination(item: $useBookingNav) { nav in
+                BookingDetailView(booking: nav.booking, focusStep: useBookingStep)
+            }
             .navigationTitle("Activity")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -66,27 +78,51 @@ struct ClientActivityView: View {
 
     private var hasUnread: Bool { unread > 0 }
 
+    /// 🔴 The banners sit ABOVE the feed and OUTSIDE its empty state, on both
+    /// platforms. They are standings, not events: a client with no unread rows
+    /// can still be trending and can still hold a balance, and nesting either
+    /// inside the "No activity yet" branch would hide a true thing for an
+    /// entirely unrelated reason.
     @ViewBuilder
     private var content: some View {
-        if rows.isEmpty {
-            emptyState
-        } else {
-            ScrollView {
-                LazyVStack(spacing: 10) {
-                    ForEach(rows) { item in
-                        ActivityRow(item: item)
+        ScrollView {
+            VStack(spacing: 10) {
+                if let trend {
+                    TrendBanner(trend: trend)
+                }
+                if let credit {
+                    CreditBanner(
+                        credit: credit,
+                        resolving: resolvingUseBooking,
+                        onUse: { bookingId in
+                            Task {
+                                await openBookingToSpendCredit(
+                                    bookingId, step: credit.useStep)
+                            }
+                        }
+                    )
+                }
+
+                if rows.isEmpty {
+                    emptyCard
+                } else {
+                    LazyVStack(spacing: 10) {
+                        ForEach(rows) { item in
+                            ActivityRow(item: item)
+                        }
                     }
                 }
-                .padding(.horizontal, 18)
-                .padding(.top, 14)
-                .padding(.bottom, 28)
             }
-            .refreshable { await load() }
+            .padding(.horizontal, 18)
+            .padding(.top, 14)
+            .padding(.bottom, 28)
         }
+        .refreshable { await load() }
     }
 
-    /// Web's empty card, verbatim.
-    private var emptyState: some View {
+    /// Web's empty card, verbatim. Padding lives on the enclosing stack now, so
+    /// this is only the card itself — it can be preceded by a banner.
+    private var emptyCard: some View {
         VStack(spacing: 8) {
             Text("No activity yet")
                 .font(BrandFont.body(15, .bold))
@@ -105,9 +141,7 @@ struct ClientActivityView: View {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(BrandColor.textPrimary.opacity(0.1), lineWidth: 1)
         )
-        .padding(.horizontal, 18)
-        .padding(.top, 24)
-        .frame(maxHeight: .infinity, alignment: .top)
+        .padding(.top, 10)
     }
 
     /// A failed LOAD is its own state — never rendered as "you have no activity".
@@ -138,6 +172,8 @@ struct ClientActivityView: View {
             rows = feed.items
             unread = max(0, feed.unreadCount)
             markReadEventKeys = feed.markReadEventKeys
+            trend = feed.trend
+            credit = feed.credit
             // Re-arm: this screen can refetch (web's cannot), so a fresh batch of
             // unread rows must be markable again. Leaving it latched would show a
             // live "Mark all read" that does nothing.
@@ -147,6 +183,25 @@ struct ClientActivityView: View {
             phase = .failed(error.userMessage)
         } catch {
             phase = .failed("Couldn’t load your activity.")
+        }
+    }
+
+    /// Open the booking the client can spend their balance on.
+    ///
+    /// The server already told us this booking's checkout is open, so a miss
+    /// here means the state moved under us (it was paid on another device, or
+    /// cancelled) — leaving the pill inert is the right outcome for that, and it
+    /// is why this is not a failure banner: nothing the client did went wrong.
+    private func openBookingToSpendCredit(_ bookingId: String, step: String?) async {
+        guard !resolvingUseBooking else { return }
+        resolvingUseBooking = true
+        defer { resolvingUseBooking = false }
+        if let booking = try? await session.client.bookings.booking(id: bookingId) {
+            // Set the step BEFORE the nav so the destination reads it on its
+            // first build; assigning it afterwards would open the overview and
+            // then jump, which reads as a glitch.
+            useBookingStep = step
+            useBookingNav = ClientBookingNav(booking: booking)
         }
     }
 
@@ -172,6 +227,164 @@ struct ClientActivityView: View {
             unread = previousUnread
         }
         marking = false
+    }
+}
+
+// MARK: - Banners
+
+/// "Your Lived-in blonde is trending · +84 saves this week · top 3% in Brooklyn".
+///
+/// A port of web's `TrendBanner`, and like every activity row the copy that
+/// carries NUMBERS (`detail`) is rendered verbatim from the server so the two
+/// platforms cannot state the same momentum differently.
+private struct TrendBanner: View {
+    let trend: ClientActivityTrend
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(BrandColor.accent.opacity(0.15))
+                    .frame(width: 42, height: 42)
+                if let imageUrl = trend.imageUrl, let url = URL(string: imageUrl) {
+                    AsyncImage(url: url) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        Color.clear
+                    }
+                    .frame(width: 42, height: 42)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                } else {
+                    Image(systemName: "flame.fill")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(BrandColor.accent)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                // Server-composed name inside app-composed words — every Text is
+                // `verbatim` so none of it goes through a localization lookup.
+                (
+                    Text(verbatim: "Your ").font(BrandFont.body(14, .bold))
+                        .foregroundColor(BrandColor.textPrimary)
+                        + Text(verbatim: trend.lookName).font(BrandFont.body(14, .bold))
+                        .foregroundColor(BrandColor.accent)
+                        + Text(verbatim: " is trending").font(BrandFont.body(14, .bold))
+                        .foregroundColor(BrandColor.textPrimary)
+                )
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+
+                Text(verbatim: trend.detail)
+                    .font(BrandFont.body(12.5))
+                    .foregroundStyle(BrandColor.textSecondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 4)
+
+            NavigationLink {
+                LookDetailView(lookId: trend.lookPostId)
+            } label: {
+                Text("View")
+                    .font(BrandFont.body(11.5, .bold))
+                    .foregroundStyle(BrandColor.onAccent)
+                    .padding(.vertical, 8).padding(.horizontal, 13)
+                    .background(BrandColor.accent, in: Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(
+            BrandColor.accent.opacity(0.08),
+            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(BrandColor.accent.opacity(0.3), lineWidth: 1)
+        )
+    }
+}
+
+/// "You earned $7.50 credit · @ava booked your Lived-in blonde · $30.00 banked
+/// total".
+///
+/// The "Use" pill renders ONLY when the server handed back a booking with an
+/// open checkout AND the path is one this app can route. A pill labelled "Use"
+/// that leads nowhere is worse than no pill, and an unspent balance is a
+/// perfectly ordinary steady state — so nothing here nags.
+private struct CreditBanner: View {
+    let credit: ClientActivityCredit
+    /// True while the parent is turning the booking id into a `ClientBooking`.
+    let resolving: Bool
+    let onUse: (String) -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(BrandColor.gold.opacity(0.16))
+                    .frame(width: 40, height: 40)
+                Image(systemName: "dollarsign.circle")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(BrandColor.gold)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                (
+                    Text(verbatim: "You earned ").font(BrandFont.body(14, .bold))
+                        .foregroundColor(BrandColor.textPrimary)
+                        + Text(verbatim: credit.earnedLabel).font(BrandFont.body(14, .bold))
+                        .foregroundColor(BrandColor.gold)
+                        + Text(verbatim: " credit").font(BrandFont.body(14, .bold))
+                        .foregroundColor(BrandColor.textPrimary)
+                )
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+
+                Text(verbatim: "\(credit.earnedDetail) · \(credit.balanceLabel) banked total")
+                    .font(BrandFont.body(12.5))
+                    .foregroundStyle(BrandColor.textSecondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 4)
+
+            // Resolved by the parent, not pushed directly: there is no
+            // single-booking client GET behind a `NavigationLink`'s destination,
+            // so the id has to be turned into a whole `ClientBooking` first —
+            // the same two-step every other id-driven client surface uses
+            // (AftercareInboxView, PriorityOffersView, ThreadView).
+            if let bookingId = credit.useBookingId {
+                Button {
+                    onUse(bookingId)
+                } label: {
+                    Text("Use")
+                        .font(BrandFont.body(11.5, .semibold))
+                        .foregroundStyle(BrandColor.textSecondary)
+                        .padding(.vertical, 6).padding(.horizontal, 12)
+                        .overlay(
+                            Capsule().stroke(BrandColor.textPrimary.opacity(0.15), lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(resolving)
+                .opacity(resolving ? 0.7 : 1)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(
+            BrandColor.gold.opacity(0.08),
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(BrandColor.gold.opacity(0.3), lineWidth: 1)
+        )
     }
 }
 

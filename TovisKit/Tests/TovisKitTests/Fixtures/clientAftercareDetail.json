@@ -86,5 +86,6 @@
     ]
   },
   "reviewEligible": true,
-  "checkoutProductsEditable": true
+  "checkoutProductsEditable": true,
+  "creatorCreditBalanceCents": 23700
 }

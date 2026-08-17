@@ -41,11 +41,21 @@ public struct ClientAftercareDetail: Decodable, Sendable {
     /// (finalized aftercare, not yet in/through payment, not completed/cancelled).
     /// When false the picker renders read-only (locked).
     public let checkoutProductsEditable: Bool
+    /// The client's spendable platform-credit balance in CENTS, already
+    /// excluding any reservation this booking's own checkout is holding.
+    ///
+    /// 0 (or absent, from a server that predates it) renders no toggle at all:
+    /// an "apply my credit" switch for a client with no credit is a control that
+    /// can only disappoint. It rides this per-booking read rather than the
+    /// booking list because the balance belongs to the CLIENT, not a booking, and
+    /// the list carries up to 300 rows that would each repeat it.
+    public let creatorCreditBalanceCents: Int?
 
     private enum CodingKeys: String, CodingKey {
         case canShowAftercare, aftercare, beforeAfter
         case recommendedProducts, checkoutProducts, rebook
         case existingReview, reviewEligible, checkoutProductsEditable
+        case creatorCreditBalanceCents
     }
 
     public init(from decoder: Decoder) throws {
@@ -66,6 +76,11 @@ public struct ClientAftercareDetail: Decodable, Sendable {
         existingReview = try c.decodeIfPresent(ClientAftercareExistingReview.self, forKey: .existingReview)
         reviewEligible = try c.decodeIfPresent(Bool.self, forKey: .reviewEligible) ?? false
         checkoutProductsEditable = try c.decodeIfPresent(Bool.self, forKey: .checkoutProductsEditable) ?? false
+        // Additive too, and money: absent means "this server has no credit
+        // ledger", which reads as no balance and therefore no toggle. Never
+        // defaulted to a number the client might be offered to spend.
+        creatorCreditBalanceCents = try c.decodeIfPresent(
+            Int.self, forKey: .creatorCreditBalanceCents)
     }
 
     /// True when there's something to render — the pro's care-plan sections,

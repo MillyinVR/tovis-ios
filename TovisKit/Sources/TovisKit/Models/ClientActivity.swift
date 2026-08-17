@@ -22,11 +22,119 @@ public struct ClientActivityFeed: Decodable, Sendable {
     /// The allowlist "Mark all read" hands back to POST /client/notifications/read.
     /// Server-owned on purpose: the client must not hard-code the event set.
     public let markReadEventKeys: [String]
+    /// The trending banner, or nil when nothing of the client's actually moved
+    /// this week. Nil is the ORDINARY case and the honest one — a client with no
+    /// momentum sees no banner rather than "+0 saves this week".
+    ///
+    /// Optional in the Swift sense too, so a server that predates this still
+    /// decodes rather than failing the whole feed.
+    public let trend: ClientActivityTrend?
+    /// The credit banner, or nil on a zero balance. Same leniency, same reason.
+    public let credit: ClientActivityCredit?
 
-    public init(items: [ClientActivityItem], unreadCount: Int, markReadEventKeys: [String]) {
+    public init(
+        items: [ClientActivityItem],
+        unreadCount: Int,
+        markReadEventKeys: [String],
+        trend: ClientActivityTrend? = nil,
+        credit: ClientActivityCredit? = nil
+    ) {
         self.items = items
         self.unreadCount = unreadCount
         self.markReadEventKeys = markReadEventKeys
+        self.trend = trend
+        self.credit = credit
+    }
+}
+
+/// "Your Lived-in blonde is trending · +84 saves this week · top 3% in Brooklyn".
+///
+/// `detail` carries every NUMBER and is composed server-side, so the two
+/// platforms cannot word the same momentum differently. Only the three-word
+/// headline around `lookName` is composed natively, because the look name has to
+/// be styled apart from the words either side of it.
+///
+/// A row exists on the server only because the look cleared a real floor, so
+/// there is no "is this worth showing?" judgement to re-make here: if this is
+/// non-nil, it is worth showing.
+public struct ClientActivityTrend: Decodable, Sendable, Equatable {
+    public let lookPostId: String
+    public let lookName: String
+    public let imageUrl: String?
+    /// "+84 saves this week · top 3% in Brooklyn". The city half is simply absent
+    /// when the scorer declined to rank the city.
+    public let detail: String
+    public let href: String
+
+    public init(
+        lookPostId: String,
+        lookName: String,
+        imageUrl: String? = nil,
+        detail: String,
+        href: String
+    ) {
+        self.lookPostId = lookPostId
+        self.lookName = lookName
+        self.imageUrl = imageUrl
+        self.detail = detail
+        self.href = href
+    }
+}
+
+/// "You earned $7.50 credit · @ava booked your Lived-in blonde · $30.00 banked
+/// total".
+///
+/// Every money string is formatted server-side; the app never does currency
+/// maths on a balance. `useHref` is nil when the client has no open checkout to
+/// spend it on, and the view then renders no "Use" affordance at all — an
+/// unspent balance is a perfectly ordinary steady state.
+public struct ClientActivityCredit: Decodable, Sendable, Equatable {
+    public let earnedLabel: String
+    public let earnedDetail: String
+    public let balanceLabel: String
+    public let useHref: String?
+
+    public init(
+        earnedLabel: String,
+        earnedDetail: String,
+        balanceLabel: String,
+        useHref: String? = nil
+    ) {
+        self.earnedLabel = earnedLabel
+        self.earnedDetail = earnedDetail
+        self.balanceLabel = balanceLabel
+        self.useHref = useHref
+    }
+
+    /// The booking the "Use" pill opens, when the href is one native can route.
+    ///
+    /// Nil for an unroutable path, so the pill is not drawn rather than drawn and
+    /// dead — the same rule `ClientActivityItem.destination` follows.
+    public var useBookingId: String? {
+        guard let components = useComponents else { return nil }
+        let parts = components.path.split(separator: "/").map(String.init)
+        // `/client/bookings/{id}` — and only that.
+        guard parts.count == 3, parts[0] == "client", parts[1] == "bookings" else {
+            return nil
+        }
+        return parts[2]
+    }
+
+    /// 🔴 The section to open the booking ON, read from the server's own href
+    /// rather than hard-coded here.
+    ///
+    /// The booking detail opens on its overview, and the checkout — the only
+    /// place the credit toggle exists — is a different section. A "Use" button
+    /// that lands somewhere with no sign of the thing it promised is a dead end
+    /// wearing a working link's clothes, which is exactly what web's bare
+    /// `/client/bookings/{id}` was doing before this.
+    public var useStep: String? {
+        useComponents?.queryItems?.first(where: { $0.name == "step" })?.value
+    }
+
+    private var useComponents: URLComponents? {
+        guard let useHref else { return nil }
+        return URLComponents(string: useHref)
     }
 }
 
