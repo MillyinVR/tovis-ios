@@ -61,16 +61,20 @@ import Testing
 
     /// The actual timer fires and calls back — this is the one place the
     /// class's async side needs a real wait rather than the pure
-    /// attempt-counter above. Margins are generous (15x the scheduled delay)
-    /// because this suite runs its tests in parallel alongside genuinely
-    /// CPU-heavy ones (video export/compositing) — a tight margin here would
-    /// be a flaky test, not a meaningful assertion.
+    /// attempt-counter above. Polls instead of sleeping a fixed window: this
+    /// suite runs its tests in parallel alongside genuinely CPU-heavy ones
+    /// (video export/compositing), and CI runners are slower still, so even a
+    /// 15x-margin FIXED sleep-then-check (what this used to do) measured
+    /// flaky in practice — a scheduling delay under load isn't proportional
+    /// to the scheduled interval, so no fixed multiple of it is safe. Polling
+    /// resolves in milliseconds in the common case and only spends the full
+    /// budget under genuine contention or a real bug.
     @Test func fireRunsTheClosureAfterTheDelay() async throws {
-        let scheduler = UploadRetryScheduler(steps: [0.1])
+        let scheduler = UploadRetryScheduler(steps: [0.01])
         let fired = Counter()
         scheduler.scheduleRetry { await fired.increment() }
 
-        try await Task.sleep(nanoseconds: 1_500_000_000)
+        try await pollUntil { await fired.value == 1 }
         #expect(await fired.value == 1)
     }
 
@@ -78,23 +82,43 @@ import Testing
     /// ONE next attempt is ever in flight, or a burst of failures would stack
     /// up redundant fires.
     @Test func reschedulingCancelsThePendingTimer() async throws {
-        let scheduler = UploadRetryScheduler(steps: [0.1, 0.1])
+        let scheduler = UploadRetryScheduler(steps: [0.01, 0.01])
         let fired = Counter()
         scheduler.scheduleRetry { await fired.increment() }
         scheduler.scheduleRetry { await fired.increment() }   // supersedes the first
 
-        try await Task.sleep(nanoseconds: 1_500_000_000)
+        try await pollUntil { await fired.value >= 1 }
+        // Give an (incorrect) second fire a further window to show up before
+        // asserting there wasn't one.
+        try await Task.sleep(nanoseconds: 300_000_000)
         #expect(await fired.value == 1)
     }
 
     @Test func stopCancelsAPendingTimerEntirely() async throws {
-        let scheduler = UploadRetryScheduler(steps: [0.1])
+        let scheduler = UploadRetryScheduler(steps: [0.01])
         let fired = Counter()
         scheduler.scheduleRetry { await fired.increment() }
         scheduler.stop()
 
-        try await Task.sleep(nanoseconds: 1_500_000_000)
+        // Nothing to poll FOR here (asserting an absence) — a flat wait long
+        // enough to have caught the fire above is the right shape.
+        try await Task.sleep(nanoseconds: 300_000_000)
         #expect(await fired.value == 0)
+    }
+
+    /// Polls `condition` every 20ms for up to 5s. Succeeds the instant the
+    /// condition is true rather than waiting out a fixed window — fast on a
+    /// healthy machine, tolerant of a genuinely overloaded CI runner, and
+    /// still fails (correctly) if the condition never becomes true.
+    private func pollUntil(
+        timeout: Duration = .seconds(5),
+        _ condition: @Sendable () async -> Bool
+    ) async throws {
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
+            if await condition() { return }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
     }
 
     private actor Counter {
