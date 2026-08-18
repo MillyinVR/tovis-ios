@@ -97,6 +97,12 @@ public struct MediaFocalPoint: Sendable, Equatable {
 /// `focalX`/`focalY` are the normalized subject focal (camera C6) — same nil-is-
 /// omitted contract, so a faceless shot (or a server that predates the field)
 /// stays center.
+///
+/// `capturedAt` (ISO-8601) and `checksumSha256` are capture-attestation claims,
+/// mirrored server-side into `MediaCaptureAttestation` — the server hashes the
+/// bytes it actually received itself and never trusts `checksumSha256` alone,
+/// so this is a claim to compare against, not a proof. Both nil-is-omitted, same
+/// degrade-cleanly contract as the focal fields.
 struct MediaConfirmRequest: Encodable, Sendable {
     let uploadSessionId: String
     let thumbUploadSessionId: String?
@@ -105,6 +111,8 @@ struct MediaConfirmRequest: Encodable, Sendable {
     let caption: String?
     let focalX: Double?
     let focalY: Double?
+    let capturedAt: String?
+    let checksumSha256: String?
 }
 
 /// `POST /api/v1/pro/media` — create body for a from-scratch post (the native

@@ -53,6 +53,11 @@ enum SessionByteVault {
         let url: URL
         let phase: MediaPhase
         let focal: MediaFocalPoint?
+        /// Device-claimed capture time — nil when the caller genuinely has no
+        /// trustworthy one (a library import; see `writePendingUpload`), or when
+        /// this file predates the field and was recovered via the legacy 4-part
+        /// filename fallback (the file's own creation date, not a real claim).
+        let capturedAt: Date?
     }
 
     private static func directory(_ bucket: Bucket) -> URL? {
@@ -74,18 +79,30 @@ enum SessionByteVault {
     }
 
     /// Spill a photo whose upload hasn't landed, tagged with everything needed to
-    /// retry it in a LATER camera session: `<bookingId>__<phase>__<focal>__<uuid>.jpg`.
+    /// retry it in a LATER camera session:
+    /// `<bookingId>__<phase>__<focal>__<capturedAt>__<uuid>.jpg`.
     /// (Same filename-as-metadata idiom as `ClipVault`, so there's one convention
     /// for pending camera work rather than two.)
+    ///
+    /// `capturedAt` is required (not defaulted) so every call site makes a
+    /// deliberate choice: a real device timestamp for an actual camera capture,
+    /// or explicit `nil` for a library import, which has no trustworthy capture
+    /// time to claim (see `ProCapturePhotosView.importFromLibrary`). It has to be
+    /// persisted here, not resampled at upload time — bytes can retry hours or
+    /// days later (background retry, or the stranded-upload sweep on a later
+    /// relaunch), and resampling would silently replace "when this was captured"
+    /// with "when this happened to upload".
     static func writePendingUpload(
         _ data: Data,
         bookingId: String,
         phase: MediaPhase,
-        focal: MediaFocalPoint?
+        focal: MediaFocalPoint?,
+        capturedAt: Date?
     ) -> URL? {
         guard let dir = directory(.pendingUpload) else { return nil }
-        let name = [bookingId, phase.rawValue, encode(focal), UUID().uuidString]
-            .joined(separator: "__")
+        let name = [
+            bookingId, phase.rawValue, encode(focal), encode(capturedAt), UUID().uuidString,
+        ].joined(separator: "__")
         return write(data, to: dir, named: "\(name).jpg")
     }
 
@@ -112,6 +129,16 @@ enum SessionByteVault {
     /// Photos still owed to the server for this booking — stranded by a crash, a
     /// kill, an offline exit, or exhausted retries. Oldest first, so the session's
     /// story uploads in the order it was shot.
+    ///
+    /// Parses two filename shapes: the current 5-part one (with an encoded
+    /// `capturedAt`), and the 4-part one written before that field existed — a
+    /// file already sitting in `.pendingUpload` when the app updates. A legacy
+    /// file's `capturedAt` falls back to the file's own creation date: this vault
+    /// write already happened synchronously right after capture (same as today),
+    /// so the filesystem timestamp is a reasonable proxy for a build that simply
+    /// didn't encode the real one yet — distinct from a library import's
+    /// deliberate `nil`, which is "no trustworthy claim available", not "unknown
+    /// because of when this file was written".
     static func strandedUploads(bookingId: String) -> [PendingUpload] {
         guard let dir = directory(.pendingUpload),
               let entries = try? FileManager.default.contentsOfDirectory(
@@ -121,11 +148,28 @@ enum SessionByteVault {
             .compactMap { url -> (PendingUpload, Date)? in
                 let parts = url.deletingPathExtension().lastPathComponent
                     .components(separatedBy: "__")
-                guard parts.count == 4, parts[0] == bookingId,
-                      let phase = MediaPhase(rawValue: parts[1]) else { return nil }
                 let created = (try? url.resourceValues(forKeys: [.creationDateKey]))?
                     .creationDate ?? .distantPast
-                return (PendingUpload(url: url, phase: phase, focal: decode(parts[2])), created)
+
+                switch parts.count {
+                case 5:
+                    guard parts[0] == bookingId,
+                          let phase = MediaPhase(rawValue: parts[1]) else { return nil }
+                    let upload = PendingUpload(
+                        url: url, phase: phase, focal: decode(parts[2]),
+                        capturedAt: decodeCapturedAt(parts[3])
+                    )
+                    return (upload, created)
+                case 4:
+                    guard parts[0] == bookingId,
+                          let phase = MediaPhase(rawValue: parts[1]) else { return nil }
+                    let upload = PendingUpload(
+                        url: url, phase: phase, focal: decode(parts[2]), capturedAt: created
+                    )
+                    return (upload, created)
+                default:
+                    return nil
+                }
             }
             .sorted { $0.1 < $1.1 }
             .map(\.0)
@@ -164,5 +208,22 @@ enum SessionByteVault {
             return nil   // "none", or a token written by a build that predates this
         }
         return MediaFocalPoint(x: x / 1_000_000, y: y / 1_000_000)
+    }
+
+    // MARK: - capturedAt encoding
+
+    /// `capturedAt` as a filename-safe token: epoch milliseconds (an Int, so no
+    /// locale-sensitive float formatting — same reasoning as the focal encoding
+    /// above), or "none" for a deliberate no-claim (a library import).
+    private static func encode(_ capturedAt: Date?) -> String {
+        guard let capturedAt else { return "none" }
+        return String(Int((capturedAt.timeIntervalSince1970 * 1000).rounded()))
+    }
+
+    private static func decodeCapturedAt(_ token: String) -> Date? {
+        guard let millis = Int(token) else {
+            return nil   // "none", or a token written by a build that predates this
+        }
+        return Date(timeIntervalSince1970: Double(millis) / 1000)
     }
 }
