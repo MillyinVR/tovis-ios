@@ -155,6 +155,9 @@ struct ClientSettingsHubView: View {
             }
             .padding(20)
         }
+        // iPad: pushed from the Me tab's gear, so it gets none of a sheet's
+        // free centered-card cap — see `RegularWidthCapped`. No-op on iPhone.
+        .cappedWidth(AdaptiveWidth.reading)
         .background(BrandColor.bgPrimary.ignoresSafeArea())
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)

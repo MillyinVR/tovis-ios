@@ -55,6 +55,10 @@ struct AppointmentsView: View {
             .padding(.top, 8)
             .padding(.bottom, 40)
         }
+        // iPad: this is a plain push (Home's Upcoming card, or rooting the
+        // Bookings tab) that gets none of a sheet's free centered-card cap —
+        // see `RegularWidthCapped`. No-op on iPhone.
+        .cappedWidth(AdaptiveWidth.reading)
         .background(BrandColor.bgPrimary.ignoresSafeArea())
         .navigationTitle("Bookings")
         .navigationBarTitleDisplayMode(.large)

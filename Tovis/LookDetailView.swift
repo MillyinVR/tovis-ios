@@ -60,6 +60,13 @@ struct LookDetailView: View {
 
     var body: some View {
         content
+            // iPad: most entries into this screen (a portfolio tile, a board
+            // tile, a tag-chip result) PUSH it onto a NavigationStack that's
+            // already full-bleed, which gets none of the centered-card
+            // treatment `.sheet` gives the share-link entry point for free.
+            // Capping here, inside the view itself, makes every entry point
+            // read the same regardless of how it got here. No-op on iPhone.
+            .cappedWidth(AdaptiveWidth.reading)
             .background(BrandColor.bgPrimary.ignoresSafeArea())
             .navigationTitle("Look")
             .navigationBarTitleDisplayMode(.inline)

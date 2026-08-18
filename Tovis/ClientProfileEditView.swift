@@ -48,6 +48,9 @@ struct ClientProfileEditView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // iPad: pushed from the Settings hub, so it gets none of a sheet's
+        // free centered-card cap — see `RegularWidthCapped`. No-op on iPhone.
+        .cappedWidth(AdaptiveWidth.reading)
         .background(BrandColor.bgPrimary.ignoresSafeArea())
         .navigationTitle("Edit profile")
         .navigationBarTitleDisplayMode(.inline)

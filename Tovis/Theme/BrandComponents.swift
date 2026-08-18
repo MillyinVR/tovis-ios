@@ -4,6 +4,61 @@
 import SwiftUI
 import TovisKit
 
+/// Width presets for `.cappedWidth(_:)` — the two shapes content on this app
+/// actually needs on a regular-width (iPad) canvas. Named rather than passed
+/// as raw numbers at each call site, so every screen that wants "the reading
+/// column" gets the SAME column, not five close-but-different guesses.
+enum AdaptiveWidth {
+    /// A portrait media column — the full-bleed Looks pager, sized like a
+    /// large phone screen so a paged photo/video doesn't stretch into
+    /// something no phone camera actually shoots.
+    static let feed: CGFloat = 480
+    /// A comfortable reading/form column — look detail, settings, bookings:
+    /// anything that is fundamentally a scrolling list or form rather than a
+    /// grid, where iPad's extra width is line-length, not more content.
+    static let reading: CGFloat = 700
+}
+
+/// Caps a view's width and centers it when the environment reports a
+/// `.regular` horizontal size class (iPad, and an iPhone Plus/Max in
+/// landscape — the same test `HomeView` already uses for its two-column
+/// layout) — a no-op everywhere else, so iPhone portrait is untouched byte
+/// for byte.
+///
+/// This is the general form of the "don't stretch across the whole canvas"
+/// fix: `BookingFlowView` gets an equivalent cap for free from SwiftUI's own
+/// sheet presentation on iPad, but a screen that ISN'T a sheet root — a tab's
+/// own content, or anything reached by a plain `NavigationLink` push onto a
+/// stack that's already on screen — gets no such cap from the system and has
+/// to ask for one explicitly. Applying it INSIDE the view itself (rather than
+/// leaning on however it happens to be presented) means the same screen reads
+/// right whether it's pushed, sheeted, or reached with a debug hook.
+private struct RegularWidthCapped: ViewModifier {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    let maxWidth: CGFloat
+
+    func body(content: Content) -> some View {
+        if horizontalSizeClass == .regular {
+            HStack(spacing: 0) {
+                Spacer(minLength: 0)
+                content.frame(maxWidth: maxWidth)
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            content
+        }
+    }
+}
+
+extension View {
+    /// See `RegularWidthCapped`. Pass an `AdaptiveWidth` preset so every
+    /// caller draws from the same two column widths.
+    func cappedWidth(_ maxWidth: CGFloat) -> some View {
+        modifier(RegularWidthCapped(maxWidth: maxWidth))
+    }
+}
+
 /// A rounded surface — the standard card/row container.
 struct BrandSurface<Content: View>: View {
     var tint: Color = BrandColor.bgSurface
