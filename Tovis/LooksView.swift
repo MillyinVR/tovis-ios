@@ -94,25 +94,33 @@ struct LooksView: View {
             ZStack(alignment: .top) {
                 BrandColor.bgPrimary.ignoresSafeArea()
 
-                switch phase {
-                case .loading:
-                    ProgressView().tint(BrandColor.accent).frame(maxHeight: .infinity)
-                case let .failed(message):
-                    failure(message)
-                case .empty:
-                    emptyState
-                case let .loaded(items):
-                    // When the comments sheet is open, shrink the media up into
-                    // the space above it (TikTok-style) so the whole look stays
-                    // visible above the sheet.
-                    feed(items)
-                        .scaleEffect(commentsOpen ? Self.mediaShrinkScale : 1, anchor: .top)
-                        .animation(.easeInOut(duration: 0.25), value: commentsOpen)
+                Group {
+                    switch phase {
+                    case .loading:
+                        ProgressView().tint(BrandColor.accent).frame(maxHeight: .infinity)
+                    case let .failed(message):
+                        failure(message)
+                    case .empty:
+                        emptyState
+                    case let .loaded(items):
+                        // When the comments sheet is open, shrink the media up into
+                        // the space above it (TikTok-style) so the whole look stays
+                        // visible above the sheet.
+                        feed(items)
+                            .scaleEffect(commentsOpen ? Self.mediaShrinkScale : 1, anchor: .top)
+                            .animation(.easeInOut(duration: 0.25), value: commentsOpen)
+                    }
                 }
+                // iPad: the pager is a portrait medium, not a canvas — cap it to a
+                // phone-shaped column and let the brand background letterbox the
+                // rest, rather than stretching a TikTok-style feed edge to edge
+                // across a 13" screen. No-op on iPhone (see `RegularWidthCapped`).
+                .cappedWidth(AdaptiveWidth.feed)
 
                 header
                     .opacity(commentsOpen ? 0 : 1)
                     .animation(.easeInOut(duration: 0.2), value: commentsOpen)
+                    .cappedWidth(AdaptiveWidth.feed)
             }
             .navigationDestination(for: LooksProfessional.self) { pro in
                 ProProfileView(professionalId: pro.id, fallbackName: pro.displayName)

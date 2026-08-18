@@ -59,6 +59,44 @@ struct MainTabView: View {
         let highlight: String?
     }
 
+    #if DEBUG
+    /// DEBUG ONLY — open a screen that has no footer tab and no push-triggered
+    /// entry point reachable without a real tap, via
+    /// `SIMCTL_CHILD_TOVIS_DEBUG_OPEN_SCREEN=<name>`. Same reasoning as
+    /// `TOVIS_DEBUG_OPEN_TAB`: this machine cannot drive the simulator with
+    /// synthetic taps, so `AppointmentsView` (pushed from Home's Upcoming card)
+    /// and `ClientSettingsHubView` + its sub-screens (pushed from the Me tab's
+    /// gear) were otherwise unreachable for a layout pass.
+    ///
+    /// `look-detail:<lookId>` is the odd one out: `LookDetailView` DOES have an
+    /// existing reach path (`TOVIS_DEBUG_OPEN_DEEP_LINK=/looks/{id}`), but that
+    /// path opens it as this shell's OWN `.sheet(item: $deepLinkLook)` — which on
+    /// iPad gets the system's centered-card treatment for free, the same as
+    /// `BookingFlowView`. Most real entry points (a portfolio tile, a board tile,
+    /// a tag chip result) instead PUSH it onto a `NavigationStack` that is
+    /// already on screen — e.g. Looks' own creator `navigationDestination` into
+    /// `ProProfileView`, then a portfolio tile push from there — which gets no
+    /// such cap. `.fullScreenCover` (not `.sheet`) is used for all four cases
+    /// below deliberately: unlike `.sheet`, it is never auto-centered on iPad,
+    /// so it reproduces the SAME uncapped context those push call sites hit,
+    /// rather than accidentally exercising the already-fine sheet path again.
+    ///
+    ///     SIMCTL_CHILD_TOVIS_DEBUG_OPEN_SCREEN=settings xcrun simctl launch …
+    ///     SIMCTL_CHILD_TOVIS_DEBUG_OPEN_SCREEN=look-detail:abc123 xcrun simctl launch …
+    private static var debugScreenValue: String? {
+        let raw = ProcessInfo.processInfo.environment["TOVIS_DEBUG_OPEN_SCREEN"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return (raw?.isEmpty == false) ? raw : nil
+    }
+    @State private var debugShowBookings = MainTabView.debugScreenValue == "bookings"
+    @State private var debugShowSettings = MainTabView.debugScreenValue == "settings"
+    @State private var debugShowSettingsProfile = MainTabView.debugScreenValue == "settings-profile"
+    @State private var debugPushedLookId: String? = {
+        guard let value = MainTabView.debugScreenValue, value.hasPrefix("look-detail:") else { return nil }
+        return String(value.dropFirst("look-detail:".count))
+    }()
+    #endif
+
     /// The tab a launch starts on — Looks, unless a DEBUG build was launched
     /// with `TOVIS_DEBUG_OPEN_TAB` naming another one. Same mechanism and same
     /// reasoning as `ProMainTabView.launchTab`: this machine can't drive the
@@ -203,6 +241,61 @@ struct MainTabView: View {
             }
             .tint(BrandColor.accent)
         }
+        #if DEBUG
+        .fullScreenCover(isPresented: $debugShowBookings) {
+            NavigationStack {
+                AppointmentsView()
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Done") { debugShowBookings = false }
+                                .tint(BrandColor.textSecondary)
+                        }
+                    }
+            }
+            .tint(BrandColor.accent)
+        }
+        .fullScreenCover(isPresented: $debugShowSettings) {
+            NavigationStack {
+                ClientSettingsHubView()
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Done") { debugShowSettings = false }
+                                .tint(BrandColor.textSecondary)
+                        }
+                    }
+            }
+            .tint(BrandColor.accent)
+        }
+        .fullScreenCover(isPresented: $debugShowSettingsProfile) {
+            NavigationStack {
+                ClientProfileEditView()
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Done") { debugShowSettingsProfile = false }
+                                .tint(BrandColor.textSecondary)
+                        }
+                    }
+            }
+            .tint(BrandColor.accent)
+        }
+        .fullScreenCover(isPresented: Binding(
+            get: { debugPushedLookId != nil },
+            set: { if !$0 { debugPushedLookId = nil } }
+        )) {
+            NavigationStack {
+                if let id = debugPushedLookId {
+                    LookDetailView(lookId: id)
+                        .toolbar {
+                            ToolbarItem(placement: .topBarLeading) {
+                                Button("Done") { debugPushedLookId = nil }
+                                    .tint(BrandColor.textSecondary)
+                            }
+                        }
+                }
+            }
+            .tint(BrandColor.accent)
+        }
+        #endif
     }
 
     /// Resolve a push deep link to a concrete destination and present it, then
