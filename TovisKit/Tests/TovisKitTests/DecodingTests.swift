@@ -1838,6 +1838,30 @@ func fixture(_ name: String) throws -> Data {
         #expect(booking.professional?.displayName == "Dana Lee")
         #expect(b.waitlist.first?.professional?.displayName == "Snip")
         #expect(b.waitlist.first?.service?.name == "Cut")
+
+        // A PARTIALLY refunded deposit (handoff item 32). `depositStatus` stays
+        // PAID through a partial refund — only `depositRefundedCents` moves — so
+        // the past row is the one that can tell a fully-held deposit from a
+        // half-returned one, and the credit is asserted through the same rule
+        // the screen calls, not just the raw column.
+        let refunded = try #require(b.past.first)
+        #expect(refunded.checkout.depositStatus == "PAID")
+        #expect(refunded.checkout.depositAmount == "60.00")
+        #expect(refunded.checkout.depositRefundedCents == 2000)
+        #expect(
+            CheckoutMoney.depositCreditApplied(
+                depositStatus: refunded.checkout.depositStatus,
+                depositAmount: refunded.checkout.depositAmount,
+                depositRefundedCents: refunded.checkout.depositRefundedCents ?? 0,
+                depositDisputed: refunded.checkout.depositDisputed ?? false,
+                total: 100
+            ) == 40
+        )
+        // The other rows carry the column too, at its "nothing back" value.
+        // Compared against the non-optional literal on purpose: an ABSENT key
+        // decodes to nil, and nil != 0, so this fails if the server ever stops
+        // sending it rather than passing on the tolerant default.
+        #expect(booking.checkout.depositRefundedCents == 0)
     }
 
     // `proposedServicesJson` is an untyped Json column, so a blob that isn't the

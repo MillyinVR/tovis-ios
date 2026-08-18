@@ -632,6 +632,10 @@ struct BookingDetailView: View {
             // double-send this fix exists to prevent.
             depositStatus: depositPaid ? "PAID" : booking.checkout.depositStatus,
             depositAmount: booking.checkout.depositAmount,
+            // A PARTIAL deposit refund leaves the status on PAID and shows up
+            // only here, so without it the client is credited money the pro no
+            // longer holds and quoted too little. Absent → 0 (nothing back).
+            depositRefundedCents: booking.checkout.depositRefundedCents ?? 0,
             depositDisputed: depositDisputed,
             total: liveTotal
         )

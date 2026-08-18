@@ -270,6 +270,13 @@ public struct ClientBookingCheckout: Decodable, Sendable {
     public let paymentFullyRefunded: Bool?
     /// The discovery deposit charge is under (or lost) a Stripe dispute.
     public let depositDisputed: Bool?
+    /// Cumulative cents already refunded against the DEPOSIT charge (0 when
+    /// none). A PARTIAL deposit refund leaves `depositStatus` on PAID and only
+    /// accumulates here, so the status alone over-states what the deposit still
+    /// covers — `CheckoutMoney.depositCreditApplied` nets this out exactly as
+    /// web's `deriveNetDepositHeldCents` does. Optional so older responses and
+    /// fixtures still decode (absent → 0, i.e. nothing refunded).
+    public let depositRefundedCents: Int?
 }
 
 // MARK: - Client checkout payment options

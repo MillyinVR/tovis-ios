@@ -42,22 +42,32 @@ public enum CheckoutMoney {
     /// total, never negative. Native port of web's `deriveNetDepositHeldCents`
     /// + the cap in `deriveDepositCredit` (`lib/booking/depositCredit.ts`).
     ///
-    /// 🔴 The wire this reads from (`ClientBooking.Checkout`) does not carry a
-    /// refunded-cents column the way web's `DEPOSIT_CREDIT_SELECT` does, so a
-    /// PARTIALLY refunded deposit is not reflected here — only paid-in-full vs
-    /// not, and disputed vs not. The checkout-session-start response's own
-    /// `depositCreditCents` remains the server-authoritative figure once
-    /// checkout actually starts; this is the pre-payment QUOTE only, the same
-    /// role `livePreviewTotal`'s `depositCredit` plays on web.
+    /// `depositRefundedCents` is what has already been handed back against the
+    /// deposit charge. It is load-bearing: a PARTIAL refund leaves
+    /// `depositStatus` on PAID and only accumulates there, so status-plus-amount
+    /// alone over-credits the client — refunding $20 of a $60 deposit leaves a
+    /// $40 credit, not $60. Same rule, same inputs as web: `depositStatus`,
+    /// `depositAmount`, `depositRefundedCents` and `depositDisputedAt` are four
+    /// of `DEPOSIT_CREDIT_SELECT`'s five columns, and `total` stands in for its
+    /// fifth (`totalAmount`), which is live here because the tip moves it.
+    ///
+    /// The checkout-session-start response's own `depositCreditCents` remains
+    /// the server-authoritative figure once checkout actually starts; this is
+    /// the pre-payment QUOTE only, the same role `livePreviewTotal`'s
+    /// `depositCredit` plays on web.
     public static func depositCreditApplied(
         depositStatus: String?,
         depositAmount: String?,
+        depositRefundedCents: Int,
         depositDisputed: Bool,
         total: Decimal
     ) -> Decimal {
         guard !depositDisputed else { return 0 }
         guard (depositStatus ?? "").uppercased() == "PAID" else { return 0 }
-        let held = amount(depositAmount)
+        // Net still held, then capped at the bill. A deposit refunded past its
+        // own value (or a nonsense negative) credits 0, never a negative.
+        let refunded = Decimal(max(0, depositRefundedCents)) / 100
+        let held = amount(depositAmount) - refunded
         return max(0, min(held, total))
     }
 
