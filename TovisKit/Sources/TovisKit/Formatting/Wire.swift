@@ -92,6 +92,13 @@ public enum Wire {
         isoWithFraction.string(from: Date())
     }
 
+    /// Any `Date` as a backend-style ISO-8601 string (fractional seconds) —
+    /// `nowISO()`'s sibling for a caller that already has the instant, e.g. a
+    /// device-claimed capture time recorded earlier than the moment it's sent.
+    public static func iso(_ date: Date) -> String {
+        isoWithFraction.string(from: date)
+    }
+
     /// The zone a free wall-clock entry is **interpreted in** when a pro types a
     /// custom appointment time — the booking location's zone, or UTC.
     ///

@@ -43,6 +43,11 @@ public final class ProMediaService: Sendable {
     /// `focal` is the normalized subject focal point (camera C6) computed on the
     /// captured still — nil (no face / not computed) → the server stores no focal
     /// → the feed cover-crop stays centered (byte-identical to pre-C6).
+    ///
+    /// `capturedAt` and `checksumSha256` are capture-attestation claims (see
+    /// tovis-app's MediaCaptureAttestation) — both nil-is-omitted, degrading
+    /// cleanly against a server that predates the fields, same contract as
+    /// `focal`.
     @discardableResult
     public func uploadSessionPhoto(
         bookingId: String,
@@ -50,11 +55,14 @@ public final class ProMediaService: Sendable {
         imageData: Data,
         contentType: String = "image/jpeg",
         caption: String? = nil,
-        focal: MediaFocalPoint? = nil
+        focal: MediaFocalPoint? = nil,
+        capturedAt: Date? = nil,
+        checksumSha256: String? = nil
     ) async throws -> ProBookingMediaItem {
         try await upload(
             bookingId: bookingId, phase: phase, data: imageData,
-            contentType: contentType, mediaType: .image, caption: caption, focal: focal
+            contentType: contentType, mediaType: .image, caption: caption, focal: focal,
+            capturedAt: capturedAt, checksumSha256: checksumSha256
         )
     }
 
@@ -112,7 +120,9 @@ public final class ProMediaService: Sendable {
         contentType: String,
         mediaType: MediaType,
         caption: String?,
-        focal: MediaFocalPoint? = nil
+        focal: MediaFocalPoint? = nil,
+        capturedAt: Date? = nil,
+        checksumSha256: String? = nil
     ) async throws -> ProBookingMediaItem {
         let initData = try await presign(
             bookingId: bookingId,
@@ -127,7 +137,9 @@ public final class ProMediaService: Sendable {
             phase: phase,
             mediaType: mediaType,
             caption: caption,
-            focal: focal
+            focal: focal,
+            capturedAt: capturedAt,
+            checksumSha256: checksumSha256
         )
     }
 
@@ -377,6 +389,12 @@ public final class ProMediaService: Sendable {
 
     /// Step 3 — record the MediaAsset against the booking + phase. Idempotent on
     /// the upload session (a retry of the same confirm dedupes server-side).
+    ///
+    /// `capturedAt`/`checksumSha256` ride the SAME idempotency nonce as
+    /// everything else in the payload — since both are computed/persisted at
+    /// capture time and never resampled on retry (see `ProCapturePhotosView`
+    /// and `SessionByteVault`), a retry of the same confirm reproduces the
+    /// exact same payload and therefore the exact same key, same as before.
     @discardableResult
     public func confirm(
         bookingId: String,
@@ -386,6 +404,8 @@ public final class ProMediaService: Sendable {
         caption: String? = nil,
         thumbUploadSessionId: String? = nil,
         focal: MediaFocalPoint? = nil,
+        capturedAt: Date? = nil,
+        checksumSha256: String? = nil,
         idempotencyKey: String? = nil
     ) async throws -> ProBookingMediaItem {
         let payload = try JSONEncoder.canonical.encode(
@@ -396,7 +416,9 @@ public final class ProMediaService: Sendable {
                 mediaType: mediaType.rawValue,
                 caption: caption,
                 focalX: focal?.x,
-                focalY: focal?.y
+                focalY: focal?.y,
+                capturedAt: capturedAt.map(Wire.iso),
+                checksumSha256: checksumSha256
             )
         )
         // Key off the upload session (the server's own dedup anchor) so a retry of

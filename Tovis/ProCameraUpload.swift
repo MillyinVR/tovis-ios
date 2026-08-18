@@ -19,6 +19,14 @@ enum ProCameraUpload {
     /// by a crash gets swept up during a later AFTER shoot and must still land in
     /// BEFORE. Practice has no phases, so it is ignored there.
     ///
+    /// `capturedAt` is the device-claimed capture moment (nil for a library
+    /// import — see `ProCapturePhotosView.importFromLibrary`); the sha256 is
+    /// always computed here, fresh, from the exact bytes being sent — a pure
+    /// function of `data`, so it's identical whether this is the first attempt
+    /// or a retry hours later, with nothing extra to persist or thread through
+    /// the vault. Practice shots don't attest (no booking to anchor a
+    /// MediaCaptureAttestation to), so both are session-only.
+    ///
     /// Throws whatever the underlying service throws — `APIError.isRetryable`
     /// still classifies a dropped connection vs a refusal, which is what the
     /// caller's custody logic branches on.
@@ -27,7 +35,8 @@ enum ProCameraUpload {
         focal: MediaFocalPoint?,
         to destination: ProCameraDestination,
         phaseOverride: MediaPhase? = nil,
-        client: TovisClient
+        client: TovisClient,
+        capturedAt: Date? = nil
     ) async throws {
         switch destination {
         case let .session(bookingId, phase):
@@ -35,7 +44,9 @@ enum ProCameraUpload {
                 bookingId: bookingId,
                 phase: phaseOverride ?? phase,
                 imageData: data,
-                focal: focal
+                focal: focal,
+                capturedAt: capturedAt,
+                checksumSha256: MediaHash.sha256Hex(data)
             )
         case .practice:
             try await client.proPractice.upload(imageData: data, focal: focal)

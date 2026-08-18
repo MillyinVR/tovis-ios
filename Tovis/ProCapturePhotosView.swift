@@ -141,6 +141,12 @@ struct ProCapturePhotosView: View {
         let url: URL
         let phase: MediaPhase
         let focal: MediaFocalPoint?
+        /// Device-claimed capture time, carried through the retry queue so a
+        /// LATER retry (background backoff, or a stranded sweep after relaunch)
+        /// still sends the moment the shot was actually taken, not whenever the
+        /// retry happens to fire. Nil for a library import (see
+        /// `importFromLibrary`), which has no trustworthy capture time to claim.
+        let capturedAt: Date?
         /// False = the server refused these bytes; retrying re-fails.
         let isRetryable: Bool
         /// What the server said, for the terminal card's explanation.
@@ -191,6 +197,10 @@ struct ProCapturePhotosView: View {
         /// Subject focal (camera C6) computed on this still — carried so a
         /// kept-anyway shot uploads with the same smart-crop hint as an accepted one.
         let focal: MediaFocalPoint?
+        /// The moment the shutter actually fired — sampled at `capturePhoto()`,
+        /// carried through the QC/retake decision so a kept-anyway shot's
+        /// attestation reflects when it was TAKEN, not when the pro tapped "keep".
+        let capturedAt: Date
     }
 
     /// Each "before" reference, measured — the targets the AFTER shoot matches
@@ -412,7 +422,7 @@ struct ProCapturePhotosView: View {
                 .filter { !owedURLs.contains($0.url) }
                 .map {
                     FailedUpload(url: $0.url, phase: $0.phase, focal: $0.focal,
-                                 isRetryable: true,
+                                 capturedAt: $0.capturedAt, isRetryable: true,
                                  reason: "Waiting to finish uploading.")
                 }
             if !owed.isEmpty { failedUploads.append(contentsOf: owed) }
@@ -687,7 +697,8 @@ struct ProCapturePhotosView: View {
         .modifier(RetakeDialog(pendingRetake: $pendingRetake, keep: { retake in
             Task {
                 uploading = true
-                await finalize(retake.data, advanceGuide: retake.advanceGuide, focal: retake.focal)
+                await finalize(retake.data, advanceGuide: retake.advanceGuide, focal: retake.focal,
+                               capturedAt: retake.capturedAt)
                 uploading = false
             }
         }, voice: settings.personality.voice))
@@ -2145,8 +2156,17 @@ struct ProCapturePhotosView: View {
             // Deliberately no card correction: that's a calibration of THIS
             // camera in THIS light, and a photo taken elsewhere must not have
             // it applied.
+            //
+            // capturedAt: deliberately nil, not import time. `PhotosPickerItem`'s
+            // `loadTransferable(type: Data.self)` gives raw bytes with no reliable
+            // access to the original photo's real capture date (that would need
+            // parsing EXIF out of the JPEG itself, which this doesn't attempt) —
+            // and claiming "when it was imported" AS "when it was captured" would
+            // be exactly the kind of unverified claim this feature exists to be
+            // honest about. No claim is more honest than a wrong one.
             guard let custody = SessionByteVault.writePendingUpload(
-                prepared.jpeg, bookingId: custodyScope, phase: phase, focal: prepared.focal
+                prepared.jpeg, bookingId: custodyScope, phase: phase, focal: prepared.focal,
+                capturedAt: nil
             ) else {
                 errorSticky = true
                 errorMessage = "Couldn’t save that photo, and it couldn’t be kept to retry."
@@ -2155,7 +2175,8 @@ struct ProCapturePhotosView: View {
             if let thumb = await ImageDownsample.thumbnail(from: prepared.jpeg, maxPixel: 216) {
                 captured.insert(CapturedShot(image: thumb, custodyURL: custody), at: 0)
             }
-            scheduleUpload(prepared.jpeg, focal: prepared.focal, phase: phase, custody: custody)
+            scheduleUpload(prepared.jpeg, focal: prepared.focal, phase: phase, custody: custody,
+                           capturedAt: nil)
             added += 1
         }
 
@@ -2205,8 +2226,15 @@ struct ProCapturePhotosView: View {
         let advancesGuide = manualShotAdvancesGuide
 
         let data: Data
+        // Sampled the instant the shutter actually fires — the truest "capture
+        // time" available in this pipeline, ahead of QC evaluation (which runs a
+        // blink-check model and can take a perceptible moment) and any retake
+        // decision. Threaded through rather than resampled in `finalize`, so a
+        // kept-anyway shot's claim reflects when it was taken, not decided on.
+        let capturedAt: Date
         do {
             data = try await camera.capturePhoto()
+            capturedAt = Date()
         } catch {
             errorMessage = "Couldn’t take that photo. Please try again."
             return false
@@ -2216,10 +2244,11 @@ struct ProCapturePhotosView: View {
         let focal = MediaFocalPoint(faceCenter: qc.focalPoint)
         if let reason = qc.retakeReason {
             pendingRetake = PendingRetake(data: data, reason: reason,
-                                          advanceGuide: advancesGuide, focal: focal)
+                                          advanceGuide: advancesGuide, focal: focal,
+                                          capturedAt: capturedAt)
             return false
         }
-        await finalize(data, advanceGuide: advancesGuide, focal: focal)
+        await finalize(data, advanceGuide: advancesGuide, focal: focal, capturedAt: capturedAt)
         return true
     }
 
@@ -2227,12 +2256,16 @@ struct ProCapturePhotosView: View {
     /// passes, say why and let the hold re-arm (nothing uploads, the guide
     /// doesn't advance) — the subject is still in position for the next try.
     private func autoCaptureBest() async -> Bool {
-        var best: (data: Data, qc: PhotoQCReport)?
+        var best: (data: Data, qc: PhotoQCReport, capturedAt: Date)?
         for _ in 0..<CoachTuning.autoCaptureAttempts {
             guard let data = try? await camera.capturePhoto() else { break }
+            // Sampled per-attempt, right at the shutter, so whichever frame wins
+            // the burst carries ITS OWN true capture moment — not the moment the
+            // whole burst finished.
+            let capturedAt = Date()
             let qc = await PhotoQC.evaluate(data, checkBlink: blinkCheckApplies)
-            if qc.passed { best = (data, qc); break }
-            if best == nil || qc.sharpness > best!.qc.sharpness { best = (data, qc) }
+            if qc.passed { best = (data, qc, capturedAt); break }
+            if best == nil || qc.sharpness > best!.qc.sharpness { best = (data, qc, capturedAt) }
         }
         guard let best else {
             errorMessage = "Couldn’t take that photo. Please try again."
@@ -2265,7 +2298,8 @@ struct ProCapturePhotosView: View {
         shutterFeedback()
         // auto only fires when ready for the step
         await finalize(best.data, advanceGuide: true,
-                       focal: MediaFocalPoint(faceCenter: best.qc.focalPoint))
+                       focal: MediaFocalPoint(faceCenter: best.qc.focalPoint),
+                       capturedAt: best.capturedAt)
         return true
     }
 
@@ -2298,7 +2332,9 @@ struct ProCapturePhotosView: View {
     /// connectivity. `advanceGuide` is decided at the capture site — always
     /// true for the guided auto-shot (it only fires when ready for the step),
     /// and gated on `manualShotAdvancesGuide` for a manual tap.
-    private func finalize(_ data: Data, advanceGuide: Bool, focal: MediaFocalPoint?) async {
+    private func finalize(
+        _ data: Data, advanceGuide: Bool, focal: MediaFocalPoint?, capturedAt: Date
+    ) async {
         // Card correction is baked in before persisting — a retry, or the
         // stranded-upload sweep after a relaunch, must resend exactly these
         // bytes rather than recompute a correction against whatever
@@ -2311,9 +2347,11 @@ struct ProCapturePhotosView: View {
         // session photo becomes safe — offline, a hung connection, a crash, a
         // kill, all the same from here on: the bytes are on disk. Everything
         // after this line is best-effort delivery, not the difference
-        // between the shot existing or not.
+        // between the shot existing or not. `capturedAt` persists here too —
+        // it's the actual shutter moment, sampled by the caller, and must
+        // survive a relaunch just like the bytes do (see SessionByteVault).
         let custody = SessionByteVault.writePendingUpload(
-            payload, bookingId: custodyScope, phase: phase, focal: focal
+            payload, bookingId: custodyScope, phase: phase, focal: focal, capturedAt: capturedAt
         )
 
         // Strip-sized decode only — holding the full-sensor UIImage here pinned
@@ -2349,16 +2387,20 @@ struct ProCapturePhotosView: View {
             return
         }
 
-        scheduleUpload(payload, focal: focal, phase: phase, custody: custody)
+        scheduleUpload(payload, focal: focal, phase: phase, custody: custody, capturedAt: capturedAt)
     }
 
     /// Fire the network attempt in the background, unstructured — never
     /// awaited by the capture path, so a hung or offline connection never
     /// blocks the next shot. Mirrors `uploadClip`'s existing shape for video.
     private func scheduleUpload(
-        _ payload: Data, focal: MediaFocalPoint?, phase uploadPhase: MediaPhase, custody: URL
+        _ payload: Data, focal: MediaFocalPoint?, phase uploadPhase: MediaPhase, custody: URL,
+        capturedAt: Date?
     ) {
-        Task { await uploadCorrected(payload, focal: focal, uploadPhase: uploadPhase, custody: custody) }
+        Task {
+            await uploadCorrected(payload, focal: focal, uploadPhase: uploadPhase, custody: custody,
+                                  capturedAt: capturedAt)
+        }
     }
 
     /// Upload bytes that are already color-final (retries must not re-correct;
@@ -2380,7 +2422,8 @@ struct ProCapturePhotosView: View {
         _ payload: Data,
         focal: MediaFocalPoint?,
         uploadPhase: MediaPhase? = nil,
-        custody: URL
+        custody: URL,
+        capturedAt: Date?
     ) async {
         guard uploadsInFlight.insert(custody).inserted else { return }
         defer { uploadsInFlight.remove(custody) }
@@ -2391,7 +2434,8 @@ struct ProCapturePhotosView: View {
                 focal: focal,
                 to: destination,
                 phaseOverride: target,
-                client: session.client
+                client: session.client,
+                capturedAt: capturedAt
             )
             SessionByteVault.remove(custody)   // safe server-side now
             clearCustody(custody)              // drop the thumbnail's pending badge
@@ -2403,11 +2447,11 @@ struct ProCapturePhotosView: View {
         } catch let error as APIError {
             // The split that matters: a dropped connection is worth another tap;
             // a refusal will be repeated forever, so it needs a decision instead.
-            requeue(custody, focal: focal, phase: target,
+            requeue(custody, focal: focal, phase: target, capturedAt: capturedAt,
                     retryable: error.isRetryable, reason: error.userMessage)
         } catch {
             // Unknown, so assume transient — never strand a shot on a guess.
-            requeue(custody, focal: focal, phase: target, retryable: true,
+            requeue(custody, focal: focal, phase: target, capturedAt: capturedAt, retryable: true,
                     reason: "Couldn’t save that photo — it’s kept here to retry.")
         }
     }
@@ -2430,11 +2474,13 @@ struct ProCapturePhotosView: View {
         _ custody: URL,
         focal: MediaFocalPoint?,
         phase uploadPhase: MediaPhase,
+        capturedAt: Date?,
         retryable: Bool,
         reason: String
     ) {
         failedUploads.append(FailedUpload(url: custody, phase: uploadPhase, focal: focal,
-                                          isRetryable: retryable, reason: reason))
+                                          capturedAt: capturedAt, isRetryable: retryable,
+                                          reason: reason))
         if retryable {
             errorMessage = reason
             // No `resetBackoff` — repeated failures of a still-struggling
@@ -2470,7 +2516,8 @@ struct ProCapturePhotosView: View {
             // Custody stays with the file for the whole attempt; it's released
             // only once the server has the bytes.
             await uploadCorrected(payload, focal: entry.focal,
-                                  uploadPhase: entry.phase, custody: entry.url)
+                                  uploadPhase: entry.phase, custody: entry.url,
+                                  capturedAt: entry.capturedAt)
         }
     }
 

@@ -35,7 +35,7 @@ struct SessionByteVaultTests {
 
         let harvested = try #require(SessionByteVault.write(jpeg("harvest"), to: .harvest))
         let pending = try #require(SessionByteVault.writePendingUpload(
-            jpeg("owed"), bookingId: booking, phase: .after, focal: nil))
+            jpeg("owed"), bookingId: booking, phase: .after, focal: nil, capturedAt: nil))
 
         SessionByteVault.reset()
 
@@ -51,7 +51,7 @@ struct SessionByteVaultTests {
         defer { cleanup(booking) }
 
         let pending = try #require(SessionByteVault.writePendingUpload(
-            jpeg(), bookingId: booking, phase: .before, focal: nil))
+            jpeg(), bookingId: booking, phase: .before, focal: nil, capturedAt: nil))
 
         // Caches is OS-reclaimable: the system may evict it under disk pressure,
         // which would lose the photo just as surely as reset() did.
@@ -60,13 +60,17 @@ struct SessionByteVaultTests {
 
     // MARK: - Recovering enough to finish the upload
 
-    @Test func strandedUploadRoundTripsPhaseAndFocal() throws {
+    @Test func strandedUploadRoundTripsPhaseFocalAndCapturedAt() throws {
         let booking = "bkg-\(UUID().uuidString)"
         defer { cleanup(booking) }
         let focal = try #require(MediaFocalPoint(x: 0.512_345, y: 0.421_098))
+        // Millisecond precision, truncated to match the encoding's own rounding —
+        // a sub-millisecond `Date` would never compare equal after round-tripping
+        // through an Int-millis filename token.
+        let capturedAt = Date(timeIntervalSince1970: 1_755_000_000.123)
 
         _ = SessionByteVault.writePendingUpload(
-            jpeg(), bookingId: booking, phase: .after, focal: focal)
+            jpeg(), bookingId: booking, phase: .after, focal: focal, capturedAt: capturedAt)
 
         let stranded = SessionByteVault.strandedUploads(bookingId: booking)
         #expect(stranded.count == 1)
@@ -75,6 +79,10 @@ struct SessionByteVaultTests {
         // the cover-crop needs, and with no locale-sensitive float formatting.
         #expect(abs((stranded.first?.focal?.x ?? 0) - focal.x) < 0.000_01)
         #expect(abs((stranded.first?.focal?.y ?? 0) - focal.y) < 0.000_01)
+        // Millisecond round-trip — the encoding is Int epoch-millis, so it's
+        // exact to the millisecond, not merely "close".
+        let roundTripped = try #require(stranded.first?.capturedAt)
+        #expect(abs(roundTripped.timeIntervalSince1970 - capturedAt.timeIntervalSince1970) < 0.001)
     }
 
     @Test func facelessShotRoundTripsAsNoFocal() throws {
@@ -82,7 +90,7 @@ struct SessionByteVaultTests {
         defer { cleanup(booking) }
 
         _ = SessionByteVault.writePendingUpload(
-            jpeg(), bookingId: booking, phase: .other, focal: nil)
+            jpeg(), bookingId: booking, phase: .other, focal: nil, capturedAt: nil)
 
         let stranded = SessionByteVault.strandedUploads(bookingId: booking)
         #expect(stranded.count == 1)
@@ -91,17 +99,58 @@ struct SessionByteVaultTests {
         #expect(stranded.first?.focal == nil)
     }
 
+    @Test func libraryImportRoundTripsAsNoCapturedAtClaim() throws {
+        let booking = "bkg-\(UUID().uuidString)"
+        defer { cleanup(booking) }
+
+        _ = SessionByteVault.writePendingUpload(
+            jpeg(), bookingId: booking, phase: .other, focal: nil, capturedAt: nil)
+
+        let stranded = SessionByteVault.strandedUploads(bookingId: booking)
+        #expect(stranded.count == 1)
+        // A deliberate no-claim (library import) must stay nil, not silently
+        // become "now" or some other invented value.
+        #expect(stranded.first?.capturedAt == nil)
+    }
+
+    @Test func legacyFourPartFilenameFallsBackToFileCreationDate() throws {
+        let booking = "bkg-\(UUID().uuidString)"
+        defer { cleanup(booking) }
+        // Simulate a file written by a build that predates the capturedAt
+        // field — the 4-part filename `writePendingUpload` produced before this
+        // change. Written directly rather than via the current API, which can no
+        // longer produce this shape.
+        let dir = try #require(FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask
+        ).first).appendingPathComponent("pending-uploads", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let legacyURL = dir.appendingPathComponent(
+            "\(booking)__AFTER__none__\(UUID().uuidString).jpg")
+        try jpeg("legacy").write(to: legacyURL, options: .atomic)
+        defer { try? FileManager.default.removeItem(at: legacyURL) }
+
+        let created = Date(timeIntervalSince1970: 1_700_000_000)
+        try FileManager.default.setAttributes(
+            [.creationDate: created], ofItemAtPath: legacyURL.path)
+
+        let stranded = SessionByteVault.strandedUploads(bookingId: booking)
+        #expect(stranded.count == 1)
+        #expect(stranded.first?.phase == .after)
+        let fallback = try #require(stranded.first?.capturedAt)
+        #expect(abs(fallback.timeIntervalSince1970 - created.timeIntervalSince1970) < 1)
+    }
+
     @Test func strandedUploadsAreScopedToTheBookingAndOldestFirst() throws {
         let booking = "bkg-\(UUID().uuidString)"
         let other = "bkg-\(UUID().uuidString)"
         defer { cleanup(booking, other) }
 
         let older = try #require(SessionByteVault.writePendingUpload(
-            jpeg("older"), bookingId: booking, phase: .before, focal: nil))
+            jpeg("older"), bookingId: booking, phase: .before, focal: nil, capturedAt: nil))
         let newer = try #require(SessionByteVault.writePendingUpload(
-            jpeg("newer"), bookingId: booking, phase: .after, focal: nil))
+            jpeg("newer"), bookingId: booking, phase: .after, focal: nil, capturedAt: nil))
         _ = SessionByteVault.writePendingUpload(
-            jpeg("elsewhere"), bookingId: other, phase: .after, focal: nil)
+            jpeg("elsewhere"), bookingId: other, phase: .after, focal: nil, capturedAt: nil)
 
         // Pin creation dates so oldest-first is deterministic.
         try FileManager.default.setAttributes(
@@ -120,7 +169,7 @@ struct SessionByteVaultTests {
         defer { cleanup(booking) }
 
         let pending = try #require(SessionByteVault.writePendingUpload(
-            jpeg(), bookingId: booking, phase: .after, focal: nil))
+            jpeg(), bookingId: booking, phase: .after, focal: nil, capturedAt: nil))
         SessionByteVault.remove(pending)
 
         #expect(SessionByteVault.strandedUploads(bookingId: booking).isEmpty)
