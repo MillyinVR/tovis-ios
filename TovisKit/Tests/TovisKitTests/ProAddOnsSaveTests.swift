@@ -7,14 +7,19 @@ import Testing
 // `PUT /pro/offerings/{id}/add-ons` is a REPLACE, not a merge: the route deletes
 // every row for the offering and recreates the set from the payload, so a field
 // the client leaves out is not "unchanged" — it comes back as the route's own
-// default (isActive true, isRecommended false, the three overrides null). The
-// add-ons screen only toggles MEMBERSHIP, so every other field on a row it did
-// not create has to be echoed back verbatim.
+// default (isActive true, isRecommended false, isPreselected false, the three
+// overrides null). The add-ons screen only toggles MEMBERSHIP, so every other
+// field on a row it did not create has to be echoed back verbatim.
 //
-// The field that bites in practice is `isRecommended`: web sets it from a
-// per-add-on pill, and clients see it both as a "Recommended" badge and as their
-// DEFAULT SELECTION in the booking flow — so silently clearing it changes what a
-// client arrives pre-checked with, not just a label.
+// TWO fields bite in practice, and they are independent:
+//   • `isRecommended` — web sets it from a per-add-on pill; clients see it as the
+//     "Recommended" badge.
+//   • `isPreselected` — web's separate "Pre-select" pill, and the ONLY thing that
+//     decides what a client arrives pre-ticked with (Tori, 2026-08-14: a
+//     recommended add-on does NOT auto pre-select).
+// Clearing either changes what the pro configured. Clearing `isPreselected`
+// changes what the client is charged for by default, which is the worse of the
+// two — and it was silently dropped on the floor here until this was added.
 //
 // Covered here:
 //   • replacementSet echoes an existing row verbatim (all seven fields)
@@ -85,6 +90,7 @@ private extension URLRequest {
               "group": "COLOR",
               "isActive": true,
               "isRecommended": true,
+              "isPreselected": true,
               "sortOrder": 10,
               "locationType": "SALON",
               "priceOverride": "45.00",
@@ -128,6 +134,7 @@ private extension URLRequest {
         let item = try #require(items.first)
         #expect(item.addOnServiceId == "svc_gloss")
         #expect(item.isRecommended == true)
+        #expect(item.isPreselected == true)
         #expect(item.isActive == true)
         #expect(item.sortOrder == 10)
         #expect(item.locationType == "SALON")
@@ -152,6 +159,7 @@ private extension URLRequest {
         let fresh = try #require(items.first { $0.addOnServiceId == "svc_toner" })
         #expect(fresh.isActive == true)
         #expect(fresh.isRecommended == false)
+        #expect(fresh.isPreselected == false)
         #expect(fresh.locationType == nil)
         #expect(fresh.priceOverride == nil)
         #expect(fresh.durationOverrideMinutes == nil)
@@ -159,6 +167,45 @@ private extension URLRequest {
         // the preserved row keeps its own.
         #expect(fresh.sortOrder == 11)
         #expect(items.first { $0.addOnServiceId == "svc_gloss" }?.sortOrder == 10)
+    }
+
+    // The fixture row above has BOTH flags on, so it proves nothing about which
+    // is which. This row crosses them: recommended OFF, pre-select ON — the exact
+    // combination web's "Pre-select" pill creates on its own. A save that reads
+    // either flag from the other fails here.
+    @Test func preservesPreselectIndependentlyOfRecommended() throws {
+        let json = Data("""
+        {
+          "eligible": [],
+          "attached": [
+            {
+              "id": "addon_3",
+              "addOnServiceId": "svc_mask",
+              "title": "Bond mask",
+              "group": null,
+              "isActive": true,
+              "isRecommended": false,
+              "isPreselected": true,
+              "sortOrder": 4,
+              "locationType": null,
+              "priceOverride": null,
+              "durationOverrideMinutes": null
+            }
+          ]
+        }
+        """.utf8)
+        let decoded = try JSONDecoder().decode(ProAddOns.self, from: json)
+        let existing = Dictionary(
+            decoded.attached.map { ($0.addOnServiceId, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+
+        let items = ProAddOnInput.replacementSet(
+            eligibleOrder: ["svc_mask"], attached: ["svc_mask"], existing: existing
+        )
+        let item = try #require(items.first)
+        #expect(item.isRecommended == false)
+        #expect(item.isPreselected == true)
     }
 
     // Switching a service off drops it from the payload, which is what makes the
@@ -209,6 +256,7 @@ private extension URLRequest {
         let first = try #require(sent.first)
         #expect(first["addOnServiceId"] as? String == "svc_gloss")
         #expect(first["isRecommended"] as? Bool == true)
+        #expect(first["isPreselected"] as? Bool == true)
         #expect(first["isActive"] as? Bool == true)
         #expect(first["sortOrder"] as? Int == 10)
         #expect(first["locationType"] as? String == "SALON")

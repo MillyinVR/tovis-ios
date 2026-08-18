@@ -189,6 +189,18 @@ public struct OfferingAddOnsResult: Sendable {
 /// OfferingAddOn link id — that's what goes back into finalize's `addOnIds`
 /// (NOT `serviceId`). Add-ons don't affect the hold (same as web): they're only
 /// applied at finalize, and the server derives the total duration/price.
+///
+/// `isRecommended` and `isPreselected` are two INDEPENDENT flags, not one:
+/// `isRecommended` drives the "Recommended" badge only, while `isPreselected` is
+/// the pro's own opt-in for "starts ticked" (Tori, 2026-08-14 — a recommended
+/// add-on does NOT auto pre-select). Web reads exactly this split; keep the two
+/// apart here or the pro's pre-select choice silently does nothing on iOS.
+///
+/// `isPreselected` decodes defensively (`decodeIfPresent ?? false`) because a
+/// server predating the field sends no such key: a required decode would fail
+/// the WHOLE add-ons response and leave the picker empty. `isRecommended` stays
+/// a required decode — it has always been on the wire, and defaulting it would
+/// mask a real server regression rather than tolerate an old one.
 public struct BookingAddOn: Decodable, Sendable, Identifiable, Hashable {
     public let id: String
     public let serviceId: String
@@ -198,6 +210,25 @@ public struct BookingAddOn: Decodable, Sendable, Identifiable, Hashable {
     public let minutes: Int
     public let sortOrder: Int
     public let isRecommended: Bool
+    public let isPreselected: Bool
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        serviceId = try c.decode(String.self, forKey: .serviceId)
+        title = try c.decode(String.self, forKey: .title)
+        group = try c.decodeIfPresent(String.self, forKey: .group)
+        price = try c.decode(String.self, forKey: .price)
+        minutes = try c.decode(Int.self, forKey: .minutes)
+        sortOrder = try c.decode(Int.self, forKey: .sortOrder)
+        isRecommended = try c.decode(Bool.self, forKey: .isRecommended)
+        isPreselected = try c.decodeIfPresent(Bool.self, forKey: .isPreselected) ?? false
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, serviceId, title, group, price, minutes, sortOrder
+        case isRecommended, isPreselected
+    }
 }
 
 // MARK: - Holds (POST /api/v1/holds)

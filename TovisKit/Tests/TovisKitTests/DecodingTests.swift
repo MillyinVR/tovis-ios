@@ -668,8 +668,8 @@ func fixture(_ name: String) throws -> Data {
         #expect(d.place.postalCode == "90001")
     }
 
-    // GET /api/v1/offerings/add-ons — Fixtures/offeringAddOns.json. No schema
-    // entry yet (the backend route isn't a typed DTO), so this is decode-only.
+    // GET /api/v1/offerings/add-ons — Fixtures/offeringAddOns.json, validated
+    // against web's OfferingAddOnItemDTO by the contract job.
     @Test func decodesOfferingAddOns() throws {
         let res = try JSONDecoder().decode(OfferingAddOnsResponse.self, from: fixture("offeringAddOns"))
         #expect(res.addOns.count == 2)
@@ -677,10 +677,54 @@ func fixture(_ name: String) throws -> Data {
         #expect(first.id == "addon_link_1")       // link id (→ finalize addOnIds)
         #expect(first.serviceId == "svc_toner")
         #expect(first.minutes == 30)
-        #expect(first.isRecommended)
         #expect(res.addOns[1].group == nil)        // nullable group decodes
         // M15: the pro's cancellation-policy disclosure rides the add-ons call.
         #expect(res.cancellationPolicy?.contains("$25.00") == true)
+
+        // `isRecommended` (the badge) and `isPreselected` (starts ticked) are
+        // INDEPENDENT — the pro can set either without the other. The fixture
+        // deliberately crosses them so a reader that confuses the two fails
+        // here; when both rows agreed, seeding off the wrong field looked green.
+        #expect(first.isRecommended)
+        #expect(!first.isPreselected)
+        #expect(!res.addOns[1].isRecommended)
+        #expect(res.addOns[1].isPreselected)
+    }
+
+    // A server predating `isPreselected` sends no such key. It has to decode —
+    // and default to "not ticked" — or the whole response fails and the picker
+    // comes up empty. Live at the time of writing: the web change that adds the
+    // field is merged but NOT yet deployed.
+    @Test func decodesOfferingAddOnWithoutPreselectedFlag() throws {
+        let json = """
+        {
+          "ok": true,
+          "offeringId": "off_1",
+          "locationType": "SALON",
+          "offering": {
+            "id": "off_1",
+            "service": { "id": "svc_1", "name": "Balayage" },
+            "professional": { "id": "pro_1", "businessName": "Studio Lumen" }
+          },
+          "addOns": [
+            {
+              "id": "addon_link_1",
+              "serviceId": "svc_toner",
+              "title": "Gloss & Toner",
+              "group": "Color",
+              "price": "35.00",
+              "minutes": 30,
+              "sortOrder": 0,
+              "isRecommended": true
+            }
+          ],
+          "cancellationPolicy": null
+        }
+        """.data(using: .utf8)!
+        let res = try JSONDecoder().decode(OfferingAddOnsResponse.self, from: json)
+        let only = try #require(res.addOns.first)
+        #expect(only.isRecommended)
+        #expect(!only.isPreselected)
     }
 
     // POST /api/v1/holds — Fixtures/bookingHoldCreate.json, validated against
@@ -1507,19 +1551,26 @@ func fixture(_ name: String) throws -> Data {
     }
 
     // GET /api/v1/pro/offerings/{id}/add-ons — Fixtures/proAddOns.json.
-    // The second attached row carries the non-default settings web can produce
-    // (isRecommended + the three overrides). It is pinned because the PUT is a
-    // REPLACE: anything the client fails to echo back is reset server-side.
+    // The attached rows carry the non-default settings web can produce
+    // (isRecommended, isPreselected + the three overrides). They are pinned
+    // because the PUT is a REPLACE: anything the client fails to echo back is
+    // reset server-side. The two booleans are CROSSED between the rows — they
+    // are independent pills in web's offering manager, and a decoder that read
+    // one from the other would otherwise look correct.
     @Test func decodesProAddOns() throws {
         let res = try JSONDecoder().decode(ProAddOns.self, from: fixture("proAddOns"))
         #expect(res.eligible.count == 2)
         #expect(res.attached.count == 2)
-        #expect(res.attached.first?.addOnServiceId == "svc_toner")
-        #expect(res.attached.first?.isActive == true)
+        let first = try #require(res.attached.first)
+        #expect(first.addOnServiceId == "svc_toner")
+        #expect(first.isActive == true)
+        #expect(first.isRecommended == false)
+        #expect(first.isPreselected == true)
 
         let recommended = try #require(res.attached.last)
         #expect(recommended.addOnServiceId == "svc_gloss")
         #expect(recommended.isRecommended == true)
+        #expect(recommended.isPreselected == false)
         #expect(recommended.sortOrder == 10)
         #expect(recommended.locationType == "SALON")
         #expect(recommended.priceOverride == "45.00")
