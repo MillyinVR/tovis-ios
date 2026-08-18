@@ -29,7 +29,8 @@
           "paymentDisputed": false,
           "paymentRefundedCents": 0,
           "paymentFullyRefunded": false,
-          "depositDisputed": false
+          "depositDisputed": false,
+          "depositRefundedCents": 0
         },
         "locationType": "SALON",
         "locationId": "loc_1",
@@ -120,7 +121,8 @@
           "paymentDisputed": false,
           "paymentRefundedCents": 0,
           "paymentFullyRefunded": false,
-          "depositDisputed": false
+          "depositDisputed": false,
+          "depositRefundedCents": 0
         },
         "locationType": "SALON",
         "locationId": "loc_1",
@@ -221,7 +223,8 @@
           "paymentDisputed": false,
           "paymentRefundedCents": 0,
           "paymentFullyRefunded": false,
-          "depositDisputed": false
+          "depositDisputed": false,
+          "depositRefundedCents": 0
         },
         "locationType": "SALON",
         "locationId": "loc_1",
@@ -254,7 +257,68 @@
         "paymentOptions": null
       }
     ],
-    "past": [],
+    "past": [
+      {
+        "id": "bk_past_partial_refund",
+        "status": "COMPLETED",
+        "source": "CLIENT",
+        "rebookOfBookingId": null,
+        "sessionStep": null,
+        "scheduledFor": "2026-06-03T17:00:00.000Z",
+        "totalDurationMinutes": 75,
+        "bufferMinutes": 0,
+        "subtotalSnapshot": "100.00",
+        "checkout": {
+          "subtotalSnapshot": "100.00",
+          "serviceSubtotalSnapshot": "100.00",
+          "productSubtotalSnapshot": null,
+          "tipAmount": null,
+          "taxAmount": null,
+          "discountAmount": null,
+          "totalAmount": "100.00",
+          "checkoutStatus": "READY",
+          "selectedPaymentMethod": null,
+          "paymentAuthorizedAt": null,
+          "paymentCollectedAt": null,
+          "depositStatus": "PAID",
+          "depositAmount": "60.00",
+          "paymentDisputed": false,
+          "paymentRefundedCents": 0,
+          "paymentFullyRefunded": false,
+          "depositDisputed": false,
+          "depositRefundedCents": 2000
+        },
+        "locationType": "SALON",
+        "locationId": "loc_1",
+        "timeZone": "America/Los_Angeles",
+        "timeZoneSource": "LOCATION",
+        "locationLabel": "1 Main St, Los Angeles",
+        "locationAddress": "1 Main St, Los Angeles, CA 90012",
+        "locationLat": 34.0537,
+        "locationLng": -118.2428,
+        "professional": {
+          "id": "pro_1", "businessName": null, "firstName": "Dana", "lastName": "Lee",
+          "handle": "dana", "nameDisplay": "REAL_NAME", "location": "LA", "timeZone": "America/Los_Angeles"
+        },
+        "bookedLocation": {
+          "id": "loc_1", "name": "Plume", "formattedAddress": "1 Main St",
+          "city": "Los Angeles", "state": "CA", "timeZone": "America/Los_Angeles"
+        },
+        "display": { "title": "Balayage", "baseName": "Balayage", "addOnNames": [], "addOnCount": 0 },
+        "items": [
+          { "id": "it_4", "type": "BASE", "serviceId": "svc_1", "name": "Balayage", "price": "100.00", "durationMinutes": 75, "parentItemId": null, "sortOrder": 0 }
+        ],
+        "productSales": [],
+        "hasUnreadAftercare": false,
+        "hasPendingConsultationApproval": false,
+        "hasPendingRebookConfirmation": false,
+        "rebookProposedFor": null,
+        "mediaUseConsent": false,
+        "cancellationPolicy": null,
+        "consultation": null,
+        "paymentOptions": null
+      }
+    ],
     "waitlist": [
       {
         "id": "wl_1", "createdAt": "2026-06-20T00:00:00.000Z", "status": "ACTIVE",

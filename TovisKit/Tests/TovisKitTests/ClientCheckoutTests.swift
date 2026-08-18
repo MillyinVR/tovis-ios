@@ -190,7 +190,8 @@ import Testing
 @Suite struct DepositCreditAppliedTests {
     @Test func paidUndisputedDepositCreditsTheHeldAmount() {
         let credit = CheckoutMoney.depositCreditApplied(
-            depositStatus: "PAID", depositAmount: "30.00", depositDisputed: false, total: 100
+            depositStatus: "PAID", depositAmount: "30.00", depositRefundedCents: 0,
+            depositDisputed: false, total: 100
         )
         #expect(credit == 30)
     }
@@ -198,7 +199,8 @@ import Testing
     @Test func creditIsCappedAtTheTotalNeverNegativeAmountDue() {
         // The pro discounted the service after the deposit landed.
         let credit = CheckoutMoney.depositCreditApplied(
-            depositStatus: "PAID", depositAmount: "80.00", depositDisputed: false, total: 50
+            depositStatus: "PAID", depositAmount: "80.00", depositRefundedCents: 0,
+            depositDisputed: false, total: 50
         )
         #expect(credit == 50)
     }
@@ -206,7 +208,8 @@ import Testing
     @Test func pendingOrFailedOrNoneDepositCreditsNothing() {
         for status in ["PENDING", "FAILED", "NONE", nil] {
             let credit = CheckoutMoney.depositCreditApplied(
-                depositStatus: status, depositAmount: "30.00", depositDisputed: false, total: 100
+                depositStatus: status, depositAmount: "30.00", depositRefundedCents: 0,
+                depositDisputed: false, total: 100
             )
             #expect(credit == 0)
         }
@@ -216,16 +219,84 @@ import Testing
     /// nothing even though `depositStatus` still reads PAID.
     @Test func disputedDepositCreditsNothingEvenWhilePaid() {
         let credit = CheckoutMoney.depositCreditApplied(
-            depositStatus: "PAID", depositAmount: "30.00", depositDisputed: true, total: 100
+            depositStatus: "PAID", depositAmount: "30.00", depositRefundedCents: 0,
+            depositDisputed: true, total: 100
         )
         #expect(credit == 0)
     }
 
     @Test func unparseableOrMissingAmountCreditsZeroNotNaN() {
         let credit = CheckoutMoney.depositCreditApplied(
-            depositStatus: "PAID", depositAmount: nil, depositDisputed: false, total: 100
+            depositStatus: "PAID", depositAmount: nil, depositRefundedCents: 0,
+            depositDisputed: false, total: 100
         )
         #expect(credit == 0)
+    }
+
+    // MARK: - Partial refunds (handoff item 32, 2026-08-18)
+    //
+    // `depositStatus` stays PAID through a PARTIAL refund — only
+    // `depositRefundedCents` moves — so none of the tests above could tell a
+    // fully-held deposit from a half-returned one. Web has always netted the
+    // refund out (`deriveNetDepositHeldCents`); iOS had no column to net.
+
+    @Test func partiallyRefundedDepositCreditsOnlyTheNetStillHeld() {
+        // Web's own worked example: refund $20 of a $60 deposit → $40 credit.
+        let credit = CheckoutMoney.depositCreditApplied(
+            depositStatus: "PAID", depositAmount: "60.00", depositRefundedCents: 2000,
+            depositDisputed: false, total: 100
+        )
+        #expect(credit == 40)
+    }
+
+    @Test func fullyRefundedDepositWhileStillMarkedPaidCreditsNothing() {
+        // A refund that happens to land on the whole amount before the status
+        // row catches up. Nothing is held, so nothing may be credited.
+        let credit = CheckoutMoney.depositCreditApplied(
+            depositStatus: "PAID", depositAmount: "60.00", depositRefundedCents: 6000,
+            depositDisputed: false, total: 100
+        )
+        #expect(credit == 0)
+    }
+
+    @Test func refundBeyondTheDepositNeverCreditsANegative() {
+        // Over-refunded (or a nonsense value): floors at 0, never a negative
+        // credit that would INFLATE the amount due.
+        let credit = CheckoutMoney.depositCreditApplied(
+            depositStatus: "PAID", depositAmount: "60.00", depositRefundedCents: 9000,
+            depositDisputed: false, total: 100
+        )
+        #expect(credit == 0)
+    }
+
+    @Test func refundIsNettedBeforeTheCapNotAfter() {
+        // $80 deposit, $50 back, $40 bill. Netting first gives $30 (correct);
+        // capping first and then subtracting would give $0 — the ordering this
+        // pins. Also the case a "cap at total" shortcut gets wrong silently.
+        let credit = CheckoutMoney.depositCreditApplied(
+            depositStatus: "PAID", depositAmount: "80.00", depositRefundedCents: 5000,
+            depositDisputed: false, total: 40
+        )
+        #expect(credit == 30)
+    }
+
+    @Test func partialRefundOnAPendingDepositStillCreditsNothing() {
+        // The status gate runs first: money that never landed cannot be netted
+        // into a credit no matter what the refund column says.
+        let credit = CheckoutMoney.depositCreditApplied(
+            depositStatus: "PENDING", depositAmount: "60.00", depositRefundedCents: 2000,
+            depositDisputed: false, total: 100
+        )
+        #expect(credit == 0)
+    }
+
+    @Test func fractionalRefundCentsSurviveAsExactDecimals() {
+        // 12.34 back off a 60.00 deposit = 47.66 exactly — no Double drift.
+        let credit = CheckoutMoney.depositCreditApplied(
+            depositStatus: "PAID", depositAmount: "60.00", depositRefundedCents: 1234,
+            depositDisputed: false, total: 100
+        )
+        #expect(credit == Decimal(string: "47.66"))
     }
 }
 
