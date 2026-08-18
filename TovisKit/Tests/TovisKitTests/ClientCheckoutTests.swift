@@ -236,7 +236,7 @@ import Testing
     // MARK: - Partial refunds (handoff item 32, 2026-08-18)
     //
     // `depositStatus` stays PAID through a PARTIAL refund — only
-    // `depositRefundedCents` moves — so the four tests above could not tell a
+    // `depositRefundedCents` moves — so none of the tests above could tell a
     // fully-held deposit from a half-returned one. Web has always netted the
     // refund out (`deriveNetDepositHeldCents`); iOS had no column to net.
 
