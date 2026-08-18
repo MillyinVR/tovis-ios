@@ -443,6 +443,25 @@ struct ProCapturePhotosView: View {
             if !failedUploads.isEmpty {
                 retryScheduler.scheduleRetry(resetBackoff: true) { await retryFailedUploads(auto: true) }
             }
+            #if DEBUG
+            // Screenshot-only hooks for verifying the offline-queue UI on a
+            // simulator with no camera and no tap automation (same reasoning as
+            // `TOVIS_DEBUG_OPEN_PRACTICE_CAMERA` in `ProMainTabView`): seed a
+            // pending-sync thumbnail, and/or force the tools drawer open — neither
+            // is otherwise reachable here without a live capture or a tap.
+            if ProcessInfo.processInfo.environment["TOVIS_DEBUG_SEED_PENDING_PHOTO"] == "1",
+               let placeholder = UIImage(systemName: "photo.fill") {
+                captured.insert(
+                    CapturedShot(image: placeholder,
+                                 custodyURL: URL(fileURLWithPath: NSTemporaryDirectory())
+                                     .appendingPathComponent("debug-pending.jpg")),
+                    at: 0
+                )
+            }
+            if ProcessInfo.processInfo.environment["TOVIS_DEBUG_OPEN_TOOLS"] == "1" {
+                showTools = true
+            }
+            #endif
         }
         // Keep the coach judging "ready for THIS shot" — expectations follow the
         // current guided step (and clear for freeform / all-done shooting).
