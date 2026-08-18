@@ -58,7 +58,7 @@ struct BookingAddOnsView: View {
     @State private var syncing = false
     /// Bumped per sync so a stale response can't overwrite a newer toggle.
     @State private var syncSequence = 0
-    @State private var didSeedRecommended = false
+    @State private var didSeedPreselected = false
 
     @State private var submitting = false
     @State private var error: String?
@@ -145,7 +145,7 @@ struct BookingAddOnsView: View {
         // The picker hides its bar to draw the frame's ✕ over the cover; this
         // step needs the bar back for its way out.
         .toolbar(.visible, for: .navigationBar)
-        .task { await seedRecommended() }
+        .task { await seedPreselected() }
     }
 
     // MARK: - Context strip
@@ -332,20 +332,32 @@ struct BookingAddOnsView: View {
 
     // MARK: - Selection
 
-    /// Recommended add-ons arrive ticked, matching web.
+    /// The set that arrives ticked.
     ///
-    /// ⚠️ Whether a paid upgrade should be pre-ticked at all is Tori's open
-    /// question — the platforms agree here so that answer only has to be applied
-    /// once, in one place per client.
-    private func seedRecommended() async {
-        guard !didSeedRecommended else { return }
-        didSeedRecommended = true
+    /// Keyed on `isPreselected` — the pro's own "starts ticked" opt-in — NOT on
+    /// `isRecommended`, which only earns the badge two rows above (Tori,
+    /// 2026-08-14). Web decides the initial selection the same way, in
+    /// `booking/add-ons/page.tsx` and `AddOnsClient.tsx`; the two must agree or a
+    /// pro who recommends an add-on without pre-selecting it gets the behaviour
+    /// they asked for on web and the old behaviour here.
+    ///
+    /// Split out of `seedPreselected()` so it can be tested: the effect around it
+    /// needs a live hold and a server, but WHICH FLAG decides the ticks is the
+    /// part that was wrong, and it is pure.
+    static func preselectedIds(from addOns: [BookingAddOn]) -> Set<String> {
+        Set(addOns.filter(\.isPreselected).map(\.id))
+    }
 
-        let recommended = Set(addOns.filter(\.isRecommended).map(\.id))
-        guard !recommended.isEmpty else { return }
+    /// Pre-selected add-ons arrive ticked, matching web.
+    private func seedPreselected() async {
+        guard !didSeedPreselected else { return }
+        didSeedPreselected = true
 
-        selected = recommended
-        await sync(recommended)
+        let preselected = Self.preselectedIds(from: addOns)
+        guard !preselected.isEmpty else { return }
+
+        selected = preselected
+        await sync(preselected)
     }
 
     private func toggle(_ addOn: BookingAddOn) {

@@ -65,10 +65,37 @@ public struct ProAddOnAttached: Decodable, Sendable, Identifiable {
     public let group: String?
     public let isActive: Bool
     public let isRecommended: Bool
+    /// The pro's "starts ticked" opt-in, set in web's offering manager and
+    /// INDEPENDENT of `isRecommended`. Decoded here only so the save below can
+    /// echo it back — see `ProAddOnInput`, where leaving it out WIPES it.
+    ///
+    /// `decodeIfPresent ?? false`: a server predating the field omits the key,
+    /// and a required decode would fail the whole add-ons editor.
+    public let isPreselected: Bool
     public let sortOrder: Int
     public let locationType: String?
     public let priceOverride: String?
     public let durationOverrideMinutes: Int?
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        addOnServiceId = try c.decode(String.self, forKey: .addOnServiceId)
+        title = try c.decode(String.self, forKey: .title)
+        group = try c.decodeIfPresent(String.self, forKey: .group)
+        isActive = try c.decode(Bool.self, forKey: .isActive)
+        isRecommended = try c.decode(Bool.self, forKey: .isRecommended)
+        isPreselected = try c.decodeIfPresent(Bool.self, forKey: .isPreselected) ?? false
+        sortOrder = try c.decode(Int.self, forKey: .sortOrder)
+        locationType = try c.decodeIfPresent(String.self, forKey: .locationType)
+        priceOverride = try c.decodeIfPresent(String.self, forKey: .priceOverride)
+        durationOverrideMinutes = try c.decodeIfPresent(Int.self, forKey: .durationOverrideMinutes)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, addOnServiceId, title, group, isActive, isRecommended, isPreselected
+        case sortOrder, locationType, priceOverride, durationOverrideMinutes
+    }
 }
 
 /// `PUT /api/v1/pro/offerings/[id]/add-ons` body item.
@@ -76,15 +103,17 @@ public struct ProAddOnAttached: Decodable, Sendable, Identifiable {
 /// The route is a REPLACE, not a merge: it `deleteMany`s every row for the
 /// offering and recreates the set from this payload. So a field left out of an
 /// item is not "unchanged" — it is reset to the route's own default
-/// (`isActive` true, `isRecommended` false, and all three overrides null).
+/// (`isActive` true, `isRecommended` false, `isPreselected` false, and all three
+/// overrides null).
 /// Every field a pro can set therefore has to be carried back on every save,
-/// which is what `init(preserving:)` is for. All three of `isRecommended`,
-/// `priceOverride` and `durationOverrideMinutes` are read by
+/// which is what `init(preserving:)` is for. All four of `isRecommended`,
+/// `isPreselected`, `priceOverride` and `durationOverrideMinutes` are read by
 /// `GET /api/v1/offerings/add-ons` and shown to CLIENTS in the booking flow.
 public struct ProAddOnInput: Encodable, Sendable {
     public let addOnServiceId: String
     public let isActive: Bool
     public let isRecommended: Bool
+    public let isPreselected: Bool
     public let sortOrder: Int
     public let locationType: String?
     public let priceOverride: String?
@@ -94,6 +123,7 @@ public struct ProAddOnInput: Encodable, Sendable {
         addOnServiceId: String,
         isActive: Bool = true,
         isRecommended: Bool = false,
+        isPreselected: Bool = false,
         sortOrder: Int,
         locationType: String? = nil,
         priceOverride: String? = nil,
@@ -102,6 +132,7 @@ public struct ProAddOnInput: Encodable, Sendable {
         self.addOnServiceId = addOnServiceId
         self.isActive = isActive
         self.isRecommended = isRecommended
+        self.isPreselected = isPreselected
         self.sortOrder = sortOrder
         self.locationType = locationType
         self.priceOverride = priceOverride
@@ -118,6 +149,7 @@ public struct ProAddOnInput: Encodable, Sendable {
             addOnServiceId: row.addOnServiceId,
             isActive: row.isActive,
             isRecommended: row.isRecommended,
+            isPreselected: row.isPreselected,
             sortOrder: row.sortOrder,
             locationType: row.locationType,
             priceOverride: row.priceOverride,

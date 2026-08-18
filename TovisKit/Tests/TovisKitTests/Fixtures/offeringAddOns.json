@@ -17,7 +17,7 @@
       "minutes": 30,
       "sortOrder": 0,
       "isRecommended": true,
-      "isPreselected": true
+      "isPreselected": false
     },
     {
       "id": "addon_link_2",
@@ -28,7 +28,7 @@
       "minutes": 20,
       "sortOrder": 1,
       "isRecommended": false,
-      "isPreselected": false
+      "isPreselected": true
     }
   ],
   "cancellationPolicy": "A cancellation fee ($25.00) applies if you cancel within 24 hours of your appointment or don’t show up."
