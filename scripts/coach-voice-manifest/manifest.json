@@ -1,0 +1,3160 @@
+{
+  "calmMentorGap" : {
+    "coveredMoments" : [
+      "goodBackground",
+      "goodColor",
+      "goodFraming",
+      "goodLevel",
+      "goodLighting",
+      "goodPose",
+      "goodSharpness"
+    ],
+    "note" : "Calm Mentor's phrase(for:ctx:) always returns nil by design — it defers to canonical text. Only these 7 \"good\" moments have a centralized canonical source (CoachCategory.canonicalGoodPhrase, Tovis\/CoachVoice.swift). The remaining in-scope moments' canonical text is scattered across ShotCoach.swift, PhotoQC.swift, BeforeShotMeasure.swift, ProCapturePhotosView.swift, CameraCoachLane.swift, CoachEngine.swift, and ProCameraDestination.swift as literals and runtime-interpolated strings, not a single lookup this tool can read without duplicating that text. Needs a centralization refactor (a CoachMoment -> String canonical table) before Calm Mentor's audio can be pre-generated for those moments.",
+    "uncoveredInScopeMoments" : [
+      "backgroundBusy",
+      "colorGreenish",
+      "colorMixed",
+      "colorWarm",
+      "compositionFaceRequired",
+      "compositionNoHeadroom",
+      "compositionOffFrame",
+      "compositionRecenter",
+      "compositionTooClose",
+      "compositionTooFar",
+      "compositionTooLow",
+      "dimensionCleared",
+      "laneCalibrationDrift",
+      "laneHoldShooting",
+      "laneSetComplete",
+      "leavingWithoutTitlePractice",
+      "levelAlmostLevel",
+      "levelTilted",
+      "lightBrighterThan",
+      "lightCoolerThan",
+      "lightDarkerThan",
+      "lightMatched",
+      "lightWarmerThan",
+      "lightingBacklit",
+      "lightingBlownOut",
+      "lightingTooDark",
+      "matchingReferenceLook",
+      "poseClipped",
+      "practiceGuideNote",
+      "qcBlownOut",
+      "qcEyesClosed",
+      "qcSoft",
+      "qcTooDark",
+      "sharpnessHoldSteady",
+      "sharpnessTapToFocus"
+    ]
+  },
+  "lines" : [
+    {
+      "ctx" : {
+
+      },
+      "id" : "094f3209c648fedf",
+      "moment" : "lightingBacklit",
+      "personality" : "hypeBestie",
+      "text" : "Backlit! Turn toward that window, chase the glow!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "68e517768dcbb562",
+      "moment" : "lightingBacklit",
+      "personality" : "hypeBestie",
+      "text" : "Bestie the light's behind them, spin them around!",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "60417d0af353fbbf",
+      "moment" : "lightingBacklit",
+      "personality" : "hypeBestie",
+      "text" : "Too much light behind — let's flip the script!",
+      "variantIndex" : 2
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "ec2166a94f850fd3",
+      "moment" : "lightingTooDark",
+      "personality" : "hypeBestie",
+      "text" : "A lil dark! Chase the light with me!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "f1eb94105763d2d5",
+      "moment" : "lightingTooDark",
+      "personality" : "hypeBestie",
+      "text" : "Bestie it's too dark, let's find some glow!",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "64c1e24b2698c249",
+      "moment" : "lightingTooDark",
+      "personality" : "hypeBestie",
+      "text" : "Ooh it's giving shadow realm — walk them toward that light!",
+      "variantIndex" : 2
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "06a11f5afa723b37",
+      "moment" : "lightingTooDark",
+      "personality" : "hypeBestie",
+      "text" : "We need more light on that face, let's gooo!",
+      "variantIndex" : 3
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "309ca65442411df5",
+      "moment" : "lightingBlownOut",
+      "personality" : "hypeBestie",
+      "text" : "Blown out! Let's dodge that light a little!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "7c51549376f6217d",
+      "moment" : "lightingBlownOut",
+      "personality" : "hypeBestie",
+      "text" : "Too much glow, we lost the details — spin away from it!",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "5d76a72b5509bd37",
+      "moment" : "lightingBlownOut",
+      "personality" : "hypeBestie",
+      "text" : "Whoa, we're blown out — turn away from that light, bestie!",
+      "variantIndex" : 2
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "fdaa17ade0032827",
+      "moment" : "compositionTooFar",
+      "personality" : "hypeBestie",
+      "text" : "Closer, closer — we want ALL of them in this shot!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "3f02e3668f16f2d3",
+      "moment" : "compositionTooFar",
+      "personality" : "hypeBestie",
+      "text" : "Get in there — fill that frame, bestie!",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "41d76fb8ff8484d2",
+      "moment" : "compositionTooClose",
+      "personality" : "hypeBestie",
+      "text" : "We're cropping the good stuff, back up a hair!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "d1771aadc0252388",
+      "moment" : "compositionTooClose",
+      "personality" : "hypeBestie",
+      "text" : "Whoa, too tight — step back a touch!",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "2116332dc63bee9b",
+      "moment" : "compositionFaceRequired",
+      "personality" : "hypeBestie",
+      "text" : "Bestie, we need that face in the shot — frame it up!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "fac66060a9f7405a",
+      "moment" : "compositionFaceRequired",
+      "personality" : "hypeBestie",
+      "text" : "Where's the face?! Get it in frame for this one!",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "71bb92da15f7ad69",
+      "moment" : "compositionOffFrame",
+      "personality" : "hypeBestie",
+      "text" : "Outside the crop! Bring them back to the middle!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "c9783c2c517890ed",
+      "moment" : "compositionOffFrame",
+      "personality" : "hypeBestie",
+      "text" : "They stepped out of the money zone — center them up!",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "55d634924cd6ffa3",
+      "moment" : "compositionNoHeadroom",
+      "personality" : "hypeBestie",
+      "text" : "Give them room to breathe — lower the camera a touch!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "870d9d0284332402",
+      "moment" : "compositionNoHeadroom",
+      "personality" : "hypeBestie",
+      "text" : "We're cramping their style — a little headroom, bestie!",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "883389002b8c189d",
+      "moment" : "compositionTooLow",
+      "personality" : "hypeBestie",
+      "text" : "They're sinking! Raise that camera up!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "a5af2daabc6713a6",
+      "moment" : "compositionTooLow",
+      "personality" : "hypeBestie",
+      "text" : "Too much empty sky — lift it up, bestie!",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "2710128511dbd775",
+      "moment" : "compositionRecenter",
+      "personality" : "hypeBestie",
+      "text" : "A little left, a little right — let's find the center!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "4ca5fd278bea1417",
+      "moment" : "compositionRecenter",
+      "personality" : "hypeBestie",
+      "text" : "Center them up, we want that balance!",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "c287be22c8ad8e25",
+      "moment" : "sharpnessHoldSteady",
+      "personality" : "hypeBestie",
+      "text" : "Freeze! We need this crisp, not blurry!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "ab0f6a78f7ff7382",
+      "moment" : "sharpnessHoldSteady",
+      "personality" : "hypeBestie",
+      "text" : "Hold it steady, this shot's looking soft!",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "fe8a9d5389e37e75",
+      "moment" : "sharpnessTapToFocus",
+      "personality" : "hypeBestie",
+      "text" : "Almost there, give it a tap!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "6d7f4e47d8cfd5de",
+      "moment" : "sharpnessTapToFocus",
+      "personality" : "hypeBestie",
+      "text" : "Just a touch soft — tap to focus, bestie!",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "6bc3e4c6965a4b34",
+      "moment" : "backgroundBusy",
+      "personality" : "hypeBestie",
+      "text" : "Ooh busy background, let's find a cleaner spot!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "f1a46456ed9f2801",
+      "moment" : "backgroundBusy",
+      "personality" : "hypeBestie",
+      "text" : "Too much going on back there — clean backdrop, bestie!",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "b687e6db5f411a7b",
+      "moment" : "poseClipped",
+      "personality" : "hypeBestie",
+      "text" : "Give them room — back up so nothing gets cut!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "a3e96a36cc39d2f5",
+      "moment" : "poseClipped",
+      "personality" : "hypeBestie",
+      "text" : "We're clipping them! Pull back a bit!",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "6d0f62f778498f96",
+      "moment" : "levelTilted",
+      "personality" : "hypeBestie",
+      "text" : "Level it out and it's PERFECT.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "74f3f448de598c10",
+      "moment" : "levelTilted",
+      "personality" : "hypeBestie",
+      "text" : "So close to level — just a nudge!",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "552475cec4a4b112",
+      "moment" : "levelTilted",
+      "personality" : "hypeBestie",
+      "text" : "We're tilting! Straighten up, we almost had it!",
+      "variantIndex" : 2
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "9050a90ead8b69f4",
+      "moment" : "levelAlmostLevel",
+      "personality" : "hypeBestie",
+      "text" : "Almost level, bestie — just a hair more!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "2f62252793b223b9",
+      "moment" : "levelAlmostLevel",
+      "personality" : "hypeBestie",
+      "text" : "So close! Straighten up just a touch!",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "8666f8de65110808",
+      "moment" : "colorMixed",
+      "personality" : "hypeBestie",
+      "text" : "Mixed light alert — kill those overheads!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "ee4d5873b8a5cd22",
+      "moment" : "colorMixed",
+      "personality" : "hypeBestie",
+      "text" : "Two lights fighting each other — pick one, bestie!",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "1d73f1e6e0fa3085",
+      "moment" : "colorGreenish",
+      "personality" : "hypeBestie",
+      "text" : "Greenish glow, let's find a cleaner source!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "cb2fb927dd917260",
+      "moment" : "colorGreenish",
+      "personality" : "hypeBestie",
+      "text" : "It's giving fluorescent green — switch that light up!",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "02bc643cef5aa223",
+      "moment" : "colorWarm",
+      "personality" : "hypeBestie",
+      "text" : "Too warm, too yellow — daylight is calling!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "3ca32d452a20ca05",
+      "moment" : "colorWarm",
+      "personality" : "hypeBestie",
+      "text" : "We're basically a candle right now — find some daylight!",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "68af45befd13135e",
+      "moment" : "goodLighting",
+      "personality" : "hypeBestie",
+      "text" : "Light is SERVING.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "2e2c1de4cca61fed",
+      "moment" : "goodColor",
+      "personality" : "hypeBestie",
+      "text" : "Color is TRUE, we love it.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "1511144765f6547e",
+      "moment" : "goodLevel",
+      "personality" : "hypeBestie",
+      "text" : "Level and iconic.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "2e0624c212c27241",
+      "moment" : "goodFraming",
+      "personality" : "hypeBestie",
+      "text" : "Framed to perfection, bestie.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "6e0dcba3135efc48",
+      "moment" : "goodSharpness",
+      "personality" : "hypeBestie",
+      "text" : "Crisp crisp crisp!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "9553143b81e51e3b",
+      "moment" : "goodBackground",
+      "personality" : "hypeBestie",
+      "text" : "Background is clean, no notes.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "b33f15e8301508cb",
+      "moment" : "goodPose",
+      "personality" : "hypeBestie",
+      "text" : "Pose is giving everything!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "7bbfab094bce03f8",
+      "moment" : "laneHoldShooting",
+      "personality" : "hypeBestie",
+      "text" : "Don't move, don't move — this is the one!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "31c89a7fda73cd5c",
+      "moment" : "laneHoldShooting",
+      "personality" : "hypeBestie",
+      "text" : "Hold it… hold it… YES, capturing!",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "0f692f5a9d656811",
+      "moment" : "laneHoldShooting",
+      "personality" : "hypeBestie",
+      "text" : "Steady steady steady — we're shooting!",
+      "variantIndex" : 2
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "fa55fc2527928bf3",
+      "moment" : "laneSetComplete",
+      "personality" : "hypeBestie",
+      "text" : "Every. Single. Shot. A whole keeper. Let's gooo!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "e52d37d22d8c73e4",
+      "moment" : "laneSetComplete",
+      "personality" : "hypeBestie",
+      "text" : "Full set, full glow — we're done, we're legendary.",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "9fb368c19026dd3e",
+      "moment" : "laneSetComplete",
+      "personality" : "hypeBestie",
+      "text" : "OKAY that's the full set, we ATE.",
+      "variantIndex" : 2
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "59a96e75d2fd42ad",
+      "moment" : "laneSetComplete",
+      "personality" : "hypeBestie",
+      "text" : "That's a wrap and it's iconic.",
+      "variantIndex" : 3
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "1e191993b49d3b13",
+      "moment" : "laneCalibrationDrift",
+      "personality" : "hypeBestie",
+      "text" : "Bestie the light moved — let's re-scan that card!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "219d3ff5f7a4c8f8",
+      "moment" : "laneCalibrationDrift",
+      "personality" : "hypeBestie",
+      "text" : "Light's different now, quick re-scan and we're back!",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Lighting"
+      },
+      "id" : "61b3c54acb4e9a80",
+      "moment" : "dimensionCleared",
+      "personality" : "hypeBestie",
+      "text" : "Lighting is fixed, bestie, look at that!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Lighting"
+      },
+      "id" : "06bbeff347e63b46",
+      "moment" : "dimensionCleared",
+      "personality" : "hypeBestie",
+      "text" : "Lighting — we got it, YES!",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Colour"
+      },
+      "id" : "bf1f70008e94944b",
+      "moment" : "dimensionCleared",
+      "personality" : "hypeBestie",
+      "text" : "Colour is fixed, bestie, look at that!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Colour"
+      },
+      "id" : "1ac0adc9f70d43b7",
+      "moment" : "dimensionCleared",
+      "personality" : "hypeBestie",
+      "text" : "Colour — we got it, YES!",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Level"
+      },
+      "id" : "49c299fae8a673df",
+      "moment" : "dimensionCleared",
+      "personality" : "hypeBestie",
+      "text" : "Level is fixed, bestie, look at that!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Level"
+      },
+      "id" : "6726c52ffa4aec40",
+      "moment" : "dimensionCleared",
+      "personality" : "hypeBestie",
+      "text" : "Level — we got it, YES!",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Framing"
+      },
+      "id" : "30c0df0e411cd163",
+      "moment" : "dimensionCleared",
+      "personality" : "hypeBestie",
+      "text" : "Framing is fixed, bestie, look at that!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Framing"
+      },
+      "id" : "0066dbba7716143e",
+      "moment" : "dimensionCleared",
+      "personality" : "hypeBestie",
+      "text" : "Framing — we got it, YES!",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Focus"
+      },
+      "id" : "ea790c2a9eec3524",
+      "moment" : "dimensionCleared",
+      "personality" : "hypeBestie",
+      "text" : "Focus is fixed, bestie, look at that!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Focus"
+      },
+      "id" : "45eaf94420de2948",
+      "moment" : "dimensionCleared",
+      "personality" : "hypeBestie",
+      "text" : "Focus — we got it, YES!",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Background"
+      },
+      "id" : "40795be833f4483b",
+      "moment" : "dimensionCleared",
+      "personality" : "hypeBestie",
+      "text" : "Background is fixed, bestie, look at that!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Background"
+      },
+      "id" : "dd5ea658fd72722c",
+      "moment" : "dimensionCleared",
+      "personality" : "hypeBestie",
+      "text" : "Background — we got it, YES!",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Pose"
+      },
+      "id" : "f213bf6c262b2c8a",
+      "moment" : "dimensionCleared",
+      "personality" : "hypeBestie",
+      "text" : "Pose is fixed, bestie, look at that!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Pose"
+      },
+      "id" : "ff7d28310615e7ce",
+      "moment" : "dimensionCleared",
+      "personality" : "hypeBestie",
+      "text" : "Pose — we got it, YES!",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "2e2ef92114fa716e",
+      "moment" : "qcEyesClosed",
+      "personality" : "hypeBestie",
+      "text" : "Bestie, blink alert! Let's catch those eyes open!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "7fe90d6c30cc3700",
+      "moment" : "qcEyesClosed",
+      "personality" : "hypeBestie",
+      "text" : "Eyes closed on that one — let's get 'em open!",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "f507c7effe4e6914",
+      "moment" : "qcSoft",
+      "personality" : "hypeBestie",
+      "text" : "Just a touch blurry, one more for the crisp!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "f9d1f5db79036ef5",
+      "moment" : "qcSoft",
+      "personality" : "hypeBestie",
+      "text" : "Ooh a lil soft, let's get it crisp!",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "It"
+      },
+      "id" : "13363e3068b20995",
+      "moment" : "qcTooDark",
+      "personality" : "hypeBestie",
+      "text" : "It came out a lil dark, bestie — one more!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Their face"
+      },
+      "id" : "9ae8e58a1242d6bb",
+      "moment" : "qcTooDark",
+      "personality" : "hypeBestie",
+      "text" : "Their face came out a lil dark, bestie — one more!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "It"
+      },
+      "id" : "533ca84fa49ca44d",
+      "moment" : "qcBlownOut",
+      "personality" : "hypeBestie",
+      "text" : "It got blown out, bestie — let's dial it back!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Their face"
+      },
+      "id" : "da8728c7830666a9",
+      "moment" : "qcBlownOut",
+      "personality" : "hypeBestie",
+      "text" : "Their face got blown out, bestie — let's dial it back!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "reference"
+      },
+      "id" : "3b73af41195ca35b",
+      "moment" : "lightMatched",
+      "personality" : "hypeBestie",
+      "text" : "Light's matching the reference, we're SO good!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "before"
+      },
+      "id" : "e5b66aadda43c489",
+      "moment" : "lightMatched",
+      "personality" : "hypeBestie",
+      "text" : "Light's matching the before, we're SO good!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "reference"
+      },
+      "id" : "beecf2e45dff9e1d",
+      "moment" : "lightBrighterThan",
+      "personality" : "hypeBestie",
+      "text" : "A touch brighter than the reference — dim it juuust a hair!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "before"
+      },
+      "id" : "54c53e11b7978ba4",
+      "moment" : "lightBrighterThan",
+      "personality" : "hypeBestie",
+      "text" : "A touch brighter than the before — dim it juuust a hair!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "reference"
+      },
+      "id" : "adabe0f8f61e9d10",
+      "moment" : "lightDarkerThan",
+      "personality" : "hypeBestie",
+      "text" : "A bit darker than the reference — let's add some glow!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "before"
+      },
+      "id" : "d1c4bc0113cf2864",
+      "moment" : "lightDarkerThan",
+      "personality" : "hypeBestie",
+      "text" : "A bit darker than the before — let's add some glow!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "reference"
+      },
+      "id" : "e8457f012e70d8ac",
+      "moment" : "lightWarmerThan",
+      "personality" : "hypeBestie",
+      "text" : "Warmer than the reference — let's cool it down!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "before"
+      },
+      "id" : "a3ee3644c7324a6f",
+      "moment" : "lightWarmerThan",
+      "personality" : "hypeBestie",
+      "text" : "Warmer than the before — let's cool it down!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "reference"
+      },
+      "id" : "a9f0cf119bfec9bb",
+      "moment" : "lightCoolerThan",
+      "personality" : "hypeBestie",
+      "text" : "Cooler than the reference — warm it up a touch!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "before"
+      },
+      "id" : "57473319b0555418",
+      "moment" : "lightCoolerThan",
+      "personality" : "hypeBestie",
+      "text" : "Cooler than the before — warm it up a touch!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "2c9f5a07cc09b006",
+      "moment" : "matchingReferenceLook",
+      "personality" : "hypeBestie",
+      "text" : "Matching that reference look, let's gooo!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "bc08654c76c12860",
+      "moment" : "practiceGuideNote",
+      "personality" : "hypeBestie",
+      "text" : "Bestie, practice shots aren't attached to anyone — shoot as many as you want, attach one later if you feel it!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "02d8d42c8fa834c2",
+      "moment" : "leavingWithoutTitlePractice",
+      "personality" : "hypeBestie",
+      "text" : "Heading out, bestie?",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "d38f615eeff2affa",
+      "moment" : "lightingBacklit",
+      "personality" : "straightShooter",
+      "text" : "Backlit. Turn to light.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "59c454eda4c0904f",
+      "moment" : "lightingBacklit",
+      "personality" : "straightShooter",
+      "text" : "Flip toward the source.",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "e664a09d6e560b53",
+      "moment" : "lightingBacklit",
+      "personality" : "straightShooter",
+      "text" : "Light's behind. Reposition.",
+      "variantIndex" : 2
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "072065f22442b96d",
+      "moment" : "lightingTooDark",
+      "personality" : "straightShooter",
+      "text" : "Face needs light.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "1a91ab39bf65ca2a",
+      "moment" : "lightingTooDark",
+      "personality" : "straightShooter",
+      "text" : "More light, face side.",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "602cac15476ddfbc",
+      "moment" : "lightingTooDark",
+      "personality" : "straightShooter",
+      "text" : "Too dark. Move to light.",
+      "variantIndex" : 2
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "bf757b8d46a98c29",
+      "moment" : "lightingBlownOut",
+      "personality" : "straightShooter",
+      "text" : "Blown out. Turn away.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "53a76c2b9bfa1c48",
+      "moment" : "lightingBlownOut",
+      "personality" : "straightShooter",
+      "text" : "Too bright. Reposition.",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "cd7c2fe3ece2358a",
+      "moment" : "compositionTooFar",
+      "personality" : "straightShooter",
+      "text" : "Move closer.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "3a229a96fb03a678",
+      "moment" : "compositionTooClose",
+      "personality" : "straightShooter",
+      "text" : "Too tight. Back up.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "0ce0d83a3612e194",
+      "moment" : "compositionFaceRequired",
+      "personality" : "straightShooter",
+      "text" : "Need the face.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "6b373a132cdd0c26",
+      "moment" : "compositionOffFrame",
+      "personality" : "straightShooter",
+      "text" : "Outside crop. Center.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "4eb9cc81713cc63f",
+      "moment" : "compositionNoHeadroom",
+      "personality" : "straightShooter",
+      "text" : "No headroom. Lower camera.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "93b04220779a25a1",
+      "moment" : "compositionTooLow",
+      "personality" : "straightShooter",
+      "text" : "Too low. Raise camera.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "0e71fbe034cdb737",
+      "moment" : "compositionRecenter",
+      "personality" : "straightShooter",
+      "text" : "Off-center. Center it.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "42be956d3d66f386",
+      "moment" : "sharpnessHoldSteady",
+      "personality" : "straightShooter",
+      "text" : "Soft. Hold steady.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "bdc8392a7b59de09",
+      "moment" : "sharpnessTapToFocus",
+      "personality" : "straightShooter",
+      "text" : "Touch soft. Tap to focus.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "92ea87fc7d62cc52",
+      "moment" : "backgroundBusy",
+      "personality" : "straightShooter",
+      "text" : "Busy background. Clean it up.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "e1e1f83a4f36a0b1",
+      "moment" : "poseClipped",
+      "personality" : "straightShooter",
+      "text" : "Clipped. Pull back.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "62d7a8bada1323dd",
+      "moment" : "levelTilted",
+      "personality" : "straightShooter",
+      "text" : "Level it.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "9cffdd1ece293f4e",
+      "moment" : "levelTilted",
+      "personality" : "straightShooter",
+      "text" : "Off-level.",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "e969aeba99c84f9d",
+      "moment" : "levelTilted",
+      "personality" : "straightShooter",
+      "text" : "Tilted. Straighten.",
+      "variantIndex" : 2
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "2d662a2abf9cc228",
+      "moment" : "levelAlmostLevel",
+      "personality" : "straightShooter",
+      "text" : "Almost level. Straighten.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "4c47fdb565e07133",
+      "moment" : "colorMixed",
+      "personality" : "straightShooter",
+      "text" : "Mixed light. Kill overheads.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "e4e56cccfdfd2676",
+      "moment" : "colorGreenish",
+      "personality" : "straightShooter",
+      "text" : "Green cast. Switch source.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "11ff2c0df4ea75fc",
+      "moment" : "colorWarm",
+      "personality" : "straightShooter",
+      "text" : "Too warm. Go daylight.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "3987a3527e44bb05",
+      "moment" : "goodLighting",
+      "personality" : "straightShooter",
+      "text" : "Light good.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "0649a4b965744942",
+      "moment" : "goodColor",
+      "personality" : "straightShooter",
+      "text" : "Color true.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "d4b4b328cfa7148f",
+      "moment" : "goodLevel",
+      "personality" : "straightShooter",
+      "text" : "Level.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "c0d6562be78868ff",
+      "moment" : "goodFraming",
+      "personality" : "straightShooter",
+      "text" : "Framed.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "edd63b44486faf91",
+      "moment" : "goodSharpness",
+      "personality" : "straightShooter",
+      "text" : "Sharp.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "9857e2504ceb5f81",
+      "moment" : "goodBackground",
+      "personality" : "straightShooter",
+      "text" : "Background clean.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "f57cee47b78949e2",
+      "moment" : "goodPose",
+      "personality" : "straightShooter",
+      "text" : "Pose good.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "db0aa191932fc77b",
+      "moment" : "laneHoldShooting",
+      "personality" : "straightShooter",
+      "text" : "Don't move.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "a11a6a624bfeb50a",
+      "moment" : "laneHoldShooting",
+      "personality" : "straightShooter",
+      "text" : "Hold.",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "b4c3ae334a05be6f",
+      "moment" : "laneHoldShooting",
+      "personality" : "straightShooter",
+      "text" : "Steady.",
+      "variantIndex" : 2
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "e2e3492ec713302d",
+      "moment" : "laneSetComplete",
+      "personality" : "straightShooter",
+      "text" : "All seven. Good.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "6dc3319b4da3cf2c",
+      "moment" : "laneSetComplete",
+      "personality" : "straightShooter",
+      "text" : "Done. Good set.",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "ebaa52bcc92d623d",
+      "moment" : "laneSetComplete",
+      "personality" : "straightShooter",
+      "text" : "Set complete.",
+      "variantIndex" : 2
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "b4adeeabe5ea04de",
+      "moment" : "laneCalibrationDrift",
+      "personality" : "straightShooter",
+      "text" : "Light changed. Re-scan.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Lighting"
+      },
+      "id" : "4304f20bef8be048",
+      "moment" : "dimensionCleared",
+      "personality" : "straightShooter",
+      "text" : "Lighting. Fixed.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Colour"
+      },
+      "id" : "75889baa9348e4c6",
+      "moment" : "dimensionCleared",
+      "personality" : "straightShooter",
+      "text" : "Colour. Fixed.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Level"
+      },
+      "id" : "3ee4ffcec0c24010",
+      "moment" : "dimensionCleared",
+      "personality" : "straightShooter",
+      "text" : "Level. Fixed.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Framing"
+      },
+      "id" : "ba76ac5645b8342b",
+      "moment" : "dimensionCleared",
+      "personality" : "straightShooter",
+      "text" : "Framing. Fixed.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Focus"
+      },
+      "id" : "209be03dbcf54acd",
+      "moment" : "dimensionCleared",
+      "personality" : "straightShooter",
+      "text" : "Focus. Fixed.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Background"
+      },
+      "id" : "2bba38d5fb0e5973",
+      "moment" : "dimensionCleared",
+      "personality" : "straightShooter",
+      "text" : "Background. Fixed.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Pose"
+      },
+      "id" : "76795be8296d9aa9",
+      "moment" : "dimensionCleared",
+      "personality" : "straightShooter",
+      "text" : "Pose. Fixed.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "75db9ae3c888115e",
+      "moment" : "qcEyesClosed",
+      "personality" : "straightShooter",
+      "text" : "Eyes closed. Retake.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "55554926fc1215a8",
+      "moment" : "qcSoft",
+      "personality" : "straightShooter",
+      "text" : "Soft. Retake.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "It"
+      },
+      "id" : "fb0a34919152cdec",
+      "moment" : "qcTooDark",
+      "personality" : "straightShooter",
+      "text" : "It too dark. Retake.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Their face"
+      },
+      "id" : "704a5e03e5cc46cc",
+      "moment" : "qcTooDark",
+      "personality" : "straightShooter",
+      "text" : "Their face too dark. Retake.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "It"
+      },
+      "id" : "5399f139e8f41635",
+      "moment" : "qcBlownOut",
+      "personality" : "straightShooter",
+      "text" : "It blown out. Retake.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Their face"
+      },
+      "id" : "8d3e9ef88e1e482d",
+      "moment" : "qcBlownOut",
+      "personality" : "straightShooter",
+      "text" : "Their face blown out. Retake.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "reference"
+      },
+      "id" : "3757c963ccf055c0",
+      "moment" : "lightMatched",
+      "personality" : "straightShooter",
+      "text" : "Light matches reference.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "before"
+      },
+      "id" : "a5d1a754529de25a",
+      "moment" : "lightMatched",
+      "personality" : "straightShooter",
+      "text" : "Light matches before.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "reference"
+      },
+      "id" : "7f96170a6399b5a3",
+      "moment" : "lightBrighterThan",
+      "personality" : "straightShooter",
+      "text" : "Brighter than reference. Dim it.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "before"
+      },
+      "id" : "00d7d919482e8215",
+      "moment" : "lightBrighterThan",
+      "personality" : "straightShooter",
+      "text" : "Brighter than before. Dim it.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "reference"
+      },
+      "id" : "667898720ec44194",
+      "moment" : "lightDarkerThan",
+      "personality" : "straightShooter",
+      "text" : "Darker than reference. Add light.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "before"
+      },
+      "id" : "d5aff32d7a7b504a",
+      "moment" : "lightDarkerThan",
+      "personality" : "straightShooter",
+      "text" : "Darker than before. Add light.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "reference"
+      },
+      "id" : "20aca4bd4958ebdf",
+      "moment" : "lightWarmerThan",
+      "personality" : "straightShooter",
+      "text" : "Warmer than reference. Cool it.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "before"
+      },
+      "id" : "8d9acb0de4d0050a",
+      "moment" : "lightWarmerThan",
+      "personality" : "straightShooter",
+      "text" : "Warmer than before. Cool it.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "reference"
+      },
+      "id" : "0a2ed3f83d76ca22",
+      "moment" : "lightCoolerThan",
+      "personality" : "straightShooter",
+      "text" : "Cooler than reference. Warm it.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "before"
+      },
+      "id" : "91826414d828e3e6",
+      "moment" : "lightCoolerThan",
+      "personality" : "straightShooter",
+      "text" : "Cooler than before. Warm it.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "e0caf8ffc5bd40d8",
+      "moment" : "matchingReferenceLook",
+      "personality" : "straightShooter",
+      "text" : "Matching reference look.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "0728f18f76b7aa39",
+      "moment" : "practiceGuideNote",
+      "personality" : "straightShooter",
+      "text" : "Practice shots. Not attached to anyone. Shoot freely.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "15ce8626bb6fc389",
+      "moment" : "leavingWithoutTitlePractice",
+      "personality" : "straightShooter",
+      "text" : "Leave camera?",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "6c23e88333d59b0d",
+      "moment" : "lightingBacklit",
+      "personality" : "editorialDirector",
+      "text" : "Flip them — we need the light on the face, not behind it.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "e0e869f32276858d",
+      "moment" : "lightingBacklit",
+      "personality" : "editorialDirector",
+      "text" : "They're backlit — turn them into the light source.",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "9bfc4fa2d1049da3",
+      "moment" : "lightingBacklit",
+      "personality" : "editorialDirector",
+      "text" : "Too much light behind the subject. Reposition toward the window.",
+      "variantIndex" : 2
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "c0e021b277e75e83",
+      "moment" : "lightingTooDark",
+      "personality" : "editorialDirector",
+      "text" : "Light needs to hit the face. Reposition toward the source.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "65d6735524595081",
+      "moment" : "lightingTooDark",
+      "personality" : "editorialDirector",
+      "text" : "Too much shadow on the subject — move them into the light.",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "7c3a523f7e7600b6",
+      "moment" : "lightingTooDark",
+      "personality" : "editorialDirector",
+      "text" : "We're losing the face in shadow — bring them into the light.",
+      "variantIndex" : 2
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "c9e5cbe374d92fb2",
+      "moment" : "lightingBlownOut",
+      "personality" : "editorialDirector",
+      "text" : "Too much light on the face. Move off the source.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "be213e5aa7fafb18",
+      "moment" : "lightingBlownOut",
+      "personality" : "editorialDirector",
+      "text" : "We're blowing out the highlights — turn away from the light.",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "bf1ccc01782d1efd",
+      "moment" : "compositionTooFar",
+      "personality" : "editorialDirector",
+      "text" : "Bring them in — fill the frame.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "2d3d6a80ceef2116",
+      "moment" : "compositionTooClose",
+      "personality" : "editorialDirector",
+      "text" : "Too tight. Give the frame room to breathe.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "1b9a302f99d4dae3",
+      "moment" : "compositionFaceRequired",
+      "personality" : "editorialDirector",
+      "text" : "This shot needs the face in frame.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "3e92e9eff668bec8",
+      "moment" : "compositionOffFrame",
+      "personality" : "editorialDirector",
+      "text" : "They're outside the published crop — center them.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "72ea59766fab120a",
+      "moment" : "compositionNoHeadroom",
+      "personality" : "editorialDirector",
+      "text" : "Cramped at the top — lower the camera for headroom.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "392b86bd2ff14a14",
+      "moment" : "compositionTooLow",
+      "personality" : "editorialDirector",
+      "text" : "Too much dead space above — raise the camera.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "97d4b2f09002363b",
+      "moment" : "compositionRecenter",
+      "personality" : "editorialDirector",
+      "text" : "Off the mark — center the subject.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "da6b389948456c33",
+      "moment" : "sharpnessHoldSteady",
+      "personality" : "editorialDirector",
+      "text" : "This is soft. Hold the frame steady.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "51d3db925bf0061e",
+      "moment" : "sharpnessTapToFocus",
+      "personality" : "editorialDirector",
+      "text" : "A touch soft — tap to lock focus.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "0c98b5e728467da6",
+      "moment" : "backgroundBusy",
+      "personality" : "editorialDirector",
+      "text" : "The background is competing with the subject — clean it up.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "a55c6e02a1e5d9c4",
+      "moment" : "poseClipped",
+      "personality" : "editorialDirector",
+      "text" : "We're clipping the frame — pull back.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "681a62c2048bfdbf",
+      "moment" : "levelTilted",
+      "personality" : "editorialDirector",
+      "text" : "Almost level. Tighten the line.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "5e63db25c3998f54",
+      "moment" : "levelTilted",
+      "personality" : "editorialDirector",
+      "text" : "Level the camera before we lock this shot.",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "eaef916a3cf77fc3",
+      "moment" : "levelTilted",
+      "personality" : "editorialDirector",
+      "text" : "The horizon's off — straighten the frame.",
+      "variantIndex" : 2
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "7b44306a5676845a",
+      "moment" : "levelAlmostLevel",
+      "personality" : "editorialDirector",
+      "text" : "Nearly level — just tighten the line.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "07f09d843db66896",
+      "moment" : "colorMixed",
+      "personality" : "editorialDirector",
+      "text" : "Mixed sources — kill the overheads.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "8764170d9751e08f",
+      "moment" : "colorGreenish",
+      "personality" : "editorialDirector",
+      "text" : "Fluorescent cast reading through — switch the source.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "46e17fb7299e1d85",
+      "moment" : "colorWarm",
+      "personality" : "editorialDirector",
+      "text" : "Too warm — daylight reads true here.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "7074e3c82091cdb6",
+      "moment" : "goodLighting",
+      "personality" : "editorialDirector",
+      "text" : "Light's reading clean.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "2fd20a2331955b57",
+      "moment" : "goodColor",
+      "personality" : "editorialDirector",
+      "text" : "Color's true.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "d4b4b328cfa7148f",
+      "moment" : "goodLevel",
+      "personality" : "editorialDirector",
+      "text" : "Level.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "19fec1b7c9a5af1e",
+      "moment" : "goodFraming",
+      "personality" : "editorialDirector",
+      "text" : "Framed on brand.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "89b6e052bddffaa7",
+      "moment" : "goodSharpness",
+      "personality" : "editorialDirector",
+      "text" : "Tack sharp.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "d59dc38ca3fede8d",
+      "moment" : "goodBackground",
+      "personality" : "editorialDirector",
+      "text" : "Background's clean.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "e9ab37d0c2fad170",
+      "moment" : "goodPose",
+      "personality" : "editorialDirector",
+      "text" : "Pose is reading well.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "c873dc47a556ef8e",
+      "moment" : "laneHoldShooting",
+      "personality" : "editorialDirector",
+      "text" : "Hold the frame. We're taking it.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "3743386574df565a",
+      "moment" : "laneHoldShooting",
+      "personality" : "editorialDirector",
+      "text" : "Hold — this is the shot.",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "ccc83c55a711466c",
+      "moment" : "laneHoldShooting",
+      "personality" : "editorialDirector",
+      "text" : "Steady… locking focus… now.",
+      "variantIndex" : 2
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "0c3d0980d017a5a2",
+      "moment" : "laneSetComplete",
+      "personality" : "editorialDirector",
+      "text" : "Full set, every frame on brand. Beautiful.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "2f1fd1dc2384e23a",
+      "moment" : "laneSetComplete",
+      "personality" : "editorialDirector",
+      "text" : "That's a wrap — this set is publication-ready.",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "327131be6a03831d",
+      "moment" : "laneSetComplete",
+      "personality" : "editorialDirector",
+      "text" : "That's the set. Clean, consistent, done.",
+      "variantIndex" : 2
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "75c9cad50f142505",
+      "moment" : "laneCalibrationDrift",
+      "personality" : "editorialDirector",
+      "text" : "The light's shifted since calibration — re-scan the card.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Lighting"
+      },
+      "id" : "dd61058169de5334",
+      "moment" : "dimensionCleared",
+      "personality" : "editorialDirector",
+      "text" : "Lighting — clean. Moving on.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Colour"
+      },
+      "id" : "2a5ad68a06c70e8f",
+      "moment" : "dimensionCleared",
+      "personality" : "editorialDirector",
+      "text" : "Colour — clean. Moving on.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Level"
+      },
+      "id" : "37645e1bf113ae8a",
+      "moment" : "dimensionCleared",
+      "personality" : "editorialDirector",
+      "text" : "Level — clean. Moving on.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Framing"
+      },
+      "id" : "ea89a89a30cb010b",
+      "moment" : "dimensionCleared",
+      "personality" : "editorialDirector",
+      "text" : "Framing — clean. Moving on.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Focus"
+      },
+      "id" : "c5ed00386315f8d8",
+      "moment" : "dimensionCleared",
+      "personality" : "editorialDirector",
+      "text" : "Focus — clean. Moving on.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Background"
+      },
+      "id" : "eddef83e604a6aed",
+      "moment" : "dimensionCleared",
+      "personality" : "editorialDirector",
+      "text" : "Background — clean. Moving on.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Pose"
+      },
+      "id" : "e764629079fb64b4",
+      "moment" : "dimensionCleared",
+      "personality" : "editorialDirector",
+      "text" : "Pose — clean. Moving on.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "6aa39b81417ef0a5",
+      "moment" : "qcEyesClosed",
+      "personality" : "editorialDirector",
+      "text" : "Eyes were closed on that one — we need them open.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "6d8b9ed288788460",
+      "moment" : "qcSoft",
+      "personality" : "editorialDirector",
+      "text" : "That one's soft — we need it sharp.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "It"
+      },
+      "id" : "ebc313bff0ae3eba",
+      "moment" : "qcTooDark",
+      "personality" : "editorialDirector",
+      "text" : "It came out dark — let's take it again in better light.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Their face"
+      },
+      "id" : "1f72e90b39b05eb7",
+      "moment" : "qcTooDark",
+      "personality" : "editorialDirector",
+      "text" : "Their face came out dark — let's take it again in better light.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "It"
+      },
+      "id" : "79199b64e717ebfb",
+      "moment" : "qcBlownOut",
+      "personality" : "editorialDirector",
+      "text" : "It blew out — we need one more take off that light.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Their face"
+      },
+      "id" : "eda8ad8e6361ea0a",
+      "moment" : "qcBlownOut",
+      "personality" : "editorialDirector",
+      "text" : "Their face blew out — we need one more take off that light.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "reference"
+      },
+      "id" : "2d07421ac56f4986",
+      "moment" : "lightMatched",
+      "personality" : "editorialDirector",
+      "text" : "Light reads true to the reference.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "before"
+      },
+      "id" : "2a496c2e3e98c8a0",
+      "moment" : "lightMatched",
+      "personality" : "editorialDirector",
+      "text" : "Light reads true to the before.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "reference"
+      },
+      "id" : "51cb3a21c0a4c3ae",
+      "moment" : "lightBrighterThan",
+      "personality" : "editorialDirector",
+      "text" : "Reading brighter than the reference — dim it slightly.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "before"
+      },
+      "id" : "f6e5f3f74770a29a",
+      "moment" : "lightBrighterThan",
+      "personality" : "editorialDirector",
+      "text" : "Reading brighter than the before — dim it slightly.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "reference"
+      },
+      "id" : "a6a3af11bc6185c0",
+      "moment" : "lightDarkerThan",
+      "personality" : "editorialDirector",
+      "text" : "Reading darker than the reference — bring in more light.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "before"
+      },
+      "id" : "a7494ad3d3ec7610",
+      "moment" : "lightDarkerThan",
+      "personality" : "editorialDirector",
+      "text" : "Reading darker than the before — bring in more light.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "reference"
+      },
+      "id" : "e8cdd6755ee20fe1",
+      "moment" : "lightWarmerThan",
+      "personality" : "editorialDirector",
+      "text" : "Reading warmer than the reference — cool the light source.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "before"
+      },
+      "id" : "581f0ab2c47a89b5",
+      "moment" : "lightWarmerThan",
+      "personality" : "editorialDirector",
+      "text" : "Reading warmer than the before — cool the light source.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "reference"
+      },
+      "id" : "72ea71c01d6079d1",
+      "moment" : "lightCoolerThan",
+      "personality" : "editorialDirector",
+      "text" : "Reading cooler than the reference — warm the light source.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "before"
+      },
+      "id" : "7f1469400c88e869",
+      "moment" : "lightCoolerThan",
+      "personality" : "editorialDirector",
+      "text" : "Reading cooler than the before — warm the light source.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "31cfc94d6384c47c",
+      "moment" : "matchingReferenceLook",
+      "personality" : "editorialDirector",
+      "text" : "Matching the reference look now.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "b33291b6290f86c1",
+      "moment" : "practiceGuideNote",
+      "personality" : "editorialDirector",
+      "text" : "Practice shots aren't attached to anyone — shoot freely, attach one to a client or look later.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "ac444597567bd482",
+      "moment" : "leavingWithoutTitlePractice",
+      "personality" : "editorialDirector",
+      "text" : "Leaving the camera?",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "1648a92fc474a74d",
+      "moment" : "lightingBacklit",
+      "personality" : "dragQueenBestie",
+      "text" : "That light's behind you like a bad ex — turn around and claim it!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "65fe060431d01397",
+      "moment" : "lightingBacklit",
+      "personality" : "dragQueenBestie",
+      "text" : "The light's sneaking up behind you, baby — turn and face your glow!",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "f26b357e96434a12",
+      "moment" : "lightingBacklit",
+      "personality" : "dragQueenBestie",
+      "text" : "You're backlit, gorgeous — spin toward that light source!",
+      "variantIndex" : 2
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "41cf774676f57ccb",
+      "moment" : "lightingTooDark",
+      "personality" : "dragQueenBestie",
+      "text" : "It's giving dark room energy, and not the fun kind — find your light, honey!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "088ba90054226c43",
+      "moment" : "lightingTooDark",
+      "personality" : "dragQueenBestie",
+      "text" : "Mama, the shadows are eating your face — strut toward that light!",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "2aaac2ea742543c3",
+      "moment" : "lightingTooDark",
+      "personality" : "dragQueenBestie",
+      "text" : "The light is not hitting right — turn toward the glow, gorgeous.",
+      "variantIndex" : 2
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "26ccb2a124e4137a",
+      "moment" : "lightingTooDark",
+      "personality" : "dragQueenBestie",
+      "text" : "We need illumination on that face card, baby — chase the light!",
+      "variantIndex" : 3
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "38c180b6052c8360",
+      "moment" : "lightingBlownOut",
+      "personality" : "dragQueenBestie",
+      "text" : "Honey, you're washed out — step back from that light, it's too much!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "6ca6f5f5c92aea38",
+      "moment" : "lightingBlownOut",
+      "personality" : "dragQueenBestie",
+      "text" : "We're overexposed, baby — ease off that glow before it eats your face!",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "4165e63d78fb10a6",
+      "moment" : "compositionTooFar",
+      "personality" : "dragQueenBestie",
+      "text" : "Come closer, baby — give us that frame-filling glamour!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "8588c51600d00f8d",
+      "moment" : "compositionTooClose",
+      "personality" : "dragQueenBestie",
+      "text" : "Ooh too close, honey — step back and give us room to see you!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "20ca8285d79ac1e5",
+      "moment" : "compositionFaceRequired",
+      "personality" : "dragQueenBestie",
+      "text" : "Where's that face, gorgeous? Get it in the shot!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "1883d2cda0c35726",
+      "moment" : "compositionOffFrame",
+      "personality" : "dragQueenBestie",
+      "text" : "You wandered off the runway, baby — center yourself back up!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "db3a05958be7790a",
+      "moment" : "compositionNoHeadroom",
+      "personality" : "dragQueenBestie",
+      "text" : "We're cramped at the top, honey — lower that camera for some breathing room!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "9c36b6e1902e49df",
+      "moment" : "compositionTooLow",
+      "personality" : "dragQueenBestie",
+      "text" : "You're sinking, baby — raise that camera and let her rise!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "f88835bc8273e117",
+      "moment" : "compositionRecenter",
+      "personality" : "dragQueenBestie",
+      "text" : "A little off-center, gorgeous — let's find your mark!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "65da7ab7ccd45bfd",
+      "moment" : "sharpnessHoldSteady",
+      "personality" : "dragQueenBestie",
+      "text" : "Hold it, baby, this shot's blurry as a Tuesday night!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "04f03f3507cdf69c",
+      "moment" : "sharpnessTapToFocus",
+      "personality" : "dragQueenBestie",
+      "text" : "Just a touch soft, honey — tap and lock it in!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "a709d14a3600ab77",
+      "moment" : "backgroundBusy",
+      "personality" : "dragQueenBestie",
+      "text" : "That background is UPSTAGING you, baby — find a cleaner backdrop!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "e64ed35f16ee36da",
+      "moment" : "poseClipped",
+      "personality" : "dragQueenBestie",
+      "text" : "We're cutting off the good parts — pull back, honey!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "ef844cf48b7624b8",
+      "moment" : "levelTilted",
+      "personality" : "dragQueenBestie",
+      "text" : "Almost level, baby — just a hair more and it's flawless.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "5c5249d01efb116b",
+      "moment" : "levelTilted",
+      "personality" : "dragQueenBestie",
+      "text" : "Ooh, we're leaning! Straighten up like you're walking the runway.",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "f19366fe31e53aa6",
+      "moment" : "levelTilted",
+      "personality" : "dragQueenBestie",
+      "text" : "The camera's tipping like it had one too many — level it, honey!",
+      "variantIndex" : 2
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "4aecc5759627e50e",
+      "moment" : "levelAlmostLevel",
+      "personality" : "dragQueenBestie",
+      "text" : "So close to level, baby — just a hair more!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "1c69606b08150f6c",
+      "moment" : "colorMixed",
+      "personality" : "dragQueenBestie",
+      "text" : "Two lights fighting for attention, baby — kill the overheads!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "21b2f9e6fa952166",
+      "moment" : "colorGreenish",
+      "personality" : "dragQueenBestie",
+      "text" : "We're reading a little swampy, honey — switch that light source!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "34eda96bd0895530",
+      "moment" : "colorWarm",
+      "personality" : "dragQueenBestie",
+      "text" : "Too much butter light, baby — daylight reads truer!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "76a826c9ed28a974",
+      "moment" : "goodLighting",
+      "personality" : "dragQueenBestie",
+      "text" : "That light is SERVING, baby.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "9ebdf5ccd155ead3",
+      "moment" : "goodColor",
+      "personality" : "dragQueenBestie",
+      "text" : "Color is reading true, gorgeous.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "f214514c864e950d",
+      "moment" : "goodLevel",
+      "personality" : "dragQueenBestie",
+      "text" : "Level, honey. Flawless.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "94f410b5e57a506d",
+      "moment" : "goodFraming",
+      "personality" : "dragQueenBestie",
+      "text" : "Framed like she owns the runway.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "24b013e449e1eec3",
+      "moment" : "goodSharpness",
+      "personality" : "dragQueenBestie",
+      "text" : "Sharp as your wit, baby.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "8eb726b1a09daae6",
+      "moment" : "goodBackground",
+      "personality" : "dragQueenBestie",
+      "text" : "Background's clean, no shade thrown.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "f0798625ad1efa80",
+      "moment" : "goodPose",
+      "personality" : "dragQueenBestie",
+      "text" : "That pose is SERVING, honey.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "a375fc874e03d98a",
+      "moment" : "laneHoldShooting",
+      "personality" : "dragQueenBestie",
+      "text" : "Freeze, baby! This is the moment, hold it!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "ecfb2c31d536cfc9",
+      "moment" : "laneHoldShooting",
+      "personality" : "dragQueenBestie",
+      "text" : "Hold that pose, don't you dare move — we're capturing greatness.",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "3040863c6121057b",
+      "moment" : "laneHoldShooting",
+      "personality" : "dragQueenBestie",
+      "text" : "Steady, steady… and captured. You better work.",
+      "variantIndex" : 2
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "d4a57e2b04d262ff",
+      "moment" : "laneSetComplete",
+      "personality" : "dragQueenBestie",
+      "text" : "Category is: photographed to perfection. We are done, baby!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "ea2e4267f01b33ae",
+      "moment" : "laneSetComplete",
+      "personality" : "dragQueenBestie",
+      "text" : "Full set, full fabulous — you ate that, no crumbs left!",
+      "variantIndex" : 1
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "9792f46fa3897519",
+      "moment" : "laneSetComplete",
+      "personality" : "dragQueenBestie",
+      "text" : "That is the full set and every single shot served. You better work!",
+      "variantIndex" : 2
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "b0f028b5266d9817",
+      "moment" : "laneSetComplete",
+      "personality" : "dragQueenBestie",
+      "text" : "That's a wrap, and honey, it was flawless from frame one.",
+      "variantIndex" : 3
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "0beb7ea9ed79c406",
+      "moment" : "laneCalibrationDrift",
+      "personality" : "dragQueenBestie",
+      "text" : "The light shifted on us, baby — re-scan that card real quick!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Lighting"
+      },
+      "id" : "244cffa59bb2b656",
+      "moment" : "dimensionCleared",
+      "personality" : "dragQueenBestie",
+      "text" : "Lighting, honey — fixed and fabulous!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Colour"
+      },
+      "id" : "5da93c767dfa9b7b",
+      "moment" : "dimensionCleared",
+      "personality" : "dragQueenBestie",
+      "text" : "Colour, honey — fixed and fabulous!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Level"
+      },
+      "id" : "e69e4048a985aa5d",
+      "moment" : "dimensionCleared",
+      "personality" : "dragQueenBestie",
+      "text" : "Level, honey — fixed and fabulous!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Framing"
+      },
+      "id" : "b3bfdcd1538c86dd",
+      "moment" : "dimensionCleared",
+      "personality" : "dragQueenBestie",
+      "text" : "Framing, honey — fixed and fabulous!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Focus"
+      },
+      "id" : "d33ba35b4bba5394",
+      "moment" : "dimensionCleared",
+      "personality" : "dragQueenBestie",
+      "text" : "Focus, honey — fixed and fabulous!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Background"
+      },
+      "id" : "78388d7c67186a5b",
+      "moment" : "dimensionCleared",
+      "personality" : "dragQueenBestie",
+      "text" : "Background, honey — fixed and fabulous!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Pose"
+      },
+      "id" : "6f64bab14d11c54f",
+      "moment" : "dimensionCleared",
+      "personality" : "dragQueenBestie",
+      "text" : "Pose, honey — fixed and fabulous!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "d0fa3620507fae33",
+      "moment" : "qcEyesClosed",
+      "personality" : "dragQueenBestie",
+      "text" : "Honey, those lashes blinked at the wrong moment — let's catch you wide-eyed!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "f498c6b50ce53b53",
+      "moment" : "qcSoft",
+      "personality" : "dragQueenBestie",
+      "text" : "That shot came out soft as a Sunday morning, baby — let's sharpen it up!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "It"
+      },
+      "id" : "767a5e08dae02a91",
+      "moment" : "qcTooDark",
+      "personality" : "dragQueenBestie",
+      "text" : "It came out dark, baby — let's chase that light one more time!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Their face"
+      },
+      "id" : "cd126d32b0363ec8",
+      "moment" : "qcTooDark",
+      "personality" : "dragQueenBestie",
+      "text" : "Their face came out dark, baby — let's chase that light one more time!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "It"
+      },
+      "id" : "093b53ab6773fbce",
+      "moment" : "qcBlownOut",
+      "personality" : "dragQueenBestie",
+      "text" : "It went full spotlight, honey — a touch too much! One more take.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "Their face"
+      },
+      "id" : "e27bee78d101fa87",
+      "moment" : "qcBlownOut",
+      "personality" : "dragQueenBestie",
+      "text" : "Their face went full spotlight, honey — a touch too much! One more take.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "reference"
+      },
+      "id" : "6680df001bad2519",
+      "moment" : "lightMatched",
+      "personality" : "dragQueenBestie",
+      "text" : "Light is matching the reference perfectly, baby — flawless!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "before"
+      },
+      "id" : "d4e3ed7bd111a6ed",
+      "moment" : "lightMatched",
+      "personality" : "dragQueenBestie",
+      "text" : "Light is matching the before perfectly, baby — flawless!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "reference"
+      },
+      "id" : "87116632cc0c1534",
+      "moment" : "lightBrighterThan",
+      "personality" : "dragQueenBestie",
+      "text" : "We're brighter than the reference, baby — ease that light down a touch!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "before"
+      },
+      "id" : "ca0b608f44ad5243",
+      "moment" : "lightBrighterThan",
+      "personality" : "dragQueenBestie",
+      "text" : "We're brighter than the before, baby — ease that light down a touch!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "reference"
+      },
+      "id" : "93233b2d118392df",
+      "moment" : "lightDarkerThan",
+      "personality" : "dragQueenBestie",
+      "text" : "We dipped darker than the reference, honey — add a little light!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "before"
+      },
+      "id" : "68a1387bfcde2213",
+      "moment" : "lightDarkerThan",
+      "personality" : "dragQueenBestie",
+      "text" : "We dipped darker than the before, honey — add a little light!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "reference"
+      },
+      "id" : "6870fdb7802dd7b3",
+      "moment" : "lightWarmerThan",
+      "personality" : "dragQueenBestie",
+      "text" : "We're running warm next to the reference, baby — cool that light off!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "before"
+      },
+      "id" : "59dc1fbfb575b7b1",
+      "moment" : "lightWarmerThan",
+      "personality" : "dragQueenBestie",
+      "text" : "We're running warm next to the before, baby — cool that light off!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "reference"
+      },
+      "id" : "b269d01704c4d55a",
+      "moment" : "lightCoolerThan",
+      "personality" : "dragQueenBestie",
+      "text" : "A little cool next to the reference, honey — warm that light up!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+        "subjectNoun" : "before"
+      },
+      "id" : "e5cbf40c68aa0b29",
+      "moment" : "lightCoolerThan",
+      "personality" : "dragQueenBestie",
+      "text" : "A little cool next to the before, honey — warm that light up!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "17851411d6b5afae",
+      "moment" : "matchingReferenceLook",
+      "personality" : "dragQueenBestie",
+      "text" : "Matching your reference look, baby — let's recreate that magic!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "7dff65f67f345ff7",
+      "moment" : "practiceGuideNote",
+      "personality" : "dragQueenBestie",
+      "text" : "Honey, these practice shots aren't tied to anybody — shoot as many as you like, we'll attach one later if she's the one!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "a2cabde2a3ecb89b",
+      "moment" : "leavingWithoutTitlePractice",
+      "personality" : "dragQueenBestie",
+      "text" : "Leaving already, baby?",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "5e31886bea9fcf31",
+      "moment" : "goodLighting",
+      "personality" : "calmMentor",
+      "text" : "Good light",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "b02147197c3e0f80",
+      "moment" : "goodFraming",
+      "personality" : "calmMentor",
+      "text" : "Framed",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "1a3c4b300d516c22",
+      "moment" : "goodSharpness",
+      "personality" : "calmMentor",
+      "text" : "Sharp",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "b1a4378180eb3d62",
+      "moment" : "goodBackground",
+      "personality" : "calmMentor",
+      "text" : "Background is clean",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "e9afd20ae0a40d9e",
+      "moment" : "goodPose",
+      "personality" : "calmMentor",
+      "text" : "Pose reads",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "1709305c9fa966d1",
+      "moment" : "goodLevel",
+      "personality" : "calmMentor",
+      "text" : "Level",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "e13c3fc96b65fd5f",
+      "moment" : "goodColor",
+      "personality" : "calmMentor",
+      "text" : "Colour is true",
+      "variantIndex" : 0
+    }
+  ],
+  "schemaVersion" : 1,
+  "scope" : {
+    "excluded" : [
+      {
+        "moment" : "aiDirectionReady",
+        "reason" : "wraps an AI-generated direction line — open-set (ProCapturePhotosView.swift ~1695)"
+      },
+      {
+        "moment" : "focusRungAdvanced",
+        "reason" : "wraps two ALREADY-rendered lines from other moments, composed at runtime — not fixed text (CoachEngine.swift ~549; see CoachPhraseContext.detail's doc comment)"
+      },
+      {
+        "moment" : "leavingWithoutTitleSession",
+        "reason" : "wraps ProSessionPhotoRequirement.leavingWithoutTitle(phase) — open-set (ProCameraDestination.swift ~110)"
+      },
+      {
+        "moment" : "retakeAnnounce",
+        "reason" : "wraps a QC\/retake reason sentence — classed open-set by brief §1 (ProCapturePhotosView.swift ~2301)"
+      },
+      {
+        "moment" : "retakeConfirm",
+        "reason" : "wraps a QC\/retake reason sentence — classed open-set by brief §1 (ProCapturePhotosView.swift ~854)"
+      },
+      {
+        "moment" : "sessionGuideNoteMet",
+        "reason" : "wraps ProSessionPhotoRequirement.guideNote(phase) — open-set (ProCameraDestination.swift ~97)"
+      },
+      {
+        "moment" : "sessionGuideNoteOutstanding",
+        "reason" : "wraps ProSessionPhotoRequirement.guideNote(phase) — open-set (ProCameraDestination.swift ~98)"
+      },
+      {
+        "moment" : "sessionOutstandingSentence",
+        "reason" : "wraps ProSessionPhotoRequirement.outstandingSentence(phase) — open-set (ProCameraDestination.swift ~124)"
+      },
+      {
+        "moment" : "shotCaptured",
+        "reason" : "wraps a shot title — open-set (ProCapturePhotosView.swift ~1503)"
+      },
+      {
+        "moment" : "shotStepAnnounce",
+        "reason" : "wraps ShotStep.title\/.hint — open-set (ProCapturePhotosView.swift ~532)"
+      },
+      {
+        "moment" : "shotStepHint",
+        "reason" : "wraps ShotStep.hint — open-set app copy (ProCapturePhotosView.swift, CameraCoachLane.swift, CameraDrawers.swift)"
+      },
+      {
+        "moment" : "trendingSetIntro",
+        "reason" : "wraps a server-driven trending-pack name\/tagline — open-set (ProCapturePhotosView.swift ~1636, ProShotPacks.swift)"
+      }
+    ],
+    "inScope" : [
+      "lightingBacklit",
+      "lightingTooDark",
+      "lightingBlownOut",
+      "compositionTooFar",
+      "compositionTooClose",
+      "compositionFaceRequired",
+      "compositionOffFrame",
+      "compositionNoHeadroom",
+      "compositionTooLow",
+      "compositionRecenter",
+      "sharpnessHoldSteady",
+      "sharpnessTapToFocus",
+      "backgroundBusy",
+      "poseClipped",
+      "levelTilted",
+      "levelAlmostLevel",
+      "colorMixed",
+      "colorGreenish",
+      "colorWarm",
+      "goodLighting",
+      "goodColor",
+      "goodLevel",
+      "goodFraming",
+      "goodSharpness",
+      "goodBackground",
+      "goodPose",
+      "laneHoldShooting",
+      "laneSetComplete",
+      "laneCalibrationDrift",
+      "dimensionCleared",
+      "qcEyesClosed",
+      "qcSoft",
+      "qcTooDark",
+      "qcBlownOut",
+      "lightMatched",
+      "lightBrighterThan",
+      "lightDarkerThan",
+      "lightWarmerThan",
+      "lightCoolerThan",
+      "matchingReferenceLook",
+      "practiceGuideNote",
+      "leavingWithoutTitlePractice"
+    ]
+  }
+}

@@ -92,6 +92,26 @@ jobs:
           fi
           echo "TovisKit tests executed: $count" >> "$GITHUB_STEP_SUMMARY"
 
+  # Drift guard for docs/design/custom-coach-voices-brief.md (tovis-app
+  # repo) chunk 1: scripts/coach-voice-manifest/manifest.json is GENERATED
+  # from Tovis/CoachVoice.swift + Tovis/CoachVoicePacks.swift, not
+  # hand-maintained. This job recompiles those real sources and diffs the
+  # result against the committed manifest — if a pack's copy changes without
+  # regenerating it, this fails instead of the manifest silently rotting
+  # behind the code (the exact failure mode `contract` above exists to catch
+  # on the wire-schema side). `swiftc` only, no simulator/xcodebuild needed.
+  coach-voice-manifest:
+    name: Coach voice manifest (drift + completeness)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Show toolchain
+        run: swift --version
+
+      - name: Regenerate + diff against committed manifest.json
+        run: scripts/coach-voice-manifest/run.sh --check
+
   # Everything under TovisTests/ — 33 files, 278 tests across 43 suites,
   # including NotificationDeepLinkTests, which pins where a tapped push row
   # navigates. NONE of it runs in the jobs above: the `ios` job builds TovisKit
