@@ -22,11 +22,14 @@ import Testing
 // two — and it was silently dropped on the floor here until this was added.
 //
 // Covered here:
-//   • replacementSet echoes an existing row verbatim (all seven fields)
+//   • replacementSet echoes an existing row verbatim (all eight fields)
+//   • the two flags survive INDEPENDENTLY — a row with recommended OFF and
+//     pre-select ON round-trips as such, so neither can be read from the other
 //   • newly switched-on services get route defaults and sort AFTER existing rows
 //   • switched-off services drop out
-//   • the actual PUT wire body carries isRecommended — pinned off the request,
-//     not off the model, so a re-encoding change cannot pass by accident
+//   • the actual PUT wire body carries isRecommended AND isPreselected — pinned
+//     off the request, not off the model, so a re-encoding change cannot pass by
+//     accident
 //   • saveAddOns THROWS on a rejection, which is what the view now surfaces
 
 /// Records the outgoing request and serves a canned envelope.
