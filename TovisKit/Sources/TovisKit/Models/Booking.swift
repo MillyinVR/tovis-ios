@@ -39,6 +39,13 @@ public struct AvailabilityBootstrap: Decodable, Sendable {
     /// Empty for a mobile booking, whose address is the client's own.
     public let locationOptions: [AvailabilityLocationOption]?
 
+    /// A MOBILE pro's travel reach ("Travels up to 12 mi around Brooklyn, NY").
+    /// Present in BOTH modes on the wire (the pro's reach is already in hand the
+    /// moment the client toggles to Mobile), but only rendered in MOBILE mode —
+    /// SALON mode names the salon itself instead. Null for a pro who has
+    /// published neither a radius nor a base city/state.
+    public let serviceArea: AvailabilityServiceArea?
+
     /// Where this booking is actually going, when the pro has a salon row for it.
     public func bookableLocation() -> AvailabilityLocationOption? {
         locationOptions?.first { $0.id == request.locationId }
@@ -54,13 +61,31 @@ public struct AvailabilityLocationOption: Decodable, Sendable, Identifiable {
     public let state: String?
     public let formattedAddress: String?
 
-    /// The full street address when the server has one, else whatever locates
-    /// this place — never the salon's NAME, which is a label and not an address.
+    /// The coarse place ("Brooklyn, NY"), sent whenever the location has a city
+    /// or state — published address or not. Render this when `formattedAddress`
+    /// is null rather than showing no location at all (Tori, 2026-08-14: a
+    /// client who doesn't know where a pro is located won't book).
+    public let areaLabel: String?
+
+    /// The full street address when the server has one, else the coarse area,
+    /// else whatever locates this place — never the salon's NAME, which is a
+    /// label and not an address.
     public var addressLine: String? {
         if let formatted = formattedAddress?.trimmedOrNil { return formatted }
+        if let area = areaLabel?.trimmedOrNil { return area }
         let parts = [city?.trimmedOrNil, state?.trimmedOrNil].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: ", ")
     }
+}
+
+/// A MOBILE pro's reach: how far they travel, and from where. Wire twin of
+/// `AvailabilityServiceArea` (`lib/booking/AvailabilityDrawer/types.ts`).
+///
+/// Deliberately carries NO address — a mobile base is very often the pro's
+/// home. Null radius/area both absent means the pro has published neither.
+public struct AvailabilityServiceArea: Decodable, Sendable {
+    public let radiusMiles: Int?
+    public let areaLabel: String?
 }
 
 /// Wire twin of `AvailabilityCover` (the drawer's `types.ts`).

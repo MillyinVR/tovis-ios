@@ -110,6 +110,10 @@ struct BookingFlowView: View {
     /// The salon this booking is going to, remembered from the bootstrap for the
     /// same reason as the timezone: the success screen outlives `.ready(boot)`.
     @State private var salonAddressLine: String?
+    /// The pro's MOBILE travel reach, remembered the same way — `placementControls`
+    /// renders even before a `boot` exists (the address-gate empty state), so this
+    /// can't just be read off `boot` inline.
+    @State private var serviceArea: AvailabilityServiceArea?
     /// Minutes of add-ons the client actually booked, reported back by the
     /// add-ons step. The base width alone under-states the appointment on the
     /// confirmation card (a 180-minute service booked with 45 minutes of add-ons
@@ -322,11 +326,86 @@ struct BookingFlowView: View {
             }
         }
 
+        whereBlock
+
         if isMobile {
             BrandSection(title: "Service address", trailing: "Required") {
                 addressSection
             }
         }
+    }
+
+    /// Where this appointment happens — on the sheet, before the client commits.
+    /// iOS twin of web's `WhereBlock.tsx` (Tori, 2026-08-14: *"when a client
+    /// chooses a pro from the looks feed or lands on the booking option they
+    /// salon address or if they are mobile a city radius should show. if the
+    /// client doesnt know where the pro is located they wont book. the address
+    /// should be clickable."*).
+    ///
+    /// MOBILE mode always renders `addressSection` (the client's OWN address)
+    /// directly below this — deliberately not repeated here, this block states
+    /// only the pro's standing travel reach. Nothing renders when neither an
+    /// address nor an area is known, matching web's "nothing to say beats a
+    /// half-filled promise."
+    @ViewBuilder
+    private var whereBlock: some View {
+        if isMobile {
+            if let area = serviceArea, area.radiusMiles != nil || area.areaLabel != nil {
+                BrandSurface {
+                    whereRow(icon: "car.fill", title: mobileReachTitle(area))
+                }
+            }
+        } else if let title = salonAddressLine {
+            // `salonAddressLine` already prefers the exact street address and
+            // falls back to the coarse area (`AvailabilityLocationOption.addressLine`)
+            // — 🔴 area always, exact address only when the pro published it.
+            BrandSurface {
+                if let url = MapsLink.url(address: title) {
+                    Link(destination: url) {
+                        whereRow(icon: "mappin.circle.fill", title: title, isLink: true)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    whereRow(icon: "mappin.circle.fill", title: title)
+                }
+            }
+        }
+    }
+
+    private func mobileReachTitle(_ area: AvailabilityServiceArea) -> String {
+        switch (area.radiusMiles, area.areaLabel?.trimmedOrNil) {
+        case let (.some(radius), .some(label)):
+            return "Travels up to \(radius) mi around \(label)"
+        case let (.some(radius), .none):
+            return "Travels up to \(radius) mi"
+        case let (.none, .some(label)):
+            return "Travels around \(label)"
+        case (.none, .none):
+            return "" // unreachable — callers guard on radius/area being present
+        }
+    }
+
+    private func whereRow(icon: String, title: String, isLink: Bool = false) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 13))
+                .foregroundStyle(isLink ? BrandColor.accent : BrandColor.textSecondary)
+                .accessibilityHidden(true)
+            Text(title)
+                .font(BrandFont.body(13, .semibold))
+                .foregroundStyle(isLink ? BrandColor.accent : BrandColor.textPrimary)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            if isLink {
+                Image(systemName: "arrow.up.right.square")
+                    .font(.system(size: 12))
+                    .foregroundStyle(BrandColor.accent)
+                    .accessibilityHidden(true)
+            }
+        }
+        .contentShape(Rectangle())
+        .frame(minHeight: isLink ? 30 : 0)
     }
 
     /// Shown when a MOBILE booking has no service address to compute availability
@@ -1018,6 +1097,7 @@ struct BookingFlowView: View {
             appointmentTimeZone = boot.timeZone
             baseDurationState = boot.request.durationMinutes
             salonAddressLine = boot.bookableLocation()?.addressLine
+            serviceArea = boot.serviceArea
 
             // bootstrap already carries the suggested day's slots — use them
             // rather than asking for the same day again on first paint.

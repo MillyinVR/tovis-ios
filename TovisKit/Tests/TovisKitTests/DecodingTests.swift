@@ -564,9 +564,61 @@ func fixture(_ name: String) throws -> Data {
         #expect(boot.timeZone == "America/Los_Angeles")
         #expect(boot.request.locationId.isEmpty == false)
         #expect(boot.offering?.salonDurationMinutes == 90)
+        // The SALON where-block's fallback when the pro has no published street
+        // address (Tori, 2026-08-14: area always, exact address only when public).
+        #expect(boot.locationOptions?.first?.areaLabel == "Los Angeles, CA")
 
         let day = try JSONDecoder().decode(AvailabilityDay.self, from: fixture("availabilityDay"))
         #expect(day.slots.isEmpty == false) // 2026-07-15 has openings for this pro
+    }
+
+    // The MOBILE where-block: "Travels up to 12 mi around Brooklyn, NY." Not in
+    // the shared schema-validated fixture above (that pro is SALON-only, and
+    // `serviceArea` there is genuinely absent) — inline JSON for the shape a
+    // mobile-reach pro's response actually carries.
+    @Test func decodesMobileServiceArea() throws {
+        let json = """
+        {
+          "timeZone": "America/New_York",
+          "request": {
+            "professionalId": "pro_1",
+            "serviceId": "svc_1",
+            "offeringId": "off_1",
+            "locationType": "MOBILE",
+            "locationId": "loc_1",
+            "durationMinutes": 60
+          },
+          "availableDays": [],
+          "serviceArea": { "radiusMiles": 12, "areaLabel": "Brooklyn, NY" }
+        }
+        """.data(using: .utf8)!
+
+        let boot = try JSONDecoder().decode(AvailabilityBootstrap.self, from: json)
+        #expect(boot.serviceArea?.radiusMiles == 12)
+        #expect(boot.serviceArea?.areaLabel == "Brooklyn, NY")
+    }
+
+    // A response predating this field must still decode — `serviceArea` absent
+    // entirely, not merely null, degrades to no where-block line rather than a
+    // decode failure that takes down the whole booking flow.
+    @Test func decodesMissingServiceAreaAsNil() throws {
+        let json = """
+        {
+          "timeZone": "America/New_York",
+          "request": {
+            "professionalId": "pro_1",
+            "serviceId": "svc_1",
+            "offeringId": "off_1",
+            "locationType": "SALON",
+            "locationId": "loc_1",
+            "durationMinutes": 60
+          },
+          "availableDays": []
+        }
+        """.data(using: .utf8)!
+
+        let boot = try JSONDecoder().decode(AvailabilityBootstrap.self, from: json)
+        #expect(boot.serviceArea == nil)
     }
 
     // POST /api/v1/holds + /bookings/finalize — small, stable shapes (inline).
