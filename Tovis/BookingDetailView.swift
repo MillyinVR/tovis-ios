@@ -608,14 +608,41 @@ struct BookingDetailView: View {
         return parsed < 0 ? 0 : parsed
     }
 
-    /// The FULL amount owed, recomputed the instant the tip changes — the single
-    /// source of truth for the Total row, the CTA amount, and the deep-link amount
+    /// The FULL amount owed, recomputed the instant the tip changes — the "Total"
+    /// row's number, BEFORE any deposit or platform credit comes off
     /// (CHK-tip-live: no "Save tip" round-trip needed).
     private var liveTotal: Decimal {
         CheckoutMoney.liveTotal(
             serviceSubtotal: serviceSubtotal, productSubtotal: productSubtotal,
             tip: tipDecimal, tax: taxAmount, discount: discountAmount
         )
+    }
+
+    /// What a deposit the client already paid takes off this bill. Server-derived
+    /// inputs (K10-A parity, 2026-08-18): the amount the client is quoted here
+    /// cannot drift from what `deriveDepositCredit` computes on web, or from what
+    /// the server actually settles at confirm.
+    private var depositCreditApplied: Decimal {
+        CheckoutMoney.depositCreditApplied(
+            // 🔴 The EFFECTIVE paid-ness (`depositPaid`), not the raw wire
+            // status. `depositPaidLocally` flips optimistically the moment the
+            // deposit return lands, and `depositCard` + `payCard` render on
+            // the SAME screen — so reading the not-yet-refreshed status would
+            // quote the full bill in exactly that window, which is the
+            // double-send this fix exists to prevent.
+            depositStatus: depositPaid ? "PAID" : booking.checkout.depositStatus,
+            depositAmount: booking.checkout.depositAmount,
+            depositDisputed: depositDisputed,
+            total: liveTotal
+        )
+    }
+
+    /// What's left after the deposit credit, BEFORE any platform credit — the
+    /// base every further amount (the toggle, the CTA, the off-platform
+    /// deep-link) is quoted against. Matches web's `depositCredit.amountDueCents`.
+    private var amountDueAfterDeposit: Decimal {
+        let due = liveTotal - depositCreditApplied
+        return due < 0 ? 0 : due
     }
 
     private var selectedMethod: ClientBookingPaymentMethod? {
@@ -655,16 +682,19 @@ struct BookingDetailView: View {
     }
 
     /// What the toggle actually takes off THIS bill — never more than the
-    /// balance, never more than the bill. The server re-derives the same cap
-    /// inside its locked transaction; this is the quote, not the authority.
+    /// balance, and never more than what's left AFTER the deposit credit (not
+    /// the full bill; see `depositCreditApplied`). The server re-derives the
+    /// same cap inside its locked transaction; this is the quote, not the
+    /// authority.
     private var creditApplied: Decimal {
         guard creditOffered, applyCredit else { return 0 }
-        return min(creditBalance, liveTotal)
+        return min(creditBalance, amountDueAfterDeposit)
     }
 
-    /// What the client still owes once their credit comes off.
+    /// What the client still owes once BOTH the deposit and their platform
+    /// credit come off.
     private var amountDueAfterCredit: Decimal {
-        let due = liveTotal - creditApplied
+        let due = amountDueAfterDeposit - creditApplied
         return due < 0 ? 0 : due
     }
 
@@ -678,13 +708,18 @@ struct BookingDetailView: View {
     }
 
     /// The one-tap off-platform pay action for the selected method (nil for cash /
-    /// card rails / Stripe or a method with no stored handle). Amount is the live
-    /// total, so it tracks the tip instantly.
+    /// card rails / Stripe or a method with no stored handle).
+    ///
+    /// 🔴 Amount is `amountDueAfterCredit`, never `liveTotal` — the full bill.
+    /// Quoting the full total on an off-platform hand-off would tell a client
+    /// who already paid a deposit to send it a second time, and there is no
+    /// charge object afterward to correct it: they just send the money.
+    /// Mirrors web's `amountDue` (`ClientCheckoutCard.tsx`).
     private var payAction: PaymentDeepLink? {
         guard let selectedMethod else { return nil }
         return buildPaymentDeepLink(
             methodKey: selectedMethod.key, handle: selectedMethod.handle,
-            amountDue: liveTotal, note: deepLinkNote
+            amountDue: amountDueAfterCredit, note: deepLinkNote
         )
     }
 
@@ -729,8 +764,19 @@ struct BookingDetailView: View {
                         .foregroundStyle(BrandColor.textPrimary)
                 }
 
+                // 🔴 Shown whenever EITHER credit is nonzero — a client who paid a
+                // deposit but applies no platform credit still needs to see why
+                // the CTA below says less than "Total" (Tori's cluster fix,
+                // 2026-08-18: this used to only appear for platform credit,
+                // leaving a deposit-paying client staring at the full bill with
+                // no explanation).
+                if depositCreditApplied > 0 {
+                    checkoutSummaryRow("Deposit credit", depositCreditApplied, negative: true)
+                }
                 if creditApplied > 0 {
                     checkoutSummaryRow("Credit applied", creditApplied, negative: true)
+                }
+                if depositCreditApplied > 0 || creditApplied > 0 {
                     HStack {
                         Text("Amount due")
                             .font(BrandFont.body(16, .semibold))
@@ -912,11 +958,13 @@ struct BookingDetailView: View {
 
                 guard
                     let method = acceptedMethods.first(where: { $0.key == next }),
-                    // Quotes the SAME amount the button does — the live total,
-                    // so a tip typed a moment ago is already in it.
+                    // Quotes the SAME amount `payAction`/the button does — the
+                    // live total minus any deposit/platform credit, so a tip
+                    // typed a moment ago is already in it and a paid deposit is
+                    // never billed a second time off-platform.
                     let action = buildPaymentDeepLink(
                         methodKey: method.key, handle: method.handle,
-                        amountDue: liveTotal, note: deepLinkNote
+                        amountDue: amountDueAfterCredit, note: deepLinkNote
                     )
                 else { return }
 

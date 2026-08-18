@@ -4,7 +4,8 @@ import Foundation
 // affordance (tovis-app `lib/payments/paymentDeepLink.ts` + the tip/total math in
 // `ClientCheckoutCard.tsx`). Pure + Decimal-based so the money path is unit-tested
 // and never drifts from web: the on-screen total AND the deep-link amount both
-// reflect the FULL amount owed, live the instant a tip changes (CHK-tip-live).
+// reflect the amount STILL OWED — the full bill minus any paid deposit credit —
+// live the instant a tip changes (CHK-tip-live).
 
 /// The tip + total math the client checkout renders. All Decimal so cents are
 /// exact (no Double rounding on real money).
@@ -25,8 +26,8 @@ public enum CheckoutMoney {
         return round2(serviceSubtotal * Decimal(percent) / 100)
     }
 
-    /// The full amount owed = service + products + tip + tax − discount. The single
-    /// source of truth for the Total row, the CTA amount, and the deep-link amount.
+    /// The full amount owed = service + products + tip + tax − discount. The
+    /// "Total" row's number — before any deposit or platform credit comes off.
     public static func liveTotal(
         serviceSubtotal: Decimal,
         productSubtotal: Decimal,
@@ -35,6 +36,29 @@ public enum CheckoutMoney {
         discount: Decimal
     ) -> Decimal {
         serviceSubtotal + productSubtotal + tip + tax - discount
+    }
+
+    /// What a PAID, undisputed deposit takes off this bill — capped at the
+    /// total, never negative. Native port of web's `deriveNetDepositHeldCents`
+    /// + the cap in `deriveDepositCredit` (`lib/booking/depositCredit.ts`).
+    ///
+    /// 🔴 The wire this reads from (`ClientBooking.Checkout`) does not carry a
+    /// refunded-cents column the way web's `DEPOSIT_CREDIT_SELECT` does, so a
+    /// PARTIALLY refunded deposit is not reflected here — only paid-in-full vs
+    /// not, and disputed vs not. The checkout-session-start response's own
+    /// `depositCreditCents` remains the server-authoritative figure once
+    /// checkout actually starts; this is the pre-payment QUOTE only, the same
+    /// role `livePreviewTotal`'s `depositCredit` plays on web.
+    public static func depositCreditApplied(
+        depositStatus: String?,
+        depositAmount: String?,
+        depositDisputed: Bool,
+        total: Decimal
+    ) -> Decimal {
+        guard !depositDisputed else { return 0 }
+        guard (depositStatus ?? "").uppercased() == "PAID" else { return 0 }
+        let held = amount(depositAmount)
+        return max(0, min(held, total))
     }
 
     /// Format a Decimal as a fixed 2-decimal amount string ("72.00") — the wire

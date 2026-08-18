@@ -178,6 +178,57 @@ import Testing
     }
 }
 
+// MARK: - Deposit credit (item 5 of the booking add-ons cluster, 2026-08-18)
+//
+// iOS used to quote platform credit — and the off-platform Venmo/Zelle
+// deep-link amount — against the FULL bill, never subtracting a deposit
+// already paid. A client who paid a $30 deposit toward a $100 bill would be
+// told to send $100 again over Venmo, with no charge object afterward to
+// correct it. These pin `CheckoutMoney.depositCreditApplied` against the same
+// three states web's `deriveDepositCredit` distinguishes.
+
+@Suite struct DepositCreditAppliedTests {
+    @Test func paidUndisputedDepositCreditsTheHeldAmount() {
+        let credit = CheckoutMoney.depositCreditApplied(
+            depositStatus: "PAID", depositAmount: "30.00", depositDisputed: false, total: 100
+        )
+        #expect(credit == 30)
+    }
+
+    @Test func creditIsCappedAtTheTotalNeverNegativeAmountDue() {
+        // The pro discounted the service after the deposit landed.
+        let credit = CheckoutMoney.depositCreditApplied(
+            depositStatus: "PAID", depositAmount: "80.00", depositDisputed: false, total: 50
+        )
+        #expect(credit == 50)
+    }
+
+    @Test func pendingOrFailedOrNoneDepositCreditsNothing() {
+        for status in ["PENDING", "FAILED", "NONE", nil] {
+            let credit = CheckoutMoney.depositCreditApplied(
+                depositStatus: status, depositAmount: "30.00", depositDisputed: false, total: 100
+            )
+            #expect(credit == 0)
+        }
+    }
+
+    /// A disputed deposit is money Stripe has already clawed back — it credits
+    /// nothing even though `depositStatus` still reads PAID.
+    @Test func disputedDepositCreditsNothingEvenWhilePaid() {
+        let credit = CheckoutMoney.depositCreditApplied(
+            depositStatus: "PAID", depositAmount: "30.00", depositDisputed: true, total: 100
+        )
+        #expect(credit == 0)
+    }
+
+    @Test func unparseableOrMissingAmountCreditsZeroNotNaN() {
+        let credit = CheckoutMoney.depositCreditApplied(
+            depositStatus: "PAID", depositAmount: nil, depositDisputed: false, total: 100
+        )
+        #expect(credit == 0)
+    }
+}
+
 // MARK: - Non-card confirm call
 
 /// Serves a canned checkout-confirm envelope and records the outgoing request.

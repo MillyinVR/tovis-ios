@@ -87,6 +87,7 @@
       "city": "Los Angeles",
       "state": "CA",
       "formattedAddress": "106 Demo Ave, Los Angeles, CA 90012",
+      "areaLabel": "Los Angeles, CA",
       "isPrimary": true
     }
   ],
