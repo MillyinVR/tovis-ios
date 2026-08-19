@@ -12,6 +12,12 @@ import TovisKit
 struct OpeningsFeedView: View {
     @Environment(SessionModel.self) private var session
 
+    /// When set, the feed opens this opening's claim sheet as soon as it loads —
+    /// the destination of a tapped LAST_MINUTE_OPENING_AVAILABLE push
+    /// (`/offerings/{offeringId}?openingId={id}`). Nil for the ordinary
+    /// pushed-from-Home entry.
+    var claimOpeningId: String? = nil
+
     private enum Phase {
         case loading
         case loaded([ClientOpening])
@@ -34,6 +40,10 @@ struct OpeningsFeedView: View {
     /// True when the claim succeeded but its booking could not be loaded for the
     /// push; the claim itself still landed, so this is informational, not an error.
     @State private var claimNoticeShown = false
+    /// `claimOpeningId` is consumed once. `load()` also runs on pull-to-refresh
+    /// and on every `refreshTick`, and without this the sheet would re-present
+    /// itself under the client each time — including right after they dismissed it.
+    @State private var didAutoOpenClaim = false
 
     var body: some View {
         ScrollView {
@@ -239,10 +249,25 @@ struct OpeningsFeedView: View {
         await load()
     }
 
+    /// Present the deep-linked opening's claim sheet, once.
+    ///
+    /// Resolution goes through TovisKit's shared `claimable(openingId:)` — the
+    /// same seam an accepted priority offer uses — so both claim paths accept and
+    /// reject exactly the same rows. A miss is not an error: the opening was
+    /// claimed by someone else, expired, or stopped being bookable, and the
+    /// loaded list is what the client should see instead of a dead tap.
+    private func autoOpenClaimIfNeeded(in openings: [ClientOpening]) {
+        guard !didAutoOpenClaim, claimOpeningId != nil else { return }
+        didAutoOpenClaim = true
+        guard let match = openings.claimable(openingId: claimOpeningId) else { return }
+        claimTarget = ClaimTarget(opening: match)
+    }
+
     private func load() async {
         do {
             let openings = try await session.client.home.openings().filter { $0.isBookable }
             phase = .loaded(openings)
+            autoOpenClaimIfNeeded(in: openings)
         } catch let error as APIError {
             phase = .failed(error.userMessage)
         } catch {

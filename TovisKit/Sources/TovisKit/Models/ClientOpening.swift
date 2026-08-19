@@ -123,6 +123,14 @@ public extension ClientOpening {
     /// Whether this opening can be shown/booked (has an offering to route to).
     var isBookable: Bool { offeringId != nil }
 
+    /// The `LastMinuteOpening` id — what every `/offerings/…?openingId=` href
+    /// carries, and the key `claimable(openingId:)` matches on.
+    ///
+    /// 🔴 NOT the same as `id`, which is the `LastMinuteRecipient` (row) id. Both
+    /// are `String` and both sit on this row, so confusing them compiles cleanly
+    /// and simply never matches.
+    var openingId: String { opening.id }
+
     /// The service the offering is resolved by on the pro's profile.
     var serviceId: String? {
         primaryService?.serviceId?.trimmedOrNil ?? primaryService?.service?.id?.trimmedOrNil
@@ -263,3 +271,24 @@ public extension ClientOpening {
     }
 }
 
+// MARK: - Resolving an opening by id
+
+public extension Collection<ClientOpening> {
+    /// The claimable opening this `openingId` names, or `nil`.
+    ///
+    /// ONE rule with two callers, deliberately: a tapped
+    /// LAST_MINUTE_OPENING_AVAILABLE push (`/offerings/{offeringId}?openingId=…`,
+    /// resolved by the openings feed) and an accepted priority offer
+    /// (`ClientOffer.claimableOpening(in:)`). Both hand `ClaimOpeningView` one
+    /// exact `ClientOpening`, and both must reject the same rows — a second copy
+    /// of this lookup is how the two paths would drift.
+    ///
+    /// Nil when the id is missing/blank, when no row matches, or when the matched
+    /// row is not bookable. Every one of those is a caller's cue to fall back to
+    /// the list, never to open a free-choice picker: an opening is ONE time, and
+    /// `finalize` refuses any other minute with `OPENING_NOT_AVAILABLE`.
+    func claimable(openingId: String?) -> ClientOpening? {
+        guard let openingId = openingId?.trimmedOrNil else { return nil }
+        return first { $0.openingId == openingId && $0.isBookable }
+    }
+}

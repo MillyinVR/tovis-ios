@@ -15,37 +15,10 @@ import Testing
 // CLICKED. That ordering is the point: the openings feed excludes
 // PRIORITY_OFFERED, so this resolution only works post-accept, and a hand-written
 // fixture would hide that.
-@Suite struct PriorityOfferClaimTargetTests {
-    private let capturedOffers = """
-    {
-      "ok": true,
-      "offers": [
-        {
-          "recipientId": "b2drive0recipient000000001",
-          "status": "PRIORITY_OFFERED",
-          "expiresAt": "2026-07-20T02:24:12.684Z",
-          "expired": false,
-          "proName": "TOVIS Test Pro",
-          "proHref": "/professionals/cmrbry44b0003po0d5f1fcs2u",
-          "professionalId": "cmrbry44b0003po0d5f1fcs2u",
-          "avatarUrl": null,
-          "serviceLabel": "Balayage",
-          "serviceId": "cmrbry482000xpo0di0hbjtni",
-          "offeringId": "cmrbry49b0055po0dbbtbpp35",
-          "openingId": "b2drive0opening00000000001",
-          "startAt": "2026-07-25T18:37:00.000Z",
-          "endAt": "2026-07-25T21:37:00.000Z",
-          "timeZone": "America/Los_Angeles",
-          "locationType": "SALON",
-          "note": "B2 drive fixture",
-          "incentiveLabel": null,
-          "claimHref": "/offerings/cmrbry49b0055po0dbbtbpp35?scheduledFor=2026-07-25T18%3A37%3A00.000Z&source=DISCOVERY&openingId=b2drive0opening00000000001&proTimeZone=America%2FLos_Angeles"
-        }
-      ]
-    }
-    """
-
-    private let capturedOpenings = """
+/// The openings-feed capture, at file scope so both suites below read the SAME
+/// bytes. Two copies of a verbatim capture is how one of them quietly stops
+/// being verbatim.
+private let capturedOpeningsFeed = """
     {
       "ok": true,
       "notifications": [
@@ -119,6 +92,39 @@ import Testing
       ]
     }
     """
+
+@Suite struct PriorityOfferClaimTargetTests {
+    private let capturedOffers = """
+    {
+      "ok": true,
+      "offers": [
+        {
+          "recipientId": "b2drive0recipient000000001",
+          "status": "PRIORITY_OFFERED",
+          "expiresAt": "2026-07-20T02:24:12.684Z",
+          "expired": false,
+          "proName": "TOVIS Test Pro",
+          "proHref": "/professionals/cmrbry44b0003po0d5f1fcs2u",
+          "professionalId": "cmrbry44b0003po0d5f1fcs2u",
+          "avatarUrl": null,
+          "serviceLabel": "Balayage",
+          "serviceId": "cmrbry482000xpo0di0hbjtni",
+          "offeringId": "cmrbry49b0055po0dbbtbpp35",
+          "openingId": "b2drive0opening00000000001",
+          "startAt": "2026-07-25T18:37:00.000Z",
+          "endAt": "2026-07-25T21:37:00.000Z",
+          "timeZone": "America/Los_Angeles",
+          "locationType": "SALON",
+          "note": "B2 drive fixture",
+          "incentiveLabel": null,
+          "claimHref": "/offerings/cmrbry49b0055po0dbbtbpp35?scheduledFor=2026-07-25T18%3A37%3A00.000Z&source=DISCOVERY&openingId=b2drive0opening00000000001&proTimeZone=America%2FLos_Angeles"
+        }
+      ]
+    }
+    """
+
+    private let capturedOpenings = capturedOpeningsFeed
+
 
     private func decodedOffer() throws -> ClientPriorityOffer {
         let response = try JSONDecoder().decode(
@@ -224,5 +230,81 @@ import Testing
 
         #expect(resolved.opening.id == "b2drive0opening00000000001")
         #expect(resolved.startAt == "2026-07-25T18:37:00.000Z")
+    }
+}
+
+// The OTHER caller of the same seam: a tapped LAST_MINUTE_OPENING_AVAILABLE
+// push. Its href carries `openingId=…` and the openings feed resolves it to the
+// row `ClaimOpeningView` renders — previously `/offerings/…` had no case in the
+// deep-link parser at all, so the push was a dead tap.
+//
+// These read the SAME captured feed as the offer suite above, and the id they
+// look up is lifted from that capture's own `claimHref` — so if the emitter ever
+// stops putting the opening id in that parameter, this goes red.
+@Suite struct OpeningClaimByIdTests {
+    private func decodedOpenings() throws -> [ClientOpening] {
+        try JSONDecoder().decode(
+            ClientOpeningFeedResponse.self,
+            from: Data(capturedOpeningsFeed.utf8)
+        ).notifications
+    }
+
+    @Test("the id in a captured claimHref resolves to that opening")
+    func capturedHrefIdResolves() throws {
+        // Lifted from the captured offer's `claimHref`, which is the same href
+        // template the last-minute job emits into the notification row.
+        let openingId = "b2drive0opening00000000001"
+        let resolved = try #require(try decodedOpenings().claimable(openingId: openingId))
+
+        #expect(resolved.openingId == openingId)
+        #expect(resolved.startAt == "2026-07-25T18:37:00.000Z")
+        #expect(resolved.serviceName == "Balayage")
+    }
+
+    // 🔴 The mix-up this rule exists to prevent. The row's `id` is the
+    // LastMinuteRecipient id and `opening.id` is the opening — both `String`,
+    // both on the row, so matching the wrong one compiles and silently never
+    // resolves. The captured payload has genuinely different values for the two.
+    @Test("the recipient id is not the opening id")
+    func recipientIdDoesNotResolve() throws {
+        let rows = try decodedOpenings()
+        let row = try #require(rows.first)
+
+        #expect(row.id == "b2drive0recipient000000001")
+        #expect(row.openingId == "b2drive0opening00000000001")
+        #expect(row.id != row.openingId)
+        #expect(rows.claimable(openingId: row.id) == nil)
+    }
+
+    @Test("a blank or missing id resolves to nil, never to the first row")
+    func blankIdResolvesToNil() throws {
+        let rows = try decodedOpenings()
+        #expect(rows.claimable(openingId: nil) == nil)
+        #expect(rows.claimable(openingId: "") == nil)
+        #expect(rows.claimable(openingId: "   ") == nil)
+    }
+
+    @Test("an opening that is gone resolves to nil so the client lands on the list")
+    func vanishedOpeningResolvesToNil() throws {
+        // Claimed by someone else, expired, or simply not this client's — the
+        // feed no longer carries it and the tap must fall back to the list.
+        #expect(try decodedOpenings().claimable(openingId: "opening_that_is_gone") == nil)
+        #expect([ClientOpening]().claimable(openingId: "b2drive0opening00000000001") == nil)
+    }
+
+    @Test("a matched but non-bookable opening resolves to nil")
+    func nonBookableResolvesToNil() throws {
+        // Same bar the offer path applies: no offering → the claim sheet could
+        // not finalize it, so the push must not open it either.
+        let rows = try JSONDecoder().decode(
+            ClientOpeningFeedResponse.self,
+            from: Data(capturedOpeningsFeed.replacingOccurrences(
+                of: "\"offeringId\": \"cmrbry49b0055po0dbbtbpp35\"",
+                with: "\"offeringId\": null"
+            ).utf8)
+        ).notifications
+
+        #expect(try #require(rows.first).isBookable == false)
+        #expect(rows.claimable(openingId: "b2drive0opening00000000001") == nil)
     }
 }

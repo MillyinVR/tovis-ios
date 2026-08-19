@@ -48,6 +48,10 @@ struct MainTabView: View {
     /// The priority-offers screen surfaced by a `/client/offers` push, presented
     /// over the shell. Carries the `?accept=` recipient id to float + highlight.
     @State private var offersPresentation: OffersPresentation?
+    /// The last-minute openings feed surfaced by an `/offerings/{id}?openingId=…`
+    /// push, presented over the shell. Carries the opening id so the feed opens
+    /// that one claim sheet on arrival.
+    @State private var openingPresentation: OpeningPresentation?
 
     /// Set while a pushed screen asks for the footer to be hidden (a screen whose
     /// own bottom bar the footer would sit on top of) — see `ShellFooterVisibility`.
@@ -57,6 +61,12 @@ struct MainTabView: View {
     private struct OffersPresentation: Identifiable {
         let id = UUID()
         let highlight: String?
+    }
+
+    /// Identifiable wrapper so `.sheet(item:)` can carry the opening to claim.
+    private struct OpeningPresentation: Identifiable {
+        let id = UUID()
+        let claimOpeningId: String
     }
 
     #if DEBUG
@@ -241,6 +251,20 @@ struct MainTabView: View {
             }
             .tint(BrandColor.accent)
         }
+        // OpeningsFeedView owns no stack either (it's pushed from Home), so the
+        // same wrapper applies.
+        .sheet(item: $openingPresentation) { presentation in
+            NavigationStack {
+                OpeningsFeedView(claimOpeningId: presentation.claimOpeningId)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Done") { openingPresentation = nil }
+                                .tint(BrandColor.textSecondary)
+                        }
+                    }
+            }
+            .tint(BrandColor.accent)
+        }
         #if DEBUG
         .fullScreenCover(isPresented: $debugShowBookings) {
             NavigationStack {
@@ -339,6 +363,13 @@ struct MainTabView: View {
             // pass + pro-proposed-time confirm/decline). `accept` floats + highlights
             // the offer the push was about.
             offersPresentation = OffersPresentation(highlight: accept)
+        case let .opening(openingId):
+            // A last-minute opening freed up and this client is a recipient. The
+            // feed opens the claim sheet for that exact slot; if the opening is
+            // gone (claimed, expired, or no longer bookable) it is simply absent
+            // from the feed and the client lands on the list — which is the
+            // honest outcome, not a dead tap.
+            openingPresentation = OpeningPresentation(claimOpeningId: openingId)
         case .referrals:
             // Referrals live under the Me tab.
             tab = .me

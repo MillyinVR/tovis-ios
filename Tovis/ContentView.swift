@@ -114,6 +114,17 @@ struct PushDeepLink: Equatable {
         // Client-shell targets.
         case booking(id: String, step: String?)  // /client/bookings/{id}?step=… (#review → "review")
         case offers(accept: String?)         // /client/offers?accept={recipientId}
+        /// /offerings/{offeringId}?openingId={id} — the claim sheet for ONE
+        /// freed-up last-minute slot.
+        ///
+        /// 🔴 `openingId` is required, not incidental. The native surface is
+        /// `ClaimOpeningView`, which renders exactly one `ClientOpening`; a bare
+        /// /offerings/{id} has no native counterpart (the phone has no generic
+        /// offering screen), so it must keep falling through to `nil` rather than
+        /// dumping the client on a list. Every emitter of this href does send
+        /// `openingId` — the last-minute job, the priority-offer route, and both
+        /// web feed cards.
+        case opening(openingId: String)
         case referrals                       // /client/referrals
         case activity                        // /client/activity
         /// /client/settings/chart-sharing — and the pre-split
@@ -152,7 +163,7 @@ struct PushDeepLink: Equatable {
         // screen from their client roster (ProClientsView).
         case .thread, .look, .publicClient, .publicPro:
             return nil
-        case .booking, .offers, .referrals, .activity, .chartAccess, .clientHome:
+        case .booking, .offers, .opening, .referrals, .activity, .chartAccess, .clientHome:
             return .client
         case .proBooking, .proReviews, .membership, .proProfile, .proCalendar, .proHome:
             return .pro
@@ -189,6 +200,20 @@ struct PushDeepLink: Equatable {
                 return
             }
             return nil
+
+        // /offerings/{offeringId}?openingId={id}&scheduledFor=… → the native claim
+        // sheet for that one opening (web's app/(main)/offerings/[offeringId]).
+        //
+        // LAST_MINUTE_OPENING_AVAILABLE ships as a push AND as a notification row,
+        // and both were dead taps: this path had no case here at all, so the client
+        // got the buzz, tapped it, and nothing happened.
+        case "offerings":
+            guard
+                let openingId = comps.queryItems?
+                    .first(where: { $0.name == "openingId" })?.value?.trimmedOrNil
+            else { return nil }
+            target = .opening(openingId: openingId)
+            return
 
         case "client":
             guard parts.count >= 2 else { target = .clientHome; return }

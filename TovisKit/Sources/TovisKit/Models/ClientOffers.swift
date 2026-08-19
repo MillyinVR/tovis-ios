@@ -109,8 +109,7 @@ public extension ClientPriorityOffer {
     /// when the matched row is not bookable — every one of which is a caller's cue
     /// to fall back, never to reopen a free-choice picker.
     func claimableOpening(in openings: [ClientOpening]) -> ClientOpening? {
-        guard let openingId = openingId?.trimmedOrNil else { return nil }
-        return openings.first { $0.opening.id == openingId && $0.isBookable }
+        openings.claimable(openingId: openingId)
     }
 
     /// "m:ss" countdown for a remaining interval (e.g. 65s → "1:05", ≤0 → "0:00").
