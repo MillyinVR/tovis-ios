@@ -164,11 +164,51 @@ struct ClientNotificationDeepLinkTests {
     // native surface yet (see the PR notes).
     @Test("Paths with no native surface stay nil so the sheet is not dismissed")
     func unroutablePathsStayNil() throws {
-        // LAST_MINUTE_OPENING_AVAILABLE (broadcast tier).
+        // A bare offering path. `openingId` is what names the claim sheet's one
+        // opening, so without it there is still no native surface — the phone has
+        // no generic offering screen. Note this is NOT the shape the last-minute
+        // job emits (see `lastMinuteOpeningOpensItsClaimSheet`); it is the guard
+        // that a truncated href does not dismiss the center onto a list.
         #expect(try clientNotification(href: "/offerings/off_1?source=DISCOVERY").deepLink == nil)
+        // An empty or blank `openingId` is the same nothing, spelled differently.
+        // Trimmed here rather than only at the lookup, so an unopenable href never
+        // dismisses the notification center onto a list it did not ask for.
+        #expect(try clientNotification(href: "/offerings/off_1?openingId=").deepLink == nil)
+        #expect(try clientNotification(href: "/offerings/off_1?openingId=%20%20").deepLink == nil)
         // Legacy rows: the column is `String @default("")`, so "" is reachable
         // and must never resolve.
         #expect(try clientNotification(href: "").deepLink == nil)
+    }
+
+    // ⚠️ The dead tap this fixes. LAST_MINUTE_OPENING_AVAILABLE fires as a push
+    // AND lands a notification row, and `/offerings/…` had no case in the parser
+    // at all — the client got the buzz, tapped, and nothing happened.
+    //
+    // The href below is the literal one the emitter builds
+    // (app/api/internal/jobs/last-minute/process/route.ts, pinned by its own test
+    // at route.test.ts) — percent-encoding and parameter order included, so a
+    // change at the emit site turns this red instead of silently going dead.
+    @Test("A last-minute opening opens its claim sheet")
+    func lastMinuteOpeningOpensItsClaimSheet() throws {
+        let href =
+            "/offerings/offering_1?scheduledFor=2026-04-14T18%3A00%3A00.000Z"
+            + "&source=DISCOVERY&openingId=opening_1&proTimeZone=America%2FLos_Angeles"
+        // The OPENING id is the destination, not the offering id in the path: the
+        // claim sheet renders one `ClientOpening`, keyed by opening.
+        #expect(try clientNotification(href: href).deepLink?.target == .opening(openingId: "opening_1"))
+        // It is a client-shell screen, so a pro tapping it switches workspace
+        // first rather than resolving in place.
+        #expect(try clientNotification(href: href).deepLink?.role == .client)
+    }
+
+    // The priority-offer route builds the same path with the same `openingId`
+    // parameter, so both emitters land on one case.
+    @Test("A priority-offer opening href routes the same way")
+    func priorityOfferOpeningRoutes() throws {
+        #expect(
+            try clientNotification(href: "/offerings/off_9?source=DISCOVERY&openingId=op_9")
+                .deepLink?.target == .opening(openingId: "op_9")
+        )
     }
 
     // The tag-page trap `PushDeepLink` already guards, re-pinned from this entry
