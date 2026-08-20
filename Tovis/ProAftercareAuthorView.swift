@@ -78,6 +78,12 @@ struct ProAftercareAuthorView: View {
     /// The day the open-slot picker is showing. Owned here (not by the picker)
     /// so the inline "My calendar" month grid can drive it.
     @State private var slotDay = Date()
+    /// Whether the pro has actually CHOSEN a day yet (a calendar tap, or the
+    /// slot picker's own date row). Until they have, `slotDay` is nothing but
+    /// "today", and custom-time mode keeps its own tomorrow default rather than
+    /// being dragged onto today-at-this-minute — which `validate` would then
+    /// refuse for not being in the future.
+    @State private var slotDayPicked = false
     /// The recommended window's END field opens the calendar as a sheet — the
     /// start (and booked mode's day) render it inline instead.
     @State private var windowEndCalendarOpen = false
@@ -158,10 +164,25 @@ struct ProAftercareAuthorView: View {
         // carry over to a time the pro never confirmed.
         .onChange(of: selectedSlot) { _, _ in resetOverrideState() }
         .onChange(of: customTime) { _, _ in resetOverrideState() }
-        .onChange(of: customTimeMode) { _, _ in
+        .onChange(of: customTimeMode) { _, isCustom in
+            // Hand the picked DAY across the switch. The calendar sits ABOVE
+            // the toggle and stays put (R2), so the day it shows has to stay
+            // put too — but the two modes hold their own instant, and without
+            // this the flip silently dropped the pro back on the other mode's
+            // day (custom mode's default is "tomorrow"). The time they then
+            // typed landed on a date they never picked. Web has no such seam:
+            // its `RebookSlotPicker` keeps ONE `day` for both modes.
+            if isCustom {
+                if slotDayPicked { customTime = dayOf(slotDay, keepingTimeOf: customTime) }
+            } else {
+                slotDay = max(customTime, Date())
+            }
             selectedSlot = nil
             resetOverrideState()
         }
+        // Covers BOTH ways the day moves in slot mode — the month grid and the
+        // picker's own date row, which writes this binding directly.
+        .onChange(of: slotDay) { _, _ in slotDayPicked = true }
         .onChange(of: rebookMode) { _, _ in resetOverrideState() }
         .alert(
             "Confirm booking",
@@ -652,11 +673,22 @@ struct ProAftercareAuthorView: View {
             slotDay = day
             return
         }
+        customTime = dayOf(day, keepingTimeOf: customTime)
+    }
+
+    /// `day`'s calendar day carrying `time`'s clock time, in the appointment's
+    /// zone — the one transform both the calendar pick and the custom-time
+    /// toggle need, so the two can never disagree about where a day lands.
+    /// Never returns the past: the pickers it feeds are floored at `Date()`
+    /// (`in: Date()...`) and would fight a lower value, exactly as the
+    /// calendar's own `pick` clamps to its `earliest`.
+    private func dayOf(_ day: Date, keepingTimeOf time: Date) -> Date {
         let cal = apptCalendar
-        let time = cal.dateComponents([.hour, .minute], from: customTime)
-        customTime = cal.date(
-            bySettingHour: time.hour ?? 0, minute: time.minute ?? 0, second: 0, of: day
+        let parts = cal.dateComponents([.hour, .minute], from: time)
+        let combined = cal.date(
+            bySettingHour: parts.hour ?? 0, minute: parts.minute ?? 0, second: 0, of: day
         ) ?? day
+        return max(combined, Date())
     }
 
     /// Whether the custom time's calendar day (in the appointment's zone) falls
