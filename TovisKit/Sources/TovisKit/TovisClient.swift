@@ -48,6 +48,9 @@ public final class TovisClient: Sendable {
     public let places: PlacesService
     public let checkout: CheckoutService
     public let looks: LooksService
+    /// Person blocks (App Store guideline 1.2). Separate from `looks` because a
+    /// block is about a PERSON — it hides their looks AND their comments.
+    public let blocks: BlocksService
     /// Client "share your look" — publish a public look from a completed visit
     /// (presign fresh photos + POST share-look). Not flag-gated; ships live.
     public let shareLook: ShareLookService
@@ -199,6 +202,7 @@ public final class TovisClient: Sendable {
         self.places = PlacesService(api: api)
         self.checkout = CheckoutService(api: api)
         self.looks = LooksService(api: api)
+        self.blocks = BlocksService(api: api)
         self.shareLook = ShareLookService(
             api: api,
             supabaseURL: config.supabaseURL,

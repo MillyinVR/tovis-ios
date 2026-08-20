@@ -86,6 +86,10 @@ struct LooksView: View {
     /// Looks this session has already reported — the wire carries no
     /// `viewerHasReported`, so this is best-effort within the session only.
     @State private var reported: Set<String> = []
+    /// Re-entrancy guard for "Block this person" (guideline 1.2). Its own set
+    /// again: blocking is independent of hiding and reporting, and it is the
+    /// only one of the three that removes MORE than the slide it was invoked on.
+    @State private var blockInFlight: Set<String> = []
 
     /// Session dedupe for view impressions (B2) — each look pings at most once
     /// so a scroll-up/scroll-down doesn't double-count. Web parity: web batches
@@ -223,12 +227,25 @@ struct LooksView: View {
                 Task { await reportLook(item) }
             }
             .disabled(reported.contains(item.id))
+            // App Store guideline 1.2. Hidden when the look names nobody
+            // blockable, rather than offering a control that cannot act.
+            if let name = item.blockTargetName, item.blockTarget != nil {
+                Button("Block \(name)", role: .destructive) {
+                    Task { await blockPoster(item) }
+                }
+                .disabled(blockInFlight.contains(item.id))
+            }
             Button("Cancel", role: .cancel) {}
-        } message: { _ in
+        } message: { item in
             // Honest about what each does: hiding is permanent for this viewer
             // and down-ranks the category (decaying, not forever); reporting
-            // goes to the moderation queue and is not a hide.
-            Text("“Not for me” hides it for good and shows you fewer like it. Reporting sends it to our team to review.")
+            // goes to the moderation queue and is not a hide; blocking is
+            // MUTUAL and reaches comments too, not just this look.
+            if let name = item.blockTargetName {
+                Text("“Not for me” hides it for good and shows you fewer like it. Reporting sends it to our team to review. Blocking \(name) hides their looks and comments from you — and yours from them. You can undo that in Settings.")
+            } else {
+                Text("“Not for me” hides it for good and shows you fewer like it. Reporting sends it to our team to review.")
+            }
         }
     }
 
@@ -653,6 +670,58 @@ struct LooksView: View {
         } catch {
             // Silent, same as the comment report's revert.
         }
+    }
+
+    /// Block the person who posted this look (App Store guideline 1.2).
+    ///
+    /// 🔴 This removes EVERY look by that person from the pager, not just the
+    /// one the long press came from. A block that leaves their other slides in
+    /// place is a promise the product does not keep — the server has already
+    /// stopped serving them, so leaving them on screen would also mean the next
+    /// page silently disagrees with the current one.
+    ///
+    /// Unlike "Not for me" this is NOT optimistic: the removal happens only
+    /// after the server confirms. Hiding is a private, reversible signal, but a
+    /// failed block that had already emptied the feed would be indistinguishable
+    /// from a successful one — and the viewer would believe they were protected
+    /// when they were not.
+    ///
+    /// Pager safety is the same problem `hideLook` solves: `scrollPosition` is
+    /// bound to `activeId`, so if the active slide is among those removed the
+    /// binding must be handed a slide that still exists BEFORE the list mutates.
+    private func blockPoster(_ item: LooksFeedItem) async {
+        guard let target = item.blockTarget,
+              !blockInFlight.contains(item.id),
+              case let .loaded(current) = phase
+        else { return }
+
+        blockInFlight.insert(item.id)
+        defer { blockInFlight.remove(item.id) }
+
+        do {
+            _ = try await session.client.blocks.block(target)
+        } catch {
+            // Left in place deliberately — see the note above. The dialog is
+            // already dismissed, so a retry is one more long press.
+            return
+        }
+
+        // Re-read: the feed may have paged in more of this person's looks while
+        // the request was in flight.
+        guard case let .loaded(latest) = phase else { return }
+        let remaining = latest.filter { $0.blockTarget != target }
+        guard remaining.count != latest.count else { return }
+
+        if let active = activeId, !remaining.contains(where: { $0.id == active }) {
+            // Land on the slide that takes the removed one's place, or the new
+            // last slide; nil when the block emptied the feed.
+            let removedIndex = latest.firstIndex { $0.id == active } ?? 0
+            activeId = remaining.indices.contains(removedIndex)
+                ? remaining[removedIndex].id
+                : remaining.last?.id
+        }
+
+        phase = remaining.isEmpty ? .empty : .loaded(remaining)
     }
 
     /// Put a look back where it was after a failed hide. No-op if it already
