@@ -27,8 +27,17 @@ jobs:
       # from that repo rather than vendoring a snapshot here: a vendored copy
       # would drift the moment a DTO changed, and this job would stay GREEN
       # while the wire contract rotted — the exact failure the gate exists to
-      # catch. Auth is a read-only deploy key (secret TOVIS_APP_DEPLOY_KEY);
-      # both repos are private, so some credential is unavoidable.
+      # catch. Auth is a read-only deploy key (secret TOVIS_APP_DEPLOY_KEY).
+      #
+      # ⚠️ The reason given for that key — "both repos are private, so some
+      # credential is unavoidable" — is no longer true. `gh repo view` reports
+      # BOTH MillyinVR/tovis-ios and MillyinVR/tovis-app as PUBLIC (re-checked
+      # 2026-08-20; the `app` job below has said so since 2026-08-12, so this
+      # file was contradicting itself). A public sparse checkout needs no
+      # credential at all, which makes TOVIS_APP_DEPLOY_KEY a secret this
+      # workflow may no longer need. Left in place deliberately — dropping it is
+      # a change to a green gate, not a comment fix — but do not re-justify it
+      # with the private-repo premise.
       - name: Fetch backend API schema (read-only deploy key)
         uses: actions/checkout@v7
         with:

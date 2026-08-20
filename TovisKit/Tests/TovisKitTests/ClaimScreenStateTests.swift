@@ -5,9 +5,14 @@ import Testing
 // The claim screen's state machine — the port of web's `ClaimPageState` plus the
 // sub-branches web nests inside its `ready` state (app/claim/[token]/page.tsx).
 //
-// These live on the model precisely so they are reachable: `swift test` is the
-// real gate for this repo (there is no CI), and the app target has essentially no
-// view tests — a rule left in a SwiftUI view would be untestable.
+// These live on the model precisely so they are reachable: a rule left inside a
+// SwiftUI view has no seam to drive it, in either target.
+//
+// ⚠️ "there is no CI" is what this comment used to say, and it has been false
+// since #189. `.github/workflows/ci.yml` runs four jobs — wire contract, TovisKit
+// `swift test`, the coach-voice manifest, and `App target (Tovis + TovisTests)`
+// via `xcodebuild test` (armed on every PR and push to main, 2026-08-12). The
+// model still earns its place; it just isn't the only thing that runs.
 
 @Suite struct ClaimScreenStateTests {
     // MARK: - Viewer branches (no outcome yet)

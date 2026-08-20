@@ -12,11 +12,19 @@
 // cuts the exported file to them — so the frame the coach approves is the frame
 // that ships, and the frame that ships is the frame that gets posted.
 //
-// 🔴 It lives in TovisKit rather than beside the camera because CI compiles and
-// tests TovisKit and nothing compiles the `Tovis/` app target. This is arithmetic
-// that decides what a pro's published photo looks like; a sign error here crops
-// somebody's client out of their own before/after and no test would have seen it.
+// 🔴 It lives in TovisKit rather than beside the camera because `swift test`
+// reaches it on every PR with no simulator: this is arithmetic that decides what
+// a pro's published photo looks like, and a sign error here crops somebody's
+// client out of their own before/after. `SocialExportGeometryTests` and
+// `SocialExportRenderTests` hold it from inside TovisKit; `TovisTests/
+// PublishCropTests.swift` and `CameraCompositionTests` hold it from the app side.
 // Moved here from `Tovis/PublishCrop.swift` when the social export pack landed.
+//
+// ⚠️ The premise this comment used to give — "nothing compiles the `Tovis/` app
+// target" — has been false since 2026-08-12, when `App target (Tovis +
+// TovisTests)` was armed on every PR and push to main. Note the irony it left
+// behind: this file's most direct tests are the app-target ones the old comment
+// said nothing ran.
 import CoreGraphics
 
 public enum PublishCrop {
