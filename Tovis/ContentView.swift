@@ -1331,13 +1331,25 @@ struct RootView: View {
                 // The acting role picks the shell — mirrors the web RoleFooter,
                 // which renders the pro/client/admin footer from the same role.
                 // ADMIN has no native shell yet, so it falls through to client.
-                if session.activeRole == .pro {
-                    ProMainTabView()
-                } else {
-                    MainTabView()
-                        // DEBUG-only launch hook — see applyDebugDeepLinkIfRequested.
-                        .task { session.applyDebugDeepLinkIfRequested() }
+                // DEBUG-only launch hook — see applyDebugDeepLinkIfRequested.
+                // The `.task` sits on the Group so it attaches to WHICHEVER shell
+                // renders. It used to hang off `MainTabView()` alone, so for an
+                // acting-PRO session the hook never ran and every pro-shell target
+                // (`/pro/membership`, `/pro/bookings/…`, `/pro/reviews`,
+                // `/pro/calendar`, `/pro/profile`) was unreachable — even though
+                // `ProMainTabView` routes all of them. That is not a small gap on
+                // this machine: synthetic taps are not delivered to Simulator.app,
+                // so this hook is the ONLY way those screens can be looked at, and
+                // `/pro/membership` in particular went unseen through three review
+                // passes because of it.
+                Group {
+                    if session.activeRole == .pro {
+                        ProMainTabView()
+                    } else {
+                        MainTabView()
+                    }
                 }
+                .task { session.applyDebugDeepLinkIfRequested() }
             }
         }
         // Stripe Checkout hands back through the `tovis://checkout/return` scheme
