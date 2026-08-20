@@ -208,6 +208,90 @@ final class FeedDiscoveryURLProtocol: URLProtocol {
         }
     }
 
+    // MARK: - Report a look (the POST itself, not a comment on it)
+    //
+    // Same discipline as the comment-report bodies above: every body here is a
+    // VERBATIM capture from driving the real route against a local server with
+    // a seeded look — including the 404 and the duplicate.
+
+    @Test func reportLookPostsToTheLookReportRoute() async throws {
+        reset()
+        FeedDiscoveryURLProtocol.status = 201
+        FeedDiscoveryURLProtocol.responseBody = Data("""
+        {"ok":true,"lookPostId":"demoseed-look-lived-in-blonde","status":"accepted"}
+        """.utf8)
+
+        let res = try await LooksService(api: await makeAPI())
+            .reportLook(lookId: "demoseed-look-lived-in-blonde")
+
+        // The whole point of the item: this must NOT be the comment path.
+        #expect(FeedDiscoveryURLProtocol.capturedPath
+            == "/api/v1/looks/demoseed-look-lived-in-blonde/report")
+        #expect(FeedDiscoveryURLProtocol.capturedMethod == "POST")
+        #expect(res.lookPostId == "demoseed-look-lived-in-blonde")
+        #expect(res.status == "accepted")
+        #expect(res.wasAccepted)
+    }
+
+    /// A first report is **201**, not 200 — pinned so a brand-new report never
+    /// surfaces as an error and strands the control on "Report".
+    @Test func reportLookTreatsThe201FirstReportAsSuccess() async throws {
+        reset()
+        FeedDiscoveryURLProtocol.status = 201
+        FeedDiscoveryURLProtocol.responseBody = Data("""
+        {"ok":true,"lookPostId":"look_1","status":"accepted"}
+        """.utf8)
+
+        let res = try await LooksService(api: await makeAPI()).reportLook(lookId: "look_1")
+        #expect(res.wasAccepted)
+    }
+
+    /// A duplicate is swallowed by the `LookPostReport` unique constraint and
+    /// comes back **200 `already_reported`** — a success, NOT a 409.
+    @Test func reportLookTreatsADuplicateAsSuccessNotAnError() async throws {
+        reset()
+        FeedDiscoveryURLProtocol.status = 200
+        FeedDiscoveryURLProtocol.responseBody = Data("""
+        {"ok":true,"lookPostId":"demoseed-look-lived-in-blonde","status":"already_reported"}
+        """.utf8)
+
+        let res = try await LooksService(api: await makeAPI())
+            .reportLook(lookId: "demoseed-look-lived-in-blonde")
+        #expect(res.status == "already_reported")
+        #expect(!res.wasAccepted)
+    }
+
+    /// `status` is a String so an unrecognized value still decodes rather than
+    /// throwing away a report the server actually recorded.
+    @Test func reportLookStillDecodesAnUnknownStatus() async throws {
+        reset()
+        FeedDiscoveryURLProtocol.status = 200
+        FeedDiscoveryURLProtocol.responseBody = Data("""
+        {"ok":true,"lookPostId":"look_1","status":"queued_for_review"}
+        """.utf8)
+
+        let res = try await LooksService(api: await makeAPI()).reportLook(lookId: "look_1")
+        #expect(res.status == "queued_for_review")
+        #expect(!res.wasAccepted)
+    }
+
+    /// An unviewable look 404s as `LOOK_NOT_FOUND` rather than 403ing, so it
+    /// leaks no existence — verbatim from the real route.
+    @Test func reportLookSurfacesTheServerErrorForAMissingLook() async throws {
+        reset()
+        FeedDiscoveryURLProtocol.status = 404
+        FeedDiscoveryURLProtocol.responseBody = Data("""
+        {"ok":false,"error":"Not found.","code":"LOOK_NOT_FOUND"}
+        """.utf8)
+
+        let service = LooksService(api: await makeAPI())
+        await #expect(throws: APIError.server(
+            status: 404, message: "Not found.", code: "LOOK_NOT_FOUND"
+        )) {
+            _ = try await service.reportLook(lookId: "gone")
+        }
+    }
+
     // MARK: - Feed search
 
     @Test func feedSendsTheTrimmedSearchQuery() async throws {

@@ -274,6 +274,40 @@ public final class LooksService: Sendable {
         )
     }
 
+    // MARK: - Report a look
+
+    /// POST /api/v1/looks/{id}/report — the UGC report path for the LOOK itself.
+    ///
+    /// The comment twin below existed long before this one; the look route was
+    /// built, tested and wired to the admin moderation queue, and then never
+    /// called by either client. In a beauty-PHOTO app the photo is the likelier
+    /// objectionable object, so this is the report an App Store reviewer will
+    /// actually reach for (guideline 1.2).
+    ///
+    /// ⚠️ **The route reads no body** — its handler parameter is `_req` and is
+    /// never read, exactly like the comment route. A `ModerationReportReason`
+    /// enum exists in the schema but NO route surfaces it, so every report is
+    /// stored as `OTHER`. **Do not add a reason picker** until the route accepts
+    /// one; it would promise a choice that never reaches the server.
+    ///
+    /// Idempotent by the `LookPostReport` unique constraint: a first report is
+    /// **201 `accepted`**, a duplicate is **200 `already_reported`** — a success,
+    /// not a 409. `APIClient` succeeds on `200..<300`, so both settle cleanly.
+    /// There is no un-report route, and **no server-side rate limit**, so the
+    /// caller owns debouncing.
+    ///
+    /// The server does NOT reject reporting your own look (same as the comment
+    /// route). 404s as `LOOK_NOT_FOUND` when the look is missing OR merely not
+    /// viewable, so it leaks no existence.
+    @discardableResult
+    public func reportLook(lookId: String) async throws -> LooksLookReportResponse {
+        try await api.request(
+            "/looks/\(lookId)/report",
+            method: .post,
+            body: Data("{}".utf8)
+        )
+    }
+
     // MARK: - Report a comment
 
     /// POST /api/v1/looks/{id}/comments/{commentId}/report — the UGC report path.
