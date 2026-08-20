@@ -88,7 +88,7 @@ struct ProMembershipView: View {
                     ? ProMembershipCopy.proPreviewEntitlements
                     : m.entitlements
                 // Anything without customer-facing copy is dropped, never auto-titled.
-                let items = ProMembershipCopy.advertised(keys)
+                let items = ProMembershipCopy.advertised(keys, brandName: brandName)
                 if items.isEmpty {
                     Text("Your current plan covers the essentials — booking, payments, clients, and growth tools.")
                         .font(BrandFont.body(13)).foregroundStyle(BrandColor.textMuted)
