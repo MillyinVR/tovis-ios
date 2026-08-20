@@ -26,14 +26,14 @@ import Testing
     // so ANYTHING the server sent was advertised automatically. A comped Studio
     // partner was shown "White Label" for a feature with no implementation.
     @Test func anUnadvertisedEntitlementIsDroppedNotAutoTitled() {
-        #expect(ProMembershipCopy.entitlementLabel("white_label") == nil)
-        #expect(ProMembershipCopy.entitlementLabel("pro_discovery_fee_waiver") == nil)
-        #expect(ProMembershipCopy.entitlementLabel("some_future_key") == nil)
+        #expect(ProMembershipCopy.entitlementLabel("white_label", brandName: "Tovis") == nil)
+        #expect(ProMembershipCopy.entitlementLabel("pro_discovery_fee_waiver", brandName: "Tovis") == nil)
+        #expect(ProMembershipCopy.entitlementLabel("some_future_key", brandName: "Tovis") == nil)
 
         let advertised = ProMembershipCopy.advertised([
             "custom_handle", "white_label", "tax_export", "pro_discovery_fee_waiver",
             "some_future_key",
-        ])
+        ], brandName: "Tovis")
         #expect(advertised.map(\.key) == ["custom_handle", "tax_export"])
         #expect(advertised.allSatisfy { !$0.label.isEmpty })
     }
@@ -41,6 +41,7 @@ import Testing
     @Test func everyPreviewedEntitlementHasCopy() {
         let advertised = ProMembershipCopy.advertised(
             ProMembershipCopy.proPreviewEntitlements,
+            brandName: "Tovis",
         )
         #expect(advertised.count == ProMembershipCopy.proPreviewEntitlements.count)
     }
@@ -72,6 +73,27 @@ import Testing
         let body = ProMembershipCopy.commissionPitchBody(brandName: "Salon X")
         #expect(body.contains("when Salon X brings you"))
         #expect(!body.contains("Tovis"))
+    }
+
+    // 🔴 Pins the 2026-08-20 fix for a real web/iOS drift: web advertised five
+    // entitlements and iOS four, and the missing one was `social_export_unbranded`
+    // — on the surface that actually RENDERS it (TovisKit SocialExport/). Nothing
+    // tied the two lists together, so nothing caught it.
+    @Test func theSocialExportPerkIsAdvertisedAndNamesTheBrand() {
+        let label = ProMembershipCopy.entitlementLabel(
+            "social_export_unbranded", brandName: "Salon X",
+        )
+        #expect(label == "Social exports signed with your handle only — no Salon X mark")
+        #expect(ProMembershipCopy.proPreviewEntitlements.contains("social_export_unbranded"))
+    }
+
+    // The label must not hardcode the platform name — it is shown to white-label
+    // tenants too, which is why it takes a brandName at all.
+    @Test func theSocialExportLabelNeverHardcodesTheBrand() {
+        let label = ProMembershipCopy.entitlementLabel(
+            "social_export_unbranded", brandName: "Salon X",
+        )
+        #expect(label?.contains("Tovis") == false)
     }
 
     // Studio is shown but never sold, so its copy must not name an unbuilt feature.

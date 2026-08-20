@@ -24,6 +24,12 @@ public enum ProMembershipCopy {
     /// `docs/design/membership-value-brief.md` §5.1.F in tovis-app.
     public static let proPreviewEntitlements = [
         "tax_export", "custom_handle", "advanced_analytics", "priority_discovery",
+        // Added 2026-08-20 alongside Tori's decision that the platform mark ships on
+        // free pros' exports regardless of ENABLE_MEMBERSHIP_ENFORCEMENT (tovis-app
+        // lib/pro/socialExportMark.ts). That is what makes this exclusive to members
+        // and therefore advertisable — and this is the surface that RENDERS it, so
+        // it being absent here while web listed it was pure drift.
+        "social_export_unbranded",
     ]
 
     /// Copy for an entitlement key, or nil when we deliberately do NOT advertise it.
@@ -33,7 +39,10 @@ public enum ProMembershipCopy {
     /// sent — `white_label` rendered as "White Label" to a comped Studio partner even
     /// though nothing implements it. Adding a label here is a promise to the buyer:
     /// only add one once the entitlement has a real implementation call site.
-    public static func entitlementLabel(_ key: String) -> String? {
+    /// `brandName` is the tenant's display name, for the one label that has to name
+    /// the platform to say anything at all ("no <brand> mark"). Mirrors web's
+    /// `EntitlementLabel` union, which is a function for exactly the same reason.
+    public static func entitlementLabel(_ key: String, brandName: String) -> String? {
         switch key {
         case "custom_handle": return "Custom handle (name.tovis.me)"
         case "tax_export": return "Tax exports (CSV + Schedule C)"
@@ -42,6 +51,12 @@ public enum ProMembershipCopy {
         case "advanced_analytics":
             return "Retention insights — rebooking rate + who's due back (on the web)"
         case "priority_discovery": return "Priority placement in discovery"
+        // Deliberately worded around the MARK, not the export: every pro gets the
+        // 4:5 / 9:16 / before-after renders and every export is signed with the
+        // pro's own handle. The membership removes only the small platform mark
+        // beside that signature. Mirrors web's `social_export_unbranded` label.
+        case "social_export_unbranded":
+            return "Social exports signed with your handle only — no \(brandName) mark"
         // 🔴 `pro_discovery_fee_waiver` is deliberately UNLABELED (Tori, 2026-08-04).
         // It now waives the right thing — the PRO's $5 cold-match fee, never the
         // client's convenience fee (the fee model shipped 2026-08-05, see
@@ -55,9 +70,12 @@ public enum ProMembershipCopy {
 
     /// The entitlements we are willing to name, in the server's order. Unlabeled keys
     /// are dropped rather than rendered blank or auto-titled.
-    public static func advertised(_ keys: [String]) -> [AdvertisedEntitlement] {
+    public static func advertised(
+        _ keys: [String],
+        brandName: String,
+    ) -> [AdvertisedEntitlement] {
         keys.compactMap { key in
-            guard let label = entitlementLabel(key) else { return nil }
+            guard let label = entitlementLabel(key, brandName: brandName) else { return nil }
             return AdvertisedEntitlement(key: key, label: label)
         }
     }
