@@ -6,9 +6,17 @@
 	  Privacy manifest (App Store requirement). Declares the data the Tovis app
 	  collects and the required-reason APIs it uses. Tovis does NOT track users
 	  across other companies' apps or websites, so NSPrivacyTracking is false and
-	  there are no tracking domains (no ATT prompt). Payments are handled by
-	  Stripe's hosted checkout in a web view — the app never receives card data —
-	  so Payment Info is intentionally not declared.
+	  there are no tracking domains (no ATT prompt).
+
+	  🔴 Every entry below must name the surface that collects it. An entry with
+	  no call site is a claim the app does not keep; a MISSING entry is the
+	  rejection risk. This file was audited against the working tree on
+	  2026-08-20 and six types were added that the app has been collecting all
+	  along — see the per-entry comments.
+
+	  ⚠️ This file is only half the answer. App Store Connect's App Privacy
+	  questionnaire is a SEPARATE surface, filled in by hand, and Apple compares
+	  the two. Anything added here has to be answered there as well.
 	-->
 	<key>NSPrivacyTracking</key>
 	<false/>
@@ -55,6 +63,25 @@
 				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
 			</array>
 		</dict>
+		<!--
+		  Physical address — a MOBILE appointment happens at the CLIENT's address,
+		  so the app has a full address book of its own: ClientServiceAddressesView
+		  creates/edits them through AddressesService (GET/POST/PATCH/DELETE
+		  /api/v1/client/addresses), and the server keeps them on ClientAddress plus
+		  a per-booking snapshot. Added 2026-08-20 — was collected, never declared.
+		-->
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypePhysicalAddress</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
 		<!-- Coarse location — Discover "pros near you" (kCLLocationAccuracyHundredMeters). -->
 		<dict>
 			<key>NSPrivacyCollectedDataType</key>
@@ -68,10 +95,111 @@
 				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
 			</array>
 		</dict>
+		<!--
+		  Health — a pro records a client's ALLERGIES from inside the app
+		  (ProAddAllergySheet, reached from the chart's Allergies tab), and the
+		  chart also carries consent records and patch-test results. Apple's
+		  "Health" type is any user-provided health or medical data, which an
+		  allergy plainly is. Added 2026-08-20 — was collected, never declared.
+
+		  ⚠️ NOT declared as NSPrivacyCollectedDataTypeSensitiveInfo: that type is
+		  a narrower list (race, sexual orientation, pregnancy, disability, beliefs,
+		  union membership, political opinion, genetic or BIOMETRIC data). The
+		  AI-camera coach reads face geometry on-device for framing, and whether
+		  that crosses into biometric data is a product/legal call, not a code fact
+		  — deliberately left for Tori rather than guessed at here.
+		-->
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeHealth</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+		<!--
+		  Payment info — 🔴 CORRECTED 2026-08-20. This file used to say payments
+		  were "handled by Stripe's hosted checkout in a web view", so Payment Info
+		  was "intentionally not declared". That is false: the app LINKS
+		  StripePaymentSheet and presents it natively over a server SetupIntent
+		  (PaymentMethodsView, reached from ClientSettingsHubView → Payment
+		  methods), so a card is entered inside the app. Tovis's own servers never
+		  see the number — the sheet talks to Stripe directly — but Apple counts
+		  data a third-party SDK collects in your app as collected by your app.
+		-->
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypePaymentInfo</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
 		<!-- Photos/videos — before/after appointment captures uploaded to the account. -->
 		<dict>
 			<key>NSPrivacyCollectedDataType</key>
 			<string>NSPrivacyCollectedDataTypePhotosorVideos</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+		<!--
+		  Other user content — the app is a social product, and almost all of its
+		  free text is composed in-app: look captions (ProNewMediaPostView,
+		  ShareLookView), look comments and replies (LookCommentsView), and the
+		  client↔pro message threads (MessagesService.send, with attachments).
+		  Added 2026-08-20 — photos were declared, the words around them were not.
+		-->
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeOtherUserContent</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+		<!--
+		  Customer support — ContactSupportView posts a subject + message from
+		  inside the app. Added 2026-08-20.
+		-->
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeCustomerSupport</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+		<!--
+		  User ID — every account carries a server-assigned id, and a pro also
+		  picks a public @handle. Apple's "User ID" type is exactly that: an
+		  account-level id or screen name. Added 2026-08-20 (Device ID was
+		  already here; the account id it is registered against was not).
+		-->
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeUserID</string>
 			<key>NSPrivacyCollectedDataTypeLinked</key>
 			<true/>
 			<key>NSPrivacyCollectedDataTypeTracking</key>
@@ -108,6 +236,20 @@
 				<string>NSPrivacyCollectedDataTypePurposeAnalytics</string>
 			</array>
 		</dict>
+		<!--
+		  Deliberately NOT declared, each checked on 2026-08-20 rather than assumed:
+		    • Search history — Discover and Looks send a `q` to the server, but no
+		      model persists it (no SearchQuery/SearchHistory table), so nothing is
+		      retained beyond servicing the request.
+		    • Contacts — the app never imports the address book; there is no
+		      `import Contacts` anywhere in the tree.
+		    • Purchase history — there is no StoreKit and no in-app purchase.
+		    • Precise location — LocationManager pins
+		      kCLLocationAccuracyHundredMeters, which is coarse.
+		    • Crash / performance data — no Sentry (or any other) analytics SDK is
+		      linked on iOS; Package.resolved is Stripe, Google Sign-In and their
+		      transitive Google dependencies only.
+		-->
 	</array>
 	<key>NSPrivacyAccessedAPITypes</key>
 	<array>
