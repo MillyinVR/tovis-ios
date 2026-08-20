@@ -269,6 +269,29 @@ public struct LooksHideResponse: Decodable, Sendable {
     public let hidden: Bool
 }
 
+// MARK: - Report a look (POST /api/v1/looks/{id}/report)
+
+/// The LOOK-level twin of `LooksCommentReportResponse`. Same `status` contract
+/// (`"accepted"` on the 201 first report, `"already_reported"` on the 200
+/// duplicate) and the same reason for keeping it a `String` rather than an
+/// enum — see that type.
+///
+/// Body shapes below are VERBATIM from driving the real route:
+/// - 201 `{"ok":true,"lookPostId":"…","status":"accepted"}`
+/// - 200 `{"ok":true,"lookPostId":"…","status":"already_reported"}`
+/// - 404 `{"ok":false,"error":"Not found.","code":"LOOK_NOT_FOUND"}`
+///
+/// Note there is no `commentId` here — the reported object IS the look.
+public struct LooksLookReportResponse: Decodable, Sendable {
+    public let lookPostId: String
+    public let status: String
+
+    /// True when this call created the report rather than matching an existing
+    /// one. Reporting twice succeeds either way; the distinction is on the wire,
+    /// so it is not thrown away here.
+    public var wasAccepted: Bool { status == "accepted" }
+}
+
 // MARK: - Report a comment (POST /api/v1/looks/{id}/comments/{cid}/report)
 
 /// `status` is deliberately a `String`, not an enum. The server sends
@@ -278,10 +301,15 @@ public struct LooksHideResponse: Decodable, Sendable {
 /// the button to "Report". Both known values mean success; an unknown one
 /// still decodes and still means the write landed.
 ///
-/// ⚠️ Same barrel gap as `LooksHideResponse`: `LooksCommentReportResponseDto`
-/// lives in `lib/looks/types.ts` but is not re-exported from `lib/dto/index.ts`,
-/// so it never reaches `schema/api/tovis-api.schema.json`. The decode tests pin
-/// a VERBATIM capture from driving the real route instead.
+/// ⚠️ **Corrected 2026-08-19 — the previous note here was stale.** It claimed
+/// `LooksCommentReportResponseDto` is not re-exported from `lib/dto/index.ts`
+/// and so never reaches `schema/api/tovis-api.schema.json`. Both halves are
+/// false: it is exported (`lib/dto/index.ts`, beside
+/// `LooksLookReportResponseDto`) and both shapes ARE in the generated schema,
+/// where `status` is the enum `"accepted" | "already_reported"`. Keeping the
+/// Swift side a `String` is still deliberate — see above — it just is not
+/// because the schema is missing. The decode tests pin VERBATIM captures from
+/// driving the real route regardless, which is the stronger evidence.
 public struct LooksCommentReportResponse: Decodable, Sendable {
     public let lookPostId: String
     public let commentId: String

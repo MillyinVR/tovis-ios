@@ -76,8 +76,16 @@ struct LooksView: View {
     /// Re-entrancy guard for "Not for me" — a second tap on a slide already
     /// mid-hide is a no-op (web keeps the same guard in a ref).
     @State private var hideInFlight: Set<String> = []
-    /// The look a long press is proposing to hide, pending confirmation.
-    @State private var hideCandidate: LooksFeedItem?
+    /// The look a long press is offering actions for ("Not for me" / "Report"),
+    /// pending confirmation. Was `hideCandidate` while hiding was the only one.
+    @State private var actionsFor: LooksFeedItem?
+    /// Re-entrancy guard for "Report this look". Separate from `hideInFlight`:
+    /// the two actions are independent, and the report route has NO server-side
+    /// rate limit, so the client owns the debounce.
+    @State private var reportInFlight: Set<String> = []
+    /// Looks this session has already reported — the wire carries no
+    /// `viewerHasReported`, so this is best-effort within the session only.
+    @State private var reported: Set<String> = []
 
     /// Session dedupe for view impressions (B2) — each look pings at most once
     /// so a scroll-up/scroll-down doesn't double-count. Web parity: web batches
@@ -187,26 +195,40 @@ struct LooksView: View {
             }
             .tint(BrandColor.accent)
         }
-        // The long press is invisible, so confirm before acting — and the action
-        // is worth confirming on its own terms: neither platform has an un-hide,
-        // so this is the one feed control a mis-tap can't take back.
+        // The long press is invisible, so confirm before acting — and both
+        // actions are worth confirming on their own terms: neither platform has
+        // an un-hide, and there is no un-report route either, so these are the
+        // feed controls a mis-tap can't take back.
+        //
+        // Report lives here rather than on the rail for the reason the rail's
+        // own comment gives: a 7th icon isn't worth the room. The feed does not
+        // push to `LookDetailView` (its only navigation destinations are the pro
+        // and the client author), so unlike the signed-export affordance this
+        // one cannot be delegated to the detail screen — it would be unreachable
+        // for anyone scrolling the feed.
         .confirmationDialog(
-            "Stop seeing this look?",
+            "This look",
             isPresented: Binding(
-                get: { hideCandidate != nil },
-                set: { if !$0 { hideCandidate = nil } }
+                get: { actionsFor != nil },
+                set: { if !$0 { actionsFor = nil } }
             ),
             titleVisibility: .visible,
-            presenting: hideCandidate
+            presenting: actionsFor
         ) { item in
             Button("Not for me", role: .destructive) {
                 Task { await hideLook(item) }
             }
+            Button(reported.contains(item.id) ? "Reported" : "Report this look",
+                   role: .destructive) {
+                Task { await reportLook(item) }
+            }
+            .disabled(reported.contains(item.id))
             Button("Cancel", role: .cancel) {}
         } message: { _ in
-            // Honest about both halves of what the server does: the look is gone
-            // for good, and its category is down-ranked (decaying, not forever).
-            Text("You won’t see this look again, and we’ll show you fewer like it.")
+            // Honest about what each does: hiding is permanent for this viewer
+            // and down-ranks the category (decaying, not forever); reporting
+            // goes to the moderation queue and is not a hide.
+            Text("“Not for me” hides it for good and shows you fewer like it. Reporting sends it to our team to review.")
         }
     }
 
@@ -369,7 +391,7 @@ struct LooksView: View {
                             onBook: { Task { await startBooking(item) } },
                             onToggleMute: { muted.toggle() },
                             onOpenTag: { tag in tagFeedFor = tag },
-                            onHide: { hideCandidate = item }
+                            onShowActions: { actionsFor = item }
                         )
                         .frame(width: geo.size.width, height: fullHeight)
                         .onAppear { Task { await loadMoreIfNeeded(at: index, total: items.count) } }
@@ -610,6 +632,29 @@ struct LooksView: View {
         }
     }
 
+    /// Report the look itself (App Store guideline 1.2). Deliberately NOT a
+    /// hide: the reporter is telling us about the look, not asking to stop
+    /// seeing it — "Not for me" beside it is that — so the slide stays put and
+    /// the pager is untouched.
+    ///
+    /// Fire-and-settle, like the comment report: the route is idempotent by
+    /// unique constraint, so a duplicate is a 200 rather than an error, and a
+    /// failure simply leaves the button reading "Report this look" so it can be
+    /// retried. Nothing is surfaced to `phase`, which would replace the whole
+    /// feed with an error for a non-blocking action.
+    private func reportLook(_ item: LooksFeedItem) async {
+        guard !reportInFlight.contains(item.id), !reported.contains(item.id) else { return }
+        reportInFlight.insert(item.id)
+        defer { reportInFlight.remove(item.id) }
+
+        do {
+            _ = try await session.client.looks.reportLook(lookId: item.id)
+            reported.insert(item.id)
+        } catch {
+            // Silent, same as the comment report's revert.
+        }
+    }
+
     /// Put a look back where it was after a failed hide. No-op if it already
     /// reappeared (a reload can beat the failure back). Web parity: the index is
     /// clamped, because the list may have grown or shrunk while the write was in
@@ -704,20 +749,22 @@ private struct LookSlide: View {
     let onToggleMute: () -> Void
     /// A tag chip tap → open its web tag page (social-first D1).
     let onOpenTag: (LooksTag) -> Void
-    /// "Not for me" — drops the slide and tells the server to stop showing it.
-    let onHide: () -> Void
+    /// Long press → the look's actions sheet ("Not for me", "Report this look").
+    /// Named for the hide it originally carried alone; it now opens the sheet
+    /// rather than hiding directly, so the parent decides what the options are.
+    let onShowActions: () -> Void
 
     var body: some View {
         ZStack(alignment: .bottom) {
             Color.black
 
             media
-                // "Not for me" lives on a long press of the look itself (the
-                // TikTok/IG gesture) rather than a rail icon — web puts an EyeOff
-                // in its rail, but a 7th control isn't worth the room here.
-                // Scoped to the media so it can't fire from the rail's buttons,
-                // and a long press doesn't race the pager (that's a drag).
-                .onLongPressGesture { onHide() }
+                // "Not for me" AND "Report this look" live on a long press of the
+                // look itself (the TikTok/IG gesture) rather than rail icons —
+                // web puts both in its rail, but a 7th control isn't worth the
+                // room here. Scoped to the media so it can't fire from the rail's
+                // buttons, and a long press doesn't race the pager (that's a drag).
+                .onLongPressGesture { onShowActions() }
 
             LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .center, endPoint: .bottom)
                 .allowsHitTesting(false)

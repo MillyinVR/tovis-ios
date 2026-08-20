@@ -57,6 +57,13 @@ struct LookDetailView: View {
     @State private var bookResolving = false
     @State private var proProfileFor: String?
     @State private var fullscreenMedia: FullscreenMedia?
+    /// Reporting this look (guideline 1.2). The wire carries no
+    /// `viewerHasReported`, so `reported` is best-effort for this screen's
+    /// lifetime; re-reporting is harmless anyway (the route answers 200
+    /// `already_reported`). `reportInFlight` is the debounce — the route has no
+    /// server-side rate limit.
+    @State private var reported = false
+    @State private var reportInFlight = false
 
     var body: some View {
         content
@@ -257,6 +264,18 @@ struct LookDetailView: View {
                     Task { await recordShare(look) }
                 })
             }
+
+            // Report the look itself (App Store guideline 1.2). Visible here
+            // rather than buried in a gesture: the detail screen has the room
+            // the fast-scroll feed rail does not, and this is the deliberate
+            // tap-through surface — the same reasoning the signed-export
+            // affordance above already follows.
+            actionButton(
+                systemName: reported ? "flag.fill" : "flag",
+                label: reported ? "Reported" : "Report",
+                tint: reported ? BrandColor.textSecondary : BrandColor.textPrimary
+            ) { Task { await reportLook(look) } }
+                .disabled(reported || reportInFlight)
 
             Spacer()
 
@@ -567,6 +586,23 @@ struct LookDetailView: View {
             phase = .failed(error.userMessage)
         } catch {
             phase = .failed("Couldn’t load this look.")
+        }
+    }
+
+    /// Report this look. Fire-and-settle: a duplicate is a 200, not an error,
+    /// so both land on "Reported"; a genuine failure returns the control to
+    /// "Report" so it stays retryable. Deliberately never touches `phase` — a
+    /// failed report must not replace the whole look with an error screen.
+    private func reportLook(_ look: LookDetail) async {
+        guard !reportInFlight, !reported else { return }
+        reportInFlight = true
+        defer { reportInFlight = false }
+
+        do {
+            _ = try await session.client.looks.reportLook(lookId: look.id)
+            reported = true
+        } catch {
+            // Silent — same posture as the comment report.
         }
     }
 
