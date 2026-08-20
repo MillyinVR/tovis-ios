@@ -3,11 +3,18 @@ import Foundation
 /// Customer-facing membership copy — the entitlement labels and the commission
 /// pitch shown on `ProMembershipView`.
 ///
-/// 🔴 This lives in TovisKit rather than beside the view ON PURPOSE. CI compiles and
-/// tests TovisKit; nothing compiles the `Tovis/` app target. Copy that makes a
+/// 🔴 This lives in TovisKit rather than beside the view ON PURPOSE: `swift test`
+/// reaches it on every PR with no simulator and no network, so copy that makes a
 /// factual claim to a paying pro (what their plan includes, what the platform
 /// charges) is exactly the code that must not sit somewhere a mistake goes
 /// unnoticed. Mirrors `app/pro/membership/entitlementCopy.ts` on web.
+///
+/// ⚠️ The premise this comment used to give — "nothing compiles the `Tovis/` app
+/// target" — has been false since 2026-08-12, when `App target (Tovis +
+/// TovisTests)` was armed on every PR and push to main (`.github/workflows/ci.yml`,
+/// TOV-REL-001). `Tovis/` is compiled and its tests run. The conclusion still
+/// holds — `swift test` is the cheaper, hermetic gate — but do not repeat the
+/// dead reason.
 public enum ProMembershipCopy {
     public struct AdvertisedEntitlement: Equatable, Sendable {
         public let key: String
