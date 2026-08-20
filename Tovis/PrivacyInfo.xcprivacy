@@ -157,10 +157,29 @@
 			</array>
 		</dict>
 		<!--
+		  Direct messages — the client↔pro threads (MessagesService.send, with
+		  attachments): subject, sender, recipients and contents, which is exactly
+		  what Apple's "Emails or Text Messages" type covers. Split out of
+		  OtherUserContent on 2026-08-20: a DM feature fits a specific category, and
+		  reaching for the catch-all when a specific type exists is the weaker answer.
+		-->
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeEmailsOrTextMessages</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+		<!--
 		  Other user content — the app is a social product, and almost all of its
 		  free text is composed in-app: look captions (ProNewMediaPostView,
-		  ShareLookView), look comments and replies (LookCommentsView), and the
-		  client↔pro message threads (MessagesService.send, with attachments).
+		  ShareLookView) and look comments and replies (LookCommentsView). Message
+		  threads used to be listed here too; they now have their own type above.
 		  Added 2026-08-20 — photos were declared, the words around them were not.
 		-->
 		<dict>
