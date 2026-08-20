@@ -111,6 +111,16 @@ struct ClientSettingsHubView: View {
                             subtitle: "Channels & quiet hours"
                         ) { NotificationPreferencesView() }
 
+                        // App Store guideline 1.2 requires a UGC app to let a
+                        // user block abusive users. The block itself is made
+                        // from the feed's long press; this row is where it can
+                        // be seen and lifted.
+                        SettingsLinkRow(
+                            icon: "hand.raised",
+                            title: "Blocked accounts",
+                            subtitle: "People you’ve blocked from seeing you"
+                        ) { BlockedAccountsView() }
+
                         // App Store guideline 5.1.1(v). Same screen the pro
                         // Profile tab uses — the endpoint is role-agnostic, so
                         // there is one deletion surface, not one per workspace.

@@ -103,6 +103,34 @@ public struct LooksFeedItem: Decodable, Sendable, Identifiable {
         return p.truncatingRemainder(dividingBy: 1) == 0
             ? "$\(Int(p))" : String(format: "$%.2f", p)
     }
+
+    /// Who "block this person" means for THIS look (guideline 1.2), resolved in
+    /// ONE place so the confirm copy and the request can never disagree.
+    ///
+    /// 🔴 A look carries up to two people. `professional` is the ORIGIN pro and
+    /// stays set even on a client-authored look, so keying off it alone would
+    /// block the pro when the viewer meant the client who posted. The publisher
+    /// wins: `clientAuthor` first, pro second.
+    ///
+    /// nil when neither is present — the control is hidden rather than sending
+    /// a request that cannot name anyone.
+    public var blockTarget: BlockTarget? {
+        if let handle = clientAuthor?.handle, !handle.isEmpty {
+            return .handle(handle)
+        }
+        if let id = professional?.id, !id.isEmpty {
+            return .professional(id: id)
+        }
+        return nil
+    }
+
+    /// What to call that person in the confirm prompt. Same precedence as
+    /// {@link blockTarget}, so the prompt names whoever actually gets blocked.
+    public var blockTargetName: String? {
+        if let handle = clientAuthor?.handle, !handle.isEmpty { return "@\(handle)" }
+        guard let pro = professional else { return nil }
+        return pro.displayName
+    }
 }
 
 /// The pro credited on a look. Mirrors `LooksProfessionalDto`; carries the
