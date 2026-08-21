@@ -144,7 +144,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         completionHandler: @escaping () -> Void
     ) {
         Task { @MainActor in
-            SessionUploadQueue.shared.backgroundEventsCompletion = completionHandler
+            let uploads = SessionUploadQueue.shared
+            uploads.backgroundEventsCompletion = completionHandler
+            // Register the delegate now. Waiting for the signed-in shell's
+            // `configure` would mean waiting on `bootstrap()` — i.e. on the
+            // network — before the events this relaunch exists to deliver can
+            // arrive at all.
+            uploads.prepareForBackgroundEvents()
         }
     }
 

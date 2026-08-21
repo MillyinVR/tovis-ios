@@ -148,6 +148,25 @@ final class SessionUploadQueue {
         }
     }
 
+    /// Bring the background session into existence NOW, without waiting for
+    /// sign-in.
+    ///
+    /// 🔴 The relaunch path depends on this. When iOS wakes the app purely to
+    /// deliver a finished transfer, `configure` has not run yet — it hangs off
+    /// the signed-in shell, which is behind `bootstrap()`, which is behind the
+    /// network. Until a `URLSession` with this identifier exists there is no
+    /// delegate, so the events never arrive and the completion handler UIKit
+    /// gave us is never called — which iOS penalises the app for.
+    ///
+    /// Touching `session` is the whole job: it is `lazy`, so this constructs it
+    /// and registers the delegate. A confirm that then needs an authenticated
+    /// client and doesn't have one is fine — the journal already records that
+    /// the bytes landed, so the next foreground launch finishes that leg
+    /// instead of re-uploading anything.
+    func prepareForBackgroundEvents() {
+        _ = session
+    }
+
     /// A photo has just been written to the vault and is owed to the server.
     func enqueue() {
         refreshPendingCount()
