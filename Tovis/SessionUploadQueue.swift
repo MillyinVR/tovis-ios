@@ -56,6 +56,22 @@ final class SessionUploadQueue {
     /// The last transient failure worth showing, cleared on the next success.
     private(set) var statusMessage: String?
 
+    /// The same two counts broken down by custody scope (a booking id, or
+    /// `"practice"`), so a booking's own screen can speak only about its own
+    /// photos rather than about everything the app happens to owe.
+    ///
+    /// Recomputed alongside the totals rather than derived on demand: the source
+    /// is a directory listing, and a view that read it every render would hit the
+    /// filesystem on every render.
+    private(set) var pendingByScope: [String: Int] = [:]
+    private(set) var blockedByScope: [String: Int] = [:]
+
+    /// Photos still owed for one booking (or for practice).
+    func pendingCount(scope: String) -> Int { pendingByScope[scope] ?? 0 }
+
+    /// Photos the server refused for one booking (or for practice).
+    func blockedCount(scope: String) -> Int { blockedByScope[scope] ?? 0 }
+
     /// Set once the pro is signed in — presign and confirm are authenticated.
     /// Until then the queue holds its bytes and does nothing.
     private var client: TovisClient?
@@ -228,7 +244,7 @@ final class SessionUploadQueue {
         blocked.insert(url)
         blockedCount = blocked.count
         statusMessage = reason
-        refreshPendingCount()
+        refreshPendingCount()   // also re-buckets it under `blockedByScope`
     }
 
     /// Mint a signed upload target for one vault file.
@@ -388,6 +404,7 @@ final class SessionUploadQueue {
         blockedCount = 0
         statusMessage = nil
         retry.stop()
+        refreshPendingCount()
         await drain()
     }
 
@@ -400,13 +417,19 @@ final class SessionUploadQueue {
         refreshPendingCount()
     }
 
+
     /// The refused photos' bytes, so the pro can keep them out of the app.
     func blockedPayloads() -> [URL] { Array(blocked) }
 
     private func refreshPendingCount() {
-        pendingCount = SessionByteVault.allPendingUploads()
-            .filter { !blocked.contains($0.url) }
-            .count
+        let all = SessionByteVault.allPendingUploads()
+        let (refused, owed) = (
+            all.filter { blocked.contains($0.url) },
+            all.filter { !blocked.contains($0.url) }
+        )
+        pendingCount = owed.count
+        pendingByScope = Dictionary(grouping: owed, by: \.scope).mapValues(\.count)
+        blockedByScope = Dictionary(grouping: refused, by: \.scope).mapValues(\.count)
     }
 
     // MARK: - Types

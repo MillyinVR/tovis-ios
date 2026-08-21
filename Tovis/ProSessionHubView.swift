@@ -1111,21 +1111,26 @@ struct ProSessionHubView: View {
     /// screen waits for it.
     @ViewBuilder
     private func uploadStatusRow() -> some View {
-        if uploads.blockedCount > 0 {
+        // Scoped to THIS booking. The queue drains everything the app owes —
+        // other bookings, practice shots — and a count that included those would
+        // be telling the pro about photos this screen has nothing to do with.
+        let refused = uploads.blockedCount(scope: bookingId)
+        let owed = uploads.pendingCount(scope: bookingId)
+        if refused > 0 {
             HStack(spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 11, weight: .semibold))
-                Text("\(uploads.blockedCount) photo\(uploads.blockedCount == 1 ? "" : "s") couldn’t be saved")
+                Text("\(refused) photo\(refused == 1 ? "" : "s") couldn’t be saved")
                     .font(BrandFont.body(12))
                 Spacer()
                 Button("Try again") { Task { await uploads.retryNow() } }
                     .font(BrandFont.body(12, .semibold))
             }
             .foregroundStyle(BrandColor.amber)
-        } else if uploads.pendingCount > 0 {
+        } else if owed > 0 {
             HStack(spacing: 6) {
                 ProgressView().controlSize(.small).tint(BrandColor.accent)
-                Text("\(uploads.pendingCount) photo\(uploads.pendingCount == 1 ? "" : "s") uploading — safe to carry on")
+                Text("\(owed) photo\(owed == 1 ? "" : "s") uploading — safe to carry on")
                     .font(BrandFont.body(12))
             }
             .foregroundStyle(BrandColor.textMuted)
