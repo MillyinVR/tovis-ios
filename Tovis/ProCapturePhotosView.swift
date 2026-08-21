@@ -404,7 +404,6 @@ struct ProCapturePhotosView: View {
         // stopped driving them (and sometimes while it isn't on screen at all),
         // so the badge follows the byte vault — the actual source of truth for
         // "does the server still owe this photo" — rather than a callback.
-        .onChange(of: uploads.pendingCount) { _, _ in dropConfirmedBadges() }
         // Keep the coach judging "ready for THIS shot" — expectations follow the
         // current guided step (and clear for freeform / all-done shooting).
         .onChange(of: activeExpectations) { _, expectations in
@@ -668,7 +667,7 @@ struct ProCapturePhotosView: View {
             count: uploads.blockedCount,
             reason: uploads.statusMessage,
             save: { Task { await saveTerminalUploadsToLibrary() } },
-            discard: { uploads.discardBlocked() }
+            discard: discardRefusedPhotos
         ))
         .confirmationDialog(
             exitDialogTitle,
@@ -2017,7 +2016,7 @@ struct ProCapturePhotosView: View {
                     // it" so a pro who glances down mid-service isn't left
                     // guessing. Clears itself the instant upload confirms.
                     .overlay(alignment: .topTrailing) {
-                        if shot.custodyURL != nil {
+                        if pendingSync(shot) {
                             Image(systemName: "icloud.and.arrow.up")
                                 .font(.system(size: 10, weight: .semibold))
                                 .foregroundStyle(BrandColor.onAccent)
@@ -2029,7 +2028,7 @@ struct ProCapturePhotosView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("\(captured.count) captured this session")
-            .accessibilityValue(shot.custodyURL != nil ? "still saving" : "")
+            .accessibilityValue(pendingSync(shot) ? "still saving" : "")
             .accessibilityHint("Opens the last shot")
         }
     }
@@ -2373,26 +2372,27 @@ struct ProCapturePhotosView: View {
         uploads.enqueue()
     }
 
-    /// Drop the pending-sync badge from any thumbnail whose bytes the queue has
-    /// since released.
+    /// Drop every refused photo currently queued — the pro's explicit choice.
+    /// A method, not an inline closure at the call site: see `pendingSync`.
+    private func discardRefusedPhotos() {
+        uploads.discardBlocked()
+    }
+
+    /// Whether this thumbnail's bytes are still owed to the server.
     ///
-    /// Reads the byte vault — the actual source of truth for "does the server
-    /// still owe this photo" — rather than a callback, because the queue
-    /// confirms uploads long after this view stopped driving them, and often
-    /// while it isn't on screen at all.
+    /// Asks the QUEUE, not the view's own state: the queue confirms uploads long
+    /// after this view stopped driving them, and often while it isn't on screen
+    /// at all, so a badge cleared by a callback would go stale the moment the
+    /// camera was reopened.
     ///
-    /// ⚠️ A method, not an inline closure in the modifier chain: that chain is
-    /// already at the edge of what the type-checker resolves quickly (see
-    /// `TerminalUploadDialog`), and inlining this body failed the App target
-    /// build with "unable to type-check this expression in reasonable time" —
-    /// pointing at an unrelated expression ~100 lines away.
-    private func dropConfirmedBadges() {
-        for index in captured.indices {
-            guard let url = captured[index].custodyURL else { continue }
-            if !FileManager.default.fileExists(atPath: url.path) {
-                captured[index].custodyURL = nil
-            }
-        }
+    /// ⚠️ Deliberately a lookup and NOT a `.onChange` modifier keeping a local
+    /// copy in step. This body's modifier chain is already at the edge of what
+    /// the compiler type-checks in reasonable time (`TerminalUploadDialog` and
+    /// `RetakeDialog` are ViewModifiers for that reason), and adding one more
+    /// modifier failed the App target build on CI twice — reported against an
+    /// unrelated expression ~100 lines away, which is how this presents.
+    private func pendingSync(_ shot: CapturedShot) -> Bool {
+        uploads.isPending(shot.custodyURL)
     }
 
     /// Write refused photos to the pro's own library, then let them go. This is

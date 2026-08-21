@@ -66,6 +66,20 @@ final class SessionUploadQueue {
     private(set) var pendingByScope: [String: Int] = [:]
     private(set) var blockedByScope: [String: Int] = [:]
 
+    /// Vault files the server has not accepted yet, as a set, so a thumbnail can
+    /// ask "is MY photo still owed?" with a lookup instead of a stat() — and
+    /// without the camera needing a `.onChange` modifier to keep badges honest.
+    /// (That modifier is not a free abstraction: adding one to the capture
+    /// view's chain pushed an unrelated expression over the compiler's
+    /// type-check budget on CI. See `ProCapturePhotosView.pendingSync`.)
+    private(set) var pendingURLs: Set<URL> = []
+
+    /// Whether this exact vault file is still owed to the server.
+    func isPending(_ url: URL?) -> Bool {
+        guard let url else { return false }
+        return pendingURLs.contains(url)
+    }
+
     /// Photos still owed for one booking (or for practice).
     func pendingCount(scope: String) -> Int { pendingByScope[scope] ?? 0 }
 
@@ -447,6 +461,7 @@ final class SessionUploadQueue {
             all.filter { !blocked.contains($0.url) }
         )
         pendingCount = owed.count
+        pendingURLs = Set(owed.map(\.url))
         pendingByScope = Dictionary(grouping: owed, by: \.scope).mapValues(\.count)
         blockedByScope = Dictionary(grouping: refused, by: \.scope).mapValues(\.count)
     }
