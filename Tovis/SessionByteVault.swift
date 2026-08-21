@@ -51,6 +51,10 @@ enum SessionByteVault {
     /// One photo still owed to the server, recovered from disk.
     struct PendingUpload: Equatable {
         let url: URL
+        /// The custody namespace these bytes were written under — a bookingId
+        /// for a session shoot, `"practice"` for the standalone camera. The
+        /// app-level uploader reads it to decide which endpoint owes them.
+        let scope: String
         let phase: MediaPhase
         let focal: MediaFocalPoint?
         /// Device-claimed capture time — nil when the caller genuinely has no
@@ -140,6 +144,32 @@ enum SessionByteVault {
     /// deliberate `nil`, which is "no trustworthy claim available", not "unknown
     /// because of when this file was written".
     static func strandedUploads(bookingId: String) -> [PendingUpload] {
+        pendingUploads(scope: bookingId)
+    }
+
+    /// Every photo still owed to the server, across ALL scopes — what the
+    /// app-level uploader drains. Oldest first, same as `strandedUploads`.
+    ///
+    /// 🔴 This is deliberately not scoped to a booking: the whole point of the
+    /// durable queue is that it keeps uploading after the camera closes, after
+    /// the session is closed out, and after a relaunch — none of which have a
+    /// "current booking" to filter on. Each entry carries its own `scope`.
+    static func allPendingUploads() -> [PendingUpload] {
+        pendingUploads(scope: nil)
+    }
+
+    /// Shared filename parser. `scope == nil` lists every namespace.
+    ///
+    /// Parses two filename shapes: the current 5-part one (with an encoded
+    /// `capturedAt`), and the 4-part one written before that field existed — a
+    /// file already sitting in `.pendingUpload` when the app updates. A legacy
+    /// file's `capturedAt` falls back to the file's own creation date: this vault
+    /// write already happened synchronously right after capture (same as today),
+    /// so the filesystem timestamp is a reasonable proxy for a build that simply
+    /// didn't encode the real one yet — distinct from a library import's
+    /// deliberate `nil`, which is "no trustworthy claim available", not "unknown
+    /// because of when this file was written".
+    private static func pendingUploads(scope: String?) -> [PendingUpload] {
         guard let dir = directory(.pendingUpload),
               let entries = try? FileManager.default.contentsOfDirectory(
                   at: dir, includingPropertiesForKeys: [.creationDateKey]
@@ -151,25 +181,18 @@ enum SessionByteVault {
                 let created = (try? url.resourceValues(forKeys: [.creationDateKey]))?
                     .creationDate ?? .distantPast
 
-                switch parts.count {
-                case 5:
-                    guard parts[0] == bookingId,
-                          let phase = MediaPhase(rawValue: parts[1]) else { return nil }
-                    let upload = PendingUpload(
-                        url: url, phase: phase, focal: decode(parts[2]),
-                        capturedAt: decodeCapturedAt(parts[3])
-                    )
-                    return (upload, created)
-                case 4:
-                    guard parts[0] == bookingId,
-                          let phase = MediaPhase(rawValue: parts[1]) else { return nil }
-                    let upload = PendingUpload(
-                        url: url, phase: phase, focal: decode(parts[2]), capturedAt: created
-                    )
-                    return (upload, created)
-                default:
-                    return nil
-                }
+                guard parts.count == 5 || parts.count == 4 else { return nil }
+                guard scope == nil || parts[0] == scope,
+                      let phase = MediaPhase(rawValue: parts[1]) else { return nil }
+                let upload = PendingUpload(
+                    url: url,
+                    scope: parts[0],
+                    phase: phase,
+                    focal: decode(parts[2]),
+                    // A 4-part name predates the capturedAt segment entirely.
+                    capturedAt: parts.count == 5 ? decodeCapturedAt(parts[3]) : created
+                )
+                return (upload, created)
             }
             .sorted { $0.1 < $1.1 }
             .map(\.0)

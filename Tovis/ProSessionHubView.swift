@@ -6,6 +6,7 @@
 // Data: `GET /session/state` (the spine) + `GET /pro/bookings/[id]` (display copy
 // + initial consultation line items) + the booking media list (before/after counts).
 import Combine
+import PhotosUI
 import SwiftUI
 import TovisKit
 import UIKit
@@ -34,6 +35,19 @@ struct ProSessionHubView: View {
     /// "Publish this transformation" button acts on.
     @State private var comparisonPage = 0
     @State private var capturing: CaptureSelection?
+    /// "Upload from library" — which phase the picked photos belong to, the
+    /// picker's presentation flag, and what came back.
+    ///
+    /// This door exists on the SESSION screen, not only inside the camera's
+    /// tools drawer, because that is where a pro looks for it: the camera tray
+    /// version is unreachable without first opening a camera they may not want.
+    @State private var importPhase: MediaPhase?
+    @State private var showLibraryPicker = false
+    @State private var importItems: [PhotosPickerItem] = []
+    @State private var importing = false
+    @State private var importMessage: String?
+    /// The durable uploader, read only to show the pro what's still outstanding.
+    private var uploads: SessionUploadQueue { .shared }
     /// The before/after shot currently open full-screen (tap a thumbnail).
     @State private var viewingMedia: FullscreenMedia?
     /// Manual-collectable payment methods (from the pro's payment settings) +
@@ -158,6 +172,17 @@ struct ProSessionHubView: View {
         }
         .fullScreenCover(item: $viewingMedia) { item in
             MediaFullscreenViewer(media: item) { viewingMedia = nil }
+        }
+        .photosPicker(
+            isPresented: $showLibraryPicker,
+            selection: $importItems,
+            maxSelectionCount: 10,
+            matching: .images
+        )
+        .onChange(of: importItems) { _, items in
+            guard !items.isEmpty, let phase = importPhase else { return }
+            importItems = []
+            Task { await importFromLibrary(items, phase: phase) }
         }
         .tint(BrandColor.accent)
     }
@@ -1045,8 +1070,116 @@ struct ProSessionHubView: View {
                     .foregroundStyle(primary ? BrandColor.onAccent : BrandColor.accent)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
+                Button {
+                    importPhase = phase
+                    showLibraryPicker = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "photo.on.rectangle.angled")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("Upload from library").font(BrandFont.body(14, .semibold))
+                    }
+                    .frame(maxWidth: .infinity).padding(.vertical, 12)
+                    .background(BrandColor.accent.opacity(0.12))
+                    .foregroundStyle(BrandColor.accent)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .disabled(importing)
+                if importing {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small).tint(BrandColor.accent)
+                        Text("Adding photos…").font(BrandFont.body(12))
+                            .foregroundStyle(BrandColor.textMuted)
+                    }
+                }
+                if let importMessage {
+                    Text(importMessage).font(BrandFont.body(12))
+                        .foregroundStyle(BrandColor.textMuted)
+                }
+                uploadStatusRow()
                 sharingConsentRow()
             }
+        }
+    }
+
+    /// What the durable uploader still owes the server, and the one control that
+    /// can act on it.
+    ///
+    /// This is shown so the pro can SEE that leaving is safe — the photos keep
+    /// uploading in the background, including after the session is closed out and
+    /// after the app is killed. It is deliberately not a blocker: nothing on this
+    /// screen waits for it.
+    @ViewBuilder
+    private func uploadStatusRow() -> some View {
+        // Scoped to THIS booking. The queue drains everything the app owes —
+        // other bookings, practice shots — and a count that included those would
+        // be telling the pro about photos this screen has nothing to do with.
+        let refused = uploads.blockedCount(scope: bookingId)
+        let owed = uploads.pendingCount(scope: bookingId)
+        if refused > 0 {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                Text("\(refused) photo\(refused == 1 ? "" : "s") couldn’t be saved")
+                    .font(BrandFont.body(12))
+                Spacer()
+                Button("Try again") { Task { await uploads.retryNow() } }
+                    .font(BrandFont.body(12, .semibold))
+            }
+            .foregroundStyle(BrandColor.amber)
+        } else if owed > 0 {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small).tint(BrandColor.accent)
+                Text("\(owed) photo\(owed == 1 ? "" : "s") uploading — safe to carry on")
+                    .font(BrandFont.body(12))
+            }
+            .foregroundStyle(BrandColor.textMuted)
+        }
+    }
+
+    /// Pull photos the pro already has into this booking's before/after set.
+    ///
+    /// Reuses `CameraLibraryImport.prepare` — the same transcode, orientation
+    /// bake and focal read the camera's own import door uses — so a photo added
+    /// here and a photo added there are indistinguishable downstream. The bytes
+    /// go to the byte vault and the durable queue, never straight to the network.
+    ///
+    /// `capturedAt` is nil on purpose: a library photo has no capture moment this
+    /// can honestly claim (see `CameraLibraryImport`).
+    private func importFromLibrary(_ items: [PhotosPickerItem], phase: MediaPhase) async {
+        guard !importing else { return }
+        importing = true
+        importMessage = nil
+        defer {
+            importing = false
+            importPhase = nil
+        }
+
+        var added = 0
+        var unreadable = 0
+        for item in items {
+            guard let raw = try? await item.loadTransferable(type: Data.self),
+                  let prepared = await CameraLibraryImport.prepare(raw) else {
+                unreadable += 1
+                continue
+            }
+            guard SessionByteVault.writePendingUpload(
+                prepared.jpeg, bookingId: bookingId, phase: phase,
+                focal: prepared.focal, capturedAt: nil
+            ) != nil else {
+                unreadable += 1
+                continue
+            }
+            added += 1
+        }
+
+        if added > 0 { uploads.enqueue() }
+        if unreadable > 0 {
+            importMessage = added > 0
+                ? "Added \(added). \(unreadable) couldn’t be read."
+                : "Couldn’t read those photos — try different ones."
+        } else {
+            importMessage = nil
         }
     }
 

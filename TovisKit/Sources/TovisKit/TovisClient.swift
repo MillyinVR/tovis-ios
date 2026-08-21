@@ -128,6 +128,17 @@ public final class TovisClient: Sendable {
     public let proMigration: ProMigrationService
     public let tokenStore: TokenStore
 
+    /// Supabase project URL + publishable key, surfaced from `TovisConfig`.
+    ///
+    /// The per-service uploaders keep their own copies for their foreground
+    /// PUTs; these exist because the app-level session-photo queue builds a
+    /// BACKGROUND `URLSession` request of its own (a background session cannot
+    /// borrow another session's task), and it needs the same two values to
+    /// address the storage gateway. Both nil in a build with no Supabase
+    /// configured — the queue then holds its bytes rather than guessing.
+    public let supabaseURL: URL?
+    public let supabaseAnonKey: String?
+
     /// Stable per-install id. Persisted in the Keychain-backed store's UserDefaults
     /// sibling so it survives launches but resets on reinstall — exactly what
     /// per-device revocation wants.
@@ -153,6 +164,8 @@ public final class TovisClient: Sendable {
         self.tokenStore = store
         self.deviceId = Self.resolveDeviceId()
         self.googleClientID = config.googleClientID
+        self.supabaseURL = config.supabaseURL
+        self.supabaseAnonKey = config.supabaseAnonKey
         self.googleServerClientID = config.googleServerClientID
 
         // Native auth is bearer-token (Keychain) based and MUST stay cookieless.

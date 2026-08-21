@@ -49,7 +49,11 @@ public final class ProPracticeService: Sendable {
     }
 
     /// Step 1 — presign a bookingless, private practice upload.
-    func presign(contentType: String, size: Int) async throws -> MediaUploadInit {
+    ///
+    /// Public because the app-level upload queue drives the three steps
+    /// itself (it owns the background transfer between them) rather than
+    /// calling `upload(imageData:)`, which does all three inline.
+    public func presign(contentType: String, size: Int) async throws -> MediaUploadInit {
         let payload = try JSONEncoder.canonical.encode(
             KindUploadInitRequest(
                 kind: "PRACTICE_PRIVATE", contentType: contentType, size: size, serviceId: nil

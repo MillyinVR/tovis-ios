@@ -27,15 +27,19 @@ import UIKit
 import UniformTypeIdentifiers
 
 enum CameraLibraryImport {
-    /// Long-edge budget for an imported photo. Matches the order of a full-frame
-    /// still from the capture path, so a library import isn't visibly softer in
-    /// the gallery next to shots taken in-app.
-    nonisolated static let maxPixel: CGFloat = 4032
+    /// Long-edge budget for an imported photo — the SHARED upload budget, so an
+    /// import and a live capture are bounded identically (`UploadImageBudget`).
+    ///
+    /// This used to be 4032px, deliberately matched to the full-frame capture
+    /// path "so a library import isn't visibly softer". That reasoning held only
+    /// while capture itself was unbudgeted; both are now bounded together, and
+    /// matching them still costs nothing visible in a gallery.
+    nonisolated static var maxPixel: CGFloat { UploadImageBudget.maxPixel }
 
     /// Hard ceiling for the encoded bytes. The signing route rejects anything
     /// over 30MB (`UPLOAD_MAX_BYTES`) before a byte is transferred, so an
-    /// oversized import must be re-encoded here rather than fail at presign.
-    nonisolated static let maxBytes = 24 * 1024 * 1024
+    /// oversized import must be re-encoded rather than fail at presign.
+    nonisolated static var maxBytes: Int { UploadImageBudget.maxBytes }
 
     /// A library photo, made ready for the existing upload pipeline.
     struct Imported: Sendable {
@@ -60,30 +64,14 @@ enum CameraLibraryImport {
         return Imported(jpeg: jpeg, focal: MediaFocalPoint(faceCenter: report.focalPoint))
     }
 
-    /// Re-encode arbitrary picker bytes as a baseline JPEG at or below the size
+    /// Re-encode arbitrary picker bytes as a baseline JPEG inside the upload
     /// budget, with EXIF orientation baked into the pixels (the capture path's
     /// bytes already have it, and the web gallery reads the pixels).
     ///
-    /// Deliberately unconditional: passing an already-JPEG through untouched
-    /// would save a re-encode but leave the orientation, dimensions and byte
-    /// count unbounded — three ways for an import to differ from a capture.
+    /// The encode itself is `UploadImageBudget`'s — there is one place that
+    /// decides how big a photo may be when it leaves the phone, and both the
+    /// import door and the shutter go through it.
     nonisolated static func transcodeToJPEG(_ data: Data) -> Data? {
-        guard let image = ImageDownsample.thumbnailSync(from: data, maxPixel: maxPixel) else {
-            return nil
-        }
-        // Step the quality down until it fits. Six steps from 0.9 reaches 0.4,
-        // which is still a usable portfolio image and, at 4032px, has never
-        // needed more than one step in practice.
-        for quality in stride(from: 0.9, through: 0.4, by: -0.1) {
-            guard let encoded = image.jpegData(compressionQuality: quality) else { return nil }
-            if encoded.count <= maxBytes { return encoded }
-        }
-        // Still too big at the floor quality: shrink the pixels instead of
-        // degrading further, rather than handing the server bytes it will refuse.
-        guard let smaller = ImageDownsample.thumbnailSync(from: data, maxPixel: maxPixel / 2) else {
-            return nil
-        }
-        let encoded = smaller.jpegData(compressionQuality: 0.8)
-        return encoded.flatMap { $0.count <= maxBytes ? $0 : nil }
+        UploadImageBudget.prepareSync(data)
     }
 }

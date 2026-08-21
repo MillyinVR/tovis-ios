@@ -12,7 +12,7 @@ struct BestShotsReviewView: View {
 
     let coach: CoachEngine
     /// Where these shots go. The tray is destination-blind beyond its button
-    /// label — `ProCameraUpload` owns the fan-out.
+    /// label — `SessionUploadQueue` owns the fan-out.
     let destination: ProCameraDestination
     /// Card-solved color correction — baked into each kept shot at upload,
     /// same as manual captures. Nil = no card scanned.
@@ -177,9 +177,9 @@ struct BestShotsReviewView: View {
         var uploaded: Set<UUID> = []
         var lastError: String?
         for (index, shot) in shots.enumerated() {
-            progress = "Uploading \(index + 1) of \(shots.count)…"
+            progress = "Saving \(index + 1) of \(shots.count)…"
             // The full-res bytes live on disk (only the tray thumb is in RAM) —
-            // read them back off the main actor for the upload.
+            // read them back off the main actor.
             guard let raw = await Task.detached(
                 priority: .userInitiated,
                 operation: { SessionByteVault.read(shot.fileURL) }
@@ -191,31 +191,39 @@ struct BestShotsReviewView: View {
             if let correction, let corrected = await CardCorrection.apply(correction, to: raw) {
                 payload = corrected
             }
-            do {
-                try await ProCameraUpload.photo(
-                    payload,
-                    focal: MediaFocalPoint(faceCenter: shot.focalPoint),
-                    to: destination,
-                    client: session.client
-                )
-                uploaded.insert(shot.id)
-            } catch let error as APIError {
-                lastError = error.userMessage
-            } catch {
-                lastError = "Couldn’t upload some photos — they’re still here to retry."
+            // Bounded, then handed to the durable queue — the same road a live
+            // capture takes. Promoting a best shot no longer waits on the
+            // network (it used to block this sheet on a full-resolution upload,
+            // one shot at a time, and fail the lot on a flaky connection).
+            //
+            // capturedAt is deliberately nil: a harvested still has no capture
+            // moment plumbed through to here, and claiming "now" would be the
+            // kind of unverified claim the attestation exists to avoid. That
+            // matches what this call site already sent.
+            let upload = await UploadImageBudget.prepare(payload) ?? payload
+            guard SessionByteVault.writePendingUpload(
+                upload,
+                bookingId: destination.custodyScope,
+                phase: destination.phase,
+                focal: MediaFocalPoint(faceCenter: shot.focalPoint),
+                capturedAt: nil
+            ) != nil else {
+                lastError = "Couldn’t keep some photos to upload — try again."
+                continue
             }
-            // Keep going: one flaky upload must not strand the shots behind it.
+            uploaded.insert(shot.id)
+            // Keep going: one bad write must not strand the shots behind it.
         }
+        SessionUploadQueue.shared.enqueue()
 
         // Only the successes leave the tray; failures stay selected so the pro can
         // tap "Keep" again to retry (their bytes are never dropped).
         coach.removeHarvested(uploaded)
         selected.subtract(uploaded)
-        if !uploaded.isEmpty { session.signalRefresh() }   // the hub gallery picks up the new photos
         let failedCount = shots.count - uploaded.count
         if failedCount > 0 {
             errorMessage = lastError
-                ?? "Couldn’t upload \(failedCount) photo\(failedCount == 1 ? "" : "s") — still here to retry."
+                ?? "Couldn’t keep \(failedCount) photo\(failedCount == 1 ? "" : "s") — still here to retry."
         }
         if coach.harvested.isEmpty { dismiss() }
     }
