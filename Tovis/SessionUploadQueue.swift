@@ -256,17 +256,17 @@ final class SessionUploadQueue {
             throw QueueError.bytesGone
         }
         let isPractice = pending.scope == ProCameraDestination.practice.custodyScope
-        let init_: MediaUploadInit = isPractice
+        let target: MediaUploadInit = isPractice
             ? try await client.proPractice.presign(contentType: "image/jpeg", size: data.count)
             : try await client.proMedia.presign(
                 bookingId: pending.scope, phase: pending.phase,
                 contentType: "image/jpeg", size: data.count
             )
         return Job(
-            storageBucket: init_.bucket,
-            storagePath: init_.path,
-            token: init_.token,
-            uploadSessionId: init_.uploadSessionId,
+            storageBucket: target.bucket,
+            storagePath: target.path,
+            token: target.token,
+            uploadSessionId: target.uploadSessionId,
             scope: pending.scope,
             phaseRaw: pending.phase.rawValue,
             vaultPath: pending.url.path,
