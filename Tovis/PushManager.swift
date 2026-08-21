@@ -131,6 +131,23 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         return true
     }
 
+    /// The system finished (or needs us to finish) background transfers for the
+    /// session-photo upload queue, and relaunched us to deal with it.
+    ///
+    /// ⚠️ `completionHandler` MUST run, on the main thread, once the session says
+    /// it has delivered everything — the app is killed for not answering. It is
+    /// stored rather than called here because the events themselves arrive later,
+    /// via `urlSessionDidFinishEvents`.
+    func application(
+        _ application: UIApplication,
+        handleEventsForBackgroundURLSession identifier: String,
+        completionHandler: @escaping () -> Void
+    ) {
+        Task { @MainActor in
+            SessionUploadQueue.shared.backgroundEventsCompletion = completionHandler
+        }
+    }
+
     func application(
         _ application: UIApplication,
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data

@@ -12,7 +12,7 @@ struct FrameScrubberView: View {
     @Environment(\.dismiss) private var dismiss
 
     let videoURL: URL
-    /// Where a pulled frame goes — `ProCameraUpload` owns the fan-out.
+    /// Where a pulled frame goes — `SessionUploadQueue` owns the fan-out.
     let destination: ProCameraDestination
     /// Card-solved color correction — baked into an extracted still at upload
     /// (the clip's own upload bakes it into the video separately). Nil = no
@@ -184,18 +184,26 @@ struct FrameScrubberView: View {
         if let correction, let corrected = await CardCorrection.apply(correction, to: data) {
             payload = corrected
         }
-        do {
-            try await ProCameraUpload.photo(
-                payload, focal: focal, to: destination, client: session.client
-            )
-            session.signalRefresh()
-            message = "Saved that frame."
-            dismiss()
-        } catch let error as APIError {
-            message = error.userMessage
-        } catch {
+        // Bounded, then handed to the durable queue — the same road a live
+        // capture takes, so a pulled frame survives a closed sheet, a
+        // backgrounded app and a dead connection instead of failing outright.
+        //
+        // capturedAt is nil: a frame pulled from a clip has no shutter moment of
+        // its own to claim. That matches what this call site already sent.
+        let upload = await UploadImageBudget.prepare(payload) ?? payload
+        guard SessionByteVault.writePendingUpload(
+            upload,
+            bookingId: destination.custodyScope,
+            phase: destination.phase,
+            focal: focal,
+            capturedAt: nil
+        ) != nil else {
             message = "Couldn’t save that frame."
+            return
         }
+        SessionUploadQueue.shared.enqueue()
+        message = "Saved that frame."
+        dismiss()
     }
 
 }

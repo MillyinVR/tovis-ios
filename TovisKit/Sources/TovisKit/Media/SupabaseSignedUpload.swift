@@ -9,7 +9,7 @@ import Foundation
 /// there is deliberately NO Authorization bearer/cookie — the token is the sole
 /// authorizer. The upload session should be ephemeral (no cookie jar) so the PUT
 /// stays clean.
-enum SupabaseSignedUpload {
+public enum SupabaseSignedUpload {
     /// Consult capture intentionally never receives a bucket or storage path.
     /// Upload only to the exact short-lived URL minted by the server, after
     /// proving it belongs to this build's configured Supabase origin and carries
@@ -67,25 +67,15 @@ enum SupabaseSignedUpload {
         contentType: String,
         upsert: Bool
     ) async throws {
-        guard let supabaseURL, let supabaseKey else {
+        guard let supabaseKey else {
             throw APIError.transport("Storage configuration missing.")
         }
-        var components = URLComponents(
-            url: supabaseURL.appendingPathComponent(
-                "storage/v1/object/upload/sign/\(bucket)/\(path)"
-            ),
-            resolvingAgainstBaseURL: false
-        )
-        components?.queryItems = [URLQueryItem(name: "token", value: token)]
-        guard let url = components?.url else {
+        guard var request = signedUploadRequest(
+            supabaseURL: supabaseURL, supabaseKey: supabaseKey, bucket: bucket,
+            path: path, token: token, contentType: contentType, upsert: upsert
+        ) else {
             throw APIError.transport("Bad upload URL.")
         }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "PUT"
-        request.setValue(supabaseKey, forHTTPHeaderField: "apikey")
-        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
-        request.setValue(upsert ? "true" : "false", forHTTPHeaderField: "x-upsert")
         request.httpBody = data
 
         let (respData, response): (Data, URLResponse)
@@ -99,5 +89,77 @@ enum SupabaseSignedUpload {
             let message = String(data: respData, encoding: .utf8)
             throw APIError.server(status: http.statusCode, message: message, code: nil)
         }
+    }
+
+    // MARK: - Request building
+
+    /// The one place the signed-upload PUT is shaped. Both the foreground `put`
+    /// above and the background-session variant below go through it, so the
+    /// RLS-critical contract (PUT, `apikey`, no Authorization bearer, `x-upsert`)
+    /// is stated once rather than copied.
+    static func signedUploadRequest(
+        supabaseURL: URL?,
+        supabaseKey: String,
+        bucket: String,
+        path: String,
+        token: String,
+        contentType: String,
+        upsert: Bool
+    ) -> URLRequest? {
+        guard let supabaseURL else { return nil }
+        var components = URLComponents(
+            url: supabaseURL.appendingPathComponent("\(uploadSignPrefix)\(bucket)/\(path)"),
+            resolvingAgainstBaseURL: false
+        )
+        components?.queryItems = [URLQueryItem(name: "token", value: token)]
+        guard let url = components?.url else { return nil }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue(supabaseKey, forHTTPHeaderField: "apikey")
+        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        request.setValue(upsert ? "true" : "false", forHTTPHeaderField: "x-upsert")
+        return request
+    }
+
+    /// A request for a BACKGROUND `URLSession` upload task.
+    ///
+    /// ⚠️ Deliberately carries NO `httpBody`: a background session rejects a
+    /// request with an in-memory body and must be given `fromFile:` instead —
+    /// which is also why the byte vault's file, rather than a `Data` in RAM, is
+    /// what gets uploaded. Everything else is byte-identical to the foreground
+    /// PUT, and `upsert` is false for the same reason it is there: these paths
+    /// are minted unique per upload and must never overwrite.
+    public static func backgroundUploadRequest(
+        supabaseURL: URL?,
+        supabaseKey: String?,
+        bucket: String,
+        path: String,
+        token: String,
+        contentType: String
+    ) -> URLRequest? {
+        guard let supabaseKey else { return nil }
+        return signedUploadRequest(
+            supabaseURL: supabaseURL, supabaseKey: supabaseKey, bucket: bucket,
+            path: path, token: token, contentType: contentType, upsert: false
+        )
+    }
+
+    private static let uploadSignPrefix = "storage/v1/object/upload/sign/"
+
+    /// Recover the storage path from a signed-upload URL.
+    ///
+    /// This is how a background task that outlived its process is matched back
+    /// to the photo it belongs to: after the app is killed and relaunched, the
+    /// only thing guaranteed to come back with the task is its request. Returns
+    /// nil for any URL that isn't a signed upload.
+    public static func storagePath(fromSignedUploadURL url: URL) -> String? {
+        let marker = "/" + uploadSignPrefix
+        guard let range = url.path.range(of: marker) else { return nil }
+        let remainder = String(url.path[range.upperBound...])
+        // Drop the bucket segment; what's left is the object path.
+        guard let slash = remainder.firstIndex(of: "/") else { return nil }
+        let path = String(remainder[remainder.index(after: slash)...])
+        return path.isEmpty ? nil : path
     }
 }

@@ -1349,7 +1349,18 @@ struct RootView: View {
                         MainTabView()
                     }
                 }
-                .task { session.applyDebugDeepLinkIfRequested() }
+                .task {
+                    session.applyDebugDeepLinkIfRequested()
+                    // Hand the durable photo queue an authenticated client and
+                    // let it drain. This is deliberately at the ROOT of the
+                    // signed-in shell, not in the camera or the session screen:
+                    // the whole point is that photos keep uploading after those
+                    // are gone — including ones captured in a previous launch
+                    // that the app was killed before finishing.
+                    let uploads = SessionUploadQueue.shared
+                    uploads.onMediaConfirmed = { session.signalRefresh() }
+                    uploads.configure(client: session.client)
+                }
             }
         }
         // Stripe Checkout hands back through the `tovis://checkout/return` scheme

@@ -175,4 +175,66 @@ struct SessionByteVaultTests {
         #expect(SessionByteVault.strandedUploads(bookingId: booking).isEmpty)
         #expect(!FileManager.default.fileExists(atPath: pending.path))
     }
+
+    // MARK: - Draining every scope, not just one booking
+
+    // The app-level queue drains photos with no "current booking" in hand — it
+    // runs at launch, after the camera is closed, after the session is closed
+    // out. `strandedUploads(bookingId:)` cannot serve it: filtering by a booking
+    // is exactly what left photos stranded forever once the pro moved on.
+
+    @Test func allPendingUploadsSpansScopesAndTagsEachWithItsOwn() throws {
+        let bookingA = "bkg-\(UUID().uuidString)"
+        let bookingB = "bkg-\(UUID().uuidString)"
+        let practice = "practice"
+        defer { cleanup(bookingA, bookingB, practice) }
+
+        _ = SessionByteVault.writePendingUpload(
+            jpeg("a"), bookingId: bookingA, phase: .before, focal: nil, capturedAt: nil)
+        _ = SessionByteVault.writePendingUpload(
+            jpeg("b"), bookingId: bookingB, phase: .after, focal: nil, capturedAt: nil)
+        _ = SessionByteVault.writePendingUpload(
+            jpeg("p"), bookingId: practice, phase: .other, focal: nil, capturedAt: nil)
+
+        let mine = SessionByteVault.allPendingUploads()
+            .filter { [bookingA, bookingB, practice].contains($0.scope) }
+        #expect(mine.count == 3)
+        #expect(mine.first { $0.scope == bookingA }?.phase == .before)
+        #expect(mine.first { $0.scope == bookingB }?.phase == .after)
+        // Practice photos are owed to the server too — a queue that skipped them
+        // would leave the standalone camera exactly as broken as before.
+        #expect(mine.first { $0.scope == practice }?.phase == .other)
+    }
+
+    @Test func strandedUploadsStillFiltersToItsOwnBooking() throws {
+        let mine = "bkg-\(UUID().uuidString)"
+        let theirs = "bkg-\(UUID().uuidString)"
+        defer { cleanup(mine, theirs) }
+
+        _ = SessionByteVault.writePendingUpload(
+            jpeg("mine"), bookingId: mine, phase: .before, focal: nil, capturedAt: nil)
+        _ = SessionByteVault.writePendingUpload(
+            jpeg("theirs"), bookingId: theirs, phase: .before, focal: nil, capturedAt: nil)
+
+        let scoped = SessionByteVault.strandedUploads(bookingId: mine)
+        #expect(scoped.count == 1)
+        #expect(scoped.first?.scope == mine)
+    }
+
+    @Test func allPendingUploadsCarriesTheMetadataNeededToFinishTheUpload() throws {
+        let booking = "bkg-\(UUID().uuidString)"
+        defer { cleanup(booking) }
+        let moment = Date(timeIntervalSince1970: 1_787_265_806.478)
+        let focal = try #require(MediaFocalPoint(x: 0.25, y: 0.75))
+
+        _ = SessionByteVault.writePendingUpload(
+            jpeg(), bookingId: booking, phase: .after, focal: focal, capturedAt: moment)
+
+        let found = try #require(
+            SessionByteVault.allPendingUploads().first { $0.scope == booking })
+        #expect(found.phase == .after)
+        #expect(found.focal == focal)
+        // The real shutter moment, not whenever the upload happens to run.
+        #expect(abs((found.capturedAt ?? .distantPast).timeIntervalSince(moment)) < 0.01)
+    }
 }
