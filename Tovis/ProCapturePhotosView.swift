@@ -404,14 +404,7 @@ struct ProCapturePhotosView: View {
         // stopped driving them (and sometimes while it isn't on screen at all),
         // so the badge follows the byte vault — the actual source of truth for
         // "does the server still owe this photo" — rather than a callback.
-        .onChange(of: uploads.pendingCount) { _, _ in
-            for index in captured.indices {
-                guard let url = captured[index].custodyURL else { continue }
-                if !FileManager.default.fileExists(atPath: url.path) {
-                    captured[index].custodyURL = nil
-                }
-            }
-        }
+        .onChange(of: uploads.pendingCount) { _, _ in dropConfirmedBadges() }
         // Keep the coach judging "ready for THIS shot" — expectations follow the
         // current guided step (and clear for freeform / all-done shooting).
         .onChange(of: activeExpectations) { _, expectations in
@@ -2378,6 +2371,28 @@ struct ProCapturePhotosView: View {
         // a time, in the background, and keeps going after this view is gone,
         // after the session is closed out, and across a relaunch.
         uploads.enqueue()
+    }
+
+    /// Drop the pending-sync badge from any thumbnail whose bytes the queue has
+    /// since released.
+    ///
+    /// Reads the byte vault — the actual source of truth for "does the server
+    /// still owe this photo" — rather than a callback, because the queue
+    /// confirms uploads long after this view stopped driving them, and often
+    /// while it isn't on screen at all.
+    ///
+    /// ⚠️ A method, not an inline closure in the modifier chain: that chain is
+    /// already at the edge of what the type-checker resolves quickly (see
+    /// `TerminalUploadDialog`), and inlining this body failed the App target
+    /// build with "unable to type-check this expression in reasonable time" —
+    /// pointing at an unrelated expression ~100 lines away.
+    private func dropConfirmedBadges() {
+        for index in captured.indices {
+            guard let url = captured[index].custodyURL else { continue }
+            if !FileManager.default.fileExists(atPath: url.path) {
+                captured[index].custodyURL = nil
+            }
+        }
     }
 
     /// Write refused photos to the pro's own library, then let them go. This is

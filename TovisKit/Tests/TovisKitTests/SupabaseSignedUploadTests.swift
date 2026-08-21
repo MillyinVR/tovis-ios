@@ -21,7 +21,7 @@ import Testing
     private let bucket = "media-private"
     private let path = "bookings/bkg_123/after/2026/08/20/1787265806478_bed93e8.jpg"
 
-    private func request() -> URLRequest? {
+    private func makeRequest() -> URLRequest? {
         SupabaseSignedUpload.backgroundUploadRequest(
             supabaseURL: base, supabaseKey: "publishable-key",
             bucket: bucket, path: path, token: "tok-abc", contentType: "image/jpeg"
@@ -31,26 +31,26 @@ import Testing
     // MARK: - The request
 
     @Test func carriesNoBodyBecauseBackgroundTasksUploadFromAFile() throws {
-        let request = try #require(request())
-        #expect(request.httpBody == nil)
-        #expect(request.httpBodyStream == nil)
+        let built = try #require(makeRequest())
+        #expect(built.httpBody == nil)
+        #expect(built.httpBodyStream == nil)
     }
 
     @Test func isAPutWithTheApikeyAndNoAuthorizationBearer() throws {
-        let request = try #require(request())
+        let built = try #require(makeRequest())
         // ⚠️ The signed token authorizes the write and bypasses RLS only on PUT;
         // a POST runs as anon and fails the media-private INSERT policy.
-        #expect(request.httpMethod == "PUT")
-        #expect(request.value(forHTTPHeaderField: "apikey") == "publishable-key")
-        #expect(request.value(forHTTPHeaderField: "Content-Type") == "image/jpeg")
+        #expect(built.httpMethod == "PUT")
+        #expect(built.value(forHTTPHeaderField: "apikey") == "publishable-key")
+        #expect(built.value(forHTTPHeaderField: "Content-Type") == "image/jpeg")
         // Paths are minted unique per upload — an overwrite would be a bug.
-        #expect(request.value(forHTTPHeaderField: "x-upsert") == "false")
+        #expect(built.value(forHTTPHeaderField: "x-upsert") == "false")
         // The token is the sole authorizer; a bearer would break the exemption.
-        #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
+        #expect(built.value(forHTTPHeaderField: "Authorization") == nil)
     }
 
     @Test func addressesTheSignedUploadEndpointWithTheToken() throws {
-        let url = try #require(request()?.url)
+        let url = try #require(makeRequest()?.url)
         #expect(url.path == "/storage/v1/object/upload/sign/\(bucket)/\(path)")
         let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
         #expect(items?.contains(URLQueryItem(name: "token", value: "tok-abc")) == true)
@@ -68,7 +68,7 @@ import Testing
     // MARK: - Recognising the request again, later, in another process
 
     @Test func recoversTheStoragePathFromItsOwnRequest() throws {
-        let url = try #require(request()?.url)
+        let url = try #require(makeRequest()?.url)
         #expect(SupabaseSignedUpload.storagePath(fromSignedUploadURL: url) == path)
     }
 
