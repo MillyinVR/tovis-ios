@@ -118,6 +118,15 @@ final class CameraController: NSObject {
     /// failing the awaiting continuation — a callback the system silently drops
     /// must not strand "Saving clip…" forever. Mirrors `captureWatchdog`.
     nonisolated private static let recordWatchdog: TimeInterval = 10
+    /// Fired (on the main actor) when a recording finishes successfully with NO
+    /// caller awaiting `stopRecording()` — the DOMINANT capped-take case:
+    /// `maxRecordedDuration` fires while the pro is still shooting, so nobody
+    /// ever calls stop, the continuation slot is empty, and without this hook
+    /// the complete 60-second file sat orphaned in tmp. The view hands it to
+    /// the ClipVault + upload queue, exactly like an awaited stop. (A late
+    /// delegate arriving after the watchdog also lands here — its awaiter is
+    /// gone, but the file is real.)
+    var onUnawaitedClipFinished: ((URL) -> Void)?
     /// Whether the session could add the movie output (false → recording hidden).
     private(set) var recordingAvailable = false
     private(set) var isRecording = false
@@ -179,6 +188,12 @@ final class CameraController: NSObject {
     /// this before restarting, so a queued `interruptionEnded` can't resurrect
     /// a session the screen deliberately paused (`stop()` behind the review
     /// sheet) — which would keep scoring + auto-harvesting while hidden.
+    ///
+    /// sessionQueue-confined like every other cross-home flag in this file:
+    /// writers hop the queue to set it, the observer reads it inside its own
+    /// `sessionQueue.async`. A plain unsynchronized Bool here is exactly the
+    /// pattern the isolation preamble names as the origin of the
+    /// `device`/`configured` bugs.
     @ObservationIgnored nonisolated(unsafe) private var isScreenActive = false
 
     /// Request permission, configure once, and start the preview. Idempotent.
@@ -186,7 +201,7 @@ final class CameraController: NSObject {
     func start(frameDelegate: AVCaptureVideoDataOutputSampleBufferDelegate? = nil) async {
         Self.installExceptionLogging()
         guard await Self.ensureAuthorized() else { status = .denied; return }
-        isScreenActive = true
+        sessionQueue.async { self.isScreenActive = true }
 
         // `configured` lives on the session queue, so ASK the queue rather than
         // reading it from here. The read used to race `configureSession`'s write
@@ -212,8 +227,8 @@ final class CameraController: NSObject {
     }
 
     func stop() {
-        isScreenActive = false
         sessionQueue.async {
+            self.isScreenActive = false
             if self.session.isRunning {
                 CaptureExceptionShield.perform("stopRunning") { self.session.stopRunning() }
             }
@@ -225,8 +240,8 @@ final class CameraController: NSObject {
     /// the camera only runs while they're actually shooting (not behind a sheet,
     /// where it would keep scoring + auto-harvesting). No-op until configured.
     func resume() {
-        isScreenActive = true
         sessionQueue.async {
+            self.isScreenActive = true
             guard self.configured, !self.session.isRunning else { return }
             CaptureExceptionShield.perform("startRunning(resume)") { self.session.startRunning() }
         }
@@ -714,6 +729,12 @@ final class CameraController: NSObject {
                 }
                 self.sessionQueue.asyncAfter(deadline: .now() + Self.recordWatchdog) { [weak self] in
                     guard let self, self.recordToken == token else { return }
+                    // The watchdog exists for the case where NO delegate callback
+                    // ever arrives — so IT must do the full recovery, not just
+                    // un-strand the awaiter: roll `isRecording` back too, or the
+                    // view keeps showing a live recording and every later tap
+                    // routes into stopRecording() → throws → bricked.
+                    Task { @MainActor in self.isRecording = false }
                     guard let cont = self.recordContinuation else { return }
                     self.recordContinuation = nil
                     cont.resume(throwing: CameraError.timedOut)
@@ -1086,8 +1107,14 @@ extension CameraController: AVCaptureFileOutputRecordingDelegate {
                 // The tmp file holds nothing usable — release it rather than
                 // leaving failed takes to pile up in tmp all day.
                 try? FileManager.default.removeItem(at: outputFileURL)
+            } else if let cont {
+                cont.resume(returning: outputFileURL)
             } else {
-                cont?.resume(returning: outputFileURL)
+                // A take that ended BY ITSELF (the duration cap firing mid-shoot
+                // is the normal case — nobody called stopRecording) has no
+                // awaiter. The file is complete and kept; hand it to the view's
+                // custody hook rather than orphaning it in tmp.
+                Task { @MainActor in self.onUnawaitedClipFinished?(outputFileURL) }
             }
         }
     }

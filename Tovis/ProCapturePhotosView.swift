@@ -336,6 +336,17 @@ struct ProCapturePhotosView: View {
             camera.onWhiteBalanceUnusable = {
                 UserDefaults.standard.removeObject(forKey: wbDefaultsKey)
             }
+            // A take that ended BY ITSELF — the 60s cap firing mid-shoot is the
+            // normal case; nobody called stopRecording, so nothing awaited it.
+            // The file is complete and KEPT: stash it into the vault and upload
+            // it exactly like an awaited stop. (A late delegate arriving after
+            // the stop-watchdog lands here too — its awaiter gave up, but the
+            // take is real.) Phase is the one being shot when it lands.
+            camera.onUnawaitedClipFinished = { [phase] url in
+                if camera.isRecording { return }   // a fresh startRecording won the race
+                let stored = ClipVault.stash(url, bookingId: custodyScope, phase: phase)
+                uploadClip(stored, phase: phase)
+            }
             await camera.start(frameDelegate: engine.analyzer)
             if !camera.whiteBalanceCalibrated,
                let gains = UserDefaults.standard.array(forKey: wbDefaultsKey) as? [Double],
@@ -448,6 +459,10 @@ struct ProCapturePhotosView: View {
         .onChange(of: isReviewing) { _, reviewing in
             if reviewing {
                 if camera.isRecording { Task { await stopRecordingAndSave(review: false) } }
+                // A stopped session kills the torch at the OS level; dropping
+                // the flag re-fires the torch onChange so the button tells the
+                // truth (and the write itself is an idempotent no-op).
+                torchOn = false
                 camera.stop()
             } else {
                 camera.resume()
@@ -822,6 +837,9 @@ struct ProCapturePhotosView: View {
     /// and even that is a sentence, not a locked door.
     private func requestExit() {
         if camera.isRecording { Task { await stopRecordingAndSave(review: false) } }
+        // Leaving the camera kills the torch at the OS level — drop the flag
+        // so a fresh session starts with the button dark, matching the device.
+        torchOn = false
         if hasUnsavedWork || (destination.owesAPhoto && !requirementMet) {
             showExitConfirm = true
         } else {
@@ -2465,14 +2483,10 @@ struct ProCapturePhotosView: View {
         let url: URL
         do {
             url = try await camera.stopRecording()
-        } catch CameraError.timedOut, CameraError.noData where !camera.isRecording {
-            // A watchdog/stranded-stop failure while the output reports NOT
-            // recording: `isRecording` has already been rolled back by the
-            // controller, so treat this tap as "start" on the next press and
-            // leave the button usable rather than bricked.
-            errorMessage = "Couldn’t finish that recording. Please try again."
-            return
         } catch {
+            // The controller owns recovery: every failure path in it (raise,
+            // dropped callback → watchdog) rolls `isRecording` back itself, so
+            // the button is usable again no matter which path failed.
             errorMessage = "Couldn’t finish that recording. Please try again."
             return
         }

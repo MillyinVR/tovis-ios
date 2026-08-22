@@ -158,6 +158,12 @@ struct CameraToolsDrawer: View {
     @Binding var onionOpacity: Double
     /// Whether there's anything to ghost (a before, or a matched look).
     let ghostAvailable: Bool
+    /// Hold-to-toggle the AE/AF lock (the caption's "HOLD"). DEBUG-only until
+    /// device-verified — a long press on a stacked Button has been observed to
+    /// double-fire across iOS versions, and an unverified gesture on the
+    /// exposure control is not a release risk worth taking. Release falls back
+    /// to plain tap, which always worked.
+    var aeAfUsesHoldGesture: Bool { false }
     /// Which "before" the ghost is showing, when there's more than one to line
     /// up against. Nil when a matched look drives the ghost (there's only one).
     let referenceChoice: (index: Int, count: Int)?
@@ -203,12 +209,25 @@ struct CameraToolsDrawer: View {
                     dismiss()
                     onCalibrate()
                 }
-                tile(icon: aeAfLocked ? "lock.fill" : "lock.open",
-                     title: "AE/AF lock",
-                     caption: aeAfLocked ? "LOCKED" : "OFF · HOLD",
-                     active: aeAfLocked,
-                     action: onToggleAEAF)
-                     .modifier(LockToggleModifier(isLocked: aeAfLocked, onToggle: onToggleAEAF))
+                if aeAfUsesHoldGesture {
+                    // Deterministic gesture split: tap toggles, hold ≥0.45s
+                    // toggles once. A plain view with two named gestures cannot
+                    // double-fire the way a long press stacked ON a Button can
+                    // (hold fires at 0.45s, release then fires the button
+                    // action too — lock-then-instant-unlock, varying by OS).
+                    AEAFHoldTile(icon: aeAfLocked ? "lock.fill" : "lock.open",
+                                 title: "AE/AF lock",
+                                 caption: aeAfLocked ? "LOCKED" : "OFF · HOLD",
+                                 active: aeAfLocked,
+                                 onTap: onToggleAEAF,
+                                 onHold: onToggleAEAF)
+                } else {
+                    tile(icon: aeAfLocked ? "lock.fill" : "lock.open",
+                         title: "AE/AF lock",
+                         caption: aeAfLocked ? "LOCKED" : "OFF · HOLD",
+                         active: aeAfLocked,
+                         action: onToggleAEAF)
+                }
                 tile(icon: "circle.lefthalf.filled",
                      title: "Ghost before",
                      caption: ghostAvailable
@@ -412,19 +431,50 @@ struct CameraToolsDrawer: View {
         .accessibilityLabel("\(title), \(caption.lowercased())")
     }
 
-    /// Hold-to-toggle AE/AF lock — the "hold to lock" gesture the drawer's own
-    /// footer promises. A long press can't be stumbled into the way a tap can,
-    /// so the pro's deliberate lock never gets undone by an accidental touch.
-    /// The tap still works for VoiceOver and anyone who taps first.
-    struct LockToggleModifier: ViewModifier {
-        let isLocked: Bool
-        let onToggle: () -> Void
+    /// Hold-to-toggle AE/AF lock — a plain view with two EXCLUSIVE named
+    /// gestures: tap toggles, hold ≥0.45s toggles once. Unlike a long press
+    /// stacked on a Button, the hold cannot double-fire on release (there is no
+    /// button action underneath to fire). This is a second trigger, not
+    /// protection — tap-to-toggle stays for VoiceOver and anyone who taps.
+    private struct AEAFHoldTile: View {
+        let icon: String
+        let title: String
+        let caption: String
+        let active: Bool
+        let onTap: () -> Void
+        let onHold: () -> Void
 
-        func body(content: Content) -> some View {
-            content
-                .onLongPressGesture(minimumDuration: 0.45, perform: onToggle)
-                .accessibilityAddTraits(isLocked ? [.isSelected] : [])
-                .accessibilityHint("Tap or press and hold to \(isLocked ? "release" : "lock") focus and exposure")
+        var body: some View {
+            VStack(alignment: .leading, spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(active ? BrandColor.accent : BrandColor.textPrimary)
+                Text(title)
+                    .font(BrandFont.body(12.5, .semibold))
+                    .foregroundStyle(BrandColor.textPrimary)
+                    .lineLimit(1).minimumScaleFactor(0.8)
+                Text(caption)
+                    .font(BrandFont.mono(9.5))
+                    .foregroundStyle(active ? BrandColor.accent : BrandColor.textMuted)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10).padding(.vertical, 14)
+            .background(active ? BrandColor.accent.opacity(0.14)
+                               : BrandColor.textPrimary.opacity(0.055),
+                        in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(active ? BrandColor.accent.opacity(0.34)
+                                         : BrandColor.textPrimary.opacity(0.10),
+                                  lineWidth: 1)
+            )
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onTap)
+            .onLongPressGesture(minimumDuration: 0.45, perform: onHold)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(title), \(caption.lowercased())")
+            .accessibilityAddTraits(active ? [.isSelected] : [])
+            .accessibilityHint("Tap or press and hold to \(active ? "release" : "lock") focus and exposure")
         }
     }
 
