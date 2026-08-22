@@ -173,6 +173,10 @@ struct CameraToolsDrawer: View {
     /// before/after is THEIR photo, and quietly copying it to the pro's camera
     /// roll is not a toggle to offer in passing.
     var saveToPhotos: Binding<Bool>? = nil
+    /// The phone's torch as a fill light. False when the device has no torch —
+    /// the row simply doesn't draw.
+    var torchAvailable: Bool = false
+    @Binding var torchOn: Bool
     /// Opens the photo picker to add before/after shots from the camera roll
     /// — a rescue for a photo taken before the camera was open, or one the
     /// live camera can't get (an angle, a detail shot from another device).
@@ -204,6 +208,7 @@ struct CameraToolsDrawer: View {
                      caption: aeAfLocked ? "LOCKED" : "OFF · HOLD",
                      active: aeAfLocked,
                      action: onToggleAEAF)
+                     .modifier(LockToggleModifier(isLocked: aeAfLocked, onToggle: onToggleAEAF))
                 tile(icon: "circle.lefthalf.filled",
                      title: "Ghost before",
                      caption: ghostAvailable
@@ -214,6 +219,30 @@ struct CameraToolsDrawer: View {
                     onionEnabled.toggle()
                 }
                 .disabled(!ghostAvailable)
+            }
+
+            if torchAvailable {
+                HStack(spacing: 10) {
+                    Image(systemName: torchOn ? "bolt.fill" : "bolt.slash.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(torchOn ? BrandColor.amber : BrandColor.textPrimary)
+                        .frame(width: 22)
+                    Toggle(isOn: $torchOn) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Fill light")
+                                .font(BrandFont.body(14))
+                                .foregroundStyle(BrandColor.textPrimary)
+                            Text("The phone's light on the work — re-scan the card if the room's light changes")
+                                .font(BrandFont.mono(10))
+                                .foregroundStyle(BrandColor.textMuted)
+                        }
+                    }
+                    .tint(BrandColor.accent)
+                }
+                .padding(.horizontal, 14)
+                .frame(minHeight: 56)
+                .background(BrandColor.textPrimary.opacity(0.08),
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
 
             if let saveToPhotos {
@@ -381,6 +410,22 @@ struct CameraToolsDrawer: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(title), \(caption.lowercased())")
+    }
+
+    /// Hold-to-toggle AE/AF lock — the "hold to lock" gesture the drawer's own
+    /// footer promises. A long press can't be stumbled into the way a tap can,
+    /// so the pro's deliberate lock never gets undone by an accidental touch.
+    /// The tap still works for VoiceOver and anyone who taps first.
+    struct LockToggleModifier: ViewModifier {
+        let isLocked: Bool
+        let onToggle: () -> Void
+
+        func body(content: Content) -> some View {
+            content
+                .onLongPressGesture(minimumDuration: 0.45, perform: onToggle)
+                .accessibilityAddTraits(isLocked ? [.isSelected] : [])
+                .accessibilityHint("Tap or press and hold to \(isLocked ? "release" : "lock") focus and exposure")
+        }
     }
 
     private func toggleRow(_ label: String, isOn: Binding<Bool>) -> some View {
