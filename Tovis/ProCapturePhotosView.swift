@@ -339,11 +339,12 @@ struct ProCapturePhotosView: View {
             // A take that ended BY ITSELF — the 60s cap firing mid-shoot is the
             // normal case; nobody called stopRecording, so nothing awaited it.
             // The file is complete and KEPT: stash it into the vault and upload
-            // it exactly like an awaited stop. (A late delegate arriving after
+            // it exactly like an awaited stop. A late delegate arriving after
             // the stop-watchdog lands here too — its awaiter gave up, but the
-            // take is real.) Phase is the one being shot when it lands.
-            camera.onUnawaitedClipFinished = { [phase] url in
-                if camera.isRecording { return }   // a fresh startRecording won the race
+            // take is real; a stashed file does not conflict with a live
+            // recording, so it is kept even if take 2 has already started.
+            // (Phase is fixed by the screen's destination — see below.)
+            camera.onUnawaitedClipFinished = { url in
                 let stored = ClipVault.stash(url, bookingId: custodyScope, phase: phase)
                 uploadClip(stored, phase: phase)
             }

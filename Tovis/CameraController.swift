@@ -708,6 +708,12 @@ final class CameraController: NSObject {
     /// awaiting caller after a beat instead of stranding it forever. Gated on a
     /// generation token so a stale watchdog can't resolve a newer take that has
     /// since reused the continuation slot.
+    ///
+    /// Testable invariant: a watchdog whose stop ALREADY resolved (delegate
+    /// arrived, or the raise path fired) is a complete no-op — it must not
+    /// touch `isRecording` under a subsequent take that began within the 10s
+    /// window, because an unresolved stop is exactly what a still-set
+    /// `recordContinuation` proves.
     func stopRecording() async throws -> URL {
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<URL, Error>) in
             sessionQueue.async {
@@ -729,14 +735,16 @@ final class CameraController: NSObject {
                 }
                 self.sessionQueue.asyncAfter(deadline: .now() + Self.recordWatchdog) { [weak self] in
                     guard let self, self.recordToken == token else { return }
-                    // The watchdog exists for the case where NO delegate callback
-                    // ever arrives — so IT must do the full recovery, not just
-                    // un-strand the awaiter: roll `isRecording` back too, or the
-                    // view keeps showing a live recording and every later tap
-                    // routes into stopRecording() → throws → bricked.
-                    Task { @MainActor in self.isRecording = false }
+                    // `recordContinuation` still being set is the PROOF this stop
+                    // never resolved — the delegate cleared it on arrival, and
+                    // `recordToken` is only bumped by a NEW stopRecording, which
+                    // stores a fresh continuation. Only then is recovery due:
+                    // roll `isRecording` back AND fail the awaiter. (A watchdog
+                    // firing after a resolved stop must do nothing, or it clears
+                    // the flag under a subsequent take that started within 10s.)
                     guard let cont = self.recordContinuation else { return }
                     self.recordContinuation = nil
+                    Task { @MainActor in self.isRecording = false }
                     cont.resume(throwing: CameraError.timedOut)
                 }
             }
