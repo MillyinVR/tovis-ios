@@ -526,8 +526,17 @@ final class SessionUploadQueue {
     /// Forwards the background session's callbacks onto the main actor. Separate
     /// from the queue itself so the queue can stay `@MainActor` and `@Observable`
     /// rather than an NSObject with nonisolated mutable state.
+    ///
+    /// `owner` is `nonisolated(unsafe)` deliberately: `weak` storage is never
+    /// statically Sendable (the reference can drop between check and use), but
+    /// this instance satisfies the invariant anyway — the property is written
+    /// ONCE in init, before the delegate is handed to its URLSession, and only
+    /// ever read via `[weak owner]` in delegate callbacks. URLSession invokes
+    /// its delegate on a single serial queue, so there is no concurrent write
+    /// to race with. The unsafe annotation documents that reasoning at the
+    /// site instead of letting the conformance lie about it.
     private final class Delegate: NSObject, URLSessionDataDelegate {
-        private weak var owner: SessionUploadQueue?
+        private nonisolated(unsafe) weak var owner: SessionUploadQueue?
 
         init(owner: SessionUploadQueue) {
             self.owner = owner
