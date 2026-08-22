@@ -34,6 +34,9 @@ struct ProCapturePhotosView: View {
     private var custodyScope: String { destination.custodyScope }
 
     @State private var camera = CameraController()
+    /// Torch state. `torchOn` drives `camera.setTorch` via onChange — the device
+    /// write stays on the session queue, the toggle stays a plain SwiftUI Bool.
+    @State private var torchOn = false
     /// Onion-skin (before/after matching) state.
     @State private var onionEnabled = true
     @State private var onionOpacity: Double = 0.35
@@ -559,6 +562,9 @@ struct ProCapturePhotosView: View {
             libraryItems = []
             Task { await importFromLibrary(items) }
         }
+        .onChange(of: torchOn) { _, on in
+            camera.setTorch(on)
+        }
         .sheet(isPresented: $showSettings) {
             #if DEBUG
             CoachSettingsSheet(settings: settings, onOpenTuning: { showTuning = true })
@@ -595,6 +601,8 @@ struct ProCapturePhotosView: View {
                     ? { presentAfterDrawer { showPracticeLibrary = true } }
                     : nil,
                 saveToPhotos: destination.isPractice ? $savePracticeToPhotos : nil,
+                torchAvailable: camera.torchAvailable,
+                torchOn: $torchOn,
                 onImportFromLibrary: { presentAfterDrawer { showLibraryPicker = true } }
             )
         }
@@ -1969,6 +1977,18 @@ struct ProCapturePhotosView: View {
                     }
                     .accessibilityLabel(camera.isRecording ? "Stop recording" : "Record clip")
                 }
+                // Torch — the windowless-salon light. A per-shoot control, so it
+                // lives on the shutter row, not in the tools tray.
+                if camera.torchAvailable {
+                    Button { torchOn.toggle() } label: {
+                        Image(systemName: torchOn ? "bolt.fill" : "bolt.slash.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(torchOn ? BrandColor.amber : BrandColor.textPrimary)
+                            .frame(width: 40, height: 40)
+                            .background(BrandColor.bgPrimary.opacity(0.62), in: Circle())
+                    }
+                    .accessibilityLabel(torchOn ? "Turn the light off" : "Turn the light on")
+                }
                 lastFrameThumbnail
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2445,6 +2465,13 @@ struct ProCapturePhotosView: View {
         let url: URL
         do {
             url = try await camera.stopRecording()
+        } catch CameraError.timedOut, CameraError.noData where !camera.isRecording {
+            // A watchdog/stranded-stop failure while the output reports NOT
+            // recording: `isRecording` has already been rolled back by the
+            // controller, so treat this tap as "start" on the next press and
+            // leave the button usable rather than bricked.
+            errorMessage = "Couldn’t finish that recording. Please try again."
+            return
         } catch {
             errorMessage = "Couldn’t finish that recording. Please try again."
             return

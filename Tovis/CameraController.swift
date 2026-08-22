@@ -6,6 +6,7 @@
 // Capture, recording, and the live coaching hook all ship here today — the coach
 // itself lives in CoachEngine.
 import AVFoundation
+import OSLog
 import SwiftUI
 import TovisKit
 
@@ -109,9 +110,20 @@ final class CameraController: NSObject {
     nonisolated static let maxClipSeconds: Double = 60
     /// sessionQueue.
     @ObservationIgnored nonisolated(unsafe) private var recordContinuation: CheckedContinuation<URL, Error>?
+    /// Bumped per stop so a stale watchdog can't resolve a later take that has
+    /// since reused the continuation slot (same pattern as `captureToken`).
+    /// sessionQueue.
+    @ObservationIgnored nonisolated(unsafe) private var recordToken = 0
+    /// Longest we wait on the recording delegate's finish callback before
+    /// failing the awaiting continuation — a callback the system silently drops
+    /// must not strand "Saving clip…" forever. Mirrors `captureWatchdog`.
+    nonisolated private static let recordWatchdog: TimeInterval = 10
     /// Whether the session could add the movie output (false → recording hidden).
     private(set) var recordingAvailable = false
     private(set) var isRecording = false
+    /// Whether the active device has a torch (false → torch control hidden).
+    /// Known only after `configureSession` has picked a device.
+    private(set) var torchAvailable = false
     /// Live-frame delegate for the on-device coach. **sessionQueue only** — it is
     /// handed to `configureSession` as an argument rather than parked on the main
     /// actor and read from the queue, which is what it used to be. Weak: the
@@ -150,16 +162,31 @@ final class CameraController: NSObject {
     /// time it happens, next to the name of the write that raised.
     nonisolated private static func installExceptionLogging() {
         CaptureExceptionShield.onCaughtException = { label, outcome in
-            print("⚠️ camera: AVFoundation raised on `\(label)` — write skipped, "
-                  + "camera still running. \(outcome.reason ?? "no reason given")")
+            Self.cameraLog.warning("⚠️ AVFoundation raised on `\(label, privacy: .public)` — write skipped, camera still running. \(outcome.reason ?? "no reason given", privacy: .public)")
         }
     }
+
+    /// The one camera log. Replaces the `print()` calls this file used for
+    /// caught exceptions and WB fallbacks — those compiled away in release
+    /// builds, so a degradation the shield deliberately survives was invisible
+    /// exactly where it happened. os_log carries these into Console + sysdiagnose
+    /// on-device; `privacy: .public` is safe here because the payloads are
+    /// AVFoundation exception reasons, never user content.
+    nonisolated private static let cameraLog = Logger(subsystem: "app.tovis", category: "camera")
+
+    /// Whether the SCREEN wants the session running. `stop()` clears it,
+    /// `start()`/`resume()` set it. The interruption-ended observer consults
+    /// this before restarting, so a queued `interruptionEnded` can't resurrect
+    /// a session the screen deliberately paused (`stop()` behind the review
+    /// sheet) — which would keep scoring + auto-harvesting while hidden.
+    @ObservationIgnored nonisolated(unsafe) private var isScreenActive = false
 
     /// Request permission, configure once, and start the preview. Idempotent.
     /// Pass `frameDelegate` to feed the on-device coach the live frames.
     func start(frameDelegate: AVCaptureVideoDataOutputSampleBufferDelegate? = nil) async {
         Self.installExceptionLogging()
         guard await Self.ensureAuthorized() else { status = .denied; return }
+        isScreenActive = true
 
         // `configured` lives on the session queue, so ASK the queue rather than
         // reading it from here. The read used to race `configureSession`'s write
@@ -185,6 +212,7 @@ final class CameraController: NSObject {
     }
 
     func stop() {
+        isScreenActive = false
         sessionQueue.async {
             if self.session.isRunning {
                 CaptureExceptionShield.perform("stopRunning") { self.session.stopRunning() }
@@ -197,9 +225,27 @@ final class CameraController: NSObject {
     /// the camera only runs while they're actually shooting (not behind a sheet,
     /// where it would keep scoring + auto-harvesting). No-op until configured.
     func resume() {
+        isScreenActive = true
         sessionQueue.async {
             guard self.configured, !self.session.isRunning else { return }
             CaptureExceptionShield.perform("startRunning(resume)") { self.session.startRunning() }
+        }
+    }
+
+    // MARK: - Torch
+
+    /// The torch is a shooting tool in windowless salons, not a UI gimmick: it
+    /// lights the WORK while the coach meters for it. Toggling it changes the
+    /// room's light, so the card calibration's drift detector will (correctly)
+    /// see the shift and offer a re-scan if it matters.
+    func setTorch(_ on: Bool) {
+        sessionQueue.async {
+            guard let device = self.device, device.hasTorch,
+                  (try? device.lockForConfiguration()) != nil else { return }
+            CaptureExceptionShield.settings("torchMode") {
+                device.torchMode = on ? .on : .off
+            }
+            device.unlockForConfiguration()
         }
     }
 
@@ -403,7 +449,14 @@ final class CameraController: NSObject {
             guard let device = self.device else { return }
             // Sanitize at the STORE, not just the write: a NaN parked here would
             // go on poisoning the bias of every later face-metering update.
-            self.calibrationBiasEV = ev.isFinite ? ev : 0
+            if !ev.isFinite {
+                // A degradation nobody can see is a bug that never gets fixed —
+                // same doctrine as the exception shield. Log and neutralize.
+                Self.cameraLog.warning("⚠️ calibration EV bias was non-finite (\(ev)); stored as 0")
+                self.calibrationBiasEV = 0
+            } else {
+                self.calibrationBiasEV = ev
+            }
             guard device.exposureMode != .locked,
                   (try? device.lockForConfiguration()) != nil else { return }
             let faceBias: Float = self.faceMeteringActive ? CoachTuning.faceExposureBias : 0
@@ -534,8 +587,7 @@ final class CameraController: NSObject {
             // this is the line that will name it next time. AVFoundation's own
             // message says which precondition it enforced; the build 38 crash
             // log did not carry one, which is why round 3 had to infer it.
-            print("⚠️ camera: \(source) — AVFoundation raised on the WB write, "
-                  + "falling back to automatic white balance. \(reason)")
+            Self.cameraLog.warning("⚠️ WB write via \(source, privacy: .public) raised; falling back to automatic white balance. \(reason, privacy: .public)")
         }
         switch outcome {
         case let .locked(r, g, b):
@@ -588,7 +640,20 @@ final class CameraController: NSObject {
         guard recordingAvailable, !isRecording else { return }
         isRecording = true
         sessionQueue.async {
-            guard self.session.isRunning, !self.movieOutput.isRecording else { return }
+            // Every bail below must roll `isRecording` back — the view's record
+            // button branches on it, so a stuck `true` reroutes every later tap
+            // into `stopRecording()` (which throws "not recording") and bricks
+            // recording for the life of the camera screen.
+            guard self.session.isRunning else {
+                Task { @MainActor in self.isRecording = false }
+                return
+            }
+            guard !self.movieOutput.isRecording else {
+                // The output IS rolling but the UI thought otherwise — trust the
+                // output and let the UI catch up rather than double-starting.
+                Task { @MainActor in self.isRecording = true }
+                return
+            }
             CaptureExceptionShield.settings("startRecording/connection") {
                 if let conn = self.movieOutput.connection(with: .video) {
                     // Upright portrait orientation (iOS 17 rotation API).
@@ -622,6 +687,12 @@ final class CameraController: NSObject {
     }
 
     /// Stop and hand back the recorded file URL.
+    ///
+    /// Watchdog, same shape as the photo capture's: if the delegate callback is
+    /// silently dropped (an output glitch, an interruption mid-take), fail the
+    /// awaiting caller after a beat instead of stranding it forever. Gated on a
+    /// generation token so a stale watchdog can't resolve a newer take that has
+    /// since reused the continuation slot.
     func stopRecording() async throws -> URL {
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<URL, Error>) in
             sessionQueue.async {
@@ -629,6 +700,8 @@ final class CameraController: NSObject {
                     cont.resume(throwing: CameraError.noData)
                     return
                 }
+                self.recordToken &+= 1
+                let token = self.recordToken
                 self.recordContinuation = cont
                 if CaptureExceptionShield.perform("stopRecording", {
                     self.movieOutput.stopRecording()
@@ -637,6 +710,13 @@ final class CameraController: NSObject {
                     // caller now rather than stranding it forever.
                     self.recordContinuation = nil
                     cont.resume(throwing: CameraError.noData)
+                    return
+                }
+                self.sessionQueue.asyncAfter(deadline: .now() + Self.recordWatchdog) { [weak self] in
+                    guard let self, self.recordToken == token else { return }
+                    guard let cont = self.recordContinuation else { return }
+                    self.recordContinuation = nil
+                    cont.resume(throwing: CameraError.timedOut)
                 }
             }
         }
@@ -887,6 +967,9 @@ final class CameraController: NSObject {
                 // Owned by this queue, set on this queue — `start()` asks for it
                 // through `onSessionQueue` rather than reading it from the main actor.
                 self.configured = true
+                if device.hasTorch {
+                    Task { @MainActor in self.torchAvailable = true }
+                }
 
                 // ⚠️ EVERYTHING THAT READS `activeFormat` HAPPENS HERE, AFTER
                 // THE COMMIT — never in the pass above.
@@ -948,9 +1031,12 @@ final class CameraController: NSObject {
         ) { [weak self] _ in
             guard let self else { return }
             self.sessionQueue.async {
-                if self.configured, !self.session.isRunning {
-                    CaptureExceptionShield.perform("startRunning(interruptionEnded)") { self.session.startRunning() }
-                }
+                // Only restart if the screen still wants the session running.
+                // `stop()` (the review sheet) clears that flag; a queued
+                // interruption-ended landing afterwards must not resurrect the
+                // session behind the sheet — `resume()` owns restarting then.
+                guard self.isScreenActive, self.configured, !self.session.isRunning else { return }
+                CaptureExceptionShield.perform("startRunning(interruptionEnded)") { self.session.startRunning() }
                 Task { @MainActor in
                     if self.status == .interrupted { self.status = .ready }
                 }
@@ -960,19 +1046,46 @@ final class CameraController: NSObject {
 }
 
 extension CameraController: AVCaptureFileOutputRecordingDelegate {
+    /// Whether a finish-callback error is the benign "hit `maxRecordedDuration`"
+    /// case. AVFoundation delivers that error WITH a complete, playable file —
+    /// Apple's contract is to consult `AVErrorRecordingSuccessfullyFinishedKey`
+    /// before treating any error as fatal (see the AVCam sample). Treating the
+    /// cap as failure used to throw away exactly 60 seconds of finished footage.
+    ///
+    /// Precedence: an explicit system "successfully finished" verdict wins;
+    /// otherwise OUR OWN duration cap is success by construction (the file was
+    /// closed at a limit we set — observed flag values alongside it vary by OS,
+    /// so the flag does not get the final say there); anything else failed.
+    nonisolated static func recordingSucceeded(despite error: Error?) -> Bool {
+        guard let error = error as NSError? else { return true }
+        if let completed = error.userInfo[AVErrorRecordingSuccessfullyFinishedKey] as? Bool,
+           completed { return true }
+        if (error.domain, error.code) == (AVError.errorDomain, AVError.maximumDurationReached.rawValue) {
+            return true
+        }
+        return false
+    }
+
     nonisolated func fileOutput(
         _ output: AVCaptureFileOutput,
         didFinishRecordingTo outputFileURL: URL,
         from connections: [AVCaptureConnection],
         error: Error?
     ) {
-        let failed = error != nil
+        // A max-duration take IS a kept take — the file on disk is complete.
+        let failed = !Self.recordingSucceeded(despite: error)
+        if failed, let error {
+            Self.cameraLog.warning("⚠️ clip failed to record: \(error.localizedDescription, privacy: .public)")
+        }
         sessionQueue.async {
             let cont = self.recordContinuation
             self.recordContinuation = nil
             Task { @MainActor in self.isRecording = false }
             if failed {
                 cont?.resume(throwing: CameraError.noData)
+                // The tmp file holds nothing usable — release it rather than
+                // leaving failed takes to pile up in tmp all day.
+                try? FileManager.default.removeItem(at: outputFileURL)
             } else {
                 cont?.resume(returning: outputFileURL)
             }
