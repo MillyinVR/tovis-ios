@@ -158,11 +158,11 @@ struct CameraToolsDrawer: View {
     @Binding var onionOpacity: Double
     /// Whether there's anything to ghost (a before, or a matched look).
     let ghostAvailable: Bool
-    /// Hold-to-toggle the AE/AF lock (the caption's "HOLD"). DEBUG-only until
-    /// device-verified — a long press on a stacked Button has been observed to
-    /// double-fire across iOS versions, and an unverified gesture on the
-    /// exposure control is not a release risk worth taking. Release falls back
-    /// to plain tap, which always worked.
+    /// Hold-to-toggle the AE/AF lock. OFF in every build right now: the
+    /// deterministic split is written and reviewed but has never been felt on
+    /// hardware, so shipping it enabled would repeat the unverified-gesture
+    /// mistake. Flip to true only after the device pass confirms the hold
+    /// fires exactly once. Until then the caption says OFF — no "HOLD" promise.
     var aeAfUsesHoldGesture: Bool { false }
     /// Which "before" the ghost is showing, when there's more than one to line
     /// up against. Nil when a matched look drives the ghost (there's only one).
@@ -217,14 +217,14 @@ struct CameraToolsDrawer: View {
                     // action too — lock-then-instant-unlock, varying by OS).
                     AEAFHoldTile(icon: aeAfLocked ? "lock.fill" : "lock.open",
                                  title: "AE/AF lock",
-                                 caption: aeAfLocked ? "LOCKED" : "OFF · HOLD",
+                                 caption: "TAP · HOLD",
                                  active: aeAfLocked,
                                  onTap: onToggleAEAF,
                                  onHold: onToggleAEAF)
                 } else {
                     tile(icon: aeAfLocked ? "lock.fill" : "lock.open",
                          title: "AE/AF lock",
-                         caption: aeAfLocked ? "LOCKED" : "OFF · HOLD",
+                         caption: aeAfLocked ? "LOCKED" : "OFF",
                          active: aeAfLocked,
                          action: onToggleAEAF)
                 }
@@ -436,6 +436,8 @@ struct CameraToolsDrawer: View {
     /// stacked on a Button, the hold cannot double-fire on release (there is no
     /// button action underneath to fire). This is a second trigger, not
     /// protection — tap-to-toggle stays for VoiceOver and anyone who taps.
+    /// Currently unreachable (`aeAfUsesHoldGesture` is false in every build)
+    /// until the gesture is device-verified.
     private struct AEAFHoldTile: View {
         let icon: String
         let title: String
