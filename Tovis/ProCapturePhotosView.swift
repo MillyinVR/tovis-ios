@@ -960,7 +960,7 @@ struct ProCapturePhotosView: View {
                                         pinchActive = true
                                         camera.beginPinchZoom()
                                     }
-                                    camera.setPinchZoom(max(0.5, value))
+                                    camera.setPinchZoom(value)
                                 }
                                 .onEnded { _ in
                                     pinchActive = false

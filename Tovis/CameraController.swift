@@ -137,6 +137,13 @@ final class CameraController: NSObject {
     /// the suspect (y, 1−x) transform — what the verification crosshair draws,
     /// converted back to layer space by the view. Main-actor written from the
     /// session queue via Task; debug diagnostics only, never read for control.
+    ///
+    /// Coupling note: `@ObservationIgnored`, so the crosshair overlay does not
+    /// register a dependency on it. The overlay refreshes because SIBLING coach
+    /// state (statuses, readiness) invalidates the view body every analysis
+    /// frame (~6fps), re-reading this as a side effect. Reliable at today's
+    /// cadence; if the camera ever stops re-rendering per frame, give this an
+    /// observed home instead.
     #if DEBUG
     @ObservationIgnored private(set) var lastFaceMeterDevicePoint: CGPoint?
     #endif
@@ -303,7 +310,7 @@ final class CameraController: NSObject {
         sessionQueue.async {
             guard let device = self.device else { return }
             let desired = self.pinchStartZoom * magnification
-            let floor = Self.parkingZoomFloor(device: device) ?? device.minAvailableVideoZoomFactor
+            let floor = Self.wideAngleParkingFactor(device: device) ?? device.minAvailableVideoZoomFactor
             guard let safe = DeviceParameterGuard.clamped(
                 desired,
                 lower: floor,
@@ -319,11 +326,16 @@ final class CameraController: NSObject {
         }
     }
 
-    /// The lowest zoom that keeps the framing on (or above) the WIDE-ANGLE
-    /// constituent — `wideAngleZoomFactor`'s answer for this device. Nil when
-    /// there is no virtual-device parking to respect (single wide camera:
-    /// minAvailableVideoZoomFactor governs).
-    nonisolated private static func parkingZoomFloor(device: AVCaptureDevice) -> CGFloat? {
+    /// The zoom factor that parks a virtual device on its WIDE-ANGLE
+    /// constituent (see `wideAngleZoomFactor`), or nil when there is no
+    /// virtual-device parking to respect — a single wide camera has no
+    /// constituents, so nothing to look up.
+    ///
+    /// The ONE lookup both call sites share: `matchWideAngleFraming` (park the
+    /// framing at startup) and the pinch-zoom floor (never pinch into
+    /// ultra-wide). House rule: no duplicate logic — the tested core is
+    /// `wideAngleZoomFactor`; this wrapper is its device-facing face.
+    nonisolated private static func wideAngleParkingFactor(device: AVCaptureDevice) -> CGFloat? {
         let constituents = device.constituentDevices
         guard !constituents.isEmpty,
               let wideIndex = constituents.firstIndex(where: { $0.deviceType == .builtInWideAngleCamera })
@@ -504,9 +516,16 @@ final class CameraController: NSObject {
             guard let target = deviceSpacePoint else { return }   // a garbage face box must not reach the device
             #if DEBUG
             // The crosshair draws THIS point back-converted through the layer.
-            // Publish only real face meters — the nil fallback (dead-center) is
-            // not a face reading and must not light the overlay up at center.
-            Task { @MainActor in self.lastFaceMeterDevicePoint = center == nil ? nil : target }
+            // Published only while face metering is genuinely ACTIVE — the
+            // stand-down paths below (tap-to-focus in play, AE/AF locked) mean
+            // no face is being metered, and a lingering dot would claim
+            // otherwise. The nil-face fallback (dead-center) likewise isn't a
+            // face reading and must not light the overlay up at center.
+            Task { @MainActor in
+                self.lastFaceMeterDevicePoint =
+                    (center != nil && !self.userMeteringActive && device.exposureMode != .locked)
+                    ? target : nil
+            }
             #endif
             let faceActive = center != nil
             let faceChanged = faceActive != self.faceMeteringActive
@@ -914,14 +933,8 @@ final class CameraController: NSObject {
     /// Park a virtual device on its wide-angle constituent so adopting one
     /// doesn't change the default framing of every shot in the app.
     nonisolated private static func matchWideAngleFraming(_ device: AVCaptureDevice) {
-        let constituents = device.constituentDevices
-        guard !constituents.isEmpty,
-              let wideIndex = constituents.firstIndex(where: { $0.deviceType == .builtInWideAngleCamera })
-        else { return }
-        let factor = wideAngleZoomFactor(
-            wideIndex: wideIndex,
-            switchOverFactors: device.virtualDeviceSwitchOverVideoZoomFactors.map { CGFloat(truncating: $0) })
-        guard factor > 1.0, (try? device.lockForConfiguration()) != nil else { return }
+        guard let factor = wideAngleParkingFactor(device: device),
+              (try? device.lockForConfiguration()) != nil else { return }
         CaptureExceptionShield.settings("videoZoomFactor") {
             if let safe = DeviceParameterGuard.clamped(
                 factor,
