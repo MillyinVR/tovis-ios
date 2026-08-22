@@ -63,7 +63,16 @@ Start the stack (`docker start tovis-dev-postgres` → `cd ~/Dev/tovis-app && pn
 - [ ] **(device)** Stripe `tovis://` redirect: confirm `SFSafariViewController` auto-follows the bounce (else the "Return to the app" button) — the one item a compile can't confirm.
 - [ ] **(device)** Push deep-link tap → opens the specific booking (sim has no APNs).
 - [ ] Pro suite sim-verify: Phase S session flow end-to-end (consult→send→approve→before→service→finish→after→wrap-up→mark-paid→aftercare), header tabs, calendar block CRUD + pending Approve/Deny (needs a PENDING booking in range), client 8-tab chart. None sim-verified.
-- [ ] Camera on-device tune pass — never run against a real camera. Tune `Tovis/CoachTuning.swift`; hardware-verify level sign, face-exposure point mapping `(x,y)→(y,1−x)`, onion-skin alignment, EXIF orientation in the web gallery, WB gains, card-scan flow. Redesign track + device-feedback log: `HANDOFF-camera-redesign.md` (carries the one-photo requirement decision and the device checks still owed). **The agenda for this pass is `docs/design/camera-excellence-plan.md` §3**, now that §4 (B1–B17) merged as #268 — every number it reserves needs the sensor.
+- [ ] Camera on-device tune pass — never run against a real camera. Tune `Tovis/CoachTuning.swift`; hardware-verify level sign, face-exposure point mapping `(x,y)→(y,1−x)` (DEBUG builds draw the metering crosshair — dot must sit on the face; PRs #344/#345), onion-skin alignment, EXIF orientation in the web gallery, WB gains, card-scan flow. Redesign track + device-feedback log: `HANDOFF-camera-redesign.md` (carries the one-photo requirement decision and the device checks still owed). **The agenda for this pass is `docs/design/camera-excellence-plan.md` §3**, now that §4 (B1–B17) merged as #268 — every number it reserves needs the sensor.
+  - **Hardware-owed camera items (post-#344), all in one place:**
+    1. 60s cap delivery — record past `maxClipSeconds`, confirm the take lands in the vault + uploads (unawaited-clip hook path).
+    2. Stop-watchdog under a live interruption — confirm recovery + button stays usable.
+    3. Torch on/off across session stop/resume + backgrounding (backgrounding kills it at OS level without clearing `torchOn` — cosmetic desync known).
+    4. AE/AF hold-to-lock gesture — fires exactly once; flip `aeAfUsesHoldGesture` when verified.
+    5. Pinch-to-zoom — feel, constituent switch-over behavior, zoom persists between gestures, floor holds above ultra-wide.
+    6. Face-metering crosshair verdict — DEBUG build; dot-on-face confirms `(y,1−x)`, mirrored dot means flip it.
+    7. Two-finger pinch vs horizontal shot-swipe drift (simultaneous gestures).
+    8. Product decisions still open: front camera; wide-only low-power mode; vault filename encoding (`__` delimiter parsing).
 - [ ] Supabase Realtime ws smoke test: does the `sb_publishable_…` key authenticate the Realtime websocket? (Falls back safely to poll/focus if not — see `tovis-app/docs/runbooks/live-sync.md`.)
 
 ## 2. Launch train (outshine step-9)

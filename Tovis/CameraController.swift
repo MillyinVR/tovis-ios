@@ -133,6 +133,13 @@ final class CameraController: NSObject {
     /// Whether the active device has a torch (false → torch control hidden).
     /// Known only after `configureSession` has picked a device.
     private(set) var torchAvailable = false
+    /// DEBUG only: the device-space point `setFaceExposure` last computed for
+    /// the suspect (y, 1−x) transform — what the verification crosshair draws,
+    /// converted back to layer space by the view. Main-actor written from the
+    /// session queue via Task; debug diagnostics only, never read for control.
+    #if DEBUG
+    @ObservationIgnored private(set) var lastFaceMeterDevicePoint: CGPoint?
+    #endif
     /// Live-frame delegate for the on-device coach. **sessionQueue only** — it is
     /// handed to `configureSession` as an argument rather than parked on the main
     /// actor and read from the queue, which is what it used to be. Weak: the
@@ -285,14 +292,21 @@ final class CameraController: NSObject {
     /// clamped to the device's range. Redundant writes (sub-0.01 deltas, the
     /// queue draining faster than the gesture reports) are skipped so the
     /// lock/write cycle doesn't run at full gesture frequency for no change.
+    ///
+    /// The zoom FLOOR is the wide-angle parking factor, not 1.0: below it sits
+    /// the ultra-wide constituent, and a stray pinch-out must not silently
+    /// reframe every shot to 0.5× — the exact regression #268's parking guard
+    /// exists to prevent. (The floor is per-DEVICE, so it is read here inside
+    /// the queue where the parking zoom was applied.)
     func setPinchZoom(_ magnification: CGFloat) {
         guard magnification.isFinite, magnification > 0 else { return }
         sessionQueue.async {
             guard let device = self.device else { return }
             let desired = self.pinchStartZoom * magnification
+            let floor = Self.parkingZoomFloor(device: device) ?? device.minAvailableVideoZoomFactor
             guard let safe = DeviceParameterGuard.clamped(
                 desired,
-                lower: device.minAvailableVideoZoomFactor,
+                lower: floor,
                 upper: device.maxAvailableVideoZoomFactor) else { return }
             // Crossing a constituent switch-over is handled BY the virtual
             // device itself — no manual lens management here, by design (#268).
@@ -303,6 +317,21 @@ final class CameraController: NSObject {
             }
             device.unlockForConfiguration()
         }
+    }
+
+    /// The lowest zoom that keeps the framing on (or above) the WIDE-ANGLE
+    /// constituent — `wideAngleZoomFactor`'s answer for this device. Nil when
+    /// there is no virtual-device parking to respect (single wide camera:
+    /// minAvailableVideoZoomFactor governs).
+    nonisolated private static func parkingZoomFloor(device: AVCaptureDevice) -> CGFloat? {
+        let constituents = device.constituentDevices
+        guard !constituents.isEmpty,
+              let wideIndex = constituents.firstIndex(where: { $0.deviceType == .builtInWideAngleCamera })
+        else { return nil }
+        let factor = wideAngleZoomFactor(
+            wideIndex: wideIndex,
+            switchOverFactors: device.virtualDeviceSwitchOverVideoZoomFactors.map { CGFloat(truncating: $0) })
+        return factor > 1.0 ? factor : nil
     }
 
     /// Capture a still → JPEG `Data`.
@@ -466,10 +495,19 @@ final class CameraController: NSObject {
                   device.isExposurePointOfInterestSupported else { return }
             // Upright top-left (x, y) → device space (sensor landscape-right,
             // top-left origin): (y, 1 − x). ⚠️ Verify on hardware, like the
-            // level sign — sensor mounting can flip this.
-            guard let target = DeviceParameterGuard.unitPoint(
+            // level sign — sensor mounting can flip this. The DEBUG crosshair
+            // draws exactly THIS point, converted back to layer space, so a
+            // dot-on-face check verifies this transform and nothing else.
+            let deviceSpacePoint = DeviceParameterGuard.unitPoint(
                 center.map { CGPoint(x: $0.y, y: 1 - $0.x) } ?? CGPoint(x: 0.5, y: 0.5)
-            ) else { return }   // a garbage face box must not reach the device
+            )
+            guard let target = deviceSpacePoint else { return }   // a garbage face box must not reach the device
+            #if DEBUG
+            // The crosshair draws THIS point back-converted through the layer.
+            // Publish only real face meters — the nil fallback (dead-center) is
+            // not a face reading and must not light the overlay up at center.
+            Task { @MainActor in self.lastFaceMeterDevicePoint = center == nil ? nil : target }
+            #endif
             let faceActive = center != nil
             let faceChanged = faceActive != self.faceMeteringActive
             self.faceMeteringActive = faceActive
