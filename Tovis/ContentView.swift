@@ -1330,7 +1330,9 @@ struct RootView: View {
             case .signedIn:
                 // The acting role picks the shell — mirrors the web RoleFooter,
                 // which renders the pro/client/admin footer from the same role.
-                // ADMIN has no native shell yet, so it falls through to client.
+                // ADMIN has no native shell — it gets a holding screen whose one
+                // action is Sign out (falling through to the client shell just
+                // painted a wall of 403s with no way out; see AdminHoldingView).
                 // DEBUG-only launch hook — see applyDebugDeepLinkIfRequested.
                 // The `.task` sits on the Group so it attaches to WHICHEVER shell
                 // renders. It used to hang off `MainTabView()` alone, so for an
@@ -1345,6 +1347,8 @@ struct RootView: View {
                 Group {
                     if session.activeRole == .pro {
                         ProMainTabView()
+                    } else if session.activeRole == .admin {
+                        AdminHoldingView()
                     } else {
                         MainTabView()
                     }
