@@ -37,16 +37,10 @@ struct ProCapturePhotosView: View {
     /// Torch state. `torchOn` drives `camera.setTorch` via onChange — the device
     /// write stays on the session queue, the toggle stays a plain SwiftUI Bool.
     @State private var torchOn = false
-    /// Pinch-to-zoom: the live cumulative magnification, and whether a pinch is
-    /// in progress (so the anchor is captured once per gesture, not per update).
-    @State private var pinchScale: CGFloat = 1
+    /// Whether a pinch gesture is in progress (anchors the zoom once per
+    /// gesture). Zoom values go straight to the controller — no @State mirror,
+    /// so no bookkeeping reset can ever flow back through as a zoom write.
     @State private var pinchActive = false
-    /// Face-metering verification (DEBUG): the last face center fed to
-    /// `setFaceExposure`, drawn as a crosshair so the ⚠️ device-space transform
-    /// can be confirmed by eye — the dot must sit on the client's face.
-    #if DEBUG
-    @State private var faceMeterDebugPoint: CGPoint?
-    #endif
     /// Onion-skin (before/after matching) state.
     @State private var onionEnabled = true
     @State private var onionOpacity: Double = 0.35
@@ -333,12 +327,9 @@ struct ProCapturePhotosView: View {
             #if DEBUG
             engine.onFaceCenter = { [weak camera = camera] center in
                 camera?.setFaceExposure(center: center)
-                // Verification crosshair: same point, drawn where it lands.
-                if let center {
-                    faceMeterDebugPoint = previewPoint(forNormalizedFrame: center)
-                } else {
-                    faceMeterDebugPoint = nil
-                }
+                // The crosshair itself derives from the controller's
+                // `lastFaceMeterDevicePoint`, which nils when no face —
+                // nothing to mirror here.
             }
             #else
             engine.onFaceCenter = { [weak camera = camera] center in
@@ -602,9 +593,6 @@ struct ProCapturePhotosView: View {
         }
         .onChange(of: torchOn) { _, on in
             camera.setTorch(on)
-        }
-        .onChange(of: pinchScale) { _, scale in
-            camera.setPinchZoom(scale)
         }
         .sheet(isPresented: $showSettings) {
             #if DEBUG
@@ -921,12 +909,13 @@ struct ProCapturePhotosView: View {
                         .ignoresSafeArea(edges: .top)
                         .overlay { focusReticleOverlay }
                         #if DEBUG
-                        // Face-metering verification crosshair: must sit ON the
-                        // client's face. If it doesn't, the (y, 1−x) device-space
-                        // transform in `setFaceExposure` is wrong for this
-                        // mounting — that ⚠️ has been waiting for this check.
+                        // Face-metering verification crosshair: draws the point
+                        // ACTUALLY WRITTEN to exposurePointOfInterest, converted
+                        // back through the layer's own inverse mapping. Dot on
+                        // face ⇒ the (y, 1−x) transform is right; mirrored dot
+                        // ⇒ wrong. See `faceMeterCrosshair`.
                         .overlay {
-                            if let p = faceMeterDebugPoint {
+                            if let p = faceMeterCrosshair {
                                 ZStack {
                                     Circle().stroke(BrandColor.emerald, lineWidth: 1.5)
                                         .frame(width: 44, height: 44)
@@ -938,7 +927,7 @@ struct ProCapturePhotosView: View {
                             }
                         }
                         .overlay(alignment: .bottom) {
-                            if faceMeterDebugPoint != nil {
+                            if faceMeterCrosshair != nil {
                                 Text("FACE METER — dot must sit on the face")
                                     .font(BrandFont.mono(9)).tracking(0.8)
                                     .foregroundStyle(.white)
@@ -958,8 +947,12 @@ struct ProCapturePhotosView: View {
                             SpatialTapGesture().onEnded { handleFocusTap($0.location) }
                         )
                         // Pinch-to-zoom: the photographer's second framing tool
-                        // after moving their feet. Anchor once per gesture, then
-                        // apply cumulative magnification (see controller).
+                        // after moving their feet. The gesture OWNS the zoom:
+                        // each update feeds the controller directly, and
+                        // `.onEnded` does bookkeeping ONLY — no reset value is
+                        // sent through the zoom channel (a reset here would
+                        // write gesture-start zoom back over the held framing).
+                        // Zoom persists between gestures by design.
                         .simultaneousGesture(
                             MagnificationGesture()
                                 .onChanged { value in
@@ -967,11 +960,10 @@ struct ProCapturePhotosView: View {
                                         pinchActive = true
                                         camera.beginPinchZoom()
                                     }
-                                    pinchScale = max(1, value)
+                                    camera.setPinchZoom(max(0.5, value))
                                 }
                                 .onEnded { _ in
                                     pinchActive = false
-                                    pinchScale = 1
                                 }
                         )
                         // Swipe the preview sideways to move a shot without
@@ -1183,18 +1175,22 @@ struct ProCapturePhotosView: View {
                       width: size.width * r.width, height: size.height * r.height)
     }
 
-    /// Preview-space point for an upright-normalized frame point — the same
-    /// axis-swap mapping `previewRect` uses for rects, via the layer's own
-    /// conversion. No point-level API exists, so convert a small metadata rect
-    /// around the point and take its center. DEBUG face-metering crosshair.
     #if DEBUG
-    private func previewPoint(forNormalizedFrame p: CGPoint) -> CGPoint? {
-        guard let layer = camera.previewLayer, layer.bounds.width > 0 else { return nil }
-        // Same swap as previewRect: upright (x,y) → metadata rect space (y,x).
-        let r = layer.layerRectConverted(fromMetadataOutputRect: CGRect(
-            origin: CGPoint(x: p.y, y: p.x),
-            size: CGSize(width: 0.002, height: 0.002)))
-        return CGPoint(x: r.midX, y: r.midY)
+    /// The crosshair's position: the DEVICE-space point `setFaceExposure`
+    /// actually wrote to `exposurePointOfInterest`, converted BACK to layer
+    /// space with `layerPointConverted(fromCaptureDevicePoint:)` — the exact
+    /// inverse of the conversion tap-to-focus uses. Drawing this point is what
+    /// makes dot-on-face a test OF THE TRANSFORM: a mirrored (y, 1−x) puts the
+    /// dot somewhere off the face even though detection and preview mapping
+    /// are both correct.
+    ///
+    /// ⚠️ `layerPointConverted` answers for the point captured in the CURRENT
+    /// frame; the crosshair lags the live face by one analysis frame (~160ms
+    /// at 6fps). Fine for an eye-check, which is all this overlay claims to be.
+    var faceMeterCrosshair: CGPoint? {
+        guard let devicePoint = camera.lastFaceMeterDevicePoint,
+              let layer = camera.previewLayer else { return nil }
+        return layer.layerPointConverted(fromCaptureDevicePoint: devicePoint)
     }
     #endif
 
