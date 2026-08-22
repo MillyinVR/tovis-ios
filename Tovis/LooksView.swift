@@ -692,7 +692,7 @@ struct LooksView: View {
     private func blockPoster(_ item: LooksFeedItem) async {
         guard let target = item.blockTarget,
               !blockInFlight.contains(item.id),
-              case let .loaded(current) = phase
+              case .loaded = phase
         else { return }
 
         blockInFlight.insert(item.id)

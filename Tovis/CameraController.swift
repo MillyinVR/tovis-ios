@@ -404,9 +404,16 @@ final class CameraController: NSObject {
                 // glitch), fail this capture after a beat so the caller recovers.
                 // Gated on the token so it can't clobber a later capture that has
                 // since reused the slot.
+                //
+                // The weak capture is bound to `controller` rather than
+                // re-binding `self`: the enclosing block holds `self` STRONGLY
+                // (deliberate — see the comment on `capturePhoto`'s outer
+                // closure), and re-binding the same name with different
+                // ownership makes the compiler flag the contrast as an error-
+                // looking mismatch. Same intent, spelled without the warning.
                 self.sessionQueue.asyncAfter(deadline: .now() + Self.captureWatchdog) { [weak self] in
-                    guard let self, self.captureToken == token else { return }
-                    self.resolveCapture(.failure(CameraError.timedOut))
+                    guard let controller = self, controller.captureToken == token else { return }
+                    controller.resolveCapture(.failure(CameraError.timedOut))
                 }
             }
         }
@@ -848,7 +855,11 @@ final class CameraController: NSObject {
                     return
                 }
                 self.sessionQueue.asyncAfter(deadline: .now() + Self.recordWatchdog) { [weak self] in
-                    guard let self, self.recordToken == token else { return }
+                    // Weak capture bound to `controller` (not re-binding
+                    // `self`) — same reason as capturePhoto's watchdog: the
+                    // enclosing block holds `self` strongly, and the ownership
+                    // contrast on the same name reads as a compiler mismatch.
+                    guard let controller = self, controller.recordToken == token else { return }
                     // `recordContinuation` still being set is the PROOF this stop
                     // never resolved — the delegate cleared it on arrival, and
                     // `recordToken` is only bumped by a NEW stopRecording, which
@@ -856,9 +867,9 @@ final class CameraController: NSObject {
                     // roll `isRecording` back AND fail the awaiter. (A watchdog
                     // firing after a resolved stop must do nothing, or it clears
                     // the flag under a subsequent take that started within 10s.)
-                    guard let cont = self.recordContinuation else { return }
-                    self.recordContinuation = nil
-                    Task { @MainActor in self.isRecording = false }
+                    guard let cont = controller.recordContinuation else { return }
+                    controller.recordContinuation = nil
+                    Task { @MainActor in controller.isRecording = false }
                     cont.resume(throwing: CameraError.timedOut)
                 }
             }
