@@ -458,6 +458,13 @@ final class CameraController: NSObject {
             }
             device.unlockForConfiguration()
             self.userMeteringActive = true   // face metering stands down
+            #if DEBUG
+            // The crosshair must not outlive face metering. Published HERE —
+            // at the transition, inside the queue that owns `userMeteringActive`
+            // — because setFaceExposure's guard returns early while this is set,
+            // so its publish site never runs to clear it.
+            Task { @MainActor in self.lastFaceMeterDevicePoint = nil }
+            #endif
             Task { @MainActor in self.aeAfLocked = false }
         }
     }
@@ -516,15 +523,16 @@ final class CameraController: NSObject {
             guard let target = deviceSpacePoint else { return }   // a garbage face box must not reach the device
             #if DEBUG
             // The crosshair draws THIS point back-converted through the layer.
-            // Published only while face metering is genuinely ACTIVE — the
-            // stand-down paths below (tap-to-focus in play, AE/AF locked) mean
-            // no face is being metered, and a lingering dot would claim
-            // otherwise. The nil-face fallback (dead-center) likewise isn't a
-            // face reading and must not light the overlay up at center.
+            // Reached only when the guard above has PROVEN metering is active —
+            // so publish unconditionally here. The STAND-DOWN transitions clear
+            // the dot at their own sites (focus(atLayerPoint:) and
+            // setAEAFLock(true)); publishing nil from inside those would read
+            // queue-confined state from the main actor, and reading it HERE
+            // from the Task body would too — the same violation class the
+            // isScreenActive fix (#342) retired. State changes publish state;
+            // nothing reads across homes.
             Task { @MainActor in
-                self.lastFaceMeterDevicePoint =
-                    (center != nil && !self.userMeteringActive && device.exposureMode != .locked)
-                    ? target : nil
+                self.lastFaceMeterDevicePoint = (center != nil) ? target : nil
             }
             #endif
             let faceActive = center != nil
@@ -603,6 +611,14 @@ final class CameraController: NSObject {
             }
             device.unlockForConfiguration()
             self.userMeteringActive = false
+            #if DEBUG
+            // AE/AF lock stands face metering down (the setFaceExposure guard
+            // returns early while exposure is locked) — clear the crosshair at
+            // the transition, on the queue that owns the state.
+            if locked {
+                Task { @MainActor in self.lastFaceMeterDevicePoint = nil }
+            }
+            #endif
             Task { @MainActor in self.aeAfLocked = locked }
         }
     }
