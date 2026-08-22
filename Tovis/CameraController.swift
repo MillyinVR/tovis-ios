@@ -264,6 +264,47 @@ final class CameraController: NSObject {
         }
     }
 
+    // MARK: - Zoom
+
+    /// Zoom anchor captured when a pinch begins. sessionQueue-confined.
+    @ObservationIgnored nonisolated(unsafe) private var pinchStartZoom: CGFloat = 1
+
+    /// Anchor a new pinch: remember the zoom the gesture starts from, so the
+    /// gesture's CUMULATIVE magnification can be applied relatively.
+    /// Called (from the view) before the first `setPinchZoom` of a gesture;
+    /// both hop the same queue, so FIFO ordering makes the anchor win.
+    func beginPinchZoom() {
+        sessionQueue.async {
+            guard let device = self.device else { return }
+            self.pinchStartZoom = device.videoZoomFactor
+        }
+    }
+
+    /// Apply one pinch update: `magnification` is the gesture's cumulative
+    /// scale since it began, multiplied against the anchored start zoom and
+    /// clamped to the device's range. Redundant writes (sub-0.01 deltas, the
+    /// queue draining faster than the gesture reports) are skipped so the
+    /// lock/write cycle doesn't run at full gesture frequency for no change.
+    func setPinchZoom(_ magnification: CGFloat) {
+        guard magnification.isFinite, magnification > 0 else { return }
+        sessionQueue.async {
+            guard let device = self.device else { return }
+            let desired = self.pinchStartZoom * magnification
+            guard let safe = DeviceParameterGuard.clamped(
+                desired,
+                lower: device.minAvailableVideoZoomFactor,
+                upper: device.maxAvailableVideoZoomFactor) else { return }
+            // Crossing a constituent switch-over is handled BY the virtual
+            // device itself — no manual lens management here, by design (#268).
+            guard abs(device.videoZoomFactor - safe) > 0.01 else { return }
+            guard (try? device.lockForConfiguration()) != nil else { return }
+            CaptureExceptionShield.settings("pinch videoZoomFactor") {
+                device.videoZoomFactor = safe
+            }
+            device.unlockForConfiguration()
+        }
+    }
+
     /// Capture a still → JPEG `Data`.
     func capturePhoto() async throws -> Data {
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Data, Error>) in
