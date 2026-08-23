@@ -14,8 +14,10 @@ import Testing
 
 @Suite struct CoachTipArbiterTests {
     private func signal(_ category: CoachCategory, score: Double, message: String? = "x",
-                        moment: CoachMoment? = nil) -> (CoachCategory, CoachSignal) {
-        (category, CoachSignal(score: score, message: message, moment: moment))
+                        moment: CoachMoment? = nil,
+                        severity: CoachSeverity = .correction) -> (CoachCategory, CoachSignal) {
+        (category, CoachSignal(score: score, message: message, moment: moment,
+                               severity: severity))
     }
 
     // MARK: - Lock: earliest broken rung in ladder order, not the worst deficit
@@ -24,7 +26,12 @@ import Testing
     /// sharpness both broken, the OLD deficit-based arbiter could pick
     /// whichever scored worse. The ladder always picks lighting — it's
     /// earlier in the fixed order — regardless of which one is "worse".
-    @Test func locksOntoTheEarliestBrokenRungRegardlessOfSeverity() {
+    ///
+    /// Note what "worse" means here: a lower SCORE. A low score is not what
+    /// `CoachSeverity` measures (that's whether the capture is recoverable at
+    /// all), and it deliberately still buys no priority — otherwise every
+    /// device retune would quietly re-rank the coach's one line.
+    @Test func locksOntoTheEarliestBrokenRungRegardlessOfScore() {
         var arbiter = CoachTipArbiter()
         // Sharpness scored far worse (0.1) than lighting (0.4), which would
         // have won outright under the old weighted-deficit ranking.
@@ -245,6 +252,143 @@ import Testing
             from: [signal(.pose, score: 0.3), signal(.color, score: 0.2)],
             now: switchAt + CoachTuning.focusRegressionWindow - 0.1)
         #expect(stillNoJump.nudge?.category == .pose, "color just became the candidate — it hasn't served its own window yet")
+    }
+
+    // MARK: - A hard failure outranks its rung (2026-08-23, plan item 1.3)
+    //
+    // The ladder orders by the SIZE of an adjustment, which is right about
+    // adjustments and silent about whether the photo survives. `CoachSeverity`
+    // adds the second axis: an unrecoverable capture is spoken about first,
+    // whatever rung it sits on. Everything else keeps taking its turn.
+
+    /// The headline case, and the one the bench measured: colour (rung 2) is
+    /// broken and so is sharpness (rung 8, last). Ordinarily colour wins and
+    /// should. When the frame is genuinely soft — motion blur, nothing to
+    /// recover — sharpness takes the line instead.
+    @Test func aHardFailureOutranksAnEarlierRungsOrdinaryCorrection() {
+        var arbiter = CoachTipArbiter()
+        let outcome = arbiter.select(from: [
+            signal(.color, score: 0.45, moment: .colorMixed),
+            signal(.sharpness, score: 0.3, moment: .sharpnessHoldSteady, severity: .failure),
+        ], now: 0)
+        #expect(outcome.nudge?.category == .sharpness)
+    }
+
+    /// The guardrail on the above: severity is not a general re-ranker. With no
+    /// failure in play the ladder is untouched — this is the same input as the
+    /// test above minus the `.failure` marking, and colour wins again.
+    @Test func withoutAFailureTheLadderOrderIsCompletelyUnchanged() {
+        var arbiter = CoachTipArbiter()
+        let outcome = arbiter.select(from: [
+            signal(.color, score: 0.45, moment: .colorMixed),
+            signal(.sharpness, score: 0.3, moment: .sharpnessHoldSteady),
+        ], now: 0)
+        #expect(outcome.nudge?.category == .color)
+    }
+
+    /// Among hard failures the ladder's own big-adjustment-first order still
+    /// decides: an unrecoverable exposure and an unrecoverable blur at once
+    /// means fix the light, because recomposing a blown frame is wasted effort.
+    @Test func amongTwoHardFailuresTheLadderOrderStillDecides() {
+        var arbiter = CoachTipArbiter()
+        let outcome = arbiter.select(from: [
+            signal(.sharpness, score: 0.3, moment: .sharpnessHoldSteady, severity: .failure),
+            signal(.lighting, score: 0.3, moment: .lightingTooDark, severity: .failure),
+        ], now: 0)
+        #expect(outcome.nudge?.category == .lighting)
+    }
+
+    /// A failure appearing mid-session doesn't seize the line instantly: it
+    /// serves the same hysteresis window as any other preemption, so a single
+    /// blurred frame during a hand movement can't yank the coach off what the
+    /// pro is currently working on.
+    @Test func aFailureMustServeTheHysteresisWindowBeforeItTakesTheLock() {
+        var arbiter = CoachTipArbiter()
+        // Working an ordinary colour correction.
+        _ = arbiter.select(from: [signal(.color, score: 0.45, moment: .colorMixed)], now: 0)
+
+        let softened: [(CoachCategory, CoachSignal)] = [
+            signal(.color, score: 0.45, moment: .colorMixed),
+            signal(.sharpness, score: 0.3, moment: .sharpnessHoldSteady, severity: .failure),
+        ]
+        let firstBad = 1.0
+        _ = arbiter.select(from: softened, now: firstBad)
+
+        let tooSoon = arbiter.select(
+            from: softened, now: firstBad + CoachTuning.focusRegressionWindow - 0.1)
+        #expect(tooSoon.nudge?.category == .color, "one blurred frame must not yank the lock")
+
+        let taken = arbiter.select(
+            from: softened, now: firstBad + CoachTuning.focusRegressionWindow + 0.1)
+        #expect(taken.nudge?.category == .sharpness)
+        #expect(taken.advanced == nil, "taking over is a redirect, not a completion")
+        #expect(taken.cleared == nil)
+    }
+
+    /// The mirror of the regression rule: while the coach is holding a hard
+    /// failure, an EARLIER rung breaking does not pull the line away from it.
+    /// The pro is being told the shot is unusable; interrupting that with a
+    /// backdrop note would be the old problem pointing the other way.
+    @Test func anEarlierRungDoesNotPreemptAHardFailureBeingWorked() {
+        var arbiter = CoachTipArbiter()
+        let failing: [(CoachCategory, CoachSignal)] = [
+            signal(.sharpness, score: 0.3, moment: .sharpnessHoldSteady, severity: .failure),
+        ]
+        _ = arbiter.select(from: failing, now: 0)
+
+        let alsoColor: [(CoachCategory, CoachSignal)] = failing + [
+            signal(.color, score: 0.45, moment: .colorMixed),
+        ]
+        _ = arbiter.select(from: alsoColor, now: 1)
+        let held = arbiter.select(
+            from: alsoColor, now: 1 + CoachTuning.focusRegressionWindow + 0.5)
+        #expect(held.nudge?.category == .sharpness, "a hard failure keeps the line until it's fixed")
+    }
+
+    /// Clearing the failure hands the line straight back to the ladder — the
+    /// coach doesn't stay stuck on the rung it jumped to.
+    ///
+    /// No compliment fires on THIS path, and that is pre-existing rather than
+    /// anything severity introduced: sharpness is the ladder's last rung, so
+    /// once it reads good the still-broken colour rung is an ordinary earlier-
+    /// rung preemption, and its window (`focusRegressionWindow`, 1.0s) elapses
+    /// before the advance's `focusStabilityWindow` (1.5s) ever could. The
+    /// compliment path is covered by the lighting case below.
+    @Test func clearingTheFailureReturnsTheLineToTheLadderOrder() {
+        var arbiter = CoachTipArbiter()
+        let both: [(CoachCategory, CoachSignal)] = [
+            signal(.color, score: 0.45, moment: .colorMixed),
+            signal(.sharpness, score: 0.3, moment: .sharpnessHoldSteady, severity: .failure),
+        ]
+        let taken = arbiter.select(from: both, now: 0)
+        #expect(taken.nudge?.category == .sharpness)
+
+        // Sharpness reads good from t=1; colour is still broken.
+        let colorOnly = [signal(.color, score: 0.45, moment: .colorMixed)]
+        _ = arbiter.select(from: colorOnly, now: 1)
+        let back = arbiter.select(from: colorOnly, now: 1 + CoachTuning.focusRegressionWindow + 0.1)
+        #expect(back.nudge?.category == .color, "the ladder resumes where it was")
+        #expect(back.advanced == nil)
+    }
+
+    /// A hard failure that is FIXED gets complimented like any other cleared
+    /// rung — severity changes which correction is spoken, never the
+    /// compliment-then-redirect moment on the way out of it.
+    @Test func aFixedFailureIsComplimentedLikeAnyClearedRung() {
+        var arbiter = CoachTipArbiter()
+        let failingLight: [(CoachCategory, CoachSignal)] = [
+            signal(.lighting, score: 0.3, moment: .lightingTooDark, severity: .failure),
+            signal(.background, score: 0.5, moment: .backgroundBusy),
+        ]
+        #expect(arbiter.select(from: failingLight, now: 0).nudge?.category == .lighting)
+
+        // Lighting reads good from t=1, with the backdrop still to fix.
+        let backgroundOnly = [signal(.background, score: 0.5, moment: .backgroundBusy)]
+        _ = arbiter.select(from: backgroundOnly, now: 1)
+        let advanced = arbiter.select(
+            from: backgroundOnly, now: 1 + CoachTuning.focusStabilityWindow + 0.1)
+        #expect(advanced.advanced == .lighting)
+        #expect(advanced.nudge?.category == .background)
     }
 
     // MARK: - The memory-free evaluate is the same rule with fresh state

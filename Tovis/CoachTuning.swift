@@ -126,7 +126,26 @@ enum CoachTuning {
 
     /// Background edge density that reads as "fully cluttered" — the normalizing
     /// divisor mapping raw background edge energy onto 0…1.
-    nonisolated(unsafe) static var clutterReference: Double = 0.18
+    ///
+    /// Measured 2026-08-23 (docs/camera-tuning-bench.md): across the 21 corpus
+    /// PORTRAITS — the only frames with a segmented person, and so the only ones
+    /// with a real background — raw background edge energy runs 0.0000 … 0.0968
+    /// with a median of 0.0371. At the old 0.18 a frame had to reach 0.108 to
+    /// read busy, which **0 of 21 did**: `BackgroundCoach` could not fire on a
+    /// portrait at all, so the backdrop was un-coachable.
+    ///
+    /// 0.125 puts the busy line at `clutterBusy × this` = 0.075 — about TWICE
+    /// the measured median, not at it. That distinction is the whole lesson of
+    /// `mixedLightSpread`, which was set on the median of ordinary photographs
+    /// and therefore fired on half of them until it read as noise. Here it wakes
+    /// the coach on the busiest 3/21 (14%) instead of 0.
+    ///
+    /// ⚠️ Deliberately the CONSERVATIVE end of "fires at all". The corpus is
+    /// watch-face and sample assets, whose backdrops are cleaner than a working
+    /// salon's shelves, bottles and mirrors — so the same number will fire MORE
+    /// often on real frames, not less. The salon pass should expect to lower
+    /// this further only after watching it, never to raise it blind.
+    nonisolated(unsafe) static var clutterReference: Double = 0.125
     /// Background must occupy at least this fraction of the frame to bother judging
     /// clutter (subject fills the frame → skip).
     nonisolated(unsafe) static var minBackgroundFraction: Double = 0.05

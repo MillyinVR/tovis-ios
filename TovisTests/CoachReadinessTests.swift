@@ -119,24 +119,147 @@ import Testing
         #expect(mixedLight > CoachAggregate.deficit(.pose, CoachSignal(score: 0.50, message: "x")))
     }
 
-    /// The frame is amber because it is SOFT, but the one line the pro is
-    /// shown tells them to turn off the overheads. Both problems are real —
-    /// color comes before sharpness on the focus ladder (fixing the room's
-    /// light is the bigger adjustment; holding the shot still for a crisp
-    /// capture is the last, finest step), so it's what the pro hears about,
-    /// even though sharpness is what's actually failing THIS frame.
-    @Test func theCoachTalksAboutLightWhileTheFrameIsFailingOnFocus() {
+    // REWRITTEN 2026-08-23 (plan item 1.3). This pair replaces the single test
+    // `theCoachTalksAboutLightWhileTheFrameIsFailingOnFocus`, which pinned the
+    // behaviour as a KNOWN DEFECT: a frame failing on focus was shown "turn off
+    // the overheads". `CoachSeverity` now lets a hard failure outrank its rung,
+    // so that case is fixed — but only for a frame that is genuinely being
+    // thrown away. The two tests below separate what changed from what did not,
+    // because the old test conflated them: its frame was only a TOUCH soft
+    // (sharpness 0.30 → `.sharpnessTapToFocus`, score 0.6), which is an ordinary
+    // correction and still yields to colour, deliberately.
+
+    /// UNCHANGED, and meant to be: a frame that is merely a touch soft is a
+    /// correction, not a failure. The ladder's order stands — fixing the room's
+    /// light is the bigger adjustment, and "tap to focus" is polish that waits
+    /// its turn. Severity is not a back door for re-ranking ordinary tips.
+    @Test func aTouchSoftFrameStillYieldsTheLineToTheRoomsLight() {
         let v = CoachAggregate.evaluate(coaches, ctx(sharpness: 0.30, mixed: 0.20,
                                                      tilt: 3.5, clutter: 0.70))
         #expect(v.readiness < CoachTuning.readyThreshold)
 
-        // Focus really is broken this frame…
+        // Sharpness is speaking up, at its gentle wording…
         let sharpness = v.statuses.first { $0.category == .sharpness }
-        #expect(sharpness?.message != nil)
+        #expect(sharpness?.moment == .sharpnessTapToFocus)
+        #expect(sharpness?.score == 0.6)
 
-        // …but the single surfaced line is about the colour of the light.
+        // …and colour, earlier on the ladder, still owns the one line.
         #expect(v.nudge?.category == .color)
         #expect(v.nudge?.message == "Mixed light — turn off the overheads")
+    }
+
+    /// THE FIX. The same ordinary-salon frame, but now genuinely soft rather
+    /// than a touch soft: motion blur no edit recovers. The photo is being
+    /// thrown away, so telling the pro about the overheads is advice about a
+    /// frame that no longer exists. A hard failure outranks its rung, and the
+    /// coach says the thing that is actually losing the shot.
+    @Test func aClearlySoftFrameTakesTheLineBackFromTheRoomsLight() {
+        let v = CoachAggregate.evaluate(coaches, ctx(sharpness: 0.15, mixed: 0.20,
+                                                     tilt: 3.5, clutter: 0.70))
+        #expect(v.readiness < CoachTuning.readyThreshold)
+
+        // Colour is still broken and still EARLIER on the ladder…
+        let color = v.statuses.first { $0.category == .color }
+        #expect(color?.message == "Mixed light — turn off the overheads")
+        #expect(FocusRung.color < FocusRung.sharpness)
+
+        // …and is nonetheless outranked, because this frame is unrecoverable.
+        #expect(v.nudge?.category == .sharpness)
+        #expect(v.nudge?.message == "Hold steady — shot looks soft")
+    }
+
+    // MARK: - Which signals are hard failures (plan item 1.3)
+
+    /// The hard-failure SET, pinned deliberately. Severity is the one thing
+    /// allowed to jump the focus ladder, so the only guard against it quietly
+    /// growing into "everything that feels important" is a list somebody has to
+    /// edit on purpose. The rule it encodes: a `.failure` is a frame no edit
+    /// afterwards recovers — clipped highlights, an underexposed face that
+    /// lifts into noise, motion blur. Everything else is a choice the next
+    /// frame can make differently at no cost to the file.
+    @Test func onlyAnUnrecoverableCaptureCountsAsAHardFailure() {
+        // Unrecoverable — the three lighting failures and a genuinely soft frame.
+        #expect(LightingCoach().evaluate(ctx(luma: 0.10, faceLuma: 0.10)).severity == .failure)
+        #expect(LightingCoach().evaluate(ctx(luma: 0.90, faceLuma: 0.90)).severity == .failure)
+        #expect(LightingCoach().evaluate(
+            ctx(luma: 0.36, faceLuma: 0.24, backgroundLuma: 0.42)).severity == .failure)
+        #expect(SharpnessCoach().evaluate(ctx(sharpness: 0.15)).severity == .failure)
+
+        // Recoverable — every other corrective the coach can give, including
+        // the GENTLE half of sharpness. Same rung, different verdict.
+        #expect(SharpnessCoach().evaluate(ctx(sharpness: 0.30)).severity == .correction)
+        #expect(ColorCoach().evaluate(ctx(mixed: 0.20)).severity == .correction)
+        #expect(ColorCoach().evaluate(ctx(warmth: 0.50)).severity == .correction)
+        #expect(LevelCoach().evaluate(ctx(tilt: 8)).severity == .correction)
+        #expect(BackgroundCoach().evaluate(ctx(clutter: 0.90)).severity == .correction)
+        #expect(CompositionCoach().evaluate(ctx(fill: 0.10)).severity == .correction)
+        #expect(PoseCoach().evaluate(FrameContext(
+            avgLuma: 0.47, faceBounds: face, faceLuma: 0.47, sharpness: 0.6,
+            backgroundClutter: 0, subjectFill: 0.5,
+            pose: PoseSignal(edgeClipped: true, joints: pose.joints), deviceTilt: 0,
+            color: ColorSignal(mixed: 0, greenTint: 0, warmth: 0.15),
+            expectations: .portrait)).severity == .correction)
+    }
+
+    /// A passing signal's severity is meaningless and must never be read as a
+    /// failure — the arbiter only ever consults it for a rung it already knows
+    /// is broken, and this keeps that assumption honest.
+    @Test func aPassingSignalIsNeverAFailure() {
+        #expect(LightingCoach().evaluate(ctx()).message == nil)
+        #expect(LightingCoach().evaluate(ctx()).severity == .correction)
+        #expect(SharpnessCoach().evaluate(ctx()).severity == .correction)
+    }
+
+    // MARK: - The backdrop coach can actually fire (plan item 1.2)
+    //
+    // Measured 2026-08-23 over the 21 corpus PORTRAITS — the only frames with a
+    // segmented person, so the only ones with a real background to judge. Raw
+    // area-normalized background edge energy ran 0.0000 … 0.0968, median
+    // 0.0371. `clutterReference` was 0.18, putting the "busy" line at 0.108 —
+    // above the busiest portrait in the corpus, so `BackgroundCoach` could not
+    // fire on a portrait at all. These pin the tuning DECISION, not a target:
+    // a future retune has to face the same numbers to move them.
+
+    /// The measured portrait distribution, either side of the busy line: the
+    /// busiest backdrop is now coachable, and an ordinary one still says
+    /// nothing. The second half is the half that matters — `mixedLightSpread`
+    /// became noise precisely by sitting ON the median of ordinary frames.
+    @Test func theBusiestPortraitIsCoachableAndTheMedianOneIsStillSilent() {
+        let medianPortrait = 0.0371, busiestPortrait = 0.0968
+        func normalized(_ raw: Double) -> Double { min(1, raw / CoachTuning.clutterReference) }
+
+        #expect(normalized(busiestPortrait) > CoachTuning.clutterBusy)
+        #expect(normalized(medianPortrait) <= CoachTuning.clutterBusy)
+        // The margin that keeps this from becoming the next mixedLightSpread:
+        // "busy" sits at roughly TWICE the median portrait, not on top of it.
+        let busyLine = CoachTuning.clutterBusy * CoachTuning.clutterReference
+        #expect(busyLine > medianPortrait * 1.8)
+    }
+
+    /// End to end: the busiest measured portrait now reaches the pro as a line.
+    /// A cluttered backdrop is a `.correction` — a few feet sideways fixes it,
+    /// and the file is fine either way — so it must NOT jump the ladder.
+    @Test func aBusyBackdropNowReachesTheProAsALine() {
+        let busiest = 0.0968 / CoachTuning.clutterReference
+        let signal = BackgroundCoach().evaluate(ctx(clutter: busiest))
+        #expect(signal.message == "Busy background — find a cleaner backdrop")
+        #expect(signal.severity == .correction)
+    }
+
+    /// What waking it costs, stated rather than discovered later: normalizing
+    /// against a smaller reference raises every frame's clutter, so an ordinary
+    /// portrait pays a little more readiness than it used to. About 0.01 — real,
+    /// bounded, and worth knowing next to the 0.8/0.85 ring-vs-harvest band.
+    @Test func wakingTheBackdropCoachCostsAMedianPortraitAboutAHundredth() {
+        let medianPortrait = 0.0371
+        let now = CoachAggregate.evaluate(
+            coaches, ctx(clutter: min(1, medianPortrait / CoachTuning.clutterReference)))
+        let before = CoachAggregate.evaluate(
+            coaches, ctx(clutter: min(1, medianPortrait / 0.18)))   // the old reference
+
+        let cost = before.readiness - now.readiness
+        #expect(cost > 0.005 && cost < 0.015)
+        #expect(now.nudge == nil, "an ordinary backdrop still says nothing at all")
     }
 
     // MARK: - Guards on the structural caps

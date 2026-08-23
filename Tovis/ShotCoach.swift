@@ -30,11 +30,36 @@ enum CoachCategory: String, Sendable {
     }
 }
 
+/// How serious a broken fundamental is — the ONE thing that can move a
+/// correction ahead of its place in the focus ladder's fixed order.
+///
+/// The line between them is not "how bad does it score": it is whether the
+/// CAPTURE survives. A `.failure` frame is one no edit afterwards recovers —
+/// clipped highlights have no data left, shadows lifted off an underexposed
+/// face come back as noise, motion blur is gone for good. A `.correction` is a
+/// choice about the room, the framing or the pose that the very next frame can
+/// simply make differently, at no cost to the file.
+///
+/// Kept as its own axis rather than derived from `score` on purpose: the scores
+/// are perception calibration the salon pass is expected to move, and a retune
+/// must not silently redecide which line the pro is shown.
+enum CoachSeverity: Sendable {
+    /// Something to fix, taken in the ladder's own big-adjustment-first order.
+    case correction
+    /// A hard failure — this frame is being thrown away whatever else is right.
+    case failure
+}
+
 /// One coach's read on the current frame. `score` is 0 (bad) … 1 (great);
 /// `message` is the corrective tip, present only when there's something to fix.
 struct CoachSignal: Sendable {
     let score: Double
     let message: String?
+    /// Whether this is an unrecoverable failure or an ordinary correction.
+    /// Only meaningful when `message` is non-nil, and only ever read by
+    /// `CoachTipArbiter` — never by readiness, which stays a pure weighted mean
+    /// of the scores.
+    let severity: CoachSeverity
     /// WHY the tip is worth acting on, in a photographer's terms. The message
     /// is an imperative ("Move in closer"); this is the sentence a photographer
     /// would add after it, surfaced in the dimensions drawer. Nil where the
@@ -51,12 +76,14 @@ struct CoachSignal: Sendable {
     let phraseCtx: CoachPhraseContext?
 
     init(score: Double, message: String?, why: String? = nil,
-         moment: CoachMoment? = nil, phraseCtx: CoachPhraseContext? = nil) {
+         moment: CoachMoment? = nil, phraseCtx: CoachPhraseContext? = nil,
+         severity: CoachSeverity = .correction) {
         self.score = score
         self.message = message
         self.why = why
         self.moment = moment
         self.phraseCtx = phraseCtx
+        self.severity = severity
     }
 }
 
@@ -386,8 +413,8 @@ enum CoachAggregate {
 /// deficit. Three rules:
 ///
 ///  • **Lock** — when nothing is locked (session start, or just cleared), the
-///    ladder locks onto the earliest rung that's currently broken. Everything
-///    before it in ladder order is, by construction, currently passing.
+///    ladder locks onto the highest-PRIORITY rung that's currently broken:
+///    ladder order, except that a hard failure outranks its rung (below).
 ///  • **Advance, stability-gated** — the locked rung only lets go once it's
 ///    read continuously PASSING for `CoachTuning.focusStabilityWindow`. A
 ///    momentary good reading (sensor noise, not a real fix) doesn't advance
@@ -396,21 +423,47 @@ enum CoachAggregate {
 ///    which rung just cleared (`advanced`) so the pro hears it complimented
 ///    before the next correction, or — if nothing else is broken — reports a
 ///    plain `cleared` with nothing to redirect to.
-///  • **Regression, hysteresis-guarded** — if a rung EARLIER than the current
-///    lock (one the ladder already passed as good) reads continuously BROKEN
-///    for `CoachTuning.focusRegressionWindow`, the lock jumps back to it — no
-///    compliment, just a normal corrective redirect. Guarded the same way as
-///    advancing: a momentary bad reading doesn't jump the lock, or two
-///    borderline rungs would ping-pong the coach between them.
+///  • **Preemption, hysteresis-guarded** — if a rung that OUTRANKS the current
+///    lock reads continuously BROKEN for `CoachTuning.focusRegressionWindow`,
+///    the lock jumps to it — no compliment, just a normal corrective redirect.
+///    Guarded the same way as advancing: a momentary bad reading doesn't jump
+///    the lock, or two borderline rungs would ping-pong the coach between them.
+///    Two things outrank: a rung EARLIER in the ladder (the original
+///    regression — something already passed has broken again), and a hard
+///    failure anywhere.
+///
+/// **A hard failure outranks its rung** (2026-08-23). The ladder's fixed order
+/// is a claim about the SIZE of an adjustment, and it is right about that: fix
+/// the room before the framing, the framing before the polish. It is not a
+/// claim about whether the photo survives. Focus sits last precisely because
+/// "hold still" is the finest instruction — but a frame that is actually
+/// motion-blurred is being thrown away, and telling that pro to turn off the
+/// overheads is advice about a photo that no longer exists.
+///
+/// So `CoachSeverity.failure` — an unrecoverable capture, not merely a low
+/// score — sorts ahead of ladder order, and hard failures keep the ladder's
+/// own big-adjustment-first order among themselves. This restores exactly what
+/// the pre-ladder weighted-deficit rule got right (`docs/camera-tuning-bench.md`
+/// measured mixed light beating everything "except an outright lighting failure
+/// or a clearly soft frame") without giving up sequential coaching: every
+/// ordinary correction is still taken strictly in rung order, one at a time.
 ///
 /// This is the decision Tori asked changed once, for everyone: nothing here
-/// reads `CoachVoice`/`CoachPersonality`, so the ladder order and its timing
-/// are identical no matter which pack ends up speaking it.
+/// reads `CoachVoice`/`CoachPersonality`, so the ladder order, the severity
+/// rule and their timing are identical no matter which pack ends up speaking it.
 struct CoachTipArbiter: Sendable {
     struct Outcome: Sendable {
         let nudge: CoachNudge?
         let cleared: CoachCategory?
         let advanced: CoachCategory?
+    }
+
+    /// One broken rung this frame: the tip to show for it, and whether it's a
+    /// hard failure. Kept together so the severity can never desync from the
+    /// nudge it belongs to.
+    private struct BrokenRung {
+        let nudge: CoachNudge
+        let severity: CoachSeverity
     }
 
     private var lockedRung: FocusRung?
@@ -423,12 +476,12 @@ struct CoachTipArbiter: Sendable {
     /// whenever it's currently reading bad. `now - this >= focusStabilityWindow`
     /// is what actually triggers an advance.
     private var stableGoodSince: TimeInterval?
-    /// The current regression candidate (the earliest rung before the lock
-    /// that's currently broken) and when IT first started reading
-    /// continuously bad. Reset whenever the candidate identity changes, so a
-    /// flickering "something's wrong above me" never accumulates enough
-    /// continuous time to actually jump the lock.
-    private var regression: (rung: FocusRung, badSince: TimeInterval)?
+    /// The current preemption candidate (the highest-priority rung that
+    /// currently OUTRANKS the lock — an earlier rung that broke again, or a
+    /// hard failure) and when IT first started reading continuously bad. Reset
+    /// whenever the candidate identity changes, so a flickering "something
+    /// outranks me" never accumulates enough continuous time to jump the lock.
+    private var preemption: (rung: FocusRung, badSince: TimeInterval)?
 
     init() {}
 
@@ -439,36 +492,52 @@ struct CoachTipArbiter: Sendable {
         // contributes exactly one signal, and composition's OWN internal
         // precedence (unchanged by this) picks which one moment — framing or
         // centering — it's reporting this frame, if any.
-        var byRung: [FocusRung: CoachNudge] = [:]
+        var byRung: [FocusRung: BrokenRung] = [:]
         for (category, signal) in signals {
             guard let message = signal.message else { continue }
             let rung = signal.moment?.focusRung ?? category.defaultFocusRung
-            byRung[rung] = CoachNudge(category: category, message: message,
-                                      moment: signal.moment, phraseCtx: signal.phraseCtx)
+            byRung[rung] = BrokenRung(
+                nudge: CoachNudge(category: category, message: message,
+                                  moment: signal.moment, phraseCtx: signal.phraseCtx),
+                severity: signal.severity)
         }
-        let broken = FocusRung.allCases.filter { byRung[$0] != nil }
+
+        // Priority order for THIS frame: hard failures first, then the ladder's
+        // fixed big-adjustment-first order. Rung raw values are unique, so this
+        // is a total order and the sort is deterministic.
+        func priority(_ rung: FocusRung) -> (Int, Int) {
+            (byRung[rung]?.severity == .failure ? 0 : 1, rung.rawValue)
+        }
+        let broken = FocusRung.allCases
+            .filter { byRung[$0] != nil }
+            .sorted { priority($0) < priority($1) }
 
         guard let locked = lockedRung else {
-            // Nothing locked: lock onto the earliest broken rung, if any.
+            // Nothing locked: lock onto the highest-priority broken rung, if any.
             guard let first = broken.first else { return Outcome(nudge: nil, cleared: nil, advanced: nil) }
-            lock(onto: first, nudge: byRung[first], now: now)
-            return Outcome(nudge: byRung[first], cleared: nil, advanced: nil)
+            lock(onto: first, nudge: byRung[first]?.nudge, now: now)
+            return Outcome(nudge: byRung[first]?.nudge, cleared: nil, advanced: nil)
         }
 
-        // Regression check: is something EARLIER than the lock also broken?
-        if let candidate = broken.first(where: { $0 < locked }) {
-            if regression?.rung != candidate { regression = (candidate, now) }
-            if now - regression!.badSince >= CoachTuning.focusRegressionWindow {
-                // Trusted — jump back. Not a completion, so no compliment.
-                lock(onto: candidate, nudge: byRung[candidate], now: now)
-                return Outcome(nudge: byRung[candidate], cleared: nil, advanced: nil)
+        // Preemption check: does anything currently OUTRANK the lock? A lock
+        // that is passing this frame has no severity of its own, so it is
+        // ranked as an ordinary correction at its rung — which is what lets a
+        // hard failure elsewhere take it, and keeps the pre-severity behaviour
+        // exactly when no failure is in play.
+        let lockedPriority = priority(locked)
+        if let candidate = broken.first(where: { priority($0) < lockedPriority }) {
+            if preemption?.rung != candidate { preemption = (candidate, now) }
+            if now - preemption!.badSince >= CoachTuning.focusRegressionWindow {
+                // Trusted — jump to it. Not a completion, so no compliment.
+                lock(onto: candidate, nudge: byRung[candidate]?.nudge, now: now)
+                return Outcome(nudge: byRung[candidate]?.nudge, cleared: nil, advanced: nil)
             }
             // Not trusted yet; keep working the current lock below.
         } else {
-            regression = nil
+            preemption = nil
         }
 
-        if let current = byRung[locked] {
+        if let current = byRung[locked]?.nudge {
             // Still broken (however it's currently worded) — hold the line.
             lockedNudge = current
             stableGoodSince = nil
@@ -484,15 +553,19 @@ struct CoachTipArbiter: Sendable {
             return Outcome(nudge: lockedNudge, cleared: nil, advanced: nil)
         }
 
-        // Stable. Advance to the next broken rung, or fully clear.
-        if let next = broken.first(where: { $0 > locked }) {
-            lock(onto: next, nudge: byRung[next], now: now)
-            return Outcome(nudge: byRung[next], cleared: nil, advanced: locked.category)
+        // Stable. Advance to the next broken rung, or fully clear. `broken` is
+        // priority-sorted, so a hard failure anywhere is taken first; failing
+        // that this is the earliest broken rung AFTER the lock, exactly as
+        // before. An earlier ordinary rung is still left to the preemption
+        // path, which is what makes it serve its hysteresis window.
+        if let next = broken.first(where: { $0 > locked || byRung[$0]?.severity == .failure }) {
+            lock(onto: next, nudge: byRung[next]?.nudge, now: now)
+            return Outcome(nudge: byRung[next]?.nudge, cleared: nil, advanced: locked.category)
         }
         lockedRung = nil
         lockedNudge = nil
         stableGoodSince = nil
-        regression = nil
+        preemption = nil
         return Outcome(nudge: nil, cleared: locked.category, advanced: nil)
     }
 
@@ -500,7 +573,7 @@ struct CoachTipArbiter: Sendable {
         lockedRung = rung
         lockedNudge = nudge
         stableGoodSince = nil
-        regression = nil
+        preemption = nil
     }
 }
 
@@ -565,7 +638,7 @@ struct LightingCoach: ShotCoach {
                 score: 0.35,
                 message: "Light’s behind them — turn them to face the window",
                 why: "The light is behind your client, so the camera exposes for the window and leaves their face in shadow.",
-                moment: .lightingBacklit)
+                moment: .lightingBacklit, severity: .failure)
         }
 
         // Expose for the skin when there is skin to expose for; the whole frame
@@ -580,7 +653,7 @@ struct LightingCoach: ShotCoach {
                                 : "Too dark — move toward the light",
                 why: onFace ? "Skin that's underexposed loses its true tone, and lifting it later brings up noise instead."
                             : "There isn't enough light on the work to hold detail.",
-                moment: .lightingTooDark)
+                moment: .lightingTooDark, severity: .failure)
         }
         if subject > CoachTuning.lumaTooBright {
             return CoachSignal(
@@ -588,7 +661,7 @@ struct LightingCoach: ShotCoach {
                 message: onFace ? "Their face is blown out — turn away from the bright light"
                                 : "Blown out — turn away from the bright light",
                 why: "Clipped highlights are gone for good — there's nothing left in the file to pull back.",
-                moment: .lightingBlownOut)
+                moment: .lightingBlownOut, severity: .failure)
         }
         // Score falls off smoothly away from the ideal exposure.
         let dist = abs(subject - CoachTuning.lumaIdeal)
@@ -722,7 +795,7 @@ struct SharpnessCoach: ShotCoach {
             return CoachSignal(
                 score: 0.3, message: "Hold steady — shot looks soft",
                 why: "Softness is the one thing no edit fixes, and it shows up full-size long after the shoot.",
-                moment: .sharpnessHoldSteady)
+                moment: .sharpnessHoldSteady, severity: .failure)
         }
         if s < CoachTuning.sharpnessSlightlySoft * factor {
             return CoachSignal(
