@@ -419,6 +419,17 @@ struct PublicBoardLink: Equatable {
 /// https URL from onOpenURL.
 struct PublicClaimLink: Equatable {
     let token: String
+    /// The signed marker naming the channel that DELIVERED this link
+    /// (`?via=email|sms&vsig=…`, stamped per-delivery by the web
+    /// `lib/clients/claimLinkChannel`). Carried opaquely and handed back to the
+    /// server, which re-checks the signature before crediting anything — so
+    /// tapping the link from the email that carried it also verifies that
+    /// email, and the client is not asked to verify it a second time.
+    ///
+    /// Absent on an older link (or one whose query the sender stripped): the
+    /// claim still works, it simply earns no verification credit.
+    let via: String?
+    let vsig: String?
 
     init?(url: URL) {
         guard url.scheme?.lowercased() == "https" else { return nil }
@@ -430,6 +441,25 @@ struct PublicClaimLink: Equatable {
         let token = parts[1]
         guard !token.isEmpty else { return nil }
         self.token = token
+
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems ?? []
+        func value(_ name: String) -> String? {
+            guard let raw = items.first(where: { $0.name == name })?.value else {
+                return nil
+            }
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        // Only a COMPLETE pair is worth carrying — one half alone can never
+        // validate server-side.
+        if let via = value("via"), let vsig = value("vsig") {
+            self.via = via
+            self.vsig = vsig
+        } else {
+            self.via = nil
+            self.vsig = nil
+        }
     }
 }
 
@@ -1049,7 +1079,9 @@ final class SessionModel {
         phone: String,
         location: ClientSignupLocation,
         intent: String? = nil,
-        inviteToken: String? = nil
+        inviteToken: String? = nil,
+        via: String? = nil,
+        vsig: String? = nil
     ) async -> Bool {
         isWorking = true
         errorMessage = nil
@@ -1065,7 +1097,9 @@ final class SessionModel {
                 location: location,
                 deviceId: client.deviceId,
                 intent: intent,
-                inviteToken: inviteToken
+                inviteToken: inviteToken,
+                via: via,
+                vsig: vsig
             )
             currentUser = result.user
             activeRole = result.user.role
@@ -1084,6 +1118,7 @@ final class SessionModel {
                status == 409, code == "CLAIMABLE_HISTORY" {
                 claimableHistoryMessage = Self.claimableHistoryMessage(
                     maskedDestination: details.maskedDestination,
+                    claimLinkSent: details.claimLinkSent,
                     serverMessage: message
                 )
                 return false
@@ -1099,8 +1134,23 @@ final class SessionModel {
     /// Body copy for the "Check your email or text" card after a cold self-serve
     /// claim. Mirrors the web signup card (SignupClientClient): names the masked
     /// destination when the backend returned one.
-    static func claimableHistoryMessage(maskedDestination: String?, serverMessage: String?) -> String {
-        if let maskedDestination, !maskedDestination.isEmpty {
+    ///
+    /// ⚠️ Only promises a message when the server says one was actually queued
+    /// (`claimLinkSent`). It used to promise unconditionally, so a send that was
+    /// rate-limited or refused still told the client to go check their inbox —
+    /// they then waited for a text that was never coming. A nil flag means an
+    /// older server that cannot say, and the server's own message is preferred
+    /// over our optimistic copy.
+    static func claimableHistoryMessage(
+        maskedDestination: String?,
+        claimLinkSent: Bool?,
+        serverMessage: String?
+    ) -> String {
+        if claimLinkSent == false {
+            return serverMessage
+                ?? "We found existing history for this contact, but couldn’t send a new secure link just now. Check your messages for a link we sent earlier, or try again in about an hour."
+        }
+        if claimLinkSent == true, let maskedDestination, !maskedDestination.isEmpty {
             return "We found existing history for this contact and sent a secure link to \(maskedDestination). Open it to finish setting up your account and keep your booking history together."
         }
         return serverMessage
@@ -1433,7 +1483,11 @@ struct RootView: View {
         )) {
             if let claim = session.pendingClaim {
                 NavigationStack {
-                    ClaimView(token: claim.token)
+                    ClaimView(
+                        token: claim.token,
+                        via: claim.via,
+                        vsig: claim.vsig
+                    )
                 }
             }
         }

@@ -79,6 +79,15 @@ public struct ClaimAcceptResponse: Codable, Sendable {
     }
 }
 
+/// POST /api/v1/pro/invites/{token}/accept — optional request body carrying the
+/// tapped link's signed delivery-channel marker, so the tap can also count as
+/// verification of the channel that delivered it. Sent only when the link had
+/// both halves; the accept works identically without it.
+struct ClaimAcceptRequest: Encodable, Sendable {
+    let via: String
+    let vsig: String
+}
+
 /// The server's authoritative answer to an accept attempt. Mirrors
 /// `AcceptClientClaimFromLinkResult` (lib/clients/clientClaim.ts), which the
 /// route maps onto an HTTP status + a top-level `code`.

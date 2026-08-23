@@ -20,6 +20,11 @@ struct ClientSignupClaimContext: Equatable {
     let lastName: String
     let email: String
     let phone: String
+    /// The claim link's signed delivery-channel marker, forwarded to register
+    /// so the tap that started this signup also verifies the channel it came
+    /// from. Nil when the link carried no marker.
+    var via: String? = nil
+    var vsig: String? = nil
 }
 
 struct ClientSignupView: View {
@@ -314,7 +319,9 @@ struct ClientSignupView: View {
             phone: trimmedPhone,
             location: location,
             intent: claimContext != nil ? "CLAIM_INVITE" : nil,
-            inviteToken: claimContext?.inviteToken
+            inviteToken: claimContext?.inviteToken,
+            via: claimContext?.via,
+            vsig: claimContext?.vsig
         )
     }
 }

@@ -8,13 +8,22 @@ public struct ServerErrorDetails: Sendable, Equatable {
     /// The self-serve-claim 409's masked hint ("we sent a link to t***@x.com").
     /// Read from the TOP level of the body.
     public let maskedDestination: String?
+    /// Whether the self-serve-claim 409 actually queued a claim link. Nil on a
+    /// server that predates the field; false means NOTHING was sent, so the
+    /// screen must not tell the client to go check their messages.
+    public let claimLinkSent: Bool?
     /// How long a rate-limited (429) response wants us to wait, from
     /// `details.retryAfterSeconds`. Drives the OTP resend countdown — see
     /// `OTPResendCooldown`.
     public let retryAfterSeconds: Int?
 
-    public init(maskedDestination: String? = nil, retryAfterSeconds: Int? = nil) {
+    public init(
+        maskedDestination: String? = nil,
+        claimLinkSent: Bool? = nil,
+        retryAfterSeconds: Int? = nil
+    ) {
         self.maskedDestination = maskedDestination
+        self.claimLinkSent = claimLinkSent
         self.retryAfterSeconds = retryAfterSeconds
     }
 }

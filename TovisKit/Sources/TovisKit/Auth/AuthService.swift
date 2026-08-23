@@ -50,7 +50,9 @@ public final class AuthService: Sendable {
         location: ClientSignupLocation,
         deviceId: String?,
         intent: String? = nil,
-        inviteToken: String? = nil
+        inviteToken: String? = nil,
+        via: String? = nil,
+        vsig: String? = nil
     ) async throws -> RegisterResponse {
         // Bind an App Attest attestation to this exact identity: attest over
         // SHA256("email\nphone\ntimestamp"), then send the same timestamp so the
@@ -93,7 +95,9 @@ public final class AuthService: Sendable {
                 deviceId: deviceId,
                 appAttest: appAttestPayload,
                 intent: intent,
-                inviteToken: inviteToken
+                inviteToken: inviteToken,
+                via: via,
+                vsig: vsig
             )
         )
         // captureErrorDetails: surface the self-serve-claim 409's `maskedDestination`

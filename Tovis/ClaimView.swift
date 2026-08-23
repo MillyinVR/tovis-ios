@@ -15,6 +15,12 @@ import TovisKit
 
 struct ClaimView: View {
     let token: String
+    /// The tapped link's signed delivery-channel marker (`?via=…&vsig=…`), or
+    /// nil when the link carried none. Passed straight through to the server,
+    /// which validates the signature before crediting the tap as verification
+    /// of the channel that delivered it.
+    var via: String? = nil
+    var vsig: String? = nil
 
     @Environment(SessionModel.self) private var session
     @Environment(\.dismiss) private var dismiss
@@ -462,7 +468,9 @@ struct ClaimView: View {
             firstName: parts.first ?? "",
             lastName: parts.count > 1 ? parts[1] : "",
             email: context.invitedEmail ?? "",
-            phone: context.invitedPhone ?? ""
+            phone: context.invitedPhone ?? "",
+            via: via,
+            vsig: vsig
         )
     }
 
@@ -512,7 +520,11 @@ struct ClaimView: View {
         defer { isClaiming = false }
 
         do {
-            outcome = try await session.client.claim.acceptClaim(token: token)
+            outcome = try await session.client.claim.acceptClaim(
+                token: token,
+                via: via,
+                vsig: vsig
+            )
         } catch let error as APIError {
             claimError = error.userMessage
         } catch {
