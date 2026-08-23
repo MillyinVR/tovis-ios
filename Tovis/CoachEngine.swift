@@ -407,8 +407,10 @@ final class CoachEngine: NSObject {
     /// The active match look's trigger-bound direction lines (tovis-app #974)
     /// — set by the camera view while an AI-enhanced look drives the shoot,
     /// `.empty` otherwise. When a coaching moment fires that the look wrote a
-    /// line for, that line speaks IN PLACE of the generic correction — same
-    /// scheduler, same per-category cooldown, so it corrects without nagging.
+    /// line for, that line REPLACES the generic correction in the published
+    /// `nudge` (see `apply`), so it reaches every surface the same — spoken
+    /// tip, lane chip, dimensions headline — on the same scheduler and
+    /// per-category cooldown: the look changes the words, never the pacing.
     var lookDirections: LookDirectionScript = .empty
     /// When the look's settle line (`ready` trigger) last spoke — the floor
     /// under re-speaks when readiness flickers around the threshold.
@@ -539,13 +541,28 @@ final class CoachEngine: NSObject {
         if let debug = result.debug { debugSignals = debug }
         onFaceCenter?(result.faceCenter)
 
+        // The match look's own line for this correction, substituted ONCE,
+        // here — so every surface downstream says the same words: the spoken
+        // tip, the lane chip and the dimensions headline all read `nudge`,
+        // and a pro shooting with voice OFF still gets the look's direction.
+        // The moment is stripped on purpose: a look line is already a complete
+        // direction, and both renderers (spokenLine, the lane) would otherwise
+        // re-render the personality's canonical text for that moment OVER the
+        // look's words — nil moment means "show/say this verbatim" on every
+        // surface, the pre-personalities contract.
+        let effectiveNudge = result.nudge.map { raw in
+            lookDirections.line(replacing: raw).map {
+                CoachNudge(category: raw.category, message: $0)
+            } ?? raw
+        }
+
         // Sequential focus coaching: the ladder just moved off a rung that
         // read stable-good. `CoachTipArbiter` only reports either of these on
         // the single frame it happens — the debouncing (was this REALLY
         // fixed, not a flicker?) already happened at the decision layer, via
         // its own stability window, so neither needs a speech-side trust
         // guard the way the old un-debounced arbiter did.
-        if let advanced = result.advanced, let nudge = result.nudge {
+        if let advanced = result.advanced, let nudge = effectiveNudge {
             // Compliment the rung that just cleared, then redirect to the
             // next one — ONE utterance, built from two ALREADY fully-voiced
             // complete sentences (this voice's own `goodMoment` line, this
@@ -554,7 +571,7 @@ final class CoachEngine: NSObject {
             let complimentFallback = advanced.canonicalGoodPhrase
             let complimentRendered = CoachVoiceRenderer.render(
                 advanced.goodMoment, fallback: complimentFallback, voice: voice) ?? complimentFallback
-            let nextRendered = lookDirections.line(replacing: nudge) ?? spokenLine(for: nudge)
+            let nextRendered = spokenLine(for: nudge)
             let fallback = "\(complimentRendered) \(nextRendered)"
             if options.speak {
                 let line = CoachVoiceRenderer.render(
@@ -571,10 +588,10 @@ final class CoachEngine: NSObject {
             speak(line, priority: .tip)
         }
 
-        if result.nudge != nudge {
+        if effectiveNudge != nudge {
             let previous = nudge
-            nudge = result.nudge
-            if let nudge = result.nudge {
+            nudge = effectiveNudge
+            if let nudge = effectiveNudge {
                 // Buzz for NEWS. A haptic per re-rank is the mechanism behind
                 // "it feels like nagging": with two near-tied coaches it was a
                 // continuous warning vibration. Now it fires only when a
@@ -651,12 +668,10 @@ final class CoachEngine: NSObject {
     /// The coaching tip's speech path specifically — `apply`'s other callers
     /// of `speak` (`announce`, the `.dimensionCleared` line) aren't subject to
     /// per-fundamental repeat suppression, only the ongoing correction is.
-    /// The match look's own line for this moment wins over the generic one
-    /// (`LookDirectionScript.line(replacing:)`); it rides the same scheduler
-    /// and category cooldown, so the look changes the words, not the pacing.
+    /// (A match look's substitution happened upstream, in `apply` — by the
+    /// time a nudge reaches here its message IS the line to say.)
     private func speakTip(_ nudge: CoachNudge) {
-        let text = lookDirections.line(replacing: nudge) ?? spokenLine(for: nudge)
-        speakSchedulerTip(text, category: nudge.category)
+        speakSchedulerTip(spokenLine(for: nudge), category: nudge.category)
     }
 
     /// The per-category-cooldown speech path with pre-built text — used by
