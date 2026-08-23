@@ -70,6 +70,11 @@ enum CoachTuning {
     /// Minimum spacing (seconds) between coaching haptics. The buzz is for
     /// news; without a floor, a re-rank storm is felt as a continuous vibration.
     nonisolated(unsafe) static var nudgeHapticMinInterval: Double = 2.0
+    /// Minimum spacing (seconds) between spoken settle lines (a match look's
+    /// `ready` direction). The line fires on the transition INTO ready; without
+    /// a floor, readiness flickering around the threshold would re-speak it on
+    /// every crossing.
+    nonisolated(unsafe) static var settleLineMinInterval: Double = 12.0
 
     // MARK: - Lighting
 

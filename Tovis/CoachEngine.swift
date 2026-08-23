@@ -404,6 +404,15 @@ final class CoachEngine: NSObject {
     /// does it repeat itself" policy, pulled out into a pure type so it's
     /// testable without a live `AVSpeechSynthesizer` (see CoachSpeechScheduler.swift).
     private var speechScheduler = CoachSpeechScheduler()
+    /// The active match look's trigger-bound direction lines (tovis-app #974)
+    /// — set by the camera view while an AI-enhanced look drives the shoot,
+    /// `.empty` otherwise. When a coaching moment fires that the look wrote a
+    /// line for, that line speaks IN PLACE of the generic correction — same
+    /// scheduler, same per-category cooldown, so it corrects without nagging.
+    var lookDirections: LookDirectionScript = .empty
+    /// When the look's settle line (`ready` trigger) last spoke — the floor
+    /// under re-speaks when readiness flickers around the threshold.
+    private var lastSettleLineAt: Date?
 
     /// Readiness at/above the tuning threshold reads as "good to shoot" (green
     /// ring). Read live (not captured) so the tuning console applies instantly.
@@ -545,7 +554,7 @@ final class CoachEngine: NSObject {
             let complimentFallback = advanced.canonicalGoodPhrase
             let complimentRendered = CoachVoiceRenderer.render(
                 advanced.goodMoment, fallback: complimentFallback, voice: voice) ?? complimentFallback
-            let nextRendered = spokenLine(for: nudge)
+            let nextRendered = lookDirections.line(replacing: nudge) ?? spokenLine(for: nudge)
             let fallback = "\(complimentRendered) \(nextRendered)"
             if options.speak {
                 let line = CoachVoiceRenderer.render(
@@ -586,6 +595,22 @@ final class CoachEngine: NSObject {
 
         let nowReady = isReady
         if nowReady && !wasReady && options.haptics { tap(.success) }
+        // The look's settle line — the `ready` trigger's "last word before the
+        // shutter". Fires on the transition INTO ready (the same edge as the
+        // success haptic), floored by `settleLineMinInterval` so readiness
+        // flickering at the threshold can't re-speak it every crossing. A tip
+        // priority: it never interrupts a line mid-flight, and with every gate
+        // green there's no correction competing for the channel anyway.
+        if nowReady, !wasReady, options.speak,
+           let settle = lookDirections.line(for: .ready) {
+            let now = Date()
+            let sinceLast = lastSettleLineAt.map { now.timeIntervalSince($0) }
+                ?? .greatestFiniteMagnitude
+            if sinceLast >= CoachTuning.settleLineMinInterval {
+                lastSettleLineAt = now
+                speak(settle, priority: .tip)
+            }
+        }
         wasReady = nowReady
 
         // Track how long the shot has held good, for auto-capture + the filling ring.
@@ -626,8 +651,12 @@ final class CoachEngine: NSObject {
     /// The coaching tip's speech path specifically — `apply`'s other callers
     /// of `speak` (`announce`, the `.dimensionCleared` line) aren't subject to
     /// per-fundamental repeat suppression, only the ongoing correction is.
+    /// The match look's own line for this moment wins over the generic one
+    /// (`LookDirectionScript.line(replacing:)`); it rides the same scheduler
+    /// and category cooldown, so the look changes the words, not the pacing.
     private func speakTip(_ nudge: CoachNudge) {
-        speakSchedulerTip(spokenLine(for: nudge), category: nudge.category)
+        let text = lookDirections.line(replacing: nudge) ?? spokenLine(for: nudge)
+        speakSchedulerTip(text, category: nudge.category)
     }
 
     /// The per-category-cooldown speech path with pre-built text — used by

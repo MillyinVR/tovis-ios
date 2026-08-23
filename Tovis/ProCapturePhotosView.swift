@@ -1679,6 +1679,7 @@ struct ProCapturePhotosView: View {
         let newID = pack?.id
         guard newID != activePackID || matchLook != nil else { return }
         matchLook = nil
+        coach?.lookDirections = .empty   // the look's script leaves with the look
         activePackID = newID
         guide = pack.map(ShotGuide.init(pack:)) ?? standardGuide
         completedStepIDs = []
@@ -1697,6 +1698,8 @@ struct ProCapturePhotosView: View {
     /// Drive the shoot from a measured reference look ("Match a look").
     private func selectMatchLook(_ look: ReferenceLook) {
         matchLook = look
+        // A freshly measured look has no AI directions yet — enhance sets them.
+        coach?.lookDirections = look.directions
         activePackID = nil
         guide = look.guide
         completedStepIDs = []
@@ -1744,7 +1747,19 @@ struct ProCapturePhotosView: View {
                 matchLook = enhanced
                 guide = enhanced.guide
                 lookDirectionIndex = 0
-                if settings.speak, let first = enhanced.directionLines.first {
+                // From here the engine speaks the look's own line at the moment
+                // the lens sees that state (tovis-app #974), in place of the
+                // generic correction.
+                coach?.lookDirections = enhanced.directions
+                // The announce's ride-along line must be an OPENER, never a
+                // corrective spoken out of context: the trigger script's
+                // `opening` line, or the step's own hint when the model wrote
+                // none. Only a legacy flat script (pre-trigger server) still
+                // uses its first line, which was written to be read in order.
+                let opener = enhanced.directions.isEmpty
+                    ? enhanced.directionLines.first
+                    : (enhanced.directions.line(for: .opening) ?? enhanced.guide.steps.first?.hint)
+                if settings.speak, let first = opener {
                     let fallback = "AI direction ready. \(first)"
                     let line = CoachVoiceRenderer.render(
                         .aiDirectionReady, fallback: fallback,
@@ -2365,12 +2380,21 @@ struct ProCapturePhotosView: View {
                 // `.retakeAnnounce` itself, around the canonical reason —
                 // not a pack-rendered reason re-wrapped in another pack
                 // flourish (that stacks two flourishes into one run-on).
+                // A blink on a matched look speaks the look's own eyesClosed
+                // line instead — the live stream has no blink signal, so the
+                // retake IS the moment the lens saw that state (tovis-app
+                // #974). Already a complete direction; no flourish stacked on.
                 if settings.speak {
-                    let fallback = "\(reason) — let’s take that one again."
-                    let line = CoachVoiceRenderer.render(
-                        .retakeAnnounce, fallback: fallback,
-                        ctx: CoachPhraseContext(detail: reason), voice: voice) ?? fallback
-                    coach?.announce(line)
+                    if best.qc.retakeMoment == .qcEyesClosed,
+                       let lookLine = coach?.lookDirections.line(for: .eyesClosed) {
+                        coach?.announce(lookLine)
+                    } else {
+                        let fallback = "\(reason) — let’s take that one again."
+                        let line = CoachVoiceRenderer.render(
+                            .retakeAnnounce, fallback: fallback,
+                            ctx: CoachPhraseContext(detail: reason), voice: voice) ?? fallback
+                        coach?.announce(line)
+                    }
                 }
                 // The ON-SCREEN lane text stands alone — no wrapper moment
                 // stacks on top of it — so rendering the QC moment directly

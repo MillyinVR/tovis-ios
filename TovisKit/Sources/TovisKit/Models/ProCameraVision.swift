@@ -51,8 +51,30 @@ public struct ProLookBrief: Decodable, Sendable {
     /// `ProShotPackPoseRule`, so unknown kinds decode fine and are dropped at
     /// guide-build time (forward-compat, like packs).
     public let poseRules: [ProShotPackPoseRule]
-    /// Spoken/shown direction lines, in coaching order.
+    /// Direction lines bound to the coach state that should speak them
+    /// (tovis-app #974), in the server's canonical coaching order. At most one
+    /// line per trigger. Optional: a server that predates triggers sends only
+    /// `directionLines`.
+    public let directions: [ProLookBriefDirection]?
+    /// The same lines as a flat ordered script — the server projects this from
+    /// `directions`, so the two shapes cannot drift. Still what a build renders
+    /// when it doesn't (or can't) bind lines to coach states.
     public let directionLines: [String]
+}
+
+/// One look-brief direction line and the coach state that should speak it.
+public struct ProLookBriefDirection: Decodable, Sendable {
+    /// Trigger kind ("opening" / "subjectTooFar" / "subjectTooClose" /
+    /// "faceMissing" / "eyesClosed" / "poseUnmet" / "ready") — a plain string,
+    /// like pose-rule kinds, so new server vocabulary decodes on old builds and
+    /// is dropped where the script is built, not at decode.
+    public let trigger: String
+    public let line: String
+
+    public init(trigger: String, line: String) {
+        self.trigger = trigger
+        self.line = line
+    }
 }
 
 // MARK: - Set critique (wrap-up photographer's review)

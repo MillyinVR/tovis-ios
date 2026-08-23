@@ -34,6 +34,11 @@ struct ReferenceLook {
     var aiSummary: String? = nil
     /// Claude's spoken/shown direction lines, in coaching order (empty = none).
     var directionLines: [String] = []
+    /// The same lines bound to coach states (tovis-app #974) — what the engine
+    /// consults to speak the look's own words at the moment the lens sees that
+    /// state. `.empty` when the server predates triggers (the flat script above
+    /// still renders/speaks the legacy way).
+    var directions: LookDirectionScript = .empty
 }
 
 enum ReferenceLookAnalyzer {
@@ -234,9 +239,15 @@ extension ReferenceLook {
                                                         isDetail: expects.isDetail,
                                                         allowsClosedEyes: expects.allowsClosedEyes,
                                                         poseRules: rules))
+        // Carry the background light targets through: the enhanced copy used to
+        // drop them, silently downgrading the light matcher from background-
+        // scoped to whole-frame for exactly the looks that got AI enhance.
         return ReferenceLook(image: image, luma: luma, warmth: warmth,
+                             backgroundLuma: backgroundLuma,
+                             backgroundWarmth: backgroundWarmth,
                              guide: ShotGuide(name: guide.name, steps: [merged]),
                              aiSummary: brief.summary.isEmpty ? nil : brief.summary,
-                             directionLines: brief.directionLines)
+                             directionLines: brief.directionLines,
+                             directions: LookDirectionScript(wire: brief.directions ?? []))
     }
 }
