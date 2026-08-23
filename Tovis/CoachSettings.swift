@@ -49,8 +49,10 @@ final class CoachSettings {
     /// camera takes it for you (full quality) and moves to the next — the
     /// "photographer is shooting for you" core.
     var autoCapture: Bool { didSet { persist(\.autoCapture, "autoCapture") } }
-    /// Auto-harvest extra stills (video-res) when quality peaks — a background
-    /// safety net, off by default now that guided auto-capture is the primary flow.
+    /// Auto-harvest extra stills (video-res) off frames that earn it — a readiness
+    /// peak, or the best frame of a steady green hold (`CoachHarvestGate`). A
+    /// background safety net, off by default now that guided auto-capture is the
+    /// primary flow, so this whole path only runs for a pro who turned it on.
     var autoHarvest: Bool { didSet { persist(\.autoHarvest, "autoHarvest") } }
     /// "Match a look" AI enhance (Phase D): also send the picked reference to
     /// Claude for the parts geometry can't measure (expression, head angle,

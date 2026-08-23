@@ -27,7 +27,9 @@ enum CoachTuning {
     /// Longest side the CoreImage / Vision aggregate math runs at — full-res frames
     /// are needless cost for luma/edge/segmentation averages.
     nonisolated static let workingMaxDim: CGFloat = 480
-    /// Minimum spacing between auto-harvested keepers (seconds).
+    /// Minimum spacing between auto-harvested keepers (seconds). The floor
+    /// under BOTH ways into the Session Reel — the readiness peak and the
+    /// steady-hold backstop (`CoachHarvestGate`).
     static let minHarvestInterval: Double = 2.5
     /// Cap on the UNREVIEWED auto-harvest tray (reviewing re-opens headroom).
     static let maxHarvest = 24
@@ -42,8 +44,24 @@ enum CoachTuning {
     nonisolated(unsafe) static var readyWarnThreshold: Double = 0.5
     /// How long (seconds) the shot must hold good before the guided flow auto-fires
     /// the shutter — long enough to avoid catching motion, short enough to feel snappy.
+    ///
+    /// Also arms the Session Reel's steady-hold backstop (`CoachHarvestGate`),
+    /// deliberately off the SAME number rather than a second knob beside it: if a
+    /// hold has been good and still long enough to earn an automatic shutter, it
+    /// has been good and still long enough to be worth a frame in the reel. Both
+    /// directions a device pass might drag this are bounded — longer just arms the
+    /// backstop later, and shorter can still never outpace `minHarvestInterval`.
     nonisolated(unsafe) static var autoCaptureHoldSeconds: Double = 0.7
-    /// Auto-harvest (Session Reel) only grabs frames at/above this readiness.
+    /// Readiness at/above which the Session Reel takes a frame on its own merit,
+    /// with no hold behind it — a fleeting excellent frame is worth keeping even
+    /// if the pro never settles.
+    ///
+    /// ⚠️ This is NO LONGER the reel's floor. It sits above `readyThreshold`, and
+    /// an ordinary salon frame (mixed light + busy backdrop + a few degrees of
+    /// hand tilt) measures **0.826** — in between — so on this threshold alone a
+    /// pro could shoot a whole session that read green throughout and end with an
+    /// empty tray. `CoachHarvestGate` closes that band with a steady-green-hold
+    /// backstop; see that file for what the two ways in cost each other.
     nonisolated(unsafe) static var harvestThreshold: Double = 0.85
 
     // MARK: - How the one coach line behaves

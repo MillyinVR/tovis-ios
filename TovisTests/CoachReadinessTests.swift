@@ -84,12 +84,46 @@ import Testing
         #expect(plusSoft.readiness >= CoachTuning.readyWarnThreshold)
     }
 
-    /// The green ring and the Session Reel disagree in an ordinary salon: the
-    /// shot reads "good to shoot" while nothing is ever harvested.
-    @Test func aFrameCanBeGreenAndStillNeverHarvest() {
+    // REWRITTEN 2026-08-23 (plan item 2, the backstop harvest). This pair
+    // replaces the single test `aFrameCanBeGreenAndStillNeverHarvest`, which
+    // pinned the band between `readyThreshold` and `harvestThreshold` as a
+    // KNOWN DEFECT: an ordinary salon frame scored green, auto-capture fired on
+    // it, and the Session Reel took nothing — so a pro could shoot a whole
+    // session that read green from the first frame to the last and find an
+    // empty tray at the end of it, when the session is over and unrepeatable.
+    // The ARITHMETIC that puts the frame in the band is unchanged and still
+    // worth pinning. What it COSTS is what changed, so the two are now separate
+    // tests: one measurement, one promise.
+
+    /// UNCHANGED, and meant to be: the ordinary-salon frame really does land
+    /// between the green ring and the peak gate. That is a measurement of the
+    /// coach weighting, not a defect — and it is the number that any future
+    /// move of either threshold has to face.
+    @Test func anOrdinarySalonFrameLandsBetweenTheRingAndThePeakGate() {
         let v = CoachAggregate.evaluate(coaches, ctx(mixed: 0.20, tilt: 3.5, clutter: 0.70))
-        #expect(v.readiness >= CoachTuning.readyThreshold)   // ring is green
-        #expect(v.readiness < CoachTuning.harvestThreshold)  // reel collects nothing
+        #expect(abs(v.readiness - 0.826) < 0.002)
+        #expect(v.readiness >= CoachTuning.readyThreshold)    // the ring is green
+        #expect(v.readiness < CoachTuning.harvestThreshold)   // and it is no peak
+    }
+
+    /// THE FIX, wired end to end — the real scored frame driving the real gate,
+    /// so the scoring arithmetic and the harvest policy cannot drift apart
+    /// while each stays green on its own. The frame the peak gate refuses is
+    /// banked once the pro has held it as steady as the guided shutter itself
+    /// requires, which is what makes the green ring's promise survive to the
+    /// end of the session.
+    @Test func theSameFrameIsBankedOnceTheHoldIsSteady() {
+        let readiness = CoachAggregate.evaluate(
+            coaches, ctx(mixed: 0.20, tilt: 3.5, clutter: 0.70)).readiness
+        // The peak path alone still refuses it — that refusal IS the band.
+        #expect(readiness < CoachTuning.harvestThreshold)
+
+        var gate = CoachHarvestGate()
+        // Green from the first frame, but a hold has to BE one before it counts.
+        #expect(gate.shouldHarvest(readiness: readiness, now: 0) == .skip)
+        // …and once it is, the reel takes it.
+        #expect(gate.shouldHarvest(readiness: readiness,
+                                   now: CoachTuning.autoCaptureHoldSeconds) == .steadyHold)
     }
 
     // MARK: - Which tip wins the one on-screen line

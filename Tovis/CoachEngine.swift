@@ -71,14 +71,20 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     }
 
     // MARK: - Best-shot harvesting (Session Reel)
-    /// When on, the analyzer grabs a high-res still whenever quality peaks — the
-    /// "captures across the session, keeps the best frames" behavior. Synced from
-    /// the pro's toggle.
+    /// When on, the analyzer grabs a high-res still whenever a frame earns it —
+    /// a readiness peak, or the best frame of a steady green hold (see
+    /// `CoachHarvestGate`). The "captures across the session, keeps the best
+    /// frames" behavior. Synced from the pro's toggle.
     nonisolated(unsafe) var autoHarvestEnabled = false
     /// Emits a harvested JPEG + its readiness + the frame's face center (camera
     /// C6, normalized top-left; nil when no face). The engine stages it for review.
     nonisolated(unsafe) var onHarvest: (@Sendable (Data, Double, CGPoint?) -> Void)?
-    private var lastHarvestAt: CFTimeInterval = 0
+    /// WHICH frames the reel admits — the readiness peak it always took, plus
+    /// the steady-green-hold backstop that keeps an ordinary session from
+    /// ending with an empty tray. Pure policy, pulled out into its own type so
+    /// it can be driven a frame at a time without a camera (CoachHarvestGate.swift).
+    /// Frame-queue-confined, like `tipArbiter`: this delegate is serial.
+    private var harvestGate = CoachHarvestGate()
 
     /// The full-res JPEG encode is expensive and mustn't run inline on the serial
     /// frame queue (it would stall analysis for the whole encode). It runs on this
@@ -229,18 +235,22 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                               cleared: verdict.cleared, advanced: verdict.advanced,
                               debug: debug))
 
-            // Harvest a keeper when quality peaks (rate-limited + capped). Reserve
-            // the slot here, but run the full-res JPEG encode OFF this frame queue
-            // so it never stalls analysis mid-burst. Retaining `pixelBuffer` for
-            // the async encode is safe: the output discards late frames, so a held
-            // buffer just drops the next frame or two rather than backing up.
-            if autoHarvestEnabled,
-               readiness >= CoachTuning.harvestThreshold,
-               now - lastHarvestAt >= CoachTuning.minHarvestInterval,
-               reserveHarvestSlot() {
-                lastHarvestAt = now
+            // Harvest a keeper when the frame earns it (rate-limited + capped) —
+            // a readiness peak, or the best frame of a steady green hold, which
+            // is `CoachHarvestGate`'s call and not this queue's. `shouldHarvest`
+            // sees EVERY analyzed frame, not only the ones that might pass: the
+            // hold it measures is made of the frames that don't.
+            //
+            // Reserve the slot here, but run the full-res JPEG encode OFF this
+            // frame queue so it never stalls analysis mid-burst. Retaining
+            // `pixelBuffer` for the async encode is safe: the output discards
+            // late frames, so a held buffer just drops the next frame or two
+            // rather than backing up.
+            let decision = harvestGate.shouldHarvest(readiness: readiness, now: now)
+            if autoHarvestEnabled, decision.banks, reserveHarvestSlot() {
+                harvestGate.didHarvest(readiness: readiness, at: now)
                 let frame = pixelBuffer
-                let peak = readiness
+                let banked = readiness
                 // The subject focal for the smart 9:16 feed crop (camera C6): the
                 // face center already computed for THIS frame, in the same upright
                 // top-left space as the harvested JPEG (both from `.oriented(.right)`),
@@ -252,7 +262,7 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                         self.releaseHarvestSlots()   // encode failed — hand the slot back
                         return
                     }
-                    self.onHarvest?(data, peak, faceCenter)
+                    self.onHarvest?(data, banked, faceCenter)
                 }
             }
         }
@@ -337,8 +347,9 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
 
 // MARK: - Engine (MainActor)
 
-/// A high-res still the coach auto-harvested at a quality peak — staged for the
-/// pro to review (keep/upload) rather than uploaded silently.
+/// A high-res still the coach auto-harvested off a frame that earned it — a
+/// readiness peak, or the best frame of a steady green hold (`CoachHarvestGate`)
+/// — staged for the pro to review (keep/upload) rather than uploaded silently.
 struct HarvestedShot: Identifiable {
     let id = UUID()
     /// Tray-cell thumbnail (640px). The full still is spilled to disk — holding
