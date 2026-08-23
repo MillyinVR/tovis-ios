@@ -19,6 +19,31 @@ scripts/coach-tuning-bench/run.sh ~/Pictures/salon-session/
 scripts/coach-tuning-bench/run.sh a.heic b.jpg
 ```
 
+### The corpus the runs below used, exactly
+
+Recorded 2026-08-23 because it never was: the previous two runs describe their
+corpus in prose ("images bundled with the installed simulator runtimes"), which
+is not enough to reproduce a number. These are the files, from the **iOS 26.4**
+simulator runtime:
+
+```sh
+R="/Library/Developer/CoreSimulator/Volumes/iOS_23E254a/Library/Developer/\
+CoreSimulator/Profiles/Runtimes/iOS 26.4.simruntime/Contents/Resources"
+mkdir -p /tmp/corpus35
+cp "$R/SampleContent/Media/DCIM/100APPLE/"* /tmp/corpus35/           #  6
+find "$R/RuntimeRoot/System/Library/NanoTimeKit/FaceBundles" \
+  \( -name 'base_*.heic' -o -name 'gallery-placeholder-*-base.heic' \) \
+  -exec cp {} /tmp/corpus35/ \;                                      # 29
+scripts/coach-tuning-bench/run.sh /tmp/corpus35/
+```
+
+6 + 17 `base_*` (NTKUltraCube) + 12 `gallery-placeholder-*` (NTKParmesan) = 35.
+The August 1 corpus of 23 is the same minus the 12 Parmesan assets. Rebuilding
+it this way reproduced August 4's numbers to the digit (faceLuma median 0.487,
+background `mixed` median 0.086, bg-edge median 0.0402), which is what confirms
+it is the right set. Substitute a runtime path if 26.4 is no longer installed —
+and note in the run if you do, because the numbers will move.
+
 It compiles the **live** `Tovis/FrameMath.swift`, `Tovis/VisionDetect.swift`,
 `Tovis/ShotCoach.swift` and `Tovis/CoachTuning.swift` on every run, so it cannot
 drift from what the camera does. No simulator, no device, no camera — it reads
@@ -73,9 +98,14 @@ overheads are the salon's), derived from a signal that is **content-confounded**
 so a red top on one side and a cool wall on the other reads as "mixed light"
 under perfectly uniform illumination.
 
-`CoachReadinessTests.theCoachTalksAboutLightWhileTheFrameIsFailingOnFocus` pins
+`CoachReadinessTests.theCoachTalksAboutLightWhileTheFrameIsFailingOnFocus` pinned
 the concrete case: a frame that is amber **because it is soft** shows the pro
-"turn off the overheads".
+"turn off the overheads". → **That test was deliberately rewritten 2026-08-23**
+into the pair `aTouchSoftFrameStillYieldsTheLineToTheRoomsLight` (unchanged, and
+meant to be) and `aClearlySoftFrameTakesTheLineBackFromTheRoomsLight` (the fix).
+See the 2026-08-23 run below for why the case had to be split in two — the frame
+this paragraph describes is only a TOUCH soft, which is a correction rather than
+a hard failure and still yields to colour on purpose.
 
 Camera Step 2 (iOS #250) cut 13 simultaneous elements to 5 and made one coach
 line the primary voice. That subtraction did not cause this, but it removed
@@ -205,6 +235,117 @@ Until then §3.1 is a discovery on the device rather than a confirmation.
 
 ---
 
+---
+
+## Measured again, 2026-08-23 — the backdrop threshold, and the ladder's cost
+
+Same 35-image corpus as August 4 (recipe above), re-run to set
+`clutterReference` (plan item 1.2) and to measure what sequential focus
+coaching did to which line the pro actually sees (plan item 1.3).
+
+### ⚠️ First finding: the bench had not run since August 4, and said nothing
+
+It did not fail loudly — it failed at the first step and exited, and nobody had
+run it in the 19 days since. Three separate rots, all from ordinary refactors
+that no test covered because **nothing in CI compiles this script**:
+
+1. `ShotExpectations` moved out of `ShotGuide.swift` into its own file, so the
+   `awk` block that brace-matched the struct out of `ShotGuide.swift` extracted
+   nothing.
+2. `PublishCrop.swift` moved into TovisKit, so the file list pointed at a path
+   that no longer exists — and `ShotCoach.swift` gained `import TovisKit` with
+   it.
+3. The file list predated `CoachFocusLadder.swift` and the `CoachMoment`
+   vocabulary, so even once the paths were fixed, `FocusRung` and
+   `CoachPhraseContext` were undefined.
+
+Fixed by compiling the real sources instead of reconstructing them: the shim is
+gone, `PublishCrop` is compiled from its TovisKit path with the single
+`import TovisKit` line stripped from the bench's copy of `ShotCoach.swift`, and
+`CoachMoment`/`CoachPhraseContext` were split out of `CoachVoice.swift` into
+`CoachMoment.swift` so the decision layer can be compiled without dragging
+SwiftUI (via `CoachPersonality`) behind it. A path that moves now fails the
+build loudly rather than silently.
+
+**The lesson worth keeping:** this bench is the only instrument for half the
+tuning plan, and it is not exercised by anything. Treat "run the bench" as
+"first, check the bench still runs".
+
+### `clutterReference`: 0.18 → 0.125
+
+The bench now reports the distribution **portraits-only**, which is the fix that
+mattered for reading it. Only a frame with a segmented person has a real
+background; without one the mask is empty, the "background" is the whole frame,
+and the number measures how busy the PICTURE is. All four images that were
+firing `BackgroundCoach` at the old threshold were faceless — which is why it
+looked half-alive while being completely dead where it counts.
+
+| raw area-normalized background edge | min | median | max |
+|---|---|---|---|
+| all 35 | 0.0000 | 0.0402 | 0.1634 |
+| **the 21 portraits** | 0.0000 | **0.0371** | **0.0968** |
+
+At `clutterReference = 0.18`, "busy" needs raw > `clutterBusy × 0.18` = 0.108 —
+**above the busiest portrait in the corpus**. 0/21. Reconfirmed, now on the
+larger corpus (August's "0/17" was the same finding on the 23-image one).
+
+The sweep the bench prints, so the choice is auditable rather than asserted:
+
+| clutterReference | busy above | portraits judged busy |
+|---|---|---|
+| 0.180 | 0.1080 | 0/21 (0%) |
+| 0.150 | 0.0900 | 2/21 (10%) |
+| 0.130 | 0.0780 | 2/21 (10%) |
+| **0.125** | **0.0750** | **3/21 (14%)** |
+| 0.120 | 0.0720 | 4/21 (19%) |
+| 0.110 | 0.0660 | 5/21 (24%) |
+| 0.080 | 0.0480 | 6/21 (29%) |
+
+**0.125 chosen.** It puts the busy line at ~2× the median portrait rather than
+on it — which is the entire lesson of `mixedLightSpread`, a threshold set at the
+median of ordinary photographs that fired on half of them until it read as
+noise. Deliberately the conservative end of "fires at all": this corpus's
+backdrops are cleaner than a working salon's shelves and mirrors, so the same
+number will fire MORE on real frames, not less. The salon pass should expect to
+lower it further after watching it, never to raise it blind.
+
+What it costs: normalizing against a smaller divisor raises every frame's
+clutter, so an ordinary portrait pays ~0.01 more readiness than before (the
+non-busy score floors at 0.7, so the cost is bounded). Pinned in
+`CoachReadinessTests.wakingTheBackdropCoachCostsAMedianPortraitAboutAHundredth`
+rather than left to be discovered next to the 0.80/0.85 ring-vs-harvest band.
+
+### What the focus ladder had done to the one line
+
+Re-running August 4's corpus against today's code measures the ladder change
+(2026-08-06) that landed between the two runs — this was never measured when it
+shipped:
+
+| which line wins | 2026-08-04 (weighted deficit) | 2026-08-23 (ladder, before this change) | after |
+|---|---|---|---|
+| composition | 17/35 | 21/35 | 19/35 |
+| colour | 10/35 | 12/35 | 11/35 |
+| **sharpness** | **6/35** | **0/35** | **3/35** |
+| lighting | 1/35 | 1/35 | 1/35 |
+| nothing to fix | 1/35 | 1/35 | 1/35 |
+
+Sharpness is the ladder's LAST rung, so once ordering replaced weighted deficit
+it stopped winning the line at all: all six frames that used to be told "hold
+steady" were told about colour or framing instead. Three of those are frames the
+sharpness metric calls **clearly soft** — motion blur no edit recovers.
+
+That is what "a hard failure outranks its rung" (item 1.3) fixes, and the 3/35
+is its measured effect. The other three were only a TOUCH soft, and still yield
+to colour on purpose: the ladder is right that fixing the room is the bigger
+adjustment, and "tap to focus" is polish that can wait its turn.
+
+Note this restores exactly what the pre-ladder rule got right — August 1
+measured mixed light outranking everything "except an outright lighting failure
+or a clearly soft frame" — without giving up sequential coaching. Ordinary
+corrections are still taken strictly one at a time, in rung order.
+
+---
+
 ## Recommended next steps
 
 These are **recommendations, not applied changes** — the corpus is not salon
@@ -217,14 +358,24 @@ footage, and the perception numbers are the device pass's call:
    the threshold on its own. The re-measurement against real salon light is
    still owed and is now plan §3.2 — and it must be read off the **background**
    column, which is what the coach judges.
-2. **Lower `clutterReference`** (or `clutterBusy`) so `BackgroundCoach` can fire
-   at all — currently it is dead weight on portraits. **Still open**; the
-   direction is measured, the value is the device pass's.
-3. **Reconsider the colour weight or the mixed-light score** so a
+2. ~~**Lower `clutterReference`** (or `clutterBusy`) so `BackgroundCoach` can
+   fire at all — currently it is dead weight on portraits.~~ → **DONE
+   2026-08-23: 0.18 → 0.125**, set from the portrait-only distribution above.
+   The salon pass still owns the final value; the direction to expect there is
+   DOWN again, not up.
+3. ~~**Reconsider the colour weight or the mixed-light score** so a
    low-confidence, often-unactionable signal cannot outrank focus and tilt for
-   the single on-screen line. **Still open** — but much less pressing now that
-   the signal is de-confounded and the tip has a dwell + switching margin, so
-   even when colour wins it no longer wins six times a second.
+   the single on-screen line.~~ → **ADDRESSED 2026-08-23**, but not by touching
+   the weight or the score. Neither picks the line any more: `CoachSeverity`
+   lets an unrecoverable capture outrank its rung, so a clearly soft frame takes
+   the line back from mixed light while every ordinary correction keeps its
+   ladder order. The colour WEIGHT (1.1) is untouched and still means what it
+   always did — how much mixed light drags the readiness ring down — which is a
+   separate question the salon pass should still look at.
+
+   Left open underneath it: `mixedLightSpread` itself is still un-measured
+   against real salon light (§3.2), and colour still wins 11/35 lines here.
+   Severity stops it outranking a lost frame; it does not make it right.
 
 ## What still genuinely needs the phone
 

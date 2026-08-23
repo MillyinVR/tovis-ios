@@ -115,7 +115,7 @@ func measure(_ url: URL) -> Measured? {
         sharpness: ctx.sharpness,
         hasFace: face != nil,
         subjectFill: seg?.subjectFill,
-        rawBgEdgeMean: seg.flatMap { s in s.clutter.map { $0 * CoachTuning.clutterReference } },
+        rawBgEdgeMean: seg?.rawBackgroundEdge,
         clutter: seg?.clutter,
         color: color,
         wholeFrameColor: wholeFrameColor,
@@ -270,6 +270,33 @@ if let c = stats(results.compactMap(\.rawBgEdgeMean)) {
     print(String(format: "raw bg edge (area-norm)  min %.4f  median %.4f  max %.4f", c.min, c.med, c.max))
     let all = results.compactMap(\.clutter)
     print("  \(all.filter { $0 > CoachTuning.clutterBusy }.count)/\(all.count) judged 'busy background'")
+
+    // Only a frame with a real segmented PERSON has a real background. Without
+    // a subject the mask is empty, the "background" IS the whole frame, and the
+    // number measures how busy the PICTURE is rather than how busy the BACKDROP
+    // behind a client is. `clutterReference` must be set from the portrait rows
+    // alone — the faceless ones would tune the coach on the wrong quantity.
+    let portraits = results.filter(\.hasFace).compactMap(\.rawBgEdgeMean)
+    if let p = stats(portraits) {
+        print(String(format: "  PORTRAITS ONLY (%d of %d)  min %.4f  median %.4f  max %.4f",
+                     portraits.count, results.count, p.min, p.med, p.max))
+        let busyAt = CoachTuning.clutterBusy * CoachTuning.clutterReference
+        let firing = portraits.filter { $0 > busyAt }.count
+        print(String(format: "  'busy' needs raw bg edge > %.4f (clutterBusy %.2f × clutterReference %.3f) → %d/%d portraits",
+                     busyAt, CoachTuning.clutterBusy, CoachTuning.clutterReference, firing, portraits.count))
+        // The tuning sweep, so the chosen value is auditable rather than
+        // asserted: what each candidate reference would fire on. Beware the
+        // `mixedLightSpread` lesson — a cutoff at the MEDIAN fires on half of
+        // ordinary frames and becomes noise the pro learns to ignore.
+        print("  candidate clutterReference → portraits that would read 'busy':")
+        for candidate in [0.18, 0.15, 0.14, 0.13, 0.125, 0.12, 0.11, 0.10, 0.08] {
+            let cut = CoachTuning.clutterBusy * candidate
+            let n = portraits.filter { $0 > cut }.count
+            let pct = portraits.isEmpty ? 0 : Double(n) / Double(portraits.count) * 100
+            print(String(format: "    %.3f  (busy above %.4f)  %2d/%d  %4.0f%%",
+                         candidate, cut, n, portraits.count, pct))
+        }
+    }
 }
 if let m = stats(results.compactMap { $0.color?.mixed }),
    let wf = stats(results.compactMap { $0.wholeFrameColor?.mixed }) {

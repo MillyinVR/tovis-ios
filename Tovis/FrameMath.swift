@@ -165,6 +165,17 @@ nonisolated enum FrameMath {
         /// Busy-ness of the area behind the subject, 0…1. Nil when the subject
         /// fills the frame (nothing left worth judging).
         let clutter: Double?
+        /// The area-normalized background edge energy `clutter` is derived
+        /// from, BEFORE the divide by `clutterReference` and the 0…1 clamp.
+        /// Nil exactly when `clutter` is.
+        ///
+        /// Carried because it is the quantity a tuning pass actually sets the
+        /// reference from, and `clutter` cannot be inverted back into it once
+        /// it saturates: every frame busier than the reference reports 1.0, so
+        /// reconstructing `clutter × clutterReference` silently reads back as
+        /// "exactly the reference" and flattens the top of the distribution.
+        /// The offline bench quoted a max that was really that clamp.
+        let rawBackgroundEdge: Double?
         /// Fraction of the whole frame the subject fills.
         let subjectFill: Double
         /// Fraction of `crop` the subject fills — what the pro is actually
@@ -194,7 +205,8 @@ nonisolated enum FrameMath {
         // enough background to judge — a subject filling the frame leaves
         // scraps, and a mean over scraps is noise wearing a number's clothes.
         guard seg.backgroundFraction > CoachTuning.minBackgroundFraction else {
-            return SegmentedFrame(clutter: nil, subjectFill: seg.subjectFill,
+            return SegmentedFrame(clutter: nil, rawBackgroundEdge: nil,
+                                  subjectFill: seg.subjectFill,
                                   cropSubjectFill: cropFill, backgroundLuma: nil,
                                   background: seg.background)
         }
@@ -204,11 +216,12 @@ nonisolated enum FrameMath {
         ])
         let bgEdgeMean = averageLuma(bgEdges.cropped(to: working.extent), context: context)
         // Normalize by background area, then against the "fully cluttered" reference.
-        let clutter = min(1.0, max(0.0,
-            (bgEdgeMean / seg.backgroundFraction) / CoachTuning.clutterReference))
+        let rawBackgroundEdge = bgEdgeMean / seg.backgroundFraction
+        let clutter = min(1.0, max(0.0, rawBackgroundEdge / CoachTuning.clutterReference))
         let backgroundLuma = backgroundAverageRGB(working, background: seg.background,
                                                   context: context).map { luma($0.rgb) }
-        return SegmentedFrame(clutter: clutter, subjectFill: seg.subjectFill,
+        return SegmentedFrame(clutter: clutter, rawBackgroundEdge: rawBackgroundEdge,
+                              subjectFill: seg.subjectFill,
                               cropSubjectFill: cropFill, backgroundLuma: backgroundLuma,
                               background: seg.background)
     }

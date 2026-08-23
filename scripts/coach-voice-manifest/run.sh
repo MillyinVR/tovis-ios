@@ -7,7 +7,8 @@
 #                                                      # against the committed manifest.json,
 #                                                      # fail if they differ (drift guard, CI)
 #
-# Compiles the REAL Tovis/CoachVoice.swift and Tovis/CoachVoicePacks.swift
+# Compiles the REAL Tovis/CoachMoment.swift (the CoachMoment vocabulary),
+# Tovis/CoachVoice.swift and Tovis/CoachVoicePacks.swift
 # against generate.swift and runs the result on this Mac. No simulator, no
 # device. Same technique as scripts/coach-tuning-bench/run.sh: because it
 # compiles the live sources every run, the manifest cannot drift from what
@@ -79,6 +80,7 @@ cp "$HERE/generate.swift" "$BUILD/main.swift"
 swiftc -O -swift-version 6 \
   "$BUILD/CoachCategoryShim.swift" \
   "$BUILD/CoachPersonalityShim.swift" \
+  "$ROOT/Tovis/CoachMoment.swift" \
   "$ROOT/Tovis/CoachVoice.swift" \
   "$ROOT/Tovis/CoachVoicePacks.swift" \
   "$BUILD/main.swift" \
