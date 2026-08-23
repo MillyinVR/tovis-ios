@@ -14,6 +14,11 @@
         "tip": "Future vocabulary still decodes as a plain string"
       }
     ],
+    "directions": [
+      { "trigger": "opening", "line": "Soft smile, eyes just past the lens" },
+      { "trigger": "subjectTooFar", "line": "Chin down a touch, then eyes up" },
+      { "trigger": "ready", "line": "Turn their face toward the window light" }
+    ],
     "directionLines": [
       "Soft smile, eyes just past the lens",
       "Chin down a touch, then eyes up",

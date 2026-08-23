@@ -1210,6 +1210,12 @@ func fixture(_ name: String) throws -> Data {
     // shape; decode-only. Pose rules ride the SAME wire type as shot packs —
     // the fixture's unknown kind proves new server vocabulary still decodes
     // (dropped at guide-build, not decode).
+    //
+    // The fixture also carries `directions` — trigger-bound direction lines the
+    // server sends since tovis-app #974, which this build does not read yet
+    // (`directionLines` is projected from them server-side, so behaviour is
+    // unchanged). Decoding succeeding WITH that key present is the assertion
+    // #974 asked for: an additive wire field cannot break a shipped build.
     @Test func decodesProLookBrief() throws {
         let res = try JSONDecoder().decode(ProLookBriefResponse.self, from: fixture("proLookBrief"))
         #expect(res.brief.summary.hasPrefix("Golden-hour glam"))
