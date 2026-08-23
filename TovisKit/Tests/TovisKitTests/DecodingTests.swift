@@ -1212,10 +1212,11 @@ func fixture(_ name: String) throws -> Data {
     // (dropped at guide-build, not decode).
     //
     // The fixture also carries `directions` — trigger-bound direction lines the
-    // server sends since tovis-app #974, which this build does not read yet
-    // (`directionLines` is projected from them server-side, so behaviour is
-    // unchanged). Decoding succeeding WITH that key present is the assertion
-    // #974 asked for: an additive wire field cannot break a shipped build.
+    // server sends since tovis-app #974, which this build reads to speak the
+    // look's own line at the moment the lens sees that state (the coach engine
+    // consumes them via `LookDirectionScript`). `trigger` is a plain string:
+    // unknown vocabulary decodes here and drops at script build, the same
+    // forward-compat contract as pose-rule kinds.
     @Test func decodesProLookBrief() throws {
         let res = try JSONDecoder().decode(ProLookBriefResponse.self, from: fixture("proLookBrief"))
         #expect(res.brief.summary.hasPrefix("Golden-hour glam"))
@@ -1224,8 +1225,37 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.brief.poseRules[0].params?["maxFaceHeights"] == 1.2)
         #expect(res.brief.poseRules[0].tip == "Bring their hand up to graze the jaw")
         #expect(res.brief.poseRules[1].kind == "someFutureRuleKind")
+        let directions = try #require(res.brief.directions)
+        #expect(directions.count == 3)
+        #expect(directions[0].trigger == "opening")
+        #expect(directions[0].line == "Soft smile, eyes just past the lens")
+        #expect(directions.map(\.trigger) == ["opening", "subjectTooFar", "ready"])
         #expect(res.brief.directionLines.count == 3)
         #expect(res.brief.directionLines[0] == "Soft smile, eyes just past the lens")
+    }
+
+    /// A server that predates triggers (prod until #974 deploys) sends only the
+    /// flat script — `directions` must decode as absent, never fail.
+    @Test func decodesProLookBriefWithoutDirections() throws {
+        let json = Data("""
+        {"ok": true, "brief": {"summary": "x", "poseRules": [],
+         "directionLines": ["Keep it soft"]}}
+        """.utf8)
+        let res = try JSONDecoder().decode(ProLookBriefResponse.self, from: json)
+        #expect(res.brief.directions == nil)
+        #expect(res.brief.directionLines == ["Keep it soft"])
+    }
+
+    /// Future trigger vocabulary decodes as a plain string (dropped later, at
+    /// script build) — same contract the pose-rule fixture pins for kinds.
+    @Test func decodesProLookBriefWithUnknownTrigger() throws {
+        let json = Data("""
+        {"ok": true, "brief": {"summary": "x", "poseRules": [],
+         "directions": [{"trigger": "someFutureTrigger", "line": "Still decodes"}],
+         "directionLines": ["Still decodes"]}}
+        """.utf8)
+        let res = try JSONDecoder().decode(ProLookBriefResponse.self, from: json)
+        #expect(res.brief.directions?.first?.trigger == "someFutureTrigger")
     }
 
     // POST /api/v1/pro/camera/set-critique — Fixtures/proSetCritique.json.
