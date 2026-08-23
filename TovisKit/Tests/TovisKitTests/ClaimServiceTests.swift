@@ -25,6 +25,7 @@ final class ClaimURLProtocol: URLProtocol {
     nonisolated(unsafe) static var capturedPath: String?
     nonisolated(unsafe) static var capturedMethod: String?
     nonisolated(unsafe) static var capturedAuthorization: String?
+    nonisolated(unsafe) static var capturedBody: Data?
     nonisolated(unsafe) static var status = 200
     nonisolated(unsafe) static var responseBody = Data("{\"ok\":true}".utf8)
 
@@ -35,6 +36,20 @@ final class ClaimURLProtocol: URLProtocol {
         Self.capturedPath = request.url?.path
         Self.capturedMethod = request.httpMethod
         Self.capturedAuthorization = request.value(forHTTPHeaderField: "Authorization")
+        // URLProtocol moves httpBody into httpBodyStream; read whichever is set.
+        Self.capturedBody = request.httpBody
+            ?? request.httpBodyStream.map { stream in
+                stream.open()
+                defer { stream.close() }
+                var data = Data()
+                var buffer = [UInt8](repeating: 0, count: 4096)
+                while stream.hasBytesAvailable {
+                    let read = stream.read(&buffer, maxLength: buffer.count)
+                    if read <= 0 { break }
+                    data.append(buffer, count: read)
+                }
+                return data
+            }
 
         let response = HTTPURLResponse(
             url: request.url!, statusCode: Self.status, httpVersion: nil,
@@ -66,6 +81,7 @@ final class ClaimURLProtocol: URLProtocol {
         ClaimURLProtocol.capturedPath = nil
         ClaimURLProtocol.capturedMethod = nil
         ClaimURLProtocol.capturedAuthorization = nil
+        ClaimURLProtocol.capturedBody = nil
         ClaimURLProtocol.status = 200
         ClaimURLProtocol.responseBody = Data("{\"ok\":true}".utf8)
     }
@@ -180,6 +196,45 @@ final class ClaimURLProtocol: URLProtocol {
         #expect(ClaimURLProtocol.capturedPath == "/api/v1/pro/invites/tok_1/accept")
         #expect(ClaimURLProtocol.capturedMethod == "POST")
         #expect(result == .claimed(bookingId: "bk_1"))
+    }
+
+    @Test func acceptClaimForwardsTheSignedChannelMarkerSoTheTapCountsAsVerification() async throws {
+        reset()
+        ClaimURLProtocol.responseBody = Data("{\"ok\":true,\"bookingId\":\"bk_1\"}".utf8)
+
+        _ = try await makeService().acceptClaim(
+            token: "tok_1",
+            via: "email",
+            vsig: "sig_1"
+        )
+
+        let body = try #require(ClaimURLProtocol.capturedBody)
+        let json = try #require(
+            try JSONSerialization.jsonObject(with: body) as? [String: Any]
+        )
+        #expect(json["via"] as? String == "email")
+        #expect(json["vsig"] as? String == "sig_1")
+    }
+
+    @Test func acceptClaimSendsNoBodyWhenTheLinkCarriedNoMarker() async throws {
+        reset()
+        ClaimURLProtocol.responseBody = Data("{\"ok\":true,\"bookingId\":\"bk_1\"}".utf8)
+
+        // An older link (or one whose query was stripped) still claims fine —
+        // it simply earns no verification credit.
+        _ = try await makeService().acceptClaim(token: "tok_1")
+
+        #expect(ClaimURLProtocol.capturedBody == nil)
+    }
+
+    @Test func acceptClaimSendsNoBodyForAHalfMarker() async throws {
+        reset()
+        ClaimURLProtocol.responseBody = Data("{\"ok\":true,\"bookingId\":\"bk_1\"}".utf8)
+
+        // One half alone can never validate server-side; don't send it.
+        _ = try await makeService().acceptClaim(token: "tok_1", via: "email")
+
+        #expect(ClaimURLProtocol.capturedBody == nil)
     }
 
     @Test func acceptClaimDecodesBooklessSuccess() async throws {

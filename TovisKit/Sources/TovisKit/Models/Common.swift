@@ -29,15 +29,19 @@ public struct AuthUser: Codable, Sendable, Identifiable, Equatable {
 ///
 ///  - `maskedDestination` (top level) — the self-serve-claim 409's "we sent a
 ///    link to t***@x.com" hint.
+///  - `claimLinkSent` (top level) — whether that 409 ACTUALLY queued a link.
+///    False when the send was rate-limited or refused, and the copy must then
+///    not promise a message that is never coming.
 ///  - `details.retryAfterSeconds` — how long a 429 wants us to wait.
 struct APIErrorBody: Decodable {
     let error: String?
     let code: String?
     let maskedDestination: String?
+    let claimLinkSent: Bool?
     let details: Details?
 
     private enum CodingKeys: String, CodingKey {
-        case error, code, maskedDestination, details
+        case error, code, maskedDestination, claimLinkSent, details
     }
 
     /// Hand-written so an unexpected `details` can't sink the whole body. A
@@ -51,6 +55,7 @@ struct APIErrorBody: Decodable {
         error = try? container.decodeIfPresent(String.self, forKey: .error)
         code = try? container.decodeIfPresent(String.self, forKey: .code)
         maskedDestination = try? container.decodeIfPresent(String.self, forKey: .maskedDestination)
+        claimLinkSent = try? container.decodeIfPresent(Bool.self, forKey: .claimLinkSent)
         details = try? container.decodeIfPresent(Details.self, forKey: .details)
     }
 

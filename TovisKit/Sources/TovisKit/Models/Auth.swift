@@ -107,6 +107,13 @@ struct RegisterRequest: Encodable, Sendable {
     // app/api/v1/auth/register/route.ts (adoptClaimInviteDuringRegistration).
     var intent: String? = nil
     var inviteToken: String? = nil
+    /// The claim link's signed delivery-channel marker (`via` + `vsig`, from the
+    /// tapped Universal Link). The backend re-checks the signature and, when it
+    /// holds AND the registering contact is the one the link was delivered to,
+    /// counts the tap as verification of that channel — so the client is not
+    /// asked to verify the same email/phone all over again.
+    var via: String? = nil
+    var vsig: String? = nil
 
     // MARK: Pro-only fields (nil → key omitted on a CLIENT signup)
     var professionType: String? = nil

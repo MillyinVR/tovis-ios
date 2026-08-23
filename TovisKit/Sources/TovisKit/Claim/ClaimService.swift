@@ -59,11 +59,29 @@ public final class ClaimService: Sendable {
     /// this build has never heard of surfaces the SERVER's message instead of
     /// being mapped to the nearest-looking case, which is how a shipped build
     /// degrades honestly rather than confidently rendering the wrong card.
-    public func acceptClaim(token: String) async throws -> ClaimAcceptOutcome {
+    ///
+    /// `via` / `vsig` carry the tapped link's signed delivery-channel marker.
+    /// The server re-checks the signature and credits the tap as verification
+    /// of the channel that delivered the link, so a client who arrived from
+    /// their email is not asked to verify that email again. Omitted (no body)
+    /// when the link carried no marker — the accept itself never depends on it.
+    public func acceptClaim(
+        token: String,
+        via: String? = nil,
+        vsig: String? = nil
+    ) async throws -> ClaimAcceptOutcome {
         do {
+            let body: Data? = {
+                guard let via, let vsig else { return nil }
+                return try? JSONEncoder.canonical.encode(
+                    ClaimAcceptRequest(via: via, vsig: vsig)
+                )
+            }()
+
             let response: ClaimAcceptResponse = try await api.request(
                 "/pro/invites/\(token)/accept",
-                method: .post
+                method: .post,
+                body: body
             )
             return .claimed(bookingId: response.bookingId)
         } catch let error as APIError {
