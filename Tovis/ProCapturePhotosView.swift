@@ -1856,7 +1856,11 @@ struct ProCapturePhotosView: View {
     private var laneInputs: CameraLane.Inputs {
         var inputs = CameraLane.Inputs()
         inputs.terminalCount = uploads.blockedCount
-        inputs.retryableCount = uploads.pendingCount
+        // Only uploads that actually FAILED an attempt raise the lane's alert —
+        // healthy in-flight uploads are `backgroundBusy`'s hairline (and the
+        // thumbnail's own "still saving" badge), never words. The session hub
+        // makes the same distinction (`uploadStatusRow`).
+        inputs.retryableCount = uploads.stalledPendingCount
         inputs.failedClipCount = failedClips.count
         inputs.bestShotCount = coach?.harvested.count ?? 0
         inputs.lightDrifted = driftNudgeActive
