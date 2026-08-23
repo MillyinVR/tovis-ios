@@ -122,6 +122,30 @@ busy backdrop + 3.5° of hand tilt lands at **0.818** — green, never harvested
 Deliberate (the reel should keep only the best), but worth knowing the reel can
 stay empty through an entire ordinary session.
 
+> **→ CLOSED 2026-08-23** (plan item 2, the backstop harvest). The band is still
+> there and the arithmetic behind it is unchanged; what it COSTS is what changed.
+>
+> The number moved: that frame measures **0.826** today, not 0.818. The cause is
+> not the backdrop retune below — this frame is scored from an already-normalized
+> `clutter: 0.70`, which `clutterReference` never touches — it is the removal of
+> `PoseCoach`'s silent 0.9 cap on any detected body: deficit 0.6 × 0.1 ÷ 7.5 total
+> weight = **+0.008**, exactly the gap. (Pinned by
+> `CoachReadinessTests.detectingABodyNoLongerCostsReadiness`.) It moved the frame
+> further INTO the band, not out of it.
+>
+> `harvestThreshold` has stopped being the reel's floor. A steady green HOLD is
+> now a second way in — a hold that has been ready for `autoCaptureHoldSeconds`
+> banks a frame, and then banks again only when it improves on what the reel
+> already took from it, which is what keeps one long pose from spending the tray.
+> See `Tovis/CoachHarvestGate.swift`; pinned by `CoachHarvestGateTests` and by the
+> rewritten pair in `CoachReadinessTests`
+> (`anOrdinarySalonFrameLandsBetweenTheRingAndThePeakGate` — the measurement,
+> unchanged — and `theSameFrameIsBankedOnceTheHoldIsSteady` — the fix).
+>
+> ⚠️ What this does NOT do: it does not stop a frame that clears 0.85 on a real
+> defect from being kept. `aLightingFailureAloneStillClearsBothTheRingAndTheHarvestGate`
+> still stands, and is still the device pass's call.
+
 ### Secondary: the readiness budget
 
 Readiness ≥ 0.8 allows a total weighted deficit of 1.5 across seven coaches.
