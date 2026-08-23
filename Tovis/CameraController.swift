@@ -837,7 +837,11 @@ final class CameraController: NSObject {
     /// `recordContinuation` proves.
     func stopRecording() async throws -> URL {
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<URL, Error>) in
-            sessionQueue.async {
+            // `[self]` is explicit, and strong on purpose — this block owns the
+            // continuation, so the controller must outlive it. The nested
+            // watchdog is deliberately `[weak self]`; spelling this capture out
+            // marks the contrast as intent (see capturePhoto's outer closure).
+            sessionQueue.async { [self] in
                 guard self.movieOutput.isRecording else {
                     cont.resume(throwing: CameraError.noData)
                     return
