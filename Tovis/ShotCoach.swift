@@ -161,6 +161,10 @@ struct CoachResult: Sendable {
     /// (`nudge` is that next rung's tip) — the "compliment, then redirect"
     /// moment. Mutually exclusive with `cleared`.
     let advanced: CoachCategory?
+    /// The coach has said `nudge` for a while with its rung's score unmoved, so
+    /// this is the "once more, simpler" pass (`CoachBackOff`). `CoachEngine.apply`
+    /// turns it into the plainest form of the same instruction.
+    let simplified: Bool
     /// Raw perception values for the DEBUG tuning console. Nil unless the
     /// console is open (`CoachDebug.captureSignals`) — zero cost otherwise.
     let debug: [DebugSignal]?
@@ -354,12 +358,19 @@ enum CoachAggregate {
         /// `cleared`. This is the "compliment, then redirect" moment —
         /// "lighting's gorgeous — now step back a touch to center them."
         let advanced: CoachCategory?
+        /// The coach has been saying `nudge` for a while with nothing to show
+        /// for it, so this is the "once more, simpler" pass — say it with
+        /// everything but the instruction taken off (`CoachPlainLine`, applied
+        /// downstream in `CoachEngine.apply`). See `CoachBackOff`.
+        let simplified: Bool
 
         init(readiness: Double, nudge: CoachNudge?, statuses: [CoachStatus],
-             cleared: CoachCategory? = nil, advanced: CoachCategory? = nil) {
+             cleared: CoachCategory? = nil, advanced: CoachCategory? = nil,
+             simplified: Bool = false) {
             self.readiness = readiness
             self.nudge = nudge
             self.statuses = statuses
+            self.simplified = simplified
             self.cleared = cleared
             self.advanced = advanced
         }
@@ -394,7 +405,8 @@ enum CoachAggregate {
                        moment: $0.1.moment, phraseCtx: $0.1.phraseCtx)
         }
         return Verdict(readiness: readiness, nudge: outcome.nudge, statuses: statuses,
-                       cleared: outcome.cleared, advanced: outcome.advanced)
+                       cleared: outcome.cleared, advanced: outcome.advanced,
+                       simplified: outcome.simplified)
     }
 
     /// Single-frame evaluation with no memory — the raw ranking, which is what
@@ -456,6 +468,20 @@ struct CoachTipArbiter: Sendable {
         let nudge: CoachNudge?
         let cleared: CoachCategory?
         let advanced: CoachCategory?
+        /// `nudge` has been on the lane long enough, with its rung's score
+        /// unmoved, that it should be said once more in its plainest form —
+        /// `CoachBackOff`'s first stage. The WORDS are substituted downstream
+        /// in `CoachEngine.apply` (`CoachPlainLine`); this is only the
+        /// decision, which is arithmetic and belongs here at the rung.
+        let simplified: Bool
+
+        init(nudge: CoachNudge?, cleared: CoachCategory?, advanced: CoachCategory?,
+             simplified: Bool = false) {
+            self.nudge = nudge
+            self.cleared = cleared
+            self.advanced = advanced
+            self.simplified = simplified
+        }
     }
 
     /// One broken rung this frame: the tip to show for it, and whether it's a
@@ -495,12 +521,31 @@ struct CoachTipArbiter: Sendable {
     ///   • **A hard failure is never retired.** See the guard in `select`.
     var dismissed: Set<CoachMoment> = []
 
+    /// The other suppression at this seam — the SHORT-horizon one (camera plan
+    /// P4.3). `dismissed` is the pro's own standing answer about their salon,
+    /// pushed in from `CoachRoomMemory`; this is the coach's own reading of the
+    /// last minute, derived here and thrown away with the shoot. Both end up
+    /// doing the same thing to a rung, through the same code path below, and
+    /// carry the same three guarantees — readiness untouched, the dimensions
+    /// drawer untouched, a hard failure never suppressed. See `CoachBackOff`
+    /// for what it measures and why backing off releases the lock.
+    private var backOff = CoachBackOff()
+
     private var lockedRung: FocusRung?
     /// The last-known tip for the locked rung, kept even after it starts
     /// reading good — the ladder is waiting out the stability window before
     /// admitting that, and the pro shouldn't see the line go blank or the
     /// coach fall silent while that's happening.
     private var lockedNudge: CoachNudge?
+    /// Whether the sentence currently on the lane is being said in its plainest
+    /// form — `CoachBackOff`'s first stage. The ONE place that answer is
+    /// decided per frame, so every `Outcome` below reads it rather than
+    /// re-asking, and the "not stable yet, keep showing the last correction"
+    /// path shows exactly what was last shown. Without it, a rung that had
+    /// backed off to its plainer wording would grow its diagnosis clause BACK
+    /// for the 1.5s stability window — the coach getting wordier at the exact
+    /// moment the pro finally fixed it.
+    private var lockedNudgeSimplified = false
     /// When the locked rung FIRST started reading continuously good — nil
     /// whenever it's currently reading bad. `now - this >= focusStabilityWindow`
     /// is what actually triggers an advance.
@@ -522,10 +567,20 @@ struct CoachTipArbiter: Sendable {
         // precedence (unchanged by this) picks which one moment — framing or
         // centering — it's reporting this frame, if any.
         var byRung: [FocusRung: BrokenRung] = [:]
-        // Rungs whose only broken signal this frame is a tip the pro has
-        // retired in this room. Tracked apart from `byRung` because a lock
-        // sitting on one has to be let go of, not waited out — see below.
+        // Rungs the coach is not saying anything about this frame — a tip the
+        // pro has retired in this room (`CoachRoomMemory`, P4.1) or one it has
+        // backed off from (`CoachBackOff`, P4.3). Tracked apart from `byRung`
+        // because a lock sitting on one has to be let go of, not waited out —
+        // see below.
         var suppressedRungs: Set<FocusRung> = []
+        // What each broken rung SCORED this frame — the only input the
+        // short-horizon back-off has (`CoachBackOff`). Corrections only: a
+        // hard failure is a capture no edit recovers, and the coach quietly
+        // giving up on saying so is not restraint, it is the same lie of
+        // omission the dismissal path refuses one line down. It is also the
+        // stronger case here — a dismissal is at least the PRO's judgement,
+        // where backing off is only the coach's own.
+        var correctionScores: [FocusRung: Double] = [:]
         for (category, signal) in signals {
             guard let message = signal.message else { continue }
             let rung = signal.moment?.focusRung ?? category.defaultFocusRung
@@ -542,21 +597,37 @@ struct CoachTipArbiter: Sendable {
                 suppressedRungs.insert(rung)
                 continue
             }
+            if signal.severity == .correction { correctionScores[rung] = signal.score }
             byRung[rung] = BrokenRung(
                 nudge: CoachNudge(category: category, message: message,
                                   moment: signal.moment, phraseCtx: signal.phraseCtx),
                 severity: signal.severity)
         }
 
-        // A dismissal that lands while its OWN rung is locked: drop the lock
-        // now, this frame. Falling through to the stable-good path instead
-        // would keep the retired line on screen for the whole stability
-        // window and then COMPLIMENT the pro on the colour it is still
-        // wrong about — the ladder would read "nothing broken here" from an
-        // absence that is suppression, not a fix.
+        // Short-horizon back-off. The clock only ever advances for the rung the
+        // pro is actually reading (`lockedRung` as it stands on the way IN to
+        // this frame) and for rungs already backed off, so a rung the coach has
+        // never spoken about cannot wear out its welcome before it is said once.
+        backOff.update(brokenScores: correctionScores, locked: lockedRung, now: now)
+        for rung in backOff.quietedRungs where byRung[rung] != nil {
+            // Same channel as a dismissal, on purpose: the lock-drop below is
+            // the ONE place a suppressed rung is let go of, so the ladder can
+            // never read silence as stable-good and compliment the pro on a
+            // problem that is still there.
+            suppressedRungs.insert(rung)
+            byRung[rung] = nil
+        }
+
+        // A dismissal or a back-off that lands while its OWN rung is locked:
+        // drop the lock now, this frame. Falling through to the stable-good
+        // path instead would keep the suppressed line on screen for the whole
+        // stability window and then COMPLIMENT the pro on the colour it is
+        // still wrong about — the ladder would read "nothing broken here" from
+        // an absence that is suppression, not a fix.
         if let locked = lockedRung, suppressedRungs.contains(locked), byRung[locked] == nil {
             lockedRung = nil
             lockedNudge = nil
+            lockedNudgeSimplified = false
             stableGoodSince = nil
             preemption = nil
         }
@@ -575,7 +646,8 @@ struct CoachTipArbiter: Sendable {
             // Nothing locked: lock onto the highest-priority broken rung, if any.
             guard let first = broken.first else { return Outcome(nudge: nil, cleared: nil, advanced: nil) }
             lock(onto: first, nudge: byRung[first]?.nudge, now: now)
-            return Outcome(nudge: byRung[first]?.nudge, cleared: nil, advanced: nil)
+            return Outcome(nudge: byRung[first]?.nudge, cleared: nil, advanced: nil,
+                           simplified: lockedNudgeSimplified)
         }
 
         // Preemption check: does anything currently OUTRANK the lock? A lock
@@ -589,7 +661,8 @@ struct CoachTipArbiter: Sendable {
             if now - preemption!.badSince >= CoachTuning.focusRegressionWindow {
                 // Trusted — jump to it. Not a completion, so no compliment.
                 lock(onto: candidate, nudge: byRung[candidate]?.nudge, now: now)
-                return Outcome(nudge: byRung[candidate]?.nudge, cleared: nil, advanced: nil)
+                return Outcome(nudge: byRung[candidate]?.nudge, cleared: nil, advanced: nil,
+                               simplified: lockedNudgeSimplified)
             }
             // Not trusted yet; keep working the current lock below.
         } else {
@@ -599,8 +672,10 @@ struct CoachTipArbiter: Sendable {
         if let current = byRung[locked]?.nudge {
             // Still broken (however it's currently worded) — hold the line.
             lockedNudge = current
+            lockedNudgeSimplified = backOff.stage(of: locked) == .simplified
             stableGoodSince = nil
-            return Outcome(nudge: current, cleared: nil, advanced: nil)
+            return Outcome(nudge: current, cleared: nil, advanced: nil,
+                           simplified: lockedNudgeSimplified)
         }
 
         // Reads good this frame. Only trust it once it's held for the whole
@@ -608,8 +683,10 @@ struct CoachTipArbiter: Sendable {
         if stableGoodSince == nil { stableGoodSince = now }
         guard now - stableGoodSince! >= CoachTuning.focusStabilityWindow else {
             // Not stable yet — keep showing the last known correction rather
-            // than going quiet over what might be a flicker.
-            return Outcome(nudge: lockedNudge, cleared: nil, advanced: nil)
+            // than going quiet over what might be a flicker, and in the wording
+            // it was last shown in.
+            return Outcome(nudge: lockedNudge, cleared: nil, advanced: nil,
+                           simplified: lockedNudgeSimplified)
         }
 
         // Stable. Advance to the next broken rung, or fully clear. `broken` is
@@ -619,10 +696,12 @@ struct CoachTipArbiter: Sendable {
         // path, which is what makes it serve its hysteresis window.
         if let next = broken.first(where: { $0 > locked || byRung[$0]?.severity == .failure }) {
             lock(onto: next, nudge: byRung[next]?.nudge, now: now)
-            return Outcome(nudge: byRung[next]?.nudge, cleared: nil, advanced: locked.category)
+            return Outcome(nudge: byRung[next]?.nudge, cleared: nil, advanced: locked.category,
+                           simplified: lockedNudgeSimplified)
         }
         lockedRung = nil
         lockedNudge = nil
+        lockedNudgeSimplified = false
         stableGoodSince = nil
         preemption = nil
         return Outcome(nudge: nil, cleared: locked.category, advanced: nil)
@@ -631,6 +710,7 @@ struct CoachTipArbiter: Sendable {
     private mutating func lock(onto rung: FocusRung, nudge: CoachNudge?, now: TimeInterval) {
         lockedRung = rung
         lockedNudge = nudge
+        lockedNudgeSimplified = backOff.stage(of: rung) == .simplified
         stableGoodSince = nil
         preemption = nil
     }

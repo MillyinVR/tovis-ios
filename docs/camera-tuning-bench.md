@@ -434,6 +434,38 @@ all. The 2026-08-23 run above was reproduced to the digit after the change
 (19/35 composition · 11/35 colour · 3/35 sharpness · 1/35 lighting · 1/35
 nothing to fix), which is what says so.
 
+## The coach backing off, and why it moves nothing here (added 2026-08-24, P4.3)
+
+`CoachBackOff` gives the tip arbiter a second reason to stop saying something:
+a rung that has held the lane for `CoachTuning.coachPatienceSeconds` with **no
+measurable improvement in its own score** is said once more plainly and then
+dropped, and the ladder coaches the next thing instead.
+
+Three things about it matter to whoever reads this file next:
+
+1. **`coachPatienceSeconds` is not a perception threshold.** It sits in the
+   "How the one coach line behaves" block with `focusStabilityWindow` and
+   `focusRegressionWindow` — behavioural numbers set by how long a person takes
+   to read a line and act on it. The salon pass does not invalidate it; a
+   stopwatch on a working pro would. Do not sweep it with the luma/edge/colour
+   numbers.
+2. **It changes no number this bench measures.** The bench runs every image
+   through `CoachAggregate.evaluate(_:_:)`, whose fresh arbiter is asked
+   **once**, at `now = 0` — so nothing can have stalled and every line is the
+   canonical one. The 2026-08-23 run reproduces to the digit after the change
+   (19/35 composition · 11/35 colour · 3/35 sharpness · 1/35 lighting · 1/35
+   nothing to fix), which is what says so, and it was re-run BEFORE the change
+   as well to prove the bench itself still ran.
+3. **`Tovis/CoachBackOff.swift` is now in `run.sh`'s file list.** `ShotCoach.swift`
+   references the type, so a bench that did not compile it would fail — loudly,
+   which is the design, but the file list is a thing to keep in step (this is
+   the third rot mode the 2026-08-23 repair called out).
+
+Like a dismissal, backing off suppresses the SENTENCE and never a score:
+readiness is a weighted mean computed before the arbiter is consulted, and the
+dimensions drawer is built from the same signals. Pinned by
+`CoachTipArbiterTests.backingOffDoesNotMoveReadinessOrTheDimensionsDrawer`.
+
 ## What still genuinely needs the phone
 
 - Every number in the table re-measured on live preview frames in a real salon.
@@ -443,3 +475,7 @@ nothing to fix), which is what says so.
 - The composed Step-2 UI over a live preview (never seen; surfaces were only
   rendered standalone).
 - Whether the readiness ring *feels* right, which no bench can answer.
+- **`coachPatienceSeconds` = 20** (P4.3): whether twenty seconds of an unmoved
+  score is the right moment to say it plainer, and forty the right moment to
+  stop. Set from how long a real physical adjustment takes to land; only
+  watching a pro mid-session settles it.

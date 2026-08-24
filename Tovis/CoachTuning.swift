@@ -85,6 +85,30 @@ enum CoachTuning {
     /// long enough that two borderline rungs can't ping-pong the lock between
     /// them.
     nonisolated(unsafe) static var focusRegressionWindow: Double = 1.0
+    /// How long (seconds) the coach keeps saying the same correction while the
+    /// rung it is about shows NO measurable improvement, before it says it once
+    /// more plainly — and then, after the same span again, stops saying it and
+    /// coaches the next thing instead (camera plan P4.3, `CoachBackOff`).
+    ///
+    /// A NEW knob rather than a reuse, deliberately, and #357's reuse of
+    /// `autoCaptureHoldSeconds` is the reason it has to be argued: that reuse
+    /// worked because both consumers meant the SAME thing ("a hold good and
+    /// still long enough to earn a shutter"). Nothing here means the same thing
+    /// as anything above it. `focusStabilityWindow` (1.5) and
+    /// `focusRegressionWindow` (1.0) ask "is this reading real?" — they are set
+    /// by sensor noise. This asks "how long is too long to be saying the same
+    /// sentence?", which is set by a stopwatch on a person, and it is an order
+    /// of magnitude larger. Sharing either would couple a human-patience number
+    /// to a debounce and drag one wherever the device pass drags the other.
+    ///
+    /// 20s: long enough that a real physical adjustment — walking closer,
+    /// turning the chair, moving a client — has time to land and register as an
+    /// improvement, so an ordinary correction is never cut short. The pro hears
+    /// the tip at most once per category per 9s (`CoachSpeechScheduler`), so a
+    /// full first stage is roughly "you've been shown this line twice and the
+    /// number hasn't moved". Behavioural, not perceptual: the salon pass does
+    /// not invalidate it — watching a pro with a stopwatch would.
+    nonisolated(unsafe) static var coachPatienceSeconds: Double = 20
     /// Minimum spacing (seconds) between coaching haptics. The buzz is for
     /// news; without a floor, a re-rank storm is felt as a continuous vibration.
     nonisolated(unsafe) static var nudgeHapticMinInterval: Double = 2.0

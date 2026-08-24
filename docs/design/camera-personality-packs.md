@@ -182,27 +182,35 @@ enum CoachVoiceRenderer {
 its purpose is to validate the seam with **zero user-visible change**, and it
 becomes the reference the other four packs are diffed against for coverage.
 
-#### What else writes the fallback now (updated 2026-08-23)
+#### What else writes the fallback now (updated 2026-08-24)
 
-Two things downstream of the decision layer rewrite a correction's words
-before the renderer sees them. Both are word-only, both run in
-`CoachEngine.apply`, and neither can change *what* fires or *when* — the
+Three things downstream of the decision layer rewrite a correction's words
+before the renderer sees them. All are word-only, all run in
+`CoachEngine.apply`, and none can change *what* fires or *when* — the
 scheduler and the per-category cooldown are the same ones as before:
 
 | layer | what it replaces | keeps the moment? |
 |---|---|---|
 | `LookDirectionScript` (tovis-app #974) | the WHOLE correction, with the sentence the model wrote for that coach state | **no** — a look line is already a complete direction, so it is spoken verbatim on every surface |
 | `CoachBookingVocabulary` (plan P3) | one NOUN in the canonical text — "Center Maya" for "Center your subject", "…fill the frame with the caramel balayage" for "…fill the frame" | **yes** — it is still the same instruction, so a pack still gets to flourish it |
+| `CoachPlainLine` (plan P4.3) | the DIAGNOSIS clause, once the coach has backed off — "Turn off the overheads" for "Mixed light — turn off the overheads". Also drops the spoken `why` | **yes** — same instruction, less of it |
 
-Precedence is look → booking → canonical. The consequence worth stating
-plainly: because booking vocabulary only replaces the *fallback*, a pro on
-**Calm Mentor** (the default, which overrides nothing) hears the client's name,
-and a pro who has chosen one of the four packs keeps that pack's generic line.
-Teaching the packs to name the client is follow-up work — it would make those
-moments open-set for `scripts/coach-voice-manifest`, which is a decision the
-manifest's owner should make on purpose rather than inherit.
+Precedence is look → booking → plain → canonical. The consequence worth stating
+plainly: because booking vocabulary and the plain form only replace the
+*fallback*, a pro on **Calm Mentor** (the default, which overrides nothing)
+hears the client's name and gets the shortened line, and a pro who has chosen
+one of the four packs keeps that pack's generic line. Teaching the packs to
+name the client — and to have a plain form — is follow-up work: it would make
+those moments open-set for `scripts/coach-voice-manifest`, which is a decision
+the manifest's owner should make on purpose rather than inherit.
 
-#### The one thing that SUPPRESSES rather than rewords (added 2026-08-23, P4.1)
+Note what a pack *does* still get from P4.3, since it is the half that matters:
+the DECISION to go quiet is taken at the rung, in `CoachTipArbiter`, and is
+entirely pack-independent — so the coach stops repeating itself in every voice.
+Only the intermediate "once more, plainer" step is canonical-only, plus the
+`why` being dropped from speech, which applies to every non-`.minimal` pack.
+
+#### The two things that SUPPRESS rather than reword (P4.1, P4.3)
 
 Room memory (`CoachRoomMemory`, camera plan P4.1) is the first layer that does
 not fit the table above, and it is worth saying why out loud rather than
@@ -236,6 +244,28 @@ The pack seam itself is unchanged: one new moment, `.roomTipDismissed`, wraps
 `.sessionGuideNoteMet`, and is excluded from `coach-voice-manifest`'s pre-bake
 scope for the same reason. Nothing in `CoachRoomMemory` or `CoachTipArbiter`
 reads a `CoachVoice`.
+
+
+**The second one, added 2026-08-24 (P4.3).** `CoachBackOff` does the same thing
+for a different reason: the pro has *not* said anything, the coach has simply
+noticed it has been saying one line for `CoachTuning.coachPatienceSeconds` × 2
+without that rung's score moving at all. It backs off — and it does so at the
+same seam, in `CoachTipArbiter`, through the same lock-drop, for the same
+reason: suppressing downstream would leave the ladder locked on a rung nobody
+is being told about.
+
+The two are not interchangeable, and the differences are the argued part:
+
+| | `CoachRoomMemory` (P4.1) | `CoachBackOff` (P4.3) |
+|---|---|---|
+| whose judgement | the PRO's — they tapped GOT IT | the COACH's own, from arithmetic |
+| horizon | permanent, per salon location, `UserDefaults` | this shoot only, never persisted |
+| scope | 4 room-condition moments (allowlisted) | any rung, because the evidence is the rung's own score |
+| undone by | UNDO, or a `meaningVersions` bump | the score moving by more than `improvementEpsilon` |
+| hard failure | never retired | never backed off — and for a *stronger* reason: this is only the coach's inference, so it gets less licence, not more |
+
+Both leave **readiness** and the **dimensions drawer** exactly as they were.
+The pro loses a sentence, never the truth about the frame.
 
 ### 2.2 Render sites (where `CoachVoiceRenderer` gets called)
 
