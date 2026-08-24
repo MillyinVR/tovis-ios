@@ -22,6 +22,11 @@ struct ProCapturePhotosView: View {
     /// instead of "Center your subject". Nil when practising, or when the
     /// booking has no usable name — see `CoachBookingVocabulary`.
     var clientName: String? = nil
+    /// The booking's salon location id and mode ("SALON"/"MOBILE") — the
+    /// stable, non-GPS key the coach's room memory hangs on (P4.1). Nil/MOBILE
+    /// means this shoot has no room to remember; see `CoachRoomMemory`.
+    var locationId: String? = nil
+    var locationType: String? = nil
     /// "Before" photos to ghost as onion-skin while shooting AFTER, so the pairs
     /// line up. Empty for the BEFORE phase (nothing to match yet).
     var referenceURLs: [URL] = []
@@ -232,6 +237,12 @@ struct ProCapturePhotosView: View {
     @State private var stepTransientToken = 0
     @State private var lightTransient: (text: String, ok: Bool)?
     @State private var lightTransientToken = 0
+    /// The coach's answer to a tip the pro just retired, inside its transient
+    /// window (P4.1).
+    @State private var roomDismissTransient: String?
+    @State private var roomDismissToken = 0
+    /// Whether that confirmation still has a tip to put back.
+    @State private var roomDismissUndoable = false
     /// The last light-match verdict seen, so the lane fires on the CHANGE rather
     /// than re-announcing a steady state every frame.
     @State private var lastLightMatchOK: Bool?
@@ -327,6 +338,20 @@ struct ProCapturePhotosView: View {
             // canonical lines — there is no client to name there.
             engine.bookingVocabulary = CoachBookingVocabulary(
                 serviceName: serviceName, clientFullName: clientName)
+            // What this ROOM has already been told. Nil for practice and for a
+            // mobile shoot — neither has a room that outlives the booking —
+            // and the coach then behaves exactly as it always has.
+            //
+            // Built ONCE per engine per room, not once per `.task`. This task
+            // runs again every time the view comes back from a fullScreenCover
+            // (the frame scrubber, the best-shots tray) with the SAME engine,
+            // and a fresh memory would reset its "already counted this shoot"
+            // set — so one shoot would be counted twice and the offer would
+            // arrive before the pro had really met the tip three times.
+            if engine.roomMemory?.locationId != locationId {
+                engine.setRoomMemory(CoachRoomMemory(locationId: locationId,
+                                                     locationType: locationType))
+            }
             // Re-arm CoreMotion: the frame scrubber is a fullScreenCover, which
             // fires this view's onDisappear → engine.stop(); on return the
             // engine is reused, so the level stream must be restarted here or
@@ -1871,6 +1896,8 @@ struct ProCapturePhotosView: View {
         inputs.bestShotCount = coach?.harvested.count ?? 0
         inputs.lightDrifted = driftNudgeActive
         inputs.lightTransient = lightTransient
+        inputs.roomTipDismissed = roomDismissTransient
+        inputs.roomTipDismissalUndoable = roomDismissUndoable
         inputs.stepTransient = stepTransient
         if guidedShooting {
             inputs.stepProgress = (index: currentStepIndex, total: guide.steps.count)
@@ -1888,6 +1915,11 @@ struct ProCapturePhotosView: View {
         inputs.coachTip = liveNudge?.message
         inputs.coachTipMoment = liveNudge?.moment
         inputs.coachTipPhraseCtx = liveNudge?.phraseCtx
+        // The room-memory offer rides on the coach's own line and only on it:
+        // no tip on the lane (tips off, set finished, look line in charge)
+        // means no offer, by construction rather than by a second rule.
+        inputs.coachTipDismissible = liveNudge?.moment != nil
+            && coach?.dismissalOffer == liveNudge?.moment
         inputs.stepHint = (guidedShooting && !allStepsDone) ? currentStep?.hint : nil
         inputs.stepPhraseCtx = (guidedShooting && !allStepsDone)
             ? currentStep.map { CoachPhraseContext(subjectNoun: $0.title, detail: $0.hint) } : nil
@@ -1915,6 +1947,21 @@ struct ProCapturePhotosView: View {
             try? await Task.sleep(nanoseconds: UInt64(CameraLane.transientSeconds * 1_000_000_000))
             // A newer transient superseded this one — its own timer owns the lane.
             if stepTransientToken == token { stepTransient = nil }
+        }
+    }
+
+    /// Same, for the coach's answer when the pro retires a room tip.
+    private func announceRoomDismissInLane(_ text: String, undoable: Bool) {
+        roomDismissTransient = text
+        roomDismissUndoable = undoable
+        roomDismissToken += 1
+        let token = roomDismissToken
+        Task {
+            try? await Task.sleep(nanoseconds: UInt64(CameraLane.transientSeconds * 1_000_000_000))
+            if roomDismissToken == token {
+                roomDismissTransient = nil
+                roomDismissUndoable = false
+            }
         }
     }
 
@@ -1957,6 +2004,16 @@ struct ProCapturePhotosView: View {
             calibrating = true
             cardMode = true
             calibrationStatus = nil
+        case .dismissRoomTip:
+            // The engine owns the record and the words; the lane only shows
+            // the sentence it hands back.
+            if let confirmation = coach?.dismissRoomTip() {
+                announceRoomDismissInLane(confirmation, undoable: true)
+            }
+        case .undoRoomDismissal:
+            if let confirmation = coach?.undoRoomDismissal() {
+                announceRoomDismissInLane(confirmation, undoable: false)
+            }
         }
     }
 

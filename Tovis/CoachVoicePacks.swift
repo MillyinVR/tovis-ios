@@ -200,6 +200,9 @@ struct HypeBestieVoice: CoachVoice {
             let compliment = ctx.subjectNoun ?? "Nice!"
             let next = ctx.detail ?? "Let's keep going!"
             return "\(compliment) Now: \(next)"
+        case .roomTipDismissed:
+            let noted = ctx.detail ?? "Got it — that's just this room"
+            return "\(noted). Won't mention it again!"
         }
     }
 }
@@ -316,6 +319,10 @@ struct StraightShooterVoice: CoachVoice {
             let compliment = ctx.subjectNoun ?? "Good."
             let next = ctx.detail ?? "Next."
             return "\(compliment) \(next)"
+        case .roomTipDismissed:
+            // Terse pack, and the canonical sentence is already terse: adding
+            // "Noted." after "Got it" is the same word twice.
+            return ctx.detail ?? "Got it — that's this room"
         }
     }
 }
@@ -456,6 +463,9 @@ struct EditorialDirectorVoice: CoachVoice {
             let compliment = ctx.subjectNoun ?? "Good."
             let next = ctx.detail ?? "Next."
             return "\(compliment) Next: \(next)"
+        case .roomTipDismissed:
+            let noted = ctx.detail ?? "Understood — that's this room"
+            return "\(noted). We'll work with it."
         }
     }
 }
@@ -612,6 +622,9 @@ struct DragQueenBestieVoice: CoachVoice {
             let compliment = ctx.subjectNoun ?? "Gorgeous!"
             let next = ctx.detail ?? "Let's keep going, baby!"
             return "\(compliment) Now, honey: \(next)"
+        case .roomTipDismissed:
+            let noted = ctx.detail ?? "Got it — that's just this room"
+            return "\(noted). Say no more, honey!"
         }
     }
 }

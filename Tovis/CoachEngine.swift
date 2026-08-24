@@ -70,6 +70,21 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         cropLock.lock(); defer { cropLock.unlock() }; return _cropGuide
     }
 
+    // Room-condition tips the pro has retired at THIS salon location
+    // (`CoachRoomMemory`) — written from the engine when the memory is set and
+    // when the pro taps the offer, read per frame, same cross-queue pattern as
+    // the tilt/expectations/crop above. Empty = the coach says everything it
+    // always did, which is what practice, a mobile shoot and every unmemorised
+    // room get.
+    private let dismissedLock = NSLock()
+    private var _dismissedMoments: Set<CoachMoment> = []
+    func setDismissedMoments(_ value: Set<CoachMoment>) {
+        dismissedLock.lock(); _dismissedMoments = value; dismissedLock.unlock()
+    }
+    private func currentDismissedMoments() -> Set<CoachMoment> {
+        dismissedLock.lock(); defer { dismissedLock.unlock() }; return _dismissedMoments
+    }
+
     // MARK: - Best-shot harvesting (Session Reel)
     /// When on, the analyzer grabs a high-res still whenever a frame earns it —
     /// a readiness peak, or the best frame of a steady green hold (see
@@ -190,6 +205,10 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             // can be tuned and tested without hardware. The arbiter carries the
             // tip's dwell across frames so the one line stops being re-ranked
             // six times a second.
+            // The arbiter is frame-queue-confined, so the retired set is read
+            // across the queue boundary here and handed to it as a plain value
+            // — the ranking itself stays pure.
+            tipArbiter.dismissed = currentDismissedMoments()
             let verdict = CoachAggregate.evaluate(coaches, ctx, arbiter: &tipArbiter, now: now)
             let readiness = verdict.readiness
             let nudge = verdict.nudge
@@ -429,6 +448,18 @@ final class CoachEngine: NSObject {
     /// per-category cooldown as everything else: the booking changes the
     /// words, never the pacing. See `CoachBookingVocabulary`.
     var bookingVocabulary: CoachBookingVocabulary = .empty
+    /// This salon room's memory of what the pro has already been told here —
+    /// nil for practice, for a mobile shoot, and for any booking without a
+    /// salon location, all of which coach exactly as they do today. Set once
+    /// by the camera view at start-up via `setRoomMemory(_:)`.
+    private(set) var roomMemory: CoachRoomMemory?
+    /// The room-condition tip currently on the lane that this pro has now met
+    /// often enough HERE to be offered a way to retire it, or nil (the normal
+    /// case). The camera view turns this into the lane's one trailing word.
+    private(set) var dismissalOffer: CoachMoment?
+    /// The tip retired by the most recent tap, so the confirmation row can
+    /// offer to put it back for the couple of seconds it is on screen.
+    private var lastRoomDismissal: CoachMoment?
     /// When the look's settle line (`ready` trigger) last spoke — the floor
     /// under re-speaks when readiness flickers around the threshold.
     private var lastSettleLineAt: Date?
@@ -584,6 +615,14 @@ final class CoachEngine: NSObject {
             } ?? spoken
         }
 
+        // Room memory (P4.1): count this shoot's sighting of the tip, and
+        // decide whether the lane offers a way to retire it. The rule lives on
+        // `CoachRoomMemory` so it is testable without a camera; nothing it
+        // does touches `readiness`, `statuses` or the speech scheduler — it
+        // decides whether ONE trailing word is offered.
+        dismissalOffer = roomMemory?.offer(forRaw: result.nudge?.moment,
+                                           published: effectiveNudge?.moment)
+
         // Sequential focus coaching: the ladder just moved off a rung that
         // read stable-good. `CoachTipArbiter` only reports either of these on
         // the single frame it happens — the debouncing (was this REALLY
@@ -669,6 +708,85 @@ final class CoachEngine: NSObject {
             holdProgress = 0
             isSteadyReady = false
         }
+    }
+
+    // MARK: - Room memory (P4.1)
+
+    /// Hand the coach this shoot's room, or nil for one it shouldn't remember
+    /// (practice, mobile, a booking with no salon location). Pushes the
+    /// already-retired tips down to the analyzer so the very first analyzed
+    /// frame of the shoot is already quiet about them — a pro who retired the
+    /// overheads last week must not hear about them once more on the way in.
+    func setRoomMemory(_ memory: CoachRoomMemory?) {
+        roomMemory = memory
+        dismissalOffer = nil
+        lastRoomDismissal = nil
+        analyzer.setDismissedMoments(memory?.dismissedMoments ?? [])
+    }
+
+    /// The pro tapped the lane's offer: this room's condition isn't theirs to
+    /// change, so stop mentioning it HERE. Returns the confirmation sentence
+    /// to put on the lane — already rendered in the pro's chosen voice, so the
+    /// lane shows it verbatim rather than flourishing it a second time — or
+    /// nil when there was nothing on offer.
+    ///
+    /// ⚠️ Suppression only. The retired condition still scores exactly what it
+    /// scored, the ring still reads it, and the dimensions drawer still names
+    /// it. See `CoachTipArbiter.dismissed`.
+    @discardableResult
+    func dismissRoomTip() -> String? {
+        guard let moment = dismissalOffer, let roomMemory,
+              roomMemory.dismiss(moment),
+              let fallback = CoachRoomMemory.confirmation(for: moment)
+        else { return nil }
+        analyzer.setDismissedMoments(roomMemory.dismissedMoments)
+        dismissalOffer = nil
+        lastRoomDismissal = moment
+        // The retired line is still the published nudge until the next
+        // analyzed frame arrives (~1/6 s). Clear it now so the lane can't
+        // flash the tip the pro just retired underneath its own confirmation.
+        if nudge?.moment == moment { nudge = nil }
+        let options = runtimeOptions()
+        let line = CoachVoiceRenderer.render(
+            .roomTipDismissed, fallback: fallback,
+            ctx: CoachPhraseContext(detail: fallback), voice: voice) ?? fallback
+        if options.haptics {
+            tap(.success)
+            // The next analyzed frame hands the lane to a different rung,
+            // which normally earns its own "a new dimension is talking" buzz.
+            // Landing that a fifth of a second after this confirmation is the
+            // double-tap `nudgeHapticMinInterval` exists to stop, so this
+            // counts as the beat.
+            lastNudgeHapticAt = Date()
+        }
+        // `.tip` priority: warm, but it never interrupts a line mid-flight.
+        if options.speak { speak(line, priority: .tip) }
+        return line
+    }
+
+    /// Put back the tip the pro just retired. Only ever reachable from the
+    /// confirmation row's own transient window — the lane stops offering it
+    /// the moment that expires — so this is the misfire escape, not a second
+    /// standing control. Returns the sentence to show, or nil if there was
+    /// nothing to put back.
+    @discardableResult
+    func undoRoomDismissal() -> String? {
+        guard let moment = lastRoomDismissal, let roomMemory,
+              roomMemory.restore(moment) else { return nil }
+        analyzer.setDismissedMoments(roomMemory.dismissedMoments)
+        lastRoomDismissal = nil
+        // Not re-offered here: `dismissalOffer` means "the tip ON THE LANE can
+        // be retired", and the restored tip is not back on the lane yet — the
+        // ladder takes up to `focusRegressionWindow` to preempt back to it.
+        // The next analyzed frame establishes the truth, and because the shoot
+        // count was left alone, a pro who DID mean it is one tap away again
+        // the moment the tip returns.
+        dismissalOffer = nil
+        // Deliberately moment-less: this is a state announcement about a
+        // CONTROL, in the same tier as the lane's own operational rows ("1
+        // photo waiting on signal"), and it is not spoken. The coaching
+        // sentence in this feature is `.roomTipDismissed`, which is.
+        return "That tip is back"
     }
 
     /// Re-arm the auto-capture hold after a shot fires (so it doesn't immediately

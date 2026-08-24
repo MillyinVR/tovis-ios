@@ -466,6 +466,35 @@ struct CoachTipArbiter: Sendable {
         let severity: CoachSeverity
     }
 
+    /// Room-condition tips this pro has retired at THIS location
+    /// (`CoachRoomMemory`) — the coach has been told the overheads are the
+    /// salon's and stay on. Set by the analyzer from the engine before each
+    /// evaluation; empty everywhere else, including in the memory-free
+    /// `CoachAggregate.evaluate(_:_:)` overload the bench and the pinned
+    /// readiness tests use, so neither can drift from canonical behaviour.
+    ///
+    /// ⚠️ This is the ONE thing in this file that changes what is DECIDED
+    /// rather than how it is worded — `LookDirectionScript` (#974) and
+    /// `CoachBookingVocabulary` (#358) both substitute words onto a
+    /// correction the coach has already chosen, downstream in
+    /// `CoachEngine.apply`. Suppression cannot live there: dropping the
+    /// published nudge would leave the ladder LOCKED on the retired rung,
+    /// and the coach would fall silent about everything else in the frame
+    /// instead of moving on to it. So it happens here, at the rung, and
+    /// carries a different guarantee that has to be argued rather than
+    /// inherited:
+    ///
+    ///   • **Readiness is untouched.** It is a weighted mean over `signals`,
+    ///     computed in `CoachAggregate.evaluate` before this type is asked
+    ///     anything, and nothing below writes to a score. A retired tip is
+    ///     still a real deficit and the ring still knows — the pro loses the
+    ///     sentence, never the truth about the frame.
+    ///   • **The dimensions drawer is untouched.** `statuses` is built from
+    ///     `signals` too, so the surface a pro opens on purpose to ask "why
+    ///     won't it go green?" still answers honestly.
+    ///   • **A hard failure is never retired.** See the guard in `select`.
+    var dismissed: Set<CoachMoment> = []
+
     private var lockedRung: FocusRung?
     /// The last-known tip for the locked rung, kept even after it starts
     /// reading good — the ladder is waiting out the stability window before
@@ -493,13 +522,43 @@ struct CoachTipArbiter: Sendable {
         // precedence (unchanged by this) picks which one moment — framing or
         // centering — it's reporting this frame, if any.
         var byRung: [FocusRung: BrokenRung] = [:]
+        // Rungs whose only broken signal this frame is a tip the pro has
+        // retired in this room. Tracked apart from `byRung` because a lock
+        // sitting on one has to be let go of, not waited out — see below.
+        var suppressedRungs: Set<FocusRung> = []
         for (category, signal) in signals {
             guard let message = signal.message else { continue }
             let rung = signal.moment?.focusRung ?? category.defaultFocusRung
+            // A retired room condition loses its WORDS and nothing else.
+            //
+            // `.correction` only: a `CoachSeverity.failure` is a capture no
+            // edit afterwards recovers, and the coach going quiet about a
+            // photograph that is already lost is not memory, it is a lie of
+            // omission. `CoachRoomMemory.dismissible` already refuses to
+            // record one; this refuses to honour one even if a stored value
+            // says otherwise.
+            if let moment = signal.moment, signal.severity == .correction,
+               dismissed.contains(moment) {
+                suppressedRungs.insert(rung)
+                continue
+            }
             byRung[rung] = BrokenRung(
                 nudge: CoachNudge(category: category, message: message,
                                   moment: signal.moment, phraseCtx: signal.phraseCtx),
                 severity: signal.severity)
+        }
+
+        // A dismissal that lands while its OWN rung is locked: drop the lock
+        // now, this frame. Falling through to the stable-good path instead
+        // would keep the retired line on screen for the whole stability
+        // window and then COMPLIMENT the pro on the colour it is still
+        // wrong about — the ladder would read "nothing broken here" from an
+        // absence that is suppression, not a fix.
+        if let locked = lockedRung, suppressedRungs.contains(locked), byRung[locked] == nil {
+            lockedRung = nil
+            lockedNudge = nil
+            stableGoodSince = nil
+            preemption = nil
         }
 
         // Priority order for THIS frame: hard failures first, then the ladder's

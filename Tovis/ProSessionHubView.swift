@@ -168,6 +168,13 @@ struct ProSessionHubView: View {
                                  // the client by name, the work by its service
                                  // name (P3). Both are already on this screen.
                                  clientName: detail?.client.fullName,
+                                 // The room the coach remembers (P4.1). The
+                                 // location id is the server's stable, non-GPS
+                                 // key; the mode is what says whether there is
+                                 // a room at all — a MOBILE booking carries the
+                                 // PRO's location id, not the house it's in.
+                                 locationId: detail?.locationId,
+                                 locationType: detail?.locationType,
                                  referenceURLs: selection.phase == .after ? beforeReferenceURLs : [],
                                  // Photos this phase ALREADY has. Without it the
                                  // camera would re-ask for the required shot every

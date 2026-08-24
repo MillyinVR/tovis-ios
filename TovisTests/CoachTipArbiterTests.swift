@@ -9,6 +9,7 @@
 // These pin the arithmetic. No camera, no thresholds from the device pass —
 // just: does the lock hold, does it advance/regress at the right moment, and
 // does the order match the ladder.
+import CoreGraphics
 import Testing
 @testable import Tovis
 
@@ -398,5 +399,103 @@ import Testing
         let picked = arbiter.select(
             from: [signal(.sharpness, score: 0.1), signal(.lighting, score: 0.4)], now: 0).nudge
         #expect(picked?.category == .lighting)
+    }
+
+    // MARK: - Room memory: retiring a tip the pro can't act on (P4.1)
+    //
+    // The one thing in this type that changes what is DECIDED rather than how
+    // it is worded — so these pin the guarantees that come with that, not just
+    // the happy path.
+
+    @Test func aRetiredRoomTipLosesTheLineToTheNextBrokenRung() {
+        var arbiter = CoachTipArbiter()
+        arbiter.dismissed = [.colorMixed]
+        let outcome = arbiter.select(
+            from: [signal(.color, score: 0.45, moment: .colorMixed),
+                   signal(.composition, score: 0.5, moment: .compositionTooFar)],
+            now: 0)
+        #expect(outcome.nudge?.moment == .compositionTooFar,
+                "the coach must move on to the next thing, not go quiet")
+    }
+
+    /// The coach doesn't fall silent about the whole frame just because the
+    /// one thing it was locked on has been retired — which is exactly what
+    /// suppressing downstream (in `CoachEngine.apply`) would have done.
+    @Test func retiringTheOnlyBrokenRungLeavesNothingToSayRatherThanAStaleLine() {
+        var arbiter = CoachTipArbiter()
+        arbiter.dismissed = [.backgroundBusy]
+        let outcome = arbiter.select(
+            from: [signal(.background, score: 0.5, moment: .backgroundBusy)], now: 0)
+        #expect(outcome.nudge == nil)
+        #expect(outcome.cleared == nil, "nothing was FIXED — there is just nothing left to say")
+    }
+
+    /// ⚠️ The rule the plan asked to be argued explicitly. A `.failure` is a
+    /// capture no edit recovers; "the light is behind them and this frame is
+    /// lost" is not the same kind of statement as "the overheads stay on
+    /// here", and the arbiter refuses to retire it even when the stored set
+    /// says otherwise.
+    @Test func aHardFailureIsNeverRetiredHoweverTheSetIsSpelled() {
+        var arbiter = CoachTipArbiter()
+        arbiter.dismissed = [.lightingBacklit, .sharpnessHoldSteady]
+        let outcome = arbiter.select(
+            from: [signal(.lighting, score: 0.4, moment: .lightingBacklit, severity: .failure),
+                   signal(.composition, score: 0.5, moment: .compositionTooFar)],
+            now: 0)
+        #expect(outcome.nudge?.moment == .lightingBacklit)
+    }
+
+    /// A tip that is retired while its own rung is LOCKED must let the lock go
+    /// this frame. Waiting the stability window out instead would keep the
+    /// retired sentence on screen for 1.5s and then compliment the pro on the
+    /// colour it is still wrong about — the ladder reading "fixed" off an
+    /// absence that is suppression.
+    @Test func aDismissalLandingOnTheLockedRungRedirectsWithoutAComplimentOrADelay() {
+        var arbiter = CoachTipArbiter()
+        let broken: [(CoachCategory, CoachSignal)] = [
+            signal(.color, score: 0.45, moment: .colorMixed),
+            signal(.composition, score: 0.5, moment: .compositionTooFar),
+        ]
+        #expect(arbiter.select(from: broken, now: 0).nudge?.moment == .colorMixed)
+        arbiter.dismissed = [.colorMixed]
+        let after = arbiter.select(from: broken, now: 0.1)
+        #expect(after.nudge?.moment == .compositionTooFar, "same frame, not after the stability window")
+        #expect(after.advanced == nil, "colour was retired, not fixed — nothing to compliment")
+        #expect(after.cleared == nil)
+    }
+
+    /// Suppression is about the WORDS. Readiness is a weighted mean over the
+    /// signals, computed before the arbiter is asked anything — a retired tip
+    /// is still a real deficit and the ring still knows.
+    @Test func retiringATipDoesNotMoveReadinessOrTheDimensionsDrawer() {
+        let coaches: [ShotCoach] = [ColorCoach(), BackgroundCoach()]
+        let ctx = FrameContext(
+            avgLuma: 0.5, faceBounds: CGRect(x: 0.3, y: 0.2, width: 0.4, height: 0.4),
+            faceLuma: 0.5, backgroundLuma: 0.5, sharpness: 1,
+            backgroundClutter: 1, subjectFill: 0.4, pose: nil, deviceTilt: 0,
+            color: ColorSignal(mixed: 1, greenTint: 0, warmth: 0, backgroundScoped: true),
+            expectations: nil)
+        var plain = CoachTipArbiter()
+        let before = CoachAggregate.evaluate(coaches, ctx, arbiter: &plain, now: 0)
+        var retired = CoachTipArbiter()
+        retired.dismissed = [.colorMixed]
+        let after = CoachAggregate.evaluate(coaches, ctx, arbiter: &retired, now: 0)
+
+        #expect(after.readiness == before.readiness, "the ring must still count the deficit")
+        #expect(after.statuses.map(\.score) == before.statuses.map(\.score))
+        #expect(after.statuses.map(\.message) == before.statuses.map(\.message),
+                "the drawer is the surface the pro opened to ask why it won't go green")
+        #expect(before.nudge?.moment == .colorMixed)
+        #expect(after.nudge?.moment != .colorMixed, "only the one on-screen line changes")
+    }
+
+    /// The memory-free overload — what the offline tuning bench and every
+    /// pinned `CoachReadinessTests` assertion run through — carries no
+    /// dismissals at all, so neither can drift from canonical behaviour.
+    @Test func theMemoryFreeOverloadNeverSuppressesAnything() {
+        var fresh = CoachTipArbiter()
+        #expect(fresh.dismissed.isEmpty)
+        _ = fresh.select(from: [signal(.color, score: 0.45, moment: .colorMixed)], now: 0)
+        #expect(fresh.dismissed.isEmpty)
     }
 }

@@ -401,6 +401,39 @@ footage, and the perception numbers are the device pass's call:
    against real salon light (§3.2), and colour still wins 11/35 lines here.
    Severity stops it outranking a lost frame; it does not make it right.
 
+## ⚠️ Before you retune `mixedLightSpread` or `clutterReference` (added 2026-08-23, P4.1)
+
+Those two constants now have a second consumer. `CoachRoomMemory` lets a pro
+retire a room-condition tip at their own salon ("the overheads stay on here"),
+and the record is keyed on **tip-id + location and nothing else** — no
+threshold value, no tuning version. That is deliberate, and it was chosen
+against the alternative:
+
+- **A retune cannot resurrect a dismissal.** The pro's answer was never about
+  the number: "the overheads stay on here" is a statement about the salon, and
+  the salon does not change when `mixedLightSpread` does. A dismissal quietly
+  evaporating because a constant two files away moved is exactly the
+  forgetting the phase exists to fix, and the pro experiences it as the coach
+  going back on its word.
+- **The cost of that choice** is the other half: a dismissal keeps suppressing
+  a tip even if a retune changes what that tip *claims* about a room. That is
+  made non-silent rather than accepted blind —
+  `CoachRoomMemory.meaningVersions` (empty today) is the deliberate,
+  auditable invalidator. If your retune genuinely changes what a moment
+  **means**, bump that moment's version in the same commit and every pro's
+  dismissal of it is forgotten at once, in the diff. If it only moves where
+  the threshold sits, leave it alone.
+
+Pinned by `CoachRoomMemoryTests.aThresholdRetuneCannotResurrectADismissal` and
+`.aMeaningVersionBumpIsTheOnlyThingThatForgetsADismissal`.
+
+Note also that none of this moves a number this bench measures: the dismissal
+suppresses the on-screen SENTENCE, never a score, and the bench runs through
+`CoachAggregate.evaluate(_:_:)`, whose fresh arbiter carries no dismissals at
+all. The 2026-08-23 run above was reproduced to the digit after the change
+(19/35 composition · 11/35 colour · 3/35 sharpness · 1/35 lighting · 1/35
+nothing to fix), which is what says so.
+
 ## What still genuinely needs the phone
 
 - Every number in the table re-measured on live preview frames in a real salon.

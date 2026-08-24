@@ -91,6 +91,7 @@ let excludedMoments: [CoachMoment: String] = [
     .sessionGuideNoteOutstanding: "wraps ProSessionPhotoRequirement.guideNote(phase) — open-set (ProCameraDestination.swift ~98)",
     .sessionOutstandingSentence: "wraps ProSessionPhotoRequirement.outstandingSentence(phase) — open-set (ProCameraDestination.swift ~124)",
     .leavingWithoutTitleSession: "wraps ProSessionPhotoRequirement.leavingWithoutTitle(phase) — open-set (ProCameraDestination.swift ~110)",
+    .roomTipDismissed: "wraps CoachRoomMemory.confirmation(for:) — one sentence per dismissible room condition, chosen at runtime from the tip being retired (CoachEngine.dismissRoomTip; CoachRoomMemory.swift)",
     .focusRungAdvanced: "wraps two ALREADY-rendered lines from other moments, composed at runtime — not fixed text (CoachEngine.swift ~549; see CoachPhraseContext.detail's doc comment)",
 ]
 

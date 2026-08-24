@@ -80,6 +80,15 @@ enum CoachMoment: Hashable, CaseIterable, Sendable {
     /// only ever supplies the bridge between them, never re-flourishes either
     /// half (see the retake-flow note in `CoachPhraseContext.detail`).
     case focusRungAdvanced
+
+    /// Room memory (camera plan P4.1): the pro has just told the coach that a
+    /// room condition — the salon's overheads, its backdrop — is not theirs
+    /// to change, and the coach has retired that tip at this location. The one
+    /// sentence the coach says back. `ctx.detail` carries the ALREADY-chosen
+    /// canonical sentence for the specific condition
+    /// (`CoachRoomMemory.confirmation(for:)`), so a pack supplies only the
+    /// bridge around it — same wrapping contract as `.sessionGuideNoteMet`.
+    case roomTipDismissed
 }
 
 extension CoachCategory {
