@@ -391,6 +391,100 @@ import UIKit
         }
     }
 
+    // MARK: - Station read: the room's words (P4.2)
+
+    /// Every line `CoachRoomVocabulary` can build, swept off
+    /// `CoachMoment.allCases` × every knowledge state a read can produce ×
+    /// both the worst booking the derivation accepts and none — the same
+    /// discipline as the sweeps above. The moment rides along because it
+    /// decides which ROW the line can appear on (only a dismissible moment
+    /// ever carries the GOT IT button).
+    private func everyRoomLine() -> [(moment: CoachMoment, text: String)] {
+        let cool = min(-0.1, CoachTuning.warmCastWarmth - 0.5)
+        let spread = CoachTuning.mixedLightSpread + 0.05
+        let window = [cool, cool + spread, cool + spread]
+        let flat = [0.0, 0.0, 0.0]
+        let profiles = [
+            CoachStationRead.Profile(warmth: CoachTuning.warmCastWarmth + 0.05,
+                                     greenTint: 0, thirdWarmths: window, readAt: .distantPast),
+            CoachStationRead.Profile(warmth: 0, greenTint: CoachTuning.greenCastTint + 0.05,
+                                     thirdWarmths: window, readAt: .distantPast),
+            CoachStationRead.Profile(warmth: 0, greenTint: 0,
+                                     thirdWarmths: window, readAt: .distantPast),
+            CoachStationRead.Profile(warmth: CoachTuning.warmCastWarmth + 0.05,
+                                     greenTint: 0, thirdWarmths: flat, readAt: .distantPast),
+        ]
+        let contexts = [
+            CoachPhraseContext(namesAPerson: true),
+            CoachPhraseContext(),
+        ]
+        var seen: Set<String> = []
+        return profiles.flatMap { profile -> [(CoachMoment, String)] in
+            let room = CoachRoomVocabulary(profile: profile)
+            return [worstCase, .empty].flatMap { vocabulary in
+                CoachMoment.allCases.flatMap { moment in
+                    contexts.compactMap { ctx in
+                        // Composed exactly as `CoachEngine.apply` composes:
+                        // booking first, the room's words over it.
+                        room.line(replacing: vocabulary.applied(to: CoachNudge(
+                            category: .color, message: "canonical",
+                            moment: moment, phraseCtx: ctx)), vocabulary: vocabulary)
+                            .map { (moment, $0) }
+                    }
+                }
+            }
+        }.filter { seen.insert($0.1).inserted }
+    }
+
+    /// Three of the four moments the room can reword are dismissible, so
+    /// those lines can land beside the GOT IT button and are measured against
+    /// that narrowest row; `.lightingTooDark` is a hard failure that can never
+    /// be retired, so its row keeps the chevron — measuring it against a
+    /// button it can never sit beside would fail lines the lane never shows.
+    @Test func everyRoomWordedLineFitsTheRowItCanActuallyAppearOn() {
+        let lines = everyRoomLine()
+        #expect(!lines.isEmpty, "the sweep found no room lines — it has stopped measuring anything")
+        // Self-checking: the sweep must reach both kinds of row, or half the
+        // measurement has quietly stopped happening.
+        #expect(lines.contains { CoachRoomMemory.dismissible.contains($0.moment) })
+        #expect(lines.contains { !CoachRoomMemory.dismissible.contains($0.moment) })
+        for width in screenWidths {
+            let besideOffer = actionRowTextWidth(screen: width,
+                                                 label: CameraLane.dismissRoomTipLabel)
+            let besideChevron = textWidth(screen: width)
+            for (moment, line) in lines {
+                let available = CoachRoomMemory.dismissible.contains(moment)
+                    ? besideOffer : besideChevron
+                let used = laidOutLines(line, width: available)
+                #expect(used <= CameraLane.maxTextLines,
+                        "\(Int(width))pt, \(moment): “\(line)” needs \(used) lines in \(Int(available))pt")
+            }
+        }
+    }
+
+    /// …and the back-off's plain form must still be plainer than the room's
+    /// words it replaces (P4.3's rule, re-asserted against P4.2's lines).
+    @Test func thePlainFormIsNeverLongerThanTheRoomsWords() {
+        let vocabulary = CoachBookingVocabulary(serviceName: "Caramel Balayage",
+                                                clientFullName: "Maya Lopez")
+        let room = CoachRoomVocabulary(profile: CoachStationRead.Profile(
+            warmth: CoachTuning.warmCastWarmth + 0.05,
+            greenTint: 0,
+            thirdWarmths: [min(-0.1, CoachTuning.warmCastWarmth - 0.5),
+                           CoachTuning.mixedLightSpread, CoachTuning.mixedLightSpread],
+            readAt: .distantPast))
+        for entry in everyCorrectionCanonicalLine() {
+            let spoken = room.applied(
+                to: vocabulary.applied(to: CoachNudge(
+                    category: entry.category, message: entry.text,
+                    moment: entry.moment, phraseCtx: entry.ctx)),
+                vocabulary: vocabulary)
+            guard let plain = CoachPlainLine.line(for: spoken, vocabulary: vocabulary) else { continue }
+            #expect(plain.count < spoken.message.count,
+                    "“\(plain)” is not plainer than “\(spoken.message)”")
+        }
+    }
+
     // MARK: - Looking at it
 
     /// The arithmetic above says the sentences fit. This renders them through
@@ -467,6 +561,45 @@ import UIKit
                 .appendingPathComponent("tovis-lane-plain-\(Int(width))pt.png")
             try png.write(to: url)
             print("PLAIN LINE LANE SNAPSHOT \(Int(width))pt → \(url.path)")
+        }
+    }
+
+    /// The room's words (P4.2), rendered — every line on the chevron row, and
+    /// the dismissible ones ALSO beside the GOT IT button, which is the
+    /// narrowest row those can actually get.
+    @Test func rendersTheRoomsWordsThroughTheRealLane() throws {
+        let entries = everyRoomLine().sorted { $0.text.count > $1.text.count }
+        let offerable = entries.filter { CoachRoomMemory.dismissible.contains($0.moment) }
+        for width in screenWidths {
+            let view = VStack(spacing: 2) {
+                ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
+                    CameraLaneView(
+                        message: LaneMessage(text: entry.text, tone: .warn,
+                                             expandable: true, pulses: true),
+                        backgroundBusy: false, onAction: { _ in }, onExpand: {},
+                        accessibilityValue: entry.text)
+                }
+                ForEach(Array(offerable.enumerated()), id: \.offset) { _, entry in
+                    CameraLaneView(
+                        message: LaneMessage(
+                            text: entry.text, tone: .warn,
+                            action: LaneAction(label: CameraLane.dismissRoomTipLabel,
+                                               kind: .dismissRoomTip),
+                            expandable: true, pulses: true),
+                        backgroundBusy: false, onAction: { _ in }, onExpand: {},
+                        accessibilityValue: entry.text)
+                }
+            }
+            .frame(width: width)
+            .background(Color.black)
+            let renderer = ImageRenderer(content: view)
+            renderer.scale = 3
+            let image = try #require(renderer.uiImage)
+            let png = try #require(image.pngData())
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("tovis-lane-station-\(Int(width))pt.png")
+            try png.write(to: url)
+            print("STATION WORDS LANE SNAPSHOT \(Int(width))pt → \(url.path)")
         }
     }
 

@@ -588,10 +588,18 @@ final class CoachEngine: NSObject {
         let options = runtimeOptions()
         analyzer.autoHarvestEnabled = options.autoHarvest
         readiness = result.readiness
-        // The booking's vocabulary reaches the drawer's rows through the SAME
-        // substitution as the lane's line below, so the two can't disagree
-        // about what the coach just said.
-        statuses = result.statuses.map { bookingVocabulary.applied(to: $0) }
+        // What the station read taught the coach about THIS room (P4.2) —
+        // words only, derived fresh each frame so a re-read or an expiry
+        // lands mid-shoot without a restart. `.empty` for practice, mobile,
+        // an unread room and an expired read alike.
+        let roomVocabulary = CoachRoomVocabulary(profile: roomMemory?.stationProfile())
+        // The booking's and the room's vocabulary reach the drawer's rows
+        // through the SAME substitutions as the lane's line below, so the two
+        // can't disagree about what the coach just said.
+        statuses = result.statuses.map {
+            roomVocabulary.applied(to: bookingVocabulary.applied(to: $0),
+                                   vocabulary: bookingVocabulary)
+        }
         centerSample = (result.centerR, result.centerG, result.centerB)
         frameLuma = result.frameLuma
         if let warmth = result.frameWarmth { frameWarmth = warmth }
@@ -624,8 +632,15 @@ final class CoachEngine: NSObject {
         // Under a booking, the plain form still names the client, because
         // `CoachPlainLine` builds from the vocabulary rather than from the
         // canonical text.
+        // The room's words (P4.2) run between the booking's and the look's:
+        // they override the booking's entry only where the station read has
+        // something truer to say (the room's own light), a look line still
+        // replaces the whole correction, and the back-off's plain form still
+        // wins while simplified — stripping a line down is not the moment to
+        // grow it a room clause.
         let effectiveNudge = result.nudge.map { raw -> CoachNudge in
-            let spoken = bookingVocabulary.applied(to: raw)
+            let spoken = roomVocabulary.applied(to: bookingVocabulary.applied(to: raw),
+                                                vocabulary: bookingVocabulary)
             if let look = lookDirections.line(replacing: spoken) {
                 return CoachNudge(category: spoken.category, message: look)
             }

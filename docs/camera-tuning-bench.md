@@ -466,6 +466,44 @@ readiness is a weighted mean computed before the arbiter is consulted, and the
 dimensions drawer is built from the same signals. Pinned by
 `CoachTipArbiterTests.backingOffDoesNotMoveReadinessOrTheDimensionsDrawer`.
 
+## The station read, and why it moves nothing here (added 2026-08-24, P4.2)
+
+`CoachStationRead` lets a pro snap their empty station once; the read is
+stored per room by `CoachRoomMemory` and reaches the pro as **words**
+(`CoachRoomVocabulary`, at the #974/#358/#360 seam in `CoachEngine.apply`)
+and as an **earlier GOT IT offer** for the colour tips the station itself
+measured. Four things about it matter to whoever reads this file next:
+
+1. **It seeds no threshold prior and moves no score — deliberately, and
+   against the plan's own wording.** The plan said "seeds profile/priors".
+   The colour thresholds this bench measures have never been salon-measured
+   (§3.2 is still owed), so a per-room delta would compound a guess with a
+   guess — and a ring that means different things in different rooms cannot
+   be trusted in any of them. When the salon pass has set the base numbers,
+   a prior can be argued from data; the profile already stores the raw
+   station measurements it would need.
+2. **Nothing in this bench's compile graph changed.** `ShotCoach.swift`,
+   `CoachTuning.swift` and `FrameMath.swift` are untouched;
+   `CoachStationRead`/`CoachRoomVocabulary` are consumed by
+   `CoachRoomMemory`/`CoachEngine`, which are deliberately outside the graph
+   — so `run.sh`'s file list needs no new entry. The 2026-08-23 run
+   reproduces to the digit after the change (19/35 composition · 11/35
+   colour · 3/35 sharpness · 1/35 lighting · 1/35 nothing to fix), re-run
+   BEFORE the change as well to prove the bench itself still ran.
+3. **A retune coherently moves what an old read means.** The profile stores
+   RAW numbers (warmth, green tint, per-third warmths) and every verdict —
+   window, cast, which tips it corroborates — is derived at use time against
+   the CURRENT `CoachTuning` thresholds. Move `mixedLightSpread` or
+   `warmCastWarmth` and every stored read is re-interpreted under the new
+   meaning in the same commit, with nothing stale frozen into UserDefaults.
+   That is also why no `meaningVersions` bump accompanies a station read: it
+   never changes what any moment CLAIMS — it only adds the room's own
+   evidence for the claim, which is why the offer may come early.
+4. **The read expires** (`CoachRoomMemory.stationReadMaxAge`, ~6 months) and
+   can be retaken any time from the session hub — a salon's light changes
+   and the coach cannot see it happen, so an unbounded read would drift ever
+   further from the room it claims to know.
+
 ## What still genuinely needs the phone
 
 - Every number in the table re-measured on live preview frames in a real salon.
