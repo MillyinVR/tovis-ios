@@ -182,6 +182,26 @@ enum CoachVoiceRenderer {
 its purpose is to validate the seam with **zero user-visible change**, and it
 becomes the reference the other four packs are diffed against for coverage.
 
+#### What else writes the fallback now (updated 2026-08-23)
+
+Two things downstream of the decision layer rewrite a correction's words
+before the renderer sees them. Both are word-only, both run in
+`CoachEngine.apply`, and neither can change *what* fires or *when* — the
+scheduler and the per-category cooldown are the same ones as before:
+
+| layer | what it replaces | keeps the moment? |
+|---|---|---|
+| `LookDirectionScript` (tovis-app #974) | the WHOLE correction, with the sentence the model wrote for that coach state | **no** — a look line is already a complete direction, so it is spoken verbatim on every surface |
+| `CoachBookingVocabulary` (plan P3) | one NOUN in the canonical text — "Center Maya" for "Center your subject", "…fill the frame with the caramel balayage" for "…fill the frame" | **yes** — it is still the same instruction, so a pack still gets to flourish it |
+
+Precedence is look → booking → canonical. The consequence worth stating
+plainly: because booking vocabulary only replaces the *fallback*, a pro on
+**Calm Mentor** (the default, which overrides nothing) hears the client's name,
+and a pro who has chosen one of the four packs keeps that pack's generic line.
+Teaching the packs to name the client is follow-up work — it would make those
+moments open-set for `scripts/coach-voice-manifest`, which is a decision the
+manifest's owner should make on purpose rather than inherit.
+
 ### 2.2 Render sites (where `CoachVoiceRenderer` gets called)
 
 Only three call sites change, all at the "final mile" between decision and

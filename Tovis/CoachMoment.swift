@@ -119,7 +119,11 @@ extension CoachCategory {
 /// a `\(...)` in it — covers every one seen in the launch scope without a
 /// pack needing to know `FrameContext` internals.
 nonisolated struct CoachPhraseContext: Sendable, Equatable {
-    /// `LevelCoach`'s tilt direction ("left"/"right").
+    /// A side, "left" or "right" — `LevelCoach`'s tilt direction, and
+    /// `CompositionCoach`'s read of which side of centre the subject is
+    /// sitting on. Always a POSITION, never a "move this way" instruction:
+    /// the move direction is the sign convention the level coach still has
+    /// flagged unverified, and nothing here should become a second one.
     var direction: String?
     /// The cleared dimension's spoken name, for `.dimensionCleared`; the shot
     /// title, the light-match noun ("before"/"reference"), the QC subject
@@ -127,6 +131,13 @@ nonisolated struct CoachPhraseContext: Sendable, Equatable {
     var subjectNoun: String?
     /// Reserved for a future moment that needs a count.
     var count: Int?
+    /// Whether this line is about the PERSON in front of the lens, rather than
+    /// the room, the camera, or a flat-lay of the work. It exists because two
+    /// moments carry BOTH kinds of line under one tag — `LightingCoach`'s
+    /// `onFace` picks between "their face is too dark" and "too dark" — so a
+    /// render that wants to name the client can tell them apart without
+    /// re-deriving it from the message string.
+    var namesAPerson: Bool = false
     /// A second interpolated string for Phase 4 moments that wrap a piece of
     /// existing text rather than just naming a thing — a step's hint, a
     /// pack's tagline, an AI direction line, a QC retake reason, a session
@@ -137,10 +148,12 @@ nonisolated struct CoachPhraseContext: Sendable, Equatable {
     /// per utterance, from whichever moment is doing the wrapping.
     var detail: String?
 
-    init(direction: String? = nil, subjectNoun: String? = nil, count: Int? = nil, detail: String? = nil) {
+    init(direction: String? = nil, subjectNoun: String? = nil, count: Int? = nil,
+         detail: String? = nil, namesAPerson: Bool = false) {
         self.direction = direction
         self.subjectNoun = subjectNoun
         self.count = count
         self.detail = detail
+        self.namesAPerson = namesAPerson
     }
 }
