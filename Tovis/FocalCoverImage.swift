@@ -2,7 +2,7 @@
 // a subject focal point (camera C6 / C6c) when one is supplied. It is the SwiftUI
 // counterpart of the web feed's `object-fit: cover` + `object-position` (see
 // `MediaFocalPoint.coverCrop`): a 3:4 capture in the full-screen 9:16 feed loses
-// ~40% of its width blind-center, so we place the visible window on the face.
+// a quarter of its width blind-center, so we place the visible window on the face.
 //
 // Two paths, by design:
 //  • No focal (the common case, and every row until web C6a #613 deploys) →

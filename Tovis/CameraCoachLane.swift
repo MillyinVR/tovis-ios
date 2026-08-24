@@ -374,7 +374,7 @@ extension CoachCategory {
     var spokenName: String {
         switch self {
         case .lighting: return "Lighting"
-        case .color: return "Colour"
+        case .color: return "Color"
         case .level: return "Level"
         case .composition: return "Framing"
         case .sharpness: return "Focus"

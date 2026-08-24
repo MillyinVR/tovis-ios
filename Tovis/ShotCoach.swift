@@ -10,7 +10,7 @@ import CoreGraphics
 import Foundation   // TimeInterval — the tip arbiter's dwell clock
 import TovisKit     // PublishCrop — the crop the coach judges inside
 
-enum CoachCategory: String, Sendable {
+enum CoachCategory: String, CaseIterable, Sendable {
     case lighting, composition, sharpness, background, pose, level, color
 
     /// Relative importance in the readiness score + which fix to surface first.
@@ -858,7 +858,7 @@ struct CompositionCoach: ShotCoach {
             let closer = "Move in closer — fill the frame"
             let closerWhy = crop == nil
                 ? "Standing too far back is the difference between a photo of a person and a photo of a room."
-                : "The 9:16 feed crop takes ~40% of the width off this — what looks filled here won't be once it's published."
+                : "The 9:16 feed crop takes a quarter of the width off this — what looks filled here won't be once it's published."
             if let band = expects?.fillBand {
                 if fill < band.lowerBound {
                     return CoachSignal(score: 0.5, message: closer, why: closerWhy, moment: .compositionTooFar)
@@ -918,7 +918,7 @@ struct CompositionCoach: ShotCoach {
         }
         if midY > CoachTuning.maxSubjectLow {
             return CoachSignal(
-                score: 0.5, message: "Raise the camera — subject’s too low",
+                score: 0.5, message: "Raise the camera — they’re too low",
                 why: "Empty space above the head pulls the eye away from the work.",
                 moment: .compositionTooLow,
                 phraseCtx: CoachPhraseContext(namesAPerson: true))
@@ -936,8 +936,8 @@ struct CompositionCoach: ShotCoach {
             // preview-left — which is what makes this a fact about the picture
             // rather than a second unverified sign convention.
             return CoachSignal(
-                score: 0.55, message: "Center your subject",
-                why: "Sitting between centre and a third reads as neither — the eye can't settle.",
+                score: 0.55, message: "Center them",
+                why: "Sitting between center and a third reads as neither — the eye can't settle.",
                 moment: .compositionRecenter,
                 phraseCtx: CoachPhraseContext(direction: centerX < 0.5 ? "left" : "right",
                                               namesAPerson: true))
@@ -1049,7 +1049,7 @@ struct PoseCoach: ShotCoach {
     func evaluate(_ ctx: FrameContext) -> CoachSignal {
         if let pose = ctx.pose, pose.edgeClipped {
             return CoachSignal(
-                score: 0.5, message: "Subject’s getting clipped — pull back",
+                score: 0.5, message: "They’re getting clipped — pull back",
                 why: "A shoulder or hand cut by the frame edge reads as a mistake, and there's no room left to crop.",
                 moment: .poseClipped,
                 phraseCtx: CoachPhraseContext(namesAPerson: true))
@@ -1180,8 +1180,8 @@ struct ColorCoach: ShotCoach {
         }
         if color.warmth > CoachTuning.warmCastWarmth {
             return CoachSignal(
-                score: 0.6, message: "Warm/yellow light — daylight reads truer",
-                why: "Warm light pushes blonde and ash tones yellow, which is the colour work the client paid for.",
+                score: 0.6, message: "Warm light — daylight reads truer",
+                why: "Warm light pushes blonde and ash tones yellow, which is the color work the client paid for.",
                 moment: .colorWarm)
         }
         // Small penalty for mild mixing; otherwise clean.

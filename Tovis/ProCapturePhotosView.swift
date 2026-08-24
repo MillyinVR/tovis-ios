@@ -19,7 +19,7 @@ struct ProCapturePhotosView: View {
     /// the coach the booking's own word for what's in the frame. Nil → generic.
     var serviceName: String? = nil
     /// The client's stored full name, so the coach can say "Center Maya"
-    /// instead of "Center your subject". Nil when practising, or when the
+    /// instead of "Center them". Nil when practising, or when the
     /// booking has no usable name — see `CoachBookingVocabulary`.
     var clientName: String? = nil
     /// The booking's salon location id and mode ("SALON"/"MOBILE") — the
@@ -1253,7 +1253,7 @@ struct ProCapturePhotosView: View {
 
     /// Publishing crops beauty work actually ships in. The PRIMARY box is 9:16
     /// — the Tovis Looks feed is a full-screen cover-cropped pager, so a 3:4
-    /// capture loses ~40% of its width there; whatever must survive the feed
+    /// capture loses a quarter of its width there; whatever must survive the feed
     /// stays inside the bright box. 4:5 (Instagram feed) rides along dimmer.
     /// Drawn from the sensor frame through the preview layer so what's inside
     /// the lines is exactly what survives each crop.

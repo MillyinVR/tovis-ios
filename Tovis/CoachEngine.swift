@@ -676,7 +676,12 @@ final class CoachEngine: NSObject {
             // complete sentences (this voice's own `goodMoment` line, this
             // voice's own line for `nudge`), never re-flourished against
             // each other. See `CoachMoment.focusRungAdvanced`.
-            let complimentFallback = advanced.canonicalGoodPhrase
+            // The SENTENCE form, not the drawer's row label: this line is
+            // built by concatenation below, so a compliment without a full
+            // stop runs straight into the next instruction. Every pack
+            // already returns a sentence here; the default voice defers to
+            // canonical text, so canonical has to supply one too.
+            let complimentFallback = advanced.canonicalGoodSentence
             let complimentRendered = CoachVoiceRenderer.render(
                 advanced.goodMoment, fallback: complimentFallback, voice: voice) ?? complimentFallback
             let nextRendered = spokenLine(for: nudge, simplified: result.simplified)
