@@ -141,10 +141,16 @@ struct StationReadView: View {
             .navigationTitle("Read your room")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.black, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            // The bar is painted BLACK in both modes, so its contents have to
+            // be told they are on a dark ground — otherwise the title and
+            // Cancel render dark-on-black for a pro in light mode. Same class
+            // of defect the render test caught in the overlay below.
+            .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
-                        .foregroundStyle(BrandColor.textSecondary)
+                        .foregroundStyle(.white.opacity(0.85))
                 }
             }
         }
