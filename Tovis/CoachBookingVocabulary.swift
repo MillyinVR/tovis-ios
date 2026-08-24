@@ -80,11 +80,13 @@ struct CoachBookingVocabulary: Equatable, Sendable {
         // corpus). "Fill the frame" with WHAT was exactly the gap.
         case .compositionTooFar:
             guard let workNoun else { return nil }
-            // Deliberately the canonical sentence with the noun added rather
-            // than a rewrite of it: "…let the caramel balayage fill the frame"
-            // reads better and wraps to THREE lines on a 375pt phone at a
-            // service name this still accepts. Measured, not guessed — see
-            // `CameraLaneLineFitTests`.
+            // Phrased as the canonical sentence with the noun appended, not
+            // as a rewrite of it. The rewrite was tried first — "Move in
+            // closer — LET \(workNoun) FILL the frame" — and it wraps to THREE
+            // lines on a 375pt phone at a service name this still accepts,
+            // which the 56pt lane would eat. This form clears the same
+            // measurement with four characters to spare. Measured, not
+            // guessed: `CameraLaneLineFitTests`.
             return "Move in closer — fill the frame with \(workNoun)"
 
         // Vision-grounded: the coach says where it can SEE them, which is the
