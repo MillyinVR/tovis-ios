@@ -9,7 +9,7 @@
       "goodPose",
       "goodSharpness"
     ],
-    "note" : "Calm Mentor's phrase(for:ctx:) always returns nil by design — it defers to canonical text. Only these 7 \"good\" moments have a centralized canonical source (CoachCategory.canonicalGoodPhrase, Tovis\/CoachVoice.swift). The remaining in-scope moments' canonical text is scattered across ShotCoach.swift, PhotoQC.swift, BeforeShotMeasure.swift, ProCapturePhotosView.swift, CameraCoachLane.swift, CoachEngine.swift, and ProCameraDestination.swift as literals and runtime-interpolated strings, not a single lookup this tool can read without duplicating that text. Needs a centralization refactor (a CoachMoment -> String canonical table) before Calm Mentor's audio can be pre-generated for those moments.",
+    "note" : "Calm Mentor's phrase(for:ctx:) always returns nil by design — it defers to canonical text. Only these 7 \"good\" moments have a centralized canonical source (CoachCategory.canonicalGoodSentence, Tovis\/CoachMoment.swift). The remaining in-scope moments' canonical text is scattered across ShotCoach.swift, PhotoQC.swift, BeforeShotMeasure.swift, ProCapturePhotosView.swift, CameraCoachLane.swift, CoachEngine.swift, and ProCameraDestination.swift as literals and runtime-interpolated strings, not a single lookup this tool can read without duplicating that text. Needs a centralization refactor (a CoachMoment -> String canonical table) before Calm Mentor's audio can be pre-generated for those moments.",
     "uncoveredInScopeMoments" : [
       "backgroundBusy",
       "colorGreenish",
@@ -3034,70 +3034,70 @@
       "ctx" : {
 
       },
-      "id" : "5e31886bea9fcf31",
+      "id" : "e18f93ed685d2810",
       "moment" : "goodLighting",
       "personality" : "calmMentor",
-      "text" : "Good light",
+      "text" : "Light's good now.",
       "variantIndex" : 0
     },
     {
       "ctx" : {
 
       },
-      "id" : "b02147197c3e0f80",
+      "id" : "c2c0e9b4afe69cbf",
       "moment" : "goodFraming",
       "personality" : "calmMentor",
-      "text" : "Framed",
+      "text" : "Framing's good now.",
       "variantIndex" : 0
     },
     {
       "ctx" : {
 
       },
-      "id" : "1a3c4b300d516c22",
+      "id" : "562a7e8f8e6e7747",
       "moment" : "goodSharpness",
       "personality" : "calmMentor",
-      "text" : "Sharp",
+      "text" : "That's sharp now.",
       "variantIndex" : 0
     },
     {
       "ctx" : {
 
       },
-      "id" : "b1a4378180eb3d62",
+      "id" : "69d098cdc6951050",
       "moment" : "goodBackground",
       "personality" : "calmMentor",
-      "text" : "Background is clean",
+      "text" : "Background's clean now.",
       "variantIndex" : 0
     },
     {
       "ctx" : {
 
       },
-      "id" : "e9afd20ae0a40d9e",
+      "id" : "bbf375101bf5824c",
       "moment" : "goodPose",
       "personality" : "calmMentor",
-      "text" : "Pose reads",
+      "text" : "Pose reads now.",
       "variantIndex" : 0
     },
     {
       "ctx" : {
 
       },
-      "id" : "1709305c9fa966d1",
+      "id" : "d066dc66c8255e85",
       "moment" : "goodLevel",
       "personality" : "calmMentor",
-      "text" : "Level",
+      "text" : "That's level now.",
       "variantIndex" : 0
     },
     {
       "ctx" : {
 
       },
-      "id" : "e13c3fc96b65fd5f",
+      "id" : "324998fda617b2fc",
       "moment" : "goodColor",
       "personality" : "calmMentor",
-      "text" : "Colour is true",
+      "text" : "Color's true now.",
       "variantIndex" : 0
     }
   ],

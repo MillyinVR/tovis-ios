@@ -162,7 +162,7 @@ struct ProSocialExportSheet: View {
             .tint(BrandColor.accent)
 
             Text(adjust == 0
-                 ? "Centred on the subject. Drag to move the crop."
+                 ? "Centered on the subject. Drag to move the crop."
                  : "Tap to reset to the smart crop.")
                 .font(BrandFont.body(11))
                 .foregroundStyle(BrandColor.textMuted)

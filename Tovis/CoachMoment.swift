@@ -115,20 +115,51 @@ extension CoachCategory {
         }
     }
 
-    /// The canonical (Calm Mentor) text for this fundamental passing —
-    /// `goodMoment`'s plain-English fallback. Shared between the dimensions
-    /// drawer's always-on-screen row and the focus ladder's compliment-on-
-    /// advance line, so there's exactly one "it's good" sentence per
-    /// fundamental rather than two that can drift apart.
+    /// The canonical (Calm Mentor) text for this fundamental passing, as the
+    /// dimensions drawer's always-on-screen ROW LABEL — `goodMoment`'s
+    /// plain-English fallback there. Terse and unpunctuated on purpose: it
+    /// sits in a column of statuses, not in a sentence. Where the same good
+    /// news gets joined onto another line, use `canonicalGoodSentence`.
     var canonicalGoodPhrase: String {
         switch self {
         case .lighting: return "Good light"
-        case .color: return "Colour is true"
+        case .color: return "Color is true"
         case .level: return "Level"
         case .composition: return "Framed"
         case .sharpness: return "Sharp"
         case .background: return "Background is clean"
         case .pose: return "Pose reads"
+        }
+    }
+
+    /// The same good news as a SENTENCE, for the one place the compliment is
+    /// joined onto another line instead of standing in a column: the focus
+    /// ladder's compliment-on-advance. That line is SPOKEN only — the lane
+    /// keeps showing the next correction on its own — so this text never has
+    /// to fit the lane, and lengthening it costs no width anywhere.
+    ///
+    /// `canonicalGoodPhrase` above is a drawer ROW LABEL — a column of terse
+    /// status words is exactly right there, and it deliberately carries no
+    /// terminal punctuation. But `CoachEngine` builds the advance line as
+    /// `"\(compliment) \(next)"`, and its own comment says the two halves are
+    /// "already fully-voiced complete sentences". That was true of every
+    /// personality pack — each ends its good line with a full stop, even the
+    /// terse one ("Sharp.") — and false of the default voice alone, which fell
+    /// through to the label and produced "Sharp Center them", run together,
+    /// spoken as one breath. The default was the only voice that did this.
+    ///
+    /// Each names what just cleared so the pro can look and check it, and
+    /// "now" is the whole point of the line — this fires on the frame a
+    /// fundamental goes from broken to good, never on an already-good one.
+    var canonicalGoodSentence: String {
+        switch self {
+        case .lighting: return "Light's good now."
+        case .color: return "Color's true now."
+        case .level: return "That's level now."
+        case .composition: return "Framing's good now."
+        case .sharpness: return "That's sharp now."
+        case .background: return "Background's clean now."
+        case .pose: return "Pose reads now."
         }
     }
 }

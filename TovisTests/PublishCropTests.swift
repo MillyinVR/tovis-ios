@@ -15,11 +15,13 @@ import TovisKit
         #expect(feed.height == 1)
         #expect(abs(feed.width - 0.75) < 1e-9)
         #expect(abs(feed.minX - 0.125) < 1e-9)
-        // The plan's "~40% of the width" claim, stated as arithmetic: a 3:4
-        // capture keeps 75% of its width, so a quarter is lost outright and the
-        // usable area drops by the same.
+        // A 3:4 capture keeps 75% of its width, so a quarter is lost outright
+        // and the usable area drops by the same. An earlier plan (and, until
+        // camera plan P5.1, the coach's own spoken `why`) called this "~40% of
+        // the width".
         #expect(abs((1 - feed.width) - 0.25) < 1e-9)
     }
+
 
     @Test func the4x5CropIsWiderThanTheFeedCropAndBothAreCentered() {
         let ig = PublishCrop.rect(aspect: PublishCrop.instagramFeed)

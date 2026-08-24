@@ -238,9 +238,9 @@ import Testing
         #expect(CoachPlainLine.line(for: nudge, vocabulary: maya) == nil)
         #expect(CoachPlainLine.applied(to: nudge, simplified: true, vocabulary: maya) == nudge)
 
-        // …and "Center your subject" only gains a plain form when there is a
+        // …and "Center them" only gains a plain form when there is a
         // name to make it plainer WITH.
-        let recenter = CoachNudge(category: .composition, message: "Center your subject",
+        let recenter = CoachNudge(category: .composition, message: "Center them",
                                   moment: .compositionRecenter)
         #expect(CoachPlainLine.line(for: recenter, vocabulary: .empty) == nil)
     }

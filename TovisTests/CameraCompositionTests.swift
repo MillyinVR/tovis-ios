@@ -59,13 +59,13 @@ import TovisKit
     /// "on a third" of the sensor may be nearly centred once published.
     @Test func centeringIsMeasuredInTheCropsOwnSpace() {
         // midX 0.25 in frame space → (0.25 − 0.125) / 0.75 = 0.1667 in crop
-        // space: further from centre, not closer. The crop makes the miss worse.
+        // space: further from center, not closer. The crop makes the miss worse.
         let leftOfThird = CGRect(x: 0.18, y: 0.20, width: 0.14, height: 0.16)
         let framed = CompositionCoach().evaluate(ctx(face: leftOfThird, fill: 0.5))
         let cropped = CompositionCoach().evaluate(
             ctx(face: leftOfThird, fill: 0.5, cropFill: 0.5, crop: PublishCrop.feedRect))
         #expect(framed.message == nil)                       // near the left third
-        #expect(cropped.message == "Center your subject")     // not once published
+        #expect(cropped.message == "Center them")             // not once published
     }
 
     @Test func withTheCropGuideOffNothingChanges() {
@@ -209,6 +209,26 @@ import TovisKit
     /// rather than assign a zero one.
     @Test func aFormatOfferingNothingLeavesTheCeilingUntouched() {
         #expect(CameraController.maxPhotoDimensions(for: []) == nil)
+    }
+
+    /// The number the coach SAYS has to be the number the geometry DOES.
+    /// These drifted: the coach told the pro the feed crop takes "~40% of the
+    /// width" while `feedRect` took 25%, and nothing connected the sentence to
+    /// the arithmetic. Now something does.
+    @Test func theCoachSaysTheFractionTheCropActuallyTakes() {
+        let lost = 1 - PublishCrop.feedRect.width
+        #expect(abs(lost - 0.25) < 1e-9)
+
+        let tooFar = CompositionCoach().evaluate(
+            ctx(face: CGRect(x: 0.44, y: 0.30, width: 0.06, height: 0.08),
+                fill: 0.05, cropFill: 0.05, crop: PublishCrop.feedRect))
+        guard let why = tooFar.why else {
+            Issue.record("no `why` on the step-closer line — the copy under test never rendered")
+            return
+        }
+        #expect(why.contains("a quarter of the width"),
+                "the crop copy no longer states the fraction the geometry takes: “\(why)”")
+        #expect(!why.contains("40%"))
     }
 }
 

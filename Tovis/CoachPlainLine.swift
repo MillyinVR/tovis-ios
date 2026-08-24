@@ -119,7 +119,7 @@ enum CoachPlainLine {
         case .compositionTooLow:
             return "Raise the camera"
         case .compositionRecenter:
-            // Canonical is already one clause ("Center your subject") — there
+            // Canonical is already one clause ("Center them") — there
             // is nothing to take away, so this simplifies only when the booking
             // has a name to make it plainer WITH.
             return vocabulary.clientName.map { "Center \($0)" }

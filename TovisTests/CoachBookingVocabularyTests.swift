@@ -34,7 +34,7 @@ import TovisKit
     @Test func readsAHonorificAsATitleRatherThanAName() {
         #expect(CoachBookingVocabulary.firstName(from: "Dr. Amara Okafor") == "Amara")
         #expect(CoachBookingVocabulary.firstName(from: "Ms Priya Raman") == "Priya")
-        // A bare title is not a name; "Center Dr" is worse than "Center your subject".
+        // A bare title is not a name; "Center Dr" is worse than "Center them".
         #expect(CoachBookingVocabulary.firstName(from: "Dr") == nil)
         #expect(CoachBookingVocabulary.firstName(from: "Mrs.") == nil)
     }
@@ -47,7 +47,7 @@ import TovisKit
     }
 
     /// The refusals. Saying a client's name WRONG, out loud, in front of that
-    /// client is worse than saying "your subject" — so anything that isn't
+    /// client is worse than saying "them" — so anything that isn't
     /// plainly a spoken first name has to fall back to the canonical line.
     @Test func refusesAnythingThatIsNotPlainlyASpokenFirstName() {
         #expect(CoachBookingVocabulary.firstName(from: nil) == nil)
@@ -163,7 +163,7 @@ import TovisKit
 
     @Test func keepsTheCategoryTheMomentAndTheContext() {
         let ctx = CoachPhraseContext(direction: "left", namesAPerson: true)
-        let raw = nudge(.compositionRecenter, "Center your subject", ctx: ctx)
+        let raw = nudge(.compositionRecenter, "Center them", ctx: ctx)
         let spoken = maya.applied(to: raw)
         #expect(spoken.message == "Center Maya — off to the left")
         #expect(spoken.category == raw.category)

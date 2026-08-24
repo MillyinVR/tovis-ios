@@ -38,7 +38,7 @@ final class CoachSettings {
     var showGrid: Bool { didSet { persist(\.showGrid, "showGrid") } }
     /// Draw the publish-crop safe areas so the money shot stays inside what
     /// survives the crop. ON by default: the Tovis Looks feed is a full-screen
-    /// 9:16 cover crop, so composing to the full 3:4 sensor frame loses ~40%
+    /// 9:16 cover crop, so composing to the full 3:4 sensor frame loses a quarter
     /// of the width the moment the shot is published.
     var showCropGuide: Bool { didSet { persist(\.showCropGuide, "showCropGuide") } }
     /// Show the readiness ring around the shutter (green = good to shoot).
@@ -66,10 +66,21 @@ final class CoachSettings {
         didSet { UserDefaults.standard.set(personality.rawValue, forKey: Self.key("personality")) }
     }
 
+    /// Which voice a stored preference string resolves to — pure, so the
+    /// default can be pinned without a test reaching into the shared
+    /// `UserDefaults` (Swift Testing runs suites in parallel; mutating global
+    /// defaults to observe a default is a race, not a test).
+    ///
+    /// Nothing → Calm Mentor. The four personality packs are opt-in: a pro who
+    /// never opens settings is coached by the warm-brief default voice
+    /// (Tori's call, 2026-08-24 — camera plan decision D4).
+    static func personality(fromStored raw: String?) -> CoachPersonality {
+        raw.flatMap(CoachPersonality.init(rawValue:)) ?? .calmMentor
+    }
+
     init() {
         let d = UserDefaults.standard
-        personality = (d.string(forKey: Self.key("personality"))
-            .flatMap(CoachPersonality.init(rawValue:))) ?? .calmMentor
+        personality = Self.personality(fromStored: d.string(forKey: Self.key("personality")))
         showNudge = d.object(forKey: Self.key("showNudge")) as? Bool ?? true
         showChecklist = d.object(forKey: Self.key("showChecklist")) as? Bool ?? true
         showGuides = d.object(forKey: Self.key("showGuides")) as? Bool ?? true

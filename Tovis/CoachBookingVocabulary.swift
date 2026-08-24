@@ -4,7 +4,7 @@
 // im photographing … i feel like its just reading lines."* Two causes were
 // verified. tovis-app #974 fixed the first — a look's brief was read in script
 // order rather than bound to what the lens was actually seeing. This is the
-// second: the coach's own WORDS. "Center your subject" is what a machine that
+// second: the coach's own WORDS. "Center your subject" was what a machine that
 // has never been told anything says.
 //
 // It needs no service detector to fix. The camera is already handed the
@@ -31,8 +31,14 @@
 //
 // Every derivation below is written as a REFUSAL rule. A coach that says a
 // client's name wrong, out loud, in front of that client is worse than one that
-// says "your subject" — so anything that isn't plainly a spoken first name or a
+// says "them" — so anything that isn't plainly a spoken first name or a
 // plainly readable service noun falls back to today's canonical line.
+//
+// (Camera plan P5.1 later took the impersonal noun out of the canonical lines
+// themselves, so the practice-mode fallback now reads "Center them" rather
+// than "Center your subject". This layer is unaffected: it switches on the
+// `CoachMoment` and builds a fresh line, and never string-matches canonical
+// text — which is exactly why that copy edit was safe to make.)
 import Foundation
 
 /// What this shoot is of, in the booking's vocabulary. `.empty` (practice, or a
@@ -167,7 +173,7 @@ struct CoachBookingVocabulary: Equatable, Sendable {
     /// A name long enough to be a name and short enough for the lane, spelled
     /// with letters. Anything else — an empty profile, an initial, a phone
     /// number a pro typed into the name field, a 30-character legal name —
-    /// returns nil and the coach keeps saying "your subject".
+    /// returns nil and the coach keeps saying the canonical line.
     static func firstName(from fullName: String?) -> String? {
         guard let raw = fullName?.trimmingCharacters(in: .whitespacesAndNewlines),
               !raw.isEmpty else { return nil }

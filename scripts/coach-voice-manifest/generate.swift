@@ -22,7 +22,9 @@
 //   2. Everything about Calm Mentor except the 7 "good" moments. Its
 //      `phrase(for:ctx:)` always returns nil by design — it defers to
 //      canonical text that, for those 7 moments, really is centralized
-//      (`CoachCategory.canonicalGoodPhrase`). Everywhere else, the
+//      (`CoachCategory.canonicalGoodSentence` — the SPOKEN form; its sibling
+//      `canonicalGoodPhrase` is the dimensions drawer's row label, which is
+//      displayed and never spoken, so it needs no audio). Everywhere else, the
 //      canonical text is scattered as literals and runtime-interpolated
 //      strings across ShotCoach.swift, PhotoQC.swift, BeforeShotMeasure.swift,
 //      ProCapturePhotosView.swift, CameraCoachLane.swift, CoachEngine.swift,
@@ -202,7 +204,9 @@ let calmMentorCategories: [CoachCategory] = [
 var calmMentorCoveredMoments: [String] = []
 for category in calmMentorCategories {
     let moment = category.goodMoment
-    let text = category.canonicalGoodPhrase
+    // The spoken form, not the drawer label — this manifest keys audio, and
+    // audio only ever exists for text the synthesizer says.
+    let text = category.canonicalGoodSentence
     calmMentorCoveredMoments.append("\(moment)")
     lines.append(ManifestLine(id: contentHash(text), personality: "calmMentor",
                               moment: "\(moment)", variantIndex: 0, ctx: [:], text: text))
@@ -238,7 +242,7 @@ let manifest = Manifest(
         uncoveredInScopeMoments: calmMentorUncovered,
         note: "Calm Mentor's phrase(for:ctx:) always returns nil by design — it defers to canonical " +
               "text. Only these 7 \"good\" moments have a centralized canonical source " +
-              "(CoachCategory.canonicalGoodPhrase, Tovis/CoachVoice.swift). The remaining in-scope " +
+              "(CoachCategory.canonicalGoodSentence, Tovis/CoachMoment.swift). The remaining in-scope " +
               "moments' canonical text is scattered across ShotCoach.swift, PhotoQC.swift, " +
               "BeforeShotMeasure.swift, ProCapturePhotosView.swift, CameraCoachLane.swift, " +
               "CoachEngine.swift, and ProCameraDestination.swift as literals and runtime-interpolated " +

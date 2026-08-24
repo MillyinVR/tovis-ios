@@ -399,11 +399,11 @@ import TovisKit
     }
 
     private func ctx(luma: Double = 0.47, faceLuma: Double? = nil, backgroundLuma: Double? = 0.5,
-                     mixed: Double = 0.0) -> FrameContext {
+                     mixed: Double = 0.0, warmth: Double = 0.15) -> FrameContext {
         FrameContext(avgLuma: luma, faceBounds: face, faceLuma: faceLuma ?? luma,
                     backgroundLuma: backgroundLuma, sharpness: 0.6,
                     backgroundClutter: 0, subjectFill: 0.5, pose: pose, deviceTilt: 0,
-                    color: ColorSignal(mixed: mixed, greenTint: 0, warmth: 0.15),
+                    color: ColorSignal(mixed: mixed, greenTint: 0, warmth: warmth),
                     expectations: .portrait)
     }
 
@@ -422,7 +422,11 @@ import TovisKit
             coaches, ctx(mixed: 0.20), arbiter: &arbiter, now: 1 + CoachTuning.focusStabilityWindow + 0.1)
         guard let advanced = verdict.advanced, let nudge = verdict.nudge else { return nil }
 
-        let complimentFallback = advanced.canonicalGoodPhrase
+        // Mirrors `CoachEngine.apply`: the SENTENCE form, because this line
+        // is built by concatenation below. (This helper re-implements the
+        // engine, so it has to be changed with it or it stops testing what
+        // ships — which is how the run-on survived this long.)
+        let complimentFallback = advanced.canonicalGoodSentence
         let compliment = CoachVoiceRenderer.render(advanced.goodMoment, fallback: complimentFallback, voice: voice)
             ?? complimentFallback
         let next = CoachVoiceRenderer.render(
@@ -456,5 +460,67 @@ import TovisKit
             #expect(!line.isEmpty)
             #expect(line != calm, "\(personality) must not silently fall back to Calm Mentor's transition line")
         }
+    }
+
+    // MARK: - The default voice's own register (camera plan P5.1)
+
+    /// The advance line is `"\(compliment) \(next)"` — a bare concatenation.
+    /// A compliment with no terminal punctuation therefore runs straight into
+    /// the next instruction and is spoken as one breath.
+    ///
+    /// Every personality pack already ended its good line with a full stop,
+    /// even the terse one ("Sharp."). The DEFAULT voice was the only one that
+    /// did not: it renders nil and defers to canonical text, and canonical
+    /// only had the dimensions drawer's row LABEL, which is unpunctuated on
+    /// purpose. So the one voice every pro starts on produced "Sharp Center
+    /// them" while every opt-in pack produced two clean sentences.
+    @Test func everyVoiceEndsItsComplimentAsAWholeSentence() {
+        for personality in CoachPersonality.allCases {
+            for category in CoachCategory.allCases {
+                let fallback = category.canonicalGoodSentence
+                let compliment = CoachVoiceRenderer.render(
+                    category.goodMoment, fallback: fallback, voice: personality.voice) ?? fallback
+                let last = compliment.last
+                #expect(last.map { ".!?".contains($0) } == true,
+                        "\(personality) ends \(category)'s compliment without a full stop: “\(compliment)”")
+            }
+        }
+    }
+
+    /// …and the fix must not be "put full stops in `canonicalGoodPhrase`".
+    /// That string is the drawer's row label, sitting in a column of statuses
+    /// where a trailing full stop would be wrong. The two forms stay separate.
+    @Test func theDrawerLabelStaysALabel() {
+        for category in CoachCategory.allCases {
+            let label = category.canonicalGoodPhrase
+            #expect(label.last.map { ".!?".contains($0) } == false,
+                    "\(category)'s drawer label has become a sentence: “\(label)”")
+            #expect(label != category.canonicalGoodSentence)
+        }
+    }
+
+    /// Packs are opt-in, and the pro who never opens settings gets Calm
+    /// Mentor. Tori's call, 2026-08-24 (camera plan decision D4).
+    @Test func theDefaultVoiceIsCalmMentorSoThePacksAreOptIn() {
+        // No stored preference, and anything unreadable, resolves to the
+        // default voice — the four packs only ever arrive by being chosen.
+        #expect(CoachSettings.personality(fromStored: nil) == .calmMentor)
+        #expect(CoachSettings.personality(fromStored: "") == .calmMentor)
+        #expect(CoachSettings.personality(fromStored: "aPackThatNoLongerExists") == .calmMentor)
+        // …and a real stored choice is still honoured.
+        #expect(CoachSettings.personality(fromStored: "hypeBestie") == .hypeBestie)
+    }
+
+    /// The coach's canonical lines are read aloud by `AVSpeechSynthesizer`
+    /// whenever the pro turns speech on, so they have to be sayable. A slash
+    /// is not: "Warm/yellow light" has no pronunciation.
+    @Test func noCanonicalGoodOrCorrectiveCopyContainsAnUnspeakableSlash() {
+        for category in CoachCategory.allCases {
+            #expect(!category.canonicalGoodSentence.contains("/"))
+            #expect(!category.canonicalGoodPhrase.contains("/"))
+        }
+        let warm = ColorCoach().evaluate(ctx(mixed: 0.02, warmth: 0.5))
+        #expect(warm.message?.contains("/") == false,
+                "the warm-light line is spoken aloud: “\(warm.message ?? "")”")
     }
 }
