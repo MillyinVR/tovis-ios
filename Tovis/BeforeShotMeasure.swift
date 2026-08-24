@@ -106,6 +106,20 @@ enum BeforeShotMeasure {
         guard lower < upper else { return nil }
         return lower...upper
     }
+
+    /// The fill band a shot must hold to READ AS THIS STAMP'S PAIR, or nil
+    /// when it has no framing pair to match — a detail/macro close-up of the
+    /// work, or a stamp that never found a subject.
+    ///
+    /// ONE derivation with TWO readers, on purpose: `matchingFraming` coaches
+    /// the pro TOWARD this band, and `BeforePair` recognizes ARRIVING at it.
+    /// Deriving it twice is how the coach ends up asking for one framing and
+    /// congratulating another.
+    nonisolated static func pairFillBand(of stamp: BeforeShotStamp, isDetail: Bool)
+        -> ClosedRange<Double>? {
+        guard !isDetail, let fill = stamp.subjectFill else { return nil }
+        return fillBand(matching: fill)
+    }
 }
 
 /// "Does the light still match the before?", as arithmetic.
@@ -178,8 +192,8 @@ extension ShotExpectations {
     /// Detail/macro steps are left alone (a close-up of the work has no framing
     /// pair to match), and so is a stamp that never found a subject.
     func matchingFraming(of stamp: BeforeShotStamp) -> ShotExpectations {
-        guard !isDetail, let fill = stamp.subjectFill,
-              let band = BeforeShotMeasure.fillBand(matching: fill) else { return self }
+        guard let band = BeforeShotMeasure.pairFillBand(of: stamp, isDetail: isDetail)
+        else { return self }
         return ShotExpectations(face: face, fillBand: band, isDetail: isDetail,
                                 allowsClosedEyes: allowsClosedEyes, poseRules: poseRules)
     }

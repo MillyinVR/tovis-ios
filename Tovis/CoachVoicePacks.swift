@@ -140,6 +140,8 @@ struct HypeBestieVoice: CoachVoice {
         case .qcBlownOut:
             let noun = ctx.subjectNoun ?? "It"
             return "\(noun) got blown out, bestie — let's dial it back!"
+        case .pairedWithBefore:
+            return "Light AND framing match the before — that's a real pair!"
         case .lightMatched:
             let noun = ctx.subjectNoun ?? "the reference"
             return "Light's matching the \(noun), we're SO good!"
@@ -271,6 +273,8 @@ struct StraightShooterVoice: CoachVoice {
         case .qcBlownOut:
             let noun = ctx.subjectNoun ?? "It"
             return "\(noun) blown out. Retake."
+        case .pairedWithBefore:
+            return "Light and framing match the before."
         case .lightMatched:
             let noun = ctx.subjectNoun ?? "reference"
             return "Light matches \(noun)."
@@ -413,6 +417,8 @@ struct EditorialDirectorVoice: CoachVoice {
         case .qcBlownOut:
             let noun = ctx.subjectNoun ?? "It"
             return "\(noun) blew out — we need one more take off that light."
+        case .pairedWithBefore:
+            return "Light and framing both read true to the before."
         case .lightMatched:
             let noun = ctx.subjectNoun ?? "reference"
             return "Light reads true to the \(noun)."
@@ -562,6 +568,8 @@ struct DragQueenBestieVoice: CoachVoice {
         case .qcBlownOut:
             let noun = ctx.subjectNoun ?? "It"
             return "\(noun) went full spotlight, honey — a touch too much! One more take."
+        case .pairedWithBefore:
+            return "Light and framing match the before, baby — that's a pair!"
         case .lightMatched:
             let noun = ctx.subjectNoun ?? "reference"
             return "Light is matching the \(noun) perfectly, baby — flawless!"

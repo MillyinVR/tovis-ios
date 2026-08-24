@@ -60,6 +60,10 @@ let dimensionClearedNouns = ["Lighting", "Colour", "Level", "Framing", "Focus", 
 let qcSubjectNouns = ["It", "Their face"]
 let lightMatchNouns = ["reference", "before"]
 
+// `.pairedWithBefore` (P5.3) is deliberately ABSENT from this table: its copy
+// interpolates nothing. Parity is only ever claimed about the booking's own
+// BEFORE (`BeforePair.verdict` takes no stamp for a "match a look" reference),
+// so there is no noun that varies — it cross-products like any static moment.
 let ctxDomains: [CoachMoment: [String]] = [
     .dimensionCleared: dimensionClearedNouns,
     .qcTooDark: qcSubjectNouns,

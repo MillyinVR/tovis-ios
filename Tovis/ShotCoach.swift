@@ -154,6 +154,12 @@ struct CoachResult: Sendable {
     /// a dark-to-blonde colour service legitimately changes whole-frame luma —
     /// that IS the work — and the matcher used to call it a light mismatch.
     let frameBackgroundLuma: Double?
+    /// `FrameContext.judgedFill` — the subject fill this frame was COACHED on,
+    /// crop-aware. Published so `BeforePair` recognizes the pair off the very
+    /// number `CompositionCoach` judged it by, and the two can never
+    /// contradict each other on the lane. Nil when no person was segmented on
+    /// the latest heavy-cadence frame.
+    let frameJudgedFill: Double?
     /// The rung the focus ladder just fully cleared, with nothing left broken
     /// to move to. Mutually exclusive with `advanced`.
     let cleared: CoachCategory?
@@ -329,6 +335,18 @@ struct FrameContext: Sendable {
         self.color = color
         self.expectations = expectations
     }
+
+    /// The subject fill the coach is ACTUALLY judging this frame: inside the
+    /// publish crop when the pro has the guide on, over the whole capture
+    /// frame otherwise. Filling the sensor frame is not the same as filling
+    /// what ships.
+    ///
+    /// One definition, because two readers need the SAME answer:
+    /// `CompositionCoach` decides "too far / too tight" from it, and
+    /// `BeforePair` decides whether to recognize the pair from it. If they
+    /// each picked their own, the lane could say "Too tight — step back a
+    /// touch" and "Light and framing match the before" about one frame.
+    var judgedFill: Double? { cropGuide == nil ? subjectFill : cropSubjectFill }
 }
 
 protocol ShotCoach: Sendable {
@@ -836,7 +854,7 @@ struct CompositionCoach: ShotCoach {
         // global floor. Detail/macro shots skip the floor — partial subjects
         // are the point. Inside the crop when there is one: filling the sensor
         // frame is not the same as filling what ships.
-        if let fill = crop == nil ? ctx.subjectFill : ctx.cropSubjectFill {
+        if let fill = ctx.judgedFill {
             let closer = "Move in closer — fill the frame"
             let closerWhy = crop == nil
                 ? "Standing too far back is the difference between a photo of a person and a photo of a room."

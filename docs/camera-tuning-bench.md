@@ -504,6 +504,79 @@ measured. Four things about it matter to whoever reads this file next:
    and the coach cannot see it happen, so an unbounded read would drift ever
    further from the room it claims to know.
 
+## The before-parity recognition, and why it moves nothing here (added 2026-08-24, P5.3)
+
+`BeforePair` adds the coach's first line of GOOD NEWS — "Light and framing
+match the before", when the after now pairs with its before on both axes the
+app already measures. The bench's numbers are byte-identical before and after
+it (19/35 composition · 11/35 colour · 3/35 sharpness · 1/35 lighting · 1/35
+nothing), and that is structural, not luck:
+
+1. **It measures nothing new.** Both terms are comparisons that already run —
+   `LightMatch.verdict` against the before's stamp, and the before's own fill
+   band. No coach's score, no rung, no readiness, no `signals`. The bench
+   measures the live coaches, and none of them changed.
+2. **It invents no threshold.** The light half uses
+   `lightMatchLumaTolerance` / `lightMatchWarmthTolerance`; the framing half
+   uses `BeforeShotMeasure.pairFillBand`, which is now the ONE definition that
+   `ShotExpectations.matchingFraming` also coaches to. **If you retune either,
+   the recognition and the coaching move together** — the coach cannot end up
+   asking for one framing and congratulating another. That single derivation is
+   the thing to preserve if you touch the fill tolerance (today `0.12`).
+3. **It is not in the bench's compile graph**, but two files it touches are:
+   `CoachMoment.swift` (a new case) and `ShotCoach.swift` (`CoachResult` gained
+   `frameSubjectFill`, a passthrough). Both are in `run.sh`'s file list already,
+   so the bench compiles them and would break loudly rather than silently.
+   `BeforePair.swift` itself needs no entry — nothing in the graph references it.
+
+### 🔴 A real defect found while building this, NOT fixed here
+
+`ShotExpectations.matchingFraming` derives the after's fill band from the
+before stamp's **whole-frame** subject fill (`BeforeShotMeasure.measureSync`
+measures with `cropGuide: nil`). `CompositionCoach` compares that band against
+`FrameContext.judgedFill`, which is a fraction of the **9:16 publish crop**
+whenever the pro has the crop guide on. Those are not the same quantity.
+
+`PublishCrop.feedRect` is the centred `(9/16) ÷ (3/4) = 0.75` of the frame's
+width, full height — so a subject sitting inside it fills ~`1/0.75` = 1.33× as
+much of the crop as of the frame:
+
+| before fill (whole frame) | band | identical after, as crop fill | coach says |
+|---|---|---|---|
+| 0.30 | 0.18–0.42 | 0.40 | in band |
+| 0.35 | 0.23–0.47 | 0.47 | in band |
+| **0.40** | 0.28–0.52 | **0.53** | **"Too tight — step back a touch"** |
+| 0.45 | 0.33–0.57 | 0.60 | "Too tight — step back a touch" |
+| 0.50 | 0.38–0.62 | 0.67 | "Too tight — step back a touch" |
+
+So with the crop guide ON and a before filling more than about 0.39 of its
+frame, an after framed **identically to its pair** is already told to step
+back. (The table assumes the subject sits fully inside the crop, so it is the
+upper bound of the skew; a subject spilling past the crop edges skews less.)
+This predates P5.3 — it arrived with the crop-aware composition judging.
+
+P5.3 does **not** fix it, and deliberately does not route around it: the
+recognition reads the very same `judgedFill`, so it stays consistent with
+whatever the coach says rather than contradicting it on screen. Fixing it
+means measuring the stamp's crop-space fill as well (`FrameMath.segmentSignals`
+already takes a `cropGuide:`) and picking the matching one in `pairFillBand` —
+which MOVES the "too far / too tight" thresholds, so it belongs with the salon
+pass, not with a recognition line.
+
+Noticed alongside it, unfixed and cosmetic: `PublishCrop`'s header and
+`CompositionCoach`'s `closerWhy` both say the feed crop "takes ~40% of the
+width off". The arithmetic above says **25%**. `closerWhy` is user-facing (the
+dimensions drawer, and spoken).
+
+⚠️ **Known, inherited, NOT introduced here**: a light verdict flickering across
+its own tolerance re-announces on every crossing, exactly as it does today. The
+FRAMING re-cross — the new way in — is floored by
+`CoachTuning.settleLineMinInterval`. Flooring the light path too would mean
+suppressing lines that ship today, which P5.3 deliberately did not do; if the
+salon pass finds the light tolerances too tight, that flicker is a reason to
+widen them rather than to add a fourth knob. Pinned by
+`aFlickeringLightVerdictStillReAnnouncesJustAsItDoesToday`.
+
 ## What still genuinely needs the phone
 
 - Every number in the table re-measured on live preview frames in a real salon.
@@ -517,3 +590,8 @@ measured. Four things about it matter to whoever reads this file next:
   score is the right moment to say it plainer, and forty the right moment to
   stop. Set from how long a real physical adjustment takes to land; only
   watching a pro mid-session settles it.
+- **The before-parity recognition** (P5.3): whether being told the pair landed
+  reads as a photographer noticing or as the app congratulating itself, whether
+  the lane's 2s transient is long enough to read it, and whether
+  `settleLineMinInterval` (12s) is the right floor for a frame hovering on the
+  edge of the before's fill band. All three are felt, not measured.
