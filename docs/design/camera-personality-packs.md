@@ -194,8 +194,11 @@ scheduler and the per-category cooldown are the same ones as before:
 | `LookDirectionScript` (tovis-app #974) | the WHOLE correction, with the sentence the model wrote for that coach state | **no** — a look line is already a complete direction, so it is spoken verbatim on every surface |
 | `CoachBookingVocabulary` (plan P3) | one NOUN in the canonical text — "Center Maya" for "Center your subject", "…fill the frame with the caramel balayage" for "…fill the frame" | **yes** — it is still the same instruction, so a pack still gets to flourish it |
 | `CoachPlainLine` (plan P4.3) | the DIAGNOSIS clause, once the coach has backed off — "Turn off the overheads" for "Mixed light — turn off the overheads". Also drops the spoken `why` | **yes** — same instruction, less of it |
+| `CoachRoomVocabulary` (plan P4.2) | the room's own facts on the colour/light corrections, from the one-time station read — "Warm light — try the window" for "…daylight reads truer", "…turn off the warm overheads" | **yes** — same instruction, with what the coach measured about this room |
 
-Precedence is look → booking → plain → canonical. The consequence worth stating
+Precedence is look → booking → plain → canonical (the room's words run between
+booking and look, and the plain form still wins while the coach is backing
+off). The consequence worth stating
 plainly: because booking vocabulary and the plain form only replace the
 *fallback*, a pro on **Calm Mentor** (the default, which overrides nothing)
 hears the client's name and gets the shortened line, and a pro who has chosen

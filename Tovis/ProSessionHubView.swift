@@ -50,6 +50,10 @@ struct ProSessionHubView: View {
     private var uploads: SessionUploadQueue { .shared }
     /// The before/after shot currently open full-screen (tap a thumbnail).
     @State private var viewingMedia: FullscreenMedia?
+    /// The station-read setup sheet (camera P4.2) and the tick that makes its
+    /// hub row re-read the stored profile after the sheet closes.
+    @State private var showStationRead = false
+    @State private var stationReadRefresh = 0
     /// Manual-collectable payment methods (from the pro's payment settings) +
     /// the chosen one — drive the wrap-up "Mark as paid" control.
     @State private var paymentMethods: [ProManualPaymentMethod] = []
@@ -183,6 +187,10 @@ struct ProSessionHubView: View {
         }
         .fullScreenCover(item: $viewingMedia) { item in
             MediaFullscreenViewer(media: item) { viewingMedia = nil }
+        }
+        .sheet(isPresented: $showStationRead, onDismiss: { stationReadRefresh += 1 }) {
+            StationReadView(locationId: detail?.locationId,
+                            locationType: detail?.locationType)
         }
         .photosPicker(
             isPresented: $showLibraryPicker,
@@ -504,6 +512,14 @@ struct ProSessionHubView: View {
         if !approved {
             ghostButton("← Back to consultation") { await transition(to: .consultation) }
         }
+
+        // The station read (camera P4.2): a quiet-moment setup offer for a
+        // salon room, shown on exactly the screen whose copy says "while you
+        // wait". Renders nothing for mobile / practice / no location — that
+        // is `CoachRoomMemory.init?`'s call inside the section.
+        StationReadHubSection(locationId: detail?.locationId,
+                              locationType: detail?.locationType,
+                              refresh: stationReadRefresh) { showStationRead = true }
 
         proofCard(state)
     }

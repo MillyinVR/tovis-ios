@@ -132,6 +132,7 @@ final class CoachRoomMemory {
     /// is one shoot, not seven hundred frames.
     private var countedThisShoot: Set<CoachMoment> = []
     private var dismissedCache: Set<CoachMoment>
+    private var stationCache: CoachStationRead.Profile?
 
     /// A room, or nothing at all.
     ///
@@ -153,6 +154,7 @@ final class CoachRoomMemory {
         self.dismissedCache = Self.dismissible.filter {
             store.bool(forKey: Self.dismissedKey(locationId: locationId, moment: $0))
         }
+        self.stationCache = Self.loadStationRead(locationId: locationId, store: store)
     }
 
     // MARK: - Reading
@@ -183,18 +185,29 @@ final class CoachRoomMemory {
     /// offer is withheld, because "GOT IT" beside words that no longer mention
     /// the overheads asks the pro to agree to something the lane isn't saying.
     @discardableResult
-    func offer(forRaw raw: CoachMoment?, published: CoachMoment?) -> CoachMoment? {
+    func offer(forRaw raw: CoachMoment?, published: CoachMoment?, now: Date = Date()) -> CoachMoment? {
         guard let raw else { return nil }
         noteShown(raw)
-        guard published == raw, shouldOfferDismissal(of: raw) else { return nil }
+        guard published == raw, shouldOfferDismissal(of: raw, now: now) else { return nil }
         return raw
     }
 
-    /// Has this pro seen this tip here often enough to be offered a way out?
-    func shouldOfferDismissal(of moment: CoachMoment) -> Bool {
+    /// Has this pro seen this tip here often enough to be offered a way out —
+    /// or has the station read (P4.2) already measured the condition as this
+    /// ROOM's, which is the same question answered with better evidence?
+    ///
+    /// The three-shoot wait exists because the coach cannot tell a room
+    /// condition from a circumstance and must not turn a fixable tip into a
+    /// dismissal prompt. A station read the pro took of the empty station IS
+    /// that telling-apart: the room itself measured warm/green/mixed with
+    /// nobody in it, so the offer lands the first time the tip fires here.
+    /// The offer only — the dismissal is still the pro's tap, and a hard
+    /// failure is still refused at both the allowlist and the arbiter.
+    func shouldOfferDismissal(of moment: CoachMoment, now: Date = Date()) -> Bool {
         Self.dismissible.contains(moment)
             && !isDismissed(moment)
-            && shootsShown(moment) >= Self.shootsBeforeOffering
+            && (shootsShown(moment) >= Self.shootsBeforeOffering
+                || stationProfile(now: now)?.corroborates(moment) == true)
     }
 
     // MARK: - Writing
@@ -239,6 +252,60 @@ final class CoachRoomMemory {
         return true
     }
 
+    // MARK: - The station read (P4.2)
+    //
+    // One coarse reading of the room's light, taken by the pro at setup and
+    // stored as RAW numbers (see `CoachStationRead.Profile` for why raw).
+    // Same store, same per-location keying as the dismissals above, and the
+    // same salon-only gate by construction — a memory that failed `init?` has
+    // nowhere to record a read. Deliberately SEPARATE keys from the
+    // dismissals: a re-read can never touch what the pro has retired, and a
+    // `meaningVersions` bump can never erase a measurement of the room.
+
+    /// How long a station read stays trusted: ~6 months. A salon's light does
+    /// change — a bulb swap, a rearrange, a season — and the coach cannot see
+    /// it happen, so an unbounded read would drift ever further from the room
+    /// it claims to know. Expiry costs one tap (the setup card returns);
+    /// speaking a stale room fact costs trust. The pro can also re-read at
+    /// any time from the session hub's summary row.
+    static let stationReadMaxAge: TimeInterval = 180 * 24 * 3600
+
+    /// This room's station read, or nil when none has been taken or the last
+    /// one has aged out. `now` is injectable for tests; callers use the clock.
+    func stationProfile(now: Date = Date()) -> CoachStationRead.Profile? {
+        guard let profile = stationCache,
+              now.timeIntervalSince(profile.readAt) <= Self.stationReadMaxAge,
+              profile.readAt <= now
+        else { return nil }
+        return profile
+    }
+
+    /// Record a fresh read, replacing any previous one — re-reading IS the
+    /// "the salon changed a bulb" story, so replacement is the point.
+    func recordStationRead(_ profile: CoachStationRead.Profile) {
+        store.set(profile.warmth, forKey: Self.stationKey(locationId: locationId, field: "warmth"))
+        store.set(profile.greenTint, forKey: Self.stationKey(locationId: locationId, field: "green"))
+        store.set(profile.thirdWarmths, forKey: Self.stationKey(locationId: locationId, field: "thirds"))
+        store.set(profile.readAt.timeIntervalSince1970,
+                  forKey: Self.stationKey(locationId: locationId, field: "readAt"))
+        stationCache = profile
+    }
+
+    private static func loadStationRead(locationId: String, store: UserDefaults)
+        -> CoachStationRead.Profile? {
+        let readAtKey = stationKey(locationId: locationId, field: "readAt")
+        guard store.object(forKey: readAtKey) != nil,
+              let thirds = store.array(forKey: stationKey(locationId: locationId, field: "thirds"))
+                  as? [Double],
+              thirds.count == 3
+        else { return nil }
+        return CoachStationRead.Profile(
+            warmth: store.double(forKey: stationKey(locationId: locationId, field: "warmth")),
+            greenTint: store.double(forKey: stationKey(locationId: locationId, field: "green")),
+            thirdWarmths: thirds,
+            readAt: Date(timeIntervalSince1970: store.double(forKey: readAtKey)))
+    }
+
     // MARK: - Keys
     //
     // `tovis.coach.room.<locationId>.<moment>.v<n>.<field>` — tip-id AND
@@ -259,5 +326,13 @@ final class CoachRoomMemory {
 
     static func dismissedKey(locationId: String, moment: CoachMoment) -> String {
         base(locationId: locationId, moment: moment) + ".dismissed"
+    }
+
+    /// `tovis.coach.room.<locationId>.station.v1.<field>` — per LOCATION, not
+    /// per moment (the read is of the room, not of any one tip), with its own
+    /// schema version so a future change to what the fields mean can be made
+    /// non-silent the same way `meaningVersions` makes retunes non-silent.
+    static func stationKey(locationId: String, field: String) -> String {
+        "tovis.coach.room.\(locationId).station.v1.\(field)"
     }
 }

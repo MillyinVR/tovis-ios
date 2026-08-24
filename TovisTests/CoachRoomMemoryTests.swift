@@ -293,6 +293,125 @@ import Testing
                 "…and the location and the tip id, and nothing else: \(v1)")
     }
 
+    // MARK: - The station read (P4.2)
+
+    private func read(warmth: Double = 0, green: Double = 0,
+                      thirds: [Double] = [0, 0, 0],
+                      readAt: Date) -> CoachStationRead.Profile {
+        CoachStationRead.Profile(warmth: warmth, greenTint: green,
+                                 thirdWarmths: thirds, readAt: readAt)
+    }
+
+    @Test func aStationReadIsRememberedAcrossShoots() {
+        let s = store()
+        let taken = Date(timeIntervalSince1970: 1_000_000)
+        salon(store: s).recordStationRead(read(warmth: 0.4, thirds: [-0.2, 0.1, 0.2],
+                                               readAt: taken))
+        let later = salon(store: s).stationProfile(now: taken.addingTimeInterval(3600))
+        #expect(later == read(warmth: 0.4, thirds: [-0.2, 0.1, 0.2], readAt: taken))
+    }
+
+    @Test func eachRoomHasItsOwnRead() {
+        let s = store()
+        let taken = Date(timeIntervalSince1970: 1_000_000)
+        salon("loc-A", store: s).recordStationRead(read(readAt: taken))
+        #expect(salon("loc-B", store: s).stationProfile(now: taken) == nil)
+    }
+
+    /// A salon's light does change — a bulb, a rearrange, a season — and the
+    /// coach cannot see it happen. An aged-out read is treated as no read at
+    /// all: the words go back to canonical, the offer goes back to three
+    /// shoots, and the hub's setup card returns.
+    @Test func aStaleReadExpiresOnItsOwn() {
+        let s = store()
+        let taken = Date(timeIntervalSince1970: 1_000_000)
+        salon(store: s).recordStationRead(read(readAt: taken))
+        let memory = salon(store: s)
+        #expect(memory.stationProfile(
+            now: taken.addingTimeInterval(CoachRoomMemory.stationReadMaxAge)) != nil)
+        #expect(memory.stationProfile(
+            now: taken.addingTimeInterval(CoachRoomMemory.stationReadMaxAge + 1)) == nil)
+        // A read stamped in the future is a broken clock, not a fresh read.
+        #expect(memory.stationProfile(now: taken.addingTimeInterval(-1)) == nil)
+    }
+
+    @Test func aReReadReplacesTheOldRead() {
+        let s = store()
+        let first = Date(timeIntervalSince1970: 1_000_000)
+        salon(store: s).recordStationRead(read(warmth: 0.5, readAt: first))
+        let again = first.addingTimeInterval(3600)
+        salon(store: s).recordStationRead(read(warmth: 0.0, readAt: again))
+        #expect(salon(store: s).stationProfile(now: again)?.warmth == 0.0)
+    }
+
+    // MARK: - The corroborated offer (the read pairs with the dismissal)
+
+    /// The three-shoot wait exists because the coach cannot tell a room
+    /// condition from a circumstance. A station read the pro took of the
+    /// EMPTY station is that telling-apart — the room itself measured warm —
+    /// so the offer lands the first time the tip fires here.
+    @Test func aCorroboratedTipIsOfferedOnTheFirstShoot() {
+        let s = store()
+        let taken = Date(timeIntervalSince1970: 1_000_000)
+        salon(store: s).recordStationRead(read(warmth: CoachTuning.warmCastWarmth + 0.05,
+                                               readAt: taken))
+        let memory = salon(store: s)
+        let now = taken.addingTimeInterval(3600)
+        #expect(memory.offer(forRaw: .colorWarm, published: .colorWarm, now: now) == .colorWarm)
+        // …and only for what the station actually measured: the others still
+        // earn the offer the slow way.
+        #expect(!memory.shouldOfferDismissal(of: .colorGreenish, now: now))
+        #expect(!memory.shouldOfferDismissal(of: .colorMixed, now: now))
+        #expect(!memory.shouldOfferDismissal(of: .backgroundBusy, now: now))
+    }
+
+    /// The offer comes early; the DISMISSAL is still the pro's tap, and an
+    /// already-dismissed tip has nothing left to offer.
+    @Test func corroborationMovesTheOfferNotTheDismissal() {
+        let s = store()
+        let taken = Date(timeIntervalSince1970: 1_000_000)
+        let now = taken.addingTimeInterval(3600)
+        salon(store: s).recordStationRead(read(warmth: CoachTuning.warmCastWarmth + 0.05,
+                                               readAt: taken))
+        let memory = salon(store: s)
+        #expect(!memory.isDismissed(.colorWarm), "the read itself retired nothing")
+        memory.dismiss(.colorWarm)
+        #expect(!memory.shouldOfferDismissal(of: .colorWarm, now: now))
+    }
+
+    @Test func anExpiredReadStopsCorroboratingButTheCountStillStands() {
+        let s = store()
+        let taken = Date(timeIntervalSince1970: 1_000_000)
+        salon(store: s).recordStationRead(read(warmth: CoachTuning.warmCastWarmth + 0.05,
+                                               readAt: taken))
+        let stale = taken.addingTimeInterval(CoachRoomMemory.stationReadMaxAge + 1)
+        let memory = salon(store: s)
+        #expect(!memory.shouldOfferDismissal(of: .colorWarm, now: stale))
+        for _ in 0..<CoachRoomMemory.shootsBeforeOffering { salon(store: s).noteShown(.colorWarm) }
+        #expect(salon(store: s).shouldOfferDismissal(of: .colorWarm, now: stale),
+                "the slow path still works under a stale read")
+    }
+
+    /// The read and the dismissals live under SEPARATE keys, so a re-read can
+    /// never touch what the pro has retired, and the retired set can never
+    /// leak into what the room measured — the same orthogonality the retune
+    /// decision demands, proved the same way (by the persisted record).
+    @Test func aStationReadTouchesNoDismissalKey() {
+        let s = store()
+        let memory = salon(store: s)
+        memory.dismiss(.colorMixed)
+        let before = s.dictionaryRepresentation().keys
+            .filter { $0.hasPrefix("tovis.coach.room.") && !$0.contains(".station.") }.sorted()
+        memory.recordStationRead(read(warmth: 1, readAt: Date(timeIntervalSince1970: 1)))
+        let after = s.dictionaryRepresentation().keys
+            .filter { $0.hasPrefix("tovis.coach.room.") && !$0.contains(".station.") }.sorted()
+        #expect(before == after, "a read wrote outside its own namespace")
+        #expect(salon(store: s).isDismissed(.colorMixed))
+        let stationKeys = s.dictionaryRepresentation().keys.filter { $0.contains(".station.") }
+        #expect(stationKeys.allSatisfy { $0.contains(".station.v1.") },
+                "station keys must carry their schema version: \(stationKeys)")
+    }
+
     // MARK: - The one sentence it says back
 
     @Test func everyDismissibleTipHasItsOwnConfirmation() {
