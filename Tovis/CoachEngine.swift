@@ -251,6 +251,7 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                               faceCenter: face.map { CGPoint(x: $0.midX, y: $0.midY) },
                               frameLuma: avgLuma, frameWarmth: cachedColor?.warmth,
                               frameBackgroundLuma: cachedBackgroundLuma,
+                              frameJudgedFill: ctx.judgedFill,
                               cleared: verdict.cleared, advanced: verdict.advanced,
                               simplified: verdict.simplified,
                               debug: debug))
@@ -411,6 +412,12 @@ final class CoachEngine: NSObject {
     /// prefers it: it changes when the ROOM's light changes, and doesn't change
     /// just because the client's hair went four shades lighter.
     private(set) var frameBackgroundLuma: Double?
+    /// The subject fill this frame was COACHED on (`FrameContext.judgedFill`,
+    /// crop-aware) — the FRAMING half of the before/after pair (`BeforePair`,
+    /// camera plan P5.3). A read-only passthrough of a number the analyzer
+    /// already computes for `CompositionCoach`: publishing it changes no
+    /// arithmetic and moves no rung.
+    private(set) var frameJudgedFill: Double?
     /// Face-priority exposure feed — the camera view wires this to
     /// `CameraController.setFaceExposure` so the camera meters for the face.
     var onFaceCenter: ((CGPoint?) -> Void)?
@@ -604,6 +611,7 @@ final class CoachEngine: NSObject {
         frameLuma = result.frameLuma
         if let warmth = result.frameWarmth { frameWarmth = warmth }
         frameBackgroundLuma = result.frameBackgroundLuma
+        frameJudgedFill = result.frameJudgedFill
         if let debug = result.debug { debugSignals = debug }
         onFaceCenter?(result.faceCenter)
 

@@ -38,6 +38,7 @@
       "lightingBlownOut",
       "lightingTooDark",
       "matchingReferenceLook",
+      "pairedWithBefore",
       "poseClipped",
       "practiceGuideNote",
       "qcBlownOut",
@@ -993,6 +994,16 @@
       "ctx" : {
 
       },
+      "id" : "ad7ed6618b40f38e",
+      "moment" : "pairedWithBefore",
+      "personality" : "hypeBestie",
+      "text" : "Light AND framing match the before — that's a real pair!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
       "id" : "d38f615eeff2affa",
       "moment" : "lightingBacklit",
       "personality" : "straightShooter",
@@ -1653,6 +1664,16 @@
       "ctx" : {
 
       },
+      "id" : "c3fcb4a88e8cc651",
+      "moment" : "pairedWithBefore",
+      "personality" : "straightShooter",
+      "text" : "Light and framing match the before.",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
       "id" : "6c23e88333d59b0d",
       "moment" : "lightingBacklit",
       "personality" : "editorialDirector",
@@ -2307,6 +2328,16 @@
       "moment" : "leavingWithoutTitlePractice",
       "personality" : "editorialDirector",
       "text" : "Leaving the camera?",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
+      "id" : "497a9c435477eb8b",
+      "moment" : "pairedWithBefore",
+      "personality" : "editorialDirector",
+      "text" : "Light and framing both read true to the before.",
       "variantIndex" : 0
     },
     {
@@ -2993,6 +3024,16 @@
       "ctx" : {
 
       },
+      "id" : "06a8c4313501c2f8",
+      "moment" : "pairedWithBefore",
+      "personality" : "dragQueenBestie",
+      "text" : "Light and framing match the before, baby — that's a pair!",
+      "variantIndex" : 0
+    },
+    {
+      "ctx" : {
+
+      },
       "id" : "5e31886bea9fcf31",
       "moment" : "goodLighting",
       "personality" : "calmMentor",
@@ -3158,7 +3199,8 @@
       "lightCoolerThan",
       "matchingReferenceLook",
       "practiceGuideNote",
-      "leavingWithoutTitlePractice"
+      "leavingWithoutTitlePractice",
+      "pairedWithBefore"
     ]
   }
 }

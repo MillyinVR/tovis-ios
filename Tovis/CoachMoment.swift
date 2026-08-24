@@ -81,6 +81,15 @@ enum CoachMoment: Hashable, CaseIterable, Sendable {
     /// half (see the retake-flow note in `CoachPhraseContext.detail`).
     case focusRungAdvanced
 
+    /// Before-parity recognition (camera plan P5.3): this frame now matches
+    /// its booking's own BEFORE on both axes the app measures — the light
+    /// (`LightMatch`) and the framing (`ShotExpectations.matchingFraming`
+    /// re-targeted at the before's measured subject fill) — so the two will
+    /// read as one comparison rather than two photographs. Static text: it is
+    /// only ever about the booking's before, never a "match a look" reference,
+    /// so there is no noun to interpolate. See `BeforePair`.
+    case pairedWithBefore
+
     /// Room memory (camera plan P4.1): the pro has just told the coach that a
     /// room condition — the salon's overheads, its backdrop — is not theirs
     /// to change, and the coach has retired that tip at this location. The one

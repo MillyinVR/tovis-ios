@@ -485,6 +485,48 @@ import UIKit
         }
     }
 
+    // MARK: - Before-parity recognition (P5.3)
+
+    /// Every line the recognition can put on the lane: the canonical sentence
+    /// plus each pack's own, discovered by sampling the way the manifest does.
+    ///
+    /// This moment is the first NEW user-facing sentence since the room's
+    /// words, and it is the longest thing the before/after tier has ever
+    /// shown — the light lines it joins are all short.
+    private func everyPairRecognitionLine() -> [String] {
+        var seen: Set<String> = []
+        return ([BeforePair.pairedLabel] + CoachPersonality.allCases.flatMap {
+            variants(.pairedWithBefore, ctx: CoachPhraseContext(subjectNoun: "before"),
+                     voice: $0.voice, fallback: BeforePair.pairedLabel).sorted()
+        }).filter { seen.insert($0).inserted }
+    }
+
+    /// The row it can ACTUALLY appear on is the CHEVRON row: the before/after
+    /// tier builds its `LaneMessage` with no action word, and
+    /// `.pairedWithBefore` is not a `CoachRoomMemory.dismissible` condition,
+    /// so it can never sit beside the GOT IT button. (Measuring a line against
+    /// a button it can never carry is exactly the mistake #361's fit test made
+    /// and caught.)
+    @Test func theBeforeParityRecognitionFitsTheRowItCanActuallyAppearOn() {
+        let lines = everyPairRecognitionLine()
+        // Calm Mentor renders nothing of its own and falls back to the
+        // canonical sentence, so five voices yield the canonical line plus the
+        // four packs' — one distinct line per personality, no more.
+        #expect(lines.contains(BeforePair.pairedLabel))
+        #expect(lines.count >= CoachPersonality.allCases.count,
+                "the sweep didn't reach every voice — it has stopped measuring")
+        #expect(!CoachRoomMemory.dismissible.contains(.pairedWithBefore),
+                "the recognition became dismissible — it must now be measured beside GOT IT too")
+        for width in screenWidths {
+            let available = textWidth(screen: width)
+            for line in lines {
+                let used = laidOutLines(line, width: available)
+                #expect(used <= CameraLane.maxTextLines,
+                        "\(Int(width))pt: “\(line)” needs \(used) lines in \(Int(available))pt")
+            }
+        }
+    }
+
     // MARK: - Looking at it
 
     /// The arithmetic above says the sentences fit. This renders them through
@@ -600,6 +642,34 @@ import UIKit
                 .appendingPathComponent("tovis-lane-station-\(Int(width))pt.png")
             try png.write(to: url)
             print("STATION WORDS LANE SNAPSHOT \(Int(width))pt → \(url.path)")
+        }
+    }
+
+    /// The recognition line (P5.3), rendered through the production lane in
+    /// every voice — new user-facing copy on the row the pro reads most, drawn
+    /// exactly as the before/after tier draws it (accent tone, no pulse, the
+    /// expand chevron).
+    @Test func rendersTheBeforeParityRecognitionThroughTheRealLane() throws {
+        let lines = everyPairRecognitionLine().sorted { $0.count > $1.count }
+        for width in screenWidths {
+            let view = VStack(spacing: 2) {
+                ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                    CameraLaneView(
+                        message: LaneMessage(text: line, tone: .accent, expandable: true),
+                        backgroundBusy: false, onAction: { _ in }, onExpand: {},
+                        accessibilityValue: line)
+                }
+            }
+            .frame(width: width)
+            .background(Color.black)
+            let renderer = ImageRenderer(content: view)
+            renderer.scale = 3
+            let image = try #require(renderer.uiImage)
+            let png = try #require(image.pngData())
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("tovis-lane-parity-\(Int(width))pt.png")
+            try png.write(to: url)
+            print("PARITY LANE SNAPSHOT \(Int(width))pt → \(url.path)")
         }
     }
 

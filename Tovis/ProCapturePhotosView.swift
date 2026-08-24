@@ -243,9 +243,11 @@ struct ProCapturePhotosView: View {
     @State private var roomDismissToken = 0
     /// Whether that confirmation still has a tip to put back.
     @State private var roomDismissUndoable = false
-    /// The last light-match verdict seen, so the lane fires on the CHANGE rather
-    /// than re-announcing a steady state every frame.
-    @State private var lastLightMatchOK: Bool?
+    /// WHEN the before/after verdict reaches the lane — the light half on a
+    /// change of its verdict (exactly as it fires today) and the PAIR on the
+    /// transition into parity, once (P5.3). Pure and clock-injected, so the
+    /// "is this a nag?" question is settled by `BeforePairAnnouncerTests`.
+    @State private var pairAnnouncer = BeforePairAnnouncer()
     /// Times out the error line so one failure can't hold the lane forever.
     @State private var errorToken = 0
     /// …except for the one message that isn't backed by any other state.
@@ -546,14 +548,32 @@ struct ProCapturePhotosView: View {
             // …and the lane says it for a beat before handing back to the coach.
             announceStepInLane()
         }
-        // The light-match verdict flipped — confirm it (or name the fix) briefly,
-        // then get out of the coach tip's way. Fires on the CHANGE only, so a
-        // steady state never re-announces itself.
-        .onChange(of: lightMatch?.ok) { _, ok in
-            guard let ok, ok != lastLightMatchOK else { return }
-            lastLightMatchOK = ok
-            if let label = lightMatch?.label { announceLightInLane(label, ok: ok) }
+        // The before/after verdict changed — confirm it (or name the fix)
+        // briefly, then get out of the coach tip's way. `BeforePairAnnouncer`
+        // owns WHEN: the light half on a change of its verdict, and the PAIR
+        // once, on the transition into parity. A steady state never
+        // re-announces itself, and dropping out of parity says nothing.
+        //
+        // ONE handler on the whole verdict rather than two on its parts: the
+        // light half and the framing half can land on the same frame, and two
+        // handlers racing to speak about it is how the lane ends up saying the
+        // good news twice.
+        .onChange(of: beforePair) { _, verdict in
+            guard let verdict,
+                  let announce = pairAnnouncer.announcement(for: verdict, now: Date())
+            else { return }
+            let voice = settings.personality.voice
+            let rendered = CoachVoiceRenderer.render(
+                announce.moment, fallback: announce.label,
+                ctx: CoachPhraseContext(subjectNoun: announce.noun),
+                voice: voice) ?? announce.label
+            announceLightInLane(rendered, ok: announce.ok)
         }
+        // A different BEFORE is a different pair, so recognition re-arms — the
+        // guided set moving to the next step, or the pro cycling the
+        // references by hand. It does NOT re-arm the re-crossing floor, so
+        // cycling cannot be used to fire the line over and over.
+        .onChange(of: currentReferenceURL) { _, _ in pairAnnouncer.newPairing() }
         // An error line used to have its own permanent row, so it could sit there
         // forever harmlessly. In the lane it outranks the coach, so it has to let
         // go — otherwise one failed capture silences coaching for the rest of the
@@ -1846,9 +1866,11 @@ struct ProCapturePhotosView: View {
         }
     }
 
-    /// The live light vs the active target (a match-look reference wins over
-    /// the before shot): matched, or the single biggest mismatch phrased as a
-    /// fix. Nil when there's nothing to match.
+    /// This frame against the active target (a match-look reference wins over
+    /// the before shot): the single biggest light mismatch phrased as a fix,
+    /// the light matched, or — for the booking's own before, and only there —
+    /// the PAIR matched, light AND framing (P5.3). Nil when there's nothing to
+    /// match.
     ///
     /// Compared on the segmented BACKGROUND when both sides have one. On the
     /// whole frame, a dark-to-blonde colour service legitimately moves the
@@ -1856,18 +1878,26 @@ struct ProCapturePhotosView: View {
     /// before — dim a touch" about a transformation that had succeeded. The
     /// background is the part of the picture that is supposed to be unchanged,
     /// which is exactly what "did the light change?" means.
-    private var lightMatch: (label: String, ok: Bool)? {
+    private var beforePair: BeforePair.Verdict? {
         guard showOnion, let coach else { return nil }
         let target: LightMatch.Reading
         let noun: String
+        // The framing half of the pair exists only for the booking's OWN
+        // before. A "match a look" reference is a picture the pro admired,
+        // not the other half of this booking's comparison, and its brief
+        // carries its own framing target — so it stays a light-only verdict,
+        // byte-for-byte what ships today.
+        let pairing: BeforeShotStamp?
         if let look = matchLook {
             target = LightMatch.Reading(luma: look.luma, warmth: look.warmth,
                                         backgroundLuma: look.backgroundLuma,
                                         backgroundWarmth: look.backgroundWarmth)
             noun = "reference"
+            pairing = nil
         } else if let url = currentReferenceURL, let stamp = referenceStamps[url] {
             target = stamp.lightReading
             noun = "before"
+            pairing = stamp
         } else {
             return nil
         }
@@ -1877,12 +1907,15 @@ struct ProCapturePhotosView: View {
         let live = LightMatch.Reading(luma: coach.frameLuma, warmth: coach.frameWarmth,
                                       backgroundLuma: coach.frameBackgroundLuma,
                                       backgroundWarmth: coach.frameWarmth)
-        let verdict = LightMatch.verdict(live: live, target: target, noun: noun)
-        let voice = settings.personality.voice
-        let rendered = CoachVoiceRenderer.render(
-            verdict.moment, fallback: verdict.label,
-            ctx: CoachPhraseContext(subjectNoun: noun), voice: voice) ?? verdict.label
-        return (label: rendered, ok: verdict.ok)
+        // `isDetail` is read off the expectations the coach is ACTUALLY
+        // judging, so recognition and coaching agree about when the before's
+        // framing is the target at all: a detail/macro close-up of the work
+        // has no framing pair, and `matchingFraming` already declines to
+        // re-target it.
+        return BeforePair.verdict(
+            live: live, target: target, noun: noun, pairing: pairing,
+            liveFill: coach.frameJudgedFill,
+            isDetail: activeExpectations?.isDetail ?? false)
     }
 
     // MARK: - The lane

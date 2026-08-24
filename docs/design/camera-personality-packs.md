@@ -270,6 +270,49 @@ The two are not interchangeable, and the differences are the argued part:
 Both leave **readiness** and the **dimensions drawer** exactly as they were.
 The pro loses a sentence, never the truth about the frame.
 
+### 2.1b The one moment that is GOOD NEWS (P5.3, 2026-08-24)
+
+Every moment above suppresses or re-words a CORRECTION. `.pairedWithBefore` is
+the first that exists to say something went right, so it is worth being explicit
+about why it is not the start of a praise vocabulary.
+
+It reports a MEASUREMENT, not a mood. The app already compares the after's
+light against the before's stamp (`LightMatch`) and already re-targets the
+framing rung at the before's own measured subject fill
+(`ShotExpectations.matchingFraming`). Each half already speaks when it is
+WRONG. Neither has ever said the good news about the PAIR — the light half
+confirms only itself, and the framing half merely stops complaining, which is
+not the same sentence as "these two will read as one comparison". `BeforePair`
+says that sentence and nothing else.
+
+- **It is a fact the coach can point at.** The canonical line names the two
+  things that matched — "Light and framing match the before" — so a pro can
+  check it. "You're doing great" is the thing the north star rules out, and a
+  line that only asserts approval is indistinguishable from one.
+- **It is not a score.** Readiness, the ring, the dimensions drawer and the
+  focus ladder are untouched. It rides the lane's existing before/after
+  transient tier, beside the light confirmation that already lives there — no
+  new lane tier, and no third entry at `CoachTipArbiter.select`'s suppression
+  seam (which still has exactly two).
+- **It is not spoken.** The before/after tier has never gone through
+  `CoachSpeechScheduler`, and this does not change that.
+- **It fires on the TRANSITION, once** (`BeforePairAnnouncer` — the shape the
+  focus ladder's `advanced`/`cleared` uses), floored on re-crossing by the
+  existing `CoachTuning.settleLineMinInterval` rather than a new knob.
+  Recognition on every matching frame would be a nag wearing a compliment's
+  clothes.
+- **It is only ever about the booking's own BEFORE.** A "match a look"
+  reference is a picture the pro admired, not the other half of this booking's
+  pair, so it stays a light-only verdict — which is what ships today. So does a
+  detail/macro step, which `matchingFraming` already declines to re-target
+  because a close-up of the work has no framing pair.
+
+Unlike #358/#360/#361, this moment is **not** a no-op on the four packs: it is
+a new sentence rather than a substitution into an existing one, so all four
+packs write it and the exhaustive switches fail loudly without it. Its copy
+interpolates nothing (there is no noun that varies), so it pre-bakes in
+`coach-voice-manifest` like any static moment.
+
 ### 2.2 Render sites (where `CoachVoiceRenderer` gets called)
 
 Only three call sites change, all at the "final mile" between decision and
