@@ -54,6 +54,15 @@ struct LaneAction: Equatable {
         case reviewBestShots
         /// The light moved away from the card calibration — re-scan.
         case recalibrate
+        /// This room's condition isn't the pro's to fix — retire the tip here
+        /// (camera plan P4.1, `CoachRoomMemory`). The only action word that
+        /// rides on the COACH row rather than replacing it, because the tip it
+        /// answers is the thing being agreed with.
+        case dismissRoomTip
+        /// …and the way back out of it, for as long as the confirmation is on
+        /// screen. A dismissal is permanent and one tap deep; this is the
+        /// misfire escape, not a second standing control.
+        case undoRoomDismissal
     }
 }
 
@@ -104,6 +113,15 @@ enum CameraLane {
     /// How long a transient (a step change, a light-match confirmation) holds
     /// the lane before it falls through to the coach tip.
     static let transientSeconds: Double = 2
+
+    /// The room-memory offer's one word. Named rather than spelled inline
+    /// because `CameraLaneLineFitTests` has to measure the coach's sentence
+    /// against the room this REAL word leaves it — an action button is far
+    /// wider than the expand chevron it replaces, and a second copy of the
+    /// label in the test would measure the wrong row.
+    static let dismissRoomTipLabel = "GOT IT"
+    /// The undo offered alongside the confirmation, measured the same way.
+    static let undoRoomDismissalLabel = "UNDO"
 
     /// Everything the lane arbitrates between. Assembled by the view each frame;
     /// nothing here reaches back into SwiftUI.
@@ -156,6 +174,19 @@ enum CameraLane {
         var aiDisclosure: String?
         /// There are dimensions to show, so the swipe-up affordance is real.
         var hasDimensions = false
+        /// The coach tip on screen is a room condition this pro has met often
+        /// enough at THIS location to be offered a way to retire it
+        /// (`CoachRoomMemory`). Adds one trailing word to the coach row; it
+        /// never changes which row wins the lane.
+        var coachTipDismissible = false
+        /// The confirmation of a tip the pro just retired, inside its
+        /// transient window. Already rendered in the pro's voice by
+        /// `CoachEngine.dismissRoomTip()` — shown verbatim, so the flourish
+        /// isn't applied twice.
+        var roomTipDismissed: String?
+        /// Whether that confirmation still has a tip to put back — false once
+        /// the undo has been taken, so the row can't offer it twice.
+        var roomTipDismissalUndoable = false
 
         // Equatable by hand: the optional tuples above aren't Equatable for free.
         static func == (a: Inputs, b: Inputs) -> Bool {
@@ -179,6 +210,9 @@ enum CameraLane {
                 && a.errorText == b.errorText
                 && a.aiDisclosure == b.aiDisclosure
                 && a.hasDimensions == b.hasDimensions
+                && a.coachTipDismissible == b.coachTipDismissible
+                && a.roomTipDismissed == b.roomTipDismissed
+                && a.roomTipDismissalUndoable == b.roomTipDismissalUndoable
         }
     }
 
@@ -253,6 +287,18 @@ enum CameraLane {
                 pulses: true
             )
         }
+        // The coach answering the pro's own tap — a confirmation, so it
+        // expires the same way. It outranks the coaching line underneath it on
+        // purpose: the tip it is about is the thing that just went away, and a
+        // dismissal with no visible answer reads as a control that did nothing.
+        if let dismissed = i.roomTipDismissed {
+            return LaneMessage(
+                text: dismissed, tone: .accent,
+                action: i.roomTipDismissalUndoable
+                    ? LaneAction(label: undoRoomDismissalLabel, kind: .undoRoomDismissal)
+                    : nil,
+                expandable: i.hasDimensions)
+        }
         // …and the before/after light match, which is a confirmation, so it
         // expires (the view only supplies it inside its transient window).
         if let light = i.lightTransient {
@@ -285,8 +331,15 @@ enum CameraLane {
         if let tip = i.coachTip {
             let rendered = CoachVoiceRenderer.render(
                 i.coachTipMoment, fallback: tip, ctx: i.coachTipPhraseCtx ?? CoachPhraseContext(), voice: voice) ?? tip
-            return LaneMessage(text: rendered, tone: .warn,
-                               expandable: i.hasDimensions, pulses: true)
+            return LaneMessage(
+                text: rendered, tone: .warn,
+                // The offer only ever ADDS a word to a line the coach had
+                // already decided to say — it can't put a row on the lane, and
+                // it can't take one off.
+                action: i.coachTipDismissible
+                    ? LaneAction(label: dismissRoomTipLabel, kind: .dismissRoomTip)
+                    : nil,
+                expandable: i.hasDimensions, pulses: true)
         }
         if let hint = i.stepHint {
             let rendered = CoachVoiceRenderer.render(
@@ -455,6 +508,11 @@ struct CameraLaneView: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Shot coach")
         .accessibilityValue(accessibilityValue)
+        // Still accurate on the coach row when it also carries the
+        // room-memory offer: a double-tap does open the seven, and the action
+        // word is reached through the actions rotor (`children: .combine`
+        // keeps a child Button's action), exactly as RETRY / OPTIONS / FIX
+        // already are.
         .accessibilityHint(message.expandable ? "Double-tap for all seven" : "")
     }
 }

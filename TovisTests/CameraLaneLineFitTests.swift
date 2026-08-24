@@ -45,11 +45,30 @@ import UIKit
     /// (`showsDot: true`, `expandable: true`, no action word).
     private func textWidth(screen: CGFloat) -> CGFloat {
         let chevron = UIImage(systemName: "chevron.up")?.size.width ?? 16
-        return screen
+        return textWidth(screen: screen, trailing: chevron)
+    }
+
+    /// The same row when it carries an ACTION WORD instead of the chevron —
+    /// which is what the room-memory offer (P4.1) does to the coach's line.
+    /// An action button is several times wider than the glyph it replaces, so
+    /// the sentence beside it has materially less room, and lines that have
+    /// been fitting for months are being measured against a narrower lane for
+    /// the first time here.
+    private func actionRowTextWidth(screen: CGFloat, label: String) -> CGFloat {
+        // `CameraLaneView`'s action button: mono 11, tracked, capsule padding.
+        let font = UIFont(name: "Space Mono", size: 11) ?? .monospacedSystemFont(ofSize: 11, weight: .regular)
+        let attributed = NSAttributedString(string: label,
+                                            attributes: [.font: font, .kern: 0.8])
+        let button = ceil(attributed.size().width) + 11 * 2
+        return textWidth(screen: screen, trailing: button)
+    }
+
+    private func textWidth(screen: CGFloat, trailing: CGFloat) -> CGFloat {
+        screen
             - CameraLane.outerInset * 2
             - CameraLane.rowInset * 2
             - (CameraLane.dotSize + CameraLane.itemSpacing)
-            - (chevron + CameraLane.itemSpacing)
+            - (trailing + CameraLane.itemSpacing)
     }
 
     /// Every face of the lane's family, at the smallest size SwiftUI may shrink
@@ -133,6 +152,107 @@ import UIKit
         }
     }
 
+    // MARK: - Room memory: a narrower lane for lines that already ship (P4.1)
+
+    /// The REAL canonical sentence each dismissible room condition puts on the
+    /// lane, read off the REAL coaches rather than retyped — so a re-worded
+    /// tip is measured here without anyone remembering to update a literal.
+    private var dismissibleCanonicalLines: [(moment: CoachMoment, text: String)] {
+        func context(mixed: Double, green: Double, warm: Double, clutter: Double) -> FrameContext {
+            FrameContext(
+                avgLuma: 0.5, faceBounds: CGRect(x: 0.3, y: 0.2, width: 0.4, height: 0.4),
+                faceLuma: 0.5, backgroundLuma: 0.5, sharpness: 1,
+                backgroundClutter: clutter, subjectFill: 0.4, pose: nil, deviceTilt: 0,
+                color: ColorSignal(mixed: mixed, greenTint: green, warmth: warm,
+                                   backgroundScoped: true),
+                expectations: nil)
+        }
+        // One context per condition, each tripping exactly the one it names —
+        // `ColorCoach` reports mixed → green → warm in that order.
+        let cases: [(ShotCoach, FrameContext)] = [
+            (ColorCoach(), context(mixed: 1, green: 0, warm: 0, clutter: 0)),
+            (ColorCoach(), context(mixed: 0, green: 1, warm: 0, clutter: 0)),
+            (ColorCoach(), context(mixed: 0, green: 0, warm: 1, clutter: 0)),
+            (BackgroundCoach(), context(mixed: 0, green: 0, warm: 0, clutter: 1)),
+        ]
+        return cases.compactMap { coach, ctx in
+            let signal = coach.evaluate(ctx)
+            guard let moment = signal.moment, let text = signal.message,
+                  CoachRoomMemory.dismissible.contains(moment) else { return nil }
+            return (moment, text)
+        }
+    }
+
+    /// Every line a voice can build for one moment. `pick(_:)` chooses at
+    /// random, so the variants are discovered by sampling — the same technique
+    /// `scripts/coach-voice-manifest/generate.swift` uses, and for the same
+    /// reason: there is no addressable array to read.
+    private func variants(_ moment: CoachMoment, ctx: CoachPhraseContext,
+                          voice: CoachVoice, fallback: String) -> Set<String> {
+        var found: Set<String> = []
+        for _ in 0..<400 {
+            found.insert(voice.phrase(for: moment, ctx: ctx) ?? fallback)
+        }
+        return found
+    }
+
+    /// The lines the offer makes narrower, in every voice a pro can pick.
+    ///
+    /// This is the risk P4.1 introduces and nothing else measures: four
+    /// sentences that have fitted the lane since they were written are now
+    /// rendered beside a "GOT IT" button rather than a chevron, in five
+    /// voices — and an instruction that loses its tail has not been shipped,
+    /// it has been written.
+    @Test func everyDismissibleTipStillFitsBesideTheOfferInEveryVoice() {
+        let lines = dismissibleCanonicalLines
+        #expect(lines.count == CoachRoomMemory.dismissible.count,
+                "the sweep didn't reach every dismissible condition — it has stopped measuring")
+        for width in screenWidths {
+            let available = actionRowTextWidth(screen: width,
+                                               label: CameraLane.dismissRoomTipLabel)
+            for (moment, canonical) in lines {
+                for personality in CoachPersonality.allCases {
+                    for line in variants(moment, ctx: CoachPhraseContext(),
+                                         voice: personality.voice, fallback: canonical) {
+                        let used = laidOutLines(line, width: available)
+                        #expect(used <= CameraLane.maxTextLines,
+                                "\(Int(width))pt beside \(CameraLane.dismissRoomTipLabel), \(personality): “\(line)” needs \(used) lines in \(Int(available))pt")
+                    }
+                }
+            }
+        }
+    }
+
+    /// …and the coach's answer once the pro taps it, which carries the UNDO
+    /// word for as long as it's on screen — so it is measured against THAT
+    /// row, not the chevron one. Rendered in every voice, since the pack
+    /// wraps it.
+    @Test func everyRoomDismissalConfirmationFitsTheLane() {
+        let lines = everyRoomDismissalConfirmation() + ["That tip is back"]
+        #expect(!lines.isEmpty)
+        for width in screenWidths {
+            let available = actionRowTextWidth(screen: width,
+                                               label: CameraLane.undoRoomDismissalLabel)
+            for line in lines {
+                let used = laidOutLines(line, width: available)
+                #expect(used <= CameraLane.maxTextLines,
+                        "\(Int(width))pt: “\(line)” needs \(used) lines in \(Int(available))pt")
+            }
+        }
+    }
+
+    private func everyRoomDismissalConfirmation() -> [String] {
+        var seen: Set<String> = []
+        return CoachRoomMemory.dismissible.sorted { "\($0)" < "\($1)" }.flatMap { moment -> [String] in
+            guard let canonical = CoachRoomMemory.confirmation(for: moment) else { return [] }
+            let ctx = CoachPhraseContext(detail: canonical)
+            return CoachPersonality.allCases.flatMap { personality in
+                variants(.roomTipDismissed, ctx: ctx, voice: personality.voice,
+                         fallback: canonical).sorted()
+            }
+        }.filter { seen.insert($0).inserted }
+    }
+
     // MARK: - Looking at it
 
     /// The arithmetic above says the sentences fit. This renders them through
@@ -170,6 +290,53 @@ import UIKit
                 .appendingPathComponent("tovis-lane-\(Int(width))pt.png")
             try png.write(to: url)
             print("LANE SNAPSHOT \(Int(width))pt → \(url.path)")
+        }
+    }
+
+    /// The room-memory rows, rendered. The arithmetic above says the coach's
+    /// sentence survives being narrowed by the offer's button; this is the
+    /// picture of it happening, plus the confirmation the pro sees next —
+    /// because the button's real width is the whole risk and a number is a
+    /// proxy for it.
+    @Test func rendersTheRoomMemoryRowsThroughTheRealLane() throws {
+        let offers = dismissibleCanonicalLines.map(\.text)
+        // Every confirmation drawn WITH the undo word, including the
+        // post-undo line that ships without one — the narrower row is the
+        // conservative measurement, which is the point of the picture.
+        let confirmations = everyRoomDismissalConfirmation() + ["That tip is back"]
+        for width in screenWidths {
+            let view = VStack(spacing: 2) {
+                ForEach(Array(offers.enumerated()), id: \.offset) { _, line in
+                    CameraLaneView(
+                        message: LaneMessage(
+                            text: line, tone: .warn,
+                            action: LaneAction(label: CameraLane.dismissRoomTipLabel,
+                                               kind: .dismissRoomTip),
+                            expandable: true, pulses: true),
+                        backgroundBusy: false, onAction: { _ in }, onExpand: {},
+                        accessibilityValue: line)
+                }
+                ForEach(Array(confirmations.enumerated()), id: \.offset) { _, line in
+                    CameraLaneView(
+                        message: LaneMessage(
+                            text: line, tone: .accent,
+                            action: LaneAction(label: CameraLane.undoRoomDismissalLabel,
+                                               kind: .undoRoomDismissal),
+                            expandable: true),
+                        backgroundBusy: false, onAction: { _ in }, onExpand: {},
+                        accessibilityValue: line)
+                }
+            }
+            .frame(width: width)
+            .background(Color.black)
+            let renderer = ImageRenderer(content: view)
+            renderer.scale = 3
+            let image = try #require(renderer.uiImage)
+            let png = try #require(image.pngData())
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("tovis-lane-room-\(Int(width))pt.png")
+            try png.write(to: url)
+            print("ROOM MEMORY LANE SNAPSHOT \(Int(width))pt → \(url.path)")
         }
     }
 }

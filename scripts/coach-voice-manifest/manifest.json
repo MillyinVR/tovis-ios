@@ -3084,6 +3084,10 @@
         "reason" : "wraps a QC\/retake reason sentence — classed open-set by brief §1 (ProCapturePhotosView.swift ~854)"
       },
       {
+        "moment" : "roomTipDismissed",
+        "reason" : "wraps CoachRoomMemory.confirmation(for:) — one sentence per dismissible room condition, chosen at runtime from the tip being retired (CoachEngine.dismissRoomTip; CoachRoomMemory.swift)"
+      },
+      {
         "moment" : "sessionGuideNoteMet",
         "reason" : "wraps ProSessionPhotoRequirement.guideNote(phase) — open-set (ProCameraDestination.swift ~97)"
       },

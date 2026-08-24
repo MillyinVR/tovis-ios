@@ -202,6 +202,41 @@ Teaching the packs to name the client is follow-up work — it would make those
 moments open-set for `scripts/coach-voice-manifest`, which is a decision the
 manifest's owner should make on purpose rather than inherit.
 
+#### The one thing that SUPPRESSES rather than rewords (added 2026-08-23, P4.1)
+
+Room memory (`CoachRoomMemory`, camera plan P4.1) is the first layer that does
+not fit the table above, and it is worth saying why out loud rather than
+letting it look like a third word-substitution.
+
+A dismissal — the pro tapping **GOT IT** on "Mixed light — turn off the
+overheads" at their own salon — has to stop that tip being *chosen*, not just
+re-worded. Doing it downstream in `CoachEngine.apply`, where the other two
+live, would drop the published nudge while leaving `CoachTipArbiter` **locked
+on that rung**: the coach would go silent about everything else in the frame
+rather than move on to it. So it happens at the rung, in
+`CoachTipArbiter.select` — a different guarantee from #974 and P3, and one
+that has to be argued rather than inherited:
+
+- **Readiness is untouched.** It is a weighted mean over `signals`, computed
+  before the arbiter is consulted. A retired tip is still a real deficit and
+  the ring still reads it. Suppressing the WORDS while leaving the SCORE alone
+  is the whole design: a coach that quietly marked a bad frame good to spare
+  the pro a sentence would be lying about the photograph.
+- **The dimensions drawer is untouched** for the same reason — it is built
+  from `signals`, and it is the surface a pro opens on purpose to ask "why
+  won't it go green?".
+- **A hard failure is never retired.** `CoachSeverity.failure` is a capture no
+  edit recovers; the arbiter refuses to suppress one whatever the stored set
+  says. Only room conditions the pro may genuinely be unable to change are
+  dismissible at all (`CoachRoomMemory.dismissible`: mixed light, a green
+  cast, a warm cast, a busy backdrop).
+
+The pack seam itself is unchanged: one new moment, `.roomTipDismissed`, wraps
+`CoachRoomMemory.confirmation(for:)` through `ctx.detail` exactly like
+`.sessionGuideNoteMet`, and is excluded from `coach-voice-manifest`'s pre-bake
+scope for the same reason. Nothing in `CoachRoomMemory` or `CoachTipArbiter`
+reads a `CoachVoice`.
+
 ### 2.2 Render sites (where `CoachVoiceRenderer` gets called)
 
 Only three call sites change, all at the "final mile" between decision and

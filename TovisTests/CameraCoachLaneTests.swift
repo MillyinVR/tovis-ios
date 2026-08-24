@@ -224,4 +224,86 @@ import Testing
     @Test func laneHeightIsFixed() {
         #expect(CameraLane.height == 56)
     }
+
+    // MARK: - Room memory: the offer and its answer (P4.1)
+
+    /// The offer ADDS a word to the coach's own line. It must not be able to
+    /// put a row on the lane or take one off — the lane's priority order is
+    /// exactly what it was.
+    @Test func theRoomMemoryOfferRidesOnTheCoachLineAndChangesNothingElse() {
+        var i = CameraLane.Inputs()
+        i.coachTip = "Mixed light — turn off the overheads"
+        i.coachTipMoment = .colorMixed
+        i.hasDimensions = true
+        let without = CameraLane.message(i)
+        i.coachTipDismissible = true
+        let with = CameraLane.message(i)
+
+        #expect(with?.text == without?.text)
+        #expect(with?.tone == without?.tone)
+        #expect(with?.pulses == without?.pulses)
+        #expect(with?.expandable == true, "the seven dimensions stay reachable while the offer stands")
+        #expect(without?.action == nil)
+        #expect(with?.action?.kind == .dismissRoomTip)
+        #expect(with?.action?.label == CameraLane.dismissRoomTipLabel)
+    }
+
+    /// No coaching line, no offer — the word has nothing to agree with.
+    @Test func theOfferCannotAppearWithoutACoachLine() {
+        var i = CameraLane.Inputs()
+        i.coachTipDismissible = true
+        i.stepHint = "Move in close on the finished work"
+        let message = CameraLane.message(i)
+        #expect(message?.action == nil)
+    }
+
+    /// A failure that needs a tap still takes the lane whole, offer or not.
+    @Test func theOfferNeverOutranksSomethingTheProMustDecide() {
+        var i = CameraLane.Inputs()
+        i.terminalCount = 1
+        i.coachTip = "Busy background — find a cleaner backdrop"
+        i.coachTipMoment = .backgroundBusy
+        i.coachTipDismissible = true
+        #expect(CameraLane.message(i)?.action?.kind == .terminalOptions)
+    }
+
+    /// The answer to the pro's own tap. It outranks the coaching line
+    /// underneath it: the tip it is about has just gone away, and a control
+    /// that produces no visible answer reads as one that did nothing.
+    @Test func theConfirmationTakesTheLaneBackFromTheCoachForItsWindow() {
+        var i = CameraLane.Inputs()
+        i.coachTip = "Move in closer — fill the frame"
+        i.coachTipMoment = .compositionTooFar
+        i.roomTipDismissed = "Got it — the overheads stay on here"
+        let message = CameraLane.message(i)
+        #expect(message?.text == "Got it — the overheads stay on here")
+        #expect(message?.tone == .accent)
+        #expect(message?.action == nil, "there is nothing left to tap")
+    }
+
+    /// The way back, for exactly as long as the confirmation is on screen.
+    @Test func theConfirmationCarriesTheUndoWhileThereIsSomethingToPutBack() {
+        var i = CameraLane.Inputs()
+        i.roomTipDismissed = "Got it — the overheads stay on here"
+        i.roomTipDismissalUndoable = true
+        #expect(CameraLane.message(i)?.action?.kind == .undoRoomDismissal)
+        #expect(CameraLane.message(i)?.action?.label == CameraLane.undoRoomDismissalLabel)
+        // …and not once it has been taken.
+        i.roomTipDismissed = "That tip is back"
+        i.roomTipDismissalUndoable = false
+        #expect(CameraLane.message(i)?.action == nil)
+    }
+
+    /// It arrives already rendered in the pro's voice (`CoachEngine`
+    /// .dismissRoomTip), so the lane shows it verbatim — flourishing it a
+    /// second time is how two packs' voices end up stacked in one sentence.
+    @Test func theConfirmationIsShownVerbatimInEveryVoice() {
+        var i = CameraLane.Inputs()
+        i.roomTipDismissed = "Got it — the overheads stay on here. Noted, bestie!"
+        for personality in CoachPersonality.allCases {
+            #expect(CameraLane.message(i, voice: personality.voice)?.text
+                    == "Got it — the overheads stay on here. Noted, bestie!",
+                    "\(personality) re-rendered a line that was already rendered")
+        }
+    }
 }
