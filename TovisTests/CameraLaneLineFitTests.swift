@@ -253,6 +253,144 @@ import UIKit
         }.filter { seen.insert($0).inserted }
     }
 
+    // MARK: - Back-off: the plainest form of the same instruction (P4.3)
+
+    /// Every line `CoachPlainLine` can build, swept off `CoachMoment.allCases`
+    /// rather than off a list someone typed — a moment that gains a plain form
+    /// later is measured here without anyone remembering to add it.
+    ///
+    /// Both bookings: the worst one the derivation will accept (a 14-character
+    /// name is the object of four of these instructions) and none at all.
+    private func everyPlainLine() -> [String] {
+        let contexts = [
+            CoachPhraseContext(namesAPerson: true),
+            CoachPhraseContext(direction: "right", namesAPerson: true),
+            CoachPhraseContext(),
+        ]
+        var seen: Set<String> = []
+        return [worstCase, .empty].flatMap { vocabulary in
+            CoachMoment.allCases.flatMap { moment in
+                contexts.compactMap { ctx in
+                    CoachPlainLine.line(
+                        for: CoachNudge(category: .composition, message: "canonical",
+                                        moment: moment, phraseCtx: ctx),
+                        vocabulary: vocabulary)
+                }
+            }
+        }.filter { seen.insert($0).inserted }
+    }
+
+    /// The plain form is meant to be SHORTER, but "meant to" is not a
+    /// measurement — and two of these can land on the coach row while it also
+    /// carries the room-memory offer's button (colour and backdrop tips are
+    /// exactly the four `CoachRoomMemory` can retire), which is the narrowest
+    /// the sentence ever gets.
+    @Test func everyPlainLineFitsTheLaneEvenBesideTheRoomMemoryOffer() {
+        let lines = everyPlainLine()
+        #expect(!lines.isEmpty, "the sweep found no plain lines — it has stopped measuring anything")
+        for width in screenWidths {
+            let available = actionRowTextWidth(screen: width,
+                                               label: CameraLane.dismissRoomTipLabel)
+            for line in lines {
+                let used = laidOutLines(line, width: available)
+                #expect(used <= CameraLane.maxTextLines,
+                        "\(Int(width))pt beside \(CameraLane.dismissRoomTipLabel): “\(line)” needs \(used) lines in \(Int(available))pt")
+            }
+        }
+    }
+
+    /// …and it must actually be plainer. A "simplification" that is longer than
+    /// what it replaces is not one, and the pro would read it as the coach
+    /// saying MORE after being ignored. Measured against the line the pro is
+    /// ACTUALLY reading — the booking's substitution, not the bare canonical.
+    @Test func thePlainFormIsNeverLongerThanTheLineItReplaces() {
+        let vocabulary = CoachBookingVocabulary(serviceName: "Caramel Balayage",
+                                                clientFullName: "Maya Lopez")
+        let canonical = everyCorrectionCanonicalLine()
+        // Self-checking: every moment that HAS a plain form must be reached by
+        // the sweep, or this test would quietly stop measuring the one that
+        // regressed. `.lightingTooDark` carries two canonical lines under one
+        // tag, so the sweep is keyed on the SENTENCE, not the moment.
+        let hasPlainForm = CoachMoment.allCases.filter { moment in
+            CoachPlainLine.line(for: CoachNudge(category: .composition, message: "x",
+                                                moment: moment),
+                                vocabulary: .empty) != nil
+        }
+        let reached = Set(canonical.map(\.moment))
+        for moment in hasPlainForm {
+            #expect(reached.contains(moment),
+                    "\(moment) has a plain form but no coach in the sweep produces it")
+        }
+
+        for entry in canonical {
+            let nudge = vocabulary.applied(to: CoachNudge(
+                category: entry.category, message: entry.text,
+                moment: entry.moment, phraseCtx: entry.ctx))
+            guard let plain = CoachPlainLine.line(for: nudge, vocabulary: vocabulary) else { continue }
+            #expect(plain.count < nudge.message.count,
+                    "“\(plain)” is not plainer than “\(nudge.message)”")
+        }
+    }
+
+    /// The REAL canonical sentence behind every correction the ladder can
+    /// coach, read off the REAL coaches rather than retyped — the same
+    /// technique `dismissibleCanonicalLines` uses, widened to the whole ladder.
+    private func everyCorrectionCanonicalLine()
+        -> [(category: CoachCategory, moment: CoachMoment, text: String, ctx: CoachPhraseContext)] {
+        func context(luma: Double = 0.5, faceLuma: Double? = 0.5, bgLuma: Double? = 0.5,
+                     sharpness: Double = 1, clutter: Double? = 0,
+                     fill: Double? = 0.4, cropFill: Double? = nil, crop: CGRect? = nil,
+                     tilt: Double? = 0,
+                     face: CGRect? = CGRect(x: 0.3, y: 0.2, width: 0.4, height: 0.4),
+                     color: ColorSignal? = nil, pose: PoseSignal? = nil,
+                     expects: ShotExpectations? = nil) -> FrameContext {
+            FrameContext(avgLuma: luma, faceBounds: face, faceLuma: faceLuma,
+                         backgroundLuma: bgLuma, sharpness: sharpness,
+                         backgroundClutter: clutter, subjectFill: fill,
+                         cropGuide: crop, cropSubjectFill: cropFill, pose: pose,
+                         deviceTilt: tilt, color: color, expectations: expects)
+        }
+        func light(_ mixed: Double, _ green: Double, _ warm: Double) -> ColorSignal {
+            ColorSignal(mixed: mixed, greenTint: green, warmth: warm, backgroundScoped: true)
+        }
+        let clipped = PoseSignal(edgeClipped: true, joints: [.neck: CGPoint(x: 0.5, y: 0.5)])
+        let feedCrop = CGRect(x: 0.2, y: 0, width: 0.6, height: 1)
+        let cases: [(ShotCoach, FrameContext)] = [
+            // Lighting — backlit, then the face and flat-lay variants of each
+            // exposure failure (two canonical lines under one moment).
+            (LightingCoach(), context(faceLuma: 0.1, bgLuma: 0.9)),
+            (LightingCoach(), context(faceLuma: 0.15, bgLuma: 0.2)),
+            (LightingCoach(), context(luma: 0.1, faceLuma: nil, bgLuma: nil, face: nil)),
+            (LightingCoach(), context(faceLuma: 0.95, bgLuma: 0.5)),
+            (LightingCoach(), context(luma: 0.95, faceLuma: nil, bgLuma: nil, face: nil)),
+            // Colour — the room's light.
+            (ColorCoach(), context(color: light(1, 0, 0))),
+            (ColorCoach(), context(color: light(0, 1, 0))),
+            (ColorCoach(), context(color: light(0, 0, 1))),
+            // Framing and centering.
+            (CompositionCoach(), context(fill: 0.05)),
+            (CompositionCoach(), context(fill: 0.95, expects: .portrait)),
+            (CompositionCoach(), context(fill: 0.5, cropFill: 0.5, crop: feedCrop,
+                                         face: CGRect(x: 0.82, y: 0.2, width: 0.16, height: 0.2))),
+            (CompositionCoach(), context(face: CGRect(x: 0.3, y: 0.005, width: 0.4, height: 0.4))),
+            (CompositionCoach(), context(face: CGRect(x: 0.3, y: 0.8, width: 0.4, height: 0.35))),
+            (CompositionCoach(), context(face: CGRect(x: 0.02, y: 0.2, width: 0.2, height: 0.2))),
+            // Level, backdrop, pose, focus.
+            (LevelCoach(), context(tilt: 12)),
+            (LevelCoach(), context(tilt: 4)),
+            (BackgroundCoach(), context(clutter: 1)),
+            (PoseCoach(), context(pose: clipped)),
+            (SharpnessCoach(), context(sharpness: 0.3)),
+        ]
+        var seen: Set<String> = []
+        return cases.compactMap { coach, ctx in
+            let signal = coach.evaluate(ctx)
+            guard let moment = signal.moment, let text = signal.message,
+                  seen.insert(text).inserted else { return nil }
+            return (coach.category, moment, text, signal.phraseCtx ?? CoachPhraseContext())
+        }
+    }
+
     // MARK: - Looking at it
 
     /// The arithmetic above says the sentences fit. This renders them through
@@ -290,6 +428,45 @@ import UIKit
                 .appendingPathComponent("tovis-lane-\(Int(width))pt.png")
             try png.write(to: url)
             print("LANE SNAPSHOT \(Int(width))pt → \(url.path)")
+        }
+    }
+
+    /// The back-off's plain forms (P4.3), rendered. New user-facing copy on the
+    /// row the pro reads most — drawn BOTH ways, because two of the four tips
+    /// `CoachRoomMemory` can retire are room conditions, so a plain line can
+    /// land beside the "GOT IT" button and be measured against the narrowest
+    /// row the lane has.
+    @Test func rendersTheBackOffPlainLinesThroughTheRealLane() throws {
+        let lines = everyPlainLine().sorted { $0.count > $1.count }
+        for width in screenWidths {
+            let view = VStack(spacing: 2) {
+                ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                    CameraLaneView(
+                        message: LaneMessage(text: line, tone: .warn, expandable: true, pulses: true),
+                        backgroundBusy: false, onAction: { _ in }, onExpand: {},
+                        accessibilityValue: line)
+                }
+                ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                    CameraLaneView(
+                        message: LaneMessage(
+                            text: line, tone: .warn,
+                            action: LaneAction(label: CameraLane.dismissRoomTipLabel,
+                                               kind: .dismissRoomTip),
+                            expandable: true, pulses: true),
+                        backgroundBusy: false, onAction: { _ in }, onExpand: {},
+                        accessibilityValue: line)
+                }
+            }
+            .frame(width: width)
+            .background(Color.black)
+            let renderer = ImageRenderer(content: view)
+            renderer.scale = 3
+            let image = try #require(renderer.uiImage)
+            let png = try #require(image.pngData())
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("tovis-lane-plain-\(Int(width))pt.png")
+            try png.write(to: url)
+            print("PLAIN LINE LANE SNAPSHOT \(Int(width))pt → \(url.path)")
         }
     }
 

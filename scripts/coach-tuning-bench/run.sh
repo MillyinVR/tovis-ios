@@ -60,6 +60,7 @@ swiftc -O -swift-version 6 \
   "$BUILD/ShotCoach.swift" \
   "$ROOT/Tovis/CoachFocusLadder.swift" \
   "$ROOT/Tovis/CoachMoment.swift" \
+  "$ROOT/Tovis/CoachBackOff.swift" \
   "$ROOT/Tovis/CoachTuning.swift" \
   "$PUBLISH_CROP" \
   "$EXPECTATIONS" \

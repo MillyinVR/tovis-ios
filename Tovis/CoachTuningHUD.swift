@@ -28,6 +28,15 @@ struct CoachTuningHUD: View {
              get: { CoachTuning.harvestThreshold }, set: { CoachTuning.harvestThreshold = $0 }),
         Knob(title: "autoCaptureHoldSeconds", range: 0.2...2.0,
              get: { CoachTuning.autoCaptureHoldSeconds }, set: { CoachTuning.autoCaptureHoldSeconds = $0 }),
+        // The one BEHAVIOURAL number on this console, and deliberately so: its
+        // neighbours in that block (`focusStabilityWindow`,
+        // `focusRegressionWindow`) are debounces you set with a stopwatch, but
+        // the back-off (P4.3) cannot be WATCHED at all without shortening it —
+        // at the shipped 20s the plainer line is 20 seconds away and the
+        // silence 40. Drag it down to five to see the whole sequence, then put
+        // it back before judging the pacing.
+        Knob(title: "coachPatienceSeconds", range: 5...60,
+             get: { CoachTuning.coachPatienceSeconds }, set: { CoachTuning.coachPatienceSeconds = $0 }),
         Knob(title: "lumaTooDark", range: 0.05...0.4,
              get: { CoachTuning.lumaTooDark }, set: { CoachTuning.lumaTooDark = $0 }),
         Knob(title: "lumaTooBright", range: 0.6...0.95,

@@ -252,6 +252,7 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                               frameLuma: avgLuma, frameWarmth: cachedColor?.warmth,
                               frameBackgroundLuma: cachedBackgroundLuma,
                               cleared: verdict.cleared, advanced: verdict.advanced,
+                              simplified: verdict.simplified,
                               debug: debug))
 
             // Harvest a keeper when the frame earns it (rate-limited + capped) —
@@ -477,11 +478,17 @@ final class CoachEngine: NSObject {
     /// voice's chattiness calls for it (`CoachVoice.includesWhy(for:)`) — the
     /// corrective itself is always canonical-or-personality text; only
     /// whether the reasoning rides along varies by pack.
-    private func spokenLine(for nudge: CoachNudge) -> String {
+    ///
+    /// `simplified` is the back-off's "once more, simpler" pass (P4.3) — the
+    /// `why` is dropped there, which on the DEFAULT voice is the longest thing
+    /// in the utterance and the whole reason the line stopped being short. It
+    /// is also the half of stage one that reaches every pack, since a pack's
+    /// own words for the moment still win on screen.
+    private func spokenLine(for nudge: CoachNudge, simplified: Bool = false) -> String {
         let rendered = CoachVoiceRenderer.render(
             nudge.moment, fallback: nudge.message,
             ctx: nudge.phraseCtx ?? CoachPhraseContext(), voice: voice) ?? nudge.message
-        guard let moment = nudge.moment, voice.includesWhy(for: moment),
+        guard !simplified, let moment = nudge.moment, voice.includesWhy(for: moment),
               let why = statuses.first(where: { $0.category == nudge.category })?.why
         else { return rendered }
         return "\(rendered) \(why)"
@@ -608,11 +615,22 @@ final class CoachEngine: NSObject {
         // flourish, while a look line is a bespoke sentence that replaces the
         // whole correction. Both are pure word substitutions on a correction
         // the coach had already decided to give.
-        let effectiveNudge = result.nudge.map { raw in
+        //
+        // The back-off's "once more, simpler" pass (P4.3) runs LAST and only
+        // when the look hasn't already replaced the whole correction: a look
+        // line is a bespoke sentence written for this shot, and shortening
+        // someone else's sentence is not this layer's business — the same call
+        // #359 made when it withheld the room-memory offer from a look line.
+        // Under a booking, the plain form still names the client, because
+        // `CoachPlainLine` builds from the vocabulary rather than from the
+        // canonical text.
+        let effectiveNudge = result.nudge.map { raw -> CoachNudge in
             let spoken = bookingVocabulary.applied(to: raw)
-            return lookDirections.line(replacing: spoken).map {
-                CoachNudge(category: spoken.category, message: $0)
-            } ?? spoken
+            if let look = lookDirections.line(replacing: spoken) {
+                return CoachNudge(category: spoken.category, message: look)
+            }
+            return CoachPlainLine.applied(to: spoken, simplified: result.simplified,
+                                          vocabulary: bookingVocabulary)
         }
 
         // Room memory (P4.1): count this shoot's sighting of the tip, and
@@ -638,7 +656,7 @@ final class CoachEngine: NSObject {
             let complimentFallback = advanced.canonicalGoodPhrase
             let complimentRendered = CoachVoiceRenderer.render(
                 advanced.goodMoment, fallback: complimentFallback, voice: voice) ?? complimentFallback
-            let nextRendered = spokenLine(for: nudge)
+            let nextRendered = spokenLine(for: nudge, simplified: result.simplified)
             let fallback = "\(complimentRendered) \(nextRendered)"
             if options.speak {
                 let line = CoachVoiceRenderer.render(
@@ -673,7 +691,9 @@ final class CoachEngine: NSObject {
                 }
                 // Skip on an advance frame — the combined compliment+next
                 // line above already spoke this exact nudge once.
-                if options.speak, result.advanced == nil { speakTip(nudge) }
+                if options.speak, result.advanced == nil {
+                    speakTip(nudge, simplified: result.simplified)
+                }
             }
         }
 
@@ -816,8 +836,9 @@ final class CoachEngine: NSObject {
     /// per-fundamental repeat suppression, only the ongoing correction is.
     /// (A match look's substitution happened upstream, in `apply` — by the
     /// time a nudge reaches here its message IS the line to say.)
-    private func speakTip(_ nudge: CoachNudge) {
-        speakSchedulerTip(spokenLine(for: nudge), category: nudge.category)
+    private func speakTip(_ nudge: CoachNudge, simplified: Bool = false) {
+        speakSchedulerTip(spokenLine(for: nudge, simplified: simplified),
+                          category: nudge.category)
     }
 
     /// The per-category-cooldown speech path with pre-built text — used by

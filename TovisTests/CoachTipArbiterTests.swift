@@ -498,4 +498,214 @@ import Testing
         _ = fresh.select(from: [signal(.color, score: 0.45, moment: .colorMixed)], now: 0)
         #expect(fresh.dismissed.isEmpty)
     }
+
+    // MARK: - Backing off when repeating itself has stopped working (P4.3)
+    //
+    // The SECOND thing in this type that changes what is decided rather than
+    // how it is worded, and — unlike a dismissal — it is the coach's OWN
+    // inference rather than the pro's instruction. So these pin the same three
+    // guarantees again, plus the two that are specific to it: silence is not
+    // read as "fixed", and the score moving brings the words straight back.
+    // The arithmetic itself lives in `CoachBackOffTests`.
+
+    /// Drive one arbiter over `seconds` at the analyzer's real cadence.
+    @discardableResult
+    private func run(_ arbiter: inout CoachTipArbiter,
+                     _ signals: [(CoachCategory, CoachSignal)],
+                     from: Double, seconds: Double) -> CoachTipArbiter.Outcome? {
+        let step = 1.0 / CoachTuning.analysisFPS
+        var now = from
+        var last: CoachTipArbiter.Outcome?
+        while now <= from + seconds {
+            last = arbiter.select(from: signals, now: now)
+            now += step
+        }
+        return last
+    }
+
+    private var patience: Double { CoachBackOff.simplifyAfter }
+    private var silence: Double { CoachBackOff.quietAfter }
+
+    /// The shape of the whole step: say it, say it plainer, then stop saying it
+    /// and coach the next thing instead.
+    @Test func aStalledTipIsSaidPlainlyOnceAndThenHandsTheLineOn() {
+        var arbiter = CoachTipArbiter()
+        let broken: [(CoachCategory, CoachSignal)] = [
+            signal(.color, score: 0.45, moment: .colorMixed),
+            signal(.composition, score: 0.5, moment: .compositionTooFar),
+        ]
+        let early = run(&arbiter, broken, from: 0, seconds: patience - 2)
+        #expect(early?.nudge?.moment == .colorMixed)
+        #expect(early?.simplified == false, "still inside the coach's patience")
+
+        let plainer = run(&arbiter, broken, from: patience, seconds: patience - 2)
+        #expect(plainer?.nudge?.moment == .colorMixed, "same correction, about to be said plainer")
+        #expect(plainer?.simplified == true)
+
+        let after = run(&arbiter, broken, from: silence, seconds: 1)
+        #expect(after?.nudge?.moment == .compositionTooFar,
+                "the coach must move on to what the pro CAN change, not stand mute")
+    }
+
+    /// 🔴 The rule the plan asked to be decided and argued: going quiet is NOT
+    /// the same as being fixed. Silence must never reach the ladder's
+    /// stable-good path, or the coach would compliment the pro on the colour it
+    /// is still wrong about — the same defect a dismissal on the locked rung
+    /// had, reached by a different route.
+    @Test func backingOffIsNeverHeardAsAComplimentOrAnAdvance() {
+        var arbiter = CoachTipArbiter()
+        let broken: [(CoachCategory, CoachSignal)] = [
+            signal(.color, score: 0.45, moment: .colorMixed),
+            signal(.composition, score: 0.5, moment: .compositionTooFar),
+        ]
+        run(&arbiter, broken, from: 0, seconds: silence - 1)
+        let handover = run(&arbiter, broken, from: silence, seconds: 1)
+        #expect(handover?.nudge?.moment == .compositionTooFar)
+        #expect(handover?.advanced == nil, "colour was given up on, not solved")
+        #expect(handover?.cleared == nil)
+    }
+
+    /// …and with nothing else broken, the lane simply goes quiet. No
+    /// compliment, no stale line, and — because the ladder let the lock go
+    /// rather than sitting on it silently — no reason the next thing that
+    /// breaks can't be coached normally.
+    @Test func backingOffOnTheOnlyBrokenRungLeavesNothingToSayRatherThanPraise() {
+        var arbiter = CoachTipArbiter()
+        let onlyColour = [signal(.color, score: 0.45, moment: .colorMixed)]
+        run(&arbiter, onlyColour, from: 0, seconds: silence - 1)
+        let quiet = run(&arbiter, onlyColour, from: silence, seconds: 1)
+        #expect(quiet?.nudge == nil)
+        #expect(quiet?.cleared == nil, "nothing was FIXED — the coach just stopped saying it")
+        #expect(quiet?.advanced == nil)
+
+        // The lock was released, so a NEW problem is still coached in full.
+        let framing = arbiter.select(
+            from: [signal(.color, score: 0.45, moment: .colorMixed),
+                   signal(.composition, score: 0.5, moment: .compositionTooFar)],
+            now: silence + 2)
+        #expect(framing.nudge?.moment == .compositionTooFar)
+    }
+
+    /// ⚠️ Asked explicitly by the plan, and decided the same way #359 decided
+    /// it for dismissal — but for a stronger reason. A `.failure` is a capture
+    /// no edit recovers; going quiet about a photograph that is already lost
+    /// leaves the pro shooting frames that do not exist. A dismissal is at
+    /// least the PRO's judgement that a condition isn't theirs to fix; backing
+    /// off is only the coach's own, so it gets less licence, not more.
+    @Test func aHardFailureIsNeverBackedOffHoweverLongItHolds() {
+        var arbiter = CoachTipArbiter()
+        let lostFrame: [(CoachCategory, CoachSignal)] = [
+            signal(.sharpness, score: 0.3, moment: .sharpnessHoldSteady, severity: .failure),
+        ]
+        run(&arbiter, lostFrame, from: 0, seconds: silence + 5)
+        let still = arbiter.select(from: lostFrame, now: silence + 10)
+        #expect(still.nudge?.moment == .sharpnessHoldSteady)
+        #expect(still.simplified == false, "there is no plainer way to say a frame is lost")
+    }
+
+    /// A correction that ESCALATES into a hard failure takes its words back
+    /// even after the coach had given up on it — the frame stopped being a
+    /// preference and started being a loss.
+    @Test func aRungThatEscalatesToAFailureTakesTheLineBackAfterBackingOff() {
+        var arbiter = CoachTipArbiter()
+        let softish = [signal(.sharpness, score: 0.6, moment: .sharpnessTapToFocus)]
+        run(&arbiter, softish, from: 0, seconds: silence + 1)
+        #expect(arbiter.select(from: softish, now: silence + 2).nudge == nil)
+
+        let lost = [signal(.sharpness, score: 0.3, moment: .sharpnessHoldSteady,
+                           severity: .failure)]
+        #expect(arbiter.select(from: lost, now: silence + 3).nudge?.moment == .sharpnessHoldSteady)
+    }
+
+    /// The pro starting to act on the line is the whole signal. A score that
+    /// moves brings the correction straight back, at full length.
+    @Test func progressBringsABackedOffTipStraightBack() {
+        var arbiter = CoachTipArbiter()
+        let stuck: [(CoachCategory, CoachSignal)] = [
+            signal(.composition, score: 0.45, moment: .compositionNoHeadroom),
+            signal(.background, score: 0.5, moment: .backgroundBusy),
+        ]
+        run(&arbiter, stuck, from: 0, seconds: silence - 1)
+        let handover = run(&arbiter, stuck, from: silence, seconds: 1)
+        #expect(handover?.nudge?.moment == .backgroundBusy)
+
+        // The pro raises the camera: composition moves 0.45 → 0.50, and the
+        // centering rung outranks the backdrop, so it preempts back.
+        let improving: [(CoachCategory, CoachSignal)] = [
+            signal(.composition, score: 0.50, moment: .compositionTooLow),
+            signal(.background, score: 0.5, moment: .backgroundBusy),
+        ]
+        let back = run(&arbiter, improving, from: silence + 2,
+                       seconds: CoachTuning.focusRegressionWindow + 1)
+        #expect(back?.nudge?.moment == .compositionTooLow)
+        #expect(back?.simplified == false, "the patience was earned back in full")
+    }
+
+    /// Backing off is about the WORDS, exactly like a dismissal. Readiness is a
+    /// weighted mean over the signals, computed before this type is asked
+    /// anything, and the dimensions drawer is built from the same signals — so
+    /// the pro loses a sentence and never the truth about the frame.
+    @Test func backingOffDoesNotMoveReadinessOrTheDimensionsDrawer() {
+        let coaches: [ShotCoach] = [ColorCoach(), BackgroundCoach()]
+        let ctx = FrameContext(
+            avgLuma: 0.5, faceBounds: CGRect(x: 0.3, y: 0.2, width: 0.4, height: 0.4),
+            faceLuma: 0.5, backgroundLuma: 0.5, sharpness: 1,
+            backgroundClutter: 1, subjectFill: 0.4, pose: nil, deviceTilt: 0,
+            color: ColorSignal(mixed: 1, greenTint: 0, warmth: 0, backgroundScoped: true),
+            expectations: nil)
+
+        var arbiter = CoachTipArbiter()
+        let first = CoachAggregate.evaluate(coaches, ctx, arbiter: &arbiter, now: 0)
+        #expect(first.nudge?.moment == .colorMixed)
+
+        let step = 1.0 / CoachTuning.analysisFPS
+        var now = step
+        var latest = first
+        while now <= silence + 1 {
+            latest = CoachAggregate.evaluate(coaches, ctx, arbiter: &arbiter, now: now)
+            now += step
+        }
+        #expect(latest.nudge?.moment == .backgroundBusy, "the coach moved on")
+        #expect(latest.readiness == first.readiness, "the ring must still count the deficit")
+        #expect(latest.statuses.map(\.score) == first.statuses.map(\.score))
+        #expect(latest.statuses.map(\.message) == first.statuses.map(\.message),
+                "the drawer is the surface the pro opened to ask why it won't go green")
+    }
+
+    /// The ladder holds the last correction on screen while it waits out the
+    /// stability window. It must hold the WORDING it was last shown in too —
+    /// otherwise a rung that had backed off to its plainest form grows its
+    /// diagnosis clause back for 1.5s, and the coach appears to get wordier at
+    /// the exact moment the pro finally fixed it.
+    @Test func theLastCorrectionIsHeldInTheWordingItWasLastShownIn() {
+        var arbiter = CoachTipArbiter()
+        let broken: [(CoachCategory, CoachSignal)] = [
+            signal(.color, score: 0.45, moment: .colorMixed),
+            signal(.background, score: 0.5, moment: .backgroundBusy),
+        ]
+        let plainer = run(&arbiter, broken, from: 0, seconds: silence - 2)
+        #expect(plainer?.simplified == true)
+
+        // Colour reads good, but not for long enough to be believed yet.
+        let colourFixed = [signal(.background, score: 0.5, moment: .backgroundBusy)]
+        let waiting = arbiter.select(from: colourFixed, now: silence - 1)
+        #expect(waiting.nudge?.moment == .colorMixed, "still holding the last correction")
+        #expect(waiting.simplified == true, "…and still in the words it was last said in")
+        #expect(waiting.advanced == nil)
+    }
+
+    /// The memory-free overload is asked exactly once with a fresh arbiter, so
+    /// no rung can ever have stalled: the offline bench and every pinned
+    /// `CoachReadinessTests` assertion keep reading canonical behaviour.
+    @Test func theMemoryFreeOverloadNeverBacksOffAnything() {
+        let ctx = FrameContext(
+            avgLuma: 0.5, faceBounds: CGRect(x: 0.3, y: 0.2, width: 0.4, height: 0.4),
+            faceLuma: 0.5, backgroundLuma: 0.5, sharpness: 1,
+            backgroundClutter: 1, subjectFill: 0.4, pose: nil, deviceTilt: 0,
+            color: ColorSignal(mixed: 1, greenTint: 0, warmth: 0, backgroundScoped: true),
+            expectations: nil)
+        let verdict = CoachAggregate.evaluate([ColorCoach(), BackgroundCoach()], ctx)
+        #expect(verdict.nudge?.moment == .colorMixed)
+        #expect(verdict.simplified == false)
+    }
 }
