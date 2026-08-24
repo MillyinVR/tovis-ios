@@ -79,6 +79,28 @@ enum CameraLane {
     /// Reserved height, in points. Fixed on purpose — see the file header.
     static let height: CGFloat = 56
 
+    // MARK: - Geometry the sentence has to live inside
+    //
+    // Named rather than spelled inline in `CameraLaneView` so a test can
+    // measure the coach's longest REAL sentence against the real lane instead
+    // of against a second copy of these numbers. A line that reads well in a
+    // string literal and loses its tail on a phone is not shipped — see
+    // `CameraLaneLineFitTests`.
+
+    /// The lane's inset from the screen edge.
+    static let outerInset: CGFloat = 18
+    /// The row capsule's inset from the lane.
+    static let rowInset: CGFloat = 16
+    /// Gap between the state dot, the sentence, and whatever trails it.
+    static let itemSpacing: CGFloat = 12
+    /// The leading state dot.
+    static let dotSize: CGFloat = 9
+    /// The sentence's type size, the floor SwiftUI may scale it to before it
+    /// starts dropping words instead, and how many lines it may wrap onto.
+    static let textPointSize: CGFloat = 16.5
+    static let minimumTextScale: CGFloat = 0.72
+    static let maxTextLines = 2
+
     /// How long a transient (a step change, a light-match confirmation) holds
     /// the lane before it falls through to the coach tip.
     static let transientSeconds: Double = 2
@@ -348,16 +370,16 @@ struct CameraLaneView: View {
         }
         .frame(height: CameraLane.height)
         .frame(maxWidth: .infinity)
-        .padding(.horizontal, 18)
+        .padding(.horizontal, CameraLane.outerInset)
         .animation(.easeOut(duration: 0.18), value: message)
     }
 
     private func row(_ message: LaneMessage) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: CameraLane.itemSpacing) {
             if message.showsDot {
                 Circle()
                     .fill(message.tone.color)
-                    .frame(width: 9, height: 9)
+                    .frame(width: CameraLane.dotSize, height: CameraLane.dotSize)
                     .opacity(message.pulses && pulsing ? 1 : 0.55)
                     .animation(message.pulses
                                ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true)
@@ -371,10 +393,10 @@ struct CameraLaneView: View {
             // scaling down keeps the whole sentence: a coaching instruction
             // that loses its tail is worse than one rendered a point smaller.
             Text(message.text)
-                .font(BrandFont.display(16.5, .semibold))
+                .font(BrandFont.display(CameraLane.textPointSize, .semibold))
                 .foregroundStyle(BrandColor.textPrimary)
-                .lineLimit(2)
-                .minimumScaleFactor(0.72)
+                .lineLimit(CameraLane.maxTextLines)
+                .minimumScaleFactor(CameraLane.minimumTextScale)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             if let action = message.action {
@@ -398,7 +420,7 @@ struct CameraLaneView: View {
                     .foregroundStyle(BrandColor.textPrimary.opacity(0.5))
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, CameraLane.rowInset)
         // Tight enough that two scaled lines still fit the fixed 56pt lane.
         .padding(.vertical, 9)
         .background(BrandColor.bgPrimary.opacity(0.78),

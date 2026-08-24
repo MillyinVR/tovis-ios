@@ -164,6 +164,10 @@ struct ProSessionHubView: View {
         .fullScreenCover(item: $capturing, onDismiss: { Task { await reloadAfterCapture() } }) { selection in
             ProCapturePhotosView(destination: .session(bookingId: bookingId, phase: selection.phase),
                                  serviceName: detail?.baseItem?.serviceName,
+                                 // The coach speaks the booking's vocabulary —
+                                 // the client by name, the work by its service
+                                 // name (P3). Both are already on this screen.
+                                 clientName: detail?.client.fullName,
                                  referenceURLs: selection.phase == .after ? beforeReferenceURLs : [],
                                  // Photos this phase ALREADY has. Without it the
                                  // camera would re-ask for the required shot every

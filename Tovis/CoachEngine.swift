@@ -423,6 +423,12 @@ final class CoachEngine: NSObject {
     /// tip, lane chip, dimensions headline — on the same scheduler and
     /// per-category cooldown: the look changes the words, never the pacing.
     var lookDirections: LookDirectionScript = .empty
+    /// What this shoot is OF, in the booking's own words — set by the camera
+    /// view at a session, `.empty` when practising. Substituted into the
+    /// coach's canonical text in `apply` (below), on the same scheduler and
+    /// per-category cooldown as everything else: the booking changes the
+    /// words, never the pacing. See `CoachBookingVocabulary`.
+    var bookingVocabulary: CoachBookingVocabulary = .empty
     /// When the look's settle line (`ready` trigger) last spoke — the floor
     /// under re-speaks when readiness flickers around the threshold.
     private var lastSettleLineAt: Date?
@@ -544,7 +550,10 @@ final class CoachEngine: NSObject {
         let options = runtimeOptions()
         analyzer.autoHarvestEnabled = options.autoHarvest
         readiness = result.readiness
-        statuses = result.statuses
+        // The booking's vocabulary reaches the drawer's rows through the SAME
+        // substitution as the lane's line below, so the two can't disagree
+        // about what the coach just said.
+        statuses = result.statuses.map { bookingVocabulary.applied(to: $0) }
         centerSample = (result.centerR, result.centerG, result.centerB)
         frameLuma = result.frameLuma
         if let warmth = result.frameWarmth { frameWarmth = warmth }
@@ -561,10 +570,18 @@ final class CoachEngine: NSObject {
         // re-render the personality's canonical text for that moment OVER the
         // look's words — nil moment means "show/say this verbatim" on every
         // surface, the pre-personalities contract.
+        //
+        // The booking's vocabulary runs FIRST and UNDER the look: it only ever
+        // swaps a noun in the canonical text ("Center Maya" for "Center your
+        // subject"), keeping the moment so a personality pack still gets to
+        // flourish, while a look line is a bespoke sentence that replaces the
+        // whole correction. Both are pure word substitutions on a correction
+        // the coach had already decided to give.
         let effectiveNudge = result.nudge.map { raw in
-            lookDirections.line(replacing: raw).map {
-                CoachNudge(category: raw.category, message: $0)
-            } ?? raw
+            let spoken = bookingVocabulary.applied(to: raw)
+            return lookDirections.line(replacing: spoken).map {
+                CoachNudge(category: spoken.category, message: $0)
+            } ?? spoken
         }
 
         // Sequential focus coaching: the ladder just moved off a rung that

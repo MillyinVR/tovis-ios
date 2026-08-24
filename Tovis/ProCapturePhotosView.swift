@@ -15,8 +15,13 @@ struct ProCapturePhotosView: View {
     /// camera, coach, guide and calibration are identical either way; the
     /// destination is only what the shoot OWES. See `ProCameraDestination`.
     let destination: ProCameraDestination
-    /// Base service name (e.g. "Balayage") — selects the ShotGuide. Nil → generic.
+    /// Base service name (e.g. "Balayage") — selects the ShotGuide, and gives
+    /// the coach the booking's own word for what's in the frame. Nil → generic.
     var serviceName: String? = nil
+    /// The client's stored full name, so the coach can say "Center Maya"
+    /// instead of "Center your subject". Nil when practising, or when the
+    /// booking has no usable name — see `CoachBookingVocabulary`.
+    var clientName: String? = nil
     /// "Before" photos to ghost as onion-skin while shooting AFTER, so the pairs
     /// line up. Empty for the BEFORE phase (nothing to match yet).
     var referenceURLs: [URL] = []
@@ -317,6 +322,11 @@ struct ProCapturePhotosView: View {
             if currentStepID == nil { currentStepID = guide.steps.first?.id }
             let engine = coach ?? CoachEngine(settings: settings)
             coach = engine
+            // What this shoot is OF, in the booking's words. Practice passes
+            // neither, so it resolves to `.empty` and the coach keeps its
+            // canonical lines — there is no client to name there.
+            engine.bookingVocabulary = CoachBookingVocabulary(
+                serviceName: serviceName, clientFullName: clientName)
             // Re-arm CoreMotion: the frame scrubber is a fullScreenCover, which
             // fires this view's onDisappear → engine.stop(); on return the
             // engine is reused, so the level stream must be restarted here or

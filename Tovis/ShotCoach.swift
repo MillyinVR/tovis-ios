@@ -638,7 +638,8 @@ struct LightingCoach: ShotCoach {
                 score: 0.35,
                 message: "Light’s behind them — turn them to face the window",
                 why: "The light is behind your client, so the camera exposes for the window and leaves their face in shadow.",
-                moment: .lightingBacklit, severity: .failure)
+                moment: .lightingBacklit,
+                phraseCtx: CoachPhraseContext(namesAPerson: true), severity: .failure)
         }
 
         // Expose for the skin when there is skin to expose for; the whole frame
@@ -653,7 +654,8 @@ struct LightingCoach: ShotCoach {
                                 : "Too dark — move toward the light",
                 why: onFace ? "Skin that's underexposed loses its true tone, and lifting it later brings up noise instead."
                             : "There isn't enough light on the work to hold detail.",
-                moment: .lightingTooDark, severity: .failure)
+                moment: .lightingTooDark,
+                phraseCtx: CoachPhraseContext(namesAPerson: onFace), severity: .failure)
         }
         if subject > CoachTuning.lumaTooBright {
             return CoachSignal(
@@ -661,7 +663,8 @@ struct LightingCoach: ShotCoach {
                 message: onFace ? "Their face is blown out — turn away from the bright light"
                                 : "Blown out — turn away from the bright light",
                 why: "Clipped highlights are gone for good — there's nothing left in the file to pull back.",
-                moment: .lightingBlownOut, severity: .failure)
+                moment: .lightingBlownOut,
+                phraseCtx: CoachPhraseContext(namesAPerson: onFace), severity: .failure)
         }
         // Score falls off smoothly away from the ideal exposure.
         let dist = abs(subject - CoachTuning.lumaIdeal)
@@ -724,7 +727,8 @@ struct CompositionCoach: ShotCoach {
                 return CoachSignal(
                     score: 0.6, message: "Frame their face for this shot",
                     why: "This step's whole job is the face — its pair on the other side of the booking has one.",
-                    moment: .compositionFaceRequired)
+                    moment: .compositionFaceRequired,
+                    phraseCtx: CoachPhraseContext(namesAPerson: true))
             }
             return CoachSignal(score: 1.0, message: nil)
         }
@@ -738,7 +742,8 @@ struct CompositionCoach: ShotCoach {
                 return CoachSignal(
                     score: 0.45, message: "They’re outside the feed crop — center them",
                     why: "The bright box is what the feed publishes; anything outside it is cut off there even though you can see it here.",
-                    moment: .compositionOffFrame)
+                    moment: .compositionOffFrame,
+                    phraseCtx: CoachPhraseContext(namesAPerson: true))
             }
         }
         let face = crop.map { PublishCrop.inCropSpace(frameFace, crop: $0) } ?? frameFace
@@ -758,17 +763,27 @@ struct CompositionCoach: ShotCoach {
             return CoachSignal(
                 score: 0.5, message: "Raise the camera — subject’s too low",
                 why: "Empty space above the head pulls the eye away from the work.",
-                moment: .compositionTooLow)
+                moment: .compositionTooLow,
+                phraseCtx: CoachPhraseContext(namesAPerson: true))
         }
         // Horizontal placement: comfortable near center or a third.
         let nearCenter = abs(centerX - 0.5) < CoachTuning.centerTolerance
         let nearThird = abs(centerX - 0.33) < CoachTuning.thirdTolerance
             || abs(centerX - 0.67) < CoachTuning.thirdTolerance
         if !nearCenter && !nearThird {
+            // Which side of centre they're sitting on, for a render that can
+            // name it. Frame space and crop space agree on the sign:
+            // `PublishCrop.rect` is horizontally CENTRED, so `centerX - 0.5`
+            // survives `inCropSpace`. The analysis buffer is `.oriented(.right)`
+            // off the BACK camera with no mirroring, so image-left is
+            // preview-left — which is what makes this a fact about the picture
+            // rather than a second unverified sign convention.
             return CoachSignal(
                 score: 0.55, message: "Center your subject",
                 why: "Sitting between centre and a third reads as neither — the eye can't settle.",
-                moment: .compositionRecenter)
+                moment: .compositionRecenter,
+                phraseCtx: CoachPhraseContext(direction: centerX < 0.5 ? "left" : "right",
+                                              namesAPerson: true))
         }
 
         // Reward good framing; small deviation → small penalty.
@@ -879,7 +894,8 @@ struct PoseCoach: ShotCoach {
             return CoachSignal(
                 score: 0.5, message: "Subject’s getting clipped — pull back",
                 why: "A shoulder or hand cut by the frame edge reads as a mistake, and there's no room left to crop.",
-                moment: .poseClipped)
+                moment: .poseClipped,
+                phraseCtx: CoachPhraseContext(namesAPerson: true))
         }
 
         let rules = ctx.expectations?.poseRules ?? []
