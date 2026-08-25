@@ -2,6 +2,8 @@
 # Offline coach tuning bench — see docs/camera-tuning-bench.md.
 #
 #   scripts/coach-tuning-bench/run.sh <folder-of-photos | photo.jpg ...>
+#   scripts/coach-tuning-bench/run.sh --compile-only   # build against the live sources, run nothing
+#   scripts/coach-tuning-bench/run.sh --selftest       # build + run end to end on generated frames (CI)
 #
 # Compiles the REAL Tovis perception sources against measure.swift and runs
 # them over the given images on this Mac. No simulator, no device, no camera.
@@ -12,10 +14,34 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 HERE="$ROOT/scripts/coach-tuning-bench"
 
-if [ $# -eq 0 ]; then
-  echo "usage: $(basename "$0") <folder-of-photos | photo.jpg ...>" >&2
-  exit 64
-fi
+# `--compile-only` and `--selftest` exist because this bench is not something
+# CI could re-measure. Its real corpus is 35 photographs out of an installed
+# simulator runtime; those are Apple's files, this repo is public, and a hosted
+# runner has a different runtime anyway, so "check the numbers" is not on
+# offer. What IS on offer is the failure that actually happened, twice, and
+# both times silently: the bench stopped COMPILING. `ShotExpectations` moved
+# out of the file this script brace-matched it from (found 2026-08-23, after
+# rotting ~19 days), and #360 added a source the hand-maintained list below did
+# not know about. Neither showed up until a person happened to run it.
+#
+#   --compile-only  builds every source in the list and stops. Needs no corpus.
+#   --selftest      does that, then generates deterministic synthetic frames and
+#                   runs the whole path over them, so "links but dies on the
+#                   first image" cannot pass either.
+#
+# 🔴 Neither mode measures anything. The numbers in docs/camera-tuning-bench.md
+# still come from a real corpus on a real Mac, and still have to be re-run by
+# hand before they are trusted.
+MODE="corpus"
+case "${1:-}" in
+  --compile-only) MODE="compile" ;;
+  --selftest)     MODE="selftest" ;;
+  "")
+    echo "usage: $(basename "$0") <folder-of-photos | photo.jpg ...>" >&2
+    echo "       $(basename "$0") --compile-only | --selftest" >&2
+    exit 64
+    ;;
+esac
 
 BUILD="$(mktemp -d)"
 trap 'rm -rf "$BUILD"' EXIT
@@ -77,6 +103,50 @@ swiftc -O -swift-version 6 \
 if [ ! -x "$BUILD/bench" ]; then
   echo "error: bench failed to compile" >&2
   exit 1
+fi
+
+if [ "$MODE" = "compile" ]; then
+  echo "coach-tuning-bench compiles against the live sources."
+  exit 0
+fi
+
+if [ "$MODE" = "selftest" ]; then
+  # The generator builds on its own — Foundation/CoreGraphics/ImageIO, none of
+  # the app sources — so a failure here is unambiguously the harness, never the
+  # thing under test.
+  swiftc -O -swift-version 6 \
+    "$HERE/selftest-corpus.swift" \
+    -o "$BUILD/selftest-corpus" 2>&1 | grep -v "warning: 'nonisolated(unsafe)' is unnecessary" || true
+  if [ ! -x "$BUILD/selftest-corpus" ]; then
+    echo "error: selftest corpus generator failed to compile" >&2
+    exit 1
+  fi
+  EXPECTED="$("$BUILD/selftest-corpus" "$BUILD/corpus")"
+  echo "generated $EXPECTED synthetic frames"
+
+  OUT="$BUILD/selftest.txt"
+  "$BUILD/bench" "$BUILD/corpus" | tee "$OUT"
+
+  # The bench prints its own count in the header. Assert it measured every
+  # frame: `measure()` returns nil on a frame it cannot decode and the run
+  # simply prints "(skipped …)" and carries on, so a build that decodes
+  # NOTHING would otherwise print empty tables and exit 0 — green, having
+  # measured nothing. Same shape as the "reported success but ran no tests"
+  # guards in .github/workflows/ci.yml.
+  if ! grep -q "=== Raw perception signals on $EXPECTED image(s) ===" "$OUT"; then
+    echo "error: bench did not report $EXPECTED images" >&2
+    exit 1
+  fi
+  if grep -q "(skipped " "$OUT"; then
+    echo "error: the bench skipped a generated frame — it could not decode its own self-test corpus" >&2
+    exit 1
+  fi
+  if ! grep -q -- "--- which line wins, across the corpus ---" "$OUT"; then
+    echo "error: bench did not reach its final summary" >&2
+    exit 1
+  fi
+  echo "coach-tuning-bench compiles and runs end to end."
+  exit 0
 fi
 
 "$BUILD/bench" "$@"

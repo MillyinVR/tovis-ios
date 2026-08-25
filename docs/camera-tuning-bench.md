@@ -17,7 +17,34 @@ This bench covers the first column offline. `CoachReadinessTests` pins the secon
 ```sh
 scripts/coach-tuning-bench/run.sh ~/Pictures/salon-session/
 scripts/coach-tuning-bench/run.sh a.heic b.jpg
+scripts/coach-tuning-bench/run.sh --compile-only   # build against the live sources, run nothing
+scripts/coach-tuning-bench/run.sh --selftest       # build + run end to end on generated frames (what CI does)
 ```
+
+### What CI covers, and what it does not
+
+`--selftest` runs on every PR, in the `Coach tools` job (`swiftc` only, no
+simulator — it shares a runner with the voice-manifest check because macOS
+bills at 10x).
+
+It exists because of how this bench actually fails. It compiles the LIVE
+perception sources every run, which is what makes it trustworthy, and it keeps
+a **hand-maintained list** of those sources, which is what makes it fragile.
+That list has broken twice, and both times **silently**: `ShotExpectations`
+moved out of the file the script brace-matched it from and the bench stayed
+broken for ~19 days (found 2026-08-23), and #360 added a source the list did
+not know about. Nothing ran it, so nothing said so. `--selftest` also runs the
+whole path over generated frames and fails if the bench decodes none of them,
+so "links, then dies on the first image" cannot pass either.
+
+🔴 **CI does NOT re-measure any threshold, and a green tick here says nothing
+about the numbers below.** The real corpus is 35 photographs out of an
+installed simulator runtime: they are Apple's files, this repo is public, and a
+hosted runner has a different runtime than the one the recorded numbers came
+from. The self-test frames are synthetic gradients — no faces, no optics, no
+salon light — and are deliberately run over rather than measured; nothing pins
+what they produce. **Every number in this document still comes from a hand-run
+on a real corpus, and still has to be re-run before it is trusted.**
 
 ### The corpus the runs below used, exactly
 

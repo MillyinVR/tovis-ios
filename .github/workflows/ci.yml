@@ -109,8 +109,12 @@ jobs:
   # regenerating it, this fails instead of the manifest silently rotting
   # behind the code (the exact failure mode `contract` above exists to catch
   # on the wire-schema side). `swiftc` only, no simulator/xcodebuild needed.
-  coach-voice-manifest:
-    name: Coach voice manifest (drift + completeness)
+  #
+  # The tuning bench rides along in this job rather than getting its own:
+  # macOS bills at 10x, both tools are `swiftc`-only, and a second runner for
+  # a 30-second compile is not worth the minutes.
+  coach-tools:
+    name: Coach tools (manifest drift + bench runs)
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
@@ -120,6 +124,25 @@ jobs:
 
       - name: Regenerate + diff against committed manifest.json
         run: scripts/coach-voice-manifest/run.sh --check
+
+      # scripts/coach-tuning-bench compiles the LIVE perception sources every
+      # run, which is what makes it trustworthy — and also what makes it
+      # fragile: it keeps a hand-maintained list of those sources, and moving
+      # or adding one breaks it. That happened twice and both times SILENTLY,
+      # because nothing ran it. `ShotExpectations` moved out of the file the
+      # script brace-matched it from and the bench stayed broken ~19 days
+      # (found 2026-08-23); #360 added a source the list did not know about.
+      #
+      # This does NOT re-measure the thresholds. The bench's real corpus is 35
+      # photographs from an installed simulator runtime — Apple's files, in a
+      # public repo, on a runner whose runtime is not the one the recorded
+      # numbers came from. `--selftest` builds against the live sources and
+      # runs the whole path over deterministic synthetic frames, so a bench
+      # that no longer compiles, or that decodes nothing, fails HERE instead of
+      # on the next person who needed a number. The numbers themselves still
+      # come from a hand-run on a real corpus — see docs/camera-tuning-bench.md.
+      - name: Coach tuning bench — compiles + runs end to end
+        run: scripts/coach-tuning-bench/run.sh --selftest
 
   # Everything under TovisTests/ — 33 files, 278 tests across 43 suites,
   # including NotificationDeepLinkTests, which pins where a tapped push row

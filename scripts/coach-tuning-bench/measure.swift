@@ -170,6 +170,15 @@ for url in urls {
     results.append(m)
 }
 
+// A corpus of files that all fail to decode is not an empty corpus — the guard
+// above only catches "no images found". Without this, every table below prints
+// from nothing and the run exits 0, which reads exactly like a clean bench.
+guard !results.isEmpty else {
+    FileHandle.standardError.write(
+        Data("error: \(urls.count) file(s) found, none could be measured\n".utf8))
+    exit(1)
+}
+
 // MARK: - Table 1 — exposure: the room vs the skin (plan §2.1 / §3.1)
 //
 // The whole point of the face relocation is that these columns disagree. This
