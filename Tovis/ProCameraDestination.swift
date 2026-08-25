@@ -97,8 +97,7 @@ enum ProCameraDestination: Equatable, Hashable {
             return CoachVoiceRenderer.render(
                 moment, fallback: fallback, ctx: CoachPhraseContext(detail: fallback), voice: voice) ?? fallback
         case .practice:
-            let fallback = "Practice shots aren’t attached to anyone. Shoot as many as you like — you can attach one to a client or a look later."
-            return CoachVoiceRenderer.render(.practiceGuideNote, fallback: fallback, voice: voice) ?? fallback
+            return CoachVoiceRenderer.renderCanonical(.practiceGuideNote, voice: voice)
         }
     }
 
@@ -112,8 +111,7 @@ enum ProCameraDestination: Equatable, Hashable {
                 .leavingWithoutTitleSession, fallback: fallback,
                 ctx: CoachPhraseContext(detail: fallback), voice: voice) ?? fallback
         case .practice:
-            let fallback = "Leave the camera?"
-            return CoachVoiceRenderer.render(.leavingWithoutTitlePractice, fallback: fallback, voice: voice) ?? fallback
+            return CoachVoiceRenderer.renderCanonical(.leavingWithoutTitlePractice, voice: voice)
         }
     }
 

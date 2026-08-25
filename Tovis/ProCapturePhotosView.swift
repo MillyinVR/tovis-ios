@@ -1763,9 +1763,8 @@ struct ProCapturePhotosView: View {
         lookDirectionIndex = 0
         onionEnabled = true   // the ghost is the point
         if settings.speak {
-            let fallback = "Matching your reference look."
-            coach?.announce(CoachVoiceRenderer.render(
-                .matchingReferenceLook, fallback: fallback, voice: settings.personality.voice) ?? fallback)
+            coach?.announce(CoachVoiceRenderer.renderCanonical(
+                .matchingReferenceLook, voice: settings.personality.voice))
         }
     }
 
@@ -2803,8 +2802,8 @@ struct CoachSettingsSheet: View {
                             Text(personality.displayName).tag(personality)
                         }
                     }
-                    Text(settings.personality.voice.phrase(for: .laneSetComplete, ctx: CoachPhraseContext())
-                         ?? "That’s the full set — beautiful work")
+                    Text(CoachVoiceRenderer.renderCanonical(
+                        .laneSetComplete, voice: settings.personality.voice))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .italic()

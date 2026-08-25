@@ -279,9 +279,8 @@ enum CameraLane {
         // actionable warning after two seconds would be a regression on what
         // the drift pill already did.
         if i.lightDrifted {
-            let fallback = "Light’s changed — re-scan the card"
             return LaneMessage(
-                text: CoachVoiceRenderer.render(.laneCalibrationDrift, fallback: fallback, voice: voice) ?? fallback,
+                text: CoachVoiceRenderer.renderCanonical(.laneCalibrationDrift, voice: voice),
                 tone: .warn,
                 action: LaneAction(label: "FIX", kind: .recalibrate),
                 pulses: true
@@ -319,13 +318,11 @@ enum CameraLane {
         }
         // 6 — the resting state. Instructions, never scores.
         if i.setComplete {
-            let fallback = "That’s the full set — beautiful work"
-            return LaneMessage(text: CoachVoiceRenderer.render(.laneSetComplete, fallback: fallback, voice: voice) ?? fallback,
+            return LaneMessage(text: CoachVoiceRenderer.renderCanonical(.laneSetComplete, voice: voice),
                                tone: .accent, expandable: i.hasDimensions)
         }
         if i.isReady {
-            let fallback = "Hold it — shooting"
-            return LaneMessage(text: CoachVoiceRenderer.render(.laneHoldShooting, fallback: fallback, voice: voice) ?? fallback,
+            return LaneMessage(text: CoachVoiceRenderer.renderCanonical(.laneHoldShooting, voice: voice),
                                tone: .accent, expandable: i.hasDimensions)
         }
         if let tip = i.coachTip {
@@ -369,20 +366,6 @@ enum CameraLane {
 }
 
 extension CoachCategory {
-    /// How VoiceOver says this fundamental. The pills abbreviated ("LIGHT");
-    /// speech shouldn't.
-    var spokenName: String {
-        switch self {
-        case .lighting: return "Lighting"
-        case .color: return "Color"
-        case .level: return "Level"
-        case .composition: return "Framing"
-        case .sharpness: return "Focus"
-        case .background: return "Background"
-        case .pose: return "Pose"
-        }
-    }
-
     /// The pills' short label, kept for the expanded dimensions drawer.
     var shortLabel: String {
         switch self {

@@ -50,6 +50,12 @@ if [ ! -f "$PUBLISH_CROP" ]; then
 fi
 sed '/^import TovisKit/d' "$ROOT/Tovis/ShotCoach.swift" > "$BUILD/ShotCoach.swift"
 
+# Every coach's corrective line now comes out of Tovis/CoachCanonicalCopy.swift
+# (the one home for the default voice's words) rather than a literal at the
+# call site, so ShotCoach.swift does not compile without it. It is Foundation
+# only for exactly this reason — this list and coach-voice-manifest's both
+# compile it directly, and either would break on a SwiftUI/TovisKit import.
+
 # swiftc only allows top-level statements in a file literally named main.swift,
 # so stage it under that name rather than saddling the repo with it.
 cp "$HERE/measure.swift" "$BUILD/main.swift"
@@ -60,6 +66,7 @@ swiftc -O -swift-version 6 \
   "$BUILD/ShotCoach.swift" \
   "$ROOT/Tovis/CoachFocusLadder.swift" \
   "$ROOT/Tovis/CoachMoment.swift" \
+  "$ROOT/Tovis/CoachCanonicalCopy.swift" \
   "$ROOT/Tovis/CoachBackOff.swift" \
   "$ROOT/Tovis/CoachTuning.swift" \
   "$PUBLISH_CROP" \

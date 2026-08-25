@@ -19,20 +19,17 @@
 //      that gap. `excludedMoments` below documents each with its real
 //      call-site source, so this list is a citation, not a guess.
 //
-//   2. Everything about Calm Mentor except the 7 "good" moments. Its
-//      `phrase(for:ctx:)` always returns nil by design — it defers to
-//      canonical text that, for those 7 moments, really is centralized
-//      (`CoachCategory.canonicalGoodSentence` — the SPOKEN form; its sibling
-//      `canonicalGoodPhrase` is the dimensions drawer's row label, which is
-//      displayed and never spoken, so it needs no audio). Everywhere else, the
-//      canonical text is scattered as literals and runtime-interpolated
-//      strings across ShotCoach.swift, PhotoQC.swift, BeforeShotMeasure.swift,
-//      ProCapturePhotosView.swift, CameraCoachLane.swift, CoachEngine.swift,
-//      and ProCameraDestination.swift — there is no single source of truth
-//      to read the way the 4 packs are one. Hand-copying that text here
-//      would be exactly the parallel-copy drift risk this pipeline exists
-//      to avoid, so `calmMentorGap` documents it as open work instead of
-//      papering over it.
+//   2. Nothing about Calm Mentor any more. It used to be everything except
+//      the 7 "good" moments: its `phrase(for:ctx:)` returns nil by design
+//      (canonical sits at the BOTTOM of the vocabulary precedence, so a
+//      default voice that returned text would jump the whole stack), and the
+//      canonical words it defers to were literals and runtime-interpolated
+//      fragments across eight app files — nothing a tool could read without
+//      hand-copying it, which is the parallel-copy drift this pipeline exists
+//      to prevent. `Tovis/CoachCanonicalCopy.swift` is now that single
+//      source, compiled here like the packs are, so the default voice is
+//      sampled from the same code the camera runs. `calmMentorGap` is kept
+//      as the record that the hole is closed rather than deleted.
 import Foundation
 import CryptoKit
 
@@ -51,35 +48,58 @@ let personalities: [(id: String, voice: CoachVoice)] = [
 
 // MARK: - Scope
 
-/// Finite ctx domains, each traced to the real call site that supplies the
-/// value in the shipping app (not invented here):
-///   - dimensionCleared: CoachCategory.spokenName (CameraCoachLane.swift),
-///     via CoachEngine.swift:558's `cleared.spokenName`.
-///   - QC verdicts: PhotoQC.swift's `faceLuma == nil ? "It" : "Their face"`.
-///   - light-match verdicts: ProCapturePhotosView.swift:1765/1767's
-///     `noun = "reference"` / `noun = "before"`.
-let dimensionClearedNouns = ["Lighting", "Colour", "Level", "Framing", "Focus", "Background", "Pose"]
-let qcSubjectNouns = ["It", "Their face"]
-let lightMatchNouns = ["reference", "before"]
+/// The finite ctx domains come from `CoachCanonicalCopy.contexts(for:)` — the
+/// app's own declaration of what each canonical line varies over, sourced from
+/// `CoachCategory.spokenName`, `PhotoQC`'s "It"/"Their face",
+/// `BeforeShotMeasure`'s "before"/"reference", `LevelCoach`'s "left"/"right"
+/// and `LightingCoach`'s `faceLuma != nil`.
+///
+/// They used to be hand-written here, and they drifted: this file still said
+/// "Colour" for months after iOS #363 made `spokenName` say "Color", so five
+/// pack lines in the committed manifest interpolated a noun the app never
+/// produces — and `--check` stayed green, because the stale copy was the
+/// tool's own. Reading the app removes the place that could be stale.
+///
+/// `.pairedWithBefore` (P5.3) is deliberately absent from any domain: parity
+/// is only ever claimed about the booking's own BEFORE (`BeforePair.verdict`
+/// takes no stamp for a "match a look" reference), so there is no noun that
+/// varies — it cross-products like any static moment.
 
-// `.pairedWithBefore` (P5.3) is deliberately ABSENT from this table: its copy
-// interpolates nothing. Parity is only ever claimed about the booking's own
-// BEFORE (`BeforePair.verdict` takes no stamp for a "match a look" reference),
-// so there is no noun that varies — it cross-products like any static moment.
-let ctxDomains: [CoachMoment: [String]] = [
-    .dimensionCleared: dimensionClearedNouns,
-    .qcTooDark: qcSubjectNouns,
-    .qcBlownOut: qcSubjectNouns,
-    .lightMatched: lightMatchNouns,
-    .lightBrighterThan: lightMatchNouns,
-    .lightDarkerThan: lightMatchNouns,
-    .lightWarmerThan: lightMatchNouns,
-    .lightCoolerThan: lightMatchNouns,
-]
+/// The contexts a PACK's copy varies over. All four read `ctx.subjectNoun`
+/// and nothing else — grepped: none of them reads `direction`,
+/// `namesAPerson` or `count` (brief §1) — so a canonical domain over one of
+/// those fields would cross-product into identical pack lines and is dropped
+/// here rather than duplicated into the manifest.
+func packContexts(for moment: CoachMoment) -> [CoachPhraseContext] {
+    let nouns = CoachCanonicalCopy.contexts(for: moment).compactMap(\.subjectNoun)
+    guard !nouns.isEmpty else { return [CoachPhraseContext()] }
+    return nouns.map { CoachPhraseContext(subjectNoun: $0) }
+}
 
-// `levelTilted`'s `ctx.direction` is deliberately absent from `ctxDomains`:
-// grepped all four packs — none of them read `ctx.direction`. It's dead
-// today (brief §1), so `levelTilted` cross-products like any static moment.
+/// Which ctx fields actually VARY across a moment's context list — the only
+/// ones worth putting in a manifest entry's `ctx`. A moment with one context
+/// gets `{}`; `lightingTooDark` gets `namesAPerson` because that Bool is what
+/// picks between its two canonical forms.
+func varyingFields(_ contexts: [CoachPhraseContext]) -> Set<String> {
+    var fields: Set<String> = []
+    if Set(contexts.map { $0.direction ?? "" }).count > 1 { fields.insert("direction") }
+    if Set(contexts.map { $0.subjectNoun ?? "" }).count > 1 { fields.insert("subjectNoun") }
+    if Set(contexts.map(\.namesAPerson)).count > 1 { fields.insert("namesAPerson") }
+    return fields
+}
+
+func ctxLabel(_ ctx: CoachPhraseContext, varying fields: Set<String>) -> [String: String] {
+    var out: [String: String] = [:]
+    if fields.contains("direction"), let direction = ctx.direction { out["direction"] = direction }
+    if fields.contains("subjectNoun"), let noun = ctx.subjectNoun { out["subjectNoun"] = noun }
+    if fields.contains("namesAPerson") { out["namesAPerson"] = ctx.namesAPerson ? "true" : "false" }
+    return out
+}
+
+func describe(_ label: [String: String]) -> String {
+    label.isEmpty ? "" : " [" + label.sorted { $0.key < $1.key }
+        .map { "ctx.\($0.key)=\($0.value)" }.joined(separator: ", ") + "]"
+}
 
 /// Moments excluded from pre-bake because their copy wraps open-set text
 /// that isn't known until runtime — see the file header. Each reason cites
@@ -100,6 +120,18 @@ let excludedMoments: [CoachMoment: String] = [
     .roomTipDismissed: "wraps CoachRoomMemory.confirmation(for:) — one sentence per dismissible room condition, chosen at runtime from the tip being retired (CoachEngine.dismissRoomTip; CoachRoomMemory.swift)",
     .focusRungAdvanced: "wraps two ALREADY-rendered lines from other moments, composed at runtime — not fixed text (CoachEngine.swift ~549; see CoachPhraseContext.detail's doc comment)",
 ]
+
+// The app declares the same set as `CoachCanonicalCopy.openSet` — the moments
+// it has no fixed words for. This table adds the REASON for each, which is
+// documentation the app has no use for. If the two ever disagree, one of them
+// is wrong about what the default voice can say, so fail rather than guess.
+let openSetMismatch = Set(excludedMoments.keys).symmetricDifference(CoachCanonicalCopy.openSet)
+if !openSetMismatch.isEmpty {
+    FileHandle.standardError.write(
+        ("error: excludedMoments here and CoachCanonicalCopy.openSet disagree on: "
+         + openSetMismatch.map { "\($0)" }.sorted().joined(separator: ", ") + "\n").data(using: .utf8)!)
+    exit(1)
+}
 
 let inScopeMoments = CoachMoment.allCases.filter { excludedMoments[$0] == nil }
 
@@ -173,43 +205,48 @@ var gaps: [String] = []
 
 for (personalityID, voice) in personalities {
     for moment in inScopeMoments {
-        let ctxValues: [(label: String, ctx: CoachPhraseContext)]
-        if let domain = ctxDomains[moment] {
-            ctxValues = domain.map { ($0, CoachPhraseContext(subjectNoun: $0)) }
-        } else {
-            ctxValues = [("", CoachPhraseContext())]
-        }
-        for (ctxLabel, ctx) in ctxValues {
+        let ctxValues = packContexts(for: moment)
+        let fields = varyingFields(ctxValues)
+        for ctx in ctxValues {
+            let label = ctxLabel(ctx, varying: fields)
             let variants = discoverVariants(voice: voice, moment: moment, ctx: ctx)
             if variants.isEmpty {
-                let suffix = ctxLabel.isEmpty ? "" : " [ctx.subjectNoun=\(ctxLabel)]"
-                gaps.append("\(personalityID) has no line for \(moment)\(suffix)")
+                gaps.append("\(personalityID) has no line for \(moment)\(describe(label))")
                 continue
             }
             for (index, text) in variants.enumerated() {
                 lines.append(ManifestLine(
                     id: contentHash(text), personality: personalityID, moment: "\(moment)",
-                    variantIndex: index,
-                    ctx: ctxLabel.isEmpty ? [:] : ["subjectNoun": ctxLabel],
-                    text: text))
+                    variantIndex: index, ctx: label, text: text))
             }
         }
     }
 }
 
-// Calm Mentor — only the 7 "good" moments; see file header + calmMentorGap.
-let calmMentorCategories: [CoachCategory] = [
-    .lighting, .composition, .sharpness, .background, .pose, .level, .color,
-]
+// Calm Mentor — the DEFAULT voice, read out of `CoachCanonicalCopy` the same
+// way the packs are read out of their own `phrase(for:ctx:)`. No sampling:
+// canonical is a pure function of (moment, ctx), so there are no random
+// variants to discover — every moment has exactly one line per context.
+//
+// For the 7 "good" moments that is the SPOKEN form (`canonicalGoodSentence`),
+// not the dimensions drawer's row label: this manifest keys AUDIO, and audio
+// only ever exists for text the synthesizer says.
 var calmMentorCoveredMoments: [String] = []
-for category in calmMentorCategories {
-    let moment = category.goodMoment
-    // The spoken form, not the drawer label — this manifest keys audio, and
-    // audio only ever exists for text the synthesizer says.
-    let text = category.canonicalGoodSentence
-    calmMentorCoveredMoments.append("\(moment)")
-    lines.append(ManifestLine(id: contentHash(text), personality: "calmMentor",
-                              moment: "\(moment)", variantIndex: 0, ctx: [:], text: text))
+for moment in inScopeMoments {
+    let ctxValues = CoachCanonicalCopy.contexts(for: moment)
+    let fields = varyingFields(ctxValues)
+    var covered = false
+    for ctx in ctxValues {
+        let label = ctxLabel(ctx, varying: fields)
+        guard let text = CoachCanonicalCopy.line(for: moment, ctx: ctx), !text.isEmpty else {
+            gaps.append("calmMentor has no canonical line for \(moment)\(describe(label))")
+            continue
+        }
+        covered = true
+        lines.append(ManifestLine(id: contentHash(text), personality: "calmMentor",
+                                  moment: "\(moment)", variantIndex: 0, ctx: label, text: text))
+    }
+    if covered { calmMentorCoveredMoments.append("\(moment)") }
 }
 let calmMentorUncovered = inScopeMoments
     .map { "\($0)" }
@@ -240,15 +277,16 @@ let manifest = Manifest(
     calmMentorGap: CalmMentorGap(
         coveredMoments: calmMentorCoveredMoments.sorted(),
         uncoveredInScopeMoments: calmMentorUncovered,
-        note: "Calm Mentor's phrase(for:ctx:) always returns nil by design — it defers to canonical " +
-              "text. Only these 7 \"good\" moments have a centralized canonical source " +
-              "(CoachCategory.canonicalGoodSentence, Tovis/CoachMoment.swift). The remaining in-scope " +
-              "moments' canonical text is scattered across ShotCoach.swift, PhotoQC.swift, " +
-              "BeforeShotMeasure.swift, ProCapturePhotosView.swift, CameraCoachLane.swift, " +
-              "CoachEngine.swift, and ProCameraDestination.swift as literals and runtime-interpolated " +
-              "strings, not a single lookup this tool can read without duplicating that text. Needs a " +
-              "centralization refactor (a CoachMoment -> String canonical table) before Calm Mentor's " +
-              "audio can be pre-generated for those moments."
+        note: "CLOSED. Calm Mentor's phrase(for:ctx:) still returns nil by design — canonical sits at " +
+              "the bottom of the vocabulary precedence and a default voice that returned text would " +
+              "jump it — but the canonical words it defers to now live in one place, " +
+              "Tovis/CoachCanonicalCopy.swift, keyed by (CoachMoment, CoachPhraseContext) exactly as " +
+              "a pack's phrase(for:ctx:) is. This tool compiles and calls that table, so the default " +
+              "voice is sampled from the code the camera runs, not from a copy of it. Every in-scope " +
+              "moment is covered and uncoveredInScopeMoments is empty; the 7 \"good\" moments resolve " +
+              "to CoachCategory.canonicalGoodSentence (the spoken form) as they always did. " +
+              "Kept as the record that the gap is closed, and as the check that it stays closed: " +
+              "generate.swift exits non-zero if any in-scope moment has no canonical line."
     ),
     lines: lines
 )
@@ -261,6 +299,48 @@ let outputPath = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "m
 try! data.write(to: URL(fileURLWithPath: outputPath))
 
 let byPersonality = Dictionary(grouping: lines, by: { $0.personality }).mapValues(\.count)
+
+// MARK: - The README is prose, and prose drifts
+//
+// `--check` diffs manifest.json and nothing else, so README.md's counts went
+// stale and stayed stale: it claimed "42 moments in scope / 12 excluded" and
+// "301 total lines" long after the real numbers moved. Nothing was wrong with
+// the pipeline — the only description of it a person reads was wrong. So the
+// tool that knows the numbers now checks the sentences that state them.
+//
+// Substrings, not a format: the README can be rewritten freely as long as the
+// numbers in it are the numbers this run produced.
+
+if CommandLine.arguments.count > 2 {
+    let readmePath = CommandLine.arguments[2]
+    guard let readme = try? String(contentsOfFile: readmePath, encoding: .utf8) else {
+        FileHandle.standardError.write("error: could not read \(readmePath)\n".data(using: .utf8)!)
+        exit(1)
+    }
+    let order = ["hypeBestie": "Hype Bestie", "straightShooter": "Straight Shooter",
+                 "editorialDirector": "Editorial Director", "dragQueenBestie": "Drag Queen Bestie",
+                 "calmMentor": "Calm Mentor"]
+    var expected = [
+        "In scope (\(inScopeMoments.count) moments)",
+        "Excluded (\(excludedMoments.count) moments)",
+        "\(lines.count) total",
+    ]
+    for id in ["hypeBestie", "straightShooter", "editorialDirector", "dragQueenBestie", "calmMentor"] {
+        expected.append("\(byPersonality[id] ?? 0) \(order[id]!)")
+    }
+    // Markdown hard-wraps, so "67 Editorial Director" can span two lines.
+    // Compare against the prose with every whitespace run collapsed to a
+    // single space — this checks the NUMBERS, not the line breaks.
+    let flattened = readme.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    let missing = expected.filter { !flattened.contains($0) }
+    if !missing.isEmpty {
+        FileHandle.standardError.write(
+            ("error: \(readmePath) is stale — this run produced numbers it does not state: "
+             + missing.map { "\"\($0)\"" }.joined(separator: ", ") + "\n").data(using: .utf8)!)
+        exit(1)
+    }
+}
+
 FileHandle.standardError.write("wrote \(outputPath): \(lines.count) lines\n".data(using: .utf8)!)
 for id in ["calmMentor", "hypeBestie", "straightShooter", "editorialDirector", "dragQueenBestie"] {
     let count = byPersonality[id] ?? 0

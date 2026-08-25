@@ -681,9 +681,8 @@ final class CoachEngine: NSObject {
             // stop runs straight into the next instruction. Every pack
             // already returns a sentence here; the default voice defers to
             // canonical text, so canonical has to supply one too.
-            let complimentFallback = advanced.canonicalGoodSentence
-            let complimentRendered = CoachVoiceRenderer.render(
-                advanced.goodMoment, fallback: complimentFallback, voice: voice) ?? complimentFallback
+            let complimentRendered = CoachVoiceRenderer.renderCanonical(
+                advanced.goodMoment, voice: voice)
             let nextRendered = spokenLine(for: nudge, simplified: result.simplified)
             let fallback = "\(complimentRendered) \(nextRendered)"
             if options.speak {
@@ -694,10 +693,9 @@ final class CoachEngine: NSObject {
                 speakSchedulerTip(line, category: nudge.category)
             }
         } else if let cleared = result.cleared, options.speak {
-            let fallback = "\(cleared.spokenName) — got it"
-            let line = CoachVoiceRenderer.render(
-                .dimensionCleared, fallback: fallback,
-                ctx: CoachPhraseContext(subjectNoun: cleared.spokenName), voice: voice) ?? fallback
+            let line = CoachVoiceRenderer.renderCanonical(
+                .dimensionCleared,
+                ctx: CoachPhraseContext(subjectNoun: cleared.spokenName), voice: voice)
             speak(line, priority: .tip)
         }
 

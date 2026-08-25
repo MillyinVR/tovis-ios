@@ -115,6 +115,29 @@ extension CoachCategory {
         }
     }
 
+    /// How VoiceOver says this fundamental, and how the coach names it in the
+    /// one line that says a fundamental just cleared. The pills abbreviated
+    /// ("LIGHT"); speech shouldn't.
+    ///
+    /// Moved here from `CameraCoachLane.swift` with the canonical-copy table
+    /// (2026-08-24), unchanged: it is canonical WORDS, and it has to be
+    /// readable without SwiftUI so `CoachCanonicalCopy` — and the two `swiftc`
+    /// tools that compile it — can build `.dimensionCleared`'s sentence from
+    /// the same seven nouns the app speaks, rather than from a hand-copied
+    /// list that can go stale. One had: the manifest still said "Colour" for
+    /// months after #363 made the app say "Color".
+    var spokenName: String {
+        switch self {
+        case .lighting: return "Lighting"
+        case .color: return "Color"
+        case .level: return "Level"
+        case .composition: return "Framing"
+        case .sharpness: return "Focus"
+        case .background: return "Background"
+        case .pose: return "Pose"
+        }
+    }
+
     /// The canonical (Calm Mentor) text for this fundamental passing, as the
     /// dimensions drawer's always-on-screen ROW LABEL — `goodMoment`'s
     /// plain-English fallback there. Terse and unpunctuated on purpose: it

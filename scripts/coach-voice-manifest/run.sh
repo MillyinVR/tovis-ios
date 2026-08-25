@@ -8,6 +8,7 @@
 #                                                      # fail if they differ (drift guard, CI)
 #
 # Compiles the REAL Tovis/CoachMoment.swift (the CoachMoment vocabulary),
+# Tovis/CoachCanonicalCopy.swift (the DEFAULT voice's words),
 # Tovis/CoachVoice.swift and Tovis/CoachVoicePacks.swift
 # against generate.swift and runs the result on this Mac. No simulator, no
 # device. Same technique as scripts/coach-tuning-bench/run.sh: because it
@@ -81,6 +82,7 @@ swiftc -O -swift-version 6 \
   "$BUILD/CoachCategoryShim.swift" \
   "$BUILD/CoachPersonalityShim.swift" \
   "$ROOT/Tovis/CoachMoment.swift" \
+  "$ROOT/Tovis/CoachCanonicalCopy.swift" \
   "$ROOT/Tovis/CoachVoice.swift" \
   "$ROOT/Tovis/CoachVoicePacks.swift" \
   "$BUILD/main.swift" \
@@ -93,7 +95,7 @@ fi
 
 if [ "$CHECK" -eq 1 ]; then
   OUT="$BUILD/manifest.json"
-  "$BUILD/generate" "$OUT"
+  "$BUILD/generate" "$OUT" "$HERE/README.md"
   if [ ! -f "$COMMITTED" ]; then
     echo "error: $COMMITTED does not exist — run without --check to generate it" >&2
     exit 1
@@ -106,6 +108,6 @@ if [ "$CHECK" -eq 1 ]; then
   fi
   echo "manifest.json is up to date."
 else
-  "$BUILD/generate" "$COMMITTED"
+  "$BUILD/generate" "$COMMITTED" "$HERE/README.md"
   echo "wrote $COMMITTED"
 fi

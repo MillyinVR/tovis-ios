@@ -59,7 +59,7 @@ enum BeforePair {
     /// compliment instead of a measurement — and because these are the exact
     /// two words the rest of the coach already uses for them (`CoachCategory`
     /// `.lighting` / `.composition` speak as "Light" and "Framing").
-    static let pairedLabel = "Light and framing match the before"
+    static let pairedLabel = CoachCanonicalCopy.ownedLine(for: .pairedWithBefore)
 
     /// Today's light verdict, upgraded when this frame ALSO fills like its
     /// before.

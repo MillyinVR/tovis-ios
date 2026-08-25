@@ -164,17 +164,21 @@ enum LightMatch {
         // Normalize each axis by its tolerance so they compare fairly.
         let lumaSeverity = abs(dLuma) / CoachTuning.lightMatchLumaTolerance
         let warmthSeverity = abs(dWarmth) / CoachTuning.lightMatchWarmthTolerance
+        // Named to avoid shadowing the enclosing `verdict(live:target:noun:)`.
+        func answer(_ moment: CoachMoment, ok: Bool)
+            -> (label: String, ok: Bool, moment: CoachMoment) {
+            (CoachCanonicalCopy.ownedLine(for: moment,
+                                          ctx: CoachPhraseContext(subjectNoun: noun)), ok, moment)
+        }
         if lumaSeverity <= 1, warmthSeverity <= 1 {
-            return ("Light matches the \(noun)", true, .lightMatched)
+            return answer(.lightMatched, ok: true)
         }
         if lumaSeverity >= warmthSeverity {
-            return dLuma > 0
-                ? ("Brighter than the \(noun) — dim a touch", false, .lightBrighterThan)
-                : ("Darker than the \(noun) — add light", false, .lightDarkerThan)
+            return dLuma > 0 ? answer(.lightBrighterThan, ok: false)
+                             : answer(.lightDarkerThan, ok: false)
         }
-        return dWarmth > 0
-            ? ("Warmer than the \(noun) — cool the light", false, .lightWarmerThan)
-            : ("Cooler than the \(noun) — warm the light", false, .lightCoolerThan)
+        return dWarmth > 0 ? answer(.lightWarmerThan, ok: false)
+                           : answer(.lightCoolerThan, ok: false)
     }
 }
 
