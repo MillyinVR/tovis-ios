@@ -133,15 +133,23 @@ jobs:
       # script brace-matched it from and the bench stayed broken ~19 days
       # (found 2026-08-23); #360 added a source the list did not know about.
       #
-      # This does NOT re-measure the thresholds. The bench's real corpus is 35
-      # photographs from an installed simulator runtime — Apple's files, in a
-      # public repo, on a runner whose runtime is not the one the recorded
-      # numbers came from. `--selftest` builds against the live sources and
-      # runs the whole path over deterministic synthetic frames, so a bench
-      # that no longer compiles, or that decodes nothing, fails HERE instead of
-      # on the next person who needed a number. The numbers themselves still
-      # come from a hand-run on a real corpus — see docs/camera-tuning-bench.md.
-      - name: Coach tuning bench — compiles + runs end to end
+      # `--selftest` builds against the live sources, runs the whole path over
+      # deterministic synthetic frames, and DIFFS every number it prints
+      # against a committed baseline. So a change to FrameMath, the coaches or
+      # CoachTuning that moves what the camera MEASURES shows up as a diff on
+      # the PR that moved it — a check previously done by hand, and therefore
+      # skippable. It earned its keep immediately: the pin exposed that the
+      # bench's own "which line wins" tally sorted ties by Swift's per-process
+      # hash seed, so its output was never reproducible whenever two categories
+      # tied.
+      #
+      # 🔴 It does NOT calibrate. The frames are synthetic gradients — no
+      # faces, no optics, no salon light — so "is 0.13 the right
+      # mixedLightSpread for a salon" is untouched by a green tick here; that
+      # needs the real 35-photograph corpus, hand-run on a Mac (the files are
+      # Apple's and this repo is public, so they cannot live in CI).
+      # See docs/camera-tuning-bench.md.
+      - name: Coach tuning bench — compiles, runs, and measures what it did before
         run: scripts/coach-tuning-bench/run.sh --selftest
 
   # Everything under TovisTests/ — 33 files, 278 tests across 43 suites,

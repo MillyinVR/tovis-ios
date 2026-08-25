@@ -126,8 +126,13 @@ func measure(_ url: URL) -> Measured? {
 
 // MARK: - Corpus
 
+// `--pin` switches the output to the digest at the bottom of this file:
+// only the values that are reproducible on a DIFFERENT MACHINE, so CI can diff
+// them. See the digest's own comment for what is left out and why.
+let pinOnly = CommandLine.arguments.dropFirst().contains("--pin")
+
 var urls: [URL] = []
-for path in CommandLine.arguments.dropFirst() {
+for path in CommandLine.arguments.dropFirst() where path != "--pin" {
     let u = URL(fileURLWithPath: path)
     var isDir: ObjCBool = false
     if FileManager.default.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue {
@@ -161,8 +166,44 @@ func shortName(_ n: String) -> String {
     n.count <= 30 ? n : String(n.prefix(27)) + "…"
 }
 
-print("=== Raw perception signals on \(urls.count) image(s) ===")
-print("sharpnessReference=\(CoachTuning.sharpnessReference)  clutterReference=\(CoachTuning.clutterReference)  mixedLightSpread=\(CoachTuning.mixedLightSpread)  backlitFaceRatio=\(CoachTuning.backlitFaceRatio)\n")
+// MARK: - The pin
+//
+// Everything below the tables is for a person to read. THIS is for CI to diff.
+//
+// It carries only values with no Vision dependency: whole-frame luma, raw edge
+// energy, normalized sharpness, whole-frame colour, and the thresholds those
+// are judged against. Measured 2026-08-25, an Apple Silicon Mac vs a
+// macos-latest runner: every one of them agreed to the digit.
+//
+// 🔴 What is deliberately NOT pinned is anything derived from the person
+// segmentation mask — `fill`, `clutter`, `bgLuma`, background-scoped colour,
+// and the readiness/coach line that depends on them. Those did NOT agree:
+// bgLuma 0.520 vs 0.522, fill 0.00 vs 0.01, background edge median 0.0157 vs
+// 0.0158. `VNGeneratePersonSegmentationRequest` is an ML model that ships with
+// the OS, and a hosted runner's is not this Mac's. Pinning a value the machine
+// decides would buy a check that goes red for reasons no one in this repo
+// caused — which is worse than no check, because it teaches people to ignore
+// red.
+func printPin(_ results: [Measured]) {
+    print("=== bench pin — machine-reproducible values only ===")
+    print(String(format: "thresholds  sharpnessReference=%.3f  mixedLightSpread=%.3f  lumaTooDark=%.3f  lumaIdeal=%.3f  lumaTooBright=%.3f  sharpnessSoft=%.3f  sharpnessSlightlySoft=%.3f  warmCastWarmth=%.3f  greenCastTint=%.3f",
+                 CoachTuning.sharpnessReference, CoachTuning.mixedLightSpread,
+                 CoachTuning.lumaTooDark, CoachTuning.lumaIdeal, CoachTuning.lumaTooBright,
+                 CoachTuning.sharpnessSoft, CoachTuning.sharpnessSlightlySoft,
+                 CoachTuning.warmCastWarmth, CoachTuning.greenCastTint))
+    for m in results.sorted(by: { $0.name < $1.name }) {
+        print(String(format: "%@  luma=%.4f  rawEdge=%.4f  sharp=%.4f  mixed_wf=%.4f  warm_wf=%.4f  face=%@",
+                     m.name, m.luma, m.rawEdgeEnergy, m.sharpness,
+                     m.wholeFrameColor?.mixed ?? -1, m.wholeFrameColor?.warmth ?? -1,
+                     m.hasFace ? "yes" : "no"))
+    }
+    print("=== end pin ===")
+}
+
+if !pinOnly {
+    print("=== Raw perception signals on \(urls.count) image(s) ===")
+    print("sharpnessReference=\(CoachTuning.sharpnessReference)  clutterReference=\(CoachTuning.clutterReference)  mixedLightSpread=\(CoachTuning.mixedLightSpread)  backlitFaceRatio=\(CoachTuning.backlitFaceRatio)\n")
+}
 
 var results: [Measured] = []
 for url in urls {
@@ -177,6 +218,11 @@ guard !results.isEmpty else {
     FileHandle.standardError.write(
         Data("error: \(urls.count) file(s) found, none could be measured\n".utf8))
     exit(1)
+}
+
+if pinOnly {
+    printPin(results)
+    exit(0)
 }
 
 // MARK: - Table 1 — exposure: the room vs the skin (plan §2.1 / §3.1)
@@ -331,7 +377,15 @@ print("\n--- which line wins, across the corpus ---")
 let byCategory = Dictionary(grouping: results.compactMap { $0.nudge?.category.rawValue },
                             by: { $0 }).mapValues(\.count)
 let silent = results.filter { $0.nudge == nil }.count
-for (category, count) in byCategory.sorted(by: { $0.value > $1.value }) {
+// Ties broken by name, not by luck. `sorted(by: { $0.value > $1.value })`
+// leaves equal counts in Dictionary order, and Swift randomizes its hash seed
+// per process — so two categories on the same count came out in either order
+// from one run to the next. The real 35-image corpus never showed it because
+// its counts are all distinct (19/11/3/1/1); the self-test corpus ties at 2
+// and caught it the day the output was first pinned.
+for (category, count) in byCategory.sorted(by: {
+    $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key
+}) {
     print("  \(count)/\(results.count)  \(category)")
 }
 print("  \(silent)/\(results.count)  (nothing to fix)")

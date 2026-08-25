@@ -1,0 +1,8 @@
+=== bench pin — machine-reproducible values only ===
+thresholds  sharpnessReference=0.120  mixedLightSpread=0.130  lumaTooDark=0.220  lumaIdeal=0.470  lumaTooBright=0.780  sharpnessSoft=0.220  sharpnessSlightlySoft=0.400  warmCastWarmth=0.300  greenCastTint=0.080
+01-underexposed.png  luma=0.0602  rawEdge=0.0000  sharp=0.0000  mixed_wf=0.0000  warm_wf=-0.0902  face=no
+02-blown-out.png  luma=0.9618  rawEdge=0.0780  sharp=0.6499  mixed_wf=0.0000  warm_wf=0.0102  face=no
+03-split-warm-cool.png  luma=0.5389  rawEdge=0.0106  sharp=0.0881  mixed_wf=0.7425  warm_wf=-0.0068  face=no
+04-fine-checks.png  luma=0.6000  rawEdge=0.3961  sharp=1.0000  mixed_wf=0.0000  warm_wf=0.0000  face=no
+05-smooth-ramp.png  luma=0.5176  rawEdge=0.0196  sharp=0.1634  mixed_wf=0.0000  warm_wf=0.0000  face=no
+=== end pin ===
