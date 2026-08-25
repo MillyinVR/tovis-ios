@@ -45,8 +45,9 @@ it is the right set. Substitute a runtime path if 26.4 is no longer installed �
 and note in the run if you do, because the numbers will move.
 
 It compiles the **live** `Tovis/FrameMath.swift`, `Tovis/VisionDetect.swift`,
-`Tovis/ShotCoach.swift` and `Tovis/CoachTuning.swift` on every run, so it cannot
-drift from what the camera does. No simulator, no device, no camera — it reads
+`Tovis/ShotCoach.swift`, `Tovis/CoachCanonicalCopy.swift` (where every coach's
+corrective line now lives) and `Tovis/CoachTuning.swift` on every run, so it
+cannot drift from what the camera does. No simulator, no device, no camera — it reads
 image files on the Mac and prints the raw signal behind every threshold:
 per-image luma, raw edge energy (pre-normalization), normalized sharpness, face
 hit, subject fill, raw background edge energy, clutter, mixed-light spread,

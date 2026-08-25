@@ -6,15 +6,24 @@ line-extraction pipeline — no ElevenLabs account or API key needed.
 
 ## What it does
 
-`run.sh` compiles the **real** `Tovis/CoachVoice.swift` and
-`Tovis/CoachVoicePacks.swift` against `generate.swift` and runs the result on
-this Mac. The generated binary instantiates the four launch packs (Hype
-Bestie, Straight Shooter, Editorial Director, Drag Queen Bestie), samples
-`phrase(for:ctx:)` for every in-scope `CoachMoment` (and, for the bounded
-dynamic segments — `dimensionCleared`'s 7 fundamentals, the 2-value QC
-subject, the 2-value light-match noun — every value in that cross-product),
-and writes `manifest.json`: one entry per distinct line, keyed by a content
-hash of its text.
+`run.sh` compiles the **real** `Tovis/CoachVoice.swift`,
+`Tovis/CoachVoicePacks.swift` and `Tovis/CoachCanonicalCopy.swift` against
+`generate.swift` and runs the result on this Mac. The generated binary
+instantiates the four launch packs (Hype Bestie, Straight Shooter, Editorial
+Director, Drag Queen Bestie), samples `phrase(for:ctx:)` for every in-scope
+`CoachMoment`, asks `CoachCanonicalCopy` the same question for the default
+voice (Calm Mentor), and writes `manifest.json`: one entry per distinct line,
+keyed by a content hash of its text.
+
+The bounded dynamic segments are cross-producted too, and the app declares
+them: `CoachCanonicalCopy.contexts(for:)` names every value a canonical line
+varies over — `dimensionCleared`'s 7 fundamentals (`CoachCategory.spokenName`),
+the 2-value QC subject, the 2-value light-match noun, `levelTilted`'s side, and
+the two forms of the exposure lines. Those lists used to be hand-written in
+`generate.swift`, and they drifted: this tool still said "Colour" for months
+after iOS #363 made the app say "Color", so five pack lines in the committed
+manifest interpolated a noun the app never produces — and `--check` stayed
+green, because the stale copy was the tool's own.
 
 Because it compiles and runs the live sources every time, the manifest
 **cannot** drift from the shipping packs without either (a) a code change,
@@ -28,30 +37,36 @@ scripts/coach-voice-manifest/run.sh --check       # CI: regenerate + diff, fail 
 
 ## Scope
 
-- **In scope (42 moments):** every `CoachMoment` whose copy is static or
+- **In scope (43 moments):** every `CoachMoment` whose copy is static or
   varies only over a finite, real, already-shipping set of values.
-- **Excluded (12 moments):** moments that wrap open-set text not known until
+- **Excluded (13 moments):** moments that wrap open-set text not known until
   runtime — a `ShotStep`'s title/hint, a trending pack's tagline, an AI
   direction line, a retake reason, a session requirement sentence, or (for
   `focusRungAdvanced`) another moment's own already-rendered line. These stay
   on system TTS permanently — brief §1, decision 4 (server-copy gap
   accepted). `manifest.json`'s `scope.excluded` lists each with its real
   call-site source.
-- **Calm Mentor:** only the 7 "good" moments are covered, sourced from
-  `CoachCategory.canonicalGoodPhrase` — the one place its copy really is
-  centralized. Its `phrase(for:ctx:)` always returns `nil` by design and
-  defers to canonical text that, everywhere else, is scattered as literals
-  and runtime-interpolated strings across `ShotCoach.swift`, `PhotoQC.swift`,
-  `BeforeShotMeasure.swift`, `ProCapturePhotosView.swift`,
-  `CameraCoachLane.swift`, `CoachEngine.swift`, and
-  `ProCameraDestination.swift`. Hand-copying that text into this tool would
-  be exactly the parallel-copy drift this pipeline exists to avoid, so it's
-  tracked instead as `manifest.json`'s `calmMentorGap.uncoveredInScopeMoments`
-  — needs a centralization refactor (a `CoachMoment -> String` canonical
-  table) before Calm Mentor can get a full library-voice bundle.
+- **Calm Mentor:** all 43 in-scope moments are covered, read out of
+  `Tovis/CoachCanonicalCopy.swift`. Its `phrase(for:ctx:)` still returns `nil`
+  by design — canonical sits at the BOTTOM of the vocabulary precedence
+  `CoachEngine.apply` builds (look → booking → plain → room → canonical), and a
+  default voice that returned text would jump the whole stack — but the words
+  it defers to now live in one `(CoachMoment, CoachPhraseContext) -> String`
+  table instead of as literals across eight app files, so this tool can compile
+  and call them exactly as it calls a pack. Until it could, 36 of the default
+  voice's 43 lines were unreadable by any tool, which meant the voice almost
+  every pro is on was the one voice that could never be pre-recorded.
+  `manifest.json`'s `calmMentorGap.uncoveredInScopeMoments` is now empty and
+  `generate.swift` exits non-zero if it ever isn't.
 
-Line counts as of this manifest: 94 Hype Bestie, 66 Straight Shooter, 66
-Editorial Director, 68 Drag Queen Bestie, 7 Calm Mentor — 301 total.
+Line counts as of this manifest: 95 Hype Bestie, 67 Straight Shooter, 67
+Editorial Director, 69 Drag Queen Bestie, 59 Calm Mentor — 357 total.
+
+Those numbers are **checked**, not asserted: `run.sh` passes this file to the
+generator, which fails if the counts above (and the two in **Scope**) are not
+the ones the run produced. `--check` used to validate `manifest.json` alone,
+which is how this README came to claim "42 / 12" and "301 total" while the
+pipeline produced 43 / 13 and 305.
 
 ## Manifest shape
 
@@ -97,7 +112,7 @@ across runs regardless of sampling order.
 
 ## Why `swiftc` directly, not an SPM tool
 
-`CoachVoice.swift`/`CoachVoicePacks.swift` live in the `Tovis` app target,
+`CoachVoice.swift`/`CoachVoicePacks.swift`/`CoachCanonicalCopy.swift` live in the `Tovis` app target,
 not the `TovisKit` package — an SPM executable can't depend on an app
 target the way it depends on a package library. Moving these files into
 TovisKit (and making their types `public`) is a real option but a much
@@ -106,7 +121,9 @@ mirrors `scripts/coach-tuning-bench/run.sh`'s existing convention instead:
 compile the real sources directly with `swiftc`, brace-matching out the one
 extra type each file needs (`CoachCategory` from `ShotCoach.swift`,
 `CoachPersonality` from `CoachSettings.swift`) so the tool doesn't drag in
-TovisKit or SwiftUI.
+TovisKit or SwiftUI. `CoachCanonicalCopy.swift` is Foundation-only for exactly
+this reason — an `import SwiftUI` there breaks this tool and
+`scripts/coach-tuning-bench` together.
 
 ## Next (chunk 2, not built here)
 

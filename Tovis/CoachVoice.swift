@@ -76,6 +76,20 @@ enum CoachVoiceRenderer {
         guard let moment else { return fallback }
         return voice.phrase(for: moment, ctx: ctx) ?? fallback
     }
+
+    /// The same render for a moment whose canonical words the app OWNS —
+    /// `CoachCanonicalCopy` supplies the fallback, so no call site has to hold
+    /// a second copy of the default voice's line beside the moment tag.
+    ///
+    /// Use `render(_:fallback:…)` instead wherever the fallback is runtime
+    /// copy this app composes rather than owns: a `ShotStep`'s hint, a
+    /// trending pack's tagline, a session requirement sentence. Those are
+    /// `CoachCanonicalCopy.openSet`, and there is nothing for a table to hold.
+    static func renderCanonical(
+        _ moment: CoachMoment, ctx: CoachPhraseContext = CoachPhraseContext(), voice: CoachVoice
+    ) -> String {
+        voice.phrase(for: moment, ctx: ctx) ?? CoachCanonicalCopy.ownedLine(for: moment, ctx: ctx)
+    }
 }
 
 /// Today's voice, ported byte-identical: it never overrides the canonical

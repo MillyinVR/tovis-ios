@@ -793,7 +793,7 @@ struct LightingCoach: ShotCoach {
            faceLuma < CoachTuning.backlitFaceMaxLuma {
             return CoachSignal(
                 score: 0.35,
-                message: "Light’s behind them — turn them to face the window",
+                message: CoachCanonicalCopy.line(for: .lightingBacklit),
                 why: "The light is behind your client, so the camera exposes for the window and leaves their face in shadow.",
                 moment: .lightingBacklit,
                 phraseCtx: CoachPhraseContext(namesAPerson: true), severity: .failure)
@@ -804,24 +804,26 @@ struct LightingCoach: ShotCoach {
         let subject = ctx.faceLuma ?? ctx.avgLuma
         let onFace = ctx.faceLuma != nil
 
+        // `namesAPerson` is what picks between the two canonical forms of
+        // these lines, so the ctx has to be built before the message is asked
+        // for rather than alongside it.
+        let exposureCtx = CoachPhraseContext(namesAPerson: onFace)
         if subject < CoachTuning.lumaTooDark {
             return CoachSignal(
                 score: 0.3,
-                message: onFace ? "Their face is too dark — turn them toward the light"
-                                : "Too dark — move toward the light",
+                message: CoachCanonicalCopy.line(for: .lightingTooDark, ctx: exposureCtx),
                 why: onFace ? "Skin that's underexposed loses its true tone, and lifting it later brings up noise instead."
                             : "There isn't enough light on the work to hold detail.",
                 moment: .lightingTooDark,
-                phraseCtx: CoachPhraseContext(namesAPerson: onFace), severity: .failure)
+                phraseCtx: exposureCtx, severity: .failure)
         }
         if subject > CoachTuning.lumaTooBright {
             return CoachSignal(
                 score: 0.4,
-                message: onFace ? "Their face is blown out — turn away from the bright light"
-                                : "Blown out — turn away from the bright light",
+                message: CoachCanonicalCopy.line(for: .lightingBlownOut, ctx: exposureCtx),
                 why: "Clipped highlights are gone for good — there's nothing left in the file to pull back.",
                 moment: .lightingBlownOut,
-                phraseCtx: CoachPhraseContext(namesAPerson: onFace), severity: .failure)
+                phraseCtx: exposureCtx, severity: .failure)
         }
         // Score falls off smoothly away from the ideal exposure.
         let dist = abs(subject - CoachTuning.lumaIdeal)
@@ -855,7 +857,7 @@ struct CompositionCoach: ShotCoach {
         // are the point. Inside the crop when there is one: filling the sensor
         // frame is not the same as filling what ships.
         if let fill = ctx.judgedFill {
-            let closer = "Move in closer — fill the frame"
+            let closer = CoachCanonicalCopy.ownedLine(for: .compositionTooFar)
             let closerWhy = crop == nil
                 ? "Standing too far back is the difference between a photo of a person and a photo of a room."
                 : "The 9:16 feed crop takes a quarter of the width off this — what looks filled here won't be once it's published."
@@ -865,7 +867,7 @@ struct CompositionCoach: ShotCoach {
                 }
                 if fill > band.upperBound {
                     return CoachSignal(
-                        score: 0.55, message: "Too tight — step back a touch",
+                        score: 0.55, message: CoachCanonicalCopy.line(for: .compositionTooClose),
                         why: "This shot wants the same framing as its pair; too tight and the two stop being comparable.",
                         moment: .compositionTooClose)
                 }
@@ -882,7 +884,7 @@ struct CompositionCoach: ShotCoach {
         guard let frameFace = ctx.faceBounds else {
             if expects?.face == .required {
                 return CoachSignal(
-                    score: 0.6, message: "Frame their face for this shot",
+                    score: 0.6, message: CoachCanonicalCopy.line(for: .compositionFaceRequired),
                     why: "This step's whole job is the face — its pair on the other side of the booking has one.",
                     moment: .compositionFaceRequired,
                     phraseCtx: CoachPhraseContext(namesAPerson: true))
@@ -897,7 +899,7 @@ struct CompositionCoach: ShotCoach {
             let center = CGPoint(x: frameFace.midX, y: frameFace.midY)
             guard crop.contains(center) else {
                 return CoachSignal(
-                    score: 0.45, message: "They’re outside the feed crop — center them",
+                    score: 0.45, message: CoachCanonicalCopy.line(for: .compositionOffFrame),
                     why: "The bright box is what the feed publishes; anything outside it is cut off there even though you can see it here.",
                     moment: .compositionOffFrame,
                     phraseCtx: CoachPhraseContext(namesAPerson: true))
@@ -912,13 +914,13 @@ struct CompositionCoach: ShotCoach {
         // Headroom: face too high (cramped top) or sitting too low.
         if topY < CoachTuning.minHeadroom {
             return CoachSignal(
-                score: 0.45, message: "Leave a little headroom — lower the camera",
+                score: 0.45, message: CoachCanonicalCopy.line(for: .compositionNoHeadroom),
                 why: "Hair cropped at the top of the frame reads as an accident rather than a choice.",
                 moment: .compositionNoHeadroom)
         }
         if midY > CoachTuning.maxSubjectLow {
             return CoachSignal(
-                score: 0.5, message: "Raise the camera — they’re too low",
+                score: 0.5, message: CoachCanonicalCopy.line(for: .compositionTooLow),
                 why: "Empty space above the head pulls the eye away from the work.",
                 moment: .compositionTooLow,
                 phraseCtx: CoachPhraseContext(namesAPerson: true))
@@ -936,7 +938,7 @@ struct CompositionCoach: ShotCoach {
             // preview-left — which is what makes this a fact about the picture
             // rather than a second unverified sign convention.
             return CoachSignal(
-                score: 0.55, message: "Center them",
+                score: 0.55, message: CoachCanonicalCopy.line(for: .compositionRecenter),
                 why: "Sitting between center and a third reads as neither — the eye can't settle.",
                 moment: .compositionRecenter,
                 phraseCtx: CoachPhraseContext(direction: centerX < 0.5 ? "left" : "right",
@@ -965,13 +967,13 @@ struct SharpnessCoach: ShotCoach {
         let factor = ctx.expectations?.isDetail == true ? CoachTuning.detailSharpnessFactor : 1
         if s < CoachTuning.sharpnessSoft * factor {
             return CoachSignal(
-                score: 0.3, message: "Hold steady — shot looks soft",
+                score: 0.3, message: CoachCanonicalCopy.line(for: .sharpnessHoldSteady),
                 why: "Softness is the one thing no edit fixes, and it shows up full-size long after the shoot.",
                 moment: .sharpnessHoldSteady, severity: .failure)
         }
         if s < CoachTuning.sharpnessSlightlySoft * factor {
             return CoachSignal(
-                score: 0.6, message: "Tap to focus — a touch soft",
+                score: 0.6, message: CoachCanonicalCopy.line(for: .sharpnessTapToFocus),
                 why: "The camera may be focused behind them; a tap puts it on the work.",
                 moment: .sharpnessTapToFocus)
         }
@@ -996,7 +998,7 @@ struct BackgroundCoach: ShotCoach {
         }
         if clutter > CoachTuning.clutterBusy {
             return CoachSignal(
-                score: 0.5, message: "Busy background — find a cleaner backdrop",
+                score: 0.5, message: CoachCanonicalCopy.line(for: .backgroundBusy),
                 why: "Shelves and product bottles compete with the work for attention, and they crop badly.",
                 moment: .backgroundBusy)
         }
@@ -1049,7 +1051,7 @@ struct PoseCoach: ShotCoach {
     func evaluate(_ ctx: FrameContext) -> CoachSignal {
         if let pose = ctx.pose, pose.edgeClipped {
             return CoachSignal(
-                score: 0.5, message: "They’re getting clipped — pull back",
+                score: 0.5, message: CoachCanonicalCopy.line(for: .poseClipped),
                 why: "A shoulder or hand cut by the frame edge reads as a mistake, and there's no room left to crop.",
                 moment: .poseClipped,
                 phraseCtx: CoachPhraseContext(namesAPerson: true))
@@ -1133,14 +1135,15 @@ struct LevelCoach: ShotCoach {
         if off > CoachTuning.tiltBadDegrees {
             // Sign convention may flip per device orientation — verify on hardware.
             let dir = tilt > 0 ? "right" : "left"
+            let tiltCtx = CoachPhraseContext(direction: dir)
             return CoachSignal(
-                score: 0.4, message: "Camera’s tilted \(dir) — straighten it",
+                score: 0.4, message: CoachCanonicalCopy.line(for: .levelTilted, ctx: tiltCtx),
                 why: "Straightening it afterwards means cropping in, and the ends of the hair are usually what gets lost.",
-                moment: .levelTilted, phraseCtx: CoachPhraseContext(direction: dir))
+                moment: .levelTilted, phraseCtx: tiltCtx)
         }
         if off > CoachTuning.tiltWarnDegrees {
             return CoachSignal(
-                score: 0.7, message: "Almost level — straighten up",
+                score: 0.7, message: CoachCanonicalCopy.line(for: .levelAlmostLevel),
                 why: "A couple of degrees is enough to read as “off” next to its before/after pair.",
                 moment: .levelAlmostLevel)
         }
@@ -1168,19 +1171,19 @@ struct ColorCoach: ShotCoach {
         // Mixed light first — it can't be fixed with one white-balance setting.
         if color.mixed > CoachTuning.mixedLightSpread {
             return CoachSignal(
-                score: 0.45, message: "Mixed light — turn off the overheads",
+                score: 0.45, message: CoachCanonicalCopy.line(for: .colorMixed),
                 why: "Warm bulbs on one side and a cool window on the other can't both be corrected — one half of their skin will read wrong whatever you do after.",
                 moment: .colorMixed)
         }
         if color.greenTint > CoachTuning.greenCastTint {
             return CoachSignal(
-                score: 0.55, message: "Greenish light — switch to one clean source",
+                score: 0.55, message: CoachCanonicalCopy.line(for: .colorGreenish),
                 why: "Fluorescent green sits right where skin tone lives, so it's the cast clients notice first.",
                 moment: .colorGreenish)
         }
         if color.warmth > CoachTuning.warmCastWarmth {
             return CoachSignal(
-                score: 0.6, message: "Warm light — daylight reads truer",
+                score: 0.6, message: CoachCanonicalCopy.line(for: .colorWarm),
                 why: "Warm light pushes blonde and ash tones yellow, which is the color work the client paid for.",
                 moment: .colorWarm)
         }

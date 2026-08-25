@@ -149,22 +149,23 @@ enum PhotoQC {
         let reason: String?
         let moment: CoachMoment?
         let phraseCtx: CoachPhraseContext?
+        let subjectCtx = CoachPhraseContext(subjectNoun: subject)
         if checkBlink, eyesClosed {
-            reason = "Their eyes were closed"
+            reason = CoachCanonicalCopy.line(for: .qcEyesClosed)
             moment = .qcEyesClosed
             phraseCtx = nil
         } else if sharpness < CoachTuning.qcSharpnessMin {
-            reason = "It came out soft"
+            reason = CoachCanonicalCopy.line(for: .qcSoft)
             moment = .qcSoft
             phraseCtx = nil
         } else if exposure < CoachTuning.qcLumaMin {
-            reason = "\(subject) came out too dark"
+            reason = CoachCanonicalCopy.line(for: .qcTooDark, ctx: subjectCtx)
             moment = .qcTooDark
-            phraseCtx = CoachPhraseContext(subjectNoun: subject)
+            phraseCtx = subjectCtx
         } else if exposure > CoachTuning.qcLumaMax {
-            reason = "\(subject) came out blown out"
+            reason = CoachCanonicalCopy.line(for: .qcBlownOut, ctx: subjectCtx)
             moment = .qcBlownOut
-            phraseCtx = CoachPhraseContext(subjectNoun: subject)
+            phraseCtx = subjectCtx
         } else {
             reason = nil
             moment = nil
