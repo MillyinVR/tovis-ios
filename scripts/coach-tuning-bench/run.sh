@@ -139,6 +139,11 @@ if [ "$MODE" = "selftest" ] || [ "$MODE" = "update" ]; then
   OUT="$BUILD/selftest.txt"
   "$BUILD/bench" "$BUILD/corpus" | tee "$OUT"
 
+  # The human tables above are for the log. The PIN is the machine-reproducible
+  # subset — see printPin() in measure.swift for what it leaves out and why.
+  PIN="$BUILD/pin.txt"
+  "$BUILD/bench" --pin "$BUILD/corpus" > "$PIN"
+
   # The bench prints its own count in the header. Assert it measured every
   # frame: `measure()` returns nil on a frame it cannot decode and the run
   # simply prints "(skipped …)" and carries on, so a build that decodes
@@ -160,7 +165,7 @@ if [ "$MODE" = "selftest" ] || [ "$MODE" = "update" ]; then
   # Everything above proves the harness ran. THIS is the regression pin: the
   # bench's full output for these frames, byte for byte.
   if [ "$MODE" = "update" ]; then
-    cp "$OUT" "$BASELINE"
+    cp "$PIN" "$BASELINE"
     echo "wrote $BASELINE"
     exit 0
   fi
@@ -170,7 +175,7 @@ if [ "$MODE" = "selftest" ] || [ "$MODE" = "update" ]; then
     exit 1
   fi
 
-  if ! diff -u "$BASELINE" "$OUT"; then
+  if ! diff -u "$BASELINE" "$PIN"; then
     cat >&2 <<'EOF'
 
 error: the bench measures something different than the pinned baseline.
@@ -182,11 +187,12 @@ error: the bench measures something different than the pinned baseline.
   the same PR, so the change to the perception math is reviewable as a number
   rather than only as code.
 
-  If you changed none of those and this failed only on CI, suspect the runner:
-  the fill/clutter/bgLuma columns come from VNGeneratePersonSegmentationRequest,
-  whose model can move when GitHub rolls the macOS image. Regenerate the
-  baseline on a machine and say so in the PR — do not "fix" the coaches to
-  match a runner.
+  The pin deliberately holds only values that reproduce on a DIFFERENT MACHINE.
+  Nothing derived from the person-segmentation mask is in it — that model
+  ships with the OS and a hosted runner's is not this Mac's (measured: bgLuma
+  0.520 vs 0.522, fill 0.00 vs 0.01). So a failure here should be your change,
+  not the runner. If you believe otherwise, say so in the PR rather than
+  editing the coaches to match a machine.
 EOF
     exit 1
   fi

@@ -38,13 +38,30 @@ not know about. Nothing ran it, so nothing said so. `--selftest` also runs the
 whole path over generated frames and fails if the bench decodes none of them,
 so "links, then dies on the first image" cannot pass either.
 
-It then **diffs every number the bench prints for those frames** against
+It then **diffs the numbers** against
 `scripts/coach-tuning-bench/selftest-baseline.txt`. That is what makes this more
-than a smoke test: a change to `FrameMath`, `VisionDetect`, the coaches or
-`CoachTuning` that moves what the camera MEASURES shows up as a diff on the PR
-that moved it, instead of relying on someone remembering to diff the bench by
-hand. If the change is intended, `--update-baseline` and commit the new pin in
-the same PR — the movement in the numbers becomes reviewable.
+than a smoke test: a change to `FrameMath`, the coaches or `CoachTuning` that
+moves what the camera MEASURES shows up as a diff on the PR that moved it,
+instead of relying on someone remembering to diff the bench by hand. If the
+change is intended, `--update-baseline` and commit the new pin in the same PR —
+the movement becomes reviewable as numbers. Moving `sharpnessReference` 0.12 →
+0.15, for instance, shows both the threshold and the three frames whose
+normalized sharpness it drags with it.
+
+**The pin holds only what reproduces on a different machine.** Whole-frame
+luma, raw edge energy, normalized sharpness, whole-frame colour, whether a face
+was found, and the thresholds those are judged against. Measured 2026-08-25,
+this Mac vs a `macos-latest` runner: every one agreed to the digit.
+
+🔴 **Nothing derived from the person-segmentation mask is pinned** — `fill`,
+`clutter`, `bgLuma`, background-scoped colour, and the readiness/coach line
+that depend on them. Those did *not* agree across machines: bgLuma 0.520 vs
+0.522, fill 0.00 vs 0.01, background edge median 0.0157 vs 0.0158.
+`VNGeneratePersonSegmentationRequest` is an ML model that ships with the OS,
+and a runner's is not this Mac's. Pinning a value the machine decides buys a
+check that goes red for reasons nobody in this repo caused, which is worse than
+no check — it teaches people to ignore red. Those columns are still PRINTED, in
+the tables CI logs; they are just not asserted.
 
 It earned its keep on day one: pinning the output immediately exposed that the
 bench's own "which line wins" tally sorted ties with
