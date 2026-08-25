@@ -331,7 +331,15 @@ print("\n--- which line wins, across the corpus ---")
 let byCategory = Dictionary(grouping: results.compactMap { $0.nudge?.category.rawValue },
                             by: { $0 }).mapValues(\.count)
 let silent = results.filter { $0.nudge == nil }.count
-for (category, count) in byCategory.sorted(by: { $0.value > $1.value }) {
+// Ties broken by name, not by luck. `sorted(by: { $0.value > $1.value })`
+// leaves equal counts in Dictionary order, and Swift randomizes its hash seed
+// per process — so two categories on the same count came out in either order
+// from one run to the next. The real 35-image corpus never showed it because
+// its counts are all distinct (19/11/3/1/1); the self-test corpus ties at 2
+// and caught it the day the output was first pinned.
+for (category, count) in byCategory.sorted(by: {
+    $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key
+}) {
     print("  \(count)/\(results.count)  \(category)")
 }
 print("  \(silent)/\(results.count)  (nothing to fix)")
