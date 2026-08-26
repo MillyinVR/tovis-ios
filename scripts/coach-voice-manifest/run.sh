@@ -36,7 +36,7 @@ trap 'rm -rf "$BUILD"' EXIT
 # technique as coach-tuning-bench's ShotExpectations shim) so this stays a
 # small, fast compile and the declaration can never go stale behind our back.
 awk '
-  /^enum CoachCategory/ { inblock = 1 }
+  /^(nonisolated[[:space:]]+)?enum CoachCategory/ { inblock = 1 }
   inblock {
     print
     opens = gsub(/\{/, "{")
@@ -47,7 +47,7 @@ awk '
   }
 ' "$ROOT/Tovis/ShotCoach.swift" > "$BUILD/CoachCategoryShim.swift"
 
-if ! grep -q "^enum CoachCategory" "$BUILD/CoachCategoryShim.swift"; then
+if ! grep -qE "^(nonisolated[[:space:]]+)?enum CoachCategory" "$BUILD/CoachCategoryShim.swift"; then
   echo "error: could not extract CoachCategory from Tovis/ShotCoach.swift" >&2
   exit 1
 fi
@@ -57,7 +57,7 @@ fi
 # whole @Observable settings class alongside it — extract just the enum
 # (same brace-matching technique) rather than pull SwiftUI into this tool.
 awk '
-  /^enum CoachPersonality/ { inblock = 1 }
+  /^(nonisolated[[:space:]]+)?enum CoachPersonality/ { inblock = 1 }
   inblock {
     print
     opens = gsub(/\{/, "{")
@@ -68,7 +68,7 @@ awk '
   }
 ' "$ROOT/Tovis/CoachSettings.swift" > "$BUILD/CoachPersonalityShim.swift"
 
-if ! grep -q "^enum CoachPersonality" "$BUILD/CoachPersonalityShim.swift"; then
+if ! grep -qE "^(nonisolated[[:space:]]+)?enum CoachPersonality" "$BUILD/CoachPersonalityShim.swift"; then
   echo "error: could not extract CoachPersonality from Tovis/CoachSettings.swift" >&2
   exit 1
 fi

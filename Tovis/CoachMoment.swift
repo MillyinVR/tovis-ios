@@ -19,7 +19,7 @@ import Foundation
 /// in the launch scope (docs/design/camera-personality-packs.md §1.2 A–D).
 /// `PoseRule.tip` (server-driven trending-pack copy) intentionally has no
 /// case here — it stays pack-neutral at every personality.
-enum CoachMoment: Hashable, CaseIterable, Sendable {
+nonisolated enum CoachMoment: Hashable, CaseIterable, Sendable {
     case lightingBacklit, lightingTooDark, lightingBlownOut
 
     case compositionTooFar, compositionTooClose, compositionFaceRequired
@@ -100,7 +100,7 @@ enum CoachMoment: Hashable, CaseIterable, Sendable {
     case roomTipDismissed
 }
 
-extension CoachCategory {
+nonisolated extension CoachCategory {
     /// The moment a fundamental's passing state renders through — the
     /// personality-flavored counterpart to `canonicalGoodPhrase`.
     var goodMoment: CoachMoment {

@@ -40,7 +40,7 @@ import Foundation
 /// is not a lesser thing the packs fall back into; it is the same rendering
 /// question asked of the voice that ships turned on, and the tooling can now
 /// ask it the same way.
-enum CoachCanonicalCopy {
+nonisolated enum CoachCanonicalCopy {
     /// Moments whose text is composed at RUNTIME out of copy this table cannot
     /// own — a `ShotStep`'s title/hint, a server-driven trending tagline, an AI
     /// direction line, a QC retake reason, a session requirement sentence, a

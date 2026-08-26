@@ -10,7 +10,7 @@ import CoreGraphics
 import Foundation   // TimeInterval — the tip arbiter's dwell clock
 import TovisKit     // PublishCrop — the crop the coach judges inside
 
-enum CoachCategory: String, CaseIterable, Sendable {
+nonisolated enum CoachCategory: String, CaseIterable, Sendable {
     case lighting, composition, sharpness, background, pose, level, color
 
     /// Relative importance in the readiness score + which fix to surface first.
