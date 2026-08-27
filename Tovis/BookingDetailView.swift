@@ -127,6 +127,13 @@ struct BookingDetailView: View {
     // Presented from the aftercare section beside the review card.
     @State private var showShareLook = false
 
+    // AI beauty consult (server-decided, GET /client/consult/availability —
+    // ports web AiConsultCard). nil until the server answers available:true;
+    // fail-closed, so an error or a dark pilot just never draws the card.
+    // ⚠️ Unrelated to the mid-appointment price-approval "Consultation" above.
+    @State private var aiConsult: ConsultAvailability?
+    @State private var showAiConsult = false
+
     // Manage leg (reschedule / cancel)
     @State private var rescheduleSheet: RescheduleContext?
     @State private var loadingReschedule = false
@@ -338,6 +345,8 @@ struct BookingDetailView: View {
                     )
                 }
 
+                aiConsultCard
+
                 if !booking.items.isEmpty {
                     BrandSection(title: "Services") {
                         VStack(spacing: 10) {
@@ -399,6 +408,7 @@ struct BookingDetailView: View {
             // Load aftercare before resolving a deep-linked scroll so the
             // aftercare anchor exists when a `?step=aftercare` push scrolls to it.
             await loadAftercare()
+            await loadAiConsultAvailability()
             await focus(proxy)
         }
         .background(BrandColor.bgPrimary.ignoresSafeArea())
@@ -3277,6 +3287,58 @@ struct BookingDetailView: View {
                 }
             }
         }
+    }
+
+    // MARK: - AI beauty consult (ports web AiConsultCard)
+
+    /// Drawn only when the server answered `available: true` for this booking
+    /// (founder gate + eligibility + session ownership all live server-side) and
+    /// the booking carries its pro. The sheet's flow creates-or-resumes the
+    /// session itself (`POST /client/consult` upserts on bookingId), so a
+    /// COMPLETED consult opens straight onto its results.
+    @ViewBuilder private var aiConsultCard: some View {
+        if let availability = aiConsult, availability.available,
+           let professionalId = booking.professional?.id {
+            BrandSurface {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("BEAUTY CONSULT")
+                        .font(BrandFont.mono(10)).tracking(1.2)
+                        .foregroundStyle(BrandColor.accent)
+                    Text("See what will flatter you most")
+                        .font(BrandFont.display(15, .semibold))
+                        .foregroundStyle(BrandColor.textPrimary)
+                        .padding(.top, 4)
+                    Text("Before your appointment, a photo-based analysis of your features — hair color, cut, bangs, brows, lashes, makeup, and your color palette — so the plan enhances what is already yours.")
+                        .font(BrandFont.body(12.5))
+                        .foregroundStyle(BrandColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 4)
+                    Button { showAiConsult = true } label: {
+                        Text(aiConsultCTA(for: availability))
+                            .font(BrandFont.body(13, .semibold))
+                            .foregroundStyle(BrandColor.onAccent)
+                            .padding(.horizontal, 16).padding(.vertical, 9)
+                            .background(BrandColor.accent)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                    .accessibilityIdentifier("booking-detail-ai-consult")
+                    .padding(.top, 12)
+                }
+            }
+            .sheet(isPresented: $showAiConsult) {
+                ConsultFlowView(bookingId: booking.id, professionalId: professionalId)
+            }
+        }
+    }
+
+    private func aiConsultCTA(for availability: ConsultAvailability) -> String {
+        guard let consult = availability.consult else { return "Start your consult" }
+        return consult.status == .completed ? "See your results" : "Continue your consult"
+    }
+
+    private func loadAiConsultAvailability() async {
+        // Fail-closed: no answer or any error just leaves the card undrawn.
+        aiConsult = try? await session.client.consult.availability(bookingId: booking.id)
     }
 
     private func noticeCard(title: String, subtitle: String, icon: String, tint: Color) -> some View {
