@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import TovisKit
+import UIKit
 
 @MainActor
 @Observable
@@ -8,13 +9,18 @@ final class ConsultFlowViewModel {
     private(set) var machine: ConsultFlowMachine
     private(set) var agreementState: ConsultAgreementState?
     private(set) var intakeState: ConsultIntakeState?
+    private(set) var inspirationState: ConsultInspirationState?
     private(set) var captureState: ConsultCaptureState?
+    private(set) var analysisState: ConsultAnalysisState?
     private(set) var results: ConsultClientResults?
     private(set) var answers: [String: String] = [:]
     private(set) var busy = false
     private(set) var processingShot: ConsultCaptureShotKey?
     private(set) var failure: ConsultClientFailure?
     private(set) var teaserTapped = false
+    /// Local previews of this session's uploads. Rejected photos are purged
+    /// server-side immediately, so this decoded copy is the only reviewable one.
+    private(set) var localThumbnails: [ConsultCaptureShotKey: UIImage] = [:]
 
     let professionalId: String
 
@@ -23,6 +29,9 @@ final class ConsultFlowViewModel {
     @ObservationIgnored private var intakeIdempotencyKey = UUID().uuidString
     @ObservationIgnored private var analysisIdempotencyKey = UUID().uuidString
     @ObservationIgnored private var pendingPhoto: PendingPhoto?
+    // Signed read URL for the inspiration image; short-lived, so refreshed
+    // shortly before expiry instead of per render.
+    @ObservationIgnored private var inspirationImageCache: (url: URL, expiresAt: Date)?
 
     private struct PendingPhoto {
         let shot: ConsultCaptureShot
@@ -50,6 +59,22 @@ final class ConsultFlowViewModel {
     }
 
     var canRetryPhoto: Bool { pendingPhoto != nil && !busy }
+
+    var inspirationDone: Bool { inspirationState?.isComplete ?? false }
+
+    var acceptedShotCount: Int {
+        captureState?.slots.filter { $0.state == .accepted }.count ?? 0
+    }
+
+    var totalShotCount: Int { captureState?.shotPack.shots.count ?? 0 }
+
+    /// The partial-pack affordance: some but not all photos accepted while the
+    /// session still sits at MEDIA_READY. (A full accepted pack advances
+    /// server-side on its own once inspiration is done.)
+    var canOfferPartialContinue: Bool {
+        guard let capture = captureState, capture.status == .mediaReady else { return false }
+        return acceptedShotCount >= 1 && acceptedShotCount < totalShotCount
+    }
 
     func start() async {
         guard canEnter else {
@@ -95,6 +120,8 @@ final class ConsultFlowViewModel {
                 acceptanceId: acceptance.id
             )
             pendingPhoto = nil
+            localThumbnails = [:]
+            inspirationImageCache = nil
             agreementState = state
             try machine.apply(agreements: state)
         }
@@ -123,14 +150,107 @@ final class ConsultFlowViewModel {
             )
             self.intakeState = updated
             try machine.apply(intake: updated)
-            let capture = try await service.capture(consultId: consultId)
+            try await loadMediaStage(consultId: consultId)
+        }
+    }
+
+    // MARK: - Inspiration
+
+    func skipInspiration() async {
+        guard let consultId = machine.consultId,
+              let inspiration = inspirationState else { return }
+        await perform {
+            let state = try await service.skipInspiration(
+                consultId: consultId,
+                schemaVersion: inspiration.schemaVersion,
+                idempotencyKey: UUID().uuidString
+            )
+            try await apply(inspiration: state, consultId: consultId)
+        }
+    }
+
+    func uploadInspirationPhoto(_ jpegData: Data) async {
+        guard let consultId = machine.consultId,
+              let inspiration = inspirationState else { return }
+        await perform {
+            let state = try await service.uploadInspiration(
+                consultId: consultId,
+                schemaVersion: inspiration.schemaVersion,
+                jpegData: jpegData,
+                keys: ConsultInspirationMutationKeys()
+            )
+            inspirationImageCache = nil
+            try await apply(inspiration: state, consultId: consultId)
+        }
+    }
+
+    func answerInspiration(
+        question: ConsultInspirationQuestion,
+        selectedValues: [String],
+        text: String,
+        sentiment: ConsultInspirationSentiment?
+    ) async {
+        guard let consultId = machine.consultId,
+              let inspiration = inspirationState else { return }
+        let trimmed = question.allowText
+            ? text.trimmingCharacters(in: .whitespacesAndNewlines)
+            : ""
+        let values = ConsultInspirationAnswering.effectiveValues(
+            question: question, selected: selectedValues, trimmedText: trimmed
+        )
+        await perform {
+            let state = try await service.answerInspiration(
+                consultId: consultId,
+                schemaVersion: inspiration.schemaVersion,
+                questionKey: question.key,
+                selectedValues: values,
+                text: trimmed.isEmpty ? nil : trimmed,
+                sentiment: trimmed.isEmpty ? nil : sentiment,
+                idempotencyKey: UUID().uuidString
+            )
+            try await apply(inspiration: state, consultId: consultId)
+        }
+    }
+
+    /// Signed read URL for the inspiration photo, fetched lazily and renewed
+    /// shortly before it expires so the image never goes dark mid-question.
+    func inspirationImageURL() async -> URL? {
+        guard let consultId = machine.consultId,
+              let source = inspirationState?.source, source.imageAvailable else { return nil }
+        if let cached = inspirationImageCache,
+           cached.expiresAt.timeIntervalSinceNow > 60 {
+            return cached.url
+        }
+        do {
+            let read = try await service.inspirationImage(
+                consultId: consultId, readEndpoint: source.imageReadEndpoint
+            )
+            guard let url = URL(string: read.url) else { return nil }
+            inspirationImageCache = (url, Date().addingTimeInterval(read.expiresInSeconds))
+            return url
+        } catch {
+            return nil
+        }
+    }
+
+    func proceedWithAccepted() async {
+        guard let consultId = machine.consultId else { return }
+        await perform {
+            let capture = try await service.proceedWithAccepted(consultId: consultId)
             captureState = capture
             try machine.apply(capture: capture)
+            try await loadAnalysisIfEntered(consultId: consultId)
         }
     }
 
     func submitPhoto(_ data: Data, for shot: ConsultCaptureShot) async {
         pendingPhoto = PendingPhoto(shot: shot, data: data, keys: ConsultCaptureMutationKeys())
+        // Decode the reviewable thumbnail before the upload: a rejected photo
+        // is purged server-side instantly, so this local copy is the only way
+        // to look at what the quality check refused.
+        if let thumbnail = await ImageDownsample.thumbnail(from: data, maxPixel: 432) {
+            localThumbnails[shot.key] = thumbnail
+        }
         await sendPendingPhoto()
     }
 
@@ -162,6 +282,9 @@ final class ConsultFlowViewModel {
             self.pendingPhoto = nil
             captureState = response.capture
             try machine.apply(capture: response.capture)
+            // The last accepted shot of a complete pack advances the session
+            // server-side; follow it into the analysis stage.
+            try await loadAnalysisIfEntered(consultId: consultId)
         }
         processingShot = nil
     }
@@ -173,6 +296,7 @@ final class ConsultFlowViewModel {
                 consultId: consultId,
                 idempotencyKey: analysisIdempotencyKey
             )
+            analysisState = analysis
             try machine.apply(analysis: analysis)
             if analysis.status == .completed { try await loadResults(consultId: consultId) }
         }
@@ -182,6 +306,7 @@ final class ConsultFlowViewModel {
         guard let consultId = machine.consultId else { return }
         await perform {
             let analysis = try await service.analysis(consultId: consultId)
+            analysisState = analysis
             try machine.apply(analysis: analysis)
             if analysis.status == .completed { try await loadResults(consultId: consultId) }
         }
@@ -204,16 +329,44 @@ final class ConsultFlowViewModel {
         case .intake:
             try await loadIntake(consultId: consultId)
         case .capture:
-            let capture = try await service.capture(consultId: consultId)
-            captureState = capture
-            try machine.apply(capture: capture)
+            try await loadMediaStage(consultId: consultId)
         case .analysis:
             let analysis = try await service.analysis(consultId: consultId)
+            analysisState = analysis
             try machine.apply(analysis: analysis)
             if analysis.status == .completed { try await loadResults(consultId: consultId) }
         case .results:
             try await loadResults(consultId: consultId)
         }
+    }
+
+    /// MEDIA_READY covers both the inspiration review and the photo pack —
+    /// load them together, the way the web wizard renders them together.
+    private func loadMediaStage(consultId: String) async throws {
+        let inspiration = try await service.inspiration(consultId: consultId)
+        inspirationState = inspiration
+        try machine.apply(inspiration: inspiration)
+        let capture = try await service.capture(consultId: consultId)
+        captureState = capture
+        try machine.apply(capture: capture)
+        try await loadAnalysisIfEntered(consultId: consultId)
+    }
+
+    /// An inspiration mutation can complete the review and, with a full
+    /// accepted pack, advance the whole session — bind the returned state and
+    /// follow any stage change.
+    private func apply(inspiration: ConsultInspirationState, consultId: String) async throws {
+        inspirationState = inspiration
+        try machine.apply(inspiration: inspiration)
+        try await loadAnalysisIfEntered(consultId: consultId)
+    }
+
+    private func loadAnalysisIfEntered(consultId: String) async throws {
+        guard machine.stage == .analysis, analysisState == nil else { return }
+        let analysis = try await service.analysis(consultId: consultId)
+        analysisState = analysis
+        try machine.apply(analysis: analysis)
+        if analysis.status == .completed { try await loadResults(consultId: consultId) }
     }
 
     private func loadIntake(consultId: String) async throws {

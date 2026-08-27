@@ -9,10 +9,22 @@ public protocol ConsultServicing: Sendable {
     func intake(consultId: String) async throws -> ConsultIntakeState
     func submitIntake(consultId: String, state: ConsultIntakeState, answers: [String: String],
                       idempotencyKey: String) async throws -> ConsultIntakeState
+    func inspiration(consultId: String) async throws -> ConsultInspirationState
+    func skipInspiration(consultId: String, schemaVersion: Int,
+                         idempotencyKey: String) async throws -> ConsultInspirationState
+    func uploadInspiration(consultId: String, schemaVersion: Int, jpegData: Data,
+                           keys: ConsultInspirationMutationKeys) async throws -> ConsultInspirationState
+    func answerInspiration(consultId: String, schemaVersion: Int, questionKey: String,
+                           selectedValues: [String], text: String?,
+                           sentiment: ConsultInspirationSentiment?,
+                           idempotencyKey: String) async throws -> ConsultInspirationState
+    func inspirationImage(consultId: String,
+                          readEndpoint: String) async throws -> ConsultInspirationSignedRead
     func capture(consultId: String) async throws -> ConsultCaptureState
     func uploadAndCheckCapture(consultId: String, shot: ConsultCaptureShot,
                                pack: ConsultCaptureShotPack, jpegData: Data,
                                keys: ConsultCaptureMutationKeys) async throws -> ConsultCaptureQualityResponse
+    func proceedWithAccepted(consultId: String) async throws -> ConsultCaptureState
     func setChartCopy(consultId: String, optIn: Bool) async throws -> ConsultCaptureState
     func analysis(consultId: String) async throws -> ConsultAnalysisState
     func startAnalysis(consultId: String, idempotencyKey: String) async throws -> ConsultAnalysisState
@@ -113,9 +125,166 @@ public final class ConsultService: ConsultServicing, Sendable {
         return response.intake
     }
 
+    public func inspiration(consultId: String) async throws -> ConsultInspirationState {
+        let response: ConsultInspirationStateResponse = try await api.request(
+            "/client/consult/\(consultId)/inspiration"
+        )
+        return response.inspiration
+    }
+
+    public func skipInspiration(consultId: String, schemaVersion: Int,
+                                idempotencyKey: String) async throws -> ConsultInspirationState {
+        struct Body: Encodable {
+            let idempotencyKey: String
+            let source: String
+            let schemaVersion: Int
+        }
+        let body = try JSONEncoder.canonical.encode(Body(
+            idempotencyKey: idempotencyKey,
+            source: "NONE",
+            schemaVersion: schemaVersion
+        ))
+        let response: ConsultInspirationMutationResponse = try await api.request(
+            "/client/consult/\(consultId)/inspiration", method: .post, body: body
+        )
+        return response.inspiration
+    }
+
+    public func uploadInspiration(
+        consultId: String,
+        schemaVersion: Int,
+        jpegData: Data,
+        keys: ConsultInspirationMutationKeys
+    ) async throws -> ConsultInspirationState {
+        guard !jpegData.isEmpty else { throw ConsultClientFailure.invalidPhoto }
+        guard jpegData.count <= Self.maximumPhotoBytes else { throw ConsultClientFailure.photoTooLarge }
+
+        struct IssueBody: Encodable {
+            let idempotencyKey: String
+            let schemaVersion: Int
+            let contentType: String
+            let sizeBytes: Int
+        }
+        let issueBody = try JSONEncoder.canonical.encode(IssueBody(
+            idempotencyKey: keys.issue,
+            schemaVersion: schemaVersion,
+            contentType: "image/jpeg",
+            sizeBytes: jpegData.count
+        ))
+        let issued: ConsultInspirationIssueUploadResponse = try await api.request(
+            "/client/consult/\(consultId)/inspiration/uploads", method: .post, body: issueBody
+        )
+        guard issued.upload.schemaVersion == schemaVersion,
+              issued.upload.contentType == "image/jpeg",
+              issued.upload.maxBytes == jpegData.count,
+              let signed = issued.upload.signedUrl.flatMap(URL.init(string:)) else {
+            throw ConsultClientFailure.contractMismatch
+        }
+
+        do {
+            try await SupabaseSignedUpload.putSignedURL(
+                session: uploadSession,
+                supabaseURL: supabaseURL,
+                supabaseKey: supabaseKey,
+                signedURL: signed,
+                expectedToken: issued.upload.token,
+                data: jpegData,
+                contentType: "image/jpeg"
+            )
+        } catch ConsultClientFailure.contractMismatch {
+            throw ConsultClientFailure.contractMismatch
+        } catch {
+            // A lost upload response can still mean the private write landed —
+            // continue to attach, same as capture: the server validates media
+            // type and byte count and otherwise returns a stable failure.
+        }
+
+        struct AttachBody: Encodable {
+            let idempotencyKey: String
+            let inspirationId: String
+            let schemaVersion: Int
+        }
+        let attachBody = try JSONEncoder.canonical.encode(AttachBody(
+            idempotencyKey: keys.attach,
+            inspirationId: issued.upload.inspirationId,
+            schemaVersion: schemaVersion
+        ))
+        let attached: ConsultInspirationMutationResponse = try await api.request(
+            "/client/consult/\(consultId)/inspiration/attach", method: .post, body: attachBody
+        )
+        return attached.inspiration
+    }
+
+    public func answerInspiration(
+        consultId: String,
+        schemaVersion: Int,
+        questionKey: String,
+        selectedValues: [String],
+        text: String?,
+        sentiment: ConsultInspirationSentiment?,
+        idempotencyKey: String
+    ) async throws -> ConsultInspirationState {
+        struct Body: Encodable {
+            let idempotencyKey: String
+            let schemaVersion: Int
+            let questionKey: String
+            let selectedValues: [String]
+            let text: String?
+            let sentiment: ConsultInspirationSentiment?
+
+            enum CodingKeys: String, CodingKey {
+                case idempotencyKey, schemaVersion, questionKey, selectedValues, text, sentiment
+            }
+
+            func encode(to encoder: Encoder) throws {
+                var container = encoder.container(keyedBy: CodingKeys.self)
+                try container.encode(idempotencyKey, forKey: .idempotencyKey)
+                try container.encode(schemaVersion, forKey: .schemaVersion)
+                try container.encode(questionKey, forKey: .questionKey)
+                try container.encode(selectedValues, forKey: .selectedValues)
+                // The server requires text and sentiment together or not at
+                // all — omit the keys entirely rather than sending null.
+                try container.encodeIfPresent(text, forKey: .text)
+                try container.encodeIfPresent(sentiment, forKey: .sentiment)
+            }
+        }
+        let body = try JSONEncoder.canonical.encode(Body(
+            idempotencyKey: idempotencyKey,
+            schemaVersion: schemaVersion,
+            questionKey: questionKey,
+            selectedValues: selectedValues,
+            text: text,
+            sentiment: sentiment
+        ))
+        let response: ConsultInspirationMutationResponse = try await api.request(
+            "/client/consult/\(consultId)/inspiration/answers", method: .post, body: body
+        )
+        return response.inspiration
+    }
+
+    public func inspirationImage(consultId: String,
+                                 readEndpoint: String) async throws -> ConsultInspirationSignedRead {
+        // The state DTO serves the endpoint as a full server path; APIClient
+        // already prefixes /api/v1, so strip it. Refuse anything that is not
+        // this consult's own media route — the look-post variant serves a
+        // different shape and iOS only offers upload-or-skip.
+        let expected = "/api/v1/client/consult/\(consultId)/inspiration/media"
+        guard readEndpoint == expected else { throw ConsultClientFailure.contractMismatch }
+        return try await api.request("/client/consult/\(consultId)/inspiration/media")
+    }
+
     public func capture(consultId: String) async throws -> ConsultCaptureState {
         let response: ConsultCaptureStateResponse = try await api.request(
             "/client/consult/\(consultId)/capture"
+        )
+        return response.capture
+    }
+
+    public func proceedWithAccepted(consultId: String) async throws -> ConsultCaptureState {
+        let response: ConsultCaptureStateResponse = try await api.request(
+            "/client/consult/\(consultId)/capture/proceed",
+            method: .post,
+            body: Data("{}".utf8)
         )
         return response.capture
     }

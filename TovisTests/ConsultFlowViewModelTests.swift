@@ -8,13 +8,33 @@ private actor MockConsultService: ConsultServicing {
     private var acceptedKinds: Set<ConsultAgreementKind> = []
     private var acceptedShots: Set<ConsultCaptureShotKey> = []
     private var rejectedBackOnce = false
+    private var inspirationSource: String?
+    private var inspirationAnsweredCount = 0
+    private var proceededWithPartialPack = false
+    private var analysisStarted = false
     private(set) var captureKeys: [ConsultCaptureMutationKeys] = []
     private(set) var receivedByteCounts: [Int] = []
+    private(set) var inspirationUploadByteCounts: [Int] = []
+    private(set) var answeredInspirationKeys: [String] = []
     private(set) var teaserRecorded = false
     private(set) var consentRevoked = false
     var sessionProfessionalId = "cmq9p645v0002jp04fttoatlq"
 
     init(root: [String: Any]) { self.root = root }
+
+    // The mock mirrors the server's advance rule: ANALYSIS_PENDING requires a
+    // complete inspiration review AND either every shot accepted or an
+    // explicit partial-pack proceed.
+    private var inspirationComplete: Bool {
+        inspirationSource == "NONE"
+            || (inspirationSource != nil && inspirationAnsweredCount >= 7)
+    }
+
+    private var sessionAdvancedToAnalysis: Bool {
+        inspirationComplete
+            && (acceptedShots.count == ConsultCaptureShotKey.allCases.count
+                || proceededWithPartialPack)
+    }
 
     func create(bookingId: String) async throws -> ConsultSession {
         var value = dictionary("session", "consult")
@@ -63,6 +83,70 @@ private actor MockConsultService: ConsultServicing {
         try captureState()
     }
 
+    func inspiration(consultId: String) async throws -> ConsultInspirationState {
+        try inspirationState()
+    }
+
+    func skipInspiration(consultId: String, schemaVersion: Int,
+                         idempotencyKey: String) async throws -> ConsultInspirationState {
+        inspirationSource = "NONE"
+        return try inspirationState()
+    }
+
+    func uploadInspiration(consultId: String, schemaVersion: Int, jpegData: Data,
+                           keys: ConsultInspirationMutationKeys) async throws
+        -> ConsultInspirationState {
+        inspirationUploadByteCounts.append(jpegData.count)
+        inspirationSource = "EXTERNAL_UPLOAD"
+        return try inspirationState()
+    }
+
+    func answerInspiration(consultId: String, schemaVersion: Int, questionKey: String,
+                           selectedValues: [String], text: String?,
+                           sentiment: ConsultInspirationSentiment?,
+                           idempotencyKey: String) async throws -> ConsultInspirationState {
+        answeredInspirationKeys.append(questionKey)
+        inspirationAnsweredCount += 1
+        return try inspirationState()
+    }
+
+    func inspirationImage(consultId: String,
+                          readEndpoint: String) async throws -> ConsultInspirationSignedRead {
+        try decode(ConsultInspirationSignedRead.self, value: [
+            "url": "https://storage.test/signed/inspiration.jpg?token=read",
+            "expiresInSeconds": 600,
+        ])
+    }
+
+    func proceedWithAccepted(consultId: String) async throws -> ConsultCaptureState {
+        guard inspirationComplete, !acceptedShots.isEmpty else {
+            throw ConsultClientFailure.analysisInspirationRequired
+        }
+        proceededWithPartialPack = true
+        return try captureState()
+    }
+
+    private func inspirationState() throws -> ConsultInspirationState {
+        let key: String
+        if inspirationSource == nil {
+            key = "inspirationSourceDecision"
+        } else if inspirationSource == "NONE" {
+            key = "inspirationSkipped"
+        } else if inspirationAnsweredCount >= 7 {
+            key = "inspirationComplete"
+        } else if inspirationAnsweredCount == 6 {
+            key = "inspirationTextQuestion"
+        } else {
+            key = "inspirationQuestion"
+        }
+        var value = dictionary(key, "inspiration")
+        value["status"] = sessionAdvancedToAnalysis ? "ANALYSIS_PENDING" : "MEDIA_READY"
+        var progress = value["progress"] as! [String: Any]
+        progress["answeredQuestionCount"] = min(inspirationAnsweredCount, 7)
+        value["progress"] = progress
+        return try decode(ConsultInspirationState.self, value: value)
+    }
+
     func uploadAndCheckCapture(consultId: String, shot: ConsultCaptureShot,
                                pack: ConsultCaptureShotPack, jpegData: Data,
                                keys: ConsultCaptureMutationKeys) async throws
@@ -99,12 +183,18 @@ private actor MockConsultService: ConsultServicing {
     }
 
     func analysis(consultId: String) async throws -> ConsultAnalysisState {
-        try decode(ConsultAnalysisState.self, value: dictionary("analysis", "analysis"))
+        var value = dictionary("analysis", "analysis")
+        value["status"] = analysisStarted ? "COMPLETED" : "ANALYSIS_PENDING"
+        return try decode(ConsultAnalysisState.self, value: value)
     }
 
     func startAnalysis(consultId: String, idempotencyKey: String) async throws
         -> ConsultAnalysisState {
-        try await analysis(consultId: consultId)
+        guard sessionAdvancedToAnalysis else {
+            throw ConsultClientFailure.analysisInspirationRequired
+        }
+        analysisStarted = true
+        return try await analysis(consultId: consultId)
     }
 
     func results(consultId: String) async throws -> ConsultClientResults {
@@ -140,8 +230,7 @@ private actor MockConsultService: ConsultServicing {
 
     private func captureDictionary(rejectedShot: ConsultCaptureShotKey? = nil) throws -> [String: Any] {
         var value = dictionary("capture", "capture")
-        value["status"] = acceptedShots.count == ConsultCaptureShotKey.allCases.count
-            ? "ANALYSIS_PENDING" : "MEDIA_READY"
+        value["status"] = sessionAdvancedToAnalysis ? "ANALYSIS_PENDING" : "MEDIA_READY"
         var slots = try #require(value["slots"] as? [[String: Any]])
         for index in slots.indices {
             let key = ConsultCaptureShotKey(rawValue: slots[index]["shotKey"] as? String ?? "")
@@ -247,6 +336,8 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
         }
         await model.submitIntake()
         #expect(model.stage == .capture)
+        #expect(model.inspirationState?.progress.blocker == .sourceDecisionRequired)
+        #expect(!model.inspirationDone)
 
         let shots = try #require(model.captureState?.shotPack.shots)
         let back = try #require(shots.first { $0.key == .hairBack })
@@ -292,7 +383,37 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
             }
             await model.submitPhoto(jpeg, for: shot)
         }
+        // 7/7 accepted but the inspiration review is still open: the server
+        // holds the session at MEDIA_READY, and the client must not jump ahead
+        // locally (the old hasAllAcceptedShots shortcut dead-ended exactly here).
+        #expect(model.captureState?.hasAllAcceptedShots == true)
+        #expect(model.stage == .capture)
+        #expect(!model.canOfferPartialContinue)
+
+        await model.uploadInspirationPhoto(Data("inspiration-look".utf8))
+        var answeredRounds = 0
+        while let question = model.inspirationState?.progress.currentQuestion,
+              answeredRounds < 10 {
+            answeredRounds += 1
+            if question.kind == .text {
+                await model.answerInspiration(
+                    question: question, selectedValues: [], text: "", sentiment: nil
+                )
+            } else {
+                let value = try #require(question.options.first?.value)
+                await model.answerInspiration(
+                    question: question, selectedValues: [value], text: "", sentiment: nil
+                )
+            }
+        }
+        #expect(answeredRounds == 7)
+        #expect(model.inspirationDone)
+        #expect(await service.inspirationUploadByteCounts == [Data("inspiration-look".utf8).count])
+        #expect(await service.answeredInspirationKeys.count == 7)
+        // The completed review advances the session server-side; the client
+        // follows it into the analysis stage instead of deciding locally.
         #expect(model.stage == .analysis)
+        #expect(model.analysisState?.status == .analysisPending)
 
         await model.startAnalysis()
         #expect(model.stage == .results)
@@ -308,6 +429,56 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
         #expect(await guidedPipeline.retainedByteCount() == 0)
         let keys = await service.captureKeys
         #expect(Set(keys.map(\.issue)).count == 8)
+        #expect(model.failure == nil)
+    }
+
+    @Test func partialPackContinuesThroughProceedOnceInspirationIsDone() async throws {
+        let service = MockConsultService(root: try fixtureRoot())
+        let openMockGate = ConsultExposurePolicy(
+            founderProfessionalIDs: ["cmq9p645v0002jp04fttoatlq"],
+            liveBaselineApproved: true,
+            liveCandidatePassed: true
+        )
+        let model = ConsultFlowViewModel(
+            bookingId: "booking_fixture_1",
+            professionalId: "cmq9p645v0002jp04fttoatlq",
+            service: service,
+            exposure: openMockGate
+        )
+
+        await model.start()
+        for requirement in model.agreementState?.requirements ?? [] {
+            await model.accept(requirement)
+        }
+        let questions = try #require(model.intakeState?.questionPack.questions)
+        for question in questions where question.requirement == .required
+            && model.answers[question.key] == nil {
+            model.selectAnswer(
+                questionKey: question.key,
+                value: try #require(question.options.first?.value)
+            )
+        }
+        await model.submitIntake()
+        #expect(model.stage == .capture)
+
+        // Continuing without an inspiration photo is a complete review.
+        await model.skipInspiration()
+        #expect(model.inspirationDone)
+        #expect(model.stage == .capture)
+
+        // One accepted photo out of seven unlocks the partial-pack path.
+        let left = try #require(model.captureState?.shotPack.shots.first { $0.key == .hairLeft })
+        await model.submitPhoto(Data("left".utf8), for: left)
+        #expect(model.acceptedShotCount == 1)
+        #expect(model.stage == .capture)
+        #expect(model.canOfferPartialContinue)
+
+        await model.proceedWithAccepted()
+        #expect(model.stage == .analysis)
+        #expect(model.analysisState?.status == .analysisPending)
+
+        await model.startAnalysis()
+        #expect(model.stage == .results)
         #expect(model.failure == nil)
     }
 

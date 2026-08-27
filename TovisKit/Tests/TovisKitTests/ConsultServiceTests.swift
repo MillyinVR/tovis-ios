@@ -218,4 +218,167 @@ private final class ConsultURLProtocol: URLProtocol {
         #expect(attaches.count == 2)
         #expect(attaches[0].httpBody == attaches[1].httpBody)
     }
+
+    private func inspirationEnvelope(_ key: String) throws -> [String: Any] {
+        try #require(try root()[key] as? [String: Any])
+    }
+
+    /// The fixture's plain state envelopes, as the mutation-route response
+    /// shape (state + `replayed`) the attach/answers endpoints return.
+    private func inspirationMutationEnvelope(_ key: String) throws -> [String: Any] {
+        var envelope = try inspirationEnvelope(key)
+        if envelope["replayed"] == nil { envelope["replayed"] = false }
+        return envelope
+    }
+
+    @Test func inspirationSkipPostsAnExplicitSourceNoneDecision() async throws {
+        reset()
+        let skipped = try inspirationEnvelope("inspirationSkipped")
+        ConsultURLProtocol.responder = { request in
+            guard request.url!.path == "/api/v1/client/consult/consult_fixture_1/inspiration",
+                  request.httpMethod == "POST" else { return (404, Data()) }
+            return (200, self.json(skipped))
+        }
+
+        let state = try await makeService().skipInspiration(
+            consultId: "consult_fixture_1", schemaVersion: 1, idempotencyKey: "skip-key"
+        )
+        #expect(state.isComplete)
+        #expect(state.source == nil)
+
+        let body = try #require(ConsultURLProtocol.requests.first?.httpBody)
+        let text = try #require(String(data: body, encoding: .utf8))
+        #expect(text.contains("\"source\":\"NONE\""))
+        #expect(text.contains("skip-key"))
+        #expect(text.contains("\"schemaVersion\":1"))
+    }
+
+    @Test func inspirationUploadUsesOnlyServerMintedPrivateURLThenAttaches() async throws {
+        reset()
+        let questioning = try inspirationMutationEnvelope("inspirationQuestion")
+        ConsultURLProtocol.responder = { request in
+            switch request.url!.path {
+            case "/api/v1/client/consult/consult_fixture_1/inspiration/uploads":
+                return (200, self.json([
+                    "upload": [
+                        "inspirationId": "inspiration_fixture_1",
+                        "schemaVersion": 1,
+                        "contentType": "image/jpeg", "maxBytes": 10,
+                        "expiresAt": "2026-08-11T18:20:00.000Z",
+                        "useExpiresAt": "2026-08-12T18:00:00.000Z",
+                        "token": "inspiration-token",
+                        "signedUrl": "https://storage.test/storage/v1/object/upload/sign/media-private/consult-inspiration/v1/opaque.jpg?token=inspiration-token"
+                    ],
+                    "replayed": false
+                ]))
+            case "/storage/v1/object/upload/sign/media-private/consult-inspiration/v1/opaque.jpg":
+                return (200, Data("{}".utf8))
+            case "/api/v1/client/consult/consult_fixture_1/inspiration/attach":
+                return (200, self.json(questioning))
+            default:
+                return (404, Data("{\"ok\":false}".utf8))
+            }
+        }
+
+        let bytes = Data("0123456789".utf8)
+        let keys = ConsultInspirationMutationKeys(issue: "issue-key", attach: "attach-key")
+        let state = try await makeService().uploadInspiration(
+            consultId: "consult_fixture_1", schemaVersion: 1, jpegData: bytes, keys: keys
+        )
+        #expect(state.source?.inspirationId == "inspiration_fixture_1")
+        #expect(state.progress.currentQuestion?.key == "favorite_colors")
+
+        #expect(ConsultURLProtocol.requests.count == 3)
+        let storage = try #require(ConsultURLProtocol.requests.first { $0.url?.host == "storage.test" })
+        #expect(storage.httpMethod == "PUT")
+        #expect(storage.value(forHTTPHeaderField: "Authorization") == nil)
+        #expect(storage.value(forHTTPHeaderField: "apikey") == "publishable-test-key")
+        #expect(storage.httpBody == bytes)
+
+        let apiRequests = ConsultURLProtocol.requests.filter { $0.url?.host == "test.local" }
+        let bodies = apiRequests.compactMap(\.httpBody).compactMap { String(data: $0, encoding: .utf8) }
+        #expect(bodies.allSatisfy { !$0.contains("consult-inspiration") })
+        #expect(bodies.allSatisfy { !$0.contains("0123456789") })
+        #expect(bodies.contains { $0.contains("issue-key") && $0.contains("\"sizeBytes\":10") })
+        #expect(bodies.contains { $0.contains("attach-key") && $0.contains("inspiration_fixture_1") })
+    }
+
+    @Test func inspirationAnswerOmitsTextAndSentimentUnlessBothArePresent() async throws {
+        reset()
+        let texting = try inspirationMutationEnvelope("inspirationTextQuestion")
+        let complete = try inspirationMutationEnvelope("inspirationComplete")
+        nonisolated(unsafe) var calls = 0
+        ConsultURLProtocol.responder = { request in
+            guard request.url!.path == "/api/v1/client/consult/consult_fixture_1/inspiration/answers" else {
+                return (404, Data())
+            }
+            calls += 1
+            return (200, self.json(calls == 1 ? texting : complete))
+        }
+
+        let service = await makeService()
+        _ = try await service.answerInspiration(
+            consultId: "consult_fixture_1", schemaVersion: 1,
+            questionKey: "favorite_colors", selectedValues: ["copper-red"],
+            text: nil, sentiment: nil, idempotencyKey: "answer-1"
+        )
+        let state = try await service.answerInspiration(
+            consultId: "consult_fixture_1", schemaVersion: 1,
+            questionKey: "other_detail", selectedValues: [],
+            text: "love the copper ribbons", sentiment: .good, idempotencyKey: "answer-2"
+        )
+        #expect(state.isComplete)
+
+        let bodies = ConsultURLProtocol.requests
+            .compactMap(\.httpBody)
+            .compactMap { String(data: $0, encoding: .utf8) }
+        #expect(bodies.count == 2)
+        #expect(!bodies[0].contains("\"text\""))
+        #expect(!bodies[0].contains("\"sentiment\""))
+        #expect(bodies[0].contains("copper-red"))
+        #expect(bodies[1].contains("\"text\":\"love the copper ribbons\""))
+        #expect(bodies[1].contains("\"sentiment\":\"GOOD\""))
+    }
+
+    @Test func inspirationImageReadsOnlyThisConsultsOwnMediaEndpoint() async throws {
+        reset()
+        ConsultURLProtocol.responder = { request in
+            guard request.url!.path == "/api/v1/client/consult/consult_fixture_1/inspiration/media",
+                  request.httpMethod == "GET" else { return (404, Data()) }
+            return (200, self.json([
+                "ok": true,
+                "url": "https://storage.test/storage/v1/object/sign/media-private/consult-inspiration/v1/opaque.jpg?token=read-token",
+                "expiresInSeconds": 600
+            ]))
+        }
+
+        let service = await makeService()
+        await #expect(throws: ConsultClientFailure.contractMismatch) {
+            _ = try await service.inspirationImage(
+                consultId: "consult_fixture_1",
+                readEndpoint: "/api/v1/looks/look_fixture_1"
+            )
+        }
+        let read = try await service.inspirationImage(
+            consultId: "consult_fixture_1",
+            readEndpoint: "/api/v1/client/consult/consult_fixture_1/inspiration/media"
+        )
+        #expect(read.url.contains("token=read-token"))
+        #expect(read.expiresInSeconds == 600)
+        #expect(ConsultURLProtocol.requests.count == 1)
+    }
+
+    @Test func partialPackProceedPostsToTheProceedRouteAndReturnsServerCapture() async throws {
+        reset()
+        let proceeded = try inspirationEnvelope("captureProceed")
+        ConsultURLProtocol.responder = { request in
+            guard request.url!.path == "/api/v1/client/consult/consult_fixture_1/capture/proceed",
+                  request.httpMethod == "POST" else { return (404, Data()) }
+            return (200, self.json(proceeded))
+        }
+
+        let capture = try await makeService().proceedWithAccepted(consultId: "consult_fixture_1")
+        #expect(capture.status == .analysisPending)
+        #expect(!capture.hasAllAcceptedShots)
+    }
 }

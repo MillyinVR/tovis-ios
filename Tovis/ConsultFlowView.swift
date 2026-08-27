@@ -14,6 +14,7 @@ struct ConsultFlowView: View {
 
     @State private var model: ConsultFlowViewModel?
     @State private var showRevokeConfirmation = false
+    @State private var fullscreen: FullscreenMedia?
 
     var body: some View {
         NavigationStack {
@@ -58,6 +59,7 @@ struct ConsultFlowView: View {
             } message: {
                 Text("No more intake, photos, or analysis can be added. The server will make raw consult photos purge-eligible and verify their removal.")
             }
+            .mediaFullscreenCover($fullscreen)
         }
         .tint(BrandColor.accent)
     }
@@ -187,10 +189,11 @@ struct ConsultFlowView: View {
 
     private func capture(_ model: ConsultFlowViewModel) -> some View {
         VStack(alignment: .leading, spacing: 18) {
+            inspirationSection(model)
             consultHeader(
                 eyebrow: "Seven daylight views",
                 title: "Take guided photos of your hair and face",
-                body: "Four hair views and three face views. The native camera checks light and framing live, then checks the chosen JPEG once more before the private upload. Preview frames never leave your device."
+                body: "Four hair views and three face views. Each photo is checked right away, and if one can’t be used you’ll see why. You can run the analysis without all seven — anything the missing photos would have shown just comes back as unknown."
             )
             if let capture = model.captureState {
                 ForEach(capture.shotPack.shots) { shot in
@@ -198,9 +201,13 @@ struct ConsultFlowView: View {
                     ConsultPhotoPickerSlot(
                         shot: shot,
                         slot: slot,
+                        thumbnail: model.localThumbnails[shot.key],
                         busy: model.processingShot == shot.key,
                         disabled: model.busy,
-                        onJPEG: { data in await model.submitPhoto(data, for: shot) }
+                        onJPEG: { data in await model.submitPhoto(data, for: shot) },
+                        onThumbnailTap: { image in
+                            fullscreen = .local(id: "consult-shot-\(shot.key.rawValue)", image: image)
+                        }
                     )
                 }
                 chartCopyToggle(model, capture: capture)
@@ -209,10 +216,11 @@ struct ConsultFlowView: View {
                         .font(BrandFont.body(14, .semibold))
                         .foregroundStyle(BrandColor.accent)
                 }
-                if capture.hasAllAcceptedShots {
-                    primaryButton("Analyze my consult", busy: model.busy, disabled: false) {
-                        Task { await model.startAnalysis() }
-                    }
+                Text("\(model.acceptedShotCount) / \(model.totalShotCount) photos accepted")
+                    .font(BrandFont.mono(10))
+                    .foregroundStyle(BrandColor.textMuted)
+                if model.canOfferPartialContinue {
+                    partialContinueCard(model)
                 }
             } else {
                 loadingCard("Loading photo checklist…")
@@ -220,17 +228,133 @@ struct ConsultFlowView: View {
         }
     }
 
+    private func partialContinueCard(_ model: ConsultFlowViewModel) -> some View {
+        BrandSurface {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("You can keep going with the photos that were accepted. The views you skip can’t be analyzed, so those parts of your results will honestly say unknown.")
+                    .font(BrandFont.body(13))
+                    .foregroundStyle(BrandColor.textSecondary)
+                primaryButton(
+                    "Continue with \(model.acceptedShotCount) of \(model.totalShotCount) photos",
+                    busy: model.busy,
+                    disabled: !model.inspirationDone
+                ) {
+                    Task { await model.proceedWithAccepted() }
+                }
+                if !model.inspirationDone {
+                    Text("Finish the inspiration step above first.")
+                        .font(BrandFont.body(12))
+                        .foregroundStyle(BrandColor.textMuted)
+                }
+            }
+        }
+        .accessibilityIdentifier("consult-partial-continue")
+    }
+
+    @ViewBuilder
+    private func inspirationSection(_ model: ConsultFlowViewModel) -> some View {
+        if let inspiration = model.inspirationState {
+            if inspiration.isComplete {
+                BrandSurface {
+                    Label(
+                        inspiration.source == nil
+                            ? "Inspiration: continuing without a photo"
+                            : "Inspiration done — your professional sees exactly what you picked out",
+                        systemImage: "checkmark.circle.fill"
+                    )
+                    .font(BrandFont.body(13, .semibold))
+                    .foregroundStyle(BrandColor.textSecondary)
+                }
+                .accessibilityIdentifier("consult-inspiration-complete")
+            } else {
+                VStack(alignment: .leading, spacing: 14) {
+                    consultHeader(
+                        eyebrow: "Your inspiration",
+                        title: "Show us the look you’re drawn to",
+                        body: inspiration.introduction
+                    )
+                    if inspiration.progress.blocker == .sourceDecisionRequired {
+                        inspirationSourceDecision(model)
+                    }
+                    if let question = inspiration.progress.currentQuestion {
+                        if let source = inspiration.source, source.imageAvailable {
+                            ConsultInspirationImagePanel(
+                                model: model,
+                                questionKey: question.key,
+                                referenceNote: inspiration.referenceNote,
+                                onTap: { url in
+                                    fullscreen = FullscreenMedia(
+                                        id: "consult-inspiration",
+                                        source: .remote(url: url, isVideo: false),
+                                        overlay: nil
+                                    )
+                                }
+                            )
+                        }
+                        if inspiration.progress.blocker == .atLeastThreeDetailsRequired {
+                            Text("Pick out at least three specific details you love or want to avoid across these questions — answers like “not sure” don’t give your professional anything to work from, so a couple of questions are coming back around.")
+                                .font(BrandFont.body(12))
+                                .foregroundStyle(BrandColor.textPrimary)
+                                .padding(10)
+                                .background(BrandColor.amber.opacity(0.12))
+                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        }
+                        ConsultInspirationQuestionView(
+                            question: question,
+                            busy: model.busy,
+                            onAnswer: { values, text, sentiment in
+                                Task {
+                                    await model.answerInspiration(
+                                        question: question,
+                                        selectedValues: values,
+                                        text: text,
+                                        sentiment: sentiment
+                                    )
+                                }
+                            }
+                        )
+                        .id(question.key)
+                    }
+                }
+            }
+        } else {
+            loadingCard("Loading your inspiration step…")
+        }
+    }
+
+    private func inspirationSourceDecision(_ model: ConsultFlowViewModel) -> some View {
+        ConsultInspirationPhotoPicker(
+            busy: model.busy,
+            onJPEG: { data in await model.uploadInspirationPhoto(data) },
+            onSkip: { Task { await model.skipInspiration() } }
+        )
+    }
+
     private func analysis(_ model: ConsultFlowViewModel) -> some View {
         VStack(alignment: .leading, spacing: 18) {
             consultHeader(
                 eyebrow: "Analysis",
-                title: "Your consult is being prepared",
+                title: "Run your analysis",
                 body: "Your professional remains the authority on what’s safe and achievable. Raw photos are made purge-eligible as soon as analysis consumes them."
             )
-            loadingCard(model.busy ? "Reviewing your seven views…" : "Analysis is still processing.")
-            if !model.busy {
-                primaryButton("Check results", busy: false, disabled: false) {
-                    Task { await model.refreshAnalysis() }
+            if let analysis = model.analysisState, analysis.status == .analysisPending {
+                BrandSurface {
+                    Text("Your photos and answers are ready. The analysis takes a minute or two, and your photos are deleted from processing storage right after it finishes.")
+                        .font(BrandFont.body(13))
+                        .foregroundStyle(BrandColor.textSecondary)
+                }
+                primaryButton(
+                    model.busy ? "Analyzing — hold tight…" : "Run my analysis",
+                    busy: model.busy, disabled: false
+                ) {
+                    Task { await model.startAnalysis() }
+                }
+            } else {
+                loadingCard(model.busy ? "Reviewing your photos…" : "Analysis is still processing.")
+                if !model.busy {
+                    primaryButton("Check results", busy: false, disabled: false) {
+                        Task { await model.refreshAnalysis() }
+                    }
                 }
             }
         }
@@ -539,12 +663,37 @@ struct ConsultFlowView: View {
     }
 }
 
+/// Client-readable reasons for a refused photo, mirroring the web wizard's
+/// QUALITY_REASON_COPY map. The retake tip is appended separately.
+private func consultQualityReasonMessage(_ code: String?) -> String {
+    switch code {
+    case "WARM_INDOOR_LIGHT":
+        return "Warm indoor lighting — hair color can’t be read accurately under it."
+    case "COLOR_CAST":
+        return "A color tint in the light is masking the true hair color."
+    case "VIEW_MISMATCH":
+        return "This doesn’t look like the view this photo asks for."
+    case "HAIR_NOT_VISIBLE":
+        return "The hair isn’t clearly visible in this photo."
+    case "BLURRY":
+        return "The photo is too blurry to use."
+    case "TOO_DARK":
+        return "The photo is too dark to read."
+    case "TOO_BRIGHT":
+        return "The photo is too bright or washed out."
+    default:
+        return "This photo can’t be used for the analysis."
+    }
+}
+
 private struct ConsultPhotoPickerSlot: View {
     let shot: ConsultCaptureShot
     let slot: ConsultCaptureSlot?
+    let thumbnail: UIImage?
     let busy: Bool
     let disabled: Bool
     let onJPEG: (Data) async -> Void
+    let onThumbnailTap: (UIImage) -> Void
 
     @State private var pick: PhotosPickerItem?
     @State private var preparationError: ConsultClientFailure?
@@ -555,22 +704,39 @@ private struct ConsultPhotoPickerSlot: View {
     var body: some View {
         BrandSurface {
             VStack(alignment: .leading, spacing: 9) {
-                HStack {
-                    Text(shot.title)
-                        .font(BrandFont.body(16, .semibold))
-                        .foregroundStyle(BrandColor.textPrimary)
-                    Spacer()
-                    status
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(shot.title)
+                                .font(BrandFont.body(16, .semibold))
+                                .foregroundStyle(BrandColor.textPrimary)
+                            Spacer()
+                            status
+                        }
+                        Text(shot.instruction)
+                            .font(BrandFont.body(13))
+                            .foregroundStyle(BrandColor.textSecondary)
+                    }
+                    if let thumbnail {
+                        Button { onThumbnailTap(thumbnail) } label: {
+                            Image(uiImage: thumbnail)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 56, height: 56)
+                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("View your \(shot.title) photo")
+                    }
                 }
-                Text(shot.instruction)
-                    .font(BrandFont.body(13))
-                    .foregroundStyle(BrandColor.textSecondary)
 
-                if slot?.state == .rejected, let tip = slot?.retakeTip {
-                    Text(tip)
+                if slot?.state == .rejected {
+                    let reason = consultQualityReasonMessage(slot?.qualityReasonCode)
+                    let tip = slot?.retakeTip
+                    Text(tip.map { "\(reason) \($0)" } ?? reason)
                         .font(BrandFont.body(13, .semibold))
                         .foregroundStyle(BrandColor.amber)
-                        .accessibilityLabel("Retake tip: \(tip)")
+                        .accessibilityLabel("Why this photo was refused: \(reason)\(tip.map { " Retake tip: \($0)" } ?? "")")
                 }
                 if let preparationError {
                     Text(preparationError.message)
@@ -672,6 +838,302 @@ private struct ConsultPhotoPickerSlot: View {
                 Text("Required")
                     .font(BrandFont.body(11, .semibold))
                     .foregroundStyle(BrandColor.textMuted)
+            }
+        }
+    }
+}
+
+/// Where to look in the inspiration photo for each question — presentation-only
+/// guidance beside the server-served question copy, mirrored from the web wizard.
+private let consultInspirationFocusHints: [String: String] = [
+    "favorite_colors": "Zoom into the hair and look at the mix of colors — the brightest pieces, the deepest pieces, and the tones in between.",
+    "avoid_colors": "Look over each color in the hair again — is there any you would not want on you?",
+    "length_goal": "Look at where the hair ends — how long it falls.",
+    "fullness_goal": "Look at how thick and full the hair appears overall.",
+    "current_styling": "Look at how the hair is styled — straight, waves, curls, or something else.",
+    "styling_walkthrough": "Think about whether you could get it styled this way on your own.",
+    "other_detail": "One last look — anything else stand out, good or bad?",
+]
+
+/// The inspiration source decision: add one reference photo of a look, or
+/// continue without one. Uses the photo library only — an inspiration picture
+/// is of a LOOK someone else wears, not something the guided camera frames.
+private struct ConsultInspirationPhotoPicker: View {
+    let busy: Bool
+    let onJPEG: (Data) async -> Void
+    let onSkip: () -> Void
+
+    @State private var pick: PhotosPickerItem?
+    @State private var preparing = false
+    @State private var preparationError: ConsultClientFailure?
+
+    var body: some View {
+        BrandSurface {
+            VStack(alignment: .leading, spacing: 10) {
+                if let preparationError {
+                    Text(preparationError.message)
+                        .font(BrandFont.body(12))
+                        .foregroundStyle(BrandColor.ember)
+                }
+                PhotosPicker(selection: $pick, matching: .images) {
+                    Group {
+                        if busy || preparing {
+                            ProgressView().tint(BrandColor.onAccent)
+                        } else {
+                            Label("Add an inspiration photo", systemImage: "photo.on.rectangle")
+                                .font(BrandFont.body(14, .semibold))
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .foregroundStyle(BrandColor.onAccent)
+                    .background(BrandColor.accent)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .disabled(busy || preparing)
+                Button(action: onSkip) {
+                    Text("Continue without one")
+                        .font(BrandFont.body(14, .semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .foregroundStyle(BrandColor.textPrimary)
+                        .background(BrandColor.bgSurface)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .disabled(busy || preparing)
+            }
+        }
+        .accessibilityIdentifier("consult-inspiration-source-decision")
+        .onChange(of: pick) { _, item in
+            guard let item else { return }
+            Task {
+                defer { pick = nil }
+                preparing = true
+                defer { preparing = false }
+                do {
+                    guard let source = try await item.loadTransferable(type: Data.self),
+                          let jpeg = await ConsultPhotoPreparation.jpeg(from: source) else {
+                        preparationError = .invalidPhoto
+                        return
+                    }
+                    preparationError = nil
+                    await onJPEG(jpeg)
+                } catch {
+                    preparationError = .invalidPhoto
+                }
+            }
+        }
+    }
+}
+
+/// Keeps the uploaded inspiration photo on screen through the question flow,
+/// with the per-question focus hint. Tapping opens the zoomable fullscreen
+/// viewer — the parity of web's pinch/scroll/double-tap zoom.
+private struct ConsultInspirationImagePanel: View {
+    let model: ConsultFlowViewModel
+    let questionKey: String
+    let referenceNote: String
+    let onTap: (URL) -> Void
+
+    @State private var url: URL?
+    @State private var failed = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let url {
+                Button { onTap(url) } label: {
+                    DownsampledRemoteImage(url: url) {
+                        HStack(spacing: 10) {
+                            ProgressView().tint(BrandColor.accent)
+                            Text("Loading your inspiration photo…")
+                                .font(BrandFont.body(13))
+                                .foregroundStyle(BrandColor.textSecondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 40)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 260)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Your inspiration photo — tap to zoom")
+            } else {
+                BrandSurface {
+                    Text(failed
+                         ? "Your inspiration photo could not be loaded right now."
+                         : "Loading your inspiration photo…")
+                        .font(BrandFont.body(13))
+                        .foregroundStyle(BrandColor.textSecondary)
+                }
+            }
+            if let hint = consultInspirationFocusHints[questionKey] {
+                Text("\(hint) Tap the photo to zoom.")
+                    .font(BrandFont.body(12))
+                    .foregroundStyle(BrandColor.textSecondary)
+            }
+            Text(referenceNote)
+                .font(BrandFont.body(11))
+                .foregroundStyle(BrandColor.textMuted)
+        }
+        .accessibilityIdentifier("consult-inspiration-image")
+        .task(id: questionKey) {
+            // Refetch per question so the short-lived signed URL is renewed
+            // before it can expire mid-questionnaire (the model caches it and
+            // only hits the network when it is close to stale).
+            let fetched = await model.inspirationImageURL()
+            url = fetched
+            failed = fetched == nil
+        }
+    }
+}
+
+/// One server-served inspiration question: option chips, and for the final
+/// free-text question the first text-entry surface in the consult flow —
+/// a bounded note with a GOOD/BAD/BOTH sentiment, where leaving everything
+/// blank means "nothing else".
+private struct ConsultInspirationQuestionView: View {
+    let question: ConsultInspirationQuestion
+    let busy: Bool
+    let onAnswer: ([String], String, ConsultInspirationSentiment?) -> Void
+
+    @State private var selected: [String] = []
+    @State private var text = ""
+    @State private var sentiment: ConsultInspirationSentiment?
+
+    private var trimmed: String {
+        question.allowText ? text.trimmingCharacters(in: .whitespacesAndNewlines) : ""
+    }
+
+    private var traitBlocked: Bool {
+        !trimmed.isEmpty && ConsultInspirationTextRules.containsUnsupportedTraitLanguage(trimmed)
+    }
+
+    private var needsSentiment: Bool { !trimmed.isEmpty && sentiment == nil }
+
+    private var needsSelection: Bool {
+        question.kind != .text && selected.count < question.minSelections
+    }
+
+    var body: some View {
+        BrandSurface {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(question.label)
+                    .font(BrandFont.body(16, .semibold))
+                    .foregroundStyle(BrandColor.textPrimary)
+                if let helpText = question.helpText {
+                    Text(helpText)
+                        .font(BrandFont.body(13))
+                        .foregroundStyle(BrandColor.textSecondary)
+                }
+                FlowLayout(spacing: 8, lineSpacing: 8) {
+                    ForEach(question.options) { option in
+                        optionChip(option)
+                    }
+                }
+                if question.allowText {
+                    noteEntry
+                }
+                Button {
+                    onAnswer(selected, text, sentiment)
+                } label: {
+                    Text("Next")
+                        .font(BrandFont.body(14, .semibold))
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 11)
+                        .foregroundStyle(BrandColor.onAccent)
+                        .background(BrandColor.accent)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .disabled(busy || needsSelection || needsSentiment || traitBlocked)
+                if needsSentiment {
+                    Text("Tell us whether that note is something you like, something to avoid, or a bit of both.")
+                        .font(BrandFont.body(12))
+                        .foregroundStyle(BrandColor.textMuted)
+                }
+            }
+        }
+        .accessibilityIdentifier("consult-inspiration-question-\(question.key)")
+    }
+
+    private func optionChip(_ option: ConsultInspirationQuestionOption) -> some View {
+        let active = selected.contains(option.value)
+        return Button {
+            selected = ConsultInspirationAnswering.toggle(
+                option.value, in: selected, question: question
+            )
+            // "Nothing else" and a written note are mutually exclusive.
+            if question.kind == .text {
+                text = ""
+                sentiment = nil
+            }
+        } label: {
+            Text(option.label)
+                .font(BrandFont.body(13, .semibold))
+                .foregroundStyle(active ? BrandColor.onAccent : BrandColor.textPrimary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+                .background(active ? BrandColor.accent : BrandColor.bgSurface)
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(busy)
+    }
+
+    private var noteEntry: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TextField(
+                "Anything else, in your own words — or leave this blank",
+                text: $text,
+                axis: .vertical
+            )
+            .lineLimit(2...5)
+            .font(BrandFont.body(14))
+            .foregroundStyle(BrandColor.textPrimary)
+            .padding(12)
+            .background(BrandColor.bgSecondary)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .disabled(busy)
+            .accessibilityIdentifier("consult-inspiration-note")
+            .onChange(of: text) { _, newValue in
+                if newValue.count > ConsultInspirationTextRules.maxCharacters {
+                    text = String(newValue.prefix(ConsultInspirationTextRules.maxCharacters))
+                }
+                if !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    selected.removeAll { $0 == "nothing-else" }
+                }
+            }
+            if !trimmed.isEmpty {
+                HStack(spacing: 8) {
+                    Text("This is…")
+                        .font(BrandFont.body(12))
+                        .foregroundStyle(BrandColor.textSecondary)
+                    ForEach(ConsultInspirationSentiment.allCases, id: \.rawValue) { option in
+                        Button {
+                            sentiment = option
+                        } label: {
+                            Text(option.label)
+                                .font(BrandFont.body(12, .semibold))
+                                .foregroundStyle(sentiment == option
+                                                 ? BrandColor.onAccent : BrandColor.textPrimary)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 7)
+                                .background(sentiment == option
+                                            ? BrandColor.accent : BrandColor.bgSurface)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(busy)
+                    }
+                }
+            }
+            if traitBlocked {
+                Text("Keep this note about the look itself — words about the face, eyes, skin, or body can’t be included here. Your photos already show your professional everything they need.")
+                    .font(BrandFont.body(12))
+                    .foregroundStyle(BrandColor.textPrimary)
+                    .padding(10)
+                    .background(BrandColor.amber.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
         }
     }

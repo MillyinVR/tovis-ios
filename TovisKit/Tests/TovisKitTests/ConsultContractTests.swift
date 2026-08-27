@@ -205,4 +205,171 @@ import Testing
             #expect(!text.contains("\"\(forbidden)\""))
         }
     }
+
+    @Test func decodesEveryInspirationStageState() throws {
+        let deciding = try decode(
+            ConsultInspirationStateResponse.self, key: "inspirationSourceDecision"
+        ).inspiration
+        #expect(deciding.progress.blocker == .sourceDecisionRequired)
+        #expect(deciding.source == nil)
+        #expect(!deciding.isComplete)
+        #expect(deciding.schemaVersion == 1)
+
+        let questioning = try decode(
+            ConsultInspirationStateResponse.self, key: "inspirationQuestion"
+        ).inspiration
+        let question = try #require(questioning.progress.currentQuestion)
+        #expect(question.key == "favorite_colors")
+        #expect(question.kind == .multiSelect)
+        #expect(question.maxSelections == 4)
+        #expect(!question.allowText)
+        let source = try #require(questioning.source)
+        #expect(source.source == "EXTERNAL_UPLOAD")
+        #expect(source.imageAvailable)
+        #expect(source.imageReadEndpoint
+            == "/api/v1/client/consult/consult_fixture_1/inspiration/media")
+        #expect(!questioning.isComplete)
+
+        let texting = try decode(
+            ConsultInspirationStateResponse.self, key: "inspirationTextQuestion"
+        ).inspiration
+        let textQuestion = try #require(texting.progress.currentQuestion)
+        #expect(textQuestion.kind == .text)
+        #expect(textQuestion.allowText)
+        #expect(textQuestion.options.map(\.value) == ["nothing-else"])
+
+        let complete = try decode(
+            ConsultInspirationMutationResponse.self, key: "inspirationComplete"
+        ).inspiration
+        #expect(complete.isComplete)
+        #expect(complete.status == .analysisPending)
+
+        let skipped = try decode(
+            ConsultInspirationMutationResponse.self, key: "inspirationSkipped"
+        ).inspiration
+        #expect(skipped.isComplete)
+        #expect(skipped.source == nil)
+        #expect(skipped.status == .mediaReady)
+    }
+
+    @Test func acceptedShotsAloneNeverAdvanceTheStageLocally() throws {
+        // Regression: the machine once jumped capture → analysis at
+        // hasAllAcceptedShots, dead-ending a 7/7 pack whose inspiration review
+        // was still open. Only the server status moves the stage now.
+        let session = try decode(ConsultSessionResponse.self, key: "session").consult
+        var captureEnvelope = try #require(try root()["capture"] as? [String: Any])
+        var captureValue = try #require(captureEnvelope["capture"] as? [String: Any])
+        captureValue["status"] = "MEDIA_READY"
+        captureEnvelope["capture"] = captureValue
+        let allAcceptedStillMediaReady = try decode(
+            ConsultCaptureStateResponse.self, value: captureEnvelope
+        ).capture
+        #expect(allAcceptedStillMediaReady.hasAllAcceptedShots)
+
+        var machine = ConsultFlowMachine(bookingId: session.bookingId)
+        try machine.apply(session: session)
+        try machine.apply(capture: allAcceptedStillMediaReady)
+        #expect(machine.stage == .capture)
+
+        let inspiration = try decode(
+            ConsultInspirationMutationResponse.self, key: "inspirationComplete"
+        ).inspiration
+        try machine.apply(inspiration: inspiration)
+        #expect(machine.stage == .analysis)
+    }
+
+    @Test func partialPackProceedStateAdvancesViaServerStatus() throws {
+        let session = try decode(ConsultSessionResponse.self, key: "session").consult
+        let proceeded = try decode(
+            ConsultCaptureStateResponse.self, key: "captureProceed"
+        ).capture
+        #expect(!proceeded.hasAllAcceptedShots)
+        #expect(proceeded.slots.filter { $0.state == .accepted }.count == 2)
+
+        var machine = ConsultFlowMachine(bookingId: session.bookingId)
+        try machine.apply(session: session)
+        try machine.apply(capture: proceeded)
+        #expect(machine.stage == .analysis)
+    }
+
+    @Test func inspirationAnsweringMirrorsServerSelectionRules() throws {
+        let questioning = try decode(
+            ConsultInspirationStateResponse.self, key: "inspirationQuestion"
+        ).inspiration
+        let question = try #require(questioning.progress.currentQuestion)
+
+        // A neutral choice replaces everything; a real choice clears neutrals.
+        var selection = ConsultInspirationAnswering.toggle(
+            "lightest-pieces", in: [], question: question
+        )
+        selection = ConsultInspirationAnswering.toggle(
+            "not-sure", in: selection, question: question
+        )
+        #expect(selection == ["not-sure"])
+        selection = ConsultInspirationAnswering.toggle(
+            "copper-red", in: selection, question: question
+        )
+        #expect(selection == ["copper-red"])
+
+        // The max-selection cap holds; tapping a selected value removes it.
+        selection = ["lightest-pieces", "darkest-pieces", "warm-golden", "cool-smoky"]
+        #expect(ConsultInspirationAnswering.toggle(
+            "copper-red", in: selection, question: question
+        ) == selection)
+        #expect(ConsultInspirationAnswering.toggle(
+            "cool-smoky", in: selection, question: question
+        ) == ["lightest-pieces", "darkest-pieces", "warm-golden"])
+
+        // The free-text question: a blank note with no selection means
+        // "nothing else" — the server refuses the answer otherwise.
+        let texting = try decode(
+            ConsultInspirationStateResponse.self, key: "inspirationTextQuestion"
+        ).inspiration
+        let textQuestion = try #require(texting.progress.currentQuestion)
+        #expect(ConsultInspirationAnswering.effectiveValues(
+            question: textQuestion, selected: [], trimmedText: ""
+        ) == ["nothing-else"])
+        #expect(ConsultInspirationAnswering.effectiveValues(
+            question: textQuestion, selected: [], trimmedText: "love the shine"
+        ) == [])
+        #expect(ConsultInspirationAnswering.effectiveValues(
+            question: textQuestion, selected: ["nothing-else"], trimmedText: ""
+        ) == ["nothing-else"])
+    }
+
+    @Test func inspirationTextRulesRefuseTraitLanguageAndMirrorTheServerCap() {
+        #expect(ConsultInspirationTextRules.maxCharacters == 240)
+        for blocked in [
+            "I love the framing around the FACE",
+            "would this suit my skin tone?",
+            "makes her eyes pop",
+            "good for my body type",
+        ] {
+            #expect(ConsultInspirationTextRules.containsUnsupportedTraitLanguage(blocked))
+        }
+        for allowed in [
+            "love the copper ribbons through the lengths",
+            "the shadow root feels too heavy for me",
+            "the money pieces brighten the whole look",
+        ] {
+            #expect(!ConsultInspirationTextRules.containsUnsupportedTraitLanguage(allowed))
+        }
+    }
+
+    @Test func analysisPrerequisiteCodesMapToActionableContentFreeMessages() {
+        let cases: [(String, ConsultClientFailure)] = [
+            ("CONSULT_ANALYSIS_PREREQUISITES_REQUIRED", .analysisPrerequisitesRequired),
+            ("CONSULT_ANALYSIS_CAPTURES_REQUIRED", .analysisCapturesRequired),
+            ("CONSULT_ANALYSIS_INSPIRATION_REQUIRED", .analysisInspirationRequired),
+        ]
+        let privateContent = "consult-raw/v1/private.jpg"
+        for (code, expected) in cases {
+            let mapped = ConsultClientFailure.stable(APIError.server(
+                status: 409, message: privateContent, code: code
+            ))
+            #expect(mapped == expected)
+            #expect(!mapped.message.contains(privateContent))
+        }
+        #expect(Set(cases.map(\.1.message)).count == cases.count)
+    }
 }
