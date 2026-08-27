@@ -54,10 +54,19 @@ public struct ConsultFlowMachine: Sendable, Equatable {
         stage = Self.stage(for: intake.status)
     }
 
+    public mutating func apply(inspiration: ConsultInspirationState) throws {
+        try bind(consultId: inspiration.consultId)
+        stage = Self.stage(for: inspiration.status)
+    }
+
+    // Server state is the truth for stage transitions: the server flips
+    // MEDIA_READY → ANALYSIS_PENDING itself once captures and the inspiration
+    // review are both satisfied, so an accepted-shots count alone must never
+    // advance the stage locally (it once did, and dead-ended 7/7 packs whose
+    // inspiration review was still open).
     public mutating func apply(capture: ConsultCaptureState) throws {
         try bind(consultId: capture.consultId)
         stage = Self.stage(for: capture.status)
-        if capture.hasAllAcceptedShots, stage == .capture { stage = .analysis }
     }
 
     public mutating func apply(analysis: ConsultAnalysisState) throws {

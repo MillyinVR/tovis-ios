@@ -170,6 +170,209 @@ struct ConsultIntakeSubmitResponse: Decodable, Sendable {
     let replayed: Bool
 }
 
+// The inspiration step sits between intake and analysis: the client either
+// attaches one reference photo of a LOOK (never of themselves) or explicitly
+// continues without one, then answers the server-served questions about it.
+// Analysis refuses to start until this review is complete (or skipped), which
+// is why the flow cannot treat capture completion alone as "ready".
+
+public enum ConsultInspirationQuestionKind: String, Decodable, Sendable, Equatable {
+    case singleSelect = "SINGLE_SELECT"
+    case multiSelect = "MULTI_SELECT"
+    case text = "TEXT"
+    case unknown
+
+    public init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = Self(rawValue: raw) ?? .unknown
+    }
+}
+
+public struct ConsultInspirationQuestionOption: Decodable, Sendable, Identifiable, Equatable {
+    public let value: String
+    public let label: String
+    public var id: String { value }
+}
+
+public struct ConsultInspirationQuestion: Decodable, Sendable, Identifiable, Equatable {
+    public let key: String
+    public let label: String
+    public let helpText: String?
+    public let kind: ConsultInspirationQuestionKind
+    public let options: [ConsultInspirationQuestionOption]
+    public let minSelections: Int
+    public let maxSelections: Int
+    public let allowText: Bool
+    public var id: String { key }
+}
+
+public enum ConsultInspirationBlocker: String, Decodable, Sendable {
+    case sourceDecisionRequired = "SOURCE_DECISION_REQUIRED"
+    case questionsRemaining = "QUESTIONS_REMAINING"
+    case atLeastThreeDetailsRequired = "AT_LEAST_THREE_DETAILS_REQUIRED"
+    case unknown
+
+    public init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = Self(rawValue: raw) ?? .unknown
+    }
+}
+
+public struct ConsultInspirationProgress: Decodable, Sendable {
+    public let currentQuestion: ConsultInspirationQuestion?
+    public let answeredQuestionCount: Int
+    public let specificDetailCount: Int
+    public let requiredSpecificDetailCount: Int
+    public let canComplete: Bool
+    public let blocker: ConsultInspirationBlocker?
+}
+
+public struct ConsultInspirationSourceState: Decodable, Sendable {
+    public let inspirationId: String
+    public let source: String
+    public let lookPostId: String?
+    /// Server-relative path (includes the `/api/v1` prefix) that answers with a
+    /// short-lived signed read URL for an EXTERNAL_UPLOAD source.
+    public let imageReadEndpoint: String
+    public let imageAvailable: Bool
+    public let useExpiresAt: String?
+}
+
+public struct ConsultInspirationState: Decodable, Sendable {
+    public let consultId: String
+    public let status: ConsultSessionStatus
+    public let schemaVersion: Int
+    public let introduction: String
+    public let referenceNote: String
+    public let reflectionPrompt: String
+    public let source: ConsultInspirationSourceState?
+    public let progress: ConsultInspirationProgress
+
+    /// Done means the source decision was made AND every question is answered
+    /// with enough specific detail — the analysis prerequisite this stage exists
+    /// to satisfy.
+    public var isComplete: Bool {
+        progress.canComplete && progress.currentQuestion == nil
+    }
+}
+
+struct ConsultInspirationStateResponse: Decodable, Sendable {
+    let inspiration: ConsultInspirationState
+}
+
+struct ConsultInspirationMutationResponse: Decodable, Sendable {
+    let inspiration: ConsultInspirationState
+    let replayed: Bool
+}
+
+struct ConsultInspirationUpload: Decodable, Sendable {
+    let inspirationId: String
+    let schemaVersion: Int
+    let contentType: String
+    let maxBytes: Int
+    let expiresAt: String
+    let useExpiresAt: String
+    let token: String
+    let signedUrl: String?
+}
+
+struct ConsultInspirationIssueUploadResponse: Decodable, Sendable {
+    let upload: ConsultInspirationUpload
+    let replayed: Bool
+}
+
+public struct ConsultInspirationSignedRead: Decodable, Sendable {
+    public let url: String
+    public let expiresInSeconds: Double
+}
+
+/// Sentiment the client attaches to a free-text inspiration note. `NONE` exists
+/// on the wire for "nothing else" reviews; the client only ever sends one of
+/// these three alongside non-empty text.
+public enum ConsultInspirationSentiment: String, Codable, Sendable, CaseIterable {
+    case good = "GOOD"
+    case bad = "BAD"
+    case both = "BOTH"
+
+    public var label: String {
+        switch self {
+        case .good: return "Something I like"
+        case .bad: return "Something I’d avoid"
+        case .both: return "A bit of both"
+        }
+    }
+}
+
+/// Idempotency keys for the inspiration upload's two writes (issue + attach).
+public struct ConsultInspirationMutationKeys: Sendable, Equatable {
+    public let issue: String
+    public let attach: String
+
+    public init(issue: String = UUID().uuidString, attach: String = UUID().uuidString) {
+        self.issue = issue
+        self.attach = attach
+    }
+}
+
+/// Client-side mirror of the server's inspiration free-text rules
+/// (`lib/consult/inspirationTextRules.ts`): the server enforces these on write;
+/// mirroring them here blocks a doomed submit with a readable message instead
+/// of an opaque 400. Change the rule on the server and this must move with it.
+public enum ConsultInspirationTextRules {
+    public static let maxCharacters = 240
+
+    /// Inspiration notes describe the look in the reference photo, never the
+    /// client's own traits — face/eye/skin/body language is refused durably
+    /// (C10-W2 boundary).
+    nonisolated(unsafe) private static let unsupportedTraitLanguage = try! NSRegularExpression(
+        pattern: "\\b(face|facial|eye|eyes|skin|undertone|complexion|identity|ethnic|ethnicity|race|health|medical|diagnosis|body|attractive|attractiveness)\\b",
+        options: [.caseInsensitive]
+    )
+
+    public static func containsUnsupportedTraitLanguage(_ text: String) -> Bool {
+        let range = NSRange(text.startIndex..., in: text)
+        return unsupportedTraitLanguage.firstMatch(in: text, range: range) != nil
+    }
+}
+
+/// Selection rules for inspiration questions, mirrored from the web wizard and
+/// the server validator (`NEUTRAL_VALUES` in `lib/consult/inspirationPack.ts`):
+/// a neutral option ("None", "Not sure", …) never combines with any other
+/// selection, and a written note excludes the "nothing-else" choice.
+public enum ConsultInspirationAnswering {
+    public static let neutralValues: Set<String> = [
+        "none", "not-sure", "not-part-of-goal", "nothing-else",
+    ]
+
+    /// Apply one option tap to the current selection.
+    public static func toggle(
+        _ value: String,
+        in current: [String],
+        question: ConsultInspirationQuestion
+    ) -> [String] {
+        if question.kind == .singleSelect { return [value] }
+        if current.contains(value) { return current.filter { $0 != value } }
+        if neutralValues.contains(value) { return [value] }
+        let withoutNeutrals = current.filter { !neutralValues.contains($0) }
+        if withoutNeutrals.count >= question.maxSelections { return current }
+        return withoutNeutrals + [value]
+    }
+
+    /// The values actually submitted: for the free-text question, a blank note
+    /// with no selection means "nothing else" (server contract — the question
+    /// is unanswerable otherwise).
+    public static func effectiveValues(
+        question: ConsultInspirationQuestion,
+        selected: [String],
+        trimmedText: String
+    ) -> [String] {
+        if question.allowText, trimmedText.isEmpty, selected.isEmpty {
+            return ["nothing-else"]
+        }
+        return selected
+    }
+}
+
 public enum ConsultCaptureShotKey: String, Codable, Sendable, CaseIterable {
     case hairBack = "hair_back"
     case hairLeft = "hair_left"
@@ -509,6 +712,9 @@ public enum ConsultClientFailure: Error, Sendable, Equatable {
     case invalidPhoto
     case photoTooLarge
     case contractMismatch
+    case analysisPrerequisitesRequired
+    case analysisCapturesRequired
+    case analysisInspirationRequired
 
     public var message: String {
         switch self {
@@ -518,6 +724,12 @@ public enum ConsultClientFailure: Error, Sendable, Equatable {
         case .invalidPhoto: return "That photo can’t be used. Choose a JPEG, PNG, or WebP image."
         case .photoTooLarge: return "That photo is too large. Choose an image under 5 MB."
         case .contractMismatch: return "We couldn’t safely show this consult. Please try again later."
+        case .analysisPrerequisitesRequired:
+            return "Your intake, inspiration, and photos need to be finished before the analysis can run."
+        case .analysisCapturesRequired:
+            return "At least one accepted photo is needed before the analysis can run."
+        case .analysisInspirationRequired:
+            return "Finish the inspiration step — add a photo and answer its questions, or continue without one — before the analysis can run."
         }
     }
 
@@ -531,6 +743,9 @@ public enum ConsultClientFailure: Error, Sendable, Equatable {
                 return .invalidState
             }
             if code == "CONSULT_CAPTURE_OBJECT_INVALID" { return .invalidPhoto }
+            if code == "CONSULT_ANALYSIS_PREREQUISITES_REQUIRED" { return .analysisPrerequisitesRequired }
+            if code == "CONSULT_ANALYSIS_CAPTURES_REQUIRED" { return .analysisCapturesRequired }
+            if code == "CONSULT_ANALYSIS_INSPIRATION_REQUIRED" { return .analysisInspirationRequired }
             return .unavailable
         case .decoding: return .contractMismatch
         case .unauthorized, .invalidResponse, .transport: return .unavailable
