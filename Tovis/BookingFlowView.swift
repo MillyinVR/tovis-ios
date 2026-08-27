@@ -120,6 +120,10 @@ struct BookingFlowView: View {
     /// is a 225-minute appointment).
     @State private var bookedAddOnMinutes = 0
     @State private var showConsult = false
+    /// Server-decided consult entry for the just-created booking (GET
+    /// /client/consult/availability). Fail-closed: stays false until the
+    /// server explicitly answers true.
+    @State private var consultAvailable = false
     /// Guards the one-time preselect so a later day change / manual pick wins.
     @State private var didApplyPreselect = false
 
@@ -845,9 +849,7 @@ struct BookingFlowView: View {
 
                 if !isReschedule { successNextSteps }
 
-                if !isReschedule,
-                   ConsultExposurePolicy.production.allows(professionalId: professionalId),
-                   bookingId != nil {
+                if !isReschedule, consultAvailable, bookingId != nil {
                     Button { showConsult = true } label: {
                         Label("Add beauty consult", systemImage: "sparkles")
                             .font(BrandFont.body(16, .semibold))
@@ -870,6 +872,15 @@ struct BookingFlowView: View {
                 .padding(.top, 4)
             }
             .padding(28)
+        }
+        // The consult entry is server-decided (founder gate + booking
+        // eligibility live in tovis-app, incl. the recorded eval deferral), so
+        // the device asks instead of shipping its own copy of the gate.
+        // Fail-closed: no answer, or any error, keeps the entry hidden.
+        .task(id: bookingId) {
+            guard !isReschedule, let bookingId else { return }
+            consultAvailable = (try? await session.client.consult
+                .availability(bookingId: bookingId).available) ?? false
         }
     }
 

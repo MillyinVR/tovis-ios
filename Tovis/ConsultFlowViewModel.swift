@@ -25,7 +25,6 @@ final class ConsultFlowViewModel {
     let professionalId: String
 
     @ObservationIgnored private let service: any ConsultServicing
-    @ObservationIgnored private let exposure: ConsultExposurePolicy
     @ObservationIgnored private var intakeIdempotencyKey = UUID().uuidString
     @ObservationIgnored private var analysisIdempotencyKey = UUID().uuidString
     @ObservationIgnored private var pendingPhoto: PendingPhoto?
@@ -40,16 +39,13 @@ final class ConsultFlowViewModel {
     }
 
     init(bookingId: String, professionalId: String,
-         service: any ConsultServicing,
-         exposure: ConsultExposurePolicy = .production) {
+         service: any ConsultServicing) {
         machine = ConsultFlowMachine(bookingId: bookingId)
         self.professionalId = professionalId
         self.service = service
-        self.exposure = exposure
     }
 
     var stage: ConsultFlowStage { machine.stage }
-    var canEnter: Bool { exposure.allows(professionalId: professionalId) }
 
     var canSubmitIntake: Bool {
         guard let pack = intakeState?.questionPack else { return false }
@@ -76,15 +72,14 @@ final class ConsultFlowViewModel {
         return acceptedShotCount >= 1 && acceptedShotCount < totalShotCount
     }
 
+    // Exposure is server-decided (GET /client/consult/availability gates the
+    // entry point; every consult route 404s while the pilot is dark for this
+    // pro), so entry carries no device-side copy of the founder gate. The one
+    // local check left is the booking/pro pairing contract.
     func start() async {
-        guard canEnter else {
-            failure = .hidden
-            return
-        }
         await perform {
             let session = try await service.create(bookingId: machine.bookingId)
-            guard session.professionalId == professionalId,
-                  exposure.allows(professionalId: session.professionalId) else {
+            guard session.professionalId == professionalId else {
                 throw ConsultClientFailure.hidden
             }
             try machine.apply(session: session)

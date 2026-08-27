@@ -1,0 +1,30 @@
+{
+  "openWithSession": {
+    "ok": true,
+    "availability": {
+      "available": true,
+      "consult": {
+        "id": "consult_fixture_1",
+        "status": "CONSENT_REQUIRED",
+        "bookingId": "booking_fixture_1",
+        "professionalId": "cmq9p645v0002jp04fttoatlq",
+        "serviceCategoryId": "category_hair_color_1",
+        "createdAt": "2026-08-11T18:00:00.000Z"
+      }
+    }
+  },
+  "openNoSession": {
+    "ok": true,
+    "availability": {
+      "available": true,
+      "consult": null
+    }
+  },
+  "dark": {
+    "ok": true,
+    "availability": {
+      "available": false,
+      "consult": null
+    }
+  }
+}

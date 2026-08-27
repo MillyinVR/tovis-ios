@@ -159,25 +159,36 @@ import Testing
         }
     }
 
-    @Test func productionGateStaysDarkEvenForFounderWithoutBothLiveEvidenceChecks() {
-        #expect(ConsultExposurePolicy.c5LiveBaselineApproved == false)
-        #expect(ConsultExposurePolicy.c5LiveCandidatePassed == false)
-        #expect(!ConsultExposurePolicy.production.allows(
-            professionalId: "cmq9p645v0002jp04fttoatlq"
-        ))
-        let onlyOne = ConsultExposurePolicy(
-            founderProfessionalIDs: ["founder"],
-            liveBaselineApproved: true,
-            liveCandidatePassed: false
+    /// Exposure is server-decided (GET /client/consult/availability): the
+    /// device shows an entry point only on an explicit `available: true` and
+    /// never re-derives the gate locally. All three server answers decode —
+    /// open with an existing session, open with none, and dark.
+    @Test func availabilityContractCarriesAllThreeServerAnswers() throws {
+        let root = try #require(
+            JSONSerialization.jsonObject(with: fixture("consultAvailability")) as? [String: Any]
         )
-        #expect(!onlyOne.allows(professionalId: "founder"))
-        let deterministicMock = ConsultExposurePolicy(
-            founderProfessionalIDs: ["founder"],
-            liveBaselineApproved: true,
-            liveCandidatePassed: true
-        )
-        #expect(deterministicMock.allows(professionalId: "founder"))
-        #expect(!deterministicMock.allows(professionalId: "someone_else"))
+
+        let openWithSession = try decode(
+            ConsultAvailabilityResponse.self,
+            value: #require(root["openWithSession"])
+        ).availability
+        #expect(openWithSession.available)
+        #expect(openWithSession.consult?.id == "consult_fixture_1")
+        #expect(openWithSession.consult?.status == .consentRequired)
+
+        let openNoSession = try decode(
+            ConsultAvailabilityResponse.self,
+            value: #require(root["openNoSession"])
+        ).availability
+        #expect(openNoSession.available)
+        #expect(openNoSession.consult == nil)
+
+        let dark = try decode(
+            ConsultAvailabilityResponse.self,
+            value: #require(root["dark"])
+        ).availability
+        #expect(!dark.available)
+        #expect(dark.consult == nil)
     }
 
     @Test func errorsAreStableAndContentFree() {

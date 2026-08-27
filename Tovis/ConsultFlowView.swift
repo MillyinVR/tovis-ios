@@ -10,7 +10,6 @@ struct ConsultFlowView: View {
     let bookingId: String
     let professionalId: String
     var suppliedService: (any ConsultServicing)?
-    var exposure: ConsultExposurePolicy = .production
 
     @State private var model: ConsultFlowViewModel?
     @State private var showRevokeConfirmation = false
@@ -41,8 +40,7 @@ struct ConsultFlowView: View {
                 let created = ConsultFlowViewModel(
                     bookingId: bookingId,
                     professionalId: professionalId,
-                    service: suppliedService ?? session.client.consult,
-                    exposure: exposure
+                    service: suppliedService ?? session.client.consult
                 )
                 model = created
                 await created.start()

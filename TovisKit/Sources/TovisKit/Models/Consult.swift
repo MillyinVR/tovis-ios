@@ -36,6 +36,26 @@ struct ConsultSessionResponse: Decodable, Sendable {
     let consult: ConsultSession
 }
 
+/// GET /client/consult/availability — the server's answer to whether the
+/// consult entry surface is open for a booking. The server owns the whole
+/// decision (founder gate incl. the recorded eval deferral, booking
+/// eligibility, session ownership); the device never re-derives any of it and
+/// shows an entry point only on an explicit `available: true`.
+public struct ConsultAvailability: Decodable, Sendable {
+    public let available: Bool
+    /// The caller's existing session for this booking, when one exists.
+    public let consult: ConsultSession?
+
+    public init(available: Bool, consult: ConsultSession?) {
+        self.available = available
+        self.consult = consult
+    }
+}
+
+struct ConsultAvailabilityResponse: Decodable, Sendable {
+    let availability: ConsultAvailability
+}
+
 public enum ConsultAgreementKind: String, Codable, Sendable, CaseIterable {
     case sensitiveDataConsent = "SENSITIVE_DATA_CONSENT"
     case adult18PlusAttestation = "ADULT_18_PLUS_ATTESTATION"
