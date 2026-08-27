@@ -89,7 +89,7 @@ private final class ConsultURLProtocol: URLProtocol {
                 return (200, self.json([
                     "upload": [
                         "uploadSessionId": "upload_1", "shotKey": "hair_back",
-                        "shotPackVersion": 1, "schemaVersion": 1,
+                        "shotPackVersion": 2, "schemaVersion": 1,
                         "contentType": "image/jpeg", "maxBytes": 10,
                         "expiresAt": "2026-08-11T19:00:00.000Z",
                         "rawExpiresAt": "2026-08-12T18:00:00.000Z",
@@ -167,7 +167,7 @@ private final class ConsultURLProtocol: URLProtocol {
                 return (200, self.json([
                     "upload": [
                         "uploadSessionId": "upload_retry", "shotKey": "hair_back",
-                        "shotPackVersion": 1, "schemaVersion": 1,
+                        "shotPackVersion": 2, "schemaVersion": 1,
                         "contentType": "image/jpeg", "maxBytes": 3,
                         "expiresAt": "2026-08-11T19:00:00.000Z",
                         "rawExpiresAt": "2026-08-12T18:00:00.000Z",

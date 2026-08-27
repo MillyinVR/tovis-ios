@@ -13,6 +13,7 @@ public protocol ConsultServicing: Sendable {
     func uploadAndCheckCapture(consultId: String, shot: ConsultCaptureShot,
                                pack: ConsultCaptureShotPack, jpegData: Data,
                                keys: ConsultCaptureMutationKeys) async throws -> ConsultCaptureQualityResponse
+    func setChartCopy(consultId: String, optIn: Bool) async throws -> ConsultCaptureState
     func analysis(consultId: String) async throws -> ConsultAnalysisState
     func startAnalysis(consultId: String, idempotencyKey: String) async throws -> ConsultAnalysisState
     func results(consultId: String) async throws -> ConsultClientResults
@@ -20,8 +21,9 @@ public protocol ConsultServicing: Sendable {
 }
 
 public final class ConsultService: ConsultServicing, Sendable {
-    public static let analysisSchemaVersion = 1
-    public static let analysisPromptVersion = "hair-color-analysis-v1"
+    // Schema v2 / full-analysis prompt (2026-08-26 launch decisions).
+    public static let analysisSchemaVersion = 2
+    public static let analysisPromptVersion = "full-analysis-v1"
     public static let maximumPhotoBytes = 5_000_000
 
     private let api: APIClient
@@ -112,6 +114,15 @@ public final class ConsultService: ConsultServicing, Sendable {
     public func capture(consultId: String) async throws -> ConsultCaptureState {
         let response: ConsultCaptureStateResponse = try await api.request(
             "/client/consult/\(consultId)/capture"
+        )
+        return response.capture
+    }
+
+    public func setChartCopy(consultId: String, optIn: Bool) async throws -> ConsultCaptureState {
+        struct Body: Encodable { let optIn: Bool }
+        let body = try JSONEncoder.canonical.encode(Body(optIn: optIn))
+        let response: ConsultCaptureStateResponse = try await api.request(
+            "/client/consult/\(consultId)/capture/chart-copy", method: .post, body: body
         )
         return response.capture
     }

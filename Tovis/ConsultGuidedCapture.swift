@@ -70,8 +70,9 @@ nonisolated struct ConsultGuidedCaptureMachine: Sendable, Equatable {
 }
 
 nonisolated enum ConsultShotGuidance {
-    /// The four server-owned C8 slots keep their identity and order. Only their
-    /// on-device expectations live here; no client trait is derived or stored.
+    /// The seven server-owned pack-v2 slots keep their identity and order. Only
+    /// their on-device expectations live here; no client trait is derived or
+    /// stored.
     static func expectations(for key: ConsultCaptureShotKey) -> ShotExpectations {
         switch key {
         case .hairBack:
@@ -94,6 +95,30 @@ nonisolated enum ConsultShotGuidance {
                 fillBand: 0.3...0.95,
                 isDetail: true,
                 allowsClosedEyes: true
+            )
+        case .faceFront:
+            // Straight-on portrait with open eyes: undertone/contrast/geometry
+            // read from this view, so framing wants the classic portrait band.
+            return ShotExpectations(
+                face: .required,
+                fillBand: 0.22...0.85,
+                isDetail: false
+            )
+        case .faceSide:
+            // Full profile; Vision face detection handles profiles the same way
+            // it already does for the hair side views.
+            return ShotExpectations(
+                face: .required,
+                fillBand: 0.25...0.9,
+                isDetail: false
+            )
+        case .eyesCloseup:
+            // Macro of both open eyes and brows: sharpness matters, a full face
+            // may not be detectable in frame.
+            return ShotExpectations(
+                face: .either,
+                fillBand: nil,
+                isDetail: true
             )
         }
     }

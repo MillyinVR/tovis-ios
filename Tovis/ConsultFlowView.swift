@@ -26,7 +26,7 @@ struct ConsultFlowView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(BrandColor.bgPrimary.ignoresSafeArea())
-            .navigationTitle("Hair color consult")
+            .navigationTitle("Beauty consult")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
             .toolbar {
@@ -188,9 +188,9 @@ struct ConsultFlowView: View {
     private func capture(_ model: ConsultFlowViewModel) -> some View {
         VStack(alignment: .leading, spacing: 18) {
             consultHeader(
-                eyebrow: "Four daylight views",
-                title: "Take guided photos of your hair",
-                body: "The native camera checks light and framing live, then checks the chosen JPEG once more before the private upload. Preview frames never leave your device."
+                eyebrow: "Seven daylight views",
+                title: "Take guided photos of your hair and face",
+                body: "Four hair views and three face views. The native camera checks light and framing live, then checks the chosen JPEG once more before the private upload. Preview frames never leave your device."
             )
             if let capture = model.captureState {
                 ForEach(capture.shotPack.shots) { shot in
@@ -203,6 +203,7 @@ struct ConsultFlowView: View {
                         onJPEG: { data in await model.submitPhoto(data, for: shot) }
                     )
                 }
+                chartCopyToggle(model, capture: capture)
                 if model.canRetryPhoto {
                     Button("Retry the private upload") { Task { await model.retryPhoto() } }
                         .font(BrandFont.body(14, .semibold))
@@ -226,7 +227,7 @@ struct ConsultFlowView: View {
                 title: "Your consult is being prepared",
                 body: "Your professional remains the authority on what’s safe and achievable. Raw photos are made purge-eligible as soon as analysis consumes them."
             )
-            loadingCard(model.busy ? "Reviewing your four views…" : "Analysis is still processing.")
+            loadingCard(model.busy ? "Reviewing your seven views…" : "Analysis is still processing.")
             if !model.busy {
                 primaryButton("Check results", busy: false, disabled: false) {
                     Task { await model.refreshAnalysis() }
@@ -239,19 +240,89 @@ struct ConsultFlowView: View {
                              model: ConsultFlowViewModel) -> some View {
         VStack(alignment: .leading, spacing: 18) {
             consultHeader(
-                eyebrow: "Your hair color consult",
+                eyebrow: "Your beauty consult",
                 title: "Directions to discuss with your professional",
-                body: "These are conversation starters, not promises. Your professional will assess your hair in person and tell you what’s actually achievable."
+                body: "These are conversation starters, not promises. Your professional will assess you in person and tell you what’s actually achievable."
             )
 
             // Keep this sequence aligned with ConsultResultPresentation.sections.
             clientWords(results)
             observations(results.aiObservations)
+            featureProfile(results.profile)
+            styleDirectionsSection(results.styleDirections)
             safety(results.safetyFlags)
             achievability(results.achievabilityDirection)
             directions(results.recommendationDirections)
             lockedMeCard(model)
         }
+    }
+
+    private func chartCopyToggle(_ model: ConsultFlowViewModel,
+                                 capture: ConsultCaptureState) -> some View {
+        BrandSurface {
+            Toggle(isOn: Binding(
+                get: { capture.chartCopy.optIn },
+                set: { newValue in Task { await model.setChartCopy(newValue) } }
+            )) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Keep these photos on my chart")
+                        .font(BrandFont.body(14, .semibold))
+                        .foregroundStyle(BrandColor.textPrimary)
+                    Text("Private to you and your professional, for future appointments. Turn it off any time before analysis runs — otherwise photos are deleted after analysis either way.")
+                        .font(BrandFont.body(12))
+                        .foregroundStyle(BrandColor.textSecondary)
+                }
+            }
+            .tint(BrandColor.accent)
+            .disabled(model.busy)
+        }
+        .accessibilityIdentifier("consult-chart-copy-toggle")
+    }
+
+    private func featureProfile(_ profile: ConsultFeatureProfile) -> some View {
+        BrandSection(title: "Your feature profile") {
+            VStack(spacing: 8) {
+                Text("What the photos suggest about your features, so recommendations enhance what is already yours. Your professional confirms these in person — color readings from photos are approximate.")
+                    .font(BrandFont.body(12))
+                    .foregroundStyle(BrandColor.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                ForEach(Array(profile.orderedEntries.enumerated()), id: \.offset) { _, entry in
+                    observationRow(entry.label, value: entry.observation.value,
+                                   confidence: entry.observation.confidence)
+                }
+            }
+        }
+        .accessibilityIdentifier("consult-results-feature-profile")
+    }
+
+    private func styleDirectionsSection(_ directions: [ConsultStyleDirection]) -> some View {
+        BrandSection(title: "What will flatter you most", trailing: "\(directions.count)") {
+            VStack(spacing: 10) {
+                Text("One direction per area, chosen to enhance your actual features rather than follow a trend. Each is a starting point to discuss with your professional.")
+                    .font(BrandFont.body(12))
+                    .foregroundStyle(BrandColor.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                ForEach(directions) { direction in
+                    BrandSurface {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(direction.domainLabel.uppercased())
+                                .font(BrandFont.mono(10))
+                                .foregroundStyle(BrandColor.accent)
+                            Text(direction.title)
+                                .font(BrandFont.body(16, .semibold))
+                                .foregroundStyle(BrandColor.textPrimary)
+                            Text(direction.direction)
+                                .font(BrandFont.body(13))
+                                .foregroundStyle(BrandColor.textSecondary)
+                            Text("Why this flatters you: \(direction.whyItFlatters)")
+                                .font(BrandFont.body(13, .semibold))
+                                .foregroundStyle(BrandColor.textPrimary)
+                        }
+                    }
+                }
+            }
+        }
+        .accessibilityIdentifier("consult-results-style-directions-\(directions.count)")
     }
 
     private func clientWords(_ results: ConsultClientResults) -> some View {

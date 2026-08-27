@@ -175,6 +175,11 @@ public enum ConsultCaptureShotKey: String, Codable, Sendable, CaseIterable {
     case hairLeft = "hair_left"
     case hairRight = "hair_right"
     case hairCrown = "hair_crown"
+    // Pack v2 (2026-08-26 full-analysis launch): three face views join the
+    // four hair views.
+    case faceFront = "face_front"
+    case faceSide = "face_side"
+    case eyesCloseup = "eyes_closeup"
 }
 
 public struct ConsultCaptureShot: Decodable, Sendable, Identifiable {
@@ -219,11 +224,19 @@ public struct ConsultCaptureSlot: Decodable, Sendable, Identifiable {
     public var id: ConsultCaptureShotKey { shotKey }
 }
 
+/// The client's chart-copy choice (decision 2026-08-26): default-on but
+/// visibly optional; changeable until analysis runs.
+public struct ConsultChartCopyState: Decodable, Sendable, Equatable {
+    public let optIn: Bool
+    public let decidedAt: String?
+}
+
 public struct ConsultCaptureState: Decodable, Sendable {
     public let consultId: String
     public let status: ConsultSessionStatus
     public let shotPack: ConsultCaptureShotPack
     public let slots: [ConsultCaptureSlot]
+    public let chartCopy: ConsultChartCopyState
 
     public var hasAllAcceptedShots: Bool {
         let expected = Set(ConsultCaptureShotKey.allCases)
@@ -349,6 +362,66 @@ public struct ConsultMeCardTeaser: Decodable, Sendable {
     public let tapped: Bool
 }
 
+/// Schema v2 (2026-08-26 full-analysis launch): the observed feature profile
+/// behind the style directions. Every entry is an evidence-cited observation
+/// with an honest UNKNOWN state.
+public struct ConsultFeatureProfile: Decodable, Sendable {
+    public let skinUndertone: ConsultObservation
+    public let contrastLevel: ConsultObservation
+    public let colorSeason: ConsultObservation
+    public let faceProportion: ConsultObservation
+    public let jawline: ConsultObservation
+    public let foreheadProportion: ConsultObservation
+    public let featureBalance: ConsultObservation
+    public let eyeShape: ConsultObservation
+    public let eyeSpacing: ConsultObservation
+    public let browDensity: ConsultObservation
+    public let browShape: ConsultObservation
+
+    /// Stable render order + display labels for the profile grid.
+    public var orderedEntries: [(label: String, observation: ConsultObservation)] {
+        [
+            ("Skin undertone", skinUndertone),
+            ("Natural contrast", contrastLevel),
+            ("Color season", colorSeason),
+            ("Face proportion", faceProportion),
+            ("Jawline", jawline),
+            ("Forehead", foreheadProportion),
+            ("Feature balance", featureBalance),
+            ("Eye shape", eyeShape),
+            ("Eye spacing", eyeSpacing),
+            ("Brow density", browDensity),
+            ("Brow shape", browShape),
+        ]
+    }
+}
+
+/// One professionally framed direction per style domain — discussion starting
+/// points grounded in the feature profile, never promises.
+public struct ConsultStyleDirection: Decodable, Sendable, Identifiable {
+    public let domain: String
+    public let title: String
+    public let direction: String
+    public let whyItFlatters: String
+    public let confidence: ConsultConfidence
+    public let evidence: [String]
+    public let discussWithProfessional: Bool
+    public var id: String { domain }
+
+    public var domainLabel: String {
+        switch domain {
+        case "HAIR_COLOR_HARMONY": return "Hair color"
+        case "CUT_AND_SHAPE": return "Cut & shape"
+        case "BANGS": return "Bangs"
+        case "BROWS": return "Brows"
+        case "LASHES": return "Lashes"
+        case "MAKEUP": return "Makeup"
+        case "COLOR_PALETTE": return "Color palette"
+        default: return ConsultResultPresentation.codeLabel(domain)
+        }
+    }
+}
+
 public struct ConsultClientResults: Decodable, Sendable {
     public let consultId: String
     public let bookingId: String
@@ -360,6 +433,8 @@ public struct ConsultClientResults: Decodable, Sendable {
     public let intakeRevisionId: String
     public let clientIntake: [ConsultClientIntakeItem]
     public let aiObservations: ConsultAIObservations
+    public let profile: ConsultFeatureProfile
+    public let styleDirections: [ConsultStyleDirection]
     public let safetyFlags: [ConsultSafetyFlag]
     public let achievabilityDirection: ConsultAchievabilityDirection
     public let recommendationDirections: [ConsultRecommendationDirection]
@@ -368,10 +443,12 @@ public struct ConsultClientResults: Decodable, Sendable {
 
     public var hasFaithfulClientContract: Bool {
         (2...3).contains(recommendationDirections.count)
+            && !styleDirections.isEmpty
             && meCardTeaser.locked
             && achievabilityDirection.discussWithProfessional
             && safetyFlags.allSatisfy(\.discussWithProfessional)
             && recommendationDirections.allSatisfy(\.discussWithProfessional)
+            && styleDirections.allSatisfy(\.discussWithProfessional)
     }
 }
 

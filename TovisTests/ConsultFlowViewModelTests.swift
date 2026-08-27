@@ -92,6 +92,12 @@ private actor MockConsultService: ConsultServicing {
         ])
     }
 
+    func setChartCopy(consultId: String, optIn: Bool) async throws -> ConsultCaptureState {
+        var value = try captureDictionary(rejectedShot: nil)
+        value["chartCopy"] = ["optIn": optIn, "decidedAt": "2026-08-12T17:00:00.000Z"]
+        return try decode(ConsultCaptureState.self, value: value)
+    }
+
     func analysis(consultId: String) async throws -> ConsultAnalysisState {
         try decode(ConsultAnalysisState.self, value: dictionary("analysis", "analysis"))
     }
@@ -298,10 +304,10 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
         await model.tapLockedMeCard()
         #expect(model.teaserTapped)
         #expect(await service.teaserRecorded)
-        #expect(await service.receivedByteCounts.count == 5)
+        #expect(await service.receivedByteCounts.count == 8)
         #expect(await guidedPipeline.retainedByteCount() == 0)
         let keys = await service.captureKeys
-        #expect(Set(keys.map(\.issue)).count == 5)
+        #expect(Set(keys.map(\.issue)).count == 8)
         #expect(model.failure == nil)
     }
 
