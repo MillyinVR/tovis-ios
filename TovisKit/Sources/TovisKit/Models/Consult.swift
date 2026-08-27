@@ -324,7 +324,7 @@ public enum ConsultInspirationTextRules {
     /// Inspiration notes describe the look in the reference photo, never the
     /// client's own traits — face/eye/skin/body language is refused durably
     /// (C10-W2 boundary).
-    nonisolated(unsafe) private static let unsupportedTraitLanguage = try! NSRegularExpression(
+    private static let unsupportedTraitLanguage = try! NSRegularExpression(
         pattern: "\\b(face|facial|eye|eyes|skin|undertone|complexion|identity|ethnic|ethnicity|race|health|medical|diagnosis|body|attractive|attractiveness)\\b",
         options: [.caseInsensitive]
     )
