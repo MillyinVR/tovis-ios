@@ -112,17 +112,23 @@ public struct ConsultFlowMachine: Sendable, Equatable {
 public enum ConsultResultSection: String, Sendable, Equatable, CaseIterable {
     case clientWords
     case aiObservations
+    case featureProfile
+    case styleDirections
     case safety
     case achievability
     case directions
     case lockedMeCard
 }
 
-/// Render ordering is a contract, not incidental SwiftUI source order.
+/// Render ordering is a contract, not incidental SwiftUI source order. The
+/// full-analysis profile and per-domain style directions sit between the hair
+/// observations and the always-visible safety section (schema v2).
 public enum ConsultResultPresentation {
     public static let sections: [ConsultResultSection] = [
         .clientWords,
         .aiObservations,
+        .featureProfile,
+        .styleDirections,
         .safety,
         .achievability,
         .directions,

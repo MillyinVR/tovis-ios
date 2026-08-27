@@ -66,11 +66,14 @@ nonisolated private struct SlowConsultQC: ConsultPhotoQCEvaluating {
         )
     }
 
-    @Test func fourSlotsHaveSpecificVisionAndFramingExpectations() {
+    @Test func sevenSlotsHaveSpecificVisionAndFramingExpectations() {
         let back = ConsultShotGuidance.expectations(for: .hairBack)
         let left = ConsultShotGuidance.expectations(for: .hairLeft)
         let right = ConsultShotGuidance.expectations(for: .hairRight)
         let crown = ConsultShotGuidance.expectations(for: .hairCrown)
+        let faceFront = ConsultShotGuidance.expectations(for: .faceFront)
+        let faceSide = ConsultShotGuidance.expectations(for: .faceSide)
+        let eyes = ConsultShotGuidance.expectations(for: .eyesCloseup)
 
         #expect(back.face == .absent)
         #expect(back.fillBand == 0.22...0.9)
@@ -80,7 +83,16 @@ nonisolated private struct SlowConsultQC: ConsultPhotoQCEvaluating {
         #expect(crown.face == .absent)
         #expect(crown.isDetail)
         #expect(crown.fillBand == 0.3...0.95)
-        #expect([back, left, right, crown].allSatisfy { $0.poseRules.isEmpty })
+        // The hair views tolerate closed eyes; the face views need them open —
+        // eye shape and lash observations read from open eyes.
+        #expect(faceFront.face == .required)
+        #expect(faceFront.fillBand == 0.22...0.85)
+        #expect(faceSide.face == .required)
+        #expect(eyes.face == .either)
+        #expect(eyes.isDetail)
+        #expect([faceFront, faceSide, eyes].allSatisfy { !$0.allowsClosedEyes })
+        let all = [back, left, right, crown, faceFront, faceSide, eyes]
+        #expect(all.allSatisfy { $0.poseRules.isEmpty })
         #expect([back, left, right, crown].allSatisfy { $0.allowsClosedEyes })
     }
 

@@ -134,6 +134,17 @@ final class ConsultFlowViewModel {
         await sendPendingPhoto()
     }
 
+    /// Records the client's chart-copy choice (default-on but visibly
+    /// optional; changeable until analysis runs).
+    func setChartCopy(_ optIn: Bool) async {
+        guard let consultId = machine.consultId else { return }
+        await perform {
+            let capture = try await service.setChartCopy(consultId: consultId, optIn: optIn)
+            captureState = capture
+            try machine.apply(capture: capture)
+        }
+    }
+
     func retryPhoto() async { await sendPendingPhoto() }
 
     private func sendPendingPhoto() async {

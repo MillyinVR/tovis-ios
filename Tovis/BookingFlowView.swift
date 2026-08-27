@@ -849,7 +849,7 @@ struct BookingFlowView: View {
                    ConsultExposurePolicy.production.allows(professionalId: professionalId),
                    bookingId != nil {
                     Button { showConsult = true } label: {
-                        Label("Add hair color consult", systemImage: "sparkles")
+                        Label("Add beauty consult", systemImage: "sparkles")
                             .font(BrandFont.body(16, .semibold))
                             .foregroundStyle(BrandColor.accent)
                             .frame(maxWidth: .infinity)

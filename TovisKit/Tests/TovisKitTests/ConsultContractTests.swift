@@ -38,12 +38,14 @@ import Testing
 
         let analysis = try decode(ConsultAnalysisStartResponse.self, key: "analysis").analysis
         #expect(analysis.status == .completed)
-        #expect(analysis.schemaVersion == 1)
-        #expect(analysis.promptVersion == "hair-color-analysis-v1")
+        #expect(analysis.schemaVersion == 2)
+        #expect(analysis.promptVersion == "full-analysis-v1")
 
         let results = try decode(ConsultClientResultsResponse.self, key: "results").results
         #expect(results.hasFaithfulClientContract)
         #expect(results.recommendationDirections.count == 2)
+        #expect(results.styleDirections.count == 7)
+        #expect(results.profile.eyeShape.value == "HOODED")
         #expect(results.safetyFlags.count == 1)
         #expect(results.meCardTeaser.locked)
 
@@ -63,11 +65,13 @@ import Testing
 
     @Test func resultOrderKeepsClientWordsBeforeAIAndSafetySeparate() {
         #expect(ConsultResultPresentation.sections == [
-            .clientWords, .aiObservations, .safety, .achievability,
-            .directions, .lockedMeCard,
+            .clientWords, .aiObservations, .featureProfile, .styleDirections,
+            .safety, .achievability, .directions, .lockedMeCard,
         ])
         #expect(ConsultResultPresentation.sections.firstIndex(of: .clientWords)! <
                 ConsultResultPresentation.sections.firstIndex(of: .aiObservations)!)
+        #expect(ConsultResultPresentation.sections.firstIndex(of: .featureProfile)! <
+                ConsultResultPresentation.sections.firstIndex(of: .safety)!)
         #expect(ConsultResultPresentation.sections.contains(.safety))
     }
 

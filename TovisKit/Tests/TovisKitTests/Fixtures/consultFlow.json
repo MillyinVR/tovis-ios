@@ -99,20 +99,26 @@
       "shotPack": {
         "id": "hair-color-daylight",
         "categorySlug": "hair-color",
-        "version": 1,
+        "version": 2,
         "schemaVersion": 1,
         "shots": [
           {"key":"hair_back","title":"Hair back","instruction":"Face away from the camera in indirect daylight.","requirement":"REQUIRED"},
           {"key":"hair_left","title":"Left side","instruction":"Turn the left side toward the camera in indirect daylight.","requirement":"REQUIRED"},
           {"key":"hair_right","title":"Right side","instruction":"Turn the right side toward the camera in indirect daylight.","requirement":"REQUIRED"},
-          {"key":"hair_crown","title":"Crown","instruction":"Angle the crown toward the camera in indirect daylight.","requirement":"REQUIRED"}
+          {"key":"hair_crown","title":"Crown","instruction":"Angle the crown toward the camera in indirect daylight.","requirement":"REQUIRED"},
+          {"key":"face_front","title":"Face front","instruction":"Face the camera straight on in indirect daylight with a relaxed, neutral expression.","requirement":"REQUIRED"},
+          {"key":"face_side","title":"Profile","instruction":"Turn fully to one side in indirect daylight.","requirement":"REQUIRED"},
+          {"key":"eyes_closeup","title":"Eyes & brows","instruction":"Fill the frame with both eyes and brows, eyes open, in indirect daylight.","requirement":"REQUIRED"}
         ]
       },
       "slots": [
         {"shotKey":"hair_back","state":"ACCEPTED","captureId":"capture_back_2","qualityReasonCode":"PASS","retakeTip":null,"rawExpiresAt":"2026-08-12T18:00:00.000Z","purgedAt":null},
         {"shotKey":"hair_left","state":"ACCEPTED","captureId":"capture_left_1","qualityReasonCode":"PASS","retakeTip":null,"rawExpiresAt":"2026-08-12T18:00:00.000Z","purgedAt":null},
         {"shotKey":"hair_right","state":"ACCEPTED","captureId":"capture_right_1","qualityReasonCode":"PASS","retakeTip":null,"rawExpiresAt":"2026-08-12T18:00:00.000Z","purgedAt":null},
-        {"shotKey":"hair_crown","state":"ACCEPTED","captureId":"capture_crown_1","qualityReasonCode":"PASS","retakeTip":null,"rawExpiresAt":"2026-08-12T18:00:00.000Z","purgedAt":null}
+        {"shotKey":"hair_crown","state":"ACCEPTED","captureId":"capture_crown_1","qualityReasonCode":"PASS","retakeTip":null,"rawExpiresAt":"2026-08-12T18:00:00.000Z","purgedAt":null},
+        {"shotKey":"face_front","state":"ACCEPTED","captureId":"capture_face_front_1","qualityReasonCode":"PASS","retakeTip":null,"rawExpiresAt":"2026-08-12T18:00:00.000Z","purgedAt":null},
+        {"shotKey":"face_side","state":"ACCEPTED","captureId":"capture_face_side_1","qualityReasonCode":"PASS","retakeTip":null,"rawExpiresAt":"2026-08-12T18:00:00.000Z","purgedAt":null},
+        {"shotKey":"eyes_closeup","state":"ACCEPTED","captureId":"capture_eyes_closeup_1","qualityReasonCode":"PASS","retakeTip":null,"rawExpiresAt":"2026-08-12T18:00:00.000Z","purgedAt":null}
       ],
       "chartCopy": {"optIn":true,"decidedAt":"2026-08-12T17:00:00.000Z"}
     }
@@ -123,20 +129,26 @@
     "shotPack": {
       "id": "hair-color-daylight",
       "categorySlug": "hair-color",
-      "version": 1,
+      "version": 2,
       "schemaVersion": 1,
       "shots": [
         {"key":"hair_back","title":"Hair back","instruction":"Face away from the camera in indirect daylight.","requirement":"REQUIRED"},
         {"key":"hair_left","title":"Left side","instruction":"Turn the left side toward the camera in indirect daylight.","requirement":"REQUIRED"},
         {"key":"hair_right","title":"Right side","instruction":"Turn the right side toward the camera in indirect daylight.","requirement":"REQUIRED"},
-        {"key":"hair_crown","title":"Crown","instruction":"Angle the crown toward the camera in indirect daylight.","requirement":"REQUIRED"}
+        {"key":"hair_crown","title":"Crown","instruction":"Angle the crown toward the camera in indirect daylight.","requirement":"REQUIRED"},
+        {"key":"face_front","title":"Face front","instruction":"Face the camera straight on in indirect daylight with a relaxed, neutral expression.","requirement":"REQUIRED"},
+        {"key":"face_side","title":"Profile","instruction":"Turn fully to one side in indirect daylight.","requirement":"REQUIRED"},
+        {"key":"eyes_closeup","title":"Eyes & brows","instruction":"Fill the frame with both eyes and brows, eyes open, in indirect daylight.","requirement":"REQUIRED"}
       ]
     },
     "slots": [
       {"shotKey":"hair_back","state":"REJECTED","captureId":"capture_back_1","qualityReasonCode":"WARM_INDOOR_LIGHT","retakeTip":"Move near a window and face the daylight.","rawExpiresAt":null,"purgedAt":"2026-08-11T18:10:00.000Z"},
       {"shotKey":"hair_left","state":"EMPTY","captureId":null,"qualityReasonCode":null,"retakeTip":null,"rawExpiresAt":null,"purgedAt":null},
       {"shotKey":"hair_right","state":"EMPTY","captureId":null,"qualityReasonCode":null,"retakeTip":null,"rawExpiresAt":null,"purgedAt":null},
-      {"shotKey":"hair_crown","state":"EMPTY","captureId":null,"qualityReasonCode":null,"retakeTip":null,"rawExpiresAt":null,"purgedAt":null}
+      {"shotKey":"hair_crown","state":"EMPTY","captureId":null,"qualityReasonCode":null,"retakeTip":null,"rawExpiresAt":null,"purgedAt":null},
+      {"shotKey":"face_front","state":"EMPTY","captureId":null,"qualityReasonCode":null,"retakeTip":null,"rawExpiresAt":null,"purgedAt":null},
+      {"shotKey":"face_side","state":"EMPTY","captureId":null,"qualityReasonCode":null,"retakeTip":null,"rawExpiresAt":null,"purgedAt":null},
+      {"shotKey":"eyes_closeup","state":"EMPTY","captureId":null,"qualityReasonCode":null,"retakeTip":null,"rawExpiresAt":null,"purgedAt":null}
     ],
     "chartCopy": {"optIn":true,"decidedAt":null}
   },
@@ -145,8 +157,8 @@
     "analysis": {
       "consultId": "consult_fixture_1",
       "status": "COMPLETED",
-      "schemaVersion": 1,
-      "promptVersion": "hair-color-analysis-v1",
+      "schemaVersion": 2,
+      "promptVersion": "full-analysis-v1",
       "result": null
     },
     "replayed": false
