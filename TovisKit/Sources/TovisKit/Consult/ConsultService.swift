@@ -21,9 +21,11 @@ public protocol ConsultServicing: Sendable {
 }
 
 public final class ConsultService: ConsultServicing, Sendable {
-    // Schema v2 / full-analysis prompt (2026-08-26 launch decisions).
+    // Schema v2 (2026-08-26 launch decisions) / prompt v2 (2026-08-27:
+    // partial capture packs — the server tells the model which views are
+    // missing; output shape unchanged).
     public static let analysisSchemaVersion = 2
-    public static let analysisPromptVersion = "full-analysis-v1"
+    public static let analysisPromptVersion = "full-analysis-v2"
     public static let maximumPhotoBytes = 5_000_000
 
     private let api: APIClient

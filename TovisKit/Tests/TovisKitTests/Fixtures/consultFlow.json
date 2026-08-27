@@ -158,7 +158,7 @@
       "consultId": "consult_fixture_1",
       "status": "COMPLETED",
       "schemaVersion": 2,
-      "promptVersion": "full-analysis-v1",
+      "promptVersion": "full-analysis-v2",
       "result": null
     },
     "replayed": false
