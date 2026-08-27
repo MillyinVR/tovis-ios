@@ -39,7 +39,7 @@ import Testing
         let analysis = try decode(ConsultAnalysisStartResponse.self, key: "analysis").analysis
         #expect(analysis.status == .completed)
         #expect(analysis.schemaVersion == 2)
-        #expect(analysis.promptVersion == "full-analysis-v1")
+        #expect(analysis.promptVersion == "full-analysis-v2")
 
         let results = try decode(ConsultClientResultsResponse.self, key: "results").results
         #expect(results.hasFaithfulClientContract)
