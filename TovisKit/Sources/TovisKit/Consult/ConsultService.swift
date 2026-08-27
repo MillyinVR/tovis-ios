@@ -1,6 +1,7 @@
 import Foundation
 
 public protocol ConsultServicing: Sendable {
+    func availability(bookingId: String) async throws -> ConsultAvailability
     func create(bookingId: String) async throws -> ConsultSession
     func agreements(consultId: String) async throws -> ConsultAgreementState
     func acceptAgreement(consultId: String, kind: ConsultAgreementKind,
@@ -52,6 +53,14 @@ public final class ConsultService: ConsultServicing, Sendable {
         self.uploadSession = uploadSession
         self.supabaseURL = supabaseURL
         self.supabaseKey = supabaseKey
+    }
+
+    public func availability(bookingId: String) async throws -> ConsultAvailability {
+        let response: ConsultAvailabilityResponse = try await api.request(
+            "/client/consult/availability",
+            query: [URLQueryItem(name: "bookingId", value: bookingId)]
+        )
+        return response.availability
     }
 
     public func create(bookingId: String) async throws -> ConsultSession {

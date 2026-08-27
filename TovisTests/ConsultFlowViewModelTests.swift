@@ -20,7 +20,15 @@ private actor MockConsultService: ConsultServicing {
     private(set) var consentRevoked = false
     var sessionProfessionalId = "cmq9p645v0002jp04fttoatlq"
 
+    /// When set, `create` throws it — models the server hiding the consult
+    /// (the pilot dark for this pro answers 404 on every consult route).
+    var createError: Error?
+
     init(root: [String: Any]) { self.root = root }
+
+    func availability(bookingId: String) async throws -> ConsultAvailability {
+        ConsultAvailability(available: createError == nil, consult: nil)
+    }
 
     // The mock mirrors the server's advance rule: ANALYSIS_PENDING requires a
     // complete inspiration review AND either every shot accepted or an
@@ -37,6 +45,7 @@ private actor MockConsultService: ConsultServicing {
     }
 
     func create(bookingId: String) async throws -> ConsultSession {
+        if let createError { throw createError }
         var value = dictionary("session", "consult")
         value["professionalId"] = sessionProfessionalId
         return try decode(ConsultSession.self, value: value)
@@ -301,16 +310,10 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
 
     @Test func completeMockedGuidedBookingConsultFlowIncludesLocalAndServerRetakes() async throws {
         let service = MockConsultService(root: try fixtureRoot())
-        let openMockGate = ConsultExposurePolicy(
-            founderProfessionalIDs: ["cmq9p645v0002jp04fttoatlq"],
-            liveBaselineApproved: true,
-            liveCandidatePassed: true
-        )
         let model = ConsultFlowViewModel(
             bookingId: "booking_fixture_1",
             professionalId: "cmq9p645v0002jp04fttoatlq",
-            service: service,
-            exposure: openMockGate
+            service: service
         )
 
         await model.start()
@@ -434,16 +437,10 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
 
     @Test func partialPackContinuesThroughProceedOnceInspirationIsDone() async throws {
         let service = MockConsultService(root: try fixtureRoot())
-        let openMockGate = ConsultExposurePolicy(
-            founderProfessionalIDs: ["cmq9p645v0002jp04fttoatlq"],
-            liveBaselineApproved: true,
-            liveCandidatePassed: true
-        )
         let model = ConsultFlowViewModel(
             bookingId: "booking_fixture_1",
             professionalId: "cmq9p645v0002jp04fttoatlq",
-            service: service,
-            exposure: openMockGate
+            service: service
         )
 
         await model.start()
@@ -482,8 +479,14 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
         #expect(model.failure == nil)
     }
 
-    @Test func productionGatePreventsEvenCreatingTheConsultShell() async throws {
+    /// The gate lives server-side now: a pro the pilot is dark for gets a 404
+    /// from every consult route, and the device renders that as hidden — no
+    /// local copy of the exposure rule exists to disagree with the server.
+    @Test func serverHiddenAnswerKeepsTheConsultDark() async throws {
         let service = MockConsultService(root: try fixtureRoot())
+        await service.setCreateErrorForTest(
+            APIError.server(status: 404, message: "Not found.", code: nil)
+        )
         let model = ConsultFlowViewModel(
             bookingId: "booking_fixture_1",
             professionalId: "cmq9p645v0002jp04fttoatlq",
@@ -497,16 +500,10 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
 
     @Test func revokingSensitiveConsentStopsTheFlow() async throws {
         let service = MockConsultService(root: try fixtureRoot())
-        let openMockGate = ConsultExposurePolicy(
-            founderProfessionalIDs: ["cmq9p645v0002jp04fttoatlq"],
-            liveBaselineApproved: true,
-            liveCandidatePassed: true
-        )
         let model = ConsultFlowViewModel(
             bookingId: "booking_fixture_1",
             professionalId: "cmq9p645v0002jp04fttoatlq",
-            service: service,
-            exposure: openMockGate
+            service: service
         )
 
         await model.start()
@@ -524,16 +521,10 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
     @Test func serverProfessionalMustMatchTheFounderGatedBooking() async throws {
         let service = MockConsultService(root: try fixtureRoot())
         await service.setSessionProfessionalIdForTest("professional_other")
-        let openMockGate = ConsultExposurePolicy(
-            founderProfessionalIDs: ["cmq9p645v0002jp04fttoatlq"],
-            liveBaselineApproved: true,
-            liveCandidatePassed: true
-        )
         let model = ConsultFlowViewModel(
             bookingId: "booking_fixture_1",
             professionalId: "cmq9p645v0002jp04fttoatlq",
-            service: service,
-            exposure: openMockGate
+            service: service
         )
 
         await model.start()
@@ -545,5 +536,9 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
 private extension MockConsultService {
     func setSessionProfessionalIdForTest(_ value: String) {
         sessionProfessionalId = value
+    }
+
+    func setCreateErrorForTest(_ error: Error) {
+        createError = error
     }
 }

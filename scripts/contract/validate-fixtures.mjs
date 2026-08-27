@@ -23,6 +23,18 @@ const schemaPath = process.env.TOVIS_API_SCHEMA || defaultSchema
 const CHECKS = [
   { file: 'clientHome.json', def: 'ClientHomeDTO', pick: (d) => [d.home] },
   { file: 'consultFlow.json', def: 'ConsultSessionDTO', pick: (d) => [d.session.consult] },
+  // GET /client/consult/availability — all three arms on purpose: open with an
+  // existing session, open with none yet, and the dark answer (available:false,
+  // consult null) that keeps the device's entry point hidden.
+  {
+    file: 'consultAvailability.json',
+    def: 'ConsultAvailabilityDTO',
+    pick: (d) => [
+      d.openWithSession.availability,
+      d.openNoSession.availability,
+      d.dark.availability,
+    ],
+  },
   { file: 'consultFlow.json', def: 'ConsultAgreementStateDTO', pick: (d) => [d.agreements.agreementState] },
   { file: 'consultFlow.json', def: 'ConsultIntakeStateDTO', pick: (d) => [d.intake.intake] },
   {
