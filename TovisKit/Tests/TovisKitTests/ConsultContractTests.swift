@@ -189,11 +189,14 @@ import Testing
         #expect(!mapped.message.contains("consult-raw"))
     }
 
-    @Test func fixtureCarriesNoRawBytesPathsOrUnsupportedTraits() throws {
+    @Test func fixtureCarriesNoRawBytesPathsOrForbiddenTraits() throws {
+        // Decision 2026-08-26 (full-analysis launch): cosmetic feature
+        // observations (undertone, face/eye descriptors) are now first-class
+        // wire content, so they left this list. Raw image material and
+        // identity/medical traits remain forbidden.
         let text = try #require(String(data: fixture("consultFlow"), encoding: .utf8))
         for forbidden in [
-            "base64", "storagePath", "storageBucket", "skinTone", "undertone",
-            "faceShape", "eyeShape", "ethnicity", "diagnosis",
+            "base64", "storagePath", "storageBucket", "ethnicity", "diagnosis",
         ] {
             #expect(!text.contains("\"\(forbidden)\""))
         }

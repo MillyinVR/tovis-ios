@@ -113,7 +113,8 @@
         {"shotKey":"hair_left","state":"ACCEPTED","captureId":"capture_left_1","qualityReasonCode":"PASS","retakeTip":null,"rawExpiresAt":"2026-08-12T18:00:00.000Z","purgedAt":null},
         {"shotKey":"hair_right","state":"ACCEPTED","captureId":"capture_right_1","qualityReasonCode":"PASS","retakeTip":null,"rawExpiresAt":"2026-08-12T18:00:00.000Z","purgedAt":null},
         {"shotKey":"hair_crown","state":"ACCEPTED","captureId":"capture_crown_1","qualityReasonCode":"PASS","retakeTip":null,"rawExpiresAt":"2026-08-12T18:00:00.000Z","purgedAt":null}
-      ]
+      ],
+      "chartCopy": {"optIn":true,"decidedAt":"2026-08-12T17:00:00.000Z"}
     }
   },
   "captureRejected": {
@@ -136,7 +137,8 @@
       {"shotKey":"hair_left","state":"EMPTY","captureId":null,"qualityReasonCode":null,"retakeTip":null,"rawExpiresAt":null,"purgedAt":null},
       {"shotKey":"hair_right","state":"EMPTY","captureId":null,"qualityReasonCode":null,"retakeTip":null,"rawExpiresAt":null,"purgedAt":null},
       {"shotKey":"hair_crown","state":"EMPTY","captureId":null,"qualityReasonCode":null,"retakeTip":null,"rawExpiresAt":null,"purgedAt":null}
-    ]
+    ],
+    "chartCopy": {"optIn":true,"decidedAt":null}
   },
   "analysis": {
     "ok": true,
@@ -177,6 +179,28 @@
         "maintenanceSummary":"The client is open to maintenance.",
         "appointmentContextSummary":"No near-term event deadline."
       },
+      "profile": {
+        "skinUndertone":{"value":"NEUTRAL","confidence":{"min":0.45,"max":0.68},"evidence":["face_front"]},
+        "contrastLevel":{"value":"MEDIUM","confidence":{"min":0.52,"max":0.74},"evidence":["face_front"]},
+        "colorSeason":{"value":"SOFT_AUTUMN","confidence":{"min":0.4,"max":0.6},"evidence":["face_front","hair_back"]},
+        "faceProportion":{"value":"BALANCED","confidence":{"min":0.55,"max":0.75},"evidence":["face_front"]},
+        "jawline":{"value":"SOFTLY_ROUNDED","confidence":{"min":0.5,"max":0.72},"evidence":["face_side"]},
+        "foreheadProportion":{"value":"TALLER","confidence":{"min":0.48,"max":0.7},"evidence":["face_side"]},
+        "featureBalance":{"value":"SOFT","confidence":{"min":0.5,"max":0.72},"evidence":["face_front"]},
+        "eyeShape":{"value":"HOODED","confidence":{"min":0.55,"max":0.78},"evidence":["eyes_closeup"]},
+        "eyeSpacing":{"value":"BALANCED","confidence":{"min":0.55,"max":0.78},"evidence":["eyes_closeup"]},
+        "browDensity":{"value":"FULL","confidence":{"min":0.6,"max":0.8},"evidence":["eyes_closeup"]},
+        "browShape":{"value":"SOFT_ARCH","confidence":{"min":0.55,"max":0.76},"evidence":["eyes_closeup"]}
+      },
+      "styleDirections": [
+        {"domain":"HAIR_COLOR_HARMONY","title":"Soft copper with depth","direction":"Discuss a muted copper that keeps depth at the root.","whyItFlatters":"A soft-autumn palette and medium contrast favor muted warmth over brights.","confidence":{"min":0.45,"max":0.68},"evidence":["face_front","hair_back"],"discussWithProfessional":true},
+        {"domain":"CUT_AND_SHAPE","title":"Soft layers below the jaw","direction":"Discuss soft layers starting below the jawline.","whyItFlatters":"Softly rounded jawline reads best with movement rather than blunt lines.","confidence":{"min":0.45,"max":0.68},"evidence":["face_side"],"discussWithProfessional":true},
+        {"domain":"BANGS","title":"Soft curtain bangs","direction":"Discuss curtain bangs that open at the cheekbone.","whyItFlatters":"A taller forehead reading is balanced by soft curtain bangs.","confidence":{"min":0.42,"max":0.66},"evidence":["face_front","face_side"],"discussWithProfessional":true},
+        {"domain":"BROWS","title":"Groomed soft arch","direction":"Discuss keeping the natural soft arch with light shaping.","whyItFlatters":"Full density and a soft arch already suit the observed feature balance.","confidence":{"min":0.5,"max":0.72},"evidence":["eyes_closeup"],"discussWithProfessional":true},
+        {"domain":"LASHES","title":"Lifted-curl mapping","direction":"Discuss a lifted curl that opens the lid.","whyItFlatters":"Hooded eyes are opened by lift rather than heavy volume.","confidence":{"min":0.5,"max":0.72},"evidence":["eyes_closeup"],"discussWithProfessional":true},
+        {"domain":"MAKEUP","title":"Diffused, blended tones","direction":"Discuss diffused application with muted warm tones.","whyItFlatters":"Soft feature balance and medium contrast favor blended definition.","confidence":{"min":0.42,"max":0.65},"evidence":["face_front"],"discussWithProfessional":true},
+        {"domain":"COLOR_PALETTE","title":"Muted warm palette","direction":"Discuss a soft-autumn palette of muted warm colors near the face.","whyItFlatters":"The observed undertone and contrast sit most comfortably in muted warmth.","confidence":{"min":0.4,"max":0.62},"evidence":["face_front"],"discussWithProfessional":true}
+      ],
       "safetyFlags": [
         {"code":"RECENT_BOX_DYE","summary":"Recent box dye may affect lift and color predictability.","discussWithProfessional":true}
       ],
