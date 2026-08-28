@@ -5,12 +5,19 @@ import Testing
 // Proves the pro waitlist-outreach methods hit the right routes with the right
 // verbs, bodies, and idempotency (all existing web routes — an iOS-only port):
 //   • waitlistOutreach → GET  /api/v1/pro/waitlist → decodes services + entries + total
-//   • offerWaitlistSlot → POST /api/v1/pro/waitlist/{entryId}/offer {slot + location}
-//     + idempotency-key header → decodes the created PENDING offer
+//   • waitlistOfferOptions → GET /api/v1/pro/waitlist/{entryId}/offer → the modes
+//     this pro may offer in and the location of their own each is anchored to
+//   • offerWaitlistSlot → POST /api/v1/pro/waitlist/{entryId}/offer {slot + mode +
+//     location} + idempotency-key header → decodes the created PENDING offer
 // The read feed's nested entries carry the FIFO rank, server-formatted preference
 // label, and join instant; a missing avatar decodes to nil. The offer body sends
-// only the chosen slot + in-salon location (the route derives client + service
-// from the entry), always locationType SALON.
+// only the chosen slot, the mode, and the PRO's location for it (the route derives
+// client + service from the entry).
+//
+// 🔴 The privacy half, which is what most of the mobile assertions here are for:
+// a PENDING mobile offer reaches this app as a distance and a general area and
+// NOTHING else. That is enforced on the server, so these tests pin the wire
+// contract the app depends on rather than the app's rendering of it.
 
 /// Records the outgoing request and serves a canned envelope.
 final class ProWaitlistURLProtocol: URLProtocol {
@@ -223,6 +230,7 @@ private extension URLRequest {
                 scheduledFor: "2026-07-15T04:00:00.000Z",
                 endsAt: "2026-07-15T05:00:00.000Z",
                 locationId: "loc_1",
+                locationType: "SALON",
                 durationMinutes: 60
             )
         }
@@ -233,6 +241,7 @@ private extension URLRequest {
                 scheduledFor: "2026-07-15T04:00:00.000Z",
                 endsAt: "2026-07-15T05:00:00.000Z",
                 locationId: "loc_1",
+                locationType: "SALON",
                 durationMinutes: 60
             )
             Issue.record("expected the off-hours offer to throw")
@@ -261,6 +270,7 @@ private extension URLRequest {
             scheduledFor: "2026-07-15T17:00:00.000Z",
             endsAt: "2026-07-15T18:00:00.000Z",
             locationId: "loc_1",
+            locationType: "SALON",
             durationMinutes: 60
         )
 
@@ -268,21 +278,23 @@ private extension URLRequest {
         #expect(ProWaitlistURLProtocol.capturedMethod == "POST")
 
         // The route rejects a missing idempotency-key header, so one is always sent,
-        // and it mirrors web exactly: scope + entry + the ISO start as the action
-        // (no nonce) — so the same entry+slot dedupes while a different slot mints a
-        // fresh key. Reconstruct it PINNED to the sent key's bucket to pin that
-        // wiring (rebuilding against the live clock races the 60s rollover — see
-        // IdempotencyKeyTestSupport).
+        // and it mirrors web exactly: scope + entry + "MODE:ISO start" as the action
+        // (no nonce) — so the same entry+mode+slot dedupes while a different slot,
+        // or the same minute in the other mode, mints a fresh key. The MODE is in
+        // there because offering 5pm in-salon and 5pm mobile are two different
+        // promises and a replay must not collapse them. Reconstruct it PINNED to the
+        // sent key's bucket to pin that wiring (rebuilding against the live clock
+        // races the 60s rollover — see IdempotencyKeyTestSupport).
         let key = try #require(ProWaitlistURLProtocol.capturedIdempotencyKey)
         #expect(key.split(separator: ":").count == 5)
         #expect(key == rebuiltIdempotencyKey(
             matchingBucketOf: key,
             scope: "pro-waitlist-offer",
             entityId: "wle_1",
-            action: "2026-07-15T17:00:00.000Z"))
+            action: "SALON:2026-07-15T17:00:00.000Z"))
         #expect(idempotencyKeyBucketIsCurrent(key))
 
-        // Body carries only the slot + in-salon location; always SALON.
+        // Body carries only the slot, the mode, and the PRO's location for it.
         let json = try bodyJSON()
         #expect(json["scheduledFor"] as? String == "2026-07-15T17:00:00.000Z")
         #expect(json["endsAt"] as? String == "2026-07-15T18:00:00.000Z")
@@ -292,11 +304,160 @@ private extension URLRequest {
         // Neither the client nor the service is sent — the route derives both.
         #expect(json["clientId"] == nil)
         #expect(json["serviceId"] == nil)
+        // 🔴 And never a client address. For a MOBILE offer the destination is
+        // resolved server-side; a field here would mean this device held one.
+        #expect(json["clientAddressId"] == nil)
 
         #expect(offer.id == "wof_1")
         #expect(offer.status == "PENDING")
         #expect(offer.startsAt == "2026-07-15T17:00:00.000Z")
         #expect(offer.endsAt == "2026-07-15T18:00:00.000Z")
         #expect(offer.locationType == "SALON")
+    }
+
+    // MARK: - MOBILE offers (tovis-app, 2026-08-27)
+
+    // A VERBATIM capture of GET /api/v1/pro/waitlist for a pro with a PENDING
+    // MOBILE offer out. `travel` is everything the server will say about where
+    // that trip goes while the client has yet to accept — there is no address and
+    // no coordinate field to decode, which is the point.
+    private static let mobileOfferedFeedJSON = """
+    {"ok":true,"services":[{"serviceId":"svc_m","serviceName":"Balayage",\
+    "entries":[{"rank":1,"waitlistEntryId":"wle_m","clientName":"Nadia Waiter",\
+    "avatarUrl":null,"preferenceLabel":"Any time",\
+    "joinedAt":"2026-08-20T02:31:50.817Z",\
+    "pendingOffer":{"id":"wof_m","startsAt":"2026-09-01T17:00:00.000Z",\
+    "locationType":"MOBILE","travel":{"distanceMiles":1.87,\
+    "areaLabel":"Coronado, CA","summary":"1.9 mi away · Coronado, CA"}}}]}],\
+    "total":1}
+    """
+
+    @Test func waitlistOutreachDecodesTheTripSummaryOnAMobileOffer() async throws {
+        reset(response: Self.mobileOfferedFeedJSON)
+
+        let outreach = try await makeService().waitlistOutreach()
+        let entry = try #require(outreach.services.first?.entries.first)
+        let offer = try #require(entry.pendingOffer)
+
+        #expect(offer.locationType == "MOBILE")
+        let travel = try #require(offer.travel)
+        // Rendered verbatim by ProWaitlistView — the server owns the wording.
+        #expect(travel.summary == "1.9 mi away · Coronado, CA")
+        #expect(travel.areaLabel == "Coronado, CA")
+        #expect(travel.distanceMiles == 1.87)
+    }
+
+    // 🔴 The regression this file exists to catch: an address appearing on the
+    // pro-facing offer payload. If the server ever adds one, the decoder here
+    // gains a field to read and this test is where that has to be argued for.
+    @Test func aPendingOfferCarriesNoAddressFieldToDecode() async throws {
+        reset(response: Self.mobileOfferedFeedJSON)
+
+        _ = try await makeService().waitlistOutreach()
+
+        let raw = String(decoding: Self.mobileOfferedFeedJSON.utf8, as: UTF8.self)
+        #expect(!raw.contains("formattedAddress"))
+        #expect(!raw.contains("addressLine"))
+        #expect(!raw.contains("clientAddressId"))
+        #expect(!raw.contains("\"lat\""))
+        #expect(!raw.contains("\"lng\""))
+
+        // And the model has nowhere to put one: `travel` is exactly these three.
+        let travel = ProWaitlistOfferTravel(
+            distanceMiles: 1.87, areaLabel: "Coronado, CA", summary: "1.9 mi away")
+        #expect(travel.summary == "1.9 mi away")
+    }
+
+    @Test func aSalonOfferHasNoTravelBlock() async throws {
+        // The pre-existing SALON capture, which predates `travel` entirely — so
+        // this also proves an older server decodes fine (the field is optional).
+        reset(response: Self.offeredFeedJSON)
+
+        let outreach = try await makeService().waitlistOutreach()
+        let offer = try #require(outreach.services.first?.entries.first?.pendingOffer)
+
+        #expect(offer.locationType == "SALON")
+        #expect(offer.travel == nil)
+    }
+
+    @Test func waitlistOfferOptionsGetsTheModesTheServerAllows() async throws {
+        reset(response: """
+        {"ok":true,"offeringId":"off_1","blockedReason":null,"options":[
+          {"locationType":"SALON","locationId":"loc_1","locationName":"Main Salon",
+           "timeZone":"America/Los_Angeles","durationMinutes":60},
+          {"locationType":"MOBILE","locationId":"base_1","locationName":"Home base",
+           "timeZone":"America/Los_Angeles","durationMinutes":75}
+        ]}
+        """)
+
+        let result = try await makeService().waitlistOfferOptions(waitlistEntryId: "wle_1")
+
+        #expect(ProWaitlistURLProtocol.capturedPath == "/api/v1/pro/waitlist/wle_1/offer")
+        #expect(ProWaitlistURLProtocol.capturedMethod == "GET")
+
+        #expect(result.offeringId == "off_1")
+        #expect(result.blockedReason == nil)
+        #expect(result.options.count == 2)
+
+        let mobile = try #require(result.options.last)
+        #expect(mobile.isMobile)
+        // The PRO's own base — never anything of the client's.
+        #expect(mobile.locationId == "base_1")
+        // Mobile and in-salon durations legitimately differ, and the sheet sizes
+        // `endsAt` from the SELECTED mode's.
+        #expect(mobile.durationMinutes == 75)
+        #expect(result.options.first?.isMobile == false)
+    }
+
+    @Test func waitlistOfferOptionsCarriesTheServerSentenceWhenNothingCanBeOffered() async throws {
+        reset(response: """
+        {"ok":true,"offeringId":null,"options":[],
+         "blockedReason":"You don’t have an active offering for this service, so there’s no time to offer. Add or activate the service first."}
+        """)
+
+        let result = try await makeService().waitlistOfferOptions(waitlistEntryId: "wle_1")
+
+        // Not an error — an answer. The sheet paints this sentence rather than
+        // inventing its own, so web and iOS say the same thing.
+        #expect(result.options.isEmpty)
+        #expect(result.offeringId == nil)
+        #expect(result.blockedReason?.contains("active offering") == true)
+    }
+
+    @Test func offerWaitlistSlotSendsMobileWithTheProsOwnBase() async throws {
+        reset(response: """
+        {"ok":true,"offer":{"id":"wof_m","status":"PENDING",
+         "startsAt":"2026-09-01T17:00:00.000Z","endsAt":"2026-09-01T18:15:00.000Z",
+         "locationType":"MOBILE"}}
+        """)
+
+        let offer = try await makeService().offerWaitlistSlot(
+            waitlistEntryId: "wle_m",
+            scheduledFor: "2026-09-01T17:00:00.000Z",
+            endsAt: "2026-09-01T18:15:00.000Z",
+            locationId: "base_1",
+            locationType: "MOBILE",
+            durationMinutes: 75
+        )
+
+        let json = try bodyJSON()
+        #expect(json["locationType"] as? String == "MOBILE")
+        #expect(json["locationId"] as? String == "base_1")
+        // 🔴 No destination in the body, and no way to put one there: the server
+        // resolves the client's address itself.
+        #expect(json["clientAddressId"] == nil)
+        #expect(json["clientLat"] == nil)
+        #expect(json["clientLng"] == nil)
+
+        // The mode is part of the idempotency action, so 5pm-mobile and
+        // 5pm-in-salon are two promises, not one replayed.
+        let key = try #require(ProWaitlistURLProtocol.capturedIdempotencyKey)
+        #expect(key == rebuiltIdempotencyKey(
+            matchingBucketOf: key,
+            scope: "pro-waitlist-offer",
+            entityId: "wle_m",
+            action: "MOBILE:2026-09-01T17:00:00.000Z"))
+
+        #expect(offer.locationType == "MOBILE")
     }
 }

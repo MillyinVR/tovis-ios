@@ -143,9 +143,30 @@ public struct ClientWaitlistOffer: Decodable, Sendable, Identifiable {
     public let endAt: String?
     public let timeZone: String?
     public let locationType: String?
+    /// MOBILE offers: the client's OWN saved address the pro would travel to.
+    ///
+    /// The mirror image of the pro's side of this same offer. The pro sees only a
+    /// distance and a general area until the client accepts; the CLIENT sees the
+    /// full address from the start, because it is theirs and it is what they are
+    /// being asked to agree to. nil for an in-salon offer, and from a server
+    /// predating this field.
+    public let clientAddressLabel: String?
     public let expiresAt: String?
 
     public var id: String { offerId }
+
+    /// Whether the pro would travel to the client for this offer.
+    public var isMobile: Bool { locationType == "MOBILE" }
+
+    /// The "where" line for the card. nil for an in-salon offer — "go to your
+    /// pro" is what a booking has always meant here and needs no line.
+    public var whereLine: String? {
+        guard isMobile else { return nil }
+        guard let label = clientAddressLabel?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !label.isEmpty
+        else { return "Your pro comes to you" }
+        return "Your pro comes to you · \(label)"
+    }
 }
 
 // MARK: - Waitlist-offer respond (POST /api/v1/client/waitlist-offers/{id})

@@ -109,7 +109,13 @@ public final class BookingService: Sendable {
         clientAddressId: String? = nil,
         addOnIds: [String] = [],
         rescheduleBookingId: String? = nil,
-        rebookOfBookingId: String? = nil
+        rebookOfBookingId: String? = nil,
+        /// Set when a PRO is picking a time to OFFER a waitlisted client. MOBILE
+        /// placement needs the client's service address, and at offer time the pro
+        /// is not entitled to it — so the entry id goes up instead and the server
+        /// resolves the destination itself. It REPLACES `clientAddressId` on this
+        /// path; nothing about the client's address exists on the device to send.
+        waitlistEntryId: String? = nil
     ) async throws -> AvailabilityDay {
         var query = [
             URLQueryItem(name: "professionalId", value: professionalId),
@@ -119,7 +125,9 @@ public final class BookingService: Sendable {
             URLQueryItem(name: "locationId", value: locationId),
             URLQueryItem(name: "date", value: date),
         ]
-        if let clientAddressId, !clientAddressId.isEmpty {
+        if let waitlistEntryId, !waitlistEntryId.isEmpty {
+            query.append(URLQueryItem(name: "waitlistEntryId", value: waitlistEntryId))
+        } else if let clientAddressId, !clientAddressId.isEmpty {
             query.append(URLQueryItem(name: "clientAddressId", value: clientAddressId))
         }
         if !addOnIds.isEmpty {

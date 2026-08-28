@@ -186,6 +186,66 @@ private extension URLRequest {
         let only = try #require(offers.first)
         #expect(only.offerId == "wo_1")
         #expect(only.serviceLabel == "Men’s Cut")
+        // An in-salon offer says nothing about "where" — going to the pro is
+        // what a booking has always meant — and a server predating
+        // `clientAddressLabel` decodes to nil rather than failing.
+        #expect(only.isMobile == false)
+        #expect(only.whereLine == nil)
+    }
+
+    // MARK: - a MOBILE waitlist offer tells the client it comes to THEM
+
+    @Test func waitlistOfferNamesTheClientsOwnAddressWhenTheProTravels() async throws {
+        // The mirror image of the pro's side of this same offer: the pro is shown
+        // a distance and a general area until the client accepts, while the CLIENT
+        // is shown the whole address, because it is theirs and it is what they are
+        // agreeing to. Without this line a mobile offer reads exactly like an
+        // in-salon one and the client confirms a home visit unknowingly.
+        let json = """
+        {
+          "ok": true,
+          "offers": [{
+            "offerId": "wo_m",
+            "status": "PENDING",
+            "proName": "Kai",
+            "proHref": null,
+            "avatarUrl": null,
+            "serviceLabel": "Balayage",
+            "startAt": "2026-09-01T17:00:00.000Z",
+            "endAt": "2026-09-01T18:00:00.000Z",
+            "timeZone": "America/Los_Angeles",
+            "locationType": "MOBILE",
+            "clientAddressLabel": "77 Orange Ave, Coronado, CA 92118",
+            "expiresAt": null
+          }]
+        }
+        """
+        reset(Data(json.utf8))
+        let bookings = BookingsService(api: await makeAPI())
+
+        let offer = try #require(try await bookings.waitlistOffers().first)
+
+        #expect(offer.isMobile)
+        #expect(offer.whereLine == "Your pro comes to you · 77 Orange Ave, Coronado, CA 92118")
+    }
+
+    @Test func aMobileOfferWithNoAddressStillSaysTheProTravels() async throws {
+        // `onDelete: SetNull` can strand the offer when the client deletes the
+        // saved address. The confirm then refuses cleanly — but until they try,
+        // the card must still say the pro would travel rather than imply a salon.
+        let json = """
+        {"ok":true,"offers":[{"offerId":"wo_m2","status":"PENDING","proName":"Kai",
+         "proHref":null,"avatarUrl":null,"serviceLabel":"Balayage",
+         "startAt":"2026-09-01T17:00:00.000Z","endAt":null,
+         "timeZone":"America/Los_Angeles","locationType":"MOBILE",
+         "clientAddressLabel":null,"expiresAt":null}]}
+        """
+        reset(Data(json.utf8))
+        let bookings = BookingsService(api: await makeAPI())
+
+        let offer = try #require(try await bookings.waitlistOffers().first)
+
+        #expect(offer.whereLine == "Your pro comes to you")
     }
 
     // MARK: - respondToWaitlistOffer CONFIRM (books, returns the booking)
