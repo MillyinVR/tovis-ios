@@ -192,13 +192,23 @@ public final class ProProfileService: Sendable {
 
     /// POST /api/v1/pro/offerings — add a service to the pro's menu. Returns the
     /// created offering.
+    ///
+    /// `offersInSalon` / `offersMobile` are OPTIONAL, and omitted from the body
+    /// when nil — matching `updateOffering` above. The route treats an absent
+    /// flag as "not stated" and derives it from the pro's bookable locations
+    /// (`defaultOfferingModes`); it is only a stated `false` that turns a mode
+    /// off. This used to take two non-optional Bools that the add-service form
+    /// filled with a hardcoded `true`/`false`, so a mobile-only pro creating a
+    /// service on the phone wrote `offersInSalon: true` and bypassed the
+    /// server's derivation entirely. Send a value ONLY for a mode the pro
+    /// actually chose.
     @discardableResult
     public func createOffering(
         serviceId: String,
         description: String?,
         customImageUrl: String?,
-        offersInSalon: Bool,
-        offersMobile: Bool,
+        offersInSalon: Bool? = nil,
+        offersMobile: Bool? = nil,
         salonPriceStartingAt: String?,
         salonDurationMinutes: Int?,
         mobilePriceStartingAt: String?,
@@ -206,8 +216,6 @@ public final class ProProfileService: Sendable {
     ) async throws -> ProOfferingAdmin {
         var fields: [String: JSONValue] = [
             "serviceId": .string(serviceId),
-            "offersInSalon": .bool(offersInSalon),
-            "offersMobile": .bool(offersMobile),
             "description": .stringOrNull(description),
             "customImageUrl": .stringOrNull(customImageUrl),
             "salonPriceStartingAt": .stringOrNull(salonPriceStartingAt),
@@ -215,6 +223,8 @@ public final class ProProfileService: Sendable {
             "mobilePriceStartingAt": .stringOrNull(mobilePriceStartingAt),
             "mobileDurationMinutes": .intOrNull(mobileDurationMinutes),
         ]
+        if let offersInSalon { fields["offersInSalon"] = .bool(offersInSalon) }
+        if let offersMobile { fields["offersMobile"] = .bool(offersMobile) }
         fields["title"] = .null
         let payload = try JSONEncoder.canonical.encode(fields)
         let response: ProOfferingResponse = try await api.request(

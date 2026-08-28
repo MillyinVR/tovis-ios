@@ -1606,6 +1606,33 @@ func fixture(_ name: String) throws -> Data {
         #expect(toner.isAddOnEligible)
         #expect(toner.addOnGroup == "COLOR")
         #expect(res.offerings.first?.serviceId == "svc_balayage")
+
+        // W6: the fixture is a MOBILE-ONLY pro — no bookable salon location. The
+        // add-service form seeds its toggles from these, so a salon-on default
+        // can no longer be assumed on the phone.
+        #expect(res.locationCapability == ProLocationCapability(salon: false, mobile: true))
+        #expect(
+            res.defaultOfferingModes
+                == ProOfferingModes(offersInSalon: false, offersMobile: true)
+        )
+    }
+
+    // A server predating the W6 capability fields must still decode: both are
+    // optional, and the form then states NEITHER flag and lets the route derive
+    // them — which is the same answer, never a hardcoded salon-on pair.
+    @Test func decodesProServicesCatalogWithoutCapabilityFields() throws {
+        var object = try #require(
+            try JSONSerialization.jsonObject(with: fixture("proServicesCatalog"))
+                as? [String: Any]
+        )
+        object.removeValue(forKey: "locationCapability")
+        object.removeValue(forKey: "defaultOfferingModes")
+        let data = try JSONSerialization.data(withJSONObject: object)
+
+        let res = try JSONDecoder().decode(ProServiceCatalog.self, from: data)
+        #expect(res.categories.count == 1)
+        #expect(res.locationCapability == nil)
+        #expect(res.defaultOfferingModes == nil)
     }
 
     // GET /api/v1/pro/camera/usage — Fixtures/proCameraUsage.json. The pro's

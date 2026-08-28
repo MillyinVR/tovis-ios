@@ -34,5 +34,18 @@
       ]
     }
   ],
-  "offerings": [{ "id": "off_1", "serviceId": "svc_balayage" }]
+  "offerings": [
+    {
+      "id": "off_1",
+      "serviceId": "svc_balayage"
+    }
+  ],
+  "locationCapability": {
+    "salon": false,
+    "mobile": true
+  },
+  "defaultOfferingModes": {
+    "offersInSalon": false,
+    "offersMobile": true
+  }
 }
