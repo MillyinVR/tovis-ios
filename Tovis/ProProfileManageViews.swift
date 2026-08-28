@@ -575,8 +575,17 @@ struct ProAddServiceSheet: View {
     @State private var serviceId = ""
 
     @State private var description = ""
+    // W6: NOT a hardcoded salon-on/mobile-off pair any more. These are display
+    // state, seeded from `catalog.defaultOfferingModes` — the server's own
+    // derivation from the pro's bookable locations — and only SENT once the pro
+    // has actually touched a toggle (`modesStated`). A mobile-only pro adding a
+    // service on the phone used to write `offersInSalon: true` regardless,
+    // bypassing that derivation entirely.
     @State private var offersInSalon = true
     @State private var offersMobile = false
+    /// True once the pro changed a mode toggle themselves. Until then the flags
+    /// are left out of the POST so `/pro/offerings` derives them.
+    @State private var modesStated = false
     @State private var salonPrice = ""
     @State private var salonDuration = ""
     @State private var mobilePrice = ""
@@ -693,9 +702,9 @@ struct ProAddServiceSheet: View {
 
     private var modeToggles: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Toggle(isOn: $offersInSalon) { Text("Offer in Salon").font(BrandFont.body(13, .semibold)).foregroundStyle(BrandColor.textPrimary) }
+            Toggle(isOn: statedBinding($offersInSalon)) { Text("Offer in Salon").font(BrandFont.body(13, .semibold)).foregroundStyle(BrandColor.textPrimary) }
                 .tint(BrandColor.accent)
-            Toggle(isOn: $offersMobile) { Text("Offer Mobile").font(BrandFont.body(13, .semibold)).foregroundStyle(BrandColor.textPrimary) }
+            Toggle(isOn: statedBinding($offersMobile)) { Text("Offer Mobile").font(BrandFont.body(13, .semibold)).foregroundStyle(BrandColor.textPrimary) }
                 .tint(BrandColor.accent)
             if let s = selectedService {
                 Text("Min price: \(Wire.money(s.minPrice) ?? s.minPrice)")
@@ -754,9 +763,43 @@ struct ProAddServiceSheet: View {
         return label
     }
 
+    /// A toggle binding that records the pro having STATED a mode.
+    ///
+    /// Deliberately not `.onChange`: seeding the toggles from the server's
+    /// defaults also mutates this state, and an onChange handler cannot tell
+    /// that apart from a tap — it would mark every form as stated and put the
+    /// hardcoded pair straight back on the wire.
+    private func statedBinding(_ source: Binding<Bool>) -> Binding<Bool> {
+        Binding(
+            get: { source.wrappedValue },
+            set: { source.wrappedValue = $0; modesStated = true }
+        )
+    }
+
+    /// Seed the mode toggles from the server's derivation, so what the form
+    /// SHOWS is what `/pro/offerings` would choose for this pro. Leaves
+    /// `modesStated` false — a seed is not a choice.
+    ///
+    /// The `else` is a DISPLAY fallback for a server predating
+    /// `defaultOfferingModes`, and is never put on the wire: `modesStated` stays
+    /// false, so the POST omits both flags and that older server derives them
+    /// itself (it has had that derivation since W6). Without this branch a reset
+    /// would leave the previous service's toggles standing, which is the one way
+    /// the form could show a mode the created offering does not have.
+    private func applyDefaultModes() {
+        if let modes = catalog?.defaultOfferingModes {
+            offersInSalon = modes.offersInSalon
+            offersMobile = modes.offersMobile
+        } else {
+            offersInSalon = true
+            offersMobile = false
+        }
+    }
+
     private func resetForService(_ service: ProCatalogService?) {
         error = nil; success = nil; imageData = nil; imageItem = nil
-        description = ""; offersInSalon = true; offersMobile = false
+        description = ""; modesStated = false
+        applyDefaultModes()
         guard let service else { salonPrice = ""; salonDuration = ""; mobilePrice = ""; mobileDuration = ""; return }
         let p = service.minPrice
         let d = String(service.defaultDurationMinutes)
@@ -771,7 +814,11 @@ struct ProAddServiceSheet: View {
     }
 
     private func load() async {
-        do { catalog = try await session.client.proProfile.servicesCatalog(); phase = .ready }
+        do {
+            catalog = try await session.client.proProfile.servicesCatalog()
+            applyDefaultModes()
+            phase = .ready
+        }
         catch let e as APIError { phase = .failed(e.userMessage) }
         catch { phase = .failed("Couldn’t load the service library.") }
     }
@@ -784,7 +831,11 @@ struct ProAddServiceSheet: View {
     private func submit() async {
         guard !loading, let service = selectedService else { return }
         if alreadyAdded { error = "You already added this service."; return }
-        if !offersInSalon && !offersMobile { error = "Enable at least Salon or Mobile."; return }
+        // Only meaningful once the pro has stated the modes — an unstated form
+        // sends no flags at all, and the route's derivation never yields neither.
+        if modesStated && !offersInSalon && !offersMobile {
+            error = "Enable at least Salon or Mobile."; return
+        }
         loading = true; error = nil; success = nil
         defer { loading = false }
 
@@ -796,16 +847,24 @@ struct ProAddServiceSheet: View {
         }
 
         do {
+            // Unstated ⇒ send NO flags and let the route derive them. Pricing
+            // for BOTH modes rides along in that case, because the mode the
+            // server picks is the one it then demands a price and duration for —
+            // sending only the displayed mode's pricing would turn a correct
+            // derivation into a "Missing Mobile price." 400.
+            let sendSalonPricing = modesStated ? offersInSalon : true
+            let sendMobilePricing = modesStated ? offersMobile : true
+
             _ = try await session.client.proProfile.createOffering(
                 serviceId: service.id,
                 description: description.trimmedOrNil,
                 customImageUrl: imageUrl,
-                offersInSalon: offersInSalon,
-                offersMobile: offersMobile,
-                salonPriceStartingAt: offersInSalon ? salonPrice.trimmedOrNil : nil,
-                salonDurationMinutes: offersInSalon ? Int(salonDuration) : nil,
-                mobilePriceStartingAt: offersMobile ? mobilePrice.trimmedOrNil : nil,
-                mobileDurationMinutes: offersMobile ? Int(mobileDuration) : nil
+                offersInSalon: modesStated ? offersInSalon : nil,
+                offersMobile: modesStated ? offersMobile : nil,
+                salonPriceStartingAt: sendSalonPricing ? salonPrice.trimmedOrNil : nil,
+                salonDurationMinutes: sendSalonPricing ? Int(salonDuration) : nil,
+                mobilePriceStartingAt: sendMobilePricing ? mobilePrice.trimmedOrNil : nil,
+                mobileDurationMinutes: sendMobilePricing ? Int(mobileDuration) : nil
             )
             success = "Service added to your menu."
             onSaved()

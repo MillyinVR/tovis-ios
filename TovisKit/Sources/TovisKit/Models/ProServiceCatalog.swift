@@ -8,10 +8,63 @@ import Foundation
 
 // MARK: - Add-service catalog
 
-/// `GET /api/v1/pro/services/catalog` → `{ categories, offerings }`.
+/// `GET /api/v1/pro/services/catalog` → `{ categories, offerings,
+/// locationCapability, defaultOfferingModes }`.
 public struct ProServiceCatalog: Decodable, Sendable {
     public let categories: [ProServiceCategory]
     public let offerings: [ProCatalogOffering]
+
+    /// W6: which modes the pro can ACTUALLY be booked in, derived server-side
+    /// from their bookable locations (`loadProLocationCapability`). Nil when the
+    /// server predates the field — see `defaultOfferingModes`.
+    public let locationCapability: ProLocationCapability?
+
+    /// The Salon/Mobile pre-selection the server itself would apply to an
+    /// offering created without stating them, so the add-service form seeds its
+    /// toggles from the pro's real locations instead of assuming salon.
+    ///
+    /// `decodeIfPresent`: against a server that does not send it the form leaves
+    /// BOTH flags unstated and lets the POST route derive them, which is the
+    /// same answer — never a hardcoded salon-on/mobile-off pair.
+    public let defaultOfferingModes: ProOfferingModes?
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        categories = try c.decode([ProServiceCategory].self, forKey: .categories)
+        offerings = try c.decode([ProCatalogOffering].self, forKey: .offerings)
+        locationCapability = try c.decodeIfPresent(
+            ProLocationCapability.self, forKey: .locationCapability
+        )
+        defaultOfferingModes = try c.decodeIfPresent(
+            ProOfferingModes.self, forKey: .defaultOfferingModes
+        )
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case categories, offerings, locationCapability, defaultOfferingModes
+    }
+}
+
+/// Whether the pro has at least one bookable location of each kind.
+public struct ProLocationCapability: Decodable, Sendable, Equatable {
+    public let salon: Bool
+    public let mobile: Bool
+
+    public init(salon: Bool, mobile: Bool) {
+        self.salon = salon
+        self.mobile = mobile
+    }
+}
+
+/// A Salon/Mobile pair as the offerings API expresses it.
+public struct ProOfferingModes: Decodable, Sendable, Equatable {
+    public let offersInSalon: Bool
+    public let offersMobile: Bool
+
+    public init(offersInSalon: Bool, offersMobile: Bool) {
+        self.offersInSalon = offersInSalon
+        self.offersMobile = offersMobile
+    }
 }
 
 public struct ProServiceCategory: Decodable, Sendable, Identifiable {
