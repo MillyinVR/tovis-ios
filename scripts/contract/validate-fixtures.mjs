@@ -349,6 +349,22 @@ const CHECKS = [
     def: 'ProCalendarResponseDTO',
     pick: (d) => [d],
   },
+  // GET /api/v1/pro/calendar — a client's LIVE checkout reservation (B5) beside
+  // an ordinary booking.
+  //
+  // A third calendar fixture for the same reason there is a second: the K6
+  // capture stays verbatim. This one exists because the feed had NO hold
+  // coverage at all — `expiresAt` has been on the wire since B5 and the iOS
+  // model did not even decode it, so the pro's tile could not say how long the
+  // slot was spoken for (Tori, 2026-08-28). A HOLD is also the one event kind
+  // that carries none of the booking channels (no payment, relationship,
+  // consent or service colour), so it is the case that catches a decoder which
+  // quietly assumes they are always there.
+  {
+    file: 'proCalendarHold.json',
+    def: 'ProCalendarResponseDTO',
+    pick: (d) => [d],
+  },
   // POST /api/v1/auth/session-handoff returns `jsonOk({ url, redirectPath,
   // expiresAt })`, so the payload is spread at the ROOT alongside `ok`.
   //

@@ -99,6 +99,77 @@ struct ProCalendarHoldEventTests {
         #expect(event.blockId == nil)
     }
 
+    // The pro's half of the client's countdown (Tori, 2026-08-28).
+    //
+    // `expiresAt` has ridden every HOLD row since B5 and NOTHING read it — the
+    // model did not even declare the field — so the pro's tile said the time was
+    // spoken for while the client watched a live clock on the same ten minutes.
+    @Test("a hold's expiry parses, fractional seconds and all")
+    func parsesHoldExpiry() throws {
+        let event = try decode(liveHoldRow)
+
+        // The captured string carries milliseconds, which is the branch a plain
+        // ISO8601DateFormatter drops on the floor.
+        #expect(event.expiresAt == "2026-07-25T22:08:23.437Z")
+        #expect(event.holdExpiresAt != nil)
+        #expect(
+            event.holdExpiresAt?.timeIntervalSince1970
+                == Date(timeIntervalSince1970: 1_785_017_303.437).timeIntervalSince1970)
+    }
+
+    // Only a hold has minutes running out. A booking asking for a countdown
+    // would get a tile that vanishes when the string it never had fails to
+    // parse, so the guard is on the KIND, not just on the field.
+    @Test("only a hold offers an expiry — a booking and a block have none")
+    func onlyAHoldExpires() throws {
+        let booking = try decode("""
+        {
+          "id": "cmrr6vdjg0033po3nn4o0s6dv",
+          "kind": "BOOKING",
+          "startsAt": "2026-07-29T16:15:00.000Z",
+          "endsAt": "2026-07-29T17:00:00.000Z",
+          "title": "Balayage",
+          "clientName": "Test Client",
+          "status": "ACCEPTED",
+          "locationType": "SALON",
+          "locationId": "cmrbry47t000fpo0dz0kdy80z",
+          "durationMinutes": 45,
+          "localDateKey": "2026-07-29"
+        }
+        """)
+
+        #expect(booking.expiresAt == nil)
+        #expect(booking.holdExpiresAt == nil)
+    }
+
+    // An unusable string must not become a countdown: the tile falls back to the
+    // one it rendered before there was a clock, rather than showing a number it
+    // cannot stand behind — or, worse, hiding itself and telling the pro a
+    // reserved slot is free.
+    @Test("an unparseable expiry yields no countdown rather than a wrong one")
+    func refusesAnUnparseableExpiry() throws {
+        let event = try decode("""
+        {
+          "id": "hold:x",
+          "holdId": "x",
+          "kind": "HOLD",
+          "startsAt": "2026-07-26T22:00:00.000Z",
+          "endsAt": "2026-07-26T23:00:00.000Z",
+          "title": "Checkout in progress",
+          "clientName": "Held",
+          "status": "HELD",
+          "locationType": "SALON",
+          "locationId": null,
+          "durationMinutes": 60,
+          "localDateKey": "2026-07-26",
+          "expiresAt": "not-a-date"
+        }
+        """)
+
+        #expect(event.isHold)
+        #expect(event.holdExpiresAt == nil)
+    }
+
     @Test("a mixed feed keeps holds alongside bookings")
     func decodesInsideAFeed() throws {
         let feed = """

@@ -145,6 +145,40 @@ private struct ScrollTouchDelayDisabler: UIViewRepresentable {
     }
 }
 
+/// Keeps a HOLD tile on the grid only while its reservation is live (Tori,
+/// 2026-08-28).
+///
+/// A hold lapses by the CLOCK, not by a request — nothing is pushed when the ten
+/// minutes run out — so a tile that waits to be told is a tile that goes on
+/// telling the pro their day is fuller than it is. Every conflict query already
+/// filters `expiresAt > now`, so the moment this hides, those minutes are
+/// genuinely bookable again; the next calendar fetch drops the row for real.
+///
+/// `allowsHitTesting(false)` is load-bearing, not tidiness: the tile carries a
+/// `contentShape` + tap gesture, so an invisible one left armed would keep
+/// swallowing taps on the empty slot underneath — the pro would be unable to
+/// book the time it had just stopped claiming.
+///
+/// Non-holds pass nil and are returned untouched, so no booking tile pays for a
+/// timer it does not need.
+private struct HoldTileLifetime: ViewModifier {
+    let expiresAt: Date?
+
+    func body(content: Content) -> some View {
+        if let expiresAt {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let live = expiresAt > context.date
+                content
+                    .opacity(live ? 1 : 0)
+                    .allowsHitTesting(live)
+                    .accessibilityHidden(!live)
+            }
+        } else {
+            content
+        }
+    }
+}
+
 /// Drag-to-reschedule haptics, factored out of `ProCalendarTimeGrid.body` (three
 /// inline `.sensoryFeedback` closures pushed the body past the type-checker's
 /// complexity limit). Fires a firm tap when a tile lifts, a light selection tick
@@ -874,6 +908,9 @@ struct ProCalendarTimeGrid: View {
         .accessibilityAddTraits(event.isHold ? [] : .isButton)
         .animation(.easeOut(duration: 0.16), value: pending)
         .opacity(isActive ? 0 : 1)
+        // A hold leaves the grid the moment its ten minutes are up — see
+        // `HoldTileLifetime`. Every other kind passes nil and is untouched.
+        .modifier(HoldTileLifetime(expiresAt: event.holdExpiresAt))
 
         // The MOVE gesture is owned by the grid-level UIKit recognizer (see
         // `TimelineMoveDrag`), which hit-tests the tile via its published frame and
@@ -1007,6 +1044,31 @@ struct ProCalendarTimeGrid: View {
                                 .font(BrandFont.mono(8))
                                 .foregroundStyle(BrandColor.textMuted)
                                 .accessibilityHidden(true)
+                        }
+                        // The pro's half of the client's hold clock (Tori,
+                        // 2026-08-28): the same mm:ss the client is watching on
+                        // their own checkout, so "this time is spoken for"
+                        // carries "…and for how much longer".
+                        //
+                        // FIRST in the row, ahead of every other chip, because
+                        // it is the only one that is counting: a fact that
+                        // changes every second is worth more than a static
+                        // label, and the chips behind it are absent on a hold
+                        // anyway (a hold carries no payment, relationship or
+                        // consent state — it is deliberately anonymous, B5).
+                        if let holdExpiresAt = event.holdExpiresAt {
+                            TimelineView(.periodic(from: .now, by: 1)) { context in
+                                let remaining = Int(
+                                    holdExpiresAt.timeIntervalSince(context.date).rounded(.down))
+                                if remaining > 0 {
+                                    tileChip(
+                                        "\(BookingSheetPresentation.holdCountdownLabel(secondsRemaining: remaining)) left",
+                                        tint: BookingSheetPresentation.holdIsUrgent(
+                                            secondsRemaining: remaining)
+                                            ? BrandColor.ember : BrandColor.textSecondary
+                                    )
+                                }
+                            }
                         }
                         // Location before payment: when the row runs out of width
                         // it is the shorter chip, and on a mixed-location grid it
