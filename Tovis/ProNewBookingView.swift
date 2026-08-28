@@ -101,6 +101,13 @@ struct ProNewBookingView: View {
     @State private var attemptKey: String?
     @State private var appliedOverrides: Set<BookingOverrideFlag> = []
     @State private var overridePrompt: BookingOverridePrompt?
+
+    // B5 follow-up: a client is mid-checkout on the minutes the pro just asked
+    // for. Same soft-confirmation shape as the override prompt — the server
+    // refuses once with the decision, the pro answers, and the retry carries
+    // `confirmHoldOverlap` on a fresh idempotency key.
+    @State private var holdOverlapDecision: HeldSlotDecision?
+    @State private var holdOverlapConfirmed = false
     /// Optional free-text reason recorded on the override audit log.
     @State private var overrideReason = ""
     /// Set after booking a new/unclaimed client — shows the claim-invite
@@ -204,6 +211,18 @@ struct ProNewBookingView: View {
         }
         .sheet(item: $claimInvite, onDismiss: { dismiss() }) { invite in
             claimInviteSheet(invite)
+        }
+        // A swipe-down is the same answer as "wait": the destructive choice
+        // here is taking somebody's slot, so it must never be the accident.
+        .sheet(item: $holdOverlapDecision) { decision in
+            HoldOverlapDecisionSheet(
+                decision: decision,
+                intent: .create,
+                timeZone: selectedLocation?.timeZone,
+                busy: creating,
+                onProceed: { Task { await proceedOverHold() } },
+                onWait: { holdOverlapDecision = nil; attemptKey = nil }
+            )
         }
     }
 
@@ -807,6 +826,18 @@ struct ProNewBookingView: View {
         }
         appliedOverrides = []
         overrideReason = ""
+        // The answer applied to ONE slot. A fresh attempt asks again.
+        holdOverlapConfirmed = false
+        attemptKey = UUID().uuidString
+        await submitBooking()
+    }
+
+    /// The pro chose to take the slot. Remember it, close the sheet, and
+    /// re-submit — with a fresh idempotency key, because the body changes and
+    /// the server 409s "same key, different body".
+    private func proceedOverHold() async {
+        holdOverlapConfirmed = true
+        holdOverlapDecision = nil
         attemptKey = UUID().uuidString
         await submitBooking()
     }
@@ -882,6 +913,7 @@ struct ProNewBookingView: View {
                 allowFarFuture: farFuture,
                 overrideReason: appliedOverrides.isEmpty || overrideReason.trimmed.isEmpty
                     ? nil : overrideReason.trimmed,
+                confirmHoldOverlap: holdOverlapConfirmed,
                 idempotencyKey: key,
             )
             attemptKey = nil
@@ -895,10 +927,20 @@ struct ProNewBookingView: View {
                 dismiss()
             }
         } catch let error as APIError {
-            // Override-gated? Offer a "book anyway?" retry (unless we already
-            // applied that flag — then it's a genuine failure, don't loop).
-            if let prompt = error.bookingOverridePrompt(intent: .create),
+            // A client is checking out for these minutes right now. Checked
+            // before the override prompt because it is a different KIND of
+            // answer: an override says "my own rule doesn't apply here", this
+            // one says "take it from someone mid-payment".
+            //
+            // `holdOverlapConfirmed` guards the loop: once answered, a second
+            // refusal with the same code would be a server bug, and re-opening
+            // the sheet would trap the pro in it.
+            if let decision = error.holdOverlapDecision, !holdOverlapConfirmed {
+                holdOverlapDecision = decision
+            } else if let prompt = error.bookingOverridePrompt(intent: .create),
                !appliedOverrides.contains(prompt.flag) {
+                // Override-gated? Offer a "book anyway?" retry (unless we
+                // already applied that flag — then it's a genuine failure).
                 overridePrompt = prompt
             } else {
                 attemptKey = nil

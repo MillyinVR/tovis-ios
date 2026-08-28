@@ -51,6 +51,11 @@ struct ProRescheduleView: View {
     /// Optional free-text reason recorded on the override audit log.
     @State private var overrideReason = ""
 
+    // B5 follow-up: the new time lands on minutes a client is checking out for.
+    // Same soft-confirmation shape as the override prompt above.
+    @State private var holdOverlapDecision: HeldSlotDecision?
+    @State private var holdOverlapConfirmed = false
+
     // MARK: - Derived
 
     private var serviceId: String? { booking.baseItem?.serviceId }
@@ -108,6 +113,18 @@ struct ProRescheduleView: View {
             Button("Cancel", role: .cancel) { attemptKey = nil; overrideReason = "" }
         } message: { prompt in
             Text(prompt.question)
+        }
+        // A swipe-down is the same answer as "wait": the destructive choice
+        // here is taking somebody's slot, so it must never be the accident.
+        .sheet(item: $holdOverlapDecision) { decision in
+            HoldOverlapDecisionSheet(
+                decision: decision,
+                intent: .edit,
+                timeZone: booking.timeZone,
+                busy: submitting,
+                onProceed: { Task { await proceedOverHold() } },
+                onWait: { holdOverlapDecision = nil; attemptKey = nil }
+            )
         }
     }
 
@@ -293,6 +310,18 @@ struct ProRescheduleView: View {
         }
         appliedOverrides = []
         overrideReason = ""
+        // The answer applied to ONE slot. A fresh attempt asks again.
+        holdOverlapConfirmed = false
+        attemptKey = UUID().uuidString
+        await submit()
+    }
+
+    /// The pro chose to take the slot. Remember it, close the sheet, and
+    /// re-submit on a fresh idempotency key — the body changes, and the server
+    /// 409s "same key, different body".
+    private func proceedOverHold() async {
+        holdOverlapConfirmed = true
+        holdOverlapDecision = nil
         attemptKey = UUID().uuidString
         await submit()
     }
@@ -344,16 +373,23 @@ struct ProRescheduleView: View {
                 allowFarFuture: farFuture,
                 overrideReason: appliedOverrides.isEmpty || overrideReason.trimmed.isEmpty
                     ? nil : overrideReason.trimmed,
+                confirmHoldOverlap: holdOverlapConfirmed,
                 idempotencyKey: key,
             )
             attemptKey = nil
             session.signalRefresh()
             dismiss()
         } catch let error as APIError {
-            // Override-gated? Offer a "save it anyway?" retry (unless we already
-            // applied that flag — then it's a genuine failure, don't loop).
-            if let prompt = error.bookingOverridePrompt(intent: .edit),
+            // A client is checking out for these minutes right now. Checked
+            // before the override prompt — a different KIND of answer, and the
+            // only one that is about somebody else's money. `holdOverlapConfirmed`
+            // guards against re-opening a sheet the pro already answered.
+            if let decision = error.holdOverlapDecision, !holdOverlapConfirmed {
+                holdOverlapDecision = decision
+            } else if let prompt = error.bookingOverridePrompt(intent: .edit),
                !appliedOverrides.contains(prompt.flag) {
+                // Override-gated? Offer a "save it anyway?" retry (unless we
+                // already applied that flag — then it's a genuine failure).
                 overridePrompt = prompt
             } else {
                 attemptKey = nil

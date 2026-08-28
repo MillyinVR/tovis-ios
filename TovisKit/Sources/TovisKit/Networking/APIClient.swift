@@ -183,7 +183,8 @@ public final class APIClient: Sendable {
                 details: ServerErrorDetails(
                     maskedDestination: parsed?.maskedDestination,
                     claimLinkSent: parsed?.claimLinkSent,
-                    retryAfterSeconds: parsed?.details?.retryAfterSeconds
+                    retryAfterSeconds: parsed?.details?.retryAfterSeconds,
+                    heldSlot: parsed?.heldSlot?.decoded()
                 )
             )
         }
