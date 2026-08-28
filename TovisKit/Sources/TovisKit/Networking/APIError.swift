@@ -16,15 +16,20 @@ public struct ServerErrorDetails: Sendable, Equatable {
     /// `details.retryAfterSeconds`. Drives the OTP resend countdown — see
     /// `OTPResendCooldown`.
     public let retryAfterSeconds: Int?
+    /// The pro's live-hold decision, on a HOLD_OVERLAP_NEEDS_CONFIRMATION 409.
+    /// Read from the TOP level of the body. See `HoldOverlapDecision.swift`.
+    public let heldSlot: HeldSlotDecision?
 
     public init(
         maskedDestination: String? = nil,
         claimLinkSent: Bool? = nil,
-        retryAfterSeconds: Int? = nil
+        retryAfterSeconds: Int? = nil,
+        heldSlot: HeldSlotDecision? = nil
     ) {
         self.maskedDestination = maskedDestination
         self.claimLinkSent = claimLinkSent
         self.retryAfterSeconds = retryAfterSeconds
+        self.heldSlot = heldSlot
     }
 }
 

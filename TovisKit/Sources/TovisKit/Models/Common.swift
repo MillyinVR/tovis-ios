@@ -39,9 +39,13 @@ struct APIErrorBody: Decodable {
     let maskedDestination: String?
     let claimLinkSent: Bool?
     let details: Details?
+    /// The pro's live-hold decision, on HOLD_OVERLAP_NEEDS_CONFIRMATION only.
+    /// TOP level, like `maskedDestination` — `jsonFail` spreads the booking
+    /// error's extras there, it does not nest them under `details`.
+    let heldSlot: HeldSlotDecisionWire?
 
     private enum CodingKeys: String, CodingKey {
-        case error, code, maskedDestination, claimLinkSent, details
+        case error, code, maskedDestination, claimLinkSent, details, heldSlot
     }
 
     /// Hand-written so an unexpected `details` can't sink the whole body. A
@@ -57,6 +61,8 @@ struct APIErrorBody: Decodable {
         maskedDestination = try? container.decodeIfPresent(String.self, forKey: .maskedDestination)
         claimLinkSent = try? container.decodeIfPresent(Bool.self, forKey: .claimLinkSent)
         details = try? container.decodeIfPresent(Details.self, forKey: .details)
+        heldSlot = try? container.decodeIfPresent(
+            HeldSlotDecisionWire.self, forKey: .heldSlot)
     }
 
     /// The `details` object a rate-limited (429) response carries. Built by

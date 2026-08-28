@@ -125,6 +125,13 @@ struct ProCalendarView: View {
     @State private var changeAttemptKey: String?
     @State private var changeAppliedOverrides: Set<BookingOverrideFlag> = []
     @State private var changeOverridePrompt: BookingOverridePrompt?
+
+    // B5 follow-up: the drag landed on minutes a client is checking out for.
+    // Same soft-confirmation shape as the override prompt above; `…Confirmed`
+    // survives the sheet closing so an override retry afterwards keeps the
+    // answer instead of asking about the same checkout twice.
+    @State private var holdOverlapDecision: HeldSlotDecision?
+    @State private var holdOverlapConfirmed = false
     @State private var changeOverrideReason = ""
 
     // Management sheet (web ManagementModal): tapping a stats tile opens the
@@ -355,6 +362,18 @@ struct ProCalendarView: View {
                 onOverride: confirmChangeOverride,
                 onCancel: cancelChange
             ))
+            // A swipe-down is the same answer as "wait": the destructive choice
+            // here is taking somebody's slot, so it must never be the accident.
+            .sheet(item: $holdOverlapDecision) { decision in
+                HoldOverlapDecisionSheet(
+                    decision: decision,
+                    intent: .edit,
+                    timeZone: calendarTimeZone.identifier,
+                    busy: changeSubmitting,
+                    onProceed: { proceedOverHold() },
+                    onWait: { holdOverlapDecision = nil; cancelChange() }
+                )
+            }
             .tint(BrandColor.accent)
         }
     }
@@ -874,6 +893,10 @@ struct ProCalendarView: View {
         changeAttemptKey = nil
         changeAppliedOverrides = []
         changeOverrideReason = ""
+        // The answer applied to ONE slot on ONE change. It must not survive
+        // into the next drag, which would book over a checkout nobody was shown.
+        holdOverlapDecision = nil
+        holdOverlapConfirmed = false
     }
 
     /// The pro confirmed the change — mint one idempotency key and submit.
@@ -881,6 +904,18 @@ struct ProCalendarView: View {
         guard !changeSubmitting else { return }
         changeAppliedOverrides = []
         changeOverrideReason = ""
+        holdOverlapConfirmed = false
+        changeAttemptKey = UUID().uuidString
+        Task { await submitChange(change) }
+    }
+
+    /// The pro chose to take the slot. Remember it, close the sheet, and
+    /// re-submit the SAME pending change on a fresh idempotency key — the body
+    /// changes, and the server 409s "same key, different body".
+    private func proceedOverHold() {
+        guard let change = pendingChange, !changeSubmitting else { return }
+        holdOverlapConfirmed = true
+        holdOverlapDecision = nil
         changeAttemptKey = UUID().uuidString
         Task { await submitChange(change) }
     }
@@ -942,6 +977,7 @@ struct ProCalendarView: View {
                     allowShortNotice: changeAppliedOverrides.contains(.allowShortNotice),
                     allowFarFuture: changeAppliedOverrides.contains(.allowFarFuture),
                     overrideReason: overrideReason,
+                    confirmHoldOverlap: holdOverlapConfirmed,
                     idempotencyKey: key
                 )
             case let .resize(resize):
@@ -959,11 +995,18 @@ struct ProCalendarView: View {
             changeAttemptKey = nil
             changeAppliedOverrides = []
             changeOverrideReason = ""
+            holdOverlapConfirmed = false
             pendingMove = nil
             pendingResize = nil
             await load()
         } catch let error as APIError {
-            if let prompt = error.bookingOverridePrompt(intent: .edit),
+            // A client is checking out for these minutes. Checked before the
+            // override prompt — a different KIND of answer, and the only one
+            // that is about somebody else's money. The pending tile stays put
+            // for the retry, exactly as it does for an override.
+            if let decision = error.holdOverlapDecision, !holdOverlapConfirmed {
+                holdOverlapDecision = decision
+            } else if let prompt = error.bookingOverridePrompt(intent: .edit),
                !changeAppliedOverrides.contains(prompt.flag) {
                 changeOverridePrompt = prompt   // keep the pending tile in place
             } else {

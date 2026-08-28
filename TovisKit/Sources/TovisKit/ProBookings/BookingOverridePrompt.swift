@@ -98,7 +98,19 @@ public extension APIError {
     func bookingOverridePrompt(
         intent: BookingOverridePromptIntent
     ) -> BookingOverridePrompt? {
-        guard case let .server(_, _, code) = self else { return nil }
+        // 🔴 BOTH server cases. `.serverDetails` is `.server` plus opted-in body
+        // fields, and matching only `.server` meant that opting a call into
+        // `captureErrorDetails` silently turned every override prompt on it into
+        // a dead-end error — the pro's "Book anyway" would simply stop
+        // appearing, with nothing failing. The pro booking create and
+        // reschedule calls now opt in (for the live-hold decision), so this is
+        // load-bearing, not defensive.
+        let code: String?
+        switch self {
+        case let .server(_, _, value): code = value
+        case let .serverDetails(_, _, value, _): code = value
+        case .invalidResponse, .unauthorized, .decoding, .transport: return nil
+        }
         return TovisKit.bookingOverridePrompt(forErrorCode: code, intent: intent)
     }
 }

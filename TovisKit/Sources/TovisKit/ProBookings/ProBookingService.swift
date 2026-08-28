@@ -115,6 +115,8 @@ public final class ProBookingService: Sendable {
         allowShortNotice: Bool = false,
         allowFarFuture: Bool = false,
         overrideReason: String? = nil,
+        /// See `createBooking(confirmHoldOverlap:)`.
+        confirmHoldOverlap: Bool = false,
         idempotencyKey: String? = nil
     ) async throws {
         let payload = try JSONEncoder.canonical.encode(
@@ -124,7 +126,8 @@ public final class ProBookingService: Sendable {
                 allowOutsideWorkingHours: allowOutsideWorkingHours,
                 allowShortNotice: allowShortNotice,
                 allowFarFuture: allowFarFuture,
-                overrideReason: overrideReason
+                overrideReason: overrideReason,
+                confirmHoldOverlap: confirmHoldOverlap ? true : nil
             )
         )
         let key = idempotencyKey ?? buildClientIdempotencyKey(
@@ -134,7 +137,9 @@ public final class ProBookingService: Sendable {
             "/pro/bookings/\(bookingId)",
             method: .patch,
             body: payload,
-            headers: ["idempotency-key": key]
+            headers: ["idempotency-key": key],
+            // See createBooking — the decision rides in the error body.
+            captureErrorDetails: true
         )
     }
 
@@ -435,6 +440,11 @@ public final class ProBookingService: Sendable {
         allowShortNotice: Bool = false,
         allowFarFuture: Bool = false,
         overrideReason: String? = nil,
+        /// Set ONLY on a retry the pro explicitly asked for, after this call
+        /// already failed once with `holdOverlapDecision` — see
+        /// `HoldOverlapDecision.swift`. It authorizes booking over a client's
+        /// live checkout AND has it recorded as an informed choice.
+        confirmHoldOverlap: Bool = false,
         idempotencyKey: String? = nil
     ) async throws -> ProBookingCreateResult {
         let payload = try JSONEncoder.canonical.encode(
@@ -452,6 +462,7 @@ public final class ProBookingService: Sendable {
                 allowShortNotice: allowShortNotice,
                 allowFarFuture: allowFarFuture,
                 overrideReason: overrideReason,
+                confirmHoldOverlap: confirmHoldOverlap ? true : nil,
             )
         )
         // Body-derived fallback: whenever the caller doesn't pin a key, the key
@@ -464,7 +475,11 @@ public final class ProBookingService: Sendable {
             "/pro/bookings",
             method: .post,
             body: payload,
-            headers: ["idempotency-key": key]
+            headers: ["idempotency-key": key],
+            // The live-hold decision rides in the error body. Without this the
+            // 409 arrives as a plain `.server` and the sheet never opens — the
+            // pro gets a dead-end message instead of the choice.
+            captureErrorDetails: true
         )
         return ProBookingCreateResult(
             bookingId: response.booking.id,
@@ -599,6 +614,8 @@ struct ProBookingRescheduleRequest: Encodable {
     let allowShortNotice: Bool
     let allowFarFuture: Bool
     let overrideReason: String?
+    /// See `ProBookingCreateRequest.confirmHoldOverlap`.
+    var confirmHoldOverlap: Bool? = nil
 }
 
 /// PATCH /pro/bookings/{id} body for a resize (change total duration in place).
@@ -656,6 +673,15 @@ struct ProBookingCreateRequest: Encodable {
     let allowShortNotice: Bool
     let allowFarFuture: Bool
     let overrideReason: String?
+    /// The pro's answer to the live-hold decision. `nil` — the default, and the
+    /// only value a FIRST attempt may carry — is dropped from the JSON, and an
+    /// absent field is what the server reads as "ask me".
+    ///
+    /// Last and defaulted so a call site that has no opinion (every one but the
+    /// pro's explicit retry) is unchanged. Key ORDER does not reach the wire:
+    /// `JSONEncoder.canonical` sorts keys, which is what the idempotency nonce
+    /// is hashed from.
+    var confirmHoldOverlap: Bool? = nil
 }
 
 /// A new MOBILE service address sent inline with a booking (the client has no
