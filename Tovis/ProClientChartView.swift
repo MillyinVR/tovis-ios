@@ -13,14 +13,19 @@ struct ProClientChartView: View {
     let clientId: String
     let fullName: String
 
+    /// Mirrors the web chart's tab set exactly (`CHART_TABS` in
+    /// lib/clients/chartTabs.ts). "History" and "Photos" used to be two tabs
+    /// here as on web — two groupings of the same visits — so a pro comparing a
+    /// formula against the result had to hold one tab in their head while
+    /// reading the other. They are ONE "Visits" tab on both surfaces now, with
+    /// each visit's frames on that visit's own card.
     enum Tab: String, CaseIterable, Identifiable {
         case notes = "Notes"
         case allergies = "Allergies"
-        case history = "History"
+        case visits = "Visits"
         case products = "Products"
         case reviews = "Reviews"
         case feedback = "Pro feedback"
-        case photos = "Photos"
         case technical = "Technical record"
         var id: String { rawValue }
     }
@@ -223,7 +228,7 @@ struct ProClientChartView: View {
 
     @ViewBuilder
     private func content(_ chart: ProClientChart) -> some View {
-        headerCard(chart.header)
+        headerCard(chart.header, noShowCount: chart.noShowCount)
         safetyStrip(chart)
         doNotRebookSection(chart)
         if let intel = chart.relationshipIntelligence {
@@ -235,7 +240,7 @@ struct ProClientChartView: View {
 
     // MARK: - Header
 
-    private func headerCard(_ h: ProChartHeader) -> some View {
+    private func headerCard(_ h: ProChartHeader, noShowCount: Int?) -> some View {
         BrandSurface {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 14) {
@@ -253,6 +258,16 @@ struct ProClientChartView: View {
                 }
                 HStack(spacing: 10) {
                     statTile("\(h.bookingCount)", "Bookings")
+                    // Cross-professional, exactly as web's header renders it: a
+                    // client who has stood up five OTHER pros must not read here
+                    // as never having no-showed. Tinted only when there is
+                    // something to flag — a zero in ember would cry wolf on
+                    // every chart. Absent entirely on a backend that predates
+                    // the field, rather than showing a fabricated 0.
+                    if let noShows = noShowCount {
+                        statTile("\(noShows)", "No-shows",
+                                 tint: noShows > 0 ? BrandColor.ember : BrandColor.textPrimary)
+                    }
                     statTile("\(h.reviewCount)", "Reviews")
                     if let pref = h.preferredContactMethod { statTile(pref.capitalized, "Prefers") }
                 }
@@ -268,9 +283,13 @@ struct ProClientChartView: View {
         }
     }
 
-    private func statTile(_ value: String, _ label: String) -> some View {
+    private func statTile(
+        _ value: String,
+        _ label: String,
+        tint: Color = BrandColor.textPrimary
+    ) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(value).font(BrandFont.body(15, .semibold)).foregroundStyle(BrandColor.textPrimary).lineLimit(1)
+            Text(value).font(BrandFont.body(15, .semibold)).foregroundStyle(tint).lineLimit(1)
             Text(label.uppercased()).font(BrandFont.mono(8)).tracking(0.6).foregroundStyle(BrandColor.textMuted)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -450,11 +469,10 @@ struct ProClientChartView: View {
         switch tab {
         case .notes: notesTab(chart)
         case .allergies: allergiesTab(chart)
-        case .history: historyTab(chart)
+        case .visits: visitsTab(chart)
         case .products: productsTab(chart)
         case .reviews: reviewsTab(chart)
         case .feedback: feedbackTab(chart)
-        case .photos: photosTab(chart)
         case .technical: technicalTab()
         }
     }
@@ -519,48 +537,13 @@ struct ProClientChartView: View {
         }
     }
 
-    private func historyTab(_ chart: ProClientChart) -> some View {
-        VStack(spacing: 10) {
-            if chart.history.isEmpty {
-                emptyTab("No bookings yet.")
-            } else {
-                ForEach(chart.history) { b in
-                    BrandSurface {
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Text(b.serviceName ?? "Booking").font(BrandFont.body(14, .semibold)).foregroundStyle(BrandColor.textPrimary)
-                                Spacer()
-                                if let total = b.total { Text(Wire.money(total) ?? total).font(BrandFont.body(13, .semibold)).foregroundStyle(BrandColor.textSecondary) }
-                            }
-                            HStack(spacing: 6) {
-                                BrandPill(
-                                    text: BookingStatusPresentation.label(b.status),
-                                    tint: statusTone(b.status))
-                                // The NR/NNR/RR/RNR mark (K6), on the viewing
-                                // pro's OWN rows only — the mark answers "did
-                                // this client request ME", so on another pro's
-                                // booking it would misread. The server already
-                                // sends nil there; the `isMine` check is the
-                                // belt to that braces, so a future server that
-                                // sent one anyway still couldn't render it here.
-                                if b.isMine, let relationship = b.relationshipBadge?.display,
-                                   relationship.significant {
-                                    BrandPill(text: relationship.label,
-                                              tint: wireBadgeTone(relationship.tone))
-                                        .accessibilityLabel(relationship.description)
-                                }
-                                if !b.isMine { Text("with \(b.proName)").font(BrandFont.body(11)).foregroundStyle(BrandColor.textMuted) }
-                            }
-                            Text(Wire.dateTime(b.scheduledFor, timeZone: b.timeZone)).font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
-                            if let notes = b.aftercareNotes, !notes.isEmpty {
-                                Text(notes).font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary).lineLimit(3)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
-            }
-        }
+    /// The chart's single list of visits — each card carrying that visit's own
+    /// before/after frames. Lives in `ProClientVisitsList` so it is the native
+    /// twin of web's `VisitHistoryList.tsx` file-for-file, and so it can be
+    /// rendered on its own in a test.
+    private func visitsTab(_ chart: ProClientChart) -> some View {
+        ProClientVisitsList(visits: chart.history, viewingMedia: $viewingMedia)
+            .mediaFullscreenCover($viewingMedia)
     }
 
     private func productsTab(_ chart: ProClientChart) -> some View {
@@ -626,38 +609,6 @@ struct ProClientChartView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
-            }
-        }
-    }
-
-    private func photosTab(_ chart: ProClientChart) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if chart.photos.isEmpty {
-                emptyTab("No photos yet.")
-            } else {
-                // .adaptive keeps 3 columns on a phone-width container and adds
-                // columns on a wider one — iPad — instead of stretching 3 tiles
-                // across the extra width.
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 113), spacing: 10)], spacing: 10) {
-                    ForEach(chart.photos) { photo in
-                        Button {
-                            viewingMedia = FullscreenMedia.remote(id: photo.id, urlString: photo.imageUrl, isVideo: false)
-                        } label: {
-                            ZStack(alignment: .topLeading) {
-                                BrandColor.bgSecondary
-                                if let url = URL(string: photo.imageUrl) {
-                                    AsyncImage(url: url) { $0.resizable().scaledToFill() } placeholder: { ProgressView().tint(BrandColor.accent) }
-                                }
-                                Text(photo.phase).font(BrandFont.mono(8)).tracking(0.6).foregroundStyle(.white)
-                                    .padding(.horizontal, 6).padding(.vertical, 3).background(.black.opacity(0.5)).clipShape(Capsule())
-                                    .padding(6)
-                            }
-                            .frame(height: 110).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .mediaFullscreenCover($viewingMedia)
             }
         }
     }

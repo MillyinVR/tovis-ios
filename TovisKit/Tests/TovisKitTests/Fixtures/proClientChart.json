@@ -31,7 +31,7 @@
       "hint": null
     },
     "pattern": {
-      "value": "Saturday · Afternoon",
+      "value": "Saturday \u00b7 Afternoon",
       "hint": "1 cancelled"
     },
     "rebooking": {
@@ -43,7 +43,7 @@
     "flags": [
       {
         "key": "retention-risk",
-        "label": "Lapsed 8 wks · usual ~6 wk",
+        "label": "Lapsed 8 wks \u00b7 usual ~6 wk",
         "tone": "warn"
       },
       {
@@ -53,7 +53,8 @@
       }
     ]
   },
-  "alertBanner": "Sensitive scalp — patch test before color.",
+  "noShowCount": 2,
+  "alertBanner": "Sensitive scalp \u2014 patch test before color.",
   "doNotRebook": null,
   "allergies": [
     {
@@ -90,14 +91,37 @@
       "proName": "Studio Lumen",
       "isMine": true,
       "total": "180.00",
+      "durationMinutes": 90,
       "aftercareNotes": "Gloss refresh in 6 weeks.",
       "relationshipBadge": {
         "kind": "RR",
         "label": "RR",
-        "description": "Returning client · requested you",
+        "description": "Returning client \u00b7 requested you",
         "tone": "neutral",
         "significant": true
-      }
+      },
+      "photos": [
+        {
+          "id": "ph_1",
+          "bookingId": "bk_1",
+          "phase": "BEFORE",
+          "caption": "Roots grown out",
+          "isMine": true,
+          "serviceName": "Balayage",
+          "when": "2026-07-01T19:00:00.000Z",
+          "imageUrl": "https://x/before.jpg"
+        },
+        {
+          "id": "ph_2",
+          "bookingId": "bk_1",
+          "phase": "AFTER",
+          "caption": "Finished look",
+          "isMine": true,
+          "serviceName": "Balayage",
+          "when": "2026-07-01T19:00:00.000Z",
+          "imageUrl": "https://x/after.jpg"
+        }
+      ]
     },
     {
       "id": "bk_other_pro_1",
@@ -109,8 +133,10 @@
       "proName": "Other Pro",
       "isMine": false,
       "total": "180.00",
+      "durationMinutes": 60,
       "aftercareNotes": null,
-      "relationshipBadge": null
+      "relationshipBadge": null,
+      "photos": []
     }
   ],
   "products": [
@@ -143,6 +169,16 @@
   "photos": [
     {
       "id": "ph_1",
+      "bookingId": "bk_1",
+      "phase": "BEFORE",
+      "caption": "Roots grown out",
+      "isMine": true,
+      "serviceName": "Balayage",
+      "when": "2026-07-01T19:00:00.000Z",
+      "imageUrl": "https://x/before.jpg"
+    },
+    {
+      "id": "ph_2",
       "bookingId": "bk_1",
       "phase": "AFTER",
       "caption": "Finished look",
