@@ -1531,7 +1531,18 @@ func fixture(_ name: String) throws -> Data {
         #expect(chart.products.first?.brand == "Olaplex")
         #expect(chart.reviewsLeft.first?.rating == 5)
         #expect(chart.proFeedback.first?.title == "Punctual")
-        #expect(chart.photos.first?.phase == "AFTER")
+        // Cross-professional no-show count (web PR #1017) — the header stat.
+        #expect(chart.noShowCount == 2)
+        // Each visit carries its OWN frames, BEFORE-first, grouped server-side.
+        // There is no separate photo timeline to regroup on the device.
+        let ownVisit = try #require(chart.history.first(where: { $0.id == "bk_1" }))
+        #expect(ownVisit.photos.map(\.phase) == ["BEFORE", "AFTER"])
+        // Booked length — the other half of the card's "90 min · $180" line.
+        #expect(ownVisit.durationMinutes == 90)
+        #expect(ownVisit.photos.first?.imageUrl == "https://x/before.jpg")
+        // A visit with no frames this pro may see is EMPTY, not absent — the
+        // card renders no photo section at all for it.
+        #expect(otherProRow.photos.isEmpty)
         #expect(!chart.technicalEnabled)
         // Relationship intelligence — formatted server-side, decoded verbatim.
         let intel = try #require(chart.relationshipIntelligence)
@@ -1556,6 +1567,30 @@ func fixture(_ name: String) throws -> Data {
         let data = try JSONSerialization.data(withJSONObject: object)
         let chart = try JSONDecoder().decode(ProClientChart.self, from: data)
         #expect(chart.relationshipIntelligence == nil)
+        #expect(chart.header.fullName == "Jordan Rivera")
+    }
+
+    // A backend that predates web PR #1017 sends neither the no-show count nor
+    // per-visit photos. Neither may fail the decode — the whole chart would go
+    // dark over two additive fields.
+    @Test func decodesProClientChartWithoutNoShowCountOrVisitPhotos() throws {
+        var object = try JSONSerialization.jsonObject(
+            with: fixture("proClientChart")
+        ) as! [String: Any]
+        object.removeValue(forKey: "noShowCount")
+        object["history"] = (object["history"] as! [[String: Any]]).map { row -> [String: Any] in
+            var stripped = row
+            stripped.removeValue(forKey: "photos")
+            stripped.removeValue(forKey: "durationMinutes")
+            return stripped
+        }
+        let data = try JSONSerialization.data(withJSONObject: object)
+        let chart = try JSONDecoder().decode(ProClientChart.self, from: data)
+        // nil, NOT 0 — a fabricated zero would tell the pro this client has
+        // never no-showed when the server never said so.
+        #expect(chart.noShowCount == nil)
+        #expect(chart.history.allSatisfy { $0.photos.isEmpty })
+        #expect(chart.history.allSatisfy { $0.durationMinutes == nil })
         #expect(chart.header.fullName == "Jordan Rivera")
     }
 

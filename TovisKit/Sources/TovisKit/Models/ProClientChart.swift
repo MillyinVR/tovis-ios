@@ -13,18 +13,30 @@ public struct ProClientChart: Decodable, Sendable {
     /// ready-made strings — the client carries no derivations of its own. Optional
     /// so a pre-deploy backend that predates the field still decodes (card hidden).
     public let relationshipIntelligence: ProChartRelationshipIntelligence?
+    /// How many times this client has NOT shown up — across ALL professionals,
+    /// by design. Scoped to the viewing pro it would read as "never" for someone
+    /// who has stood up five others. Optional so a backend that predates web
+    /// PR #1017 still decodes (the stat simply doesn't render).
+    public let noShowCount: Int?
     public let alertBanner: String?
     public let doNotRebook: ProChartDoNotRebook?
     public let allergies: [ProChartAllergy]
     public let noteGroups: [ProChartNoteGroup]
+    /// Every visit, newest first — each carrying its OWN before/after frames.
+    /// The chart has ONE list of visits; there is no separate photo timeline.
     public let history: [ProChartBooking]
     public let products: [ProChartProduct]
     public let reviewsLeft: [ProChartReview]
     public let proFeedback: [ProChartFeedback]
-    public let photos: [ProChartPhoto]
     /// Whether the founder-gated technical record (formulas/consents) is enabled.
     /// Its encrypted free text stays web-only; native shows the gate + a pointer.
     public let technicalEnabled: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case header, relationshipIntelligence, noShowCount, alertBanner, doNotRebook
+        case allergies, noteGroups, history, products, reviewsLeft, proFeedback
+        case technicalEnabled
+    }
 }
 
 /// The pro chart's relationship-intelligence zone, fully formatted by the backend
@@ -112,7 +124,43 @@ public struct ProChartBooking: Decodable, Sendable, Identifiable {
     /// `isMine` is false, by construction rather than by the view remembering.
     public let relationshipBadge: ProRelationshipBadge?
     public let total: String?
+    /// Booked length in minutes. The web card prints "90 min • $180" as one
+    /// line; optional so a backend that predates the field still decodes and the
+    /// card simply shows the money half.
+    public let durationMinutes: Int?
     public let aftercareNotes: String?
+    /// This visit's own before/after frames, BEFORE-first — the SAME rows and the
+    /// same order the web chart renders on its card for this booking. Empty when
+    /// the visit has no frames this pro is allowed to see.
+    ///
+    /// The server groups these; the device never re-derives them from a flat
+    /// list, so "which visit is this frame from" has exactly one answer.
+    public let photos: [ProChartPhoto]
+
+    private enum CodingKeys: String, CodingKey {
+        case id, status, scheduledFor, timeZone, serviceName, categoryName
+        case proName, isMine, relationshipBadge, total, durationMinutes
+        case aftercareNotes, photos
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        status = try c.decode(String.self, forKey: .status)
+        scheduledFor = try c.decode(String.self, forKey: .scheduledFor)
+        timeZone = try c.decodeIfPresent(String.self, forKey: .timeZone)
+        serviceName = try c.decodeIfPresent(String.self, forKey: .serviceName)
+        categoryName = try c.decodeIfPresent(String.self, forKey: .categoryName)
+        proName = try c.decode(String.self, forKey: .proName)
+        isMine = try c.decode(Bool.self, forKey: .isMine)
+        relationshipBadge = try c.decodeIfPresent(ProRelationshipBadge.self, forKey: .relationshipBadge)
+        total = try c.decodeIfPresent(String.self, forKey: .total)
+        durationMinutes = try c.decodeIfPresent(Int.self, forKey: .durationMinutes)
+        aftercareNotes = try c.decodeIfPresent(String.self, forKey: .aftercareNotes)
+        // A backend that predates web PR #1017 sends no `photos` on a visit; the
+        // card then simply has no frames rather than failing the whole chart.
+        photos = try c.decodeIfPresent([ProChartPhoto].self, forKey: .photos) ?? []
+    }
 }
 
 public struct ProChartProduct: Decodable, Sendable, Identifiable {
