@@ -49,6 +49,21 @@ final class SessionUploadQueue {
     /// is shown, and the number that must reach zero before the shoot is safe.
     private(set) var pendingCount = 0
 
+    /// Whether the queue's most recent attempt actually FAILED (offline, a 5xx,
+    /// a timeout) and it is waiting out a backoff. False while photos are merely
+    /// queued or in flight — that is the difference between "still uploading"
+    /// (background work, a hairline, no words) and "waiting on signal" (the
+    /// lane's alert + RETRY). Cleared by the next confirmed photo or by the
+    /// queue draining empty; deliberately NOT cleared when a retry attempt
+    /// starts, so the alert doesn't flap off/on around every backoff cycle.
+    private(set) var stalled = false
+
+    /// What the camera lane should raise an ALERT about: everything owed, but
+    /// only once an attempt has actually failed — the whole serial queue is
+    /// stuck behind the failing head, so the full count is the honest number.
+    /// 0 while the queue is healthy: an in-flight upload is not a warning.
+    var stalledPendingCount: Int { stalled ? pendingCount : 0 }
+
     /// Photos the server REFUSED (a 4xx it will repeat). These are not retried;
     /// they need a decision, and they keep their bytes until they get one.
     private(set) var blockedCount = 0
@@ -226,6 +241,7 @@ final class SessionUploadQueue {
                 .filter { !blocked.contains($0.url) }
             guard let next = owed.first else {
                 statusMessage = nil
+                stalled = false
                 return
             }
 
@@ -394,11 +410,13 @@ final class SessionUploadQueue {
                     checksumSha256: job.checksumSha256
                 )
             }
-            // Safe server-side — release the bytes and move on.
+            // Safe server-side — release the bytes and move on. A confirmed
+            // photo proves the pipe works, so any earlier stall is over.
             SessionByteVault.remove(job.vaultURL)
             journal[job.storagePath] = nil
             Journal.save(journal)
             statusMessage = nil
+            stalled = false
             retry.stop()
             onMediaConfirmed?()
             return .released
@@ -421,6 +439,8 @@ final class SessionUploadQueue {
         let apiError = error as? APIError
         statusMessage = apiError?.userMessage
             ?? "Still uploading — waiting for a better connection."
+        // An attempt genuinely failed — from here the lane may raise its alert.
+        stalled = true
         refreshPendingCount()
         retry.scheduleRetry { [weak self] in
             guard let self else { return }

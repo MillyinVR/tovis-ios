@@ -128,7 +128,11 @@ enum CameraLane {
     struct Inputs: Equatable {
         /// Photos the server refused (retrying re-fails) — needs a decision.
         var terminalCount = 0
-        /// Photos still owed to the server — worth a tap.
+        /// Photos owed to the server whose upload has actually FAILED at least
+        /// once (the queue is waiting out a backoff) — worth a tap. A photo
+        /// that is merely queued or in flight is NOT counted here: healthy
+        /// background uploading is `backgroundBusy`'s hairline, never words,
+        /// so taking a picture feels instant instead of raising an alert.
         var retryableCount = 0
         /// Clips still owed to the server.
         var failedClipCount = 0
@@ -242,9 +246,11 @@ enum CameraLane {
                 action: LaneAction(label: "OPTIONS", kind: .terminalOptions)
             )
         }
-        // 2 — owed to the server, and a tap is worth making. Named by CAUSE so
-        // the pro can tell it from the refusal above: this one gets better when
-        // the signal does.
+        // 2 — an upload actually FAILED and a tap is worth making. Named by
+        // CAUSE so the pro can tell it from the refusal above: this one gets
+        // better when the signal does. Healthy in-flight uploads never reach
+        // this rule — they ride the hairline, so the words only appear when
+        // they are true.
         let owed = i.retryableCount + i.failedClipCount
         if owed > 0 {
             return LaneMessage(
