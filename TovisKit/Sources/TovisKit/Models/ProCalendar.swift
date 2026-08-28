@@ -155,6 +155,14 @@ public struct ProCalendarEvent: Decodable, Sendable, Identifiable {
     /// every booking while `ENABLE_RECURRING_APPOINTMENTS` is unset. Absent must
     /// decode fine and render NOTHING. Read it through `recurringDisplay`.
     public let recurring: ProRecurringMark?
+    /// HOLD events only: when this client's checkout reservation lapses.
+    ///
+    /// The server has always sent it; nothing read it, so the pro's tile said the
+    /// time was spoken for without ever saying for how long — while the client
+    /// watched a live countdown on the same ten minutes. Read it through
+    /// `holdExpiresAt`. Optional because a booking, a block and a waitlist row
+    /// have no expiry at all.
+    public let expiresAt: String?
 
     public var isBooking: Bool { kind == "BOOKING" }
     public var isBlock: Bool { kind == "BLOCK" }
@@ -172,6 +180,16 @@ public struct ProCalendarEvent: Decodable, Sendable, Identifiable {
     /// ⚠️ A hold is NOT a block. It must never fall into an `isBlock ? … : …`
     /// else-branch that assumes "booking", nor into a block's tap/edit path.
     public var isHold: Bool { kind == "HOLD" }
+
+    /// When a HOLD's reservation lapses, parsed from the wire's `expiresAt`.
+    ///
+    /// nil for every other kind, and nil for a hold whose string will not parse —
+    /// callers fall back to the tile they rendered before there was a clock,
+    /// rather than showing a countdown they cannot stand behind.
+    public var holdExpiresAt: Date? {
+        guard isHold, let expiresAt else { return nil }
+        return Wire.date(expiresAt)
+    }
 
     /// The bare block id for block operations (`GET`/`PATCH`/`DELETE …/blocked/{id}`),
     /// which expect the un-namespaced id. Prefers the API's `blockId`, else strips a
