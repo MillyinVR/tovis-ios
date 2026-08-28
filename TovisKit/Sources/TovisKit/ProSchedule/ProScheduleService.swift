@@ -71,24 +71,50 @@ public final class ProScheduleService: Sendable {
         return try await api.request("/pro/waitlist")
     }
 
-    /// POST /api/v1/pro/waitlist/{entryId}/offer — propose a concrete in-salon
-    /// appointment time to a waitlisted client (web `WaitlistOfferModal`). Creates a
-    /// PENDING `WaitlistOffer` and notifies the client to Confirm/Decline; it does
-    /// NOT book anything (the client's confirm does). SALON-only for v1. The route
-    /// derives the client + service from the entry, so only the chosen slot + the
-    /// in-salon `locationId` travel in the body — pick the slot from the pro's live
-    /// availability (`BookingService.day`). Idempotent, mirroring web
-    /// (`buildClientIdempotencyKey`): the key is scoped to the entry + the ISO start
-    /// instant (no nonce — the start already distinguishes one offer from another),
-    /// so a double-tap of the same slot replays instead of double-offering, while a
-    /// different slot mints a fresh key. The route rejects a missing idempotency-key
-    /// header, so one is always sent.
+    /// GET /api/v1/pro/waitlist/{entryId}/offer — what this pro may offer this
+    /// waitlisted client: which modes, anchored to which of the pro's own
+    /// locations, at what length.
+    ///
+    /// Ask before offering. This sheet used to derive the answer itself — find a
+    /// bookable SALON/SUITE and hardcode `SALON` — which is why a mobile-only pro
+    /// had no offer action and no explanation. The server folds together what the
+    /// pro can host and what an offer can be fulfilled in, and the POST below
+    /// re-runs both rules under the professional's lock.
+    ///
+    /// 🔴 Nothing about the CLIENT comes back. A mobile option names the pro's own
+    /// base; the destination is resolved server-side at offer time.
+    public func waitlistOfferOptions(
+        waitlistEntryId: String
+    ) async throws -> ProWaitlistOfferOptions {
+        return try await api.request("/pro/waitlist/\(waitlistEntryId)/offer")
+    }
+
+    /// POST /api/v1/pro/waitlist/{entryId}/offer — propose a concrete appointment
+    /// time to a waitlisted client (web `WaitlistOfferModal`). Creates a PENDING
+    /// `WaitlistOffer` and notifies the client to Confirm/Decline; it does NOT book
+    /// anything (the client's confirm does). The route derives the client + service
+    /// from the entry, so only the chosen slot, the mode, and the PRO's `locationId`
+    /// for that mode travel in the body — take all three from
+    /// `waitlistOfferOptions(...)` and the slot from the pro's live availability
+    /// (`BookingService.day`).
+    ///
+    /// `locationType` is IN-SALON or MOBILE. For a mobile offer the server resolves
+    /// the client's service address itself, runs the travel-radius check at offer
+    /// time, and stores a distance + general area for the pro — the exact address
+    /// stays closed until the client accepts.
+    ///
+    /// Idempotent, mirroring web (`buildClientIdempotencyKey`): the key is scoped to
+    /// the entry + the mode + the ISO start instant, so a double-tap of the same
+    /// slot replays instead of double-offering, while a different slot — or the same
+    /// minute in the OTHER mode, which is a different promise — mints a fresh key.
+    /// The route rejects a missing idempotency-key header, so one is always sent.
     @discardableResult
     public func offerWaitlistSlot(
         waitlistEntryId: String,
         scheduledFor: String,
         endsAt: String,
         locationId: String,
+        locationType: String,
         durationMinutes: Int,
         idempotencyKey: String? = nil
     ) async throws -> ProWaitlistOffer {
@@ -97,12 +123,14 @@ public final class ProScheduleService: Sendable {
                 scheduledFor: scheduledFor,
                 endsAt: endsAt,
                 locationId: locationId,
-                locationType: "SALON",
+                locationType: locationType,
                 durationMinutes: durationMinutes
             )
         )
         let key = idempotencyKey ?? buildClientIdempotencyKey(
-            scope: "pro-waitlist-offer", entityId: waitlistEntryId, action: scheduledFor)
+            scope: "pro-waitlist-offer",
+            entityId: waitlistEntryId,
+            action: "\(locationType):\(scheduledFor)")
         let response: ProWaitlistOfferResponse = try await api.request(
             "/pro/waitlist/\(waitlistEntryId)/offer",
             method: .post,

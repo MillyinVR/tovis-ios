@@ -250,6 +250,16 @@ struct PriorityOffersView: View {
                             .font(BrandFont.body(12.5))
                             .foregroundStyle(BrandColor.textMuted)
                             .lineLimit(1)
+                        // Without this a mobile offer reads exactly like an
+                        // in-salon one, and the client would confirm a visit to
+                        // their own home without being told so.
+                        if let whereLine = offer.whereLine {
+                            Text(whereLine)
+                                .font(BrandFont.body(12.5))
+                                .foregroundStyle(BrandColor.textMuted)
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                     Spacer(minLength: 8)
                     if busy == offer.offerId {

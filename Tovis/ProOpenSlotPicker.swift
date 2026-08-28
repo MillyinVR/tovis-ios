@@ -25,6 +25,12 @@ struct ProOpenSlotPicker: View {
     /// For a MOBILE booking, the client's saved service-address id so slots respect
     /// the pro's travel radius. nil for SALON (or an as-yet-unsaved MOBILE address).
     var clientAddressId: String? = nil
+    /// Set when a PRO is picking a time to OFFER a waitlisted client. MOBILE
+    /// placement needs the client's service address, and at offer time the pro is
+    /// not entitled to it — so this entry id goes to the server instead and the
+    /// destination is resolved there. It REPLACES `clientAddressId` on that path;
+    /// nothing about the client's address exists on this device to pass.
+    var waitlistEntryId: String? = nil
     /// Weekday indexes (0=Sun … 6=Sat) the pro's weekly schedule marks disabled.
     /// An off day legitimately has zero open times — with this set, the empty
     /// state says WHY (and `offDayHint` can point at the surface's escape
@@ -97,7 +103,7 @@ struct ProOpenSlotPicker: View {
     /// Re-fetch whenever the service/location/date inputs change. The rebook
     /// source is part of the key — it changes the width the day is computed for.
     private var fetchKey: String {
-        "\(professionalId)|\(serviceId)|\(offeringId)|\(locationId)|\(clientAddressId ?? "")|\(rebookOfBookingId ?? "")|\(ymd(selectedDate))"
+        "\(professionalId)|\(serviceId)|\(offeringId)|\(locationId)|\(locationType)|\(clientAddressId ?? "")|\(waitlistEntryId ?? "")|\(rebookOfBookingId ?? "")|\(ymd(selectedDate))"
     }
 
     var body: some View {
@@ -216,6 +222,7 @@ struct ProOpenSlotPicker: View {
                 locationType: locationType,
                 clientAddressId: clientAddressId,
                 rebookOfBookingId: rebookOfBookingId,
+                waitlistEntryId: waitlistEntryId,
             )
             slots = day.slots
             slotTimeZone = day.timeZone

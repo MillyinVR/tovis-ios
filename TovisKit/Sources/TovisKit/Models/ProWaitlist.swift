@@ -54,11 +54,46 @@ public struct ProWaitlistPendingOffer: Decodable, Sendable, Identifiable {
     public let id: String
     public let startsAt: String
     public let locationType: String
+    /// MOBILE offers only: how far the pro would travel and roughly where.
+    ///
+    /// 🔴 This is ALL the server sends about the destination while the offer is
+    /// PENDING, and that is enforced server-side — the response carries no
+    /// address and no coordinates to decode, whatever this app renders. The exact
+    /// address arrives only once the client accepts, on the booking that creates.
+    ///
+    /// nil for an in-salon offer (the client is coming to the pro), and nil from
+    /// a server predating this field.
+    public let travel: ProWaitlistOfferTravel?
 
-    public init(id: String, startsAt: String, locationType: String) {
+    public init(
+        id: String,
+        startsAt: String,
+        locationType: String,
+        travel: ProWaitlistOfferTravel? = nil
+    ) {
         self.id = id
         self.startsAt = startsAt
         self.locationType = locationType
+        self.travel = travel
+    }
+}
+
+/// The trip a PENDING mobile offer would involve, as the pro is allowed to see it.
+///
+/// `summary` is the whole sentence, composed by the server ("1.9 mi away ·
+/// Coronado, CA") and rendered VERBATIM — the wording of a privacy boundary is
+/// not re-authored per platform, the same rule `preferenceLabel` follows.
+/// `distanceMiles` / `areaLabel` are its parts, for a surface that needs them
+/// separately; either may be nil, and so may `summary` when neither is known.
+public struct ProWaitlistOfferTravel: Decodable, Sendable {
+    public let distanceMiles: Double?
+    public let areaLabel: String?
+    public let summary: String?
+
+    public init(distanceMiles: Double?, areaLabel: String?, summary: String?) {
+        self.distanceMiles = distanceMiles
+        self.areaLabel = areaLabel
+        self.summary = summary
     }
 }
 
@@ -100,16 +135,78 @@ public struct ProWaitlistEntry: Decodable, Sendable, Identifiable {
 
 /// The request body for offering a waitlisted client a concrete appointment time
 /// (web `WaitlistOfferModal`). The route derives the client + service from the
-/// waitlist entry, so neither travels here — only the chosen slot + in-salon
-/// location. `locationType` is always `SALON` (in-salon offers only, v1). Times
-/// are ISO-8601 instants; `durationMinutes` is sent alongside `endsAt` so the
-/// server doesn't have to re-derive it (it falls back to `endsAt - scheduledFor`).
+/// waitlist entry, so neither travels here — only the chosen slot, the mode, and
+/// the PRO's own location for that mode. Times are ISO-8601 instants;
+/// `durationMinutes` is sent alongside `endsAt` so the server doesn't have to
+/// re-derive it (it falls back to `endsAt - scheduledFor`).
+///
+/// 🔴 There is no client-address field, and there must never be one. For a MOBILE
+/// offer the destination is resolved server-side from the waitlist entry; asking
+/// this device to name it would mean handing the pro an address they are not yet
+/// entitled to.
 struct ProWaitlistOfferRequest: Encodable {
     let scheduledFor: String
     let endsAt: String
     let locationId: String
     let locationType: String
     let durationMinutes: Int
+}
+
+// MARK: - What may be offered (GET /api/v1/pro/waitlist/{entryId}/offer)
+
+/// One mode the SERVER says this pro may offer this entry a time in, and the
+/// location of their own it is anchored to.
+///
+/// Server-answered on purpose. Both apps used to derive this locally — find a
+/// bookable SALON/SUITE, send `locationType: "SALON"` — so a mobile-only pro had
+/// no offer action at all and no way to learn why. `loadWaitlistHostability` and
+/// `pickBookableLocation` are the two rules, and the POST re-runs both under the
+/// professional's lock, so an option here is one the send accepts.
+public struct ProWaitlistOfferOption: Decodable, Sendable, Identifiable {
+    public let locationType: String
+    public let locationId: String
+    public let locationName: String?
+    public let timeZone: String
+    public let durationMinutes: Int
+
+    public var id: String { "\(locationType):\(locationId)" }
+
+    public var isMobile: Bool { locationType == "MOBILE" }
+
+    public init(
+        locationType: String,
+        locationId: String,
+        locationName: String?,
+        timeZone: String,
+        durationMinutes: Int
+    ) {
+        self.locationType = locationType
+        self.locationId = locationId
+        self.locationName = locationName
+        self.timeZone = timeZone
+        self.durationMinutes = durationMinutes
+    }
+}
+
+/// `GET /api/v1/pro/waitlist/{entryId}/offer` → what this pro may offer.
+///
+/// `blockedReason` is a pro-facing sentence for the empty state — "there is
+/// nothing to offer, and here is what to fix" — not an error. It is non-nil
+/// exactly when `options` is empty.
+public struct ProWaitlistOfferOptions: Decodable, Sendable {
+    public let offeringId: String?
+    public let options: [ProWaitlistOfferOption]
+    public let blockedReason: String?
+
+    public init(
+        offeringId: String?,
+        options: [ProWaitlistOfferOption],
+        blockedReason: String?
+    ) {
+        self.offeringId = offeringId
+        self.options = options
+        self.blockedReason = blockedReason
+    }
 }
 
 /// `POST /api/v1/pro/waitlist/{entryId}/offer` → `{ ok, offer }`.

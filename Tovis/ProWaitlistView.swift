@@ -4,7 +4,8 @@
 // services, grouped by service and FIFO-ranked (who has waited longest is rank #1).
 // Two ways to fill a spot from each row — work the list top-down:
 //   • Message   → resolve-or-create the WAITLIST thread and push ThreadView.
-//   • Offer a time → propose a concrete in-salon slot (ProWaitlistOfferSheet →
+//   • Offer a time → propose a concrete slot, in-salon or mobile, in whichever
+//     modes the SERVER says this pro can offer (ProWaitlistOfferSheet →
 //     POST /pro/waitlist/{entryId}/offer); the client confirms before it books.
 // Reached from the pro profile's Business section.
 import SwiftUI
@@ -204,6 +205,21 @@ struct ProWaitlistView: View {
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 2)
+
+                    // A MOBILE offer's trip, as the server composed it — how far
+                    // and roughly where, and that is deliberately everything.
+                    //
+                    // 🔴 Rendered verbatim, never re-assembled from the parts:
+                    // the phrasing of a privacy boundary must read identically on
+                    // both platforms. The exact address is not in this payload at
+                    // all — it arrives on the booking, after the client accepts.
+                    if let travel = offer.travel?.summary, !travel.isEmpty {
+                        Text("You’d travel · \(travel)")
+                            .font(BrandFont.body(12))
+                            .foregroundStyle(BrandColor.textMuted)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

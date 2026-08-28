@@ -1,20 +1,27 @@
 // Offer-a-time sheet for the pro waitlist workspace — the native port of the web
 // `WaitlistOfferModal` (`app/pro/calendar/_components/WaitlistOfferModal.tsx`).
-// Proposes a concrete in-salon appointment time to a waitlisted client: pick a
-// slot from the pro's live availability, then POST /api/v1/pro/waitlist/{entryId}/offer
-// (an existing route — no backend change). The route creates a PENDING offer and
-// notifies the client, who Confirms/Declines before it books.
+// Proposes a concrete appointment time — in-salon OR mobile — to a waitlisted
+// client: pick a slot from the pro's live availability, then
+// POST /api/v1/pro/waitlist/{entryId}/offer. The route creates a PENDING offer
+// and notifies the client, who Confirms/Declines before it books.
 //
-// Unlike the web modal — which is handed the offering + salon location by the
-// calendar surface — this sheet resolves them itself from the pro's own context:
-//   • professionalId ← proProfile.myProfile()
-//   • in-salon location ← proCalendar.locations() (bookable SALON/SUITE, primary
-//     first — mirrors web's `offerSalonLocation`)
-//   • offeringId + duration ← proBookings.sellableServices("SALON") matched on the
-//     row's serviceId (absent ⇒ no active in-salon offering ⇒ blocked, matching
-//     web's `offeringId === null` empty state)
-// so it can be reached straight from a waitlist row — the outreach workspace's
-// (`ProWaitlistView`) and the pro calendar's management sheet's alike.
+// The mode list is NOT decided here. This sheet used to resolve its own context
+// (bookable SALON/SUITE from `proCalendar.locations()`, offering from
+// `proBookings.sellableServices("SALON")`) and send `locationType: "SALON"` as a
+// literal — so a mobile-only pro was told "you don't have a bookable in-salon
+// location", which was true and useless, and web's modal did the same thing in
+// its own words. Both now ask
+// `GET /api/v1/pro/waitlist/{entryId}/offer` (`waitlistOfferOptions`), which
+// answers from the same two resolvers the POST re-runs under the professional's
+// lock — so every option shown is one the send will accept, and the two platforms
+// cannot disagree about what a pro may offer.
+//
+// 🔴 Nothing about the client's address is on this device, in any response it
+// reads. A mobile option carries the PRO's own base; the destination is resolved
+// server-side from the waitlist entry — for the availability query
+// (`waitlistEntryId`, never `clientAddressId`) and for the offer alike. The pro
+// learns how far and roughly where once the offer exists, and the exact address
+// only once the client accepts it.
 import SwiftUI
 import TovisKit
 
@@ -34,33 +41,51 @@ struct ProWaitlistOfferSheet: View {
     /// confirm ("Offer sent to …") and reload.
     var onOffered: (String) -> Void
 
-    /// The resolved context needed to run the availability picker + send the offer.
+    /// Everything needed to run the availability picker + send the offer. The
+    /// mode options come from the server; `professionalId` is the only piece
+    /// still resolved locally, because the availability query needs it and it is
+    /// the pro's own id.
     private struct OfferContext {
         let professionalId: String
         let offeringId: String
-        let durationMinutes: Int
-        let locationId: String
-        let locationTimeZone: String?
+        let options: [ProWaitlistOfferOption]
     }
 
     private enum Phase {
         case loading
         case ready(OfferContext)
-        /// Can't offer a time (no active in-salon offering, or no bookable salon).
+        /// Can't offer a time — the server's own sentence for why.
         case blocked(String)
         case failed(String)
     }
 
     @State private var phase: Phase = .loading
     @State private var selectedSlot: String?
+    /// Which of the server's options is selected. Index rather than the value so
+    /// the segmented control binds directly.
+    @State private var modeIndex = 0
     /// The open-slot picker's day (see ProOpenSlotPicker.selectedDate).
     @State private var slotDay = Date()
     @State private var sending = false
     @State private var sendError: String?
 
     private var canSend: Bool {
-        if case .ready = phase { return selectedSlot != nil && !sending }
+        if case let .ready(ctx) = phase {
+            return selectedOption(ctx) != nil && selectedSlot != nil && !sending
+        }
         return false
+    }
+
+    private func selectedOption(_ ctx: OfferContext) -> ProWaitlistOfferOption? {
+        guard ctx.options.indices.contains(modeIndex) else { return ctx.options.first }
+        return ctx.options[modeIndex]
+    }
+
+    /// "Mobile", or the salon location's name. Matches web's `modeLabel`.
+    private func modeLabel(_ option: ProWaitlistOfferOption) -> String {
+        if option.isMobile { return "Mobile" }
+        let name = option.locationName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return name.isEmpty ? "In-salon" : name
     }
 
     var body: some View {
@@ -119,27 +144,50 @@ struct ProWaitlistOfferSheet: View {
 
     @ViewBuilder
     private func readyBody(_ ctx: OfferContext) -> some View {
-        ProOpenSlotPicker(
-            professionalId: ctx.professionalId,
-            serviceId: serviceId,
-            offeringId: ctx.offeringId,
-            locationId: ctx.locationId,
-            locationType: "SALON",
-            locationTimeZone: ctx.locationTimeZone,
-            selectedSlot: $selectedSlot,
-            selectedDate: $slotDay
-        )
+        if let option = selectedOption(ctx) {
+            if ctx.options.count > 1 {
+                Picker("Where", selection: $modeIndex) {
+                    ForEach(Array(ctx.options.enumerated()), id: \.element.id) { index, mode in
+                        Text(modeLabel(mode)).tag(index)
+                    }
+                }
+                .pickerStyle(.segmented)
+                // A slot is only valid for the mode it was computed in.
+                .onChange(of: modeIndex) { _, _ in selectedSlot = nil }
+            }
 
-        if let sendError {
-            Text(sendError)
-                .font(BrandFont.body(13, .semibold))
-                .foregroundStyle(BrandColor.ember)
-        }
+            if option.isMobile {
+                Text("You’ll travel to \(displayClientName). Once they accept, their address appears on the booking.")
+                    .font(BrandFont.body(12))
+                    .foregroundStyle(BrandColor.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
-        if let zone = ctx.locationTimeZone, !zone.isEmpty {
-            Text("Times are in \(zone).")
-                .font(BrandFont.body(12))
-                .foregroundStyle(BrandColor.textMuted)
+            ProOpenSlotPicker(
+                professionalId: ctx.professionalId,
+                serviceId: serviceId,
+                offeringId: ctx.offeringId,
+                locationId: option.locationId,
+                locationType: option.locationType,
+                locationTimeZone: option.timeZone,
+                // 🔴 No client address, on either path. A mobile day's placement
+                // is resolved server-side from the entry id below.
+                waitlistEntryId: waitlistEntryId,
+                selectedSlot: $selectedSlot,
+                selectedDate: $slotDay
+            )
+
+            if let sendError {
+                Text(sendError)
+                    .font(BrandFont.body(13, .semibold))
+                    .foregroundStyle(BrandColor.ember)
+            }
+
+            if !option.timeZone.isEmpty {
+                Text("Times are in \(option.timeZone).")
+                    .font(BrandFont.body(12))
+                    .foregroundStyle(BrandColor.textMuted)
+            }
         }
     }
 
@@ -168,45 +216,35 @@ struct ProWaitlistOfferSheet: View {
 
     // MARK: - Data
 
-    /// Bookable in-salon location (SALON or SUITE) — mirrors web `offerSalonLocation`.
-    private func isInSalon(_ loc: ProLocationSummary) -> Bool {
-        loc.type == "SALON" || loc.type == "SUITE"
-    }
-
     private func load() async {
         phase = .loading
         selectedSlot = nil
+        modeIndex = 0
         sendError = nil
         do {
             async let profileTask = session.client.proProfile.myProfile()
-            async let locationsTask = session.client.proCalendar.locations()
-            async let servicesTask = session.client.proBookings.sellableServices(locationType: "SALON")
+            async let optionsTask = session.client.proSchedule.waitlistOfferOptions(
+                waitlistEntryId: waitlistEntryId
+            )
             let professionalId = try await profileTask.id
-            let locations = try await locationsTask
-            let services = try await servicesTask
+            let offerOptions = try await optionsTask
 
-            // In-salon location the offer anchors to: bookable SALON/SUITE, primary
-            // first (mirrors web's `offerSalonLocation`).
-            let salon = locations.first { $0.isBookable && isInSalon($0) && $0.isPrimary }
-                ?? locations.first { $0.isBookable && isInSalon($0) }
-            guard let salon else {
-                phase = .blocked("You don’t have a bookable in-salon location yet, so there’s no time to offer. Add one in your locations first.")
-                return
-            }
-
-            // The pro's active in-salon offering for this service. Absent ⇒ nothing
-            // to offer (matches web's null-offering empty state).
-            guard let match = services.first(where: { $0.id == serviceId }) else {
-                phase = .blocked("You don’t have an active in-salon offering for \(serviceName), so there’s no time to offer yet. Add or activate the service first.")
+            guard let offeringId = offerOptions.offeringId,
+                  !offerOptions.options.isEmpty
+            else {
+                // The server's own sentence — one wording, both platforms, and it
+                // names what to fix rather than what happens to be missing here.
+                phase = .blocked(
+                    offerOptions.blockedReason
+                        ?? "There’s no time to offer for \(serviceName) yet. Add or activate the service and a bookable location first."
+                )
                 return
             }
 
             phase = .ready(OfferContext(
                 professionalId: professionalId,
-                offeringId: match.offeringId,
-                durationMinutes: match.selectedMode?.durationMinutes ?? 60,
-                locationId: salon.id,
-                locationTimeZone: salon.timeZone
+                offeringId: offeringId,
+                options: offerOptions.options
             ))
         } catch let error as APIError {
             phase = .failed(error.userMessage)
@@ -216,7 +254,7 @@ struct ProWaitlistOfferSheet: View {
     }
 
     private func send(_ ctx: OfferContext) async {
-        guard let slot = selectedSlot, !sending else { return }
+        guard let slot = selectedSlot, let option = selectedOption(ctx), !sending else { return }
         guard let start = Wire.date(slot) else {
             sendError = "That time couldn’t be read. Pick another."
             return
@@ -225,10 +263,12 @@ struct ProWaitlistOfferSheet: View {
         sendError = nil
         defer { sending = false }
 
-        // endsAt = the chosen start + the offering's duration (the web modal derives
-        // it from the picked slot's end; iOS's picker yields only the start instant).
+        // endsAt = the chosen start + the mode's duration (the web modal derives it
+        // from the picked slot's end; iOS's picker yields only the start instant).
+        // The duration is the server's answer for THIS mode — mobile and in-salon
+        // legitimately differ.
         let endIso = ProCalendarGrid.iso(
-            start.addingTimeInterval(Double(ctx.durationMinutes) * 60)
+            start.addingTimeInterval(Double(option.durationMinutes) * 60)
         )
 
         do {
@@ -236,8 +276,9 @@ struct ProWaitlistOfferSheet: View {
                 waitlistEntryId: waitlistEntryId,
                 scheduledFor: slot,
                 endsAt: endIso,
-                locationId: ctx.locationId,
-                durationMinutes: ctx.durationMinutes
+                locationId: option.locationId,
+                locationType: option.locationType,
+                durationMinutes: option.durationMinutes
             )
             onOffered(displayClientName)
             dismiss()
