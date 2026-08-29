@@ -67,14 +67,20 @@ struct ServiceImportPreviewRequestBody: Encodable {
     let rows: [ServiceMenuInputRow]
 }
 
-/// One committed row's mapping decision (`ServiceImportDecision`). The web wizard
-/// only ever imports salon offerings (`offersMobile` hardcoded false), but the
-/// shape carries mobile fields for parity with the route. Optional price/duration
+/// One committed row's mapping decision (`ServiceImportDecision`). Optional
 /// fields are `encodeIfPresent` (nil → omitted; server coerces to null).
+///
+/// W6: the mode flags are OPTIONAL, and `nil` means "not stated" — the commit
+/// route then derives them from the pro's bookable locations
+/// (`loadProLocationCapability`), the same helper `POST /pro/offerings` uses.
+/// Both wizards used to hardcode `offersInSalon: true` / `offersMobile: false`,
+/// because an absent flag parsed as `false` and the row was refused NO_MODE. A
+/// mobile-only pro's whole imported menu was therefore written salon-only.
+/// ⚠️ Sending `false` is a STATED choice and is obeyed — omit, don't send false.
 public struct ServiceImportDecision: Encodable, Sendable, Equatable {
     public let serviceId: String
-    public let offersInSalon: Bool
-    public let offersMobile: Bool
+    public let offersInSalon: Bool?
+    public let offersMobile: Bool?
     public let salonPrice: Double?
     public let salonDurationMinutes: Double?
     public let mobilePrice: Double?
@@ -83,8 +89,8 @@ public struct ServiceImportDecision: Encodable, Sendable, Equatable {
 
     public init(
         serviceId: String,
-        offersInSalon: Bool,
-        offersMobile: Bool,
+        offersInSalon: Bool? = nil,
+        offersMobile: Bool? = nil,
         salonPrice: Double?,
         salonDurationMinutes: Double?,
         mobilePrice: Double?,
@@ -152,6 +158,36 @@ public struct ServicePreviewRow: Decodable, Sendable, Identifiable, Equatable {
 public struct ServiceImportPreviewResponse: Decodable, Sendable {
     public let catalog: [ServiceCatalogOption]
     public let rows: [ServicePreviewRow]
+
+    /// W6: which modes this pro can ACTUALLY be booked in, from their bookable
+    /// locations. Same field and shape `GET /pro/services/catalog` already ships
+    /// to the add-service form — one server-side derivation, two consumers.
+    public let locationCapability: ProLocationCapability?
+
+    /// The Salon/Mobile pair the commit route will itself derive for a decision
+    /// that states neither, so the wizard can TELL the pro which mode their menu
+    /// is about to be imported as.
+    ///
+    /// `decodeIfPresent`: a server predating these fields omits them, and the
+    /// import still works — the decisions omit the flags either way, and that
+    /// older server would refuse them all NO_MODE regardless of what we showed.
+    public let defaultOfferingModes: ProOfferingModes?
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        catalog = try c.decode([ServiceCatalogOption].self, forKey: .catalog)
+        rows = try c.decode([ServicePreviewRow].self, forKey: .rows)
+        locationCapability = try c.decodeIfPresent(
+            ProLocationCapability.self, forKey: .locationCapability
+        )
+        defaultOfferingModes = try c.decodeIfPresent(
+            ProOfferingModes.self, forKey: .defaultOfferingModes
+        )
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case catalog, rows, locationCapability, defaultOfferingModes
+    }
 }
 
 // MARK: - Commit response
