@@ -42,6 +42,10 @@ struct ProMigrateServicesView: View {
     @State private var phase: Phase = .upload
     @State private var catalog: [ServiceCatalogOption] = []
     @State private var catalogById: [String: ServiceCatalogOption] = [:]
+    /// W6: the Salon/Mobile pair the commit route will derive for this pro, from
+    /// the preview. DISPLAY only — the decisions state neither mode and let the
+    /// server derive them, so this can never disagree with what gets written.
+    @State private var defaultModes: ProOfferingModes?
     @State private var rows: [ServiceRow] = []
     /// Per-row raise overrides, keyed by rowId (default = 10% every 10 weeks).
     @State private var rampConfigs: [String: ServiceRampConfig] = [:]
@@ -111,6 +115,11 @@ struct ProMigrateServicesView: View {
                 subtitle: "We matched each service to the catalog. Fix anything that’s off — every service needs a match before you import."
             )
             statPills
+            if let modeLine {
+                Text(modeLine)
+                    .font(BrandFont.body(12))
+                    .foregroundStyle(BrandColor.textMuted)
+            }
             VStack(spacing: 10) {
                 ForEach(rows) { row in serviceRowCard(row) }
             }
@@ -146,6 +155,23 @@ struct ProMigrateServicesView: View {
     private var commitLabel: String {
         let n = counts.willAdd
         return "Add \(n) service\(n == 1 ? "" : "s")"
+    }
+
+    /// Tell the pro which mode their menu is about to be imported as.
+    ///
+    /// The web wizard shows this per row as Salon/Mobile pills; this screen had
+    /// no mode surface at all, which is how a mobile-only pro could import a
+    /// wholly in-salon menu without one cue that anything was wrong. Nil against
+    /// a server that does not send `defaultOfferingModes` — better to say
+    /// nothing than to guess, which is the mistake this whole change undoes.
+    private var modeLine: String? {
+        guard let modes = defaultModes else { return nil }
+        if modes.offersInSalon && modes.offersMobile {
+            return "These will be added as in-salon and mobile services."
+        }
+        if modes.offersMobile { return "These will be added as mobile services." }
+        if modes.offersInSalon { return "These will be added as in-salon services." }
+        return nil
     }
 
     private var statPills: some View {
@@ -371,6 +397,7 @@ struct ProMigrateServicesView: View {
             let byId = Dictionary(preview.catalog.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             catalog = preview.catalog
             catalogById = byId
+            defaultModes = preview.defaultOfferingModes
             rows = preview.rows.map { buildRow($0, byId: byId) }
             rampConfigs = [:]
             phase = .map
@@ -387,14 +414,23 @@ struct ProMigrateServicesView: View {
             guard let serviceId = row.mappedServiceId,
                   row.status == .ok || row.status == .priceGrace else { return nil }
             let ramp = rampConfigs[row.rowId] ?? .default
+            // W6: state NEITHER mode. This wizard has no mode toggle, so there
+            // is nothing the pro could have stated — the commit route derives
+            // both from their bookable locations. Hardcoding the pair here is
+            // exactly what bypassed that derivation and wrote a mobile-only
+            // pro's whole menu as salon-only.
+            //
+            // A CSV row carries ONE price and ONE duration with no mode
+            // attached, so both ride along: the mode the server derives is the
+            // one it stores a price for, and it drops the other. Sending only
+            // salon pricing would turn a correct mobile derivation into a
+            // priceless mobile offering.
             return ServiceImportDecision(
                 serviceId: serviceId,
-                offersInSalon: true,
-                offersMobile: false,
                 salonPrice: row.salonPrice,
                 salonDurationMinutes: row.salonDurationMinutes,
-                mobilePrice: nil,
-                mobileDurationMinutes: nil,
+                mobilePrice: row.salonPrice,
+                mobileDurationMinutes: row.salonDurationMinutes,
                 ramp: ramp
             )
         }
@@ -490,6 +526,7 @@ struct ProMigrateServicesView: View {
         rows = []
         catalog = []
         catalogById = [:]
+        defaultModes = nil
         rampConfigs = [:]
         result = nil
         errorMessage = nil

@@ -173,6 +173,86 @@ private extension URLRequest {
         #expect(unmatched.bestServiceId == nil)
         #expect(unmatched.sourcePrice == nil)
         #expect(unmatched.suggestions.isEmpty)
+
+        // This payload predates the W6 fields; both decode to nil rather than
+        // failing the whole preview.
+        #expect(preview.locationCapability == nil)
+        #expect(preview.defaultOfferingModes == nil)
+    }
+
+    // MARK: - W6: the modes the pro can actually host
+
+    /// The same payload plus the two fields the preview route now sends, for a
+    /// pro whose only bookable location is a mobile base.
+    private static let mobileOnlyPreviewJSON = """
+    {
+      "ok": true,
+      "catalog": [
+        {
+          "id": "svc_cut", "name": "Haircut & Style", "categoryName": "Hair",
+          "minPrice": 60, "defaultDurationMinutes": 60, "allowMobile": true
+        }
+      ],
+      "rows": [
+        {
+          "index": 0, "sourceName": "Haircut", "sourcePrice": 90,
+          "sourceDurationMinutes": 60, "suggestions": [], "bestServiceId": "svc_cut"
+        }
+      ],
+      "locationCapability": { "salon": false, "mobile": true },
+      "defaultOfferingModes": { "offersInSalon": false, "offersMobile": true }
+    }
+    """
+
+    @Test func previewDecodesLocationCapabilityAndDefaultModes() async throws {
+        reset(response: Self.mobileOnlyPreviewJSON)
+
+        let preview = try await makeService().previewServiceImport(
+            rows: [ServiceMenuInputRow(name: "Haircut", price: 90, durationMinutes: 60)]
+        )
+
+        #expect(preview.locationCapability == ProLocationCapability(salon: false, mobile: true))
+        #expect(
+            preview.defaultOfferingModes
+                == ProOfferingModes(offersInSalon: false, offersMobile: true)
+        )
+    }
+
+    /// The fix, on the wire.
+    ///
+    /// The import wizard has no mode toggle, so it states NEITHER mode and lets
+    /// the commit route derive both from the pro's bookable locations. It used
+    /// to hardcode `offersInSalon: true` / `offersMobile: false`, which is how a
+    /// mobile-only pro's whole imported menu was written salon-only. Both keys
+    /// must be ABSENT from the JSON: a `false` is a stated choice the route obeys.
+    @Test func unstatedModesAreOmittedFromTheCommitBody() async throws {
+        reset(response: """
+        {
+          "ok": true,
+          "rows": [{ "serviceId": "svc_cut", "ok": true, "offeringId": "off_1", "ramps": 0 }],
+          "summary": { "attempted": 1, "created": 1, "skipped": 0, "rampsCreated": 0 }
+        }
+        """)
+
+        _ = try await makeService().commitServiceImport(decisions: [
+            ServiceImportDecision(
+                serviceId: "svc_cut",
+                // A CSV row's one price/duration rides on BOTH modes, so the one
+                // the server derives is the one it can store a price for.
+                salonPrice: 90, salonDurationMinutes: 60,
+                mobilePrice: 90, mobileDurationMinutes: 60,
+                ramp: .default
+            ),
+        ])
+
+        let json = try bodyJSON()
+        let sent = try #require(json["decisions"] as? [[String: Any]])
+        #expect(sent[0]["offersInSalon"] == nil)
+        #expect(sent[0]["offersMobile"] == nil)
+        // The pricing the derivation needs is present for both modes.
+        #expect((sent[0]["salonPrice"] as? NSNumber)?.doubleValue == 90)
+        #expect((sent[0]["mobilePrice"] as? NSNumber)?.doubleValue == 90)
+        #expect((sent[0]["mobileDurationMinutes"] as? NSNumber)?.doubleValue == 60)
     }
 
     @Test func commitPostsDecisionsAndDecodes() async throws {
@@ -187,6 +267,8 @@ private extension URLRequest {
         }
         """)
 
+        // Modes STATED explicitly — still put on the wire verbatim, so a caller
+        // that does have a choice to express keeps expressing it.
         let decisions = [
             ServiceImportDecision(
                 serviceId: "svc_balayage",
