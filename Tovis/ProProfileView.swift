@@ -787,9 +787,17 @@ struct ProProfileView: View {
         .accessibilityLabel("\(proName) signature work")
     }
 
-    /// Landscape, unlike the portrait grid tiles — the promoted post is the one
-    /// picture on the page that gets room to breathe.
-    private var signatureAspect: CGFloat { 4.0 / 3.0 }
+    /// 🔴 PORTRAIT, and it must stay portrait. This was 4:3 LANDSCAPE, on the
+    /// reasoning that the promoted post "gets room to breathe" — but the work is
+    /// shot 3:4 upright, so a landscape window over it threw away 44% of the
+    /// frame's height, top and bottom, blind-centre. The biggest, most deliberate
+    /// photograph on the profile was the worst crop in the app: it cut the hair
+    /// off the top and the finished style off the bottom.
+    ///
+    /// 4:5 is `PublishCrop.instagramFeed` — read from the shared constant rather
+    /// than re-typed, since web's Signature card and the look detail's hero are
+    /// the same frame and must not drift from it again.
+    private var signatureAspect: CGFloat { PublishCrop.instagramFeed }
 
     /// Sized through `MediaGridCell` rather than a bare `.frame(height:)`:
     /// `MediaGridImage` fill-crops with `scaledToFill`, whose LAYOUT width
@@ -816,7 +824,14 @@ struct ProProfileView: View {
             )
         } else {
             MediaGridCell(aspectRatio: signatureAspect, cornerRadius: 0) {
-                MediaGridImage(url: URL(string: tile.displayUrl), showsSpinner: false)
+                MediaGridImage(
+                    url: URL(string: tile.displayUrl),
+                    focal: tile.focalPoint,
+                    showsSpinner: false,
+                    // The card is the full content width, not a grid cell, so it
+                    // decodes at the screen budget rather than the tile one.
+                    maxPixel: ImageDownsample.screenMaxPixel
+                )
             }
         }
     }

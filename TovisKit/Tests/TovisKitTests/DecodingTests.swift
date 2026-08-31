@@ -2080,6 +2080,16 @@ func fixture(_ name: String) throws -> Data {
         // Service chips need names, not just ids (the ids alone can't be rendered).
         #expect(p.portfolioTiles.first?.serviceIds == ["svc_1"])
         #expect(p.portfolioTiles.first?.serviceNames == ["Balayage"])
+        // The subject focal point. Both profile surfaces cover-crop to frames
+        // that are NOT the capture's aspect (a 3:4 grid cell, a 4:5 Signature
+        // card), so without this they crop blind-centre — which on an upright
+        // portrait is the client's chin. The grid tile and the Signature carry
+        // DIFFERENT values on purpose: reading one for the other is exactly the
+        // copy-paste this pins.
+        #expect(p.portfolioTiles.first?.focalPoint?.x == 0.48)
+        #expect(p.portfolioTiles.first?.focalPoint?.y == 0.39)
+        #expect(p.signature?.tile.focalPoint?.x == 0.52)
+        #expect(p.signature?.tile.focalPoint?.y == 0.41)
         #expect(p.reviews.first?.rating == 5)
         #expect(p.stats.averageRatingLabel == "4.9")
         #expect(p.stats.followerCount == 45)

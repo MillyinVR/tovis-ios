@@ -29,6 +29,8 @@
 // Everything that renders a uniform media grid goes through here so the failure
 // can't be reintroduced in one screen and not the others.
 import SwiftUI
+// `MediaFocalPoint` (the crop origin a cell centres on) lives in TovisKit.
+import TovisKit
 
 /// The geometry a uniform media grid shares.
 enum MediaGridLayout {
@@ -38,6 +40,12 @@ enum MediaGridLayout {
     /// Square — the management and review grids, where the tile is an inventory
     /// thumbnail rather than a client-facing crop.
     static let squareAspect: CGFloat = 1.0
+
+    /// Long-edge decode budget for one grid tile. A 3-up grid cell is ~120pt, so
+    /// 3x for the densest display is ~360px; 512 leaves headroom for the 2-up
+    /// grids and for a cell that a wider container stretches, while staying a
+    /// fraction of the full-screen budget a slide decodes at.
+    static let tileMaxPixel: CGFloat = 512
 
     /// A phone-width content column, used only to translate a phone-tuned
     /// `count` into an adaptive minimum below — never rendered against.
@@ -101,18 +109,27 @@ struct MediaGridCell<Content: View>: View {
 /// where `scaledToFill`'s overflow is harmless and gets clipped.
 struct MediaGridImage: View {
     let url: URL?
+    /// The subject focal point (camera C6) to centre the fill-crop on, or nil for
+    /// a plain centred fill. A grid cell crops harder than anything else in the
+    /// app — a 3:4 cell over a 3:4 capture is generous, a 4:5 Signature card over
+    /// one is not — so the tile grids want this for the same reason the feed does.
+    /// Nil keeps the old centred `AsyncImage` path exactly (see `FocalCoverImage`).
+    var focal: MediaFocalPoint? = nil
     /// Whether a loading tile shows a spinner. The spaced grids (the pro's own
     /// portfolio, My media, review shots) do. The public profile's flush 2pt
     /// mosaic passes `false`: a loading tile there is just the cell's own fill,
     /// which is exactly how that screen looked before this view was shared — and
     /// that screen is the one that was already right, so it doesn't get changed.
     var showsSpinner: Bool = true
+    /// Long-edge decode budget for the focal path. A grid cell is ~120pt wide, so
+    /// the full-screen default would decode a slide-sized bitmap for a thumbnail —
+    /// `FocalCoverImage`'s own doc comment invites a grid to pass less, and this
+    /// is the grid.
+    var maxPixel: CGFloat = MediaGridLayout.tileMaxPixel
 
     var body: some View {
         if let url {
-            AsyncImage(url: url) { image in
-                image.resizable().scaledToFill()
-            } placeholder: {
+            FocalCoverImage(url: url, focal: focal, maxPixel: maxPixel) {
                 if showsSpinner { ProgressView().tint(BrandColor.accent) }
             }
         }

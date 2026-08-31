@@ -37,7 +37,11 @@ struct PortfolioTileFace: View {
     // would push the chip out past the cell's edge and into the clip.
     var body: some View {
         MediaGridCell(cornerRadius: cornerRadius) {
-            MediaGridImage(url: URL(string: tile.displayUrl), showsSpinner: showsSpinner)
+            MediaGridImage(
+                url: URL(string: tile.displayUrl),
+                focal: tile.focalPoint,
+                showsSpinner: showsSpinner
+            )
         }
         .overlay { glyph }
         .overlay { scrim }
