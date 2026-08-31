@@ -82,17 +82,67 @@ struct FocalCoverImage<Placeholder: View, Failure: View>: View {
     }
 
     private func loadFocalImage() async {
-        focalImage = nil
         focalLoadFailed = false
+
+        // A cache hit resolves BEFORE the nil reset below, so a tile that has
+        // already been decoded comes straight back instead of flashing its
+        // placeholder on every re-appearance.
+        if let cached = FocalImageCache.image(for: url, maxPixel: maxPixel) {
+            focalImage = cached
+            return
+        }
+
+        focalImage = nil
         guard let (data, _) = try? await URLSession.shared.data(from: url) else {
             focalLoadFailed = true
             return
         }
         if let image = await ImageDownsample.thumbnail(from: data, maxPixel: maxPixel) {
+            FocalImageCache.store(image, url: url, maxPixel: maxPixel)
             focalImage = image
         } else {
             focalLoadFailed = true
         }
+    }
+}
+
+/// Decoded-image cache for the focal path.
+///
+/// 🔴 Why this had to exist before the profile grids could use `FocalCoverImage`:
+/// the nil-focal branch is an `AsyncImage`, which keeps its own in-memory cache of
+/// DECODED images. The focal branch fetches and decodes by hand and had none — so
+/// every time a view re-appeared it re-ran `URLSession` (bytes may come from
+/// URLCache; the decode never does) and re-decoded from scratch.
+///
+/// That was survivable while the only caller was the feed, which shows one slide
+/// at a time. It is not survivable on a 60-tile portfolio grid that scrolls, which
+/// is exactly what `MediaGridImage` became a caller of — and those tiles all gain a
+/// focal the moment the server starts sending one, so the regression would have
+/// arrived on its own, without an app release, the day the API change deployed.
+///
+/// Keyed on `maxPixel` as well as the URL: the same asset is legitimately decoded
+/// at a tile budget and at the screen budget, and handing a 512px bitmap to a
+/// full-width Signature card would render it soft.
+///
+/// `NSCache` is thread-safe and evicts itself under memory pressure, so this can
+/// never become the jetsam source the capture pipeline already learned to avoid.
+private enum FocalImageCache {
+    private static let cache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.countLimit = 120
+        return cache
+    }()
+
+    private static func key(_ url: URL, _ maxPixel: CGFloat) -> NSString {
+        "\(url.absoluteString)|\(Int(maxPixel))" as NSString
+    }
+
+    static func image(for url: URL, maxPixel: CGFloat) -> UIImage? {
+        cache.object(forKey: key(url, maxPixel))
+    }
+
+    static func store(_ image: UIImage, url: URL, maxPixel: CGFloat) {
+        cache.setObject(image, forKey: key(url, maxPixel))
     }
 }
 

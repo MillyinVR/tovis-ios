@@ -270,12 +270,25 @@ public struct ProPortfolioTile: Decodable, Sendable, Identifiable {
     /// a literal "0".
     public let engagement: ProPortfolioTileEngagement
 
+    /// Normalized subject focal point (camera C6), [0,1] top-left. Every profile
+    /// surface cover-crops this tile to a different frame — a 3:4 grid cell, a
+    /// 4:5 Signature card — so each needs the focal to place its window on the
+    /// face. Optional so a payload from a server that predates the field still
+    /// decodes; nil → center, which is exactly how these tiles cropped before.
+    public let focalX: Double?
+    public let focalY: Double?
+
     /// The thumbnail to render (falls back to the full source).
     public var displayUrl: String { thumbUrl ?? src }
+
+    /// The validated focal point to crop on, or nil (center) when absent or
+    /// invalid. Mirrors `LooksFeedItem.focalPoint` and the web `resolveFocalPoint`.
+    public var focalPoint: MediaFocalPoint? { MediaFocalPoint(x: focalX, y: focalY) }
 
     private enum CodingKeys: String, CodingKey {
         case id, lookId, caption, src, thumbUrl, isVideo, isFeaturedInPortfolio
         case serviceIds, serviceNames, before, engagement
+        case focalX, focalY
     }
 
     public init(from decoder: Decoder) throws {
@@ -292,6 +305,8 @@ public struct ProPortfolioTile: Decodable, Sendable, Identifiable {
         before = try c.decodeIfPresent(PairedBeforeMedia.self, forKey: .before)
         engagement = try c.decodeIfPresent(ProPortfolioTileEngagement.self, forKey: .engagement)
             ?? ProPortfolioTileEngagement(likeCount: 0, commentCount: 0, recreatedCount: 0)
+        focalX = try c.decodeIfPresent(Double.self, forKey: .focalX)
+        focalY = try c.decodeIfPresent(Double.self, forKey: .focalY)
     }
 }
 

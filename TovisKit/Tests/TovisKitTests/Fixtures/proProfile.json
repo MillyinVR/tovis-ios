@@ -76,6 +76,8 @@
           "Balayage"
         ],
         "before": null,
+        "focalX": 0.48,
+        "focalY": 0.39,
         "engagement": {
           "likeCount": 214,
           "commentCount": 18,
@@ -122,6 +124,8 @@
           "Balayage"
         ],
         "before": null,
+        "focalX": 0.52,
+        "focalY": 0.41,
         "engagement": {
           "likeCount": 331,
           "commentCount": 41,

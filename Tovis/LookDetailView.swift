@@ -168,22 +168,40 @@ struct LookDetailView: View {
 
     // MARK: - Media
 
+    /// 🔴 An ASPECT, never a fixed height. The hero was pinned at 420pt while its
+    /// width came from the device, so the same photograph was cropped differently
+    /// on every iPhone — and web's twin was worse still (a height CAP on a
+    /// width-driven image, throwing away 53% of the frame at desktop widths).
+    ///
+    /// 4:5 is `PublishCrop.instagramFeed`, shared with the Signature card and with
+    /// web's hero, so one look is one shape on every surface and both platforms.
+    private var heroAspect: CGFloat { PublishCrop.instagramFeed }
+
     @ViewBuilder
     private func media(_ look: LookDetail) -> some View {
+        // All three branches go through `MediaGridCell`, which is the primitive
+        // that keeps a fill-cropped child from sizing its own parent (read the
+        // 🔴 at the top of MediaGridCell.swift — this screen is exactly the shape
+        // of view that bug bit). It also supplies the corner radius and the
+        // placeholder fill the hand-rolled version was doing itself.
         Group {
             if look.isVideo, let url = URL(string: look.primaryMedia.url) {
-                LookVideoView(url: url, isActive: true, isMuted: false)
-                    .frame(height: 420)
+                MediaGridCell(aspectRatio: heroAspect, cornerRadius: 16) {
+                    LookVideoView(url: url, isActive: true, isMuted: false)
+                }
             } else if let pair = look.beforeAfterPair {
                 // The money shot. `passVerticalScroll` so the wipe claims only
                 // horizontal drags — this screen scrolls under it, unlike the
                 // grid tiles the slider defaults to.
-                BeforeAfterCompareView(
-                    beforeURL: pair.before,
-                    afterURL: pair.after,
-                    height: 420,
-                    passVerticalScroll: true
-                )
+                MediaGridCell(aspectRatio: heroAspect, cornerRadius: 16) {
+                    BeforeAfterCompareView(
+                        beforeURL: pair.before,
+                        afterURL: pair.after,
+                        cornerRadius: 0,
+                        fillContainer: true,
+                        passVerticalScroll: true
+                    )
+                }
                 .overlay(alignment: .topTrailing) {
                     shareButton(
                         after: pair.after.absoluteString,
@@ -192,13 +210,14 @@ struct LookDetailView: View {
                     )
                 }
             } else if let url = URL(string: look.primaryMedia.url) {
-                FocalCoverImage(url: url, focal: look.focalPoint) {
-                    Rectangle().fill(BrandColor.bgSecondary)
-                } failure: {
-                    Rectangle().fill(BrandColor.bgSecondary)
+                MediaGridCell(aspectRatio: heroAspect, cornerRadius: 16) {
+                    FocalCoverImage(
+                        url: url,
+                        focal: look.focalPoint,
+                        placeholder: { Rectangle().fill(BrandColor.bgSecondary) },
+                        failure: { Rectangle().fill(BrandColor.bgSecondary) }
+                    )
                 }
-                .frame(height: 420)
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(alignment: .topTrailing) {
                     shareButton(after: look.primaryMedia.url, professionalId: look.professional.id)
                 }
@@ -523,24 +542,49 @@ struct LookDetailView: View {
                 // .adaptive keeps 3 columns on a phone-width container and adds
                 // columns on a wider one — iPad — instead of stretching 3 tiles
                 // across the extra width.
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 115), spacing: 6)], spacing: 6) {
+                LazyVGrid(columns: MediaGridLayout.columns(count: 3, spacing: 6), spacing: 6) {
                     ForEach(others) { asset in
                         if let url = asset.media.thumbOrFullURL {
-                            FocalCoverImage(url: url, focal: asset.media.focalPoint) {
-                                Rectangle().fill(BrandColor.bgSecondary)
-                            } failure: {
-                                Rectangle().fill(BrandColor.bgSecondary)
-                            }
-                            .frame(height: 108)
-                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                            .overlay(alignment: .bottomTrailing) {
-                                if asset.media.isVideo {
-                                    Image(systemName: "play.fill")
-                                        .font(.system(size: 9))
-                                        .foregroundStyle(.white)
-                                        .padding(5)
+                            // 🔴 These tiles were not tappable. They carried a
+                            // play glyph on a video and sat under a heading that
+                            // invites a tap, and nothing happened — while web's
+                            // twin (`ClickableMedia`) has always opened the
+                            // fullscreen viewer. A rendered control with no
+                            // handler; the button is the fix, not the chrome.
+                            Button {
+                                fullscreenMedia = FullscreenMedia.clientExportable(
+                                    id: asset.media.id,
+                                    urlString: asset.media.url,
+                                    isVideo: asset.media.isVideo,
+                                    professionalId: look.professional.id
+                                )
+                            } label: {
+                                // 3:4 through the shared cell, like every other
+                                // browse tile — a fixed 108pt band over a ~118pt
+                                // column was a landscape window on an upright
+                                // capture, cropping ~30% of each thumbnail away.
+                                MediaGridCell(cornerRadius: 10) {
+                                    FocalCoverImage(
+                                        url: url,
+                                        focal: asset.media.focalPoint,
+                                        maxPixel: MediaGridLayout.tileMaxPixel,
+                                        placeholder: { Rectangle().fill(BrandColor.bgSecondary) },
+                                        failure: { Rectangle().fill(BrandColor.bgSecondary) }
+                                    )
+                                }
+                                .overlay(alignment: .bottomTrailing) {
+                                    if asset.media.isVideo {
+                                        Image(systemName: "play.fill")
+                                            .font(.system(size: 9))
+                                            .foregroundStyle(.white)
+                                            .padding(5)
+                                    }
                                 }
                             }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(
+                                asset.media.isVideo ? "Open video from this post" : "Open photo from this post"
+                            )
                         }
                     }
                 }
