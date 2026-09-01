@@ -183,8 +183,8 @@ public final class ProMediaService: Sendable {
     public func updateMedia(
         mediaId: String,
         caption: String?,
-        isEligibleForLooks: Bool,
-        isFeaturedInPortfolio: Bool,
+        isEligibleForLooks: Bool? = nil,
+        isFeaturedInPortfolio: Bool? = nil,
         serviceIds: [String],
         pairing: ProMediaPairingEdit = .untouched
     ) async throws {
