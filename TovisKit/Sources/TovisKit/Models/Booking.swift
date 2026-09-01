@@ -259,6 +259,18 @@ struct CreateHoldRequest: Encodable, Sendable {
     /// reschedule keeps the booking's original add-ons. Omitted (not sent
     /// blank) for an ordinary booking.
     let rescheduleBookingId: String?
+    /// Book the Look, B8. Set when the slot is being reserved for a consult's
+    /// booking proposal: the server then sizes the reservation from that
+    /// proposal's WHOLE estimate — sized for every enhancement she could still
+    /// tick — instead of from the floor offering's base.
+    ///
+    /// 🔴 Mutually exclusive with `addOnIds`, and refused on the wire if both
+    /// are sent: B7 answered the enhancement question with the estimate's own
+    /// beyond-floor lines, which never travel as add-on ids.
+    ///
+    /// Optional, so it is omitted entirely from the encoded body for every
+    /// ordinary hold — the wire for those paths is byte-identical to before.
+    let consultId: String?
 }
 
 struct CreateHoldResponse: Decodable, Sendable {
@@ -318,6 +330,25 @@ struct FinalizeBookingRequest: Encodable, Sendable {
     /// The client ticked "I agree to the cancellation policy" at the confirm step
     /// (M15). Required by the server when the pro charges no-show/late-cancel fees.
     let cancellationPolicyAccepted: Bool
+    /// Book the Look, B8 — the discovery reference the booking is attributed
+    /// to. Present on the consult path because the proposal names the look it
+    /// was derived from; `nil` (and omitted) everywhere else.
+    let lookPostId: String?
+    /// The consult that produced this booking. The write boundary re-derives
+    /// the whole proposal under the session lock before it sizes or prices
+    /// anything, so this stamps the booking — it does not carry a number.
+    let consultId: String?
+    /// Book the Look, B8 — the enhancements she TICKED, as estimate-line ids.
+    ///
+    /// 🔴 This list decides WHICH, never HOW MUCH: the server re-derives each
+    /// one's price and duration from the pro's own menu. Absent or empty means
+    /// the floor alone, which is what a booking with no consult sends and is
+    /// correct.
+    ///
+    /// Optional rather than an always-sent `[]` so the encoded body — and
+    /// therefore the derived idempotency nonce — is unchanged for every
+    /// non-consult booking.
+    let consultEnhancementLineIds: [String]?
 }
 
 struct FinalizeBookingResponse: Decodable, Sendable {

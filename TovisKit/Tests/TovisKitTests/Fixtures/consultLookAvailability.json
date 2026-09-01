@@ -1,0 +1,42 @@
+{
+  "_comment": "GET /client/consult/look/availability — Book the Look, B8. All four arms on purpose: open with an existing session, open with none yet, the DARK answer (available:false, reason null) that keeps the device's entry point hidden and leaks nothing about the founder gate, and a named refusal that leaks nothing either.",
+  "openWithSession": {
+    "ok": true,
+    "availability": {
+      "available": true,
+      "reason": null,
+      "consult": {
+        "id": "consult_look_fixture_1",
+        "status": "COMPLETED",
+        "lookPostId": "look_fixture_1",
+        "professionalId": "cmq9p645v0002jp04fttoatlq",
+        "serviceCategoryId": "category_hair_color_1",
+        "createdAt": "2026-08-31T18:00:00.000Z"
+      }
+    }
+  },
+  "openNoSession": {
+    "ok": true,
+    "availability": {
+      "available": true,
+      "reason": null,
+      "consult": null
+    }
+  },
+  "dark": {
+    "ok": true,
+    "availability": {
+      "available": false,
+      "reason": null,
+      "consult": null
+    }
+  },
+  "serviceUnlinked": {
+    "ok": true,
+    "availability": {
+      "available": false,
+      "reason": "LOOK_SERVICE_UNLINKED",
+      "consult": null
+    }
+  }
+}

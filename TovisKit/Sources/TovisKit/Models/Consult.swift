@@ -56,6 +56,84 @@ struct ConsultAvailabilityResponse: Decodable, Sendable {
     let availability: ConsultAvailability
 }
 
+// ── Book the Look, B2/B8 — the LOOK-anchored consult ───────────────────────
+//
+// A consult anchored to a LOOK and a professional, with NO booking. A
+// DELIBERATELY SEPARATE type from `ConsultSession` rather than a nullable
+// `bookingId` on it: shipped builds decode `ConsultSession.bookingId` as a
+// non-optional String, and the booking-anchored endpoints they read must keep
+// their exact shape. Everything downstream — agreements, intake, inspiration,
+// capture, analysis, results — is the SAME flow; only the anchor differs.
+
+/// Why a look may not be consultable, when saying so leaks nothing. The founder
+/// gate stays a silent `available: false` with NO reason, exactly like the
+/// booking endpoint — an unrecognised code decodes to `unknown` and is rendered
+/// as the reason-agnostic refusal rather than crashing.
+public enum ConsultLookUnavailableReason: String, Decodable, Sendable, Equatable {
+    case lookServiceUnlinked = "LOOK_SERVICE_UNLINKED"
+    case lookVerticalNotEnabled = "LOOK_VERTICAL_NOT_ENABLED"
+    case unknown
+
+    public init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = Self(rawValue: raw) ?? .unknown
+    }
+}
+
+public struct ConsultLookSession: Decodable, Sendable, Identifiable {
+    public let id: String
+    public let status: ConsultSessionStatus
+    public let lookPostId: String
+    public let professionalId: String
+    public let serviceCategoryId: String
+    public let createdAt: String
+
+    public init(
+        id: String,
+        status: ConsultSessionStatus,
+        lookPostId: String,
+        professionalId: String,
+        serviceCategoryId: String,
+        createdAt: String
+    ) {
+        self.id = id
+        self.status = status
+        self.lookPostId = lookPostId
+        self.professionalId = professionalId
+        self.serviceCategoryId = serviceCategoryId
+        self.createdAt = createdAt
+    }
+}
+
+struct ConsultLookSessionResponse: Decodable, Sendable {
+    let consult: ConsultLookSession
+}
+
+/// GET /client/consult/look/availability — whether the consult door is open for
+/// a LOOK. The server owns the whole decision (founder gate, look visibility,
+/// service linkage, pilot vertical); the device never re-derives any of it and
+/// shows an entry point only on an explicit `available: true`.
+public struct ConsultLookAvailability: Decodable, Sendable {
+    public let available: Bool
+    public let reason: ConsultLookUnavailableReason?
+    /// The caller's existing session for this look, when one exists.
+    public let consult: ConsultLookSession?
+
+    public init(
+        available: Bool,
+        reason: ConsultLookUnavailableReason?,
+        consult: ConsultLookSession?
+    ) {
+        self.available = available
+        self.reason = reason
+        self.consult = consult
+    }
+}
+
+struct ConsultLookAvailabilityResponse: Decodable, Sendable {
+    let availability: ConsultLookAvailability
+}
+
 public enum ConsultAgreementKind: String, Codable, Sendable, CaseIterable {
     case sensitiveDataConsent = "SENSITIVE_DATA_CONSENT"
     case adult18PlusAttestation = "ADULT_18_PLUS_ATTESTATION"
@@ -647,7 +725,14 @@ public struct ConsultStyleDirection: Decodable, Sendable, Identifiable {
 
 public struct ConsultClientResults: Decodable, Sendable {
     public let consultId: String
-    public let bookingId: String
+    // Book the Look, B2/B8 — EXACTLY ONE anchor is set. `bookingId` widened to
+    // optional rather than being joined by a second results type, because a
+    // look-anchored consult returns it as null and a non-optional String here
+    // fails to decode the whole results payload. `lookPostId` is OPTIONAL on
+    // the wire (absent, not null, on the booking-anchored path), which is what
+    // `String?` decodes.
+    public let bookingId: String?
+    public let lookPostId: String?
     public let serviceCategoryId: String
     public let briefRevisionId: String
     public let briefRevision: Int

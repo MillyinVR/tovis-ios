@@ -58,8 +58,26 @@ struct BookingFlowView: View {
     /// without it the opening stays claimable and the discount is silently dropped.
     /// `nil` for an ordinary booking or a reschedule.
     var openingId: String? = nil
+    /// Book the Look, B8 — when set, this flow is committing a CONSULT's
+    /// booking proposal rather than an offering picked off a menu.
+    ///
+    /// It changes four things, each of which was a real defect on web before it
+    /// was fixed (B4b):
+    ///  1. the MODE is pinned to the one the proposal was derived under — the
+    ///     placement toggle would otherwise re-ask a settled question and show
+    ///     times for a proposal she has never seen;
+    ///  2. the grid, the hold and the finalize are all sized by the consult
+    ///     (`consultId`), not by the floor offering's base;
+    ///  3. the header shows NO price and never the service name — the floor's
+    ///     own starting price is smaller than the estimate she just agreed to,
+    ///     and a LOOK never names the service that produced it (B1);
+    ///  4. the second step reviews the proposal instead of offering add-ons,
+    ///     which the server refuses on this path anyway.
+    var consultProposal: ConsultBookingProposal? = nil
 
     private var isReschedule: Bool { rescheduleBookingId != nil }
+
+    private var isConsult: Bool { consultProposal != nil }
 
     private enum Phase {
         case loading
@@ -69,7 +87,15 @@ struct BookingFlowView: View {
         case needsAddress
         case failed(String)
         /// Carries the (re)scheduled instant ISO — works for finalize + reschedule.
-        case success(scheduledFor: String, bookingId: String?, professionalId: String?)
+        ///
+        /// 🔴 `status` is the status the SERVER actually gave the booking, and
+        /// the receipt is written from it. Without it this screen told everyone
+        /// "Request sent · PENDING CONFIRMATION", including clients of an
+        /// auto-accepting pro whose booking came back ACCEPTED — the same lie
+        /// the proposal's own `commitNote` exists to prevent, printed one screen
+        /// later. Nil for a reschedule, which is already confirmed.
+        case success(scheduledFor: String, bookingId: String?, professionalId: String?,
+                     status: String?)
     }
 
     /// The one pushed step. The add-ons screen reads the hold + bootstrap out of
@@ -114,11 +140,17 @@ struct BookingFlowView: View {
     /// renders even before a `boot` exists (the address-gate empty state), so this
     /// can't just be read off `boot` inline.
     @State private var serviceArea: AvailabilityServiceArea?
-    /// Minutes of add-ons the client actually booked, reported back by the
-    /// add-ons step. The base width alone under-states the appointment on the
-    /// confirmation card (a 180-minute service booked with 45 minutes of add-ons
-    /// is a 225-minute appointment).
-    @State private var bookedAddOnMinutes = 0
+    /// What the second step reported back about the width that was actually
+    /// booked, so the confirmation card states the appointment's real length.
+    ///
+    /// On the ORDINARY path it is the minutes of add-ons to add to the base —
+    /// the base alone under-states it (a 180-minute service booked with 45
+    /// minutes of add-ons is a 225-minute appointment). On the CONSULT path it
+    /// is the proposal's own TOTAL for the selection she committed to.
+    /// `bookedDuration` reads it accordingly: adding the consult total to the
+    /// base would double-count, and that base is the HOLD's width, which was
+    /// deliberately over-reserved for every enhancement she could have ticked.
+    @State private var bookedWidthMinutes = 0
     @State private var showConsult = false
     /// Server-decided consult entry for the just-created booking (GET
     /// /client/consult/availability). Fail-closed: stays false until the
@@ -156,7 +188,10 @@ struct BookingFlowView: View {
     /// Show the SALON/MOBILE switch only for a new booking on an offering that
     /// supports both. A reschedule preserves the original mode.
     private var canChooseMode: Bool {
-        !isReschedule && offering.offersInSalon && offering.offersMobile
+        // A consult proposal was DERIVED under one mode — its lines, prices and
+        // width are that mode's answers. Letting the sheet flip it would show
+        // times for a proposal the client has never seen.
+        !isReschedule && !isConsult && offering.offersInSalon && offering.offersMobile
     }
 
     /// The mode a new flow opens in. Reschedule keeps the booking's existing
@@ -167,6 +202,8 @@ struct BookingFlowView: View {
     /// default is SALON, so untouched callers behave identically).
     private var initialMode: String {
         if isReschedule { return locationType }
+        // Echoed by the server on the proposal, never re-derived here.
+        if let consultProposal { return consultProposal.locationType }
         if locationType.uppercased() == "MOBILE" && offering.offersMobile { return "MOBILE" }
         if offering.offersInSalon { return "SALON" }
         if offering.offersMobile { return "MOBILE" }
@@ -175,6 +212,32 @@ struct BookingFlowView: View {
 
     /// A mobile booking can't proceed until a service address is chosen.
     private var addressRequiredButMissing: Bool { isMobile && selectedAddressId == nil }
+
+    /// The cover's title when the look itself has no name.
+    ///
+    /// 🔴 On the CONSULT path it must never be the service name: that is the one
+    /// screen whose whole point is that she is booking an OUTCOME, and B1's rule
+    /// is that a look never names the service that produced it. The
+    /// named-service door — a client who picked a service off a menu — keeps the
+    /// service name it has always shown.
+    private func coverTitleFallback(_ boot: AvailabilityBootstrap) -> String {
+        if isConsult { return ConsultBookingCopy.unnamedLookTitle }
+        return boot.serviceName ?? offering.name
+    }
+
+    /// 🔴 A consult proposal shows NO price here. This figure is the FLOOR
+    /// offering's own starting price, and the client has just been shown, and
+    /// agreed to, the whole estimate's "Starting at $X" — which is larger by
+    /// every beyond-floor line. Rendering the smaller number on the very next
+    /// screen contradicts the proposal she is committing to.
+    ///
+    /// Suppressed rather than replaced: decision 5 requires the estimate framing
+    /// to travel WITH that number, this header has no room for it, and the
+    /// proposal's own word ("Starting at") is deliberately not the look card's
+    /// ("From"). The review step re-states the price with its framing intact.
+    private var headerPriceFromLabel: String? {
+        isConsult ? nil : offering.priceFromLabel
+    }
 
     /// The width to SHOW. A reschedule commits the booking's own duration, which
     /// drifts from the offering's base whenever the pro edits the service — so
@@ -193,10 +256,17 @@ struct BookingFlowView: View {
     /// The width of the appointment that was actually BOOKED — the base plus the
     /// add-ons the client kept. `phase` is `.success` by the time this renders,
     /// so it cannot read the bootstrap echo.
-    private var bookedDuration: Int { baseDuration + bookedAddOnMinutes }
+    private var bookedDuration: Int {
+        isConsult ? bookedWidthMinutes : baseDuration + bookedWidthMinutes
+    }
 
     /// The base width the bootstrap echoed, remembered across the phase change.
     @State private var baseDurationState: Int?
+
+    /// The look's name, remembered for the same reason: the confirmation card
+    /// outlives `.ready(boot)`, and on the consult path it is what stands where
+    /// the service name used to.
+    @State private var lookNameState: String?
 
     private var baseDuration: Int {
         if case let .ready(boot) = phase { return boot.request.durationMinutes }
@@ -212,8 +282,9 @@ struct BookingFlowView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 case let .failed(message):
                     failure(message)
-                case let .success(scheduledFor, bookingId, professionalId):
-                    success(scheduledFor, bookingId: bookingId, professionalId: professionalId)
+                case let .success(scheduledFor, bookingId, professionalId, status):
+                    success(scheduledFor, bookingId: bookingId,
+                            professionalId: professionalId, status: status)
                 case .needsAddress:
                     addressGate
                 case let .ready(boot):
@@ -232,7 +303,7 @@ struct BookingFlowView: View {
                 }
             }
             .sheet(isPresented: $showConsult) {
-                if case let .success(_, bookingId?, professionalId?) = phase {
+                if case let .success(_, bookingId?, professionalId?, _) = phase {
                     ConsultFlowView(bookingId: bookingId, professionalId: professionalId)
                 }
             }
@@ -280,10 +351,10 @@ struct BookingFlowView: View {
                     BookingSheetCover(
                         cover: boot.cover,
                         trust: boot.trust,
-                        serviceName: boot.serviceName ?? offering.name,
+                        serviceName: coverTitleFallback(boot),
                         proName: proName,
                         proAvatarUrl: boot.primaryPro?.avatarUrl,
-                        priceFromLabel: offering.priceFromLabel,
+                        priceFromLabel: headerPriceFromLabel,
                         durationMinutes: displayDuration,
                         onClose: { close() }
                     )
@@ -420,7 +491,11 @@ struct BookingFlowView: View {
             VStack(alignment: .leading, spacing: 22) {
                 BrandSurface {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(offering.name)
+                        // Same rule as the cover and the confirmation: a LOOK
+                        // never names the service that produced it (B1), and
+                        // this gate renders BEFORE any bootstrap exists, so it
+                        // cannot read a look name off one.
+                        Text(isConsult ? ConsultBookingCopy.unnamedLookTitle : offering.name)
                             .font(BrandFont.body(17, .semibold)).foregroundStyle(BrandColor.textPrimary)
                         Text("with \(proName)")
                             .font(BrandFont.body(13)).foregroundStyle(BrandColor.textSecondary)
@@ -681,8 +756,14 @@ struct BookingFlowView: View {
             .disabled(ctaDisabled)
 
             if hold == nil {
-                Text("No charge yet · The pro confirms first")
+                // 🔴 "The pro confirms first" is FALSE for an auto-accepting
+                // pro. On the consult path the server composes the true
+                // sentence for this pro through the same fork the commit runs,
+                // so print that instead of the generic promise.
+                Text(consultProposal?.commitNote ?? "No charge yet · The pro confirms first")
                     .font(BrandFont.body(11)).foregroundStyle(BrandColor.textMuted)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 16)
@@ -695,7 +776,10 @@ struct BookingFlowView: View {
 
     private var ctaLabel: String {
         if hold == nil { return "Pick a time to continue" }
-        return isReschedule ? "Confirm new time" : "Continue to add-ons"
+        if isReschedule { return "Confirm new time" }
+        // A consult proposal has no add-on step to promise — the next screen
+        // reviews what the consultation put together and books it.
+        return isConsult ? "Review & book" : "Continue to add-ons"
     }
 
     private var ctaDisabled: Bool {
@@ -707,33 +791,55 @@ struct BookingFlowView: View {
     @ViewBuilder
     private var addOnsStep: some View {
         if case let .ready(boot) = phase, let hold, let holdExpiresAt {
-            BookingAddOnsView(
-                context: BookingAddOnsContext(
-                    coverImageUrl: boot.cover?.imageUrl,
-                    lookName: boot.cover?.lookName,
-                    serviceName: boot.serviceName ?? offering.name,
-                    proName: proName,
-                    whenLabel: Wire.dateTime(hold.scheduledFor, timeZone: boot.timeZone)
-                ),
-                holdId: hold.id,
-                holdExpiresAt: holdExpiresAt,
-                offeringId: offering.id,
-                locationType: mode,
-                addOns: addOns,
-                cancellationPolicy: cancellationPolicy,
-                openingId: openingId,
-                onBooked: { booked, addOnMinutes in
-                    holdConsumed = true
-                    bookedAddOnMinutes = addOnMinutes
-                    session.signalRefresh() // surface the change in Appointments/Home
-                    phase = .success(
-                        scheduledFor: booked.scheduledFor,
-                        bookingId: booked.id,
-                        professionalId: booked.professionalId
-                    )
-                    path.removeAll()
-                }
+            let context = BookingAddOnsContext(
+                coverImageUrl: boot.cover?.imageUrl,
+                lookName: boot.cover?.lookName,
+                // The strip's fallback follows the cover's rule: on the consult
+                // path a look never names the service that produced it (B1).
+                serviceName: coverTitleFallback(boot),
+                proName: proName,
+                whenLabel: Wire.dateTime(hold.scheduledFor, timeZone: boot.timeZone)
             )
+            // What "booked" means for the confirmation card. The consult path
+            // reports the PROPOSAL's own total for the selection she committed
+            // to; the ordinary path reports the add-on minutes it added to the
+            // base. `onBooked(_:_:)` carries the two as `bookedWidthMinutes`
+            // and they are interpreted by `bookedDuration`.
+            let booked: (FinalizedBooking, Int) -> Void = { booked, widthMinutes in
+                holdConsumed = true
+                bookedWidthMinutes = widthMinutes
+                session.signalRefresh() // surface the change in Appointments/Home
+                phase = .success(
+                    scheduledFor: booked.scheduledFor,
+                    bookingId: booked.id,
+                    professionalId: booked.professionalId,
+                    status: booked.status
+                )
+                path.removeAll()
+            }
+
+            if let consultProposal {
+                ConsultBookingReviewView(
+                    context: context,
+                    holdId: hold.id,
+                    holdExpiresAt: holdExpiresAt,
+                    initialProposal: consultProposal,
+                    cancellationPolicy: cancellationPolicy,
+                    onBooked: booked
+                )
+            } else {
+                BookingAddOnsView(
+                    context: context,
+                    holdId: hold.id,
+                    holdExpiresAt: holdExpiresAt,
+                    offeringId: offering.id,
+                    locationType: mode,
+                    addOns: addOns,
+                    cancellationPolicy: cancellationPolicy,
+                    openingId: openingId,
+                    onBooked: booked
+                )
+            }
         } else {
             // Only reachable if the hold went away under the push (expired and
             // cleared). Say so rather than showing an add-ons screen that cannot
@@ -818,36 +924,46 @@ struct BookingFlowView: View {
     /// A RESCHEDULE is already confirmed, so it keeps the hero and the card but
     /// drops the pending pill and the steps — nothing is waiting on the pro.
     private func success(_ scheduledFor: String, bookingId: String?,
-                         professionalId: String?) -> some View {
-        ScrollView {
+                         professionalId: String?, status: String?) -> some View {
+        // 🔴 The receipt is written from the status the SERVER gave the booking,
+        // never from an assumption that every client booking is a request. An
+        // auto-accepting pro's booking comes back ACCEPTED, and the proposal
+        // promised exactly that one screen earlier.
+        let confirmed = BookingStatusPresentation.tone(status) == .active
+
+        return ScrollView {
             VStack(spacing: 16) {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 56)).foregroundStyle(BrandColor.accent)
 
-                Text(isReschedule ? "Time updated" : "Request sent")
+                Text(isReschedule ? "Time updated"
+                     : confirmed ? "You’re booked" : "Request sent")
                     .font(BrandFont.display(24, .semibold)).foregroundStyle(BrandColor.textPrimary)
 
                 Text(isReschedule
                      ? "Your booking was moved. \(proName) will be notified."
-                     : "\(proName) has your request — nothing’s charged until they confirm.")
+                     : confirmed
+                       ? "\(proName) has your appointment — it’s confirmed."
+                       : "\(proName) has your request — nothing’s charged until they confirm.")
                     .font(BrandFont.body(14)).foregroundStyle(BrandColor.textSecondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
 
                 if !isReschedule {
+                    let chipTint = confirmed ? BrandColor.accent : BrandColor.gold
                     HStack(spacing: 7) {
-                        Circle().fill(BrandColor.gold).frame(width: 6, height: 6)
-                        Text("PENDING CONFIRMATION")
+                        Circle().fill(chipTint).frame(width: 6, height: 6)
+                        Text(confirmed ? "CONFIRMED" : "PENDING CONFIRMATION")
                             .font(BrandFont.mono(10)).tracking(1.2)
-                            .foregroundStyle(BrandColor.gold)
+                            .foregroundStyle(chipTint)
                     }
                     .padding(.horizontal, 13).padding(.vertical, 7)
-                    .overlay(Capsule().stroke(BrandColor.gold.opacity(0.4), lineWidth: 1))
+                    .overlay(Capsule().stroke(chipTint.opacity(0.4), lineWidth: 1))
                 }
 
                 successSummaryCard(scheduledFor)
 
-                if !isReschedule { successNextSteps }
+                if !isReschedule { successNextSteps(confirmed: confirmed) }
 
                 if !isReschedule, consultAvailable, bookingId != nil {
                     Button { showConsult = true } label: {
@@ -878,10 +994,26 @@ struct BookingFlowView: View {
         // the device asks instead of shipping its own copy of the gate.
         // Fail-closed: no answer, or any error, keeps the entry hidden.
         .task(id: bookingId) {
-            guard !isReschedule, let bookingId else { return }
+            // Never on the consult path: this booking CAME from a consult, and
+            // offering "Add beauty consult" on its confirmation would send her
+            // back into the one she just finished.
+            guard !isReschedule, !isConsult, let bookingId else { return }
             consultAvailable = (try? await session.client.consult
                 .availability(bookingId: bookingId).available) ?? false
         }
+    }
+
+    /// A LOOK never names the service that produced it (B1), so the consult
+    /// path's confirmation names the look — or says so plainly when the look
+    /// itself is unnamed.
+    private var successTitle: String {
+        guard isConsult else { return offering.name }
+        if let lookName = lookNameState, !lookName.isEmpty { return lookName }
+        return ConsultBookingCopy.unnamedLookTitle
+    }
+
+    private var successPriceLabel: String? {
+        isConsult ? nil : StartingPrice.label(offering.priceFromLabel)
     }
 
     /// Service · price · duration, then WHEN / WHERE — the same rows the web
@@ -890,7 +1022,7 @@ struct BookingFlowView: View {
         VStack(spacing: 0) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(offering.name)
+                    Text(successTitle)
                         .font(BrandFont.display(16, .semibold))
                         .foregroundStyle(BrandColor.textPrimary)
                     Text("with \(proName)")
@@ -902,7 +1034,15 @@ struct BookingFlowView: View {
                     // sends a bare "$250", so the word comes from here. This card
                     // rendered the figure alone until 2026-08-14; the comment that
                     // used to sit here claimed the server had already added it.
-                    if let price = StartingPrice.label(offering.priceFromLabel) {
+                    //
+                    // 🔴 Suppressed entirely on the CONSULT path, and NOT
+                    // replaced by the proposal's figure: this is the FLOOR
+                    // offering's price, which is smaller than the estimate she
+                    // just agreed to, and decision 5 requires the estimate
+                    // framing to travel WITH the proposal's number — which this
+                    // card has no room for. The review step stated it with its
+                    // framing intact one tap earlier.
+                    if let price = successPriceLabel {
                         Text(price)
                             .font(BrandFont.display(17, .bold))
                             .foregroundStyle(BrandColor.accent)
@@ -1008,13 +1148,13 @@ struct BookingFlowView: View {
         return MapsLink.url(address: salonAddressLine)
     }
 
-    private var successNextSteps: some View {
+    private func successNextSteps(confirmed: Bool) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("WHAT HAPPENS NEXT")
                 .font(BrandFont.mono(10)).tracking(1.4)
                 .foregroundStyle(BrandColor.textMuted)
 
-            ForEach(Self.successSteps(proName: proName), id: \.text) { step in
+            ForEach(Self.successSteps(proName: proName, confirmed: confirmed), id: \.text) { step in
                 HStack(spacing: 12) {
                     Image(systemName: step.symbol)
                         .font(.system(size: 15))
@@ -1041,8 +1181,22 @@ struct BookingFlowView: View {
 
     /// Kept in lock-step with `COPY.bookingConfirmation` on the web. The pro's
     /// pronouns are unknown, so every line says "they".
-    static func successSteps(proName: String) -> [(symbol: String, text: String)] {
-        [
+    ///
+    /// 🔴 A CONFIRMED booking gets its own three. The request-mode lines are all
+    /// promises about a confirmation that has already happened — "reviews within
+    /// a few hours" about a booking she already has, and "no charge until they
+    /// confirm" about a deposit that may already be taken.
+    static func successSteps(
+        proName: String, confirmed: Bool
+    ) -> [(symbol: String, text: String)] {
+        if confirmed {
+            return [
+                ("calendar", "It’s on \(proName)’s calendar."),
+                ("bell.badge", "We’ll remind you before it starts."),
+                ("arrow.triangle.2.circlepath", "Need to change it? Manage it from Appointments."),
+            ]
+        }
+        return [
             ("clock", "\(proName) reviews within a few hours."),
             ("bell.badge", "We’ll notify you the moment they confirm."),
             ("checkmark.shield", "No charge until they confirm."),
@@ -1094,7 +1248,8 @@ struct BookingFlowView: View {
                 clientAddressId: isMobile ? selectedAddressId : nil,
                 mediaId: lookMediaId,
                 startDate: initialStartDate,
-                rescheduleBookingId: rescheduleBookingId
+                rescheduleBookingId: rescheduleBookingId,
+                consultId: consultProposal?.consultId
             )
             // Open on the preselected slot's day when the feed handed us one, else
             // the server's suggested first day.
@@ -1109,6 +1264,7 @@ struct BookingFlowView: View {
             baseDurationState = boot.request.durationMinutes
             salonAddressLine = boot.bookableLocation()?.addressLine
             serviceArea = boot.serviceArea
+            lookNameState = boot.cover?.lookName
 
             // bootstrap already carries the suggested day's slots — use them
             // rather than asking for the same day again on first paint.
@@ -1135,7 +1291,12 @@ struct BookingFlowView: View {
         let result = try? await session.client.booking.addOns(
             offeringId: offering.id, locationType: mode
         )
-        addOns = result?.addOns ?? []
+        // 🔴 The consult path still needs the POLICY — the finalize refuses
+        // without the acceptance whichever door the booking came through — but
+        // it must never offer add-ons: an `OfferingAddOn` on top of a consult
+        // proposal is refused by the hold AND the finalize (B7 answered
+        // decision 10 with the estimate's own beyond-floor lines instead).
+        addOns = isConsult ? [] : (result?.addOns ?? [])
         cancellationPolicy = result?.cancellationPolicy
     }
 
@@ -1182,7 +1343,10 @@ struct BookingFlowView: View {
                 // the base service — same as the web drawer, whose hold is then
                 // re-sized when an add-on is ticked.
                 addOnIds: [],
-                rescheduleBookingId: rescheduleBookingId
+                rescheduleBookingId: rescheduleBookingId,
+                // Book the Look, B8: sized by the consult's WHOLE estimate, so
+                // the starts offered are ones the whole look fits into.
+                consultId: consultProposal?.consultId
             )
             applySlots(day.slots, boot: boot)
         } catch let error as APIError {
@@ -1242,7 +1406,12 @@ struct BookingFlowView: View {
                 // each one is ticked (B1-A), which is where a widened window can
                 // still be refused while the add-on can be un-ticked.
                 addOnIds: [],
-                rescheduleBookingId: rescheduleBookingId
+                rescheduleBookingId: rescheduleBookingId,
+                // 🔴 On the consult path the server sizes this hold for EVERY
+                // enhancement the analysis recommends, not for the ones ticked
+                // — she opts in on the NEXT step. Over-reserving is the safe
+                // direction: the commit is then always ≤ what was held.
+                consultId: consultProposal?.consultId
             )
             hold = created
             holdExpiresAt = Wire.date(created.expiresAt)
@@ -1285,7 +1454,8 @@ struct BookingFlowView: View {
             holdConsumed = true
             session.signalRefresh() // surface the change in Appointments/Home
             phase = .success(
-                scheduledFor: result.scheduledFor, bookingId: nil, professionalId: nil
+                scheduledFor: result.scheduledFor, bookingId: nil, professionalId: nil,
+                status: nil
             )
         } catch let error as APIError {
             bookError = error.userMessage

@@ -65,6 +65,9 @@ struct LooksView: View {
     @State private var navPath: [LooksProfessional] = []
     /// Drives the booking sheet with a preselected offering (web BOOK parity).
     @State private var bookLaunch: BookLaunch?
+    /// Book the Look, B8 — set when the SERVER answered that this look opens a
+    /// consult for this viewer. Nil is the ordinary path, unchanged.
+    @State private var consultLaunch: LookConsultLaunch?
     /// The look id whose BOOK button is mid-resolve (shows a spinner).
     @State private var resolvingBookId: String?
 
@@ -185,6 +188,7 @@ struct LooksView: View {
                 lookMediaId: launch.lookMediaId
             )
         }
+        .sheet(item: $consultLaunch) { LookConsultSheet(launch: $0) }
         // Wrapped in its own stack + Done button, like the deep-link look sheets
         // in MainTabView — the tag screen pushes look details inside it.
         .sheet(item: $tagFeedFor) { tag in
@@ -581,6 +585,22 @@ struct LooksView: View {
 
         func fallbackToProfile() {
             if navPath.last != pro { navPath.append(pro) }
+        }
+
+        // Book the Look, B8 — asked ON TAP, never on render: a probe per feed
+        // slide would put two database reads in front of every scroll for every
+        // viewer, pilot or not, on the hottest surface in the app.
+        if let destination = await LookConsultEntry.resolve(
+            lookPostId: item.id,
+            service: session.client.consult
+        ) {
+            consultLaunch = LookConsultLaunch(
+                destination: destination,
+                lookPostId: item.id,
+                professionalId: pro.id,
+                lookMediaId: item.primaryMediaId
+            )
+            return
         }
 
         guard let offering = await LookBooking.offering(

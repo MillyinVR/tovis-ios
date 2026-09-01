@@ -422,5 +422,370 @@
     "ok": true,
     "teaser":{"locked":true,"tapped":true},
     "replayed":false
+  },
+  "lookSession": {
+    "_comment": "POST /client/consult/look — Book the Look, B2/B8. A DELIBERATELY separate shape from `session` above: `lookPostId` where that one has `bookingId`, because shipped builds decode ConsultSession.bookingId as a non-optional String and the booking-anchored route keeps its exact shape.",
+    "ok": true,
+    "consult": {
+      "id": "consult_look_fixture_1",
+      "status": "CONSENT_REQUIRED",
+      "lookPostId": "look_fixture_1",
+      "professionalId": "cmq9p645v0002jp04fttoatlq",
+      "serviceCategoryId": "category_hair_color_1",
+      "createdAt": "2026-08-31T18:00:00.000Z"
+    }
+  },
+  "lookResults": {
+    "_comment": "GET /client/consult/{id}/results for a LOOK-anchored consult (Book the Look, B2/B8). 🔴 Exactly one anchor is ever set: `bookingId` is NULL here and `lookPostId` names the look. The booking-anchored arm above omits `lookPostId` entirely, which is what makes the field OPTIONAL rather than nullable on the wire — and what makes a non-optional String in a client's model fail to decode this whole payload.",
+    "ok": true,
+    "results": {
+      "consultId": "consult_look_fixture_1",
+      "bookingId": null,
+      "serviceCategoryId": "category_hair_color_1",
+      "briefRevisionId": "revision_brief_3",
+      "briefRevision": 3,
+      "analysisRevisionId": "revision_analysis_2",
+      "analysisRevision": 2,
+      "intakeRevisionId": "revision_intake_1",
+      "clientIntake": [
+        {
+          "questionKey": "desired_color",
+          "question": "Your dream color?",
+          "answerCode": "copper",
+          "answer": "Copper"
+        },
+        {
+          "questionKey": "box_dye_history",
+          "question": "When did you last use box dye on your hair?",
+          "answerCode": "within-6-months",
+          "answer": "Within 6 months"
+        },
+        {
+          "questionKey": "prior_reaction",
+          "question": "Have you ever had a reaction during or after a hair color service?",
+          "answerCode": "no",
+          "answer": "No"
+        }
+      ],
+      "aiObservations": {
+        "currentLevel": {
+          "min": 4,
+          "max": 5,
+          "confidence": {
+            "min": 0.72,
+            "max": 0.88
+          },
+          "evidence": [
+            "hair_back",
+            "hair_crown"
+          ]
+        },
+        "currentTone": {
+          "value": "NEUTRAL",
+          "confidence": {
+            "min": 0.68,
+            "max": 0.82
+          },
+          "evidence": [
+            "hair_left",
+            "hair_right"
+          ]
+        },
+        "visibleCondition": {
+          "value": "POSSIBLE_COMPROMISE",
+          "confidence": {
+            "min": 0.6,
+            "max": 0.76
+          },
+          "evidence": [
+            "hair_crown"
+          ]
+        },
+        "density": {
+          "value": "MEDIUM",
+          "confidence": {
+            "min": 0.65,
+            "max": 0.8
+          },
+          "evidence": [
+            "hair_back"
+          ]
+        },
+        "texture": {
+          "value": "WAVY",
+          "confidence": {
+            "min": 0.7,
+            "max": 0.84
+          },
+          "evidence": [
+            "hair_left",
+            "hair_right"
+          ]
+        },
+        "goalSummary": "The client wants a noticeable copper result.",
+        "historySummary": "The client reports box dye within six months.",
+        "constraintsSummary": "Preserve visible condition and discuss strand testing.",
+        "maintenanceSummary": "The client is open to maintenance.",
+        "appointmentContextSummary": "No near-term event deadline."
+      },
+      "profile": {
+        "skinUndertone": {
+          "value": "NEUTRAL",
+          "confidence": {
+            "min": 0.45,
+            "max": 0.68
+          },
+          "evidence": [
+            "face_front"
+          ]
+        },
+        "contrastLevel": {
+          "value": "MEDIUM",
+          "confidence": {
+            "min": 0.52,
+            "max": 0.74
+          },
+          "evidence": [
+            "face_front"
+          ]
+        },
+        "colorSeason": {
+          "value": "SOFT_AUTUMN",
+          "confidence": {
+            "min": 0.4,
+            "max": 0.6
+          },
+          "evidence": [
+            "face_front",
+            "hair_back"
+          ]
+        },
+        "faceProportion": {
+          "value": "BALANCED",
+          "confidence": {
+            "min": 0.55,
+            "max": 0.75
+          },
+          "evidence": [
+            "face_front"
+          ]
+        },
+        "jawline": {
+          "value": "SOFTLY_ROUNDED",
+          "confidence": {
+            "min": 0.5,
+            "max": 0.72
+          },
+          "evidence": [
+            "face_side"
+          ]
+        },
+        "foreheadProportion": {
+          "value": "TALLER",
+          "confidence": {
+            "min": 0.48,
+            "max": 0.7
+          },
+          "evidence": [
+            "face_side"
+          ]
+        },
+        "featureBalance": {
+          "value": "SOFT",
+          "confidence": {
+            "min": 0.5,
+            "max": 0.72
+          },
+          "evidence": [
+            "face_front"
+          ]
+        },
+        "eyeShape": {
+          "value": "HOODED",
+          "confidence": {
+            "min": 0.55,
+            "max": 0.78
+          },
+          "evidence": [
+            "eyes_closeup"
+          ]
+        },
+        "eyeSpacing": {
+          "value": "BALANCED",
+          "confidence": {
+            "min": 0.55,
+            "max": 0.78
+          },
+          "evidence": [
+            "eyes_closeup"
+          ]
+        },
+        "browDensity": {
+          "value": "FULL",
+          "confidence": {
+            "min": 0.6,
+            "max": 0.8
+          },
+          "evidence": [
+            "eyes_closeup"
+          ]
+        },
+        "browShape": {
+          "value": "SOFT_ARCH",
+          "confidence": {
+            "min": 0.55,
+            "max": 0.76
+          },
+          "evidence": [
+            "eyes_closeup"
+          ]
+        }
+      },
+      "styleDirections": [
+        {
+          "domain": "HAIR_COLOR_HARMONY",
+          "title": "Soft copper with depth",
+          "direction": "Discuss a muted copper that keeps depth at the root.",
+          "whyItFlatters": "A soft-autumn palette and medium contrast favor muted warmth over brights.",
+          "confidence": {
+            "min": 0.45,
+            "max": 0.68
+          },
+          "evidence": [
+            "face_front",
+            "hair_back"
+          ],
+          "discussWithProfessional": true
+        },
+        {
+          "domain": "CUT_AND_SHAPE",
+          "title": "Soft layers below the jaw",
+          "direction": "Discuss soft layers starting below the jawline.",
+          "whyItFlatters": "Softly rounded jawline reads best with movement rather than blunt lines.",
+          "confidence": {
+            "min": 0.45,
+            "max": 0.68
+          },
+          "evidence": [
+            "face_side"
+          ],
+          "discussWithProfessional": true
+        },
+        {
+          "domain": "BANGS",
+          "title": "Soft curtain bangs",
+          "direction": "Discuss curtain bangs that open at the cheekbone.",
+          "whyItFlatters": "A taller forehead reading is balanced by soft curtain bangs.",
+          "confidence": {
+            "min": 0.42,
+            "max": 0.66
+          },
+          "evidence": [
+            "face_front",
+            "face_side"
+          ],
+          "discussWithProfessional": true
+        },
+        {
+          "domain": "BROWS",
+          "title": "Groomed soft arch",
+          "direction": "Discuss keeping the natural soft arch with light shaping.",
+          "whyItFlatters": "Full density and a soft arch already suit the observed feature balance.",
+          "confidence": {
+            "min": 0.5,
+            "max": 0.72
+          },
+          "evidence": [
+            "eyes_closeup"
+          ],
+          "discussWithProfessional": true
+        },
+        {
+          "domain": "LASHES",
+          "title": "Lifted-curl mapping",
+          "direction": "Discuss a lifted curl that opens the lid.",
+          "whyItFlatters": "Hooded eyes are opened by lift rather than heavy volume.",
+          "confidence": {
+            "min": 0.5,
+            "max": 0.72
+          },
+          "evidence": [
+            "eyes_closeup"
+          ],
+          "discussWithProfessional": true
+        },
+        {
+          "domain": "MAKEUP",
+          "title": "Diffused, blended tones",
+          "direction": "Discuss diffused application with muted warm tones.",
+          "whyItFlatters": "Soft feature balance and medium contrast favor blended definition.",
+          "confidence": {
+            "min": 0.42,
+            "max": 0.65
+          },
+          "evidence": [
+            "face_front"
+          ],
+          "discussWithProfessional": true
+        },
+        {
+          "domain": "COLOR_PALETTE",
+          "title": "Muted warm palette",
+          "direction": "Discuss a soft-autumn palette of muted warm colors near the face.",
+          "whyItFlatters": "The observed undertone and contrast sit most comfortably in muted warmth.",
+          "confidence": {
+            "min": 0.4,
+            "max": 0.62
+          },
+          "evidence": [
+            "face_front"
+          ],
+          "discussWithProfessional": true
+        }
+      ],
+      "safetyFlags": [
+        {
+          "code": "RECENT_BOX_DYE",
+          "summary": "Recent box dye may affect lift and color predictability.",
+          "discussWithProfessional": true
+        }
+      ],
+      "achievabilityDirection": {
+        "direction": "Discuss strand testing and a staged plan with your professional.",
+        "assessment": "LIKELY_MULTI_APPOINTMENT",
+        "context": "Recent color history and visible condition may make a staged approach more realistic.",
+        "discussWithProfessional": true
+      },
+      "recommendationDirections": [
+        {
+          "title": "Dimensional copper",
+          "why": "Adds copper while keeping some depth.",
+          "direction": "Discuss a dimensional copper plan.",
+          "reference": {
+            "type": "SERVICE",
+            "serviceId": "service_color_1",
+            "serviceCategoryId": "category_hair_color_1"
+          },
+          "discussWithProfessional": true
+        },
+        {
+          "title": "Copper gloss first",
+          "why": "A lower-lift first step may help assess condition and tone.",
+          "direction": "Discuss starting with a gloss.",
+          "reference": {
+            "type": "SERVICE_CATEGORY",
+            "serviceId": null,
+            "serviceCategoryId": "category_hair_color_1"
+          },
+          "discussWithProfessional": true
+        }
+      ],
+      "meCardTeaser": {
+        "locked": true,
+        "tapped": false
+      },
+      "createdAt": "2026-08-11T18:20:00.000Z",
+      "lookPostId": "look_fixture_1"
+    }
   }
 }

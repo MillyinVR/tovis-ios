@@ -49,7 +49,13 @@ public final class BookingService: Sendable {
         mediaId: String? = nil,
         days: Int = 7,
         startDate: String? = nil,
-        rescheduleBookingId: String? = nil
+        rescheduleBookingId: String? = nil,
+        /// Book the Look, B8 — size the window by a CONSULT's booking proposal
+        /// (its whole estimate, widened for every enhancement) rather than by
+        /// the floor offering's base. The route authenticates and re-checks
+        /// ownership for this branch, and REFUSES rather than falling back, so
+        /// the days marked bookable are the ones this look actually fits into.
+        consultId: String? = nil
     ) async throws -> AvailabilityBootstrap {
         var query = [
             URLQueryItem(name: "professionalId", value: professionalId),
@@ -73,6 +79,9 @@ public final class BookingService: Sendable {
         }
         if let rescheduleBookingId, !rescheduleBookingId.isEmpty {
             query.append(URLQueryItem(name: "rescheduleBookingId", value: rescheduleBookingId))
+        }
+        if let consultId, !consultId.isEmpty {
+            query.append(URLQueryItem(name: "consultId", value: consultId))
         }
         return try await api.request("/availability/bootstrap", query: query)
     }
@@ -115,7 +124,15 @@ public final class BookingService: Sendable {
         /// is not entitled to it — so the entry id goes up instead and the server
         /// resolves the destination itself. It REPLACES `clientAddressId` on this
         /// path; nothing about the client's address exists on the device to send.
-        waitlistEntryId: String? = nil
+        waitlistEntryId: String? = nil,
+        /// Book the Look, B8 — the same third sizing window `bootstrap` takes.
+        /// The grid, the hold and the finalize are then all sized by this
+        /// consult's proposal, which is what makes the offered starts ones the
+        /// whole look fits into.
+        ///
+        /// ⚠️ Never sent alongside `addOnIds`: `OfferingAddOn` add-ons on top of
+        /// a consult proposal are refused on the wire (B7).
+        consultId: String? = nil
     ) async throws -> AvailabilityDay {
         var query = [
             URLQueryItem(name: "professionalId", value: professionalId),
@@ -138,6 +155,9 @@ public final class BookingService: Sendable {
         }
         if let rebookOfBookingId, !rebookOfBookingId.isEmpty {
             query.append(URLQueryItem(name: "rebookOfBookingId", value: rebookOfBookingId))
+        }
+        if let consultId, !consultId.isEmpty {
+            query.append(URLQueryItem(name: "consultId", value: consultId))
         }
         return try await api.request("/availability/day", query: query)
     }
@@ -178,13 +198,22 @@ public final class BookingService: Sendable {
         clientAddressId: String? = nil,
         source: String = "REQUESTED",
         addOnIds: [String] = [],
-        rescheduleBookingId: String? = nil
+        rescheduleBookingId: String? = nil,
+        /// Book the Look, B8 — reserve the proposal's whole width.
+        ///
+        /// 🔴 The server sizes this hold for EVERY enhancement the analysis
+        /// recommends, not for the ones ticked so far, because she opts in on
+        /// the review step AFTER the slot is reserved. That is what makes the
+        /// commit always ≤ what was held: opting in fills space already
+        /// reserved, and there is no "that no longer fits" refusal at the end
+        /// of checkout. Do not try to "right-size" it from a selection.
+        consultId: String? = nil
     ) async throws -> BookingHold {
         let payload = try JSONEncoder.canonical.encode(CreateHoldRequest(
             offeringId: offeringId, locationType: locationType,
             locationId: locationId, scheduledFor: scheduledFor, source: source,
             clientAddressId: clientAddressId, addOnIds: addOnIds,
-            rescheduleBookingId: rescheduleBookingId
+            rescheduleBookingId: rescheduleBookingId, consultId: consultId
         ))
         let response: CreateHoldResponse = try await api.request(
             "/holds", method: .post, body: payload
@@ -239,13 +268,22 @@ public final class BookingService: Sendable {
         source: String = "REQUESTED",
         openingId: String? = nil,
         cancellationPolicyAccepted: Bool = false,
+        /// Book the Look, B8 — the consult stamp, its look, and the
+        /// enhancements she ticked. All three `nil`/omitted for an ordinary
+        /// booking, which leaves that wire (and its derived idempotency nonce)
+        /// exactly as it was.
+        lookPostId: String? = nil,
+        consultId: String? = nil,
+        consultEnhancementLineIds: [String]? = nil,
         idempotencyKey: String? = nil
     ) async throws -> FinalizedBooking {
         let payload = try JSONEncoder.canonical.encode(FinalizeBookingRequest(
             holdId: holdId, offeringId: offeringId,
             locationType: locationType, addOnIds: addOnIds, source: source,
             openingId: openingId,
-            cancellationPolicyAccepted: cancellationPolicyAccepted
+            cancellationPolicyAccepted: cancellationPolicyAccepted,
+            lookPostId: lookPostId, consultId: consultId,
+            consultEnhancementLineIds: consultEnhancementLineIds
         ))
         let key = idempotencyKey ?? buildClientIdempotencyKey(
             scope: "booking", entityId: holdId, action: "finalize",

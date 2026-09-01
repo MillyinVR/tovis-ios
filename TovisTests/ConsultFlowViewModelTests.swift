@@ -51,6 +51,32 @@ private actor MockConsultService: ConsultServicing {
         return try decode(ConsultSession.self, value: value)
     }
 
+    // Book the Look, B8 — the look-anchored twins. `createFromLook` models the
+    // server's create-or-resume: asking twice returns the SAME consult.
+    func lookAvailability(lookPostId: String) async throws -> ConsultLookAvailability {
+        ConsultLookAvailability(
+            available: createError == nil, reason: nil, consult: nil)
+    }
+
+    func createFromLook(lookPostId: String) async throws -> ConsultLookSession {
+        if let createError { throw createError }
+        var value = dictionary("lookSession", "consult")
+        value["professionalId"] = sessionProfessionalId
+        value["lookPostId"] = lookPostId
+        return try decode(ConsultLookSession.self, value: value)
+    }
+
+    func proposal(consultId: String, locationType: String,
+                  enhancementLineIds: [String]) async throws -> ConsultBookingProposalAvailability {
+        // The flow's own tests never reach the booking door; the proposal
+        // screen is covered against the fixtures in TovisKit. A refusal here is
+        // the honest stand-in — and the shape the device must survive when the
+        // endpoint does not exist on the server it is pointed at.
+        ConsultBookingProposalAvailability(
+            available: false, reason: .estimateMissing, proposal: nil,
+            professionalId: sessionProfessionalId)
+    }
+
     func agreements(consultId: String) async throws -> ConsultAgreementState {
         try agreementState()
     }
@@ -311,7 +337,7 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
     @Test func completeMockedGuidedBookingConsultFlowIncludesLocalAndServerRetakes() async throws {
         let service = MockConsultService(root: try fixtureRoot())
         let model = ConsultFlowViewModel(
-            bookingId: "booking_fixture_1",
+            anchor: .booking("booking_fixture_1"),
             professionalId: "cmq9p645v0002jp04fttoatlq",
             service: service
         )
@@ -438,7 +464,7 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
     @Test func partialPackContinuesThroughProceedOnceInspirationIsDone() async throws {
         let service = MockConsultService(root: try fixtureRoot())
         let model = ConsultFlowViewModel(
-            bookingId: "booking_fixture_1",
+            anchor: .booking("booking_fixture_1"),
             professionalId: "cmq9p645v0002jp04fttoatlq",
             service: service
         )
@@ -488,7 +514,7 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
             APIError.server(status: 404, message: "Not found.", code: nil)
         )
         let model = ConsultFlowViewModel(
-            bookingId: "booking_fixture_1",
+            anchor: .booking("booking_fixture_1"),
             professionalId: "cmq9p645v0002jp04fttoatlq",
             service: service
         )
@@ -501,7 +527,7 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
     @Test func revokingSensitiveConsentStopsTheFlow() async throws {
         let service = MockConsultService(root: try fixtureRoot())
         let model = ConsultFlowViewModel(
-            bookingId: "booking_fixture_1",
+            anchor: .booking("booking_fixture_1"),
             professionalId: "cmq9p645v0002jp04fttoatlq",
             service: service
         )
@@ -522,7 +548,7 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
         let service = MockConsultService(root: try fixtureRoot())
         await service.setSessionProfessionalIdForTest("professional_other")
         let model = ConsultFlowViewModel(
-            bookingId: "booking_fixture_1",
+            anchor: .booking("booking_fixture_1"),
             professionalId: "cmq9p645v0002jp04fttoatlq",
             service: service
         )

@@ -55,6 +55,9 @@ struct LookDetailView: View {
     @State private var tagFeedFor: LooksTag?
     @State private var bookLaunch: DetailBookLaunch?
     @State private var bookResolving = false
+    /// Book the Look, B8 — set when the SERVER answered that this look opens a
+    /// consult for this viewer. Nil is the ordinary path, unchanged.
+    @State private var consultLaunch: LookConsultLaunch?
     @State private var proProfileFor: String?
     @State private var fullscreenMedia: FullscreenMedia?
     /// Reporting this look (guideline 1.2). The wire carries no
@@ -120,6 +123,7 @@ struct LookDetailView: View {
                     lookMediaId: launch.lookMediaId
                 )
             }
+            .sheet(item: $consultLaunch) { LookConsultSheet(launch: $0) }
             .navigationDestination(item: $proProfileFor) { id in
                 ProProfileView(professionalId: id)
             }
@@ -704,6 +708,23 @@ struct LookDetailView: View {
         guard !bookResolving else { return }
         bookResolving = true
         defer { bookResolving = false }
+
+        // Book the Look, B8 — ask the SERVER whether this look opens a consult
+        // for this viewer, ON TAP. Anything other than a clear yes (a guest, a
+        // non-pilot pro, a network failure, an endpoint this server does not
+        // have yet) falls through to the ordinary sheet below, unchanged.
+        if let destination = await LookConsultEntry.resolve(
+            lookPostId: look.id,
+            service: session.client.consult
+        ) {
+            consultLaunch = LookConsultLaunch(
+                destination: destination,
+                lookPostId: look.id,
+                professionalId: look.professional.id,
+                lookMediaId: look.primaryMedia.id
+            )
+            return
+        }
 
         guard let offering = await LookBooking.offering(
             client: session.client,

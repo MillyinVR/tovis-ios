@@ -1,0 +1,154 @@
+{
+  "_comment": "GET /client/consult/{id}/proposal — Book the Look, B4/B7/B8. Five arms, each one a branch the device renders differently: the floor alone (nothing ticked), the SAME proposal with one enhancement ticked (so the opt-in contract is exercised in both directions), a mode refusal, the load-bearing SAFETY refusal, and a proposal whose analysis recommended nothing beyond the look. Every figure here is a SERVER composition — the device never assembles one.",
+
+  "salonFloorOnly": {
+    "ok": true,
+    "proposal": {
+      "available": true,
+      "reason": null,
+      "professionalId": "cmq9p645v0002jp04fttoatlq",
+      "proposal": {
+        "consultId": "consult_look_fixture_1",
+        "locationType": "SALON",
+        "offeringId": "offering_fixture_1",
+        "professionalId": "cmq9p645v0002jp04fttoatlq",
+        "serviceId": "service_fixture_1",
+        "lookPostId": "look_fixture_1",
+        "totalDurationMinutes": 240,
+        "startingAtPrice": "285.00",
+        "startingAtLabel": "Starting at $285",
+        "estimateNote": "This is an estimate from your photos.",
+        "proDecidesNote": "Your professional makes the final call.",
+        "autoAccepts": false,
+        "commitNote": "Your time is held for you — your professional confirms in the morning.",
+        "lines": [
+          {
+            "serviceName": "Full Balayage",
+            "price": "285.00",
+            "durationMinutes": 240
+          }
+        ],
+        "recommendations": [
+          {
+            "estimateLineId": "estimate_line_gloss_1",
+            "outcome": "The mid-lengths would otherwise read brassy in weeks.",
+            "priceDeltaLabel": "+$45",
+            "durationDeltaLabel": "+30 min",
+            "selected": false
+          },
+          {
+            "estimateLineId": "estimate_line_bond_1",
+            "outcome": "Your ends are already fragile, and this keeps the lift from taking more.",
+            "priceDeltaLabel": null,
+            "durationDeltaLabel": "+15 min",
+            "selected": false
+          }
+        ]
+      }
+    }
+  },
+
+  "salonOneEnhancementSelected": {
+    "ok": true,
+    "proposal": {
+      "available": true,
+      "reason": null,
+      "professionalId": "cmq9p645v0002jp04fttoatlq",
+      "proposal": {
+        "consultId": "consult_look_fixture_1",
+        "locationType": "SALON",
+        "offeringId": "offering_fixture_1",
+        "professionalId": "cmq9p645v0002jp04fttoatlq",
+        "serviceId": "service_fixture_1",
+        "lookPostId": "look_fixture_1",
+        "totalDurationMinutes": 270,
+        "startingAtPrice": "330.00",
+        "startingAtLabel": "Starting at $330",
+        "estimateNote": "This is an estimate from your photos.",
+        "proDecidesNote": "Your professional makes the final call.",
+        "autoAccepts": true,
+        "commitNote": "Tapping book confirms this appointment right away.",
+        "lines": [
+          {
+            "serviceName": "Full Balayage",
+            "price": "285.00",
+            "durationMinutes": 240
+          },
+          {
+            "serviceName": "Toner Gloss",
+            "price": "45.00",
+            "durationMinutes": 30
+          }
+        ],
+        "recommendations": [
+          {
+            "estimateLineId": "estimate_line_gloss_1",
+            "outcome": "The mid-lengths would otherwise read brassy in weeks.",
+            "priceDeltaLabel": "+$45",
+            "durationDeltaLabel": "+30 min",
+            "selected": true
+          },
+          {
+            "estimateLineId": "estimate_line_bond_1",
+            "outcome": "Your ends are already fragile, and this keeps the lift from taking more.",
+            "priceDeltaLabel": null,
+            "durationDeltaLabel": "+15 min",
+            "selected": false
+          }
+        ]
+      }
+    }
+  },
+
+  "modeNotOffered": {
+    "ok": true,
+    "proposal": {
+      "available": false,
+      "reason": "MODE_NOT_OFFERED",
+      "proposal": null,
+      "professionalId": "cmq9p645v0002jp04fttoatlq"
+    }
+  },
+
+  "safetyReviewRequired": {
+    "ok": true,
+    "proposal": {
+      "available": false,
+      "reason": "SAFETY_REVIEW_REQUIRED",
+      "proposal": null,
+      "professionalId": "cmq9p645v0002jp04fttoatlq"
+    }
+  },
+
+  "noRecommendations": {
+    "ok": true,
+    "proposal": {
+      "available": true,
+      "reason": null,
+      "professionalId": "cmq9p645v0002jp04fttoatlq",
+      "proposal": {
+        "consultId": "consult_look_fixture_2",
+        "locationType": "MOBILE",
+        "offeringId": "offering_fixture_2",
+        "professionalId": "cmq9p645v0002jp04fttoatlq",
+        "serviceId": "service_fixture_2",
+        "lookPostId": "look_fixture_2",
+        "totalDurationMinutes": 90,
+        "startingAtPrice": "0.00",
+        "startingAtLabel": null,
+        "estimateNote": "This is an estimate from your photos.",
+        "proDecidesNote": "Your professional makes the final call.",
+        "autoAccepts": true,
+        "commitNote": "Tapping book confirms this appointment right away.",
+        "lines": [
+          {
+            "serviceName": "Silk Press",
+            "price": "0.00",
+            "durationMinutes": 90
+          }
+        ],
+        "recommendations": []
+      }
+    }
+  }
+}

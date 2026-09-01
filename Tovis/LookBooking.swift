@@ -25,4 +25,27 @@ enum LookBooking {
         }
         return profile.offerings.first { $0.serviceId == serviceId }
     }
+
+    /// Book the Look, B8 — the CONSULT path's resolution, by offering id.
+    ///
+    /// A consult's booking proposal already names the exact floor offering a
+    /// hold and a finalize must be placed against, so this matches on `id`
+    /// rather than on the look's service. It returns the pro's display name
+    /// too: the same profile fetch already carries it, and the picker needs it.
+    ///
+    /// 🔴 nil means REFUSE, not "fall back". On the consult path a different
+    /// offering is not a lesser answer, it is the wrong appointment — the
+    /// caller must say it cannot open times rather than reserve something the
+    /// proposal was not derived from.
+    static func offering(
+        client: TovisClient,
+        professionalId: String,
+        offeringId: String
+    ) async -> (offering: ProOffering, proName: String)? {
+        guard !offeringId.isEmpty,
+              let profile = try? await client.profiles.professional(id: professionalId),
+              let match = profile.offerings.first(where: { $0.id == offeringId })
+        else { return nil }
+        return (match, profile.header.displayName)
+    }
 }

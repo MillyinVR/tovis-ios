@@ -3,6 +3,12 @@ import Foundation
 public protocol ConsultServicing: Sendable {
     func availability(bookingId: String) async throws -> ConsultAvailability
     func create(bookingId: String) async throws -> ConsultSession
+    // Book the Look, B8 — the look-anchored twin of the two above, plus the
+    // booking proposal the flow ends on.
+    func lookAvailability(lookPostId: String) async throws -> ConsultLookAvailability
+    func createFromLook(lookPostId: String) async throws -> ConsultLookSession
+    func proposal(consultId: String, locationType: String,
+                  enhancementLineIds: [String]) async throws -> ConsultBookingProposalAvailability
     func agreements(consultId: String) async throws -> ConsultAgreementState
     func acceptAgreement(consultId: String, kind: ConsultAgreementKind,
                          agreementVersionId: String) async throws -> ConsultAgreementState
@@ -70,6 +76,77 @@ public final class ConsultService: ConsultServicing, Sendable {
             "/client/consult", method: .post, body: body
         )
         return response.consult
+    }
+
+    // ── Book the Look, B8 ──────────────────────────────────────────────────
+    //
+    // 🔴 NONE OF THESE THREE ENDPOINTS EXIST IN PRODUCTION YET. B1–B7 are
+    // merged and UNDEPLOYED, and a TestFlight build reaches a phone pointed at
+    // prod long before the web deploys. Every caller therefore treats a throw
+    // — a 404 most of all — as "no door", exactly as the consult gate did
+    // (#375): the entry point simply does not render. Never a crash, never a
+    // dead button, never a spinner that has nothing to wait for.
+
+    /// GET /client/consult/look/availability — whether the consult door is open
+    /// for this LOOK. The server owns the whole decision; the device shows an
+    /// entry point only on an explicit `available: true`.
+    public func lookAvailability(lookPostId: String) async throws -> ConsultLookAvailability {
+        let response: ConsultLookAvailabilityResponse = try await api.request(
+            "/client/consult/look/availability",
+            query: [URLQueryItem(name: "lookPostId", value: lookPostId)]
+        )
+        return response.availability
+    }
+
+    /// POST /client/consult/look — create, or on a retry return, the
+    /// consent-required consult shell anchored to a LOOK. Deliberately beside
+    /// `create(bookingId:)` rather than inside it: the two anchors are separate
+    /// types on the wire and the booking-anchored route must keep its shape.
+    public func createFromLook(lookPostId: String) async throws -> ConsultLookSession {
+        struct Body: Encodable { let lookPostId: String }
+        let body = try JSONEncoder.canonical.encode(Body(lookPostId: lookPostId))
+        let response: ConsultLookSessionResponse = try await api.request(
+            "/client/consult/look", method: .post, body: body
+        )
+        return response.consult
+    }
+
+    /// GET /client/consult/{id}/proposal — "what would I be booking, and what
+    /// does it start at?" for one consult, in one mode, with one set of
+    /// enhancements ticked.
+    ///
+    /// 🔴 THE SERVER IS THE ANSWER. Both parameters name the QUESTION and
+    /// reserve nothing, and every figure that comes back — the lines, the
+    /// width, the "Starting at", each "+$40" — is derived from the pro's own
+    /// menu by the same function the finalize will run. A caller must never sum
+    /// the deltas itself; it re-asks with the new selection instead.
+    ///
+    /// `locationType` is REQUIRED with no default, for the same reason the
+    /// route refuses to guess one: a salon price handed to someone who meant
+    /// mobile is exactly what the mode reconciliation exists to prevent.
+    ///
+    /// An EMPTY `enhancementLineIds` means the floor alone, which is the
+    /// default everywhere she has not chosen (decision 10, opt-in never
+    /// pre-checked). Ids only — nothing the device can edit decides a price.
+    public func proposal(
+        consultId: String,
+        locationType: String,
+        enhancementLineIds: [String] = []
+    ) async throws -> ConsultBookingProposalAvailability {
+        var query = [URLQueryItem(name: "locationType", value: locationType)]
+        // Comma-separated, like every other id list this API puts in a query
+        // string. Sent in the caller's order, which is always the SERVER's own
+        // order (`ConsultBookingProposal.selectedEnhancementLineIds`).
+        if !enhancementLineIds.isEmpty {
+            query.append(URLQueryItem(
+                name: "enhancementIds",
+                value: enhancementLineIds.joined(separator: ",")
+            ))
+        }
+        let response: ConsultBookingProposalResponse = try await api.request(
+            "/client/consult/\(consultId)/proposal", query: query
+        )
+        return response.proposal
     }
 
     public func agreements(consultId: String) async throws -> ConsultAgreementState {
