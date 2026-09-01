@@ -9,8 +9,28 @@ public enum ConsultFlowStage: Sendable, Equatable {
     case stopped
 }
 
+/// What a consult hangs off. Book the Look (B2/B8) added the second case: the
+/// SAME flow — agreements, intake, inspiration, capture, analysis, results —
+/// reached from a look instead of from a booking. The machine's job is that
+/// every response keeps naming the anchor the flow was opened on, so a
+/// mixed-up id can never render one client's analysis inside another's booking.
+public enum ConsultAnchor: Sendable, Equatable {
+    case booking(String)
+    case look(String)
+
+    public var bookingId: String? {
+        if case let .booking(id) = self { return id }
+        return nil
+    }
+
+    public var lookPostId: String? {
+        if case let .look(id) = self { return id }
+        return nil
+    }
+}
+
 /// Small, content-agnostic lifecycle reducer. It validates that every response
-/// remains anchored to the same server-owned consult/booking and that C7 result
+/// remains anchored to the same server-owned consult/anchor and that C7 result
 /// provenance is complete before the UI can render any sensitive content.
 public struct ConsultFlowMachine: Sendable, Equatable {
     private struct Revision: Sendable, Equatable {
@@ -18,22 +38,42 @@ public struct ConsultFlowMachine: Sendable, Equatable {
         let number: Int
     }
 
-    public let bookingId: String
+    public let anchor: ConsultAnchor
     public private(set) var consultId: String?
     public private(set) var stage: ConsultFlowStage = .prerequisites
     private var serviceCategoryId: String?
     private var intakeRevisionId: String?
     private var analysisRevision: Revision?
 
+    public init(anchor: ConsultAnchor) {
+        self.anchor = anchor
+    }
+
     public init(bookingId: String) {
-        self.bookingId = bookingId
+        self.init(anchor: .booking(bookingId))
     }
 
     public mutating func apply(session: ConsultSession) throws {
-        guard session.bookingId == bookingId else { throw ConsultClientFailure.contractMismatch }
+        guard anchor == .booking(session.bookingId) else {
+            throw ConsultClientFailure.contractMismatch
+        }
         try bind(consultId: session.id)
         serviceCategoryId = session.serviceCategoryId
         stage = Self.stage(for: session.status)
+    }
+
+    /// Book the Look, B8 — the look-anchored twin. A separate entry point
+    /// rather than a widened `apply(session:)` because the wire types are
+    /// separate too: `ConsultLookSession` carries `lookPostId` where
+    /// `ConsultSession` carries `bookingId`, and neither has the other's field
+    /// to check.
+    public mutating func apply(lookSession: ConsultLookSession) throws {
+        guard anchor == .look(lookSession.lookPostId) else {
+            throw ConsultClientFailure.contractMismatch
+        }
+        try bind(consultId: lookSession.id)
+        serviceCategoryId = lookSession.serviceCategoryId
+        stage = Self.stage(for: lookSession.status)
     }
 
     public mutating func apply(agreements: ConsultAgreementState) throws {
@@ -83,7 +123,13 @@ public struct ConsultFlowMachine: Sendable, Equatable {
 
     public mutating func apply(results: ConsultClientResults) throws {
         try bind(consultId: results.consultId)
-        guard results.bookingId == bookingId,
+        // 🔴 The results payload must still name the anchor this flow was
+        // opened on. `bookingId` is null on a look-anchored consult and
+        // `lookPostId` is null on a booking-anchored one, so the check is
+        // against the anchor's OWN field — comparing an optional to an
+        // optional would let two nils satisfy it and bind results to a flow
+        // they do not belong to.
+        guard Self.anchorMatches(anchor: anchor, results: results),
               serviceCategoryId.map({ $0 == results.serviceCategoryId }) ?? true,
               !results.briefRevisionId.isEmpty,
               results.briefRevision > 0,
@@ -98,6 +144,16 @@ public struct ConsultFlowMachine: Sendable, Equatable {
             throw ConsultClientFailure.contractMismatch
         }
         stage = .results
+    }
+
+    private static func anchorMatches(
+        anchor: ConsultAnchor,
+        results: ConsultClientResults
+    ) -> Bool {
+        switch anchor {
+        case let .booking(id): return results.bookingId == id
+        case let .look(id): return results.lookPostId == id
+        }
     }
 
     private mutating func bind(consultId candidate: String) throws {

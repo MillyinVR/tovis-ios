@@ -7,9 +7,33 @@ struct ConsultFlowView: View {
     @Environment(SessionModel.self) private var session
     @Environment(\.dismiss) private var dismiss
 
-    let bookingId: String
+    /// What this consult hangs off. Book the Look (B8) added the look case: the
+    /// SAME flow, reached from a look instead of from a booking.
+    let anchor: ConsultAnchor
     let professionalId: String
     var suppliedService: (any ConsultServicing)?
+    /// The look's primary media, on the look-anchored path — carried through so
+    /// the booking sheet's cover is the photo she tapped, not an empty well.
+    let lookMediaId: String?
+
+    /// Convenience for the booking-anchored callers, which is every shipped
+    /// entry point — they pass a booking id and nothing else changes.
+    init(bookingId: String, professionalId: String,
+         suppliedService: (any ConsultServicing)? = nil) {
+        self.anchor = .booking(bookingId)
+        self.professionalId = professionalId
+        self.suppliedService = suppliedService
+        self.lookMediaId = nil
+    }
+
+    init(anchor: ConsultAnchor, professionalId: String,
+         lookMediaId: String? = nil,
+         suppliedService: (any ConsultServicing)? = nil) {
+        self.anchor = anchor
+        self.professionalId = professionalId
+        self.suppliedService = suppliedService
+        self.lookMediaId = lookMediaId
+    }
 
     @State private var model: ConsultFlowViewModel?
     @State private var showRevokeConfirmation = false
@@ -38,7 +62,7 @@ struct ConsultFlowView: View {
             .task {
                 guard model == nil else { return }
                 let created = ConsultFlowViewModel(
-                    bookingId: bookingId,
+                    anchor: anchor,
                     professionalId: professionalId,
                     service: suppliedService ?? session.client.consult
                 )
@@ -376,6 +400,29 @@ struct ConsultFlowView: View {
             achievability(results.achievabilityDirection)
             directions(results.recommendationDirections)
             lockedMeCard(model)
+            bookThisLook(model)
+        }
+    }
+
+    /// Book the Look, B8 — the results CTA, and ONLY on a look-anchored
+    /// consult. A booking-anchored consult already HAS its appointment; the
+    /// proposal endpoint refuses one with `ESTIMATE_MISSING`, so rendering the
+    /// door there would be a button whose only outcome is an explained refusal.
+    @ViewBuilder
+    private func bookThisLook(_ model: ConsultFlowViewModel) -> some View {
+        if model.isLookAnchored, let consultId = model.consultId {
+            NavigationLink {
+                ConsultBookingView(consultId: consultId, lookMediaId: lookMediaId)
+            } label: {
+                Text(ConsultBookingCopy.unnamedLookTitle)
+                    .font(BrandFont.body(16, .semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .foregroundStyle(BrandColor.onAccent)
+                    .background(BrandColor.accent)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+            .accessibilityIdentifier("consult-results-book-this-look")
         }
     }
 

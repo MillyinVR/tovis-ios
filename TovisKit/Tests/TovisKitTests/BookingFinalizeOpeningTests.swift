@@ -105,11 +105,19 @@ private extension URLRequest {
 
         let json = try bodyJSON()
         #expect(json["openingId"] == nil)
+        #expect(json["lookPostId"] == nil)
+        #expect(json["consultId"] == nil)
+        #expect(json["consultEnhancementLineIds"] == nil)
 
+        // Book the Look (B8) added three more optionals for the consult path.
+        // Passed explicitly as nil here, which is the whole point: an ordinary
+        // finalize must still encode NONE of them, so this body — and the
+        // idempotency key derived from it — stays byte-identical to before.
         let expectedBody = try JSONEncoder.canonical.encode(FinalizeBookingRequest(
             holdId: "hold_1", offeringId: "off_1",
             locationType: "SALON", addOnIds: [], source: "REQUESTED",
-            openingId: nil, cancellationPolicyAccepted: false))
+            openingId: nil, cancellationPolicyAccepted: false,
+            lookPostId: nil, consultId: nil, consultEnhancementLineIds: nil))
         // Pinned to the bucket the sent key used — the body nonce is still compared
         // exactly; only the 60s clock rollover is taken out of it.
         let capturedKey = try #require(FinalizeURLProtocol.capturedIdempotencyKey)

@@ -38,14 +38,22 @@ final class ConsultFlowViewModel {
         let keys: ConsultCaptureMutationKeys
     }
 
-    init(bookingId: String, professionalId: String,
+    init(anchor: ConsultAnchor, professionalId: String,
          service: any ConsultServicing) {
-        machine = ConsultFlowMachine(bookingId: bookingId)
+        machine = ConsultFlowMachine(anchor: anchor)
         self.professionalId = professionalId
         self.service = service
     }
 
     var stage: ConsultFlowStage { machine.stage }
+
+    /// The consult the flow is on, once the server has named it. Book the Look
+    /// (B8) reads it to open the booking door from the results screen.
+    var consultId: String? { machine.consultId }
+
+    /// True when this flow was opened from a LOOK rather than from a booking —
+    /// the only case where a booking DOOR belongs on the results screen.
+    var isLookAnchored: Bool { machine.anchor.lookPostId != nil }
 
     var canSubmitIntake: Bool {
         guard let pack = intakeState?.questionPack else { return false }
@@ -78,15 +86,29 @@ final class ConsultFlowViewModel {
     // local check left is the booking/pro pairing contract.
     func start() async {
         await perform {
-            let session = try await service.create(bookingId: machine.bookingId)
-            guard session.professionalId == professionalId else {
-                throw ConsultClientFailure.hidden
+            // Create-or-resume, on the SERVER, for both anchors: asking twice
+            // returns the SAME consult rather than a second one.
+            let consultId: String
+            switch machine.anchor {
+            case let .booking(bookingId):
+                let session = try await service.create(bookingId: bookingId)
+                guard session.professionalId == professionalId else {
+                    throw ConsultClientFailure.hidden
+                }
+                try machine.apply(session: session)
+                consultId = session.id
+            case let .look(lookPostId):
+                let session = try await service.createFromLook(lookPostId: lookPostId)
+                guard session.professionalId == professionalId else {
+                    throw ConsultClientFailure.hidden
+                }
+                try machine.apply(lookSession: session)
+                consultId = session.id
             }
-            try machine.apply(session: session)
-            let agreements = try await service.agreements(consultId: session.id)
+            let agreements = try await service.agreements(consultId: consultId)
             agreementState = agreements
             try machine.apply(agreements: agreements)
-            try await loadCurrentStage(consultId: session.id)
+            try await loadCurrentStage(consultId: consultId)
         }
     }
 

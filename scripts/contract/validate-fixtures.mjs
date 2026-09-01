@@ -50,8 +50,43 @@ const CHECKS = [
   },
   { file: 'consultFlow.json', def: 'ConsultCaptureStateDTO', pick: (d) => [d.capture.capture, d.captureRejected, d.captureProceed.capture] },
   { file: 'consultFlow.json', def: 'ConsultAnalysisStateDTO', pick: (d) => [d.analysis.analysis] },
-  { file: 'consultFlow.json', def: 'ConsultClientResultsDTO', pick: (d) => [d.results.results] },
+  // BOTH anchors on purpose (Book the Look, B2/B8): the booking-anchored arm
+  // omits `lookPostId` entirely, the look-anchored one sets it and answers
+  // `bookingId: null`. One arm alone would let either half of that widening
+  // rot unnoticed.
+  { file: 'consultFlow.json', def: 'ConsultClientResultsDTO', pick: (d) => [d.results.results, d.lookResults.results] },
   { file: 'consultFlow.json', def: 'ConsultMeCardTeaserTapResponseDTO', pick: (d) => [d.teaser] },
+
+  // ── Book the Look, B8 — the look-anchored consult and its booking door ──
+  { file: 'consultFlow.json', def: 'ConsultLookSessionDTO', pick: (d) => [d.lookSession.consult] },
+  // All four arms: open with an existing session, open with none, the DARK
+  // answer that keeps the device's entry point hidden with no reason at all
+  // (the founder gate must leak nothing), and a named refusal.
+  {
+    file: 'consultLookAvailability.json',
+    def: 'ConsultLookAvailabilityDTO',
+    pick: (d) => [
+      d.openWithSession.availability,
+      d.openNoSession.availability,
+      d.dark.availability,
+      d.serviceUnlinked.availability,
+    ],
+  },
+  // Every branch the device renders differently: the floor alone, the same
+  // proposal with one enhancement ticked (the opt-in contract, both
+  // directions), a mode refusal, the load-bearing SAFETY refusal, and a
+  // proposal with no recommendations and no printable price.
+  {
+    file: 'consultProposal.json',
+    def: 'ConsultBookingProposalAvailabilityDTO',
+    pick: (d) => [
+      d.salonFloorOnly.proposal,
+      d.salonOneEnhancementSelected.proposal,
+      d.modeNotOffered.proposal,
+      d.safetyReviewRequired.proposal,
+      d.noRecommendations.proposal,
+    ],
+  },
   { file: 'clientMe.json', def: 'ClientMePageDTO', pick: (d) => [d.me] },
   // Validate the whole feed (not just the rows) so `unreadCount` +
   // `markReadEventKeys` — the bell's badge and the mark-read allowlist — are
