@@ -34,7 +34,9 @@ struct ProProfileTabView: View {
     @State private var composing = false
     @State private var editing = false
     @State private var showPayment = false
-    @State private var viewingMedia: FullscreenMedia?
+    /// The library owns its own load, so the tab's pull-to-refresh reaches it by
+    /// bumping this rather than by hoisting its state up here.
+    @State private var libraryReloadTick = 0
 
     var body: some View {
         NavigationStack {
@@ -60,7 +62,10 @@ struct ProProfileTabView: View {
             .navigationTitle("Profile")
             .navigationBarTitleDisplayMode(.large)
             .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
-            .refreshable { await load() }
+            .refreshable {
+                libraryReloadTick += 1
+                await load()
+            }
             .task { if case .loading = phase { await load() } }
             .onChange(of: session.refreshTick) { Task { await load() } }
             .sheet(isPresented: $editing) {
@@ -72,8 +77,11 @@ struct ProProfileTabView: View {
             }
             .sheet(isPresented: $showPayment) { ProPaymentSettingsView() }
             .sheet(isPresented: $composing) {
-                // Reload so a new post shows in the portfolio tab + the Looks stat.
-                ProNewMediaPostView { Task { await load() } }
+                // Reload so a new post shows in the library + the Looks stat.
+                ProNewMediaPostView {
+                    libraryReloadTick += 1
+                    Task { await load() }
+                }
             }
             .tint(BrandColor.accent)
         }
@@ -92,7 +100,7 @@ struct ProProfileTabView: View {
 
         tabBar
         switch tab {
-        case .portfolio: portfolioTab(pub)
+        case .portfolio: portfolioTab()
         case .services: servicesTab(pub)
         case .reviews: reviewsTab(pub)
         }
@@ -283,7 +291,18 @@ struct ProProfileTabView: View {
             statTile(stats.averageRatingLabel ?? "–", "Rating")
             statTile(stats.reviewCountLabel, "Reviews")
             statTile(stats.favoritesLabel, "Favs")
-            if let looks = stats.looksLabel { statTile(looks, "Looks") }
+            // 🔴 The Looks tile is the way into the creator analytics, which used
+            // to be a "Your Looks performance" row buried in the Growth list
+            // between Referral rewards and Membership. Putting it on the number
+            // it explains is what let that row go — so this link is load-bearing,
+            // not decoration.
+            if let looks = stats.looksLabel {
+                NavigationLink { ProLooksPerformanceView() } label: {
+                    statTile(looks, "Looks")
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Looks: \(looks). See how they are performing")
+            }
             if let followers = stats.followersLabel { statTile(followers, "Followers") }
         }
     }
@@ -364,45 +383,17 @@ struct ProProfileTabView: View {
         .padding(.top, 4)
     }
 
+    /// 🔴 The library itself, not a mirror of it.
+    ///
+    /// This used to render `pub.portfolioTiles` — the PUBLIC profile's grid,
+    /// read-only, where a tap opened a fullscreen viewer and nothing could be
+    /// decided. The things a pro actually does with their photos lived on two
+    /// other screens reached from the Business list below ("Portfolio" and "My
+    /// media"), so the tab that looked like the library was the one place that
+    /// wasn't it. Both rows are gone; this is them.
     @ViewBuilder
-    private func portfolioTab(_ pub: ProProfile?) -> some View {
-        let tiles = pub?.portfolioTiles ?? []
-        if tiles.isEmpty {
-            emptyTab("No portfolio assets yet. Upload your best work to start building your client-facing profile.")
-        } else {
-            // Cell size comes from `MediaGridCell`, never from the media — a
-            // landscape upload used to widen its own cell past the column and
-            // draw over its neighbour. See MediaGridCell.swift.
-            LazyVGrid(columns: MediaGridLayout.columns(count: 3, spacing: 10), spacing: 10) {
-                ForEach(tiles.prefix(60)) { tile in
-                    if let before = tile.before, let beforeStr = before.displayUrl,
-                       let beforeURL = URL(string: beforeStr), let afterURL = URL(string: tile.displayUrl) {
-                        // Paired before/after → the comparison slider fills the cell,
-                        // at the same size as every plain tile in the row.
-                        MediaGridCompareCell(beforeURL: beforeURL, afterURL: afterURL, cornerRadius: 12)
-                    } else {
-                        Button {
-                            // The pro's own portfolio tile mirrors web's
-                            // `/media/[id]`: the asset full-screen with its
-                            // caption and service chips overlaid.
-                            viewingMedia = FullscreenMedia.remote(
-                                id: tile.id,
-                                urlString: tile.src,
-                                isVideo: tile.isVideo,
-                                overlay: MediaCaptionOverlay.make(
-                                    caption: tile.caption,
-                                    serviceNames: tile.serviceNames
-                                )
-                            )
-                        } label: {
-                            PortfolioTileFace(tile: tile, cornerRadius: 12, chrome: .videoGlyph)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-            .mediaFullscreenCover($viewingMedia)
-        }
+    private func portfolioTab() -> some View {
+        ProLibrarySection(reloadTick: libraryReloadTick)
     }
 
     @ViewBuilder
@@ -486,12 +477,11 @@ struct ProProfileTabView: View {
 
             BrandSection(title: "Business") {
                 VStack(spacing: 10) {
-                    // The library the pro decides from — its top zone IS the
-                    // public portfolio. "My media" stays below it because it is
-                    // the ASSET editor (caption, service tags, cover, delete);
-                    // this one is about what is public.
-                    businessLink(icon: "square.grid.2x2", title: "Portfolio") { ProPortfolioView() }
-                    businessLink(icon: "photo.on.rectangle", title: "My media") { ProMediaManagerView() }
+                    // 🔴 No "Portfolio" or "My media" rows. Both led to grids of
+                    // the same photos: one to decide what was public, one to
+                    // edit the asset. They are now the Portfolio TAB above and
+                    // the "Edit details" sheet on a tile. A row here would be a
+                    // third door into a room that already has one.
                     businessLink(icon: "person.2.fill", title: "Clients") { ProClientsView() }
                     businessLink(icon: "person.crop.circle.badge.clock", title: "Waitlist") { ProWaitlistView() }
                     businessLink(icon: "checklist", title: "Reminders") { ProRemindersView() }
@@ -515,7 +505,10 @@ struct ProProfileTabView: View {
 
             BrandSection(title: "Growth") {
                 VStack(spacing: 10) {
-                    businessLink(icon: "chart.line.uptrend.xyaxis", title: "Your Looks performance") { ProLooksPerformanceView() }
+                    // 🔴 No "Your Looks performance" row — it is the Looks stat
+                    // tile in the header, next to the number it explains. Never
+                    // remove that link without putting this row back: between
+                    // them they are the only way into the creator analytics.
                     businessLink(icon: "eye", title: "Your visibility") { ProVisibilityView() }
                     businessLink(icon: "gift", title: "Referral rewards") { ProReferralActivityView() }
                     businessLink(icon: "star.circle", title: "Membership") { ProMembershipView() }

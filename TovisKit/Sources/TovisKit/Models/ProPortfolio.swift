@@ -101,6 +101,12 @@ public struct ProLibraryTile: Decodable, Sendable, Identifiable {
     /// live comparison slider: a recognised gesture wins the scroll, and the tap
     /// belongs to the tile.
     public let before: LooksPairedBefore?
+    /// The STORED pairing, which is not the same fact as `before`: that one is
+    /// nil whenever the paired row can't be drawn (a video "after", an
+    /// unreadable asset), while this is the column the editor's picker must
+    /// reflect. Optional so a server that predates it decodes to nil rather
+    /// than failing the whole screen.
+    public let beforeAssetId: String?
     public let mark: ProLibraryMark?
     /// Set only on PUBLIC tiles.
     public let engagement: ProLibraryEngagement?
@@ -156,7 +162,24 @@ public struct ProLibraryCounts: Decodable, Sendable {
     public let heldCount: Int
 }
 
+/// One taggable service, as the tile editor's picker renders it. The same
+/// taxonomy `PATCH /api/v1/pro/media/{id}` validates `serviceIds` against.
+public struct ProLibraryServiceOption: Decodable, Sendable, Identifiable, Hashable {
+    public let id: String
+    public let name: String
+
+    /// The shape `ProServiceTagPicker` renders. The picker is shared with the
+    /// new-post composer, so one control serves both rather than each library
+    /// surface growing its own tag list.
+    public var asServiceTag: ProMediaServiceTag {
+        ProMediaServiceTag(serviceId: id, name: name)
+    }
+}
+
 public struct ProLibraryRoutes: Decodable, Sendable {
+    /// Where the library lives on web: the pro's own profile, portfolio tab.
+    /// The VALUE moved there; the KEY must not change — this is non-optional,
+    /// so a rename server-side fails the decode and blanks the native screen.
     public let portfolio: String
     public let uploadNew: String
     public let proHome: String
@@ -181,6 +204,10 @@ public struct ProLibraryPageModel: Decodable, Sendable {
     /// True only when the pro owns no media at all.
     public let isBlank: Bool
     public let publicProfileHref: String?
+    /// Loaded with the page so opening a tile's editor costs no round-trip.
+    /// Optional for the same reason as `ProLibraryTile.beforeAssetId`: a server
+    /// that predates it must not blank the whole library.
+    public let serviceOptions: [ProLibraryServiceOption]?
 }
 
 struct ProLibraryResponse: Decodable, Sendable {

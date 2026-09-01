@@ -14,6 +14,11 @@ public struct ProMediaServiceTag: Decodable, Sendable, Identifiable, Hashable {
     public let serviceId: String
     public let name: String
     public var id: String { serviceId }
+
+    public init(serviceId: String, name: String) {
+        self.serviceId = serviceId
+        self.name = name
+    }
 }
 
 /// One item in the pro's own media library (`ProManagedMediaItemDTO`). Carries
@@ -103,8 +108,11 @@ public enum ProMediaPairingEdit: Sendable, Equatable {
 /// a single optional.
 struct ProMediaUpdateRequest: Encodable, Sendable {
     let caption: String?
-    let isEligibleForLooks: Bool
-    let isFeaturedInPortfolio: Bool
+    /// Nil for an editor that does not own visibility (the library's tile sheet,
+    /// where publishing is its own act) — the key is then omitted and the server
+    /// keeps the stored flag.
+    let isEligibleForLooks: Bool?
+    let isFeaturedInPortfolio: Bool?
     let serviceIds: [String]
     var pairing: ProMediaPairingEdit = .untouched
 
@@ -114,10 +122,17 @@ struct ProMediaUpdateRequest: Encodable, Sendable {
 
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
-        // A nil caption is omitted → the server coerces an absent caption to null.
-        try c.encodeIfPresent(caption, forKey: .caption)
-        try c.encode(isEligibleForLooks, forKey: .isEligibleForLooks)
-        try c.encode(isFeaturedInPortfolio, forKey: .isFeaturedInPortfolio)
+        // 🔴 ALWAYS send the caption key, explicit null included.
+        //
+        // This used to `encodeIfPresent`, so clearing a caption worked only
+        // because the server wrote `caption` unconditionally and coerced an
+        // absent one to null — which also meant every partial save WIPED the
+        // caption. The server now writes the column only when the key is
+        // present, so an omitted caption preserves it, and "clear this caption"
+        // has to say so.
+        try c.encode(caption, forKey: .caption)
+        try c.encodeIfPresent(isEligibleForLooks, forKey: .isEligibleForLooks)
+        try c.encodeIfPresent(isFeaturedInPortfolio, forKey: .isFeaturedInPortfolio)
         try c.encode(serviceIds, forKey: .serviceIds)
         switch pairing {
         case .untouched:

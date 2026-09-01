@@ -1,27 +1,31 @@
-// The pro's Portfolio — ONE library whose top zone IS the public portfolio.
-// Native twin of the web `/pro/portfolio` screen, backed by
-// `GET /api/v1/pro/portfolio`, which shares its builder with the web page so the
-// two can never disagree about what is public or what a photo is waiting on.
+// The pro's library — ONE set of photos whose top zone IS the public portfolio.
+// It renders INSIDE the Profile tab, under the profile header, the way a grid
+// does in every app a pro already uses.
 //
-// It replaces "My media" (ProMediaManagerView), which listed a flat grid with
-// two INDEPENDENT visibility toggles. The server welds those together —
-// publishing derives PUBLIC visibility and publishes a LookPost — so two
-// toggles were a lie the pro had to unlearn the first time they used it. Here:
+// 🔴 It used to be a screen of its own, pushed from a "Portfolio" row in the
+// Business list, with a second row ("My media") leading to a second grid of the
+// same photos whose only unique power was the asset editor. Three doors into one
+// room, and the profile's own portfolio tab was a read-only mirror that decided
+// nothing. Now: the tab IS this, and the editor lives on the tile.
+//
+// Backed by `GET /api/v1/pro/portfolio`, which shares its builder with the web
+// page, so the two can never disagree about what is public or what a photo is
+// waiting on. The model it renders:
 //
 //   - publishing is ONE act, with its destinations written down before it lands;
 //   - public-vs-private is carried by WHICH ZONE a tile sits in, not by a badge,
 //     so a tile's chip is only ever something the pro DECIDED (Signature/Cover);
 //   - a blocked photo names a PERSON, not a rule, and offers the only real
 //     action — re-issuing the aftercare, which is where media-use is ticked.
-//
-// The old editor (caption / service tags / delete / cover / pairing) still lives
-// in ProMediaManagerView, reached from the same Business section: this screen is
-// about deciding what is public, that one is about editing an asset.
 import SwiftUI
 import TovisKit
 
-struct ProPortfolioView: View {
+struct ProLibrarySection: View {
     @Environment(SessionModel.self) private var session
+
+    /// Bumped by the host when it wants a reload — the Profile tab's own
+    /// pull-to-refresh, which owns the scroll view this renders into.
+    var reloadTick: Int = 0
 
     private enum Phase {
         case loading
@@ -35,40 +39,38 @@ struct ProPortfolioView: View {
     @State private var composing = false
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                switch phase {
-                case .loading:
-                    HStack { Spacer(); ProgressView().tint(BrandColor.accent); Spacer() }
-                        .padding(.top, 60)
-                case let .failed(message):
-                    errorState(message)
-                case let .loaded(model):
-                    content(model)
-                }
+        VStack(alignment: .leading, spacing: 0) {
+            switch phase {
+            case .loading:
+                HStack { Spacer(); ProgressView().tint(BrandColor.accent); Spacer() }
+                    .padding(.vertical, 60)
+            case let .failed(message):
+                errorState(message)
+            case let .loaded(model):
+                content(model)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 12)
-            .padding(.bottom, 120)
         }
-        .background(BrandColor.bgPrimary.ignoresSafeArea())
-        .navigationTitle("Portfolio")
-        .navigationBarTitleDisplayMode(.large)
-        .refreshable { await load() }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .task { if case .loading = phase { await load() } }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button { composing = true } label: { Image(systemName: "plus") }
-                    .accessibilityLabel("Upload a photo")
-            }
-        }
+        .onChange(of: reloadTick) { Task { await load() } }
         .sheet(item: $openTile) { tile in
-            ProPortfolioSheet(tile: tile) { Task { await load() } }
+            ProPortfolioSheet(
+                tile: tile,
+                serviceOptions: serviceOptions,
+                onChanged: { Task { await load() } }
+            )
         }
         .sheet(isPresented: $composing) {
             ProNewMediaPostView { Task { await load() } }
         }
-        .tint(BrandColor.accent)
+    }
+
+    /// Nil only against a server that predates the field — the picker then has
+    /// nothing to offer and the editor's save gate keeps a pro from clearing
+    /// their tags by accident.
+    private var serviceOptions: [ProLibraryServiceOption] {
+        guard case let .loaded(model) = phase else { return [] }
+        return model.serviceOptions ?? []
     }
 
     @ViewBuilder

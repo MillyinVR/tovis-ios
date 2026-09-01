@@ -19,12 +19,16 @@ struct ProPortfolioSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     let tile: ProLibraryTile
+    /// The taggable taxonomy the editor offers, carried by the library page so
+    /// opening this sheet costs no round-trip.
+    let serviceOptions: [ProLibraryServiceOption]
     var onChanged: () -> Void
 
     @State private var busy = false
     @State private var error: String?
     @State private var sent = false
     @State private var retracting = false
+    @State private var editing = false
 
     var body: some View {
         NavigationStack {
@@ -39,6 +43,11 @@ struct ProPortfolioSheet: View {
                     } else {
                         manage
                     }
+
+                    // Editing the asset is not publishing it, so it is offered
+                    // on every face — including a held photo, whose caption and
+                    // tags are the pro's own while they wait on the client.
+                    if !retracting { editDetailsButton }
                 }
                 .padding(20)
             }
@@ -50,7 +59,41 @@ struct ProPortfolioSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
+        // 🔴 A drag inside the sheet SCROLLS its content instead of resizing the
+        // sheet. Without this, the default (`.resizes`) swallows the gesture at
+        // the medium detent, and "Edit details" — which now sits below Make
+        // private — could not be reached at all without first grabbing the tiny
+        // drag indicator. Verified in the simulator: with `.resizes`, neither a
+        // content drag nor a grabber drag got to it.
+        .presentationContentInteraction(.scrolls)
+        .sheet(isPresented: $editing) {
+            ProMediaEditSheet(tile: tile, serviceOptions: serviceOptions) {
+                // A caption, tag, cover or delete change moves the library.
+                onChanged()
+                dismiss()
+            }
+        }
         .tint(BrandColor.accent)
+    }
+
+    /// What "My media" used to be a whole second screen for. Secondary styling
+    /// throughout: the sheet's first job is the decision it was opened for.
+    private var editDetailsButton: some View {
+        Button { editing = true } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "slider.horizontal.3").font(.system(size: 13))
+                Text("Edit details").font(BrandFont.body(13, .semibold))
+            }
+            .foregroundStyle(BrandColor.textSecondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(BrandColor.textMuted.opacity(0.25), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(busy)
     }
 
     // MARK: - Header

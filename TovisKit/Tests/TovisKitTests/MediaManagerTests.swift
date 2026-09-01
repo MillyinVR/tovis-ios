@@ -170,7 +170,7 @@ private extension URLRequest {
         #expect(body["beforeAssetId"] == nil)
     }
 
-    @Test func updateOmitsCaptionKeyWhenNilToClearIt() async throws {
+    @Test func updateSendsExplicitNullCaptionToClearIt() async throws {
         reset()
         try await makeService().updateMedia(
             mediaId: "media_1",
@@ -181,10 +181,32 @@ private extension URLRequest {
         )
 
         let body = try bodyJSON()
-        // A nil caption is omitted; the server coerces an absent caption to null.
-        #expect(body["caption"] == nil)
+        // 🔴 Explicit null, never an omitted key. The server writes `caption`
+        // only when the key is present (so a partial save can't wipe it), so
+        // clearing a caption has to SAY null. This used to omit the key and rely
+        // on the server coercing an absent caption to null.
+        #expect(body.keys.contains("caption"))
+        #expect(body["caption"] is NSNull)
         #expect(body["isFeaturedInPortfolio"] as? Bool == true)
         #expect(body["serviceIds"] as? [String] == ["s1"])
+    }
+
+    /// The library's tile sheet edits the ASSET and never publishes, so it sends
+    /// no visibility flags at all — the server then leaves both stored flags
+    /// alone. Sending `false` would silently retract a public photo.
+    @Test func updateOmitsVisibilityFlagsWhenTheEditorDoesNotOwnThem() async throws {
+        reset()
+        try await makeService().updateMedia(
+            mediaId: "media_1",
+            caption: "Tag fix only",
+            serviceIds: ["s1"]
+        )
+
+        let body = try bodyJSON()
+        #expect(body["caption"] as? String == "Tag fix only")
+        #expect(body["serviceIds"] as? [String] == ["s1"])
+        #expect(body.keys.contains("isEligibleForLooks") == false)
+        #expect(body.keys.contains("isFeaturedInPortfolio") == false)
     }
 
     @Test func beforeOptionsGetsRouteAndDecodesCandidates() async throws {
