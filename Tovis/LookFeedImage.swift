@@ -127,7 +127,12 @@ struct LookFeedImage<Placeholder: View, Failure: View>: View {
         image = nil
 
         // The render URL first; the stored original only if it does not arrive.
-        for candidate in [url, fallbackURL].compactMap({ $0 }) {
+        // Deduped: an asset with no thumb resolves `thumbOrFullURL` to `url`, so
+        // both candidates are the same file and a failure would fetch it twice.
+        var candidates = [url]
+        if let fallbackURL, fallbackURL != url { candidates.append(fallbackURL) }
+
+        for candidate in candidates {
             guard let (data, _) = try? await URLSession.shared.data(from: candidate),
                   let decoded = await ImageDownsample.thumbnail(from: data, maxPixel: maxPixel)
             else { continue }
