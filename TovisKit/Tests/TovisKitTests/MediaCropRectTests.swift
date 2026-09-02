@@ -200,4 +200,100 @@ import CoreGraphics
         )
         #expect(tile.cropRect == nil)
     }
+
+    // ── The two SYNTHESIZED decoders ────────────────────────────────────────
+    //
+    // `ProPortfolioTile` above spells its `decodeIfPresent` calls out by hand.
+    // `LooksFeedItem` and `LookDetailMedia` rely on Swift synthesizing the
+    // decoder instead, so they are pinned separately rather than assumed to
+    // behave like the hand-written one.
+    //
+    // What the compiler already catches, checked rather than guessed at:
+    // DELETING `case cropX, cropY, cropW, cropH` from `LooksFeedItem`'s custom
+    // `CodingKeys` does NOT silently decode nils — it is a hard "does not
+    // conform to Decodable" build error. So that failure mode needs no test.
+    //
+    // What it does NOT catch, and these tests do: a wrong RAW VALUE on the key.
+    // `case cropX = "cropWidth"` compiles perfectly and decodes every rect as
+    // nil for ever. Confirmed by injecting exactly that — two of the tests below
+    // go red — then reverting. They also pin `focalPointInCrop` returning the
+    // MAPPED focal on these types, which nothing else asserts and which is the
+    // property a cropping view will actually read.
+
+    private func decodeFeedItem(_ cropJSON: String) throws -> LooksFeedItem {
+        let json = """
+        {
+          "id": "look_1",
+          "url": "https://cdn.tovis/looks/1.jpg",
+          "mediaType": "IMAGE",
+          "createdAt": "2026-01-01T00:00:00Z",
+          "_count": { "likes": 0, "comments": 0 },
+          "viewerLiked": false,
+          "viewerSaved": false,
+          "viewerFollows": false,
+          "focalX": 0.6, "focalY": 0.2\(cropJSON)
+        }
+        """
+        return try JSONDecoder().decode(LooksFeedItem.self, from: Data(json.utf8))
+    }
+
+    @Test func looksFeedItemDecodesARect() throws {
+        let item = try decodeFeedItem(
+            #", "cropX": 0.25, "cropY": 0.1, "cropW": 0.5, "cropH": 0.4"#
+        )
+        let crop = try #require(item.cropRect)
+        #expect(crop.x == 0.25)
+        #expect(crop.y == 0.1)
+        #expect(crop.w == 0.5)
+        #expect(crop.h == 0.4)
+
+        // …and the cropping focal is the MAPPED one, not the raw wire pair.
+        let inCrop = try #require(item.focalPointInCrop)
+        #expect(abs(inCrop.x - 0.70) < 1e-9)
+        #expect(abs(inCrop.y - 0.25) < 1e-9)
+        #expect(item.focalPoint?.x == 0.6)
+    }
+
+    @Test func looksFeedItemWithoutARectIsTheFullFrame() throws {
+        let item = try decodeFeedItem("")
+        #expect(item.cropRect == nil)
+        #expect(item.focalPointInCrop == item.focalPoint)
+    }
+
+    @Test func looksFeedItemDecodesAPartialRectAsNoCrop() throws {
+        let item = try decodeFeedItem(#", "cropX": 0.25, "cropW": 0.5"#)
+        #expect(item.cropX == 0.25)
+        #expect(item.cropRect == nil)
+    }
+
+    private func decodeDetailMedia(_ cropJSON: String) throws -> LookDetailMedia {
+        let json = """
+        {
+          "id": "media_1",
+          "url": "https://cdn.tovis/looks/1.jpg",
+          "mediaType": "IMAGE",
+          "createdAt": "2026-01-01T00:00:00Z",
+          "focalX": 0.6, "focalY": 0.2\(cropJSON)
+        }
+        """
+        return try JSONDecoder().decode(LookDetailMedia.self, from: Data(json.utf8))
+    }
+
+    @Test func lookDetailMediaDecodesARect() throws {
+        let media = try decodeDetailMedia(
+            #", "cropX": 0.25, "cropY": 0.1, "cropW": 0.5, "cropH": 0.4"#
+        )
+        let crop = try #require(media.cropRect)
+        #expect(crop.w == 0.5)
+
+        let inCrop = try #require(media.focalPointInCrop)
+        #expect(abs(inCrop.x - 0.70) < 1e-9)
+        #expect(abs(inCrop.y - 0.25) < 1e-9)
+    }
+
+    @Test func lookDetailMediaWithoutARectIsTheFullFrame() throws {
+        let media = try decodeDetailMedia("")
+        #expect(media.cropRect == nil)
+        #expect(media.focalPointInCrop == media.focalPoint)
+    }
 }
