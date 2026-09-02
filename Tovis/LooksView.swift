@@ -435,9 +435,15 @@ struct LooksView: View {
             // snaps flush, with no sliver of the previous slide left at the top.
             .ignoresSafeArea()
             // Record a sampled view impression for whichever slide snaps active (B2).
-            .onChange(of: activeId) { _, id in Task { await recordView(id) } }
+            .onChange(of: activeId) { _, id in
+                Task { await recordView(id) }
+                prefetchUpcoming(after: id, in: items)
+            }
             // Start the first slide playing before any scroll happens.
-            .onAppear { if activeId == nil { activeId = items.first?.id } }
+            .onAppear {
+                if activeId == nil { activeId = items.first?.id }
+                prefetchUpcoming(after: activeId, in: items)
+            }
             .onChange(of: items.first?.id) { _, first in if activeId == nil { activeId = first } }
         }
     }
@@ -569,6 +575,42 @@ struct LooksView: View {
         viewedLookIds.insert(id)
         try? await session.client.looks.recordViews(lookIds: [id])
     }
+
+    /// How many slides ahead of the active one are fetched and decoded early.
+    ///
+    /// Two, not ten: a full-screen photograph for every mounted slide at once is
+    /// what made the web feed spend 40 s on a throttled connection, and the
+    /// device pays a decode on top. Two covers a normal swipe and a fast one.
+    private static let prefetchAhead = 2
+
+    /// Warm `FocalImageCache` for the slides just below the one being looked at,
+    /// so a swipe lands on a picture that is already decoded instead of a
+    /// spinner. A no-op for anything already cached or in flight.
+    ///
+    /// Deliberately the SAME cache, key and pixel budget `LookFeedImage` reads
+    /// with — a prefetch decoded at a different `maxPixel` would be stored under
+    /// a different key and the slide would fetch all over again.
+    private func prefetchUpcoming(after id: String?, in items: [LooksFeedItem]) {
+        guard let id, let index = items.firstIndex(where: { $0.id == id }) else { return }
+
+        for item in items.dropFirst(index + 1).prefix(Self.prefetchAhead) {
+            // ⚠️ A PAIRED look renders through BeforeAfterCompareView, which
+            // loads via DownsampledRemoteImage and never reads FocalImageCache.
+            // Prefetching one would download a photograph into a cache nothing
+            // looks in — the opposite of the point. Skip it.
+            guard item.beforeAfterPair == nil else { continue }
+
+            // A video slide shows its POSTER through LookFeedImage; the clip
+            // itself streams and is not an image, so never hand `url` to the
+            // image cache for one.
+            let url = item.isVideo
+                ? item.thumbUrl.flatMap(URL.init(string:))
+                : item.thumbOrFullURL
+            guard let url else { continue }
+            Task { await FocalImageCache.prefetch(url) }
+        }
+    }
+
     private func shareURL(_ i: LooksFeedItem) -> URL? {
         URL(string: "https://www.tovis.app/looks/\(i.id)")
     }
@@ -917,11 +959,18 @@ private struct LookSlide: View {
             .clipped()
             .contentShape(Rectangle())
             .onTapGesture { onToggleMute() }
-        } else if let url = URL(string: item.url) {
+        } else if let url = item.thumbOrFullURL {
             // The look CONTAINED over a blurred copy of itself — the whole
             // published frame on screen, nothing cropped away, and the page still
             // full. The window is the pro's stored rect when there is one, else
             // the full stored image (every look today). Web's LookMedia twin.
+            //
+            // 🔴 `thumbOrFullURL`, not `url`. `url` is the STORED ORIGINAL — for
+            // a phone capture that is 3024×4032 and ~4.5 MB for a 393pt slide,
+            // which this then downsamples to screen size anyway. The server now
+            // renders a 1080px variant into `thumbUrl`; taking it cuts both the
+            // download and roughly 8× of per-slide decode. Web's LookMedia makes
+            // the same choice, from the same two fields.
             //
             // 🔴 `focalPointInCrop`, never `focalPoint`: the stored focal is
             // measured on the UNCROPPED frame and the backdrop cover-crops.
