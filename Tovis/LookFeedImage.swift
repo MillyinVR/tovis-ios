@@ -32,6 +32,14 @@ import UIKit
 
 struct LookFeedImage<Placeholder: View, Failure: View>: View {
     let url: URL
+    /// The stored original, used ONLY if `url` fails to load.
+    ///
+    /// `url` is now usually the server's downscaled render of this look, which
+    /// Supabase serves from its image-transformation endpoint — documented as a
+    /// Pro-plan feature while this project is on Free. It works today, but if it
+    /// ever stops, every slide in the feed would fail at once. Falling back to
+    /// the original turns a blank feed into a slow one. nil → no fallback.
+    var fallbackURL: URL? = nil
     /// The pro's published frame, or nil for the full stored image (every look
     /// today). The window this frame displays.
     let crop: MediaCropRect?
@@ -117,16 +125,24 @@ struct LookFeedImage<Placeholder: View, Failure: View>: View {
         }
 
         image = nil
-        guard let (data, _) = try? await URLSession.shared.data(from: url) else {
-            loadFailed = true
+
+        // The render URL first; the stored original only if it does not arrive.
+        // Deduped: an asset with no thumb resolves `thumbOrFullURL` to `url`, so
+        // both candidates are the same file and a failure would fetch it twice.
+        var candidates = [url]
+        if let fallbackURL, fallbackURL != url { candidates.append(fallbackURL) }
+
+        for candidate in candidates {
+            guard let (data, _) = try? await URLSession.shared.data(from: candidate),
+                  let decoded = await ImageDownsample.thumbnail(from: data, maxPixel: maxPixel)
+            else { continue }
+
+            FocalImageCache.store(decoded, url: candidate, maxPixel: maxPixel)
+            image = decoded
             return
         }
-        if let decoded = await ImageDownsample.thumbnail(from: data, maxPixel: maxPixel) {
-            FocalImageCache.store(decoded, url: url, maxPixel: maxPixel)
-            image = decoded
-        } else {
-            loadFailed = true
-        }
+
+        loadFailed = true
     }
 }
 
@@ -177,6 +193,7 @@ extension LookFeedImage where Failure == Placeholder {
     /// Convenience: reuse the placeholder as the failure view.
     init(
         url: URL,
+        fallbackURL: URL? = nil,
         crop: MediaCropRect?,
         focalInCrop: MediaFocalPoint?,
         maxPixel: CGFloat = ImageDownsample.screenMaxPixel,
@@ -184,6 +201,7 @@ extension LookFeedImage where Failure == Placeholder {
     ) {
         self.init(
             url: url,
+            fallbackURL: fallbackURL,
             crop: crop,
             focalInCrop: focalInCrop,
             maxPixel: maxPixel,

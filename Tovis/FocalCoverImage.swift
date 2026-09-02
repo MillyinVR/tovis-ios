@@ -147,6 +147,37 @@ enum FocalImageCache {
     static func store(_ image: UIImage, url: URL, maxPixel: CGFloat) {
         cache.setObject(image, forKey: key(url, maxPixel))
     }
+
+    /// URLs currently being prefetched, so a fast scroll cannot start the same
+    /// download several times over. MainActor-isolated rather than locked —
+    /// every caller is a view.
+    @MainActor private static var inFlight: Set<String> = []
+
+    /// Fetch and decode `url` into the cache BEFORE anything asks to draw it, so
+    /// the view that eventually does gets a cache hit instead of a spinner.
+    ///
+    /// Cheap to over-call: returns immediately if the image is already cached or
+    /// already being fetched, and silently gives up on any failure — a prefetch
+    /// that doesn't arrive costs nothing, because the view still loads normally.
+    ///
+    /// 🔴 `maxPixel` must match what the eventual view will ask for. The cache is
+    /// keyed on URL **and** pixel budget, so prefetching at the wrong budget
+    /// stores a bitmap nothing will ever look up and doubles the download.
+    @MainActor
+    static func prefetch(_ url: URL, maxPixel: CGFloat = ImageDownsample.screenMaxPixel) async {
+        if image(for: url, maxPixel: maxPixel) != nil { return }
+
+        let inFlightKey = key(url, maxPixel) as String
+        if inFlight.contains(inFlightKey) { return }
+        inFlight.insert(inFlightKey)
+        defer { inFlight.remove(inFlightKey) }
+
+        guard let (data, _) = try? await URLSession.shared.data(from: url),
+              let decoded = await ImageDownsample.thumbnail(from: data, maxPixel: maxPixel)
+        else { return }
+
+        store(decoded, url: url, maxPixel: maxPixel)
+    }
 }
 
 extension FocalCoverImage where Failure == Placeholder {
