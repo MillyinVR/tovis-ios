@@ -976,6 +976,7 @@ private struct LookSlide: View {
             // measured on the UNCROPPED frame and the backdrop cover-crops.
             LookFeedImage(
                 url: url,
+                fallbackURL: URL(string: item.url),
                 crop: item.cropRect,
                 focalInCrop: item.focalPointInCrop,
                 placeholder: { ProgressView().tint(BrandColor.accent) },
