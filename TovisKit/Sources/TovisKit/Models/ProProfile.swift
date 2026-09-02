@@ -278,6 +278,16 @@ public struct ProPortfolioTile: Decodable, Sendable, Identifiable {
     public let focalX: Double?
     public let focalY: Double?
 
+    /// Non-destructive publish CROP (capture chain item 2): the rect of `src` a
+    /// surface should display, [0,1] top-left, in the SAME space as the focal
+    /// above. All four or all nil; nil = the full stored frame, which is every
+    /// tile today. Optional so a payload from a server that predates the field
+    /// still decodes. Read `cropRect`, never these raw.
+    public let cropX: Double?
+    public let cropY: Double?
+    public let cropW: Double?
+    public let cropH: Double?
+
     /// The thumbnail to render (falls back to the full source).
     public var displayUrl: String { thumbUrl ?? src }
 
@@ -285,10 +295,24 @@ public struct ProPortfolioTile: Decodable, Sendable, Identifiable {
     /// invalid. Mirrors `LooksFeedItem.focalPoint` and the web `resolveFocalPoint`.
     public var focalPoint: MediaFocalPoint? { MediaFocalPoint(x: focalX, y: focalY) }
 
+    /// The validated publish crop, or nil (the full stored frame).
+    public var cropRect: MediaCropRect? {
+        MediaCropRect(x: cropX, y: cropY, w: cropW, h: cropH)
+    }
+
+    /// 🔴 The focal a CROPPING surface must use — the subject's position inside
+    /// `cropRect`, not inside the frame it was measured in. Both profile
+    /// surfaces cover-crop this tile, so whichever adopts the rect must read
+    /// this and not `focalPoint`. nil when the subject was framed out.
+    public var focalPointInCrop: MediaFocalPoint? {
+        focalPoint?.inCropSpace(cropRect)
+    }
+
     private enum CodingKeys: String, CodingKey {
         case id, lookId, caption, src, thumbUrl, isVideo, isFeaturedInPortfolio
         case serviceIds, serviceNames, before, engagement
         case focalX, focalY
+        case cropX, cropY, cropW, cropH
     }
 
     public init(from decoder: Decoder) throws {
@@ -307,6 +331,10 @@ public struct ProPortfolioTile: Decodable, Sendable, Identifiable {
             ?? ProPortfolioTileEngagement(likeCount: 0, commentCount: 0, recreatedCount: 0)
         focalX = try c.decodeIfPresent(Double.self, forKey: .focalX)
         focalY = try c.decodeIfPresent(Double.self, forKey: .focalY)
+        cropX = try c.decodeIfPresent(Double.self, forKey: .cropX)
+        cropY = try c.decodeIfPresent(Double.self, forKey: .cropY)
+        cropW = try c.decodeIfPresent(Double.self, forKey: .cropW)
+        cropH = try c.decodeIfPresent(Double.self, forKey: .cropH)
     }
 }
 

@@ -10,6 +10,10 @@
       "createdAt": "2026-06-26T18:30:00.000Z",
       "focalX": null,
       "focalY": null,
+      "cropX": null,
+      "cropY": null,
+      "cropW": null,
+      "cropH": null,
       "professional": {
         "id": "pro_1",
         "businessName": "Studio Lumi\u00e8re",
@@ -69,6 +73,10 @@
       "createdAt": "2026-06-25T14:05:00.000Z",
       "focalX": null,
       "focalY": null,
+      "cropX": null,
+      "cropY": null,
+      "cropW": null,
+      "cropH": null,
       "professional": null,
       "clientAuthor": {
         "handle": "noellestyles",

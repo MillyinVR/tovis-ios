@@ -137,6 +137,13 @@ public struct LookDetailMedia: Decodable, Sendable, Identifiable, Hashable {
     public let createdAt: String
     public let focalX: Double?
     public let focalY: Double?
+    /// Non-destructive publish crop (item 2), [0,1] top-left in the same space
+    /// as the focal. All four or all nil; nil = the full stored frame. Read
+    /// `cropRect`, never these raw.
+    public let cropX: Double?
+    public let cropY: Double?
+    public let cropW: Double?
+    public let cropH: Double?
     public let review: LookDetailReview?
 
     public var isVideo: Bool { mediaType.uppercased() == "VIDEO" }
@@ -144,6 +151,16 @@ public struct LookDetailMedia: Decodable, Sendable, Identifiable, Hashable {
     /// The validated focal point to crop on, or nil (center) when absent or
     /// invalid — same degradation as the feed's.
     public var focalPoint: MediaFocalPoint? { MediaFocalPoint(x: focalX, y: focalY) }
+
+    /// The validated publish crop, or nil (the full stored frame).
+    public var cropRect: MediaCropRect? {
+        MediaCropRect(x: cropX, y: cropY, w: cropW, h: cropH)
+    }
+
+    /// 🔴 The focal a CROPPING surface must use — see `LooksFeedItem`.
+    public var focalPointInCrop: MediaFocalPoint? {
+        focalPoint?.inCropSpace(cropRect)
+    }
 
     /// Thumb when present, else the full asset — for the grid tiles.
     public var thumbOrFullURL: URL? { URL(string: thumbUrl ?? url) }

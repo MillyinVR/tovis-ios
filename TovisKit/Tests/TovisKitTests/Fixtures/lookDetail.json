@@ -41,6 +41,10 @@
       "createdAt": "2026-07-08T07:46:42.581Z",
       "focalX": null,
       "focalY": null,
+      "cropX": null,
+      "cropY": null,
+      "cropW": null,
+      "cropH": null,
       "review": {
         "id": "seed-review-balayage-001",
         "rating": 5,
@@ -81,6 +85,10 @@
           "createdAt": "2026-07-08T07:46:42.581Z",
           "focalX": null,
           "focalY": null,
+          "cropX": null,
+          "cropY": null,
+          "cropW": null,
+          "cropH": null,
           "review": {
             "id": "seed-review-balayage-001",
             "rating": 5,

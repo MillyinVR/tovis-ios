@@ -51,6 +51,16 @@ public struct LooksFeedItem: Decodable, Sendable, Identifiable {
     public let focalX: Double?
     public let focalY: Double?
 
+    /// Non-destructive publish CROP of the primary asset (capture chain item 2):
+    /// the rect of the stored image a surface should display, [0,1] top-left, in
+    /// the SAME space as the focal above. All four or all nil; nil = the full
+    /// stored frame, which is every look today. Optional so an older payload
+    /// still decodes. Read `cropRect`, never these raw.
+    public let cropX: Double?
+    public let cropY: Double?
+    public let cropW: Double?
+    public let cropH: Double?
+
     /// Opt-in before/after pairing on the primary image → the reveal slider.
     public let before: LooksPairedBefore?
 
@@ -68,6 +78,7 @@ public struct LooksFeedItem: Decodable, Sendable, Identifiable {
         case viewerLiked, viewerSaved, viewerFollows
         case serviceId, serviceName, category, priceStartingAt
         case focalX, focalY
+        case cropX, cropY, cropW, cropH
         case before
         case tagsRaw = "tags"
     }
@@ -78,6 +89,20 @@ public struct LooksFeedItem: Decodable, Sendable, Identifiable {
     /// Mirrors the web `resolveFocalPoint` — a non-finite or out-of-[0,1] value
     /// degrades to nil rather than a bad crop.
     public var focalPoint: MediaFocalPoint? { MediaFocalPoint(x: focalX, y: focalY) }
+
+    /// The validated publish crop, or nil (the full stored frame) when absent or
+    /// unusable. A partial rect resolves to nil rather than a half-answer.
+    public var cropRect: MediaCropRect? {
+        MediaCropRect(x: cropX, y: cropY, w: cropW, h: cropH)
+    }
+
+    /// 🔴 The focal a CROPPING surface must use — the subject's position inside
+    /// `cropRect`, not inside the sensor frame it was measured in. nil when the
+    /// subject was framed out (centre instead). A view that honours `cropRect`
+    /// and reads `focalPoint` directly is silently off by the crop's origin.
+    public var focalPointInCrop: MediaFocalPoint? {
+        focalPoint?.inCropSpace(cropRect)
+    }
 
     /// Thumb when the row has one, else the full asset — the grid tile's source.
     /// Same shape as `LookDetail.thumbOrFullURL`, and it lives here rather than
