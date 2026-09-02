@@ -69,12 +69,26 @@ public enum LookConsultEntry {
     /// door; one still mid-flow resumes where it was. This is about landing on
     /// the RIGHT screen for a Book tap, not about guarding the flow — the flow
     /// guards itself off server state.
+    ///
+    /// 🔴 `.cancelled` returns nil, which hands the Book button BACK to the
+    /// ordinary booking sheet. The server returns the existing session for a
+    /// (client, pro, look) triple whatever its status — a unique index makes a
+    /// second one impossible — so a terminal consult otherwise captures the
+    /// button forever: every tap lands on a screen with no forward action and
+    /// the booking sheet below is never reached.
+    ///
+    /// `.consentRevoked` is NOT terminal and deliberately still resumes:
+    /// accepting a fresh agreement moves the session back to CONSENT_REQUIRED
+    /// on the server, so the flow's own consent step is the way back in.
     static func destination(
         for status: ConsultSessionStatus,
         consultId: String
     ) -> LookConsultEntryDestination? {
         let trimmed = consultId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
+        // Terminal with no recovery transition: purged mid-analysis. Nothing
+        // the client can do revives it.
+        guard status != .cancelled else { return nil }
         return status == .completed
             ? .bookingProposal(consultId: trimmed)
             : .resumeFlow(consultId: trimmed)
