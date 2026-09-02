@@ -106,7 +106,10 @@ struct FocalCoverImage<Placeholder: View, Failure: View>: View {
     }
 }
 
-/// Decoded-image cache for the focal path.
+/// Decoded-image cache for the focal path — and for `LookFeedImage`, which needs
+/// a decoded bitmap for the same reason (it has to know the intrinsic size before
+/// it can lay a crop window out). Shared rather than duplicated, so a look
+/// decoded by one is free for the other.
 ///
 /// 🔴 Why this had to exist before the profile grids could use `FocalCoverImage`:
 /// the nil-focal branch is an `AsyncImage`, which keeps its own in-memory cache of
@@ -126,7 +129,7 @@ struct FocalCoverImage<Placeholder: View, Failure: View>: View {
 ///
 /// `NSCache` is thread-safe and evicts itself under memory pressure, so this can
 /// never become the jetsam source the capture pipeline already learned to avoid.
-private enum FocalImageCache {
+enum FocalImageCache {
     private static let cache: NSCache<NSString, UIImage> = {
         let cache = NSCache<NSString, UIImage>()
         cache.countLimit = 120

@@ -20,20 +20,20 @@ public extension MediaFocalPoint {
     /// offset is `≤ 0` and spans exactly `[container − scaled, 0]`, so the window
     /// stays on the image — the same clamp `object-position` applies. A degenerate
     /// (zero) image or container falls back to a centered `containerSize` fill.
+    /// The arithmetic itself lives in `LookFeedLayout.windowBox` — the same
+    /// function the letterboxed feed frame uses, so a cover crop cannot mean one
+    /// thing here and another there. This is the (size, offset) shape the
+    /// existing callers want.
     func coverCrop(imageSize: CGSize, containerSize: CGSize) -> (size: CGSize, offset: CGSize) {
-        let cw = containerSize.width, ch = containerSize.height
-        let iw = imageSize.width, ih = imageSize.height
-        guard iw > 0, ih > 0, cw > 0, ch > 0 else {
-            return (containerSize, .zero)
-        }
-        // `.scaledToFill()`: the larger of the two axis ratios covers the frame.
-        let scale = max(cw / iw, ch / ih)
-        let scaled = CGSize(width: iw * scale, height: ih * scale)
-        // (container − scaled) ≤ 0 on the overflow axis; x/y ∈ [0,1] keep it clamped.
-        let offset = CGSize(
-            width: (cw - scaled.width) * x,
-            height: (ch - scaled.height) * y
+        let box = LookFeedLayout.windowBox(
+            window: imageSize,
+            container: containerSize,
+            fit: .cover,
+            focal: self
         )
-        return (scaled, offset)
+        // A degenerate image or container falls back to a centered fill, which is
+        // what every caller of this has always been handed.
+        guard box.width > 0, box.height > 0 else { return (containerSize, .zero) }
+        return (box.size, CGSize(width: box.minX, height: box.minY))
     }
 }
