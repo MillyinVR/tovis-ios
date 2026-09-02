@@ -17,6 +17,8 @@ import TovisKit
 /// The look / pro / time carried over from the sheet.
 struct BookingAddOnsContext: Equatable {
     let coverImageUrl: String?
+    /// The stored original behind a rendered `coverImageUrl` — see `FallbackAsyncImage`.
+    let coverFallbackImageUrl: String?
     let lookName: String?
     let serviceName: String
     let proName: String
@@ -157,7 +159,10 @@ struct BookingAddOnsView: View {
                     .frame(width: 38, height: 38)
                     .background(BrandColor.bgSecondary)
                     .overlay {
-                        AsyncImage(url: url) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
+                        FallbackAsyncImage(
+                            url: url,
+                            fallbackURL: context.coverFallbackImageUrl.flatMap(URL.init(string:))
+                        ) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
                     }
                     .clipped()
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))

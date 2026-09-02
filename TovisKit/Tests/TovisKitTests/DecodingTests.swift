@@ -567,6 +567,10 @@ func fixture(_ name: String) throws -> Data {
         // The SALON where-block's fallback when the pro has no published street
         // address (Tori, 2026-08-14: area always, exact address only when public).
         #expect(boot.locationOptions?.first?.areaLabel == "Los Angeles, CA")
+        // The cover carries the stored original behind the render, so the sheet
+        // can fall back the way the feed does if the render endpoint stops.
+        #expect(boot.cover?.imageUrl == "https://cdn.example.com/looks/lived-in-blonde.jpg")
+        #expect(boot.cover?.fallbackImageUrl == "https://cdn.example.com/looks/lived-in-blonde-original.jpg")
 
         let day = try JSONDecoder().decode(AvailabilityDay.self, from: fixture("availabilityDay"))
         #expect(day.slots.isEmpty == false) // 2026-07-15 has openings for this pro

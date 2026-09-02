@@ -90,7 +90,15 @@ public struct AvailabilityServiceArea: Decodable, Sendable {
 
 /// Wire twin of `AvailabilityCover` (the drawer's `types.ts`).
 public struct AvailabilityCover: Decodable, Sendable {
+    /// The downscaled `feed` render of the look when one can be derived, else
+    /// the stored original (`lib/booking/bookingCover.ts`).
     public let imageUrl: String?
+    /// The stored original, ONLY when `imageUrl` is a derived render of it —
+    /// the render endpoint is a documented Pro-plan feature while the project
+    /// is on Free, so a cover must be able to fall back the way the feed does
+    /// (`LookFeedImage.fallbackURL`). nil when `imageUrl` already IS the
+    /// original, so nothing retries the same URL.
+    public let fallbackImageUrl: String?
     public let lookName: String?
 }
 

@@ -103,6 +103,7 @@
   },
   "cover": {
     "imageUrl": "https://cdn.example.com/looks/lived-in-blonde.jpg",
+    "fallbackImageUrl": "https://cdn.example.com/looks/lived-in-blonde-original.jpg",
     "lookName": "Lived-in blonde"
   },
   "trust": {

@@ -26,6 +26,12 @@ struct BookingSheetCover: View {
         return URL(string: raw)
     }
 
+    /// The stored original behind the render — see `FallbackAsyncImage`.
+    private var coverFallbackURL: URL? {
+        guard let raw = cover?.fallbackImageUrl, !raw.isEmpty else { return nil }
+        return URL(string: raw)
+    }
+
     private var title: String {
         if let name = cover?.lookName, !name.isEmpty { return name }
         return serviceName
@@ -51,7 +57,7 @@ struct BookingSheetCover: View {
                     .frame(maxWidth: .infinity)
                     .background(BrandColor.bgSecondary)
                     .overlay {
-                        AsyncImage(url: coverURL) { image in
+                        FallbackAsyncImage(url: coverURL, fallbackURL: coverFallbackURL) { image in
                             image.resizable().scaledToFill()
                         } placeholder: {
                             Color.clear
