@@ -107,7 +107,7 @@ struct ConsultFlowView: View {
                     if let results = model.results { resultsView(results, model: model) }
                     else { loadingCard("Loading your consult…") }
                 case .stopped:
-                    stopped
+                    stopped(model)
                 }
             }
             .padding(20)
@@ -126,11 +126,17 @@ struct ConsultFlowView: View {
     }
 
     private func prerequisites(_ model: ConsultFlowViewModel) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
+        // A session she previously revoked lands here rather than on a dead
+        // end, so say why she is being asked again instead of pretending this
+        // is the first time.
+        let resuming = model.agreementState?.status == .consentRevoked
+        return VStack(alignment: .leading, spacing: 16) {
             consultHeader(
-                eyebrow: "Before photos or intake",
-                title: "Your consent comes first",
-                body: "Review sensitive-data consent and confirm that you’re 18 or older. They are separate prerequisites."
+                eyebrow: resuming ? "Picking this back up" : "Before photos or intake",
+                title: resuming ? "Start this consult again?" : "Your consent comes first",
+                body: resuming
+                    ? "You revoked consent, so this consult stopped where it was. Accepting again starts it up from there."
+                    : "Review sensitive-data consent and confirm that you’re 18 or older. They are separate prerequisites."
             )
             if let state = model.agreementState {
                 ForEach(state.requirements) { requirement in
@@ -631,11 +637,19 @@ struct ConsultFlowView: View {
         .accessibilityIdentifier("consult-me-card-locked")
     }
 
-    private var stopped: some View {
-        consultHeader(
+    /// Reached two ways, and they are not the same thing: the client revoking
+    /// consent from the footer just now, or a consult CANCELLED server-side
+    /// (purged mid-analysis), which nothing can revive. The revoked half is a
+    /// full stop she chose and can undo by tapping Book again; saying "your
+    /// consent was revoked" over a cancelled consult would be false.
+    private func stopped(_ model: ConsultFlowViewModel) -> some View {
+        let revoked = model.agreementState?.status == .consentRevoked
+        return consultHeader(
             eyebrow: "Consult stopped",
-            title: "Your consent was revoked",
-            body: "No more intake, photos, or analysis can be added to this consult."
+            title: revoked ? "Your consent was revoked" : "This consult was stopped",
+            body: revoked
+                ? "No more intake, photos, or analysis can be added. You can start it again any time from this look."
+                : "No more intake, photos, or analysis can be added to this consult."
         )
     }
 

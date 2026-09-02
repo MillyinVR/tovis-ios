@@ -96,6 +96,55 @@ import Testing
         #expect(LookConsultEntry.destination(for: .completed, consultId: "   ") == nil)
     }
 
+    /// 🔴 Revoking consent used to make Book a permanent dead end for that look.
+    /// The server hands back the existing session for a (client, pro, look)
+    /// triple whatever its status, and a unique index makes a second one
+    /// impossible — so the terminal statuses decide whether the button still
+    /// works at all.
+    @Test func aRevokedConsultResumesAndACancelledOneGivesTheButtonBack() {
+        // Revoked is recoverable: accepting a current agreement un-revokes the
+        // session server-side, and the flow's consent step is where that
+        // happens.
+        #expect(LookConsultEntry.destination(for: .consentRevoked, consultId: "c1")
+                == .resumeFlow(consultId: "c1"))
+        // Cancelled has no recovery transition. nil hands the tap back to the
+        // ordinary booking sheet rather than parking it on a screen with no
+        // forward action.
+        #expect(LookConsultEntry.destination(for: .cancelled, consultId: "c1") == nil)
+    }
+
+    private func lookSession(status: ConsultSessionStatus) -> ConsultLookSession {
+        ConsultLookSession(
+            id: "c1",
+            status: status,
+            lookPostId: "look_1",
+            professionalId: "pro_1",
+            serviceCategoryId: "cat_1",
+            createdAt: "2026-09-02T10:00:00.000Z"
+        )
+    }
+
+    /// The stage half of the same fix: arriving at a revoked consult must land
+    /// on the screen that can restart it, not on the full stop.
+    @Test func arrivingAtARevokedConsultLandsOnConsentNotAFullStop() throws {
+        var machine = ConsultFlowMachine(anchor: .look("look_1"))
+        try machine.apply(lookSession: lookSession(status: .consentRevoked))
+        #expect(machine.stage == .prerequisites)
+
+        var cancelled = ConsultFlowMachine(anchor: .look("look_1"))
+        try cancelled.apply(lookSession: lookSession(status: .cancelled))
+        #expect(cancelled.stage == .stopped)
+    }
+
+    /// …while the moment she revokes keeps its own full stop, so the app does
+    /// not answer a revoke by immediately asking her to accept again.
+    @Test func revokingInTheFlowStillStops() throws {
+        var machine = ConsultFlowMachine(anchor: .look("look_1"))
+        try machine.apply(lookSession: lookSession(status: .mediaReady))
+        machine.stopAfterRevoke()
+        #expect(machine.stage == .stopped)
+    }
+
     // MARK: - The proposal
 
     @Test func theFloorAloneIsTheDefaultAndNothingArrivesTicked() throws {

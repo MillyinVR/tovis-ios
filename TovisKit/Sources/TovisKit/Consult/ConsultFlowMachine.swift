@@ -78,7 +78,12 @@ public struct ConsultFlowMachine: Sendable, Equatable {
 
     public mutating func apply(agreements: ConsultAgreementState) throws {
         try bind(consultId: agreements.consultId)
-        if agreements.status == .consentRevoked || agreements.status == .cancelled {
+        // Only `.cancelled` stops here. A revoked session still has a way back
+        // — accepting a current agreement un-revokes it server-side — so it
+        // falls through to `.prerequisites` below, which is the screen that
+        // offers exactly that. Treating the two alike is what made revoking
+        // consent a permanent dead end for the look's Book button.
+        if agreements.status == .cancelled {
             stage = .stopped
         } else if !agreements.allCurrent {
             stage = .prerequisites
@@ -86,6 +91,18 @@ public struct ConsultFlowMachine: Sendable, Equatable {
             let serverStage = Self.stage(for: agreements.status)
             stage = serverStage == .prerequisites ? .intake : serverStage
         }
+    }
+
+    /// The client just revoked consent from inside the flow.
+    ///
+    /// Separate from the status mapping on purpose. ARRIVING at a revoked
+    /// consult (tapping Book again) must offer the way back in, or the button
+    /// is a dead end — that is `stage(for:)` answering `.prerequisites`. But
+    /// answering a revoke with "now accept these agreements" reads as ignoring
+    /// what she just asked for, so the moment of revoking keeps its own honest
+    /// full stop. Same status, two different situations.
+    public mutating func stopAfterRevoke() {
+        stage = .stopped
     }
 
     public mutating func apply(intake: ConsultIntakeState) throws {
@@ -169,7 +186,11 @@ public struct ConsultFlowMachine: Sendable, Equatable {
         case .mediaReady: return .capture
         case .analysisPending, .analyzing: return .analysis
         case .completed: return .results
-        case .consentRevoked, .cancelled, .unknown: return .stopped
+        // Revoking consent stops the consult where it stood, but does not end
+        // it: accepting a current agreement transitions CONSENT_REVOKED ->
+        // CONSENT_REQUIRED, so the consent screen is the way back in.
+        case .consentRevoked: return .prerequisites
+        case .cancelled, .unknown: return .stopped
         }
     }
 }

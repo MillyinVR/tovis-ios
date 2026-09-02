@@ -141,6 +141,10 @@ final class ConsultFlowViewModel {
             inspirationImageCache = nil
             agreementState = state
             try machine.apply(agreements: state)
+            // She asked for this one. Show the full stop, not an immediate
+            // request to accept again — tapping Book later is what offers the
+            // way back in (ConsultFlowMachine.stopAfterRevoke).
+            if state.status == .consentRevoked { machine.stopAfterRevoke() }
         }
     }
 
