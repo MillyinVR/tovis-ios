@@ -109,12 +109,18 @@ struct MediaGridCell<Content: View>: View {
 /// where `scaledToFill`'s overflow is harmless and gets clipped.
 struct MediaGridImage: View {
     let url: URL?
-    /// The subject focal point (camera C6) to centre the fill-crop on, or nil for
-    /// a plain centred fill. A grid cell crops harder than anything else in the
-    /// app — a 3:4 cell over a 3:4 capture is generous, a 4:5 Signature card over
-    /// one is not — so the tile grids want this for the same reason the feed does.
-    /// Nil keeps the old centred `AsyncImage` path exactly (see `FocalCoverImage`).
-    var focal: MediaFocalPoint? = nil
+    /// The pro's published frame + the subject focal (camera C6) IN that frame's
+    /// space — always as a pair, never separately, because a rect honoured with
+    /// an uncropped focal silently shows the wrong part of the photograph. Take
+    /// it straight off the wire model: `tile.displayCrop`.
+    ///
+    /// A grid cell crops harder than anything else in the app — a 3:4 cell over a
+    /// 3:4 capture is generous, a 4:5 Signature card over one is not — so the
+    /// tile grids want this for the same reason the feed does.
+    ///
+    /// `.fullFrame` (no rect, no focal) keeps the old centred `AsyncImage` path
+    /// exactly, which is every tile that carries neither (see `FocalCoverImage`).
+    var display: MediaDisplayCrop = .fullFrame
     /// Whether a loading tile shows a spinner. The spaced grids (the pro's own
     /// portfolio, My media, review shots) do. The public profile's flush 2pt
     /// mosaic passes `false`: a loading tile there is just the cell's own fill,
@@ -129,7 +135,7 @@ struct MediaGridImage: View {
 
     var body: some View {
         if let url {
-            FocalCoverImage(url: url, focal: focal, maxPixel: maxPixel) {
+            FocalCoverImage(url: url, display: display, maxPixel: maxPixel) {
                 if showsSpinner { ProgressView().tint(BrandColor.accent) }
             }
         }

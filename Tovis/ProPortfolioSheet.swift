@@ -102,7 +102,7 @@ struct ProPortfolioSheet: View {
         HStack(alignment: .top, spacing: 13) {
             MediaGridCell(aspectRatio: 3.0 / 4.0, cornerRadius: 13) {
                 if let url = URL(string: tile.src) {
-                    MediaGridImage(url: url)
+                    MediaGridImage(url: url, display: tile.displayCrop)
                         .saturation(dimmed ? 0 : 1)
                         .opacity(dimmed ? 0.6 : 1)
                 }

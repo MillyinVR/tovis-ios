@@ -5,12 +5,17 @@
 // a quarter of its width blind-center, so we place the visible window on the face.
 //
 // Two paths, by design:
-//  • No focal (the common case, and every row until web C6a #613 deploys) →
+//  • Neither a focal nor a stored crop (the common case, and every row today) →
 //    a plain center `.scaledToFill()` AsyncImage. Byte-identical to pre-C6c, and
-//    it keeps AsyncImage's in-memory decoded cache for the nil-focal majority.
-//  • A focal present → the decode-bounded UIImage path (like DownsampledRemoteImage)
-//    so we know the intrinsic size and can offset the fill exactly. Only the
-//    images that actually carry a focal pay for the extra decode.
+//    it keeps AsyncImage's in-memory decoded cache for that majority.
+//  • A focal or a CROP present → the decode-bounded UIImage path (like
+//    DownsampledRemoteImage) so we know the intrinsic size and can place the
+//    window exactly. Only those images pay for the extra decode.
+//
+// The crop is capture-chain item 4's other half: "one crop per look, applied
+// EVERYWHERE". The feed honoured the pro's stored rect from item 3 while every
+// grid tile and hero still derived its own window from the master, so a pro who
+// re-framed a look watched it change in the feed and nowhere else.
 //
 // The caller supplies the bounding frame + clip (every call site is a fill
 // context); this view fills whatever space it's given.
@@ -22,7 +27,16 @@ struct FocalCoverImage<Placeholder: View, Failure: View>: View {
     let url: URL
     /// The subject focal point to center the cover-crop on, or nil for a plain
     /// centered fill (identical to `.scaledToFill()`).
+    ///
+    /// 🔴 When `crop` is also supplied this must ALREADY be in crop space —
+    /// `MediaDisplayCrop.focal`, never the model's raw `focalPoint`. The stored
+    /// focal is measured on the uncropped frame; handing it in raw silently
+    /// shows the wrong part of the photograph.
     let focal: MediaFocalPoint?
+    /// The pro's published frame — the window of the stored image to display, or
+    /// nil for the full stored frame (every row today, and byte-identical to
+    /// before this existed). Pair it with `focal` via `MediaDisplayCrop`.
+    var crop: MediaCropRect? = nil
     /// Long-edge decode budget for the focal path (the nil path lets AsyncImage
     /// decide). Grids can pass a smaller value than a full-screen slide.
     var maxPixel: CGFloat = ImageDownsample.screenMaxPixel
@@ -33,11 +47,13 @@ struct FocalCoverImage<Placeholder: View, Failure: View>: View {
     @State private var focalLoadFailed = false
 
     var body: some View {
-        if let focal {
+        // A crop needs the intrinsic size just as much as a focal does — the
+        // window cannot be laid out without it — so both take the decoded path.
+        if focal != nil || crop != nil {
             GeometryReader { geo in
                 Group {
                     if let focalImage {
-                        focalFill(focalImage, focal: focal, container: geo.size)
+                        focalFill(focalImage, container: geo.size)
                     } else if focalLoadFailed {
                         failure()
                     } else {
@@ -69,16 +85,21 @@ struct FocalCoverImage<Placeholder: View, Failure: View>: View {
         }
     }
 
-    /// Draw the image at cover scale, offset so `focal` lands where CSS
+    /// Draw the crop window at cover scale, anchored on `focal` exactly where CSS
     /// `object-position` would put it, then clip to the container.
-    private func focalFill(_ image: UIImage, focal: MediaFocalPoint, container: CGSize) -> some View {
-        let layout = focal.coverCrop(imageSize: image.size, containerSize: container)
-        return Image(uiImage: image)
-            .resizable()
-            .frame(width: layout.size.width, height: layout.size.height)
-            .offset(x: layout.offset.width, y: layout.offset.height)
-            .frame(width: container.width, height: container.height, alignment: .topLeading)
-            .clipped()
+    ///
+    /// `CropWindowLayer` is shared with the feed's `LookFeedImage`. With
+    /// `crop == nil` its source box IS its window box, so this reduces to the
+    /// same focal-anchored `.scaledToFill()` it has always drawn — the invariant
+    /// `LookFeedLayoutTests` pins.
+    private func focalFill(_ image: UIImage, container: CGSize) -> some View {
+        CropWindowLayer(
+            image: image,
+            crop: crop,
+            container: container,
+            fit: .cover,
+            focal: focal
+        )
     }
 
     private func loadFocalImage() async {
@@ -186,9 +207,35 @@ extension FocalCoverImage where Failure == Placeholder {
     init(
         url: URL,
         focal: MediaFocalPoint?,
+        crop: MediaCropRect? = nil,
         maxPixel: CGFloat = ImageDownsample.screenMaxPixel,
         @ViewBuilder placeholder: @escaping () -> Placeholder
     ) {
-        self.init(url: url, focal: focal, maxPixel: maxPixel, placeholder: placeholder, failure: placeholder)
+        self.init(
+            url: url,
+            focal: focal,
+            crop: crop,
+            maxPixel: maxPixel,
+            placeholder: placeholder,
+            failure: placeholder
+        )
+    }
+
+    /// The call every cropping surface should make: the rect and its crop-space
+    /// focal together, straight off the wire model, so neither can be forgotten.
+    init(
+        url: URL,
+        display: MediaDisplayCrop,
+        maxPixel: CGFloat = ImageDownsample.screenMaxPixel,
+        @ViewBuilder placeholder: @escaping () -> Placeholder
+    ) {
+        self.init(
+            url: url,
+            focal: display.focal,
+            crop: display.crop,
+            maxPixel: maxPixel,
+            placeholder: placeholder,
+            failure: placeholder
+        )
     }
 }

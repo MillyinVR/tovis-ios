@@ -100,6 +100,9 @@ public struct LooksFeedItem: Decodable, Sendable, Identifiable {
     /// `cropRect`, not inside the sensor frame it was measured in. nil when the
     /// subject was framed out (centre instead). A view that honours `cropRect`
     /// and reads `focalPoint` directly is silently off by the crop's origin.
+    ///
+    /// Prefer `displayCrop` (`MediaCropDisplayable`), which pairs this with the
+    /// rect AND applies the video exclusion in one place.
     public var focalPointInCrop: MediaFocalPoint? {
         focalPoint?.inCropSpace(cropRect)
     }
@@ -438,3 +441,8 @@ struct LooksCommentCreateRequest: Encodable, Sendable {
     let body: String
     let parentCommentId: String?
 }
+
+
+/// The rect + crop-space focal a cover-cropping surface reads. See
+/// `MediaDisplayCrop`; video is excluded there, matching web.
+extension LooksFeedItem: MediaCropDisplayable {}

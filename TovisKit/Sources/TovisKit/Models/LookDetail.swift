@@ -222,3 +222,8 @@ public struct LookDetailViewerContext: Decodable, Sendable, Hashable {
     public let canSave: Bool
     public let isOwner: Bool
 }
+
+
+/// The rect + crop-space focal a cover-cropping surface reads (the 4:5 hero and
+/// the "more from this post" strip). See `MediaDisplayCrop`.
+extension LookDetailMedia: MediaCropDisplayable {}
