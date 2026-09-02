@@ -2057,6 +2057,24 @@ func fixture(_ name: String) throws -> Data {
         // identical names would hide a booking-to-tile mapping bug.
         let names = Set(p.groups.flatMap(\.tiles).compactMap(\.hold).map(\.clientFirstName))
         #expect(names.count > 1)
+
+        // 🔴 The pro's own library honours the stored publish crop (capture chain
+        // item 4). It is the FIRST place a pro looks after re-framing a look, so
+        // a tile that decoded the rect away would leave the one screen they check
+        // showing the old frame — with nothing wrong-looking in the diff.
+        let framed = try #require(p.publicTiles.first { $0.cropRect != nil })
+        let display = framed.displayCrop
+        #expect(display.crop == MediaCropRect(x: 0.25, y: 0.1, w: 0.5, h: 0.4))
+        // The worked example, shared with web's cropRect tests: (0.60, 0.20) on
+        // the uncropped frame is (0.70, 0.25) inside this rect.
+        let focal = try #require(display.focal)
+        #expect(abs(focal.x - 0.7) < 1e-9)
+        #expect(abs(focal.y - 0.25) < 1e-9)
+
+        // …and every other tile stays exactly as it was: no rect, no focal.
+        let plain = try #require(p.publicTiles.first { $0.cropRect == nil })
+        #expect(plain.displayCrop.crop == nil)
+        #expect(plain.displayCrop.focal == nil)
     }
 
     // GET /api/v1/professionals/{id} — Fixtures/proProfile.json (schema-validated).

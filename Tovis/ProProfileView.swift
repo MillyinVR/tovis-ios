@@ -826,7 +826,9 @@ struct ProProfileView: View {
             MediaGridCell(aspectRatio: signatureAspect, cornerRadius: 0) {
                 MediaGridImage(
                     url: URL(string: tile.displayUrl),
-                    focal: tile.focalPoint,
+                    // The same rect the grid and the feed honour — the Signature
+                    // card cannot show a different window of the same photograph.
+                    display: tile.displayCrop,
                     showsSpinner: false,
                     // The card is the full content width, not a grid cell, so it
                     // decodes at the screen budget rather than the tile one.

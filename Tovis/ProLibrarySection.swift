@@ -200,7 +200,9 @@ struct ProLibrarySection: View {
         // a landscape shot sits beside a portrait one.
         MediaGridCell(aspectRatio: 3.0 / 4.0, cornerRadius: 14) {
             if let url = URL(string: tile.src) {
-                MediaGridImage(url: url)
+                // The pro's own library is the first place they look after a
+                // re-frame, so it honours the same rect every public surface does.
+                MediaGridImage(url: url, display: tile.displayCrop)
                     // A held photo reads as not-yet-yours at a glance, before any copy.
                     .saturation(tile.isHeld ? 0 : 1)
                     .opacity(tile.isHeld ? 0.55 : 1)
@@ -358,7 +360,9 @@ struct ProLibrarySection: View {
                 ForEach(lead.shots) { shot in
                     Button { openTile = shot } label: {
                         MediaGridCell(aspectRatio: 3.0 / 4.0, cornerRadius: 11) {
-                            if let url = URL(string: shot.src) { MediaGridImage(url: url) }
+                            if let url = URL(string: shot.src) {
+                                MediaGridImage(url: url, display: shot.displayCrop)
+                            }
                         }
                         .frame(width: 66)
                     }

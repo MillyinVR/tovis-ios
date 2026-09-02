@@ -217,7 +217,10 @@ struct LookDetailView: View {
                 MediaGridCell(aspectRatio: heroAspect, cornerRadius: 16) {
                     FocalCoverImage(
                         url: url,
-                        focal: look.focalPoint,
+                        // One crop per look: the hero shows the frame the pro
+                        // published, not a window this surface derives itself.
+                        focal: look.primaryMedia.displayCrop.focal,
+                        crop: look.primaryMedia.displayCrop.crop,
                         placeholder: { Rectangle().fill(BrandColor.bgSecondary) },
                         failure: { Rectangle().fill(BrandColor.bgSecondary) }
                     )
@@ -570,7 +573,8 @@ struct LookDetailView: View {
                                 MediaGridCell(cornerRadius: 10) {
                                     FocalCoverImage(
                                         url: url,
-                                        focal: asset.media.focalPoint,
+                                        focal: asset.media.displayCrop.focal,
+                                        crop: asset.media.displayCrop.crop,
                                         maxPixel: MediaGridLayout.tileMaxPixel,
                                         placeholder: { Rectangle().fill(BrandColor.bgSecondary) },
                                         failure: { Rectangle().fill(BrandColor.bgSecondary) }

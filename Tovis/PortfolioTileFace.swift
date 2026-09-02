@@ -39,7 +39,9 @@ struct PortfolioTileFace: View {
         MediaGridCell(cornerRadius: cornerRadius) {
             MediaGridImage(
                 url: URL(string: tile.displayUrl),
-                focal: tile.focalPoint,
+                // One crop per look, applied EVERYWHERE: the tile shows the frame
+                // the pro published, not a 3:4 window derived from the master.
+                display: tile.displayCrop,
                 showsSpinner: showsSpinner
             )
         }

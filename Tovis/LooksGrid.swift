@@ -45,9 +45,11 @@ struct LookGridCard: View {
                 ZStack(alignment: .topLeading) {
                     Group {
                         if let url = look.thumbOrFullURL {
-                            // Focal-aware cover crop (camera C6c) — center the 3:4
-                            // tile on the subject; null focal → centered fill.
-                            FocalCoverImage(url: url, focal: look.focalPoint) { CardSheen() }
+                            // The pro's published frame, focal-anchored inside it
+                            // (camera C6c) — the same rect the feed renders, so a
+                            // look is one shape wherever you meet it. No rect and
+                            // no focal → the plain centred fill, as before.
+                            FocalCoverImage(url: url, display: look.displayCrop) { CardSheen() }
                         } else {
                             CardSheen()
                         }

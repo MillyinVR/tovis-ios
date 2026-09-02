@@ -201,7 +201,7 @@ struct PublicBoardView: View {
             BrandColor.bgSecondary
             if let url = look.imageUrl, let parsed = URL(string: url) {
                 // Focal-aware cover crop (camera C6c); null focal → centered fill.
-                FocalCoverImage(url: parsed, focal: look.focalPoint) {
+                FocalCoverImage(url: parsed, display: look.displayCrop) {
                     ProgressView().tint(BrandColor.accent)
                 }
             }

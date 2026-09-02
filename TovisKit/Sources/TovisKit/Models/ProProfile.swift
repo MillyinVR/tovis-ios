@@ -434,3 +434,8 @@ public struct ReviewHelpfulResult: Decodable, Sendable {
     public let helpful: Bool
     public let helpfulCount: Int
 }
+
+
+/// The rect + crop-space focal the public profile's 3:4 grid tiles and its 4:5
+/// Signature hero read. See `MediaDisplayCrop`.
+extension ProPortfolioTile: MediaCropDisplayable {}

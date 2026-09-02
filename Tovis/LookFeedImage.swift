@@ -88,29 +88,22 @@ struct LookFeedImage<Placeholder: View, Failure: View>: View {
 
     /// Draw the crop window into `container` at the given fit.
     ///
-    /// Three nested frames, matching web's three nested boxes: the source drawn
-    /// oversized and back-shifted, clipped to the window box, then offset into
-    /// the container. With `crop == nil` the source box IS the window box, so
-    /// this reduces to a plain focal-anchored fill/fit.
+    /// The layout itself is `CropWindowLayer`, shared with `FocalCoverImage` so
+    /// the feed and every grid tile cannot drift into two different windows of
+    /// the same photograph.
     private func layer(
         _ image: UIImage,
         container: CGSize,
         fit: LookFeedLayout.Fit,
         focal: MediaFocalPoint?
     ) -> some View {
-        let window = LookFeedLayout.windowSize(crop: crop, natural: image.size)
-        let box = LookFeedLayout.windowBox(window: window, container: container, fit: fit, focal: focal)
-        let source = LookFeedLayout.sourceBox(crop: crop, windowBox: box.size)
-
-        return Image(uiImage: image)
-            .resizable()
-            .frame(width: source.width, height: source.height)
-            .offset(x: source.minX, y: source.minY)
-            .frame(width: box.width, height: box.height, alignment: .topLeading)
-            .clipped()
-            .offset(x: box.minX, y: box.minY)
-            .frame(width: container.width, height: container.height, alignment: .topLeading)
-            .clipped()
+        CropWindowLayer(
+            image: image,
+            crop: crop,
+            container: container,
+            fit: fit,
+            focal: focal
+        )
     }
 
     private func load() async {

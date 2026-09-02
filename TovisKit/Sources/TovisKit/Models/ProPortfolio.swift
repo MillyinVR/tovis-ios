@@ -115,9 +115,37 @@ public struct ProLibraryTile: Decodable, Sendable, Identifiable {
     /// ISO-8601 — when this went public. Nil while private.
     public let publishedAt: String?
 
+    /// Normalized subject focal point (camera C6), [0,1] top-left, and the
+    /// non-destructive publish CROP (capture chain item 2) in the SAME space.
+    /// All four crop values or all nil; nil = the full stored frame.
+    ///
+    /// The pro's own library is the FIRST place they look after re-framing a
+    /// look, so it honours the same rect every public surface does — a re-frame
+    /// that moved the feed and left this grid alone reads as broken, not partial.
+    /// Optional so a payload from a server that predates the fields still
+    /// decodes. 🔴 Read `displayCrop`, never these raw.
+    public let focalX: Double?
+    public let focalY: Double?
+    public let cropX: Double?
+    public let cropY: Double?
+    public let cropW: Double?
+    public let cropH: Double?
+
     public var isHeld: Bool { hold != nil }
     public var isPublic: Bool { publishedAt != nil }
+
+    /// The validated focal, or nil (centre) when absent or invalid.
+    public var focalPoint: MediaFocalPoint? { MediaFocalPoint(x: focalX, y: focalY) }
+
+    /// The validated publish crop, or nil (the full stored frame).
+    public var cropRect: MediaCropRect? {
+        MediaCropRect(x: cropX, y: cropY, w: cropW, h: cropH)
+    }
 }
+
+/// The rect + crop-space focal the pro's own library grid reads. See
+/// `MediaDisplayCrop`; video is excluded there, matching web.
+extension ProLibraryTile: MediaCropDisplayable {}
 
 /// A private zone, grouped by where the photo CAME FROM — so the consent rule is
 /// stated once per group instead of repeated on every tile.
