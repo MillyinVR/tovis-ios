@@ -6,6 +6,9 @@
 //
 // Reads use existing endpoints; like/follow/save write through and reconcile
 // with the server (optimistic, like the web). Live-sync refetches on refreshTick.
+// AVFoundation: the feed hands `LookVideoView` an `AVLayerVideoGravity` so its
+// clips are CONTAINED like its photos.
+import AVFoundation
 import SwiftUI
 import TovisKit
 
@@ -891,9 +894,23 @@ private struct LookSlide: View {
             .clipped()
         } else if item.isVideo, let url = URL(string: item.url) {
             ZStack {
-                posterImage // shows instantly; the video layer covers it when ready
-                LookVideoView(url: url, isActive: isActive, isMuted: muted)
-                    .allowsHitTesting(false)
+                // The clip is CONTAINED like an image slide, so the same blurred
+                // backdrop fills what the aspect ratios leave over. It is built
+                // from the poster, never a second decoding <video>: one moving
+                // picture per slide, and a blurred still behind reads the same.
+                //
+                // ⚠️ The stored crop rect is deliberately NOT applied to video,
+                // on EITHER platform — a clip's frame comes from its poster and
+                // that is unbuilt (see the capture chain's video note). Matching
+                // exclusions beat a rect honoured on one platform only.
+                posterFrame // shows instantly; the video layer covers it when ready
+                LookVideoView(
+                    url: url,
+                    isActive: isActive,
+                    isMuted: muted,
+                    videoGravity: .resizeAspect
+                )
+                .allowsHitTesting(false)
                 muteBadge
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -901,12 +918,17 @@ private struct LookSlide: View {
             .contentShape(Rectangle())
             .onTapGesture { onToggleMute() }
         } else if let url = URL(string: item.url) {
-            // Smart 9:16 crop (camera C6c): center the full-screen cover window on
-            // the subject focal instead of the blind geometric center. Null focal →
-            // plain centered fill (byte-identical to pre-C6c).
-            FocalCoverImage(
+            // The look CONTAINED over a blurred copy of itself — the whole
+            // published frame on screen, nothing cropped away, and the page still
+            // full. The window is the pro's stored rect when there is one, else
+            // the full stored image (every look today). Web's LookMedia twin.
+            //
+            // 🔴 `focalPointInCrop`, never `focalPoint`: the stored focal is
+            // measured on the UNCROPPED frame and the backdrop cover-crops.
+            LookFeedImage(
                 url: url,
-                focal: item.focalPoint,
+                crop: item.cropRect,
+                focalInCrop: item.focalPointInCrop,
                 placeholder: { ProgressView().tint(BrandColor.accent) },
                 failure: { fallback }
             )
@@ -917,22 +939,32 @@ private struct LookSlide: View {
         }
     }
 
-    private var posterImage: some View {
-        Group {
-            if let thumb = item.thumbUrl, let url = URL(string: thumb) {
-                AsyncImage(url: url) { phase in
-                    if case let .success(image) = phase {
-                        image.resizable().scaledToFill()
-                    } else {
-                        Color.black
-                    }
-                }
-            } else {
-                Color.black
-            }
+    /// The poster, in exactly the frame an image slide would get: contained over
+    /// a blurred copy of itself. It is BOTH the still shown until the first video
+    /// frame arrives AND the backdrop that stays behind the playing clip, from one
+    /// decode of one file — the contained clip lands precisely on the contained
+    /// poster, so the handover has nothing to jump.
+    ///
+    /// `crop: nil` on purpose: a clip's rect would come from its poster frame and
+    /// that is unbuilt on both platforms. With no crop, crop space IS frame space,
+    /// which is why the raw `focalPoint` is the right thing to hand a parameter
+    /// named `focalInCrop` here.
+    ///
+    /// No poster → nothing, and the slide's own black background shows through,
+    /// exactly as it did before.
+    @ViewBuilder
+    private var posterFrame: some View {
+        if let thumb = item.thumbUrl, let url = URL(string: thumb) {
+            LookFeedImage(
+                url: url,
+                crop: nil,
+                focalInCrop: item.focalPoint,
+                placeholder: { Color.clear },
+                failure: { Color.clear }
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .clipped()
     }
 
     private var muteBadge: some View {

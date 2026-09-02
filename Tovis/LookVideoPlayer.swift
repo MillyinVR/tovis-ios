@@ -16,6 +16,11 @@ struct LookVideoView: UIViewRepresentable {
     let url: URL
     let isActive: Bool
     let isMuted: Bool
+    /// How the clip fills its slot. `.resizeAspectFill` (the default, and what
+    /// every caller but the Looks feed wants) cover-crops to the frame; the feed
+    /// passes `.resizeAspect` because it CONTAINS its media and paints a blurred
+    /// backdrop behind — nothing in the feed is cropped away any more.
+    var videoGravity: AVLayerVideoGravity = .resizeAspectFill
 
     func makeUIView(context: Context) -> LoopingPlayerView {
         LoopingPlayerView()
@@ -23,6 +28,7 @@ struct LookVideoView: UIViewRepresentable {
 
     func updateUIView(_ view: LoopingPlayerView, context: Context) {
         view.configure(url: url)
+        view.setVideoGravity(videoGravity)
         view.setMuted(isMuted)
         view.setActive(isActive)
     }
@@ -55,8 +61,14 @@ final class LoopingPlayerView: UIView {
         looper = AVPlayerLooper(player: queue, templateItem: item)
 
         playerLayer.player = queue
-        playerLayer.videoGravity = .resizeAspectFill
         player = queue
+    }
+
+    /// Set separately from `configure` so a re-bind to the SAME url (which
+    /// `configure` short-circuits) still honours the caller's gravity.
+    func setVideoGravity(_ gravity: AVLayerVideoGravity) {
+        guard playerLayer.videoGravity != gravity else { return }
+        playerLayer.videoGravity = gravity
     }
 
     func setMuted(_ muted: Bool) {
