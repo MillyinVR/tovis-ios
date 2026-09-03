@@ -362,6 +362,7 @@
       "analysisRevisionId": "revision_analysis_2",
       "analysisRevision": 2,
       "intakeRevisionId": "revision_intake_1",
+      "directionsTitle": "Directions to discuss",
       "clientIntake": [
         {"questionKey":"desired_color","question":"Your dream color?","answerCode":"copper","answer":"Copper"},
         {"questionKey":"box_dye_history","question":"When did you last use box dye on your hair?","answerCode":"within-6-months","answer":"Within 6 months"},

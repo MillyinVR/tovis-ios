@@ -55,11 +55,21 @@ final class ConsultFlowViewModel {
     /// the only case where a booking DOOR belongs on the results screen.
     var isLookAnchored: Bool { machine.anchor.lookPostId != nil }
 
+    /// Whether Continue is offered. The served `progress.canComplete` is the
+    /// authority — it is the web wizard's gate and it knows the pack's
+    /// goal-direction rule — but it describes the answers the server has SAVED,
+    /// and this flow saves only on submit. So a served "cannot complete" is
+    /// trusted only while nothing has changed locally; once the client has
+    /// answered further, the local rule (REQUIRED answered) decides, and the
+    /// server has the final word when the submit lands.
     var canSubmitIntake: Bool {
-        guard let pack = intakeState?.questionPack else { return false }
-        return pack.questions.allSatisfy {
+        guard let intakeState else { return false }
+        let locallyComplete = intakeState.questionPack.questions.allSatisfy {
             !$0.requirement.mustAnswer || answers[$0.key] != nil
         }
+        guard let served = intakeState.progress?.canComplete else { return locallyComplete }
+        if answers == (intakeState.latestRevision?.answers ?? [:]) { return served }
+        return locallyComplete
     }
 
     var canRetryPhoto: Bool { pendingPhoto != nil && !busy }

@@ -69,23 +69,47 @@ extension View {
 private struct WorkspaceSwitchPromptModifier: ViewModifier {
     @Environment(SessionModel.self) private var session
     @Binding var prompt: WorkspaceSwitchPrompt?
+    /// A switch that did not take. `switchWorkspace(to:)` writes
+    /// `session.errorMessage`, which only the auth and settings screens
+    /// render — on a look surface the tap used to end in silence, still as
+    /// pro. It is shown here, where the offer was made.
+    @State private var failure: String?
 
     func body(content: Content) -> some View {
-        content.alert(
-            "Switch to client to continue",
-            isPresented: Binding(
-                get: { prompt != nil },
-                set: { if !$0 { prompt = nil } }
-            ),
-            presenting: prompt
-        ) { prompt in
-            Button("Switch to client") {
-                Task { await session.switchWorkspace(to: .client, thenOpen: prompt.resumeAt) }
+        content
+            .alert(
+                "Switch to client to continue",
+                isPresented: Binding(
+                    get: { prompt != nil },
+                    set: { if !$0 { prompt = nil } }
+                ),
+                presenting: prompt
+            ) { prompt in
+                Button("Switch to client") {
+                    Task {
+                        await session.switchWorkspace(to: .client, thenOpen: prompt.resumeAt)
+                        if session.activeRole != .client {
+                            failure = session.errorMessage
+                                ?? "Couldn’t switch to your client view. Please try again."
+                        }
+                    }
+                }
+                Button("Not now", role: .cancel) {}
+            } message: { _ in
+                Text("Booking lives in your client view. Switch now and this look opens ready to book.")
             }
-            Button("Not now", role: .cancel) {}
-        } message: { _ in
-            Text("Booking lives in your client view. Switch now and this look opens ready to book.")
-        }
+            .alert(
+                "Couldn’t switch",
+                isPresented: Binding(
+                    get: { failure != nil },
+                    set: { if !$0 { failure = nil } }
+                ),
+                presenting: failure
+            ) { _ in
+                Button("OK", role: .cancel) {}
+            } message: { message in
+                Text(message)
+            }
     }
 }
 
