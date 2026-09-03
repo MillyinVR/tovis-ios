@@ -191,7 +191,7 @@ struct ConsultFlowView: View {
                 ForEach(intake.questionPack.questions) { question in
                     BrandSection(
                         title: question.label,
-                        trailing: question.requirement == .required ? "Required" : "Optional"
+                        trailing: question.requirement.mustAnswer ? "Required" : "Optional"
                     ) {
                         FlowLayout(spacing: 8, lineSpacing: 8) {
                             ForEach(question.options) { option in

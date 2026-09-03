@@ -195,9 +195,25 @@ struct ConsultAgreementAcceptResponse: Decodable, Sendable {
     let replayed: Bool
 }
 
+/// REQUIRED / CONDITIONAL / SKIPPABLE, decoded leniently: a requirement this
+/// build does not know reads as `.unknown` and is treated as required, rather
+/// than failing the whole intake response. (The server's current colour pack
+/// already carries a CONDITIONAL question; shipped builds before this one
+/// could not decode it at all.)
 public enum ConsultIntakeRequirement: String, Decodable, Sendable {
     case required = "REQUIRED"
+    case conditional = "CONDITIONAL"
     case skippable = "SKIPPABLE"
+    case unknown
+
+    public init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = Self(rawValue: raw) ?? .unknown
+    }
+
+    /// Only SKIPPABLE may be left unanswered; everything else — including a
+    /// requirement this build does not know — is asked.
+    public var mustAnswer: Bool { self != .skippable }
 }
 
 public struct ConsultIntakeOption: Decodable, Sendable, Identifiable, Equatable {
@@ -471,16 +487,43 @@ public enum ConsultInspirationAnswering {
     }
 }
 
-public enum ConsultCaptureShotKey: String, Codable, Sendable, CaseIterable {
-    case hairBack = "hair_back"
-    case hairLeft = "hair_left"
-    case hairRight = "hair_right"
-    case hairCrown = "hair_crown"
-    // Pack v2 (2026-08-26 full-analysis launch): three face views join the
-    // four hair views.
-    case faceFront = "face_front"
-    case faceSide = "face_side"
-    case eyesCloseup = "eyes_closeup"
+/// A capture slot's key, as the SERVER names it. Open by design (service-aware
+/// consult, 2026-09-03): the pack served depends on the service family, and a
+/// family added after this build ships must still render, upload and be
+/// guided — so an unknown key decodes as itself rather than failing the whole
+/// capture state. The known keys are static constants so call sites keep the
+/// dot syntax they had when this was an enum.
+public struct ConsultCaptureShotKey: RawRepresentable, Codable, Sendable, Hashable {
+    public let rawValue: String
+
+    public init(rawValue: String) { self.rawValue = rawValue }
+    public init(_ rawValue: String) { self.rawValue = rawValue }
+
+    public init(from decoder: Decoder) throws {
+        self.rawValue = try decoder.singleValueContainer().decode(String.self)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+
+    // The hair pack (v2): four hair views plus three face views.
+    public static let hairBack = ConsultCaptureShotKey("hair_back")
+    public static let hairLeft = ConsultCaptureShotKey("hair_left")
+    public static let hairRight = ConsultCaptureShotKey("hair_right")
+    public static let hairCrown = ConsultCaptureShotKey("hair_crown")
+    public static let faceFront = ConsultCaptureShotKey("face_front")
+    public static let faceSide = ConsultCaptureShotKey("face_side")
+    public static let eyesCloseup = ConsultCaptureShotKey("eyes_closeup")
+    // The area pack: the treatment area in context, then close.
+    public static let areaWide = ConsultCaptureShotKey("area_wide")
+    public static let areaCloseup = ConsultCaptureShotKey("area_closeup")
+
+    /// The hair pack's seven keys, in the server's evidence order.
+    public static let hairPack: [ConsultCaptureShotKey] = [
+        .hairBack, .hairLeft, .hairRight, .hairCrown, .faceFront, .faceSide, .eyesCloseup,
+    ]
 }
 
 public struct ConsultCaptureShot: Decodable, Sendable, Identifiable {
@@ -539,11 +582,13 @@ public struct ConsultCaptureState: Decodable, Sendable {
     public let slots: [ConsultCaptureSlot]
     public let chartCopy: ConsultChartCopyState
 
+    /// Every slot of the pack the server SERVED is accepted. The pack decides
+    /// what "all" means — seven for hair, three for the face and area packs —
+    /// not a list compiled into this build.
     public var hasAllAcceptedShots: Bool {
-        let expected = Set(ConsultCaptureShotKey.allCases)
-        return shotPack.shots.count == expected.count
+        let expected = Set(shotPack.shots.map(\.key))
+        return !expected.isEmpty
             && slots.count == expected.count
-            && Set(shotPack.shots.map(\.key)) == expected
             && Set(slots.filter { $0.state == .accepted }.map(\.shotKey)) == expected
     }
 }
