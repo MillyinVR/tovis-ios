@@ -275,7 +275,7 @@ private actor MockConsultService: ConsultServicing {
                 slots[index]["retakeTip"] = "Move near a window and face the daylight."
                 slots[index]["rawExpiresAt"] = NSNull()
                 slots[index]["purgedAt"] = "2026-08-11T18:10:00.000Z"
-            } else if let key, acceptedShots.contains(key) {
+            } else if acceptedShots.contains(key) {
                 slots[index]["state"] = "ACCEPTED"
                 slots[index]["qualityReasonCode"] = "PASS"
                 slots[index]["retakeTip"] = NSNull()
