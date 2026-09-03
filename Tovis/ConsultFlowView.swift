@@ -586,7 +586,7 @@ struct ConsultFlowView: View {
     }
 
     private func directions(_ recommendations: [ConsultRecommendationDirection]) -> some View {
-        BrandSection(title: "Hair color directions", trailing: "\(recommendations.count)") {
+        BrandSection(title: "Directions to discuss", trailing: "\(recommendations.count)") {
             VStack(spacing: 10) {
                 ForEach(Array(recommendations.enumerated()), id: \.element.id) { index, item in
                     BrandSurface {
