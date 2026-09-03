@@ -793,6 +793,7 @@ struct BookingFlowView: View {
         if case let .ready(boot) = phase, let hold, let holdExpiresAt {
             let context = BookingAddOnsContext(
                 coverImageUrl: boot.cover?.imageUrl,
+                coverFallbackImageUrl: boot.cover?.fallbackImageUrl,
                 lookName: boot.cover?.lookName,
                 // The strip's fallback follows the cover's rule: on the consult
                 // path a look never names the service that produced it (B1).

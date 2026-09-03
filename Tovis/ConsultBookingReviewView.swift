@@ -354,7 +354,10 @@ struct ConsultReviewContextStrip: View {
                     .frame(width: 38, height: 38)
                     .background(BrandColor.bgSecondary)
                     .overlay {
-                        AsyncImage(url: url) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
+                        FallbackAsyncImage(
+                            url: url,
+                            fallbackURL: context.coverFallbackImageUrl.flatMap(URL.init(string:))
+                        ) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
                     }
                     .clipped()
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
