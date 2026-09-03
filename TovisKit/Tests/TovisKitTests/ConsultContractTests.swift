@@ -43,6 +43,8 @@ import Testing
 
         let results = try decode(ConsultClientResultsResponse.self, key: "results").results
         #expect(results.hasFaithfulClientContract)
+        // Additive brand heading — present here, optional on the wire.
+        #expect(results.directionsTitle == "Directions to discuss")
         #expect(results.recommendationDirections.count == 2)
         #expect(results.styleDirections.count == 7)
         #expect(results.profile.eyeShape.value == "HOODED")
@@ -382,5 +384,68 @@ import Testing
             #expect(!mapped.message.contains(privateContent))
         }
         #expect(Set(cases.map(\.1.message)).count == cases.count)
+    }
+
+    // MARK: - Pre-deploy fixes (2026-09-03)
+
+    /// The server's rule, not a stricter local one: only REQUIRED blocks on
+    /// its own. The previous build labelled CONDITIONAL "Required" and refused
+    /// to submit without it — a demand the web never makes.
+    @Test func onlyRequiredMustBeAnsweredLocally() {
+        #expect(ConsultIntakeRequirement.required.mustAnswer)
+        #expect(!ConsultIntakeRequirement.conditional.mustAnswer)
+        #expect(!ConsultIntakeRequirement.skippable.mustAnswer)
+        #expect(!ConsultIntakeRequirement.unknown.mustAnswer)
+    }
+
+    /// The served progress is what the submit gate prefers; a fixture written
+    /// before it existed still decodes (`progress` is optional here only).
+    @Test func intakeProgressDecodesWhenServed() throws {
+        let intake = try decode(ConsultIntakeStateResponse.self, key: "intake").intake
+        let progress = try #require(intake.progress)
+        #expect(progress.canComplete == false)
+        #expect(progress.nextQuestionKey == "current_color")
+        #expect(progress.blocker == "REQUIRED_ANSWERS_MISSING")
+
+        var stripped = try #require(try root()["intake"] as? [String: Any])
+        var inner = try #require(stripped["intake"] as? [String: Any])
+        inner.removeValue(forKey: "progress")
+        stripped["intake"] = inner
+        let legacy = try decode(ConsultIntakeStateResponse.self, value: stripped).intake
+        #expect(legacy.progress == nil)
+    }
+
+    /// A pack describes itself by its shot KEYS, so the capture header can
+    /// name "four hair views and three face views" for the hair pack and
+    /// "the area … and your face" for a pack this build has never seen.
+    @Test func shotPackDescribesItselfByKeys() throws {
+        let hair = try decode(ConsultCaptureStateResponse.self, key: "capture").capture.shotPack
+        #expect(hair.hairViewCount == 4)
+        #expect(hair.faceViewCount == 3)
+        #expect(hair.areaViewCount == 0)
+
+        let area = try decode(ConsultCaptureShotPack.self, value: [
+            "id": "area-daylight", "categorySlug": "nails", "version": 1, "schemaVersion": 1,
+            "shots": [
+                ["key": "area_wide", "title": "The area", "instruction": "", "requirement": "REQUIRED"],
+                ["key": "area_closeup", "title": "Close up", "instruction": "", "requirement": "REQUIRED"],
+                ["key": "face_front", "title": "Face front", "instruction": "", "requirement": "REQUIRED"],
+            ],
+        ] as [String: Any])
+        #expect(area.areaViewCount == 2)
+        #expect(area.faceViewCount == 1)
+        #expect(area.hairViewCount == 0)
+        #expect(area.shots.count == 3)
+    }
+
+    /// Absent on an older server, the heading is nil and the view falls back.
+    @Test func directionsTitleIsOptionalOnTheWire() throws {
+        var response = try #require(try root()["results"] as? [String: Any])
+        var results = try #require(response["results"] as? [String: Any])
+        results.removeValue(forKey: "directionsTitle")
+        response["results"] = results
+        let decoded = try decode(ConsultClientResultsResponse.self, value: response).results
+        #expect(decoded.directionsTitle == nil)
+        #expect(decoded.hasFaithfulClientContract)
     }
 }

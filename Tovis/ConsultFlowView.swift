@@ -218,10 +218,14 @@ struct ConsultFlowView: View {
     private func capture(_ model: ConsultFlowViewModel) -> some View {
         VStack(alignment: .leading, spacing: 18) {
             inspirationSection(model)
+            // The count and the views come from the SERVED pack: seven for hair,
+            // three for the face and area packs, whatever a fourth pack says.
+            let pack = model.captureState?.shotPack
             consultHeader(
-                eyebrow: "Seven daylight views",
-                title: "Take guided photos of your hair and face",
-                body: "Four hair views and three face views. Each photo is checked right away, and if one can’t be used you’ll see why. You can run the analysis without all seven — anything the missing photos would have shown just comes back as unknown."
+                eyebrow: pack.map { "\(ConsultCaptureCopy.countWord($0.shots.count).capitalized) daylight views" }
+                    ?? "Daylight views",
+                title: pack.map(ConsultCaptureCopy.title) ?? "Take guided photos",
+                body: pack.map(ConsultCaptureCopy.intro) ?? "Each photo is checked right away, and if one can’t be used you’ll see why."
             )
             if let capture = model.captureState {
                 ForEach(capture.shotPack.shots) { shot in
@@ -404,7 +408,7 @@ struct ConsultFlowView: View {
             styleDirectionsSection(results.styleDirections)
             safety(results.safetyFlags)
             achievability(results.achievabilityDirection)
-            directions(results.recommendationDirections)
+            directions(results.recommendationDirections, title: results.directionsTitle)
             lockedMeCard(model)
             bookThisLook(model)
         }
@@ -585,8 +589,9 @@ struct ConsultFlowView: View {
         }
     }
 
-    private func directions(_ recommendations: [ConsultRecommendationDirection]) -> some View {
-        BrandSection(title: "Directions to discuss", trailing: "\(recommendations.count)") {
+    private func directions(_ recommendations: [ConsultRecommendationDirection],
+                            title: String?) -> some View {
+        BrandSection(title: title ?? "Directions to discuss", trailing: "\(recommendations.count)") {
             VStack(spacing: 10) {
                 ForEach(Array(recommendations.enumerated()), id: \.element.id) { index, item in
                     BrandSurface {
@@ -727,13 +732,15 @@ struct ConsultFlowView: View {
 private func consultQualityReasonMessage(_ code: String?) -> String {
     switch code {
     case "WARM_INDOOR_LIGHT":
-        return "Warm indoor lighting — hair color can’t be read accurately under it."
+        return "Warm indoor lighting — true colors can’t be read accurately under it."
     case "COLOR_CAST":
-        return "A color tint in the light is masking the true hair color."
+        return "A color tint in the light is masking the true colors."
     case "VIEW_MISMATCH":
         return "This doesn’t look like the view this photo asks for."
     case "HAIR_NOT_VISIBLE":
         return "The hair isn’t clearly visible in this photo."
+    case "SUBJECT_NOT_VISIBLE":
+        return "The area this photo asks for isn’t clearly visible."
     case "BLURRY":
         return "The photo is too blurry to use."
     case "TOO_DARK":

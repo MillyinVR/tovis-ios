@@ -196,10 +196,10 @@ struct ConsultAgreementAcceptResponse: Decodable, Sendable {
 }
 
 /// REQUIRED / CONDITIONAL / SKIPPABLE, decoded leniently: a requirement this
-/// build does not know reads as `.unknown` and is treated as required, rather
-/// than failing the whole intake response. (The server's current colour pack
-/// already carries a CONDITIONAL question; shipped builds before this one
-/// could not decode it at all.)
+/// build does not know reads as `.unknown` rather than failing the whole
+/// intake response. (The server's current colour pack already carries a
+/// CONDITIONAL question; shipped builds before this one could not decode it
+/// at all.)
 public enum ConsultIntakeRequirement: String, Decodable, Sendable {
     case required = "REQUIRED"
     case conditional = "CONDITIONAL"
@@ -211,9 +211,14 @@ public enum ConsultIntakeRequirement: String, Decodable, Sendable {
         self = Self(rawValue: raw) ?? .unknown
     }
 
-    /// Only SKIPPABLE may be left unanswered; everything else — including a
-    /// requirement this build does not know — is asked.
-    public var mustAnswer: Bool { self != .skippable }
+    /// Exactly the server's rule (`evaluateConsultIntakeProgress`): only
+    /// REQUIRED blocks completion on its own. CONDITIONAL is required only
+    /// when the pack's goal-direction rule says so, which the server decides
+    /// and reports through `progress.canComplete`; SKIPPABLE is optional; a
+    /// requirement this build does not know is left to the server as well.
+    /// Labelling CONDITIONAL "Required" — as the previous build did — showed
+    /// a client a demand the web never makes.
+    public var mustAnswer: Bool { self == .required }
 }
 
 public struct ConsultIntakeOption: Decodable, Sendable, Identifiable, Equatable {
@@ -266,10 +271,20 @@ public struct ConsultIntakeRevision: Decodable, Sendable, Identifiable {
     public let createdAt: String
 }
 
+/// The server-owned answer to "can this intake be completed as saved?" —
+/// the same field the web wizard gates its Continue on. Optional here only
+/// so a fixture written before it decodes; the server always sends it.
+public struct ConsultIntakeProgress: Decodable, Sendable {
+    public let canComplete: Bool
+    public let nextQuestionKey: String?
+    public let blocker: String?
+}
+
 public struct ConsultIntakeState: Decodable, Sendable {
     public let consultId: String
     public let status: ConsultSessionStatus
     public let questionPack: ConsultIntakeQuestionPack
+    public let progress: ConsultIntakeProgress?
     public let prefillSuggestions: [ConsultIntakePrefillSuggestion]
     public let prefillSignals: [ConsultIntakePrefillSignal]
     public let latestRevision: ConsultIntakeRevision?
@@ -540,6 +555,13 @@ public struct ConsultCaptureShotPack: Decodable, Sendable {
     public let version: Int
     public let schemaVersion: Int
     public let shots: [ConsultCaptureShot]
+
+    /// What the pack photographs, read off its shot KEYS — never its id, so a
+    /// pack this build has not seen still describes itself. Mirrors the web's
+    /// `describeConsultCapturePack` (lib/consult/captureCopy.ts).
+    public var hairViewCount: Int { shots.filter { $0.key.rawValue.hasPrefix("hair_") }.count }
+    public var areaViewCount: Int { shots.filter { $0.key.rawValue.hasPrefix("area_") }.count }
+    public var faceViewCount: Int { shots.count - hairViewCount - areaViewCount }
 }
 
 public enum ConsultCaptureSlotStatus: String, Decodable, Sendable {
@@ -791,6 +813,10 @@ public struct ConsultClientResults: Decodable, Sendable {
     public let safetyFlags: [ConsultSafetyFlag]
     public let achievabilityDirection: ConsultAchievabilityDirection
     public let recommendationDirections: [ConsultRecommendationDirection]
+    /// The heading over the directions, from the serving tenant's brand
+    /// copy. Optional on the wire (additive); the view falls back to the
+    /// default heading when a server has not sent it.
+    public let directionsTitle: String?
     public let meCardTeaser: ConsultMeCardTeaser
     public let createdAt: String
 
