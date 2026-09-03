@@ -40,7 +40,7 @@ private actor MockConsultService: ConsultServicing {
 
     private var sessionAdvancedToAnalysis: Bool {
         inspirationComplete
-            && (acceptedShots.count == ConsultCaptureShotKey.allCases.count
+            && (acceptedShots.count == ConsultCaptureShotKey.hairPack.count
                 || proceededWithPartialPack)
     }
 

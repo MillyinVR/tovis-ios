@@ -58,7 +58,7 @@ final class ConsultFlowViewModel {
     var canSubmitIntake: Bool {
         guard let pack = intakeState?.questionPack else { return false }
         return pack.questions.allSatisfy {
-            $0.requirement == .skippable || answers[$0.key] != nil
+            !$0.requirement.mustAnswer || answers[$0.key] != nil
         }
     }
 

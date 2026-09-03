@@ -33,7 +33,7 @@ import Testing
         #expect(intake.questionPack.questions.first { $0.key == "box_dye_history" } != nil)
 
         let capture = try decode(ConsultCaptureStateResponse.self, key: "capture").capture
-        #expect(capture.shotPack.shots.map(\.key) == ConsultCaptureShotKey.allCases)
+        #expect(capture.shotPack.shots.map(\.key) == ConsultCaptureShotKey.hairPack)
         #expect(capture.hasAllAcceptedShots)
 
         let analysis = try decode(ConsultAnalysisStartResponse.self, key: "analysis").analysis

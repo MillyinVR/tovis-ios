@@ -70,9 +70,10 @@ nonisolated struct ConsultGuidedCaptureMachine: Sendable, Equatable {
 }
 
 nonisolated enum ConsultShotGuidance {
-    /// The seven server-owned pack-v2 slots keep their identity and order. Only
-    /// their on-device expectations live here; no client trait is derived or
-    /// stored.
+    /// On-device expectations per server-owned slot; no client trait is derived
+    /// or stored. A key this build does not know (a pack added after it
+    /// shipped) gets the neutral expectations: any framing, face optional, so
+    /// the slot still captures rather than blocking the consult.
     static func expectations(for key: ConsultCaptureShotKey) -> ShotExpectations {
         switch key {
         case .hairBack:
@@ -119,6 +120,29 @@ nonisolated enum ConsultShotGuidance {
                 face: .either,
                 fillBand: nil,
                 isDetail: true
+            )
+        case .areaWide:
+            // The treatment area in context — hands, a brow line, a patch of
+            // skin. No face required; a wide framing band.
+            return ShotExpectations(
+                face: .either,
+                fillBand: 0.2...0.95,
+                isDetail: false,
+                allowsClosedEyes: true
+            )
+        case .areaCloseup:
+            return ShotExpectations(
+                face: .either,
+                fillBand: nil,
+                isDetail: true,
+                allowsClosedEyes: true
+            )
+        default:
+            return ShotExpectations(
+                face: .either,
+                fillBand: nil,
+                isDetail: false,
+                allowsClosedEyes: true
             )
         }
     }
@@ -357,9 +381,9 @@ struct ConsultGuidedCaptureView: View {
 
     private var visionExpectationCopy: String {
         switch expectations.face {
-        case .required: return "Keep the side of the face and the full hair view visible."
-        case .absent: return "Fill the frame with the hair; a face isn’t required for this view."
-        case .either: return "Fill the frame with the requested hair view."
+        case .required: return "Keep the face visible along with the requested view."
+        case .absent: return "Fill the frame with the requested view; a face isn’t required."
+        case .either: return "Fill the frame with the requested view."
         }
     }
 
