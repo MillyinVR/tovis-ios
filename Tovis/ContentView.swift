@@ -787,6 +787,24 @@ final class SessionModel {
         }
     }
 
+    /// Switch workspaces on the user's say-so from a client-only action taken
+    /// while acting as pro (Book on a look), then hand the newly mounted shell
+    /// the place to resume at. The native twin of the web's
+    /// `WorkspaceMismatchProvider`, which replays the refused request once the
+    /// switch lands: here the "replay" is a buffered deep link, which the client
+    /// shell's `.task` / `.onChange` consumes exactly as it does a tapped push.
+    ///
+    /// 🔴 The link is set AFTER the switch takes, never before. Set first, the
+    /// still-mounted pro shell's own `.onChange(of: pushDeepLink)` would present
+    /// a `.look` target (either shell can open one) and clear it before the
+    /// client shell ever mounted. A switch that does not take leaves nothing
+    /// buffered, so a stray link never sticks.
+    func switchWorkspace(to role: Role, thenOpen link: PushDeepLink) async {
+        await switchWorkspace(to: role)
+        guard activeRole == role else { return }
+        pushDeepLink = link
+    }
+
     /// Subscribe to this user's live channel. Derives the userId from the stored
     /// JWT so it works on a cold launch too. No-op if realtime isn't configured.
     private func startRealtime() async {
