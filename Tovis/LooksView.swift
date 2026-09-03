@@ -68,6 +68,9 @@ struct LooksView: View {
     @State private var navPath: [LooksProfessional] = []
     /// Drives the booking sheet with a preselected offering (web BOOK parity).
     @State private var bookLaunch: BookLaunch?
+    /// Book tapped while acting as pro on an account that can also act as a
+    /// client — offer the switch rather than a sheet that dead-ends at the hold.
+    @State private var workspaceSwitchPrompt: WorkspaceSwitchPrompt?
     /// Book the Look, B8 — set when the SERVER answered that this look opens a
     /// consult for this viewer. Nil is the ordinary path, unchanged.
     @State private var consultLaunch: LookConsultLaunch?
@@ -183,6 +186,7 @@ struct LooksView: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
+        .workspaceSwitchPrompt($workspaceSwitchPrompt)
         .sheet(item: $bookLaunch) { launch in
             BookingFlowView(
                 professionalId: launch.pro.id,
@@ -635,10 +639,11 @@ struct LooksView: View {
         // Book the Look, B8 — asked ON TAP, never on render: a probe per feed
         // slide would put two database reads in front of every scroll for every
         // viewer, pilot or not, on the hottest surface in the app.
-        if let destination = await LookConsultEntry.resolve(
+        switch await LookConsultEntry.resolve(
             lookPostId: item.id,
             service: session.client.consult
         ) {
+        case let .consult(destination):
             consultLaunch = LookConsultLaunch(
                 destination: destination,
                 lookPostId: item.id,
@@ -646,6 +651,15 @@ struct LooksView: View {
                 lookMediaId: item.primaryMediaId
             )
             return
+        case .workspaceMismatch:
+            // Acting as pro: booking is client-only all the way down (the hold
+            // and the finalize both require a client), so the sheet below would
+            // be a dead end one screen later. Offer the switch instead; the
+            // client shell reopens this look with booking started.
+            workspaceSwitchPrompt = .bookLook(id: item.id)
+            return
+        case .noConsult:
+            break
         }
 
         guard let offering = await LookBooking.offering(

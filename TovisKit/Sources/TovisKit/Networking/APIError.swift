@@ -51,6 +51,21 @@ public enum APIError: Error, Sendable, Equatable {
     /// URLSession transport failure (offline, timeout, TLS, …).
     case transport(String)
 
+    /// The server's `WORKSPACE_MISMATCH` — a 403 that is NOT "you may not",
+    /// it is "not from THIS workspace": the account holds the role the route
+    /// wants (a pro who is also a client), and switching would make the same
+    /// call succeed. The web wraps every fetch to catch exactly this and offers
+    /// "Switch to Client to continue"; native surfaces that want the same
+    /// offer read this instead of treating the 403 as a dead end.
+    public var isWorkspaceMismatch: Bool {
+        switch self {
+        case let .server(_, _, code), let .serverDetails(_, _, code, _):
+            return code == "WORKSPACE_MISMATCH"
+        case .invalidResponse, .unauthorized, .decoding, .transport:
+            return false
+        }
+    }
+
     public var userMessage: String {
         switch self {
         case .invalidResponse:

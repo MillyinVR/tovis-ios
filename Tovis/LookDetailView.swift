@@ -54,6 +54,9 @@ struct LookDetailView: View {
     /// A tapped tag chip → the native tag feed (LookTagFeedView).
     @State private var tagFeedFor: LooksTag?
     @State private var bookLaunch: DetailBookLaunch?
+    /// Book tapped while acting as pro on an account that can also act as a
+    /// client — offer the switch rather than a sheet that dead-ends at the hold.
+    @State private var workspaceSwitchPrompt: WorkspaceSwitchPrompt?
     @State private var bookResolving = false
     /// Book the Look, B8 — set when the SERVER answered that this look opens a
     /// consult for this viewer. Nil is the ordinary path, unchanged.
@@ -115,6 +118,7 @@ struct LookDetailView: View {
                 }
                 .tint(BrandColor.accent)
             }
+            .workspaceSwitchPrompt($workspaceSwitchPrompt)
             .sheet(item: $bookLaunch) { launch in
                 BookingFlowView(
                     professionalId: launch.professionalId,
@@ -717,10 +721,11 @@ struct LookDetailView: View {
         // for this viewer, ON TAP. Anything other than a clear yes (a guest, a
         // non-pilot pro, a network failure, an endpoint this server does not
         // have yet) falls through to the ordinary sheet below, unchanged.
-        if let destination = await LookConsultEntry.resolve(
+        switch await LookConsultEntry.resolve(
             lookPostId: look.id,
             service: session.client.consult
         ) {
+        case let .consult(destination):
             consultLaunch = LookConsultLaunch(
                 destination: destination,
                 lookPostId: look.id,
@@ -728,6 +733,14 @@ struct LookDetailView: View {
                 lookMediaId: look.primaryMedia.id
             )
             return
+        case .workspaceMismatch:
+            // Acting as pro: booking is client-only all the way down, so the
+            // sheet below would dead-end at the hold. Offer the switch; the
+            // client shell reopens this look with booking started.
+            workspaceSwitchPrompt = .bookLook(id: look.id)
+            return
+        case .noConsult:
+            break
         }
 
         guard let offering = await LookBooking.offering(

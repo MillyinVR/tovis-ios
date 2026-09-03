@@ -19,10 +19,18 @@ import Foundation
 /// database reads in front of every scroll for every viewer, pilot or not, on
 /// the hottest surface in the app.
 ///
-/// 🔴 Anything other than a clear "yes" returns nil, and the caller keeps
+/// 🔴 Anything other than a clear "yes" is `.noConsult`, and the caller keeps
 /// today's behaviour EXACTLY — it opens the ordinary booking sheet. That is
 /// what makes this safe to ship against a production server where none of
 /// these endpoints exist yet: a 404 is not an error state, it is "no door".
+///
+/// The ONE refusal that is not "no door" is the server's WORKSPACE_MISMATCH:
+/// the viewer is acting as PRO on an account that also has a client profile.
+/// Booking is client-only end to end (the hold and the finalize both require a
+/// client), so falling through to the sheet there is not a fallback, it is a
+/// dead end one screen later. That answer is surfaced as its own outcome so
+/// the caller can offer the switch — what the web's WorkspaceMismatchProvider
+/// does for every fetch, done here for the one tap that needs it.
 public enum LookConsultEntryDestination: Sendable, Equatable {
     /// A consult still mid-flow — resume it where it was.
     case resumeFlow(consultId: String)
@@ -36,33 +44,69 @@ public enum LookConsultEntryDestination: Sendable, Equatable {
     }
 }
 
+/// What a Book tap resolved to.
+public enum LookConsultEntryOutcome: Sendable, Equatable {
+    /// This look opens (or resumes) a consult — go there.
+    case consult(LookConsultEntryDestination)
+    /// Not this look, not this viewer, or a server that has no consult door:
+    /// the caller opens the ordinary booking sheet, unchanged.
+    case noConsult
+    /// The viewer is acting as PRO on an account that can also act as a
+    /// client. Offer the switch; the client workspace will answer the same tap.
+    case workspaceMismatch
+}
+
 public enum LookConsultEntry {
     /// Ask whether this look opens a consult for this viewer, and start (or
     /// resume) one if it does.
-    ///
-    /// Returns the destination to navigate to, or nil meaning "not this look,
-    /// not this viewer".
     public static func resolve(
         lookPostId: String,
         service: any ConsultServicing
-    ) async -> LookConsultEntryDestination? {
+    ) async -> LookConsultEntryOutcome {
         let id = lookPostId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !id.isEmpty else { return nil }
+        guard !id.isEmpty else { return .noConsult }
 
-        guard let availability = try? await service.lookAvailability(lookPostId: id),
-              availability.available else { return nil }
+        let availability: ConsultLookAvailability
+        do {
+            availability = try await service.lookAvailability(lookPostId: id)
+        } catch {
+            return outcome(refusedBy: error)
+        }
+        guard availability.available else { return .noConsult }
 
         if let existing = availability.consult {
-            return destination(for: existing.status, consultId: existing.id)
+            return outcome(for: existing.status, consultId: existing.id)
         }
 
         // Create-or-resume on the SERVER: tapping Book twice returns the same
         // consult rather than a second one (a unique index is what makes that
         // true under a race), so a retry here is safe.
-        guard let started = try? await service.createFromLook(lookPostId: id) else {
-            return nil
+        let started: ConsultLookSession
+        do {
+            started = try await service.createFromLook(lookPostId: id)
+        } catch {
+            return outcome(refusedBy: error)
         }
-        return destination(for: started.status, consultId: started.id)
+        return outcome(for: started.status, consultId: started.id)
+    }
+
+    /// A refused probe is "no door" — EXCEPT the one refusal that names a door
+    /// the viewer can open by switching workspaces.
+    static func outcome(refusedBy error: Error) -> LookConsultEntryOutcome {
+        if let apiError = error as? APIError, apiError.isWorkspaceMismatch {
+            return .workspaceMismatch
+        }
+        return .noConsult
+    }
+
+    private static func outcome(
+        for status: ConsultSessionStatus,
+        consultId: String
+    ) -> LookConsultEntryOutcome {
+        guard let destination = destination(for: status, consultId: consultId) else {
+            return .noConsult
+        }
+        return .consult(destination)
     }
 
     /// A consult that already reached results goes straight to its booking
