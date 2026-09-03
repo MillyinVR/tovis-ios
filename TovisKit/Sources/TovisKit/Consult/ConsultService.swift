@@ -40,11 +40,12 @@ public protocol ConsultServicing: Sendable {
 }
 
 public final class ConsultService: ConsultServicing, Sendable {
-    // Schema v2 (2026-08-26 launch decisions) / prompt v2 (2026-08-27:
-    // partial capture packs — the server tells the model which views are
-    // missing; output shape unchanged).
-    public static let analysisSchemaVersion = 2
-    public static let analysisPromptVersion = "full-analysis-v2"
+    // Schema v3 / prompt v3 (2026-09-03, service-aware consult, tovis-app
+    // slice 2): the analysis is told which service the consult is for and the
+    // pro's menu; the colour lens became a service lens. The server refuses a
+    // start that names an older pair, so these move with the server.
+    public static let analysisSchemaVersion = 3
+    public static let analysisPromptVersion = "service-analysis-v3"
     public static let maximumPhotoBytes = 5_000_000
 
     private let api: APIClient
