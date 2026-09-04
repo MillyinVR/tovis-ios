@@ -527,13 +527,13 @@ struct ConsultFlowView: View {
     private func observations(_ observations: ConsultAIObservations) -> some View {
         BrandSection(title: "Photo-based observations") {
             VStack(spacing: 8) {
-                observationRow(
-                    "Current level",
-                    value: observations.currentLevel.min.flatMap { min in
-                        observations.currentLevel.max.map { "Level \(min)–\($0)" }
-                    } ?? "Unknown",
-                    confidence: observations.currentLevel.confidence
-                )
+                // Two named levels, not a range. `codeLabel` renders LEVEL_7 as
+                // "Level 7" and UNKNOWN as "Unknown", exactly as it does for
+                // every other observation's enum.
+                observationRow("Base level", value: observations.baseLevel.value,
+                               confidence: observations.baseLevel.confidence)
+                observationRow("Lightest level", value: observations.lightestLevel.value,
+                               confidence: observations.lightestLevel.confidence)
                 observationRow("Tone", value: observations.currentTone.value,
                                confidence: observations.currentTone.confidence)
                 observationRow("Visible condition", value: observations.visibleCondition.value,
