@@ -71,4 +71,68 @@ import Testing
         let small = solid(.gray, CGRect(x: 0, y: 0, width: 100, height: 100))
         #expect(FrameMath.downscaled(small, maxDim: 480).extent.width == 100)
     }
+
+    // MARK: - The colour-of-light read on a skin-filled close-up (B3)
+
+    private var frame: CGRect { CGRect(x: 0, y: 0, width: 64, height: 64) }
+
+    /// A warm frame — what a face fills the viewfinder with, indoors or out.
+    private var warmFrame: CIImage {
+        solid(CIColor(red: 0.72, green: 0.48, blue: 0.24), frame)
+    }
+
+    /// A background-weight image: white = background, black = subject. `top`
+    /// is the share of the frame's HEIGHT that is background.
+    ///
+    /// ⚠️ `top` is not the fraction `backgroundAverageRGB` reports. That
+    /// fraction is the area mean read back through the render transfer curve,
+    /// so a 5%-white strip measures far above 0.05. Only the two ends of the
+    /// range are transfer-curve-independent, and those are what these tests
+    /// use; the FLOOR itself is pinned separately, straight against
+    /// `backgroundAverageRGB`'s own `minFraction` argument.
+    private func backgroundWeight(top: Double) -> CIImage {
+        solid(.white, frame)
+            .cropped(to: CGRect(x: 0, y: 0, width: frame.width,
+                                height: frame.height * top))
+            .composited(over: solid(.black, frame))
+            .cropped(to: frame)
+    }
+
+    @Test func colorSignalReadsTheBackgroundWhenThereIsEnoughOfIt() throws {
+        let signal = try #require(FrameMath.colorSignal(
+            warmFrame, background: backgroundWeight(top: 0.5),
+            context: FrameMath.context))
+        #expect(signal.backgroundScoped)
+    }
+
+    /// The floor itself: below `minFraction` there is not enough background to
+    /// divide by, and the answer is no reading rather than an invented one.
+    @Test func backgroundAverageIsNilBelowTheMinimumFraction() throws {
+        let half = backgroundWeight(top: 0.5)
+        let generous = try #require(FrameMath.backgroundAverageRGB(
+            warmFrame, background: half, minFraction: 0.01,
+            context: FrameMath.context))
+        // …and the same image against a floor above what it measures.
+        #expect(FrameMath.backgroundAverageRGB(
+            warmFrame, background: half, minFraction: generous.fraction + 0.01,
+            context: FrameMath.context) == nil)
+    }
+
+    /// The B3 defect: the subject fills the frame, `backgroundAverageRGB`
+    /// refuses to read the scraps that are left, and the old code fell through
+    /// to the whole frame — reporting the client's SKIN as a warm room, firing
+    /// the warm-light line and pinning readiness at 0.6. Nil is the honest
+    /// answer, and `ColorCoach` stays silent on it.
+    @Test func colorSignalIsNilWhenTheSubjectFillsTheFrame() {
+        #expect(FrameMath.colorSignal(warmFrame, background: backgroundWeight(top: 0),
+                                      context: FrameMath.context) == nil)
+        // Proof the nil is about the MASK and not the image: the same warm
+        // frame with no mask at all is a flat-lay/detail shot, where the frame
+        // legitimately IS the background — and it still reads warm there.
+        let noMask = FrameMath.colorSignal(warmFrame, background: nil,
+                                           context: FrameMath.context)
+        #expect(noMask != nil)
+        #expect(noMask?.backgroundScoped == false)
+        #expect((noMask?.warmth ?? 0) > CoachTuning.warmCastWarmth)
+    }
 }

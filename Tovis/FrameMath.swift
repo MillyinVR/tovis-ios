@@ -242,8 +242,18 @@ nonisolated enum FrameMath {
     /// is skin — so it is worst on exactly the tight beauty close-ups that
     /// matter most.
     ///
-    /// With no mask the whole frame stands in. That is not a compromise on a
-    /// flat-lay or a detail shot: there, the frame IS the background.
+    /// With no mask AT ALL the whole frame stands in. That is not a compromise
+    /// on a flat-lay or a detail shot: there, the frame IS the background.
+    ///
+    /// But once a mask exists the whole-frame fallback is not available, and
+    /// this returns nil instead. A mask means there IS a subject, and when the
+    /// subject fills the frame — a skin-filled beauty close-up, eyes and brows
+    /// edge to edge — `backgroundAverageRGB` refuses to read the scraps that
+    /// are left. Falling through then measures the PERSON: every such frame
+    /// reported a warm cast, the coach fired "warm light" at 0.6, and the
+    /// readiness ring could never go green on a close-up under perfectly
+    /// neutral light. Nil is the honest answer, and `ColorCoach` is built to
+    /// stay silent on it rather than guess (B3).
     static func colorSignal(_ working: CIImage, background: CIImage?, context: CIContext)
         -> ColorSignal? {
         let e = working.extent
@@ -253,21 +263,21 @@ nonisolated enum FrameMath {
             CGRect(x: Double(i) / 3.0, y: 0, width: 1.0 / 3.0, height: 1)
         }
 
-        if let background,
-           let global = backgroundAverageRGB(working, background: background, context: context) {
+        if let background {
+            guard let global = backgroundAverageRGB(working, background: background,
+                                                    context: context) else { return nil }
             let warms: [Double] = (0..<3).compactMap { i in
                 backgroundAverageRGB(working, background: background, in: thirdRect(i),
                                      context: context).map { warmth($0.rgb) }
             }
             // Two thirds with measurable background is enough for a spread; one
-            // is not a spread at all, so fall through rather than invent one.
-            if warms.count >= 2 {
-                return ColorSignal(
-                    mixed: max(0, (warms.max() ?? 0) - (warms.min() ?? 0)),
-                    greenTint: greenTint(global.rgb),
-                    warmth: warmth(global.rgb),
-                    backgroundScoped: true)
-            }
+            // is not a spread at all, so report no spread rather than invent
+            // one — the global cast is still measured off the background.
+            return ColorSignal(
+                mixed: warms.count >= 2 ? max(0, (warms.max() ?? 0) - (warms.min() ?? 0)) : 0,
+                greenTint: greenTint(global.rgb),
+                warmth: warmth(global.rgb),
+                backgroundScoped: true)
         }
 
         guard let global = averageRGB(working, context: context) else { return nil }
