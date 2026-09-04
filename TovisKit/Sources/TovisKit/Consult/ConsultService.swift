@@ -349,15 +349,38 @@ public final class ConsultService: ConsultServicing, Sendable {
         return response.inspiration
     }
 
+    /// The inspiration photo's short-lived read URL.
+    ///
+    /// `imageReadEndpoint` may only ever name a route that answers
+    /// `ConsultInspirationSignedRead` — `{ url, expiresInSeconds }` — and since
+    /// the server now serves ONE such route per consult for every source
+    /// (uploads and the anchoring Look alike), the only endpoint this client
+    /// will follow is that one. The guard stays strict on purpose: a path that
+    /// arrives in a state DTO is server-supplied input, and following an
+    /// arbitrary one would let a changed server steer the app at any URL it
+    /// liked.
+    ///
+    /// 🔴 A refusal here THROWS. It used to be swallowed into `nil` by the
+    /// caller, which is what made a look-anchored consult (whose endpoint was
+    /// then `/api/v1/looks/{id}`) ask "what did you like about it?" with an
+    /// empty panel and no error anywhere — handoff Part 1, B4.
     public func inspirationImage(consultId: String,
                                  readEndpoint: String) async throws -> ConsultInspirationSignedRead {
         // The state DTO serves the endpoint as a full server path; APIClient
-        // already prefixes /api/v1, so strip it. Refuse anything that is not
-        // this consult's own media route — the look-post variant serves a
-        // different shape and iOS only offers upload-or-skip.
+        // already prefixes /api/v1, so strip it.
         let expected = "/api/v1/client/consult/\(consultId)/inspiration/media"
         guard readEndpoint == expected else { throw ConsultClientFailure.contractMismatch }
-        return try await api.request("/client/consult/\(consultId)/inspiration/media")
+        let read: ConsultInspirationSignedRead =
+            try await api.request("/client/consult/\(consultId)/inspiration/media")
+        // A route that answers the right shape with an unusable payload is the
+        // same failure as the wrong route: refuse it rather than hand the view
+        // a URL it cannot load or an expiry it cannot schedule from.
+        guard !read.url.isEmpty,
+              read.expiresInSeconds.isFinite,
+              read.expiresInSeconds > 0 else {
+            throw ConsultClientFailure.contractMismatch
+        }
+        return read
     }
 
     public func capture(consultId: String) async throws -> ConsultCaptureState {

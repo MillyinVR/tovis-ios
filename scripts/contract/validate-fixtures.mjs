@@ -43,6 +43,7 @@ const CHECKS = [
     pick: (d) => [
       d.inspirationSourceDecision.inspiration,
       d.inspirationQuestion.inspiration,
+      d.inspirationLookSourceQuestion.inspiration,
       d.inspirationTextQuestion.inspiration,
       d.inspirationComplete.inspiration,
       d.inspirationSkipped.inspiration,

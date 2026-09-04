@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import OSLog
 import TovisKit
 import UIKit
 
@@ -243,25 +244,72 @@ final class ConsultFlowViewModel {
         }
     }
 
-    /// Signed read URL for the inspiration photo, fetched lazily and renewed
-    /// shortly before it expires so the image never goes dark mid-question.
-    func inspirationImageURL() async -> URL? {
+    /// What the inspiration panel got back for its image.
+    ///
+    /// Three OUTCOMES, not two: "there is no image to show" and "there is one
+    /// and we could not load it" are different things the client is owed
+    /// different words for. Collapsing both into `nil` is what let B4 ship —
+    /// a look-anchored consult rendered an empty panel and told nobody.
+    enum InspirationImageOutcome: Equatable {
+        case unavailable
+        case ready(URL)
+        case failed
+    }
+
+    /// Read URL for the inspiration photo — the client's upload OR the
+    /// anchoring Look, both behind the one `imageReadEndpoint` route — fetched
+    /// lazily and renewed shortly before it expires so the image never goes
+    /// dark mid-question.
+    ///
+    /// 🔴 A read that fails returns `.failed` and logs it. It must NEVER be
+    /// swallowed into "no image": the panel is the whole point of the
+    /// likes/dislikes step, and a silent blank is indistinguishable from a
+    /// feature that was never built.
+    func inspirationImage() async -> InspirationImageOutcome {
         guard let consultId = machine.consultId,
-              let source = inspirationState?.source, source.imageAvailable else { return nil }
+              let source = inspirationState?.source, source.imageAvailable else {
+            return .unavailable
+        }
         if let cached = inspirationImageCache,
            cached.expiresAt.timeIntervalSinceNow > 60 {
-            return cached.url
+            return .ready(cached.url)
         }
         do {
             let read = try await service.inspirationImage(
                 consultId: consultId, readEndpoint: source.imageReadEndpoint
             )
-            guard let url = URL(string: read.url) else { return nil }
+            guard let url = URL(string: read.url) else {
+                Self.logInspirationImageReadFailure(
+                    source: source.source, reason: "MALFORMED_URL"
+                )
+                return .failed
+            }
             inspirationImageCache = (url, Date().addingTimeInterval(read.expiresInSeconds))
-            return url
+            return .ready(url)
         } catch {
-            return nil
+            Self.logInspirationImageReadFailure(
+                source: source.source,
+                reason: (error as? ConsultClientFailure) == .contractMismatch
+                    ? "CONTRACT_MISMATCH"
+                    : "REQUEST_FAILED"
+            )
+            return .failed
         }
+    }
+
+    nonisolated private static let consultLog = Logger(
+        subsystem: "app.tovis", category: "consult"
+    )
+
+    /// Telemetry twin of web's `consult.inspiration.image_read_failed`. The
+    /// inspiration SOURCE and a coarse reason only — no consult id, no URL, no
+    /// signed token, nothing about the client.
+    nonisolated private static func logInspirationImageReadFailure(
+        source: String, reason: String
+    ) {
+        consultLog.error(
+            "ai_consult INSPIRATION_IMAGE_READ_FAILED source=\(source, privacy: .public) reason=\(reason, privacy: .public)"
+        )
     }
 
     func proceedWithAccepted() async {

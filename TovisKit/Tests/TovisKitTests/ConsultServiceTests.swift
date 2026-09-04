@@ -368,6 +368,28 @@ private final class ConsultURLProtocol: URLProtocol {
         #expect(ConsultURLProtocol.requests.count == 1)
     }
 
+    /// A route that answers the right SHAPE with an unusable payload is the
+    /// same failure as the wrong route. An empty url renders nothing; a
+    /// non-positive expiry is not something the panel can renew from.
+    @Test func inspirationImageRefusesAnUnusableSignedRead() async throws {
+        for payload in [
+            ["ok": true, "url": "", "expiresInSeconds": 600],
+            ["ok": true, "url": "https://storage.test/read", "expiresInSeconds": 0],
+            ["ok": true, "url": "https://storage.test/read", "expiresInSeconds": -1],
+        ] as [[String: Any]] {
+            reset()
+            let body = json(payload)
+            ConsultURLProtocol.responder = { _ in (200, body) }
+            let service = await makeService()
+            await #expect(throws: ConsultClientFailure.contractMismatch) {
+                _ = try await service.inspirationImage(
+                    consultId: "consult_fixture_1",
+                    readEndpoint: "/api/v1/client/consult/consult_fixture_1/inspiration/media"
+                )
+            }
+        }
+    }
+
     @Test func partialPackProceedPostsToTheProceedRouteAndReturnsServerCapture() async throws {
         reset()
         let proceeded = try inspirationEnvelope("captureProceed")
