@@ -136,6 +136,12 @@ private extension URLRequest {
             items: [ProBookingServiceItemInput(serviceId: "s1", offeringId: "o1", sortOrder: 0)]
         )
         let firstKey = try #require(ProEditServiceItemsURLProtocol.capturedIdempotencyKey)
+        let firstBody = try #require(ProEditServiceItemsURLProtocol.capturedBody)
+        #expect(firstKey == rebuiltIdempotencyKey(
+            matchingBucketOf: firstKey,
+            scope: "pro-booking", entityId: "bkg_1", action: "edit-service-items",
+            nonce: idempotencyNonce(firstBody)))
+        #expect(idempotencyKeyBucketIsCurrent(firstKey))
 
         reset("""
         {"ok":true,"booking":{"id":"bkg_1","status":"ACCEPTED"},"meta":{"mutated":true,"noOp":false}}
@@ -144,7 +150,16 @@ private extension URLRequest {
             bookingId: "bkg_1",
             items: [ProBookingServiceItemInput(serviceId: "s1", offeringId: "o1", sortOrder: 0)]
         )
-        #expect(ProEditServiceItemsURLProtocol.capturedIdempotencyKey == firstKey)
+        // Compared to ITS OWN derivation rather than to `firstKey`: the key carries a
+        // 60s wall-clock bucket, so two live sends that straddle a boundary differ for
+        // a reason that has nothing to do with the wiring. The body nonce is still
+        // compared byte for byte — see `IdempotencyKeyTestSupport`.
+        let retryKey = try #require(ProEditServiceItemsURLProtocol.capturedIdempotencyKey)
+        let retryBody = try #require(ProEditServiceItemsURLProtocol.capturedBody)
+        #expect(retryKey == rebuiltIdempotencyKey(
+            matchingBucketOf: retryKey,
+            scope: "pro-booking", entityId: "bkg_1", action: "edit-service-items",
+            nonce: idempotencyNonce(retryBody)))
 
         reset("""
         {"ok":true,"booking":{"id":"bkg_1","status":"ACCEPTED"},"meta":{"mutated":true,"noOp":false}}

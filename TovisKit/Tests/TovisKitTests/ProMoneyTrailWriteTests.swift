@@ -141,6 +141,17 @@ private extension URLRequest {
             nonce: idempotencyNonce(body))
     }
 
+    /// The key an action with NO body derives, rebuilt in the bucket `captured`
+    /// used — the empty-nonce twin of `expectedRefundKey`, and there for the same
+    /// reason: two LIVE sends can straddle the 60s bucket boundary, so comparing
+    /// one capture to the other tests the clock as much as the wiring.
+    private func expectedEmptyBodyKey(
+        matching captured: String, scope: String, entityId: String, action: String
+    ) -> String? {
+        rebuiltIdempotencyKey(
+            matchingBucketOf: captured, scope: scope, entityId: entityId, action: action)
+    }
+
     @Test func refundKeyTracksBody() async throws {
         // Same amount + reason ⇒ the same DERIVATION, so a stable network retry
         // replays server-side instead of refunding twice.
@@ -193,10 +204,18 @@ private extension URLRequest {
         reset()
         try await makeService().waiveNoShowFee(bookingId: "bkg_1")
         let firstKey = try #require(ProMoneyTrailWriteURLProtocol.capturedIdempotencyKey)
+        #expect(firstKey == expectedEmptyBodyKey(
+            matching: firstKey, scope: "booking", entityId: "bkg_1", action: "no-show-waive"))
+        #expect(idempotencyKeyBucketIsCurrent(firstKey))
 
+        // The repeat tap is compared to ITS OWN derivation rather than to `firstKey`:
+        // identical derivations are identical keys within a bucket, and a rollover
+        // between the two sends no longer fails a test about the wiring.
         reset()
         try await makeService().waiveNoShowFee(bookingId: "bkg_1")
-        #expect(ProMoneyTrailWriteURLProtocol.capturedIdempotencyKey == firstKey)
+        let retryKey = try #require(ProMoneyTrailWriteURLProtocol.capturedIdempotencyKey)
+        #expect(retryKey == expectedEmptyBodyKey(
+            matching: retryKey, scope: "booking", entityId: "bkg_1", action: "no-show-waive"))
 
         // A different booking ⇒ a different key (namespaced to the target).
         reset()
@@ -229,10 +248,16 @@ private extension URLRequest {
         reset()
         try await makeService().refundNoShowFee(bookingId: "bkg_1")
         let firstKey = try #require(ProMoneyTrailWriteURLProtocol.capturedIdempotencyKey)
+        #expect(firstKey == expectedEmptyBodyKey(
+            matching: firstKey, scope: "booking", entityId: "bkg_1", action: "no-show-refund"))
+        #expect(idempotencyKeyBucketIsCurrent(firstKey))
 
+        // Compared to its own derivation, not to `firstKey` — see `waiveKeyIsStable…`.
         reset()
         try await makeService().refundNoShowFee(bookingId: "bkg_1")
-        #expect(ProMoneyTrailWriteURLProtocol.capturedIdempotencyKey == firstKey)
+        let retryKey = try #require(ProMoneyTrailWriteURLProtocol.capturedIdempotencyKey)
+        #expect(retryKey == expectedEmptyBodyKey(
+            matching: retryKey, scope: "booking", entityId: "bkg_1", action: "no-show-refund"))
 
         // A different booking ⇒ a different key (namespaced to the target).
         reset()
@@ -282,10 +307,16 @@ private extension URLRequest {
         reset(Self.markCapture)
         try await makeService().markNoShow(bookingId: "bkg_1")
         let firstKey = try #require(ProMoneyTrailWriteURLProtocol.capturedIdempotencyKey)
+        #expect(firstKey == expectedEmptyBodyKey(
+            matching: firstKey, scope: "pro-booking", entityId: "bkg_1", action: "no-show"))
+        #expect(idempotencyKeyBucketIsCurrent(firstKey))
 
+        // Compared to its own derivation, not to `firstKey` — see `waiveKeyIsStable…`.
         reset(Self.markCapture)
         try await makeService().markNoShow(bookingId: "bkg_1")
-        #expect(ProMoneyTrailWriteURLProtocol.capturedIdempotencyKey == firstKey)
+        let retryKey = try #require(ProMoneyTrailWriteURLProtocol.capturedIdempotencyKey)
+        #expect(retryKey == expectedEmptyBodyKey(
+            matching: retryKey, scope: "pro-booking", entityId: "bkg_1", action: "no-show"))
     }
 
     @Test func markNoShowKeyIsPerBooking() async throws {
