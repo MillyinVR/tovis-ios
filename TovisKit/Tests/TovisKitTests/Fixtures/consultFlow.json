@@ -414,7 +414,7 @@
         {"questionKey":"prior_reaction","question":"Have you ever had a reaction during or after a hair color service?","answerCode":"no","answer":"No"}
       ],
       "aiObservations": {
-        "currentLevel":{"min":4,"max":5,"confidence":{"min":0.72,"max":0.88},"evidence":["hair_back","hair_crown"]},
+        "baseLevel":{"value":"LEVEL_4","confidence":{"min":0.72,"max":0.88},"evidence":["hair_back","hair_crown"]},"lightestLevel":{"value":"LEVEL_5","confidence":{"min":0.72,"max":0.88},"evidence":["hair_back","hair_crown"]},"currentLevel":{"min":4,"max":5,"confidence":{"min":0.72,"max":0.88},"evidence":["hair_back","hair_crown"]},
         "currentTone":{"value":"NEUTRAL","confidence":{"min":0.68,"max":0.82},"evidence":["hair_left","hair_right"]},
         "visibleCondition":{"value":"POSSIBLE_COMPROMISE","confidence":{"min":0.6,"max":0.76},"evidence":["hair_crown"]},
         "density":{"value":"MEDIUM","confidence":{"min":0.65,"max":0.8},"evidence":["hair_back"]},
@@ -514,6 +514,28 @@
         }
       ],
       "aiObservations": {
+        "baseLevel": {
+          "value": "LEVEL_4",
+          "confidence": {
+            "min": 0.72,
+            "max": 0.88
+          },
+          "evidence": [
+            "hair_back",
+            "hair_crown"
+          ]
+        },
+        "lightestLevel": {
+          "value": "LEVEL_5",
+          "confidence": {
+            "min": 0.72,
+            "max": 0.88
+          },
+          "evidence": [
+            "hair_back",
+            "hair_crown"
+          ]
+        },
         "currentLevel": {
           "min": 4,
           "max": 5,

@@ -668,15 +668,17 @@ public struct ConsultObservation: Decodable, Sendable {
     public let evidence: [String]
 }
 
-public struct ConsultCurrentLevel: Decodable, Sendable {
-    public let min: Int?
-    public let max: Int?
-    public let confidence: ConsultConfidence
-    public let evidence: [String]
-}
-
 public struct ConsultAIObservations: Decodable, Sendable {
-    public let currentLevel: ConsultCurrentLevel
+    /// Analysis schema v4: the two NAMED ends of the head.
+    ///
+    /// v3 sent one `currentLevel: { min, max }` and this screen rendered it
+    /// "Level 4–5" — which a colourist reads as base-to-lightest, from a field
+    /// that never said that was what it meant (the web's
+    /// `lib/consult/hairLevel.ts` has the whole story). They are ordinary
+    /// observations now, valued `LEVEL_1`…`LEVEL_10` or `UNKNOWN`, and a solid
+    /// single-process legitimately reports the same value in both.
+    public let baseLevel: ConsultObservation
+    public let lightestLevel: ConsultObservation
     public let currentTone: ConsultObservation
     public let visibleCondition: ConsultObservation
     public let density: ConsultObservation
