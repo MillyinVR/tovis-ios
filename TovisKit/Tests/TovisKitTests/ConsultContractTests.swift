@@ -243,6 +243,21 @@ import Testing
             == "/api/v1/client/consult/consult_fixture_1/inspiration/media")
         #expect(!questioning.isComplete)
 
+        // 🔴 A LOOK-anchored source names the SAME per-consult read route as an
+        // upload. `imageReadEndpoint` is a typed contract — whatever it carries
+        // must answer `{ url, expiresInSeconds }` — and it used to fork here and
+        // point at `/api/v1/looks/{id}`, which answers a look DTO. That is B4:
+        // the likes/dislikes step with nothing on screen.
+        let lookSourced = try decode(
+            ConsultInspirationStateResponse.self, key: "inspirationLookSourceQuestion"
+        ).inspiration
+        let lookSource = try #require(lookSourced.source)
+        #expect(lookSource.source == "PLATFORM_LOOK")
+        #expect(lookSource.lookPostId == "look_fixture_1")
+        #expect(lookSource.imageAvailable)
+        #expect(lookSource.useExpiresAt == nil)
+        #expect(lookSource.imageReadEndpoint == source.imageReadEndpoint)
+
         let texting = try decode(
             ConsultInspirationStateResponse.self, key: "inspirationTextQuestion"
         ).inspiration

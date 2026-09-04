@@ -145,9 +145,16 @@ private actor MockConsultService: ConsultServicing {
         return try inspirationState()
     }
 
+    /// When set, the image read throws it — the server-side half of B4 (a
+    /// route that refuses, or a contract the client will not follow).
+    var inspirationImageError: Error?
+    private(set) var inspirationImageReads = 0
+
     func inspirationImage(consultId: String,
                           readEndpoint: String) async throws -> ConsultInspirationSignedRead {
-        try decode(ConsultInspirationSignedRead.self, value: [
+        inspirationImageReads += 1
+        if let inspirationImageError { throw inspirationImageError }
+        return try decode(ConsultInspirationSignedRead.self, value: [
             "url": "https://storage.test/signed/inspiration.jpg?token=read",
             "expiresInSeconds": 600,
         ])
@@ -557,6 +564,72 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
         #expect(model.failure == .hidden)
         #expect(model.machine.consultId == nil)
     }
+
+    /// Drives a model as far as an ATTACHED inspiration source, which is the
+    /// only state in which the image panel renders.
+    private func modelAtInspiration(
+        _ service: MockConsultService
+    ) async throws -> ConsultFlowViewModel {
+        let model = ConsultFlowViewModel(
+            anchor: .booking("booking_fixture_1"),
+            professionalId: "cmq9p645v0002jp04fttoatlq",
+            service: service
+        )
+        await model.start()
+        for kind in [ConsultAgreementKind.sensitiveDataConsent, .adult18PlusAttestation] {
+            let requirement = try #require(model.agreementState?.requirements.first {
+                $0.kind == kind
+            })
+            await model.accept(requirement)
+        }
+        let questions = try #require(model.intakeState?.questionPack.questions)
+        for question in questions where question.requirement == .required
+            && model.answers[question.key] == nil {
+            model.selectAnswer(
+                questionKey: question.key,
+                value: try #require(question.options.first?.value)
+            )
+        }
+        await model.submitIntake()
+        await model.uploadInspirationPhoto(Data("inspiration".utf8))
+        #expect(model.inspirationState?.source?.imageAvailable == true)
+        return model
+    }
+
+    /// 🔴 B4. A failed image read is a SURFACED failure, not "no image":
+    /// `.failed` is what puts "we couldn't load your inspiration photo" and a
+    /// Retry in front of the client. It used to be swallowed into `nil`, which
+    /// the panel could not tell apart from having nothing to show.
+    @Test func aFailedInspirationImageReadIsSurfacedNotSwallowed() async throws {
+        let service = MockConsultService(root: try fixtureRoot())
+        let model = try await modelAtInspiration(service)
+        #expect(await model.inspirationImage() == .ready(
+            try #require(URL(string: "https://storage.test/signed/inspiration.jpg?token=read"))
+        ))
+
+        let refusing = MockConsultService(root: try fixtureRoot())
+        await refusing.setInspirationImageErrorForTest(ConsultClientFailure.contractMismatch)
+        let refused = try await modelAtInspiration(refusing)
+        #expect(await refused.inspirationImage() == .failed)
+        // One read per call — a failure schedules no retry of its own.
+        #expect(await refusing.inspirationImageReads == 1)
+        #expect(await refused.inspirationImage() == .failed)
+        #expect(await refusing.inspirationImageReads == 2)
+    }
+
+    /// No source attached → nothing to show, and nothing to report. The panel
+    /// does not render at all in this state.
+    @Test func anAbsentInspirationSourceIsUnavailableNotFailed() async throws {
+        let service = MockConsultService(root: try fixtureRoot())
+        let model = ConsultFlowViewModel(
+            anchor: .booking("booking_fixture_1"),
+            professionalId: "cmq9p645v0002jp04fttoatlq",
+            service: service
+        )
+        await model.start()
+        #expect(await model.inspirationImage() == .unavailable)
+        #expect(await service.inspirationImageReads == 0)
+    }
 }
 
 private extension MockConsultService {
@@ -566,5 +639,9 @@ private extension MockConsultService {
 
     func setCreateErrorForTest(_ error: Error) {
         createError = error
+    }
+
+    func setInspirationImageErrorForTest(_ error: Error?) {
+        inspirationImageError = error
     }
 }

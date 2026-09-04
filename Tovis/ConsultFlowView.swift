@@ -1003,6 +1003,9 @@ private struct ConsultInspirationImagePanel: View {
 
     @State private var url: URL?
     @State private var failed = false
+    /// Bumped by Retry so the `.task` re-runs. A FAILURE never bumps it — the
+    /// panel waits for the client, it does not re-request on its own.
+    @State private var attempt = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1024,11 +1027,28 @@ private struct ConsultInspirationImagePanel: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Your inspiration photo — tap to zoom")
+            } else if failed {
+                // Surfaced, not silent: the client is being asked what she
+                // liked about a photo, so she has to be told when we cannot
+                // put it in front of her — and given a way to try again.
+                BrandSurface {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("We couldn’t load your inspiration photo.")
+                            .font(BrandFont.body(14, .semibold))
+                            .foregroundStyle(BrandColor.textPrimary)
+                        Text("Answer these questions with the photo in front of you — tap retry, and if it still won’t load, go back a step and pick it again.")
+                            .font(BrandFont.body(12))
+                            .foregroundStyle(BrandColor.textSecondary)
+                        Button("Retry") { attempt += 1 }
+                            .font(BrandFont.body(13, .semibold))
+                            .foregroundStyle(BrandColor.accent)
+                            .accessibilityIdentifier("consult-inspiration-image-retry")
+                    }
+                }
+                .accessibilityIdentifier("consult-inspiration-image-error")
             } else {
                 BrandSurface {
-                    Text(failed
-                         ? "Your inspiration photo could not be loaded right now."
-                         : "Loading your inspiration photo…")
+                    Text("Loading your inspiration photo…")
                         .font(BrandFont.body(13))
                         .foregroundStyle(BrandColor.textSecondary)
                 }
@@ -1043,13 +1063,24 @@ private struct ConsultInspirationImagePanel: View {
                 .foregroundStyle(BrandColor.textMuted)
         }
         .accessibilityIdentifier("consult-inspiration-image")
-        .task(id: questionKey) {
-            // Refetch per question so the short-lived signed URL is renewed
-            // before it can expire mid-questionnaire (the model caches it and
-            // only hits the network when it is close to stale).
-            let fetched = await model.inspirationImageURL()
-            url = fetched
-            failed = fetched == nil
+        .task(id: "\(questionKey)#\(attempt)") {
+            // Refetch per question (and on Retry) so the short-lived read URL
+            // is renewed before it can expire mid-questionnaire — the model
+            // caches it and only hits the network when it is close to stale.
+            switch await model.inspirationImage() {
+            case let .ready(fetched):
+                url = fetched
+                failed = false
+            case .failed:
+                url = nil
+                failed = true
+            case .unavailable:
+                // The panel only renders when `imageAvailable` is true, so
+                // this is a source that went away mid-flow: no image, and
+                // nothing broken to report.
+                url = nil
+                failed = false
+            }
         }
     }
 }

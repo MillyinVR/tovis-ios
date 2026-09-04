@@ -157,6 +157,51 @@
       "latestReview": null
     }
   },
+  "inspirationLookSourceQuestion": {
+    "ok": true,
+    "inspiration": {
+      "consultId": "consult_fixture_1",
+      "status": "MEDIA_READY",
+      "schemaVersion": 1,
+      "introduction": "An inspiration picture is optional. It can help you and your professional get visually on the same page.",
+      "referenceNote": "Use it as a reference, not a guarantee or something that can be copied directly onto you.",
+      "reflectionPrompt": "A complete look can include color, length, fullness, and styling. Take a moment to choose what actually stands out to you.",
+      "source": {
+        "inspirationId": "inspiration_fixture_look_1",
+        "source": "PLATFORM_LOOK",
+        "lookPostId": "look_fixture_1",
+        "imageReadEndpoint": "/api/v1/client/consult/consult_fixture_1/inspiration/media",
+        "imageAvailable": true,
+        "useExpiresAt": null
+      },
+      "progress": {
+        "currentQuestion": {
+          "key": "favorite_colors",
+          "label": "Which color or colors in this picture are your favorite?",
+          "helpText": null,
+          "kind": "MULTI_SELECT",
+          "options": [
+            {"value":"lightest-pieces","label":"The lightest pieces"},
+            {"value":"darkest-pieces","label":"The darkest pieces"},
+            {"value":"warm-golden","label":"The warm or golden colors"},
+            {"value":"cool-smoky","label":"The cool or smoky colors"},
+            {"value":"copper-red","label":"The copper or red colors"},
+            {"value":"whole-color-mix","label":"The whole mix of colors"},
+            {"value":"not-sure","label":"Not sure"}
+          ],
+          "minSelections": 1,
+          "maxSelections": 4,
+          "allowText": false
+        },
+        "answeredQuestionCount": 0,
+        "specificDetailCount": 0,
+        "requiredSpecificDetailCount": 3,
+        "canComplete": false,
+        "blocker": "QUESTIONS_REMAINING"
+      },
+      "latestReview": null
+    }
+  },
   "inspirationTextQuestion": {
     "ok": true,
     "inspiration": {
