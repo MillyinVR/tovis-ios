@@ -19,6 +19,23 @@ import Foundation
 // run that is roughly a 1-in-800 chance per run, which is frequent enough to read
 // as somebody's bug and rare enough to be dismissed as noise — the worst kind.
 //
+// It recurred on 2026-09-04 in a SECOND shape this file did not spell out, and
+// `main` went red on a PR that touched none of the code involved
+// (`ProMoneyTrailWriteTests.refundNoShowFeeKeyIsStableAcrossRepeatTaps`, run
+// 33832875367): a "the key is stable across repeat taps" test compared two LIVE
+// captures to each other — `#expect(captured == firstKey)` — with no rebuild in
+// sight. That is the same bug wearing different clothes. Two clock readings are
+// two clock readings whether one of them came from the builder or from a second
+// send; the sends were 0.15s apart and the 03:23:00Z boundary landed between
+// them. Six call sites had this shape and are now all pinned.
+//
+// 🔴 So: NEVER compare one captured idempotency key to another captured one with
+// `==`. Compare EACH capture to the derivation it should have produced, pinned to
+// that capture's own bucket. Two keys that are each their own honest derivation
+// of the same inputs are identical within a bucket — which is the invariant the
+// test actually means. (An `!=` between two live captures cannot go falsely red,
+// so those are left alone.)
+//
 // The fix is NOT to loosen the assertion. Read the bucket back off the captured
 // key and pin the rebuild to it: scope, entity, action and the body fingerprint
 // are all still compared byte for byte, and only the clock is taken out of the

@@ -569,19 +569,38 @@ final class CheckoutProductsURLProtocol: URLProtocol {
         let a = [CheckoutProductLineInput(recommendationId: "rp_2", productId: "prod_9", quantity: 2)]
         let b = [CheckoutProductLineInput(recommendationId: "rp_2", productId: "prod_9", quantity: 3)]
 
-        reset(Self.okResponse)
-        _ = try await makeService().saveCheckoutProducts(bookingId: "bkg_1", items: a)
-        let key1 = CheckoutProductsURLProtocol.capturedIdempotencyKey
+        // Each send is compared to the derivation it should have produced, rebuilt in
+        // the bucket that send used — NOT to the other send's key. The key carries a
+        // 60s wall-clock bucket, so two live sends that straddle a boundary differ for
+        // a reason that has nothing to do with the nonce contract; the body nonce is
+        // still compared byte for byte. See `IdempotencyKeyTestSupport`.
+        func expectedKey(matching captured: String, body: Data) -> String? {
+            rebuiltIdempotencyKey(
+                matchingBucketOf: captured,
+                scope: "client-checkout-products", entityId: "bkg_1", action: "save-selection",
+                nonce: idempotencyNonce(body))
+        }
 
         reset(Self.okResponse)
         _ = try await makeService().saveCheckoutProducts(bookingId: "bkg_1", items: a)
-        let key1Again = CheckoutProductsURLProtocol.capturedIdempotencyKey
+        let key1 = try #require(CheckoutProductsURLProtocol.capturedIdempotencyKey)
+        let body1 = try #require(CheckoutProductsURLProtocol.capturedBody)
+        #expect(key1 == expectedKey(matching: key1, body: body1))
+        #expect(idempotencyKeyBucketIsCurrent(key1))
+
+        reset(Self.okResponse)
+        _ = try await makeService().saveCheckoutProducts(bookingId: "bkg_1", items: a)
+        let key1Again = try #require(CheckoutProductsURLProtocol.capturedIdempotencyKey)
+        let body1Again = try #require(CheckoutProductsURLProtocol.capturedBody)
+        // The same selection serializes to the same bytes ⇒ the same nonce ⇒ the same
+        // key within a bucket. Both halves are asserted, neither reads the clock.
+        #expect(body1Again == body1)
+        #expect(key1Again == expectedKey(matching: key1Again, body: body1Again))
 
         reset(Self.okResponse)
         _ = try await makeService().saveCheckoutProducts(bookingId: "bkg_1", items: b)
         let key2 = CheckoutProductsURLProtocol.capturedIdempotencyKey
 
-        #expect(key1 == key1Again)
         #expect(key1 != key2)
     }
 }

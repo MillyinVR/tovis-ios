@@ -101,19 +101,38 @@ final class ReviewsURLProtocol: URLProtocol {
     @Test func submitIdempotencyKeyTracksContent() async throws {
         // Same content within the bucket → same key (dedupe a double-tap); a
         // changed rating/text → fresh key. Mirrors the web nonce contract.
-        reset(Self.reviewOk)
-        _ = try await makeService().submitReview(bookingId: "bkg_1", rating: 5, headline: "A", body: "B")
-        let key1 = ReviewsURLProtocol.capturedIdempotencyKey
+        // Each send is compared to the derivation it should have produced, rebuilt in
+        // the bucket that send used — NOT to the other send's key. The key carries a
+        // 60s wall-clock bucket, so two live sends that straddle a boundary differ for
+        // a reason that has nothing to do with the nonce contract; the body nonce is
+        // still compared byte for byte. See `IdempotencyKeyTestSupport`.
+        func expectedKey(matching captured: String, body: Data) -> String? {
+            rebuiltIdempotencyKey(
+                matchingBucketOf: captured,
+                scope: "client-review", entityId: "bkg_1", action: "create",
+                nonce: idempotencyNonce(body))
+        }
 
         reset(Self.reviewOk)
         _ = try await makeService().submitReview(bookingId: "bkg_1", rating: 5, headline: "A", body: "B")
-        let key1Again = ReviewsURLProtocol.capturedIdempotencyKey
+        let key1 = try #require(ReviewsURLProtocol.capturedIdempotencyKey)
+        let body1 = try #require(ReviewsURLProtocol.capturedBody)
+        #expect(key1 == expectedKey(matching: key1, body: body1))
+        #expect(idempotencyKeyBucketIsCurrent(key1))
+
+        reset(Self.reviewOk)
+        _ = try await makeService().submitReview(bookingId: "bkg_1", rating: 5, headline: "A", body: "B")
+        let key1Again = try #require(ReviewsURLProtocol.capturedIdempotencyKey)
+        let body1Again = try #require(ReviewsURLProtocol.capturedBody)
+        // Identical content serializes to identical bytes ⇒ the same nonce ⇒ the same
+        // key within a bucket. Both halves are asserted, neither reads the clock.
+        #expect(body1Again == body1)
+        #expect(key1Again == expectedKey(matching: key1Again, body: body1Again))
 
         reset(Self.reviewOk)
         _ = try await makeService().submitReview(bookingId: "bkg_1", rating: 4, headline: "A", body: "B")
         let key2 = ReviewsURLProtocol.capturedIdempotencyKey
 
-        #expect(key1 == key1Again)
         #expect(key1 != key2)
     }
 
