@@ -1162,6 +1162,15 @@ struct LevelCoach: ShotCoach {
 /// colour of the LIGHT rather than the colour of the client's top. The
 /// thresholds are unchanged — they were guessed against a confounded signal and
 /// are re-measured in the salon pass, on this cleaner one.
+///
+/// **A nil signal is silence, not a neutral guess, and that is load-bearing**
+/// (B3). On a skin-filled close-up — eyes and brows edge to edge — there is too
+/// little background left to read the light off, so `FrameMath.colorSignal`
+/// returns nil rather than falling back to the whole frame and reporting the
+/// client's own skin as a warm room. The early return below is what turns that
+/// into "say nothing about the light on this shot": no `.colorWarm` line, and
+/// no 0.6 dragging the readiness ring off green under perfectly neutral light.
+/// Do not replace it with a partial score — there is nothing to score.
 struct ColorCoach: ShotCoach {
     let category: CoachCategory = .color
 

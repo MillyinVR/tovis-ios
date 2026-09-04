@@ -38,15 +38,50 @@ import Testing
         warmth: Double = 0.15,
         tilt: Double = 0.0,
         clutter: Double = 0.0,
-        fill: Double = 0.5
+        fill: Double = 0.5,
+        color: ColorSignal?? = nil  // outer nil = "build one from mixed/warmth"
     ) -> FrameContext {
         FrameContext(
             avgLuma: luma, faceBounds: face, faceLuma: faceLuma ?? luma,
             backgroundLuma: backgroundLuma, sharpness: sharpness,
             backgroundClutter: clutter, subjectFill: fill, pose: pose, deviceTilt: tilt,
-            color: ColorSignal(mixed: mixed, greenTint: 0, warmth: warmth),
+            color: color ?? ColorSignal(mixed: mixed, greenTint: 0, warmth: warmth),
             expectations: .portrait
         )
+    }
+
+    // MARK: - The skin-filled close-up (B3)
+
+    /// Eyes and brows filling the frame under NEUTRAL light. There is too
+    /// little background left to read the colour of the light off, so
+    /// `FrameMath.colorSignal` hands the coach nil. The ring has to be able to
+    /// go green anyway — before this, the whole-frame fallback measured the
+    /// client's skin, `ColorCoach` fired the warm-light line at 0.6, and the
+    /// close-up could never reach `readyThreshold` however good it was.
+    @Test func aCloseUpWithNoMeasurableLightSignalStillReachesGreen() {
+        let unmeasurable = CoachAggregate.evaluate(
+            coaches, ctx(fill: 0.97, color: .some(nil)))
+        #expect(unmeasurable.readiness >= CoachTuning.readyThreshold)
+        #expect(unmeasurable.statuses.first { $0.category == .color }?.score == 1.0)
+        #expect(unmeasurable.statuses.first { $0.category == .color }?.message == nil)
+
+        // The old behaviour, for contrast: the same frame with the whole-frame
+        // warmth the fallback used to hand over.
+        let skinReadAsRoom = CoachAggregate.evaluate(
+            coaches,
+            ctx(warmth: CoachTuning.warmCastWarmth + 0.1, fill: 0.97))
+        #expect(skinReadAsRoom.statuses.first { $0.category == .color }?.score == 0.6)
+        #expect(skinReadAsRoom.readiness < unmeasurable.readiness)
+    }
+
+    /// The nil is silence, not blanket permission: a frame that DOES have
+    /// background to read, and reads warm off it, still says so.
+    @Test func aMeasurableWarmRoomStillFiresTheWarmLightLine() {
+        let warmRoom = CoachAggregate.evaluate(
+            coaches, ctx(warmth: CoachTuning.warmCastWarmth + 0.1))
+        let color = warmRoom.statuses.first { $0.category == .color }
+        #expect(color?.score == 0.6)
+        #expect(color?.moment == .colorWarm)
     }
 
     // MARK: - Ceiling
