@@ -275,11 +275,28 @@ public final class TovisClient: Sendable {
 
     /// A URLSession that neither stores nor sends cookies — keeps native auth
     /// truly cookieless so the backend's Origin-check exemption always applies.
+    ///
+    /// 🔴 The timeout is set EXPLICITLY, and 60 was never a considered choice —
+    /// it is `URLSessionConfiguration.default`'s value, which nothing here had
+    /// ever overridden. `timeoutIntervalForRequest` is measured from the last
+    /// byte received, and the server sends nothing until a response is ready,
+    /// so it is a hard ceiling on how long any single request may take.
+    ///
+    /// That ceiling silently broke the consult analysis. The analysis request
+    /// blocked for the whole run — measured at 5.5s + 5-8.6s + 29-90s+, i.e.
+    /// past 60s on a typical run and far past it on a slow one — so the app
+    /// timed out and showed a failure while the server went on to succeed. P4b
+    /// removes the cause (the analysis is a background job; the start request
+    /// returns in well under a second), and this raises the ceiling anyway:
+    /// a short request must not sit one slow network away from a limit nobody
+    /// picked. 120 matches SessionUploadQueue, the one place that had already
+    /// hit this and set its own.
     private static func makeCookielessSession() -> URLSession {
         let configuration = URLSessionConfiguration.default
         configuration.httpCookieStorage = nil
         configuration.httpShouldSetCookies = false
         configuration.httpCookieAcceptPolicy = .never
+        configuration.timeoutIntervalForRequest = 120
         return URLSession(configuration: configuration)
     }
 
