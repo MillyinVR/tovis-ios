@@ -413,7 +413,14 @@ struct ConsultGuidedCaptureView: View {
             let source = try await camera.capturePhoto()
             await finish(source)
         } catch {
-            guard !Task.isCancelled else { return }
+            // Nothing cancels this task any more, so a failure here is a real
+            // camera failure. It gets a line either way: a shutter press that
+            // produces neither a photograph nor a word is the failure this
+            // whole change exists to remove.
+            ConsultCaptureTelemetry.queue(
+                "camera_capture_failed shot=\(shot.key.rawValue) cancelled=\(Task.isCancelled)",
+                level: .error
+            )
             machine.requestRetake("The camera didn’t finish that photo. Please try again.")
         }
         captureTask = nil
@@ -438,7 +445,14 @@ struct ConsultGuidedCaptureView: View {
     private func finish(_ source: Data) async {
         switch await pipeline.process(source, expectations: expectations) {
         case let .accepted(jpeg):
-            guard !Task.isCancelled, machine.phase != .cancelled else { return }
+            // 🔴 No cancellation guard, deliberately. This used to read
+            // `guard !Task.isCancelled, machine.phase != .cancelled else { return }`,
+            // and combined with `tearDown()` cancelling `captureTask` it meant
+            // dismissing the camera in the moment after the shutter fired threw
+            // the photograph away — silently, in RAM, with nothing logged. Once
+            // the shutter has fired the shot is OWED: `onJPEG` persists it to
+            // the vault and `ConsultCaptureUploadQueue` finishes it whether or
+            // not this view still exists.
             await onJPEG(jpeg)
             machine.delivered()
             dismiss()
@@ -447,24 +461,49 @@ struct ConsultGuidedCaptureView: View {
         case .invalid:
             machine.requestRetake("That image couldn’t be prepared as a private JPEG. Try another photo.")
         case .cancelled:
-            break
+            // Unreachable now that nothing cancels the capture task — which is
+            // exactly why it is logged rather than swallowed. A silent `break`
+            // here is how a shot used to disappear; if this line ever appears,
+            // something has started cancelling again.
+            ConsultCaptureTelemetry.queue(
+                "pipeline_cancelled shot=\(shot.key.rawValue)", level: .error
+            )
         }
     }
 
+    /// Close the camera. It does NOT cancel a capture already under way — see
+    /// `finish`. Backing out before pressing the shutter takes nothing with it;
+    /// backing out after is not a way to un-take a photograph.
     private func cancel() {
-        machine.cancel()
-        captureTask?.cancel()
-        captureTask = nil
-        Task { await pipeline.discard() }
+        if machine.phase != .capturing { machine.cancel() }
         dismiss()
     }
 
+    /// Stop the hardware. The capture task is deliberately left running.
+    ///
+    /// 🔴 This used to `captureTask?.cancel()` and `pipeline.discard()`, which is
+    /// precisely the prod failure: `.onDisappear` fires the instant the sheet
+    /// begins dismissing, so a shot taken and then dismissed was cancelled
+    /// mid-chain and vanished. The coach is this view's to stop; the photograph
+    /// is not this view's to drop.
+    ///
+    /// ⚠️ And the camera is stopped only AFTER any in-flight capture finishes.
+    /// `CameraController.stop()` calls `stopRunning()` on the session, which
+    /// aborts a photo AVFoundation has not delivered yet — so stopping it here
+    /// unconditionally would have re-created the same lost shot through a
+    /// different door, after the cancellation was removed. `pending` is nil in
+    /// the ordinary case and this is then the same immediate stop it always was.
     private func tearDown() {
-        camera.stop()
         coach?.stop()
-        captureTask?.cancel()
-        captureTask = nil
-        Task { await pipeline.discard() }
+        let pending = captureTask
+        if pending != nil {
+            ConsultCaptureTelemetry.queue("view_dismissed_mid_capture shot=\(shot.key.rawValue)")
+        }
+        let controller = camera
+        Task {
+            await pending?.value
+            controller.stop()
+        }
     }
 }
 

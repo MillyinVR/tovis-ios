@@ -60,7 +60,14 @@ struct ConsultFlowView: View {
                 }
             }
             .task {
-                guard model == nil else { return }
+                guard model == nil else {
+                    // Coming BACK to this screen. The durable queue may have
+                    // finished legs while it was gone — in another process,
+                    // even — so the served slot state is re-read rather than
+                    // trusted from whenever this view last saw it.
+                    await model?.refreshCapture()
+                    return
+                }
                 let created = ConsultFlowViewModel(
                     anchor: anchor,
                     professionalId: professionalId,
@@ -272,7 +279,14 @@ struct ConsultFlowView: View {
                         shot: shot,
                         slot: slot,
                         thumbnail: model.localThumbnails[shot.key],
-                        busy: model.processingShot == shot.key,
+                        // Where the DURABLE queue has got to with this slot.
+                        // Nil means it owes nothing and the served slot state is
+                        // the whole story; anything else outranks the served
+                        // state, because the queue knows about a shot the server
+                        // has not been told about yet.
+                        queueStage: model.captureStage(for: shot.key),
+                        queueBlockedReason: model.captureBlockedReason(for: shot.key),
+                        queueStalled: model.uploads.stalled,
                         disabled: model.busy,
                         onJPEG: { data in await model.submitPhoto(data, for: shot) },
                         onThumbnailTap: { image in
@@ -281,10 +295,17 @@ struct ConsultFlowView: View {
                     )
                 }
                 chartCopyToggle(model, capture: capture)
+                if let queueMessage = model.captureQueueMessage {
+                    Text(queueMessage)
+                        .font(BrandFont.body(12))
+                        .foregroundStyle(BrandColor.amber)
+                }
                 if model.canRetryPhoto {
-                    Button("Retry the private upload") { Task { await model.retryPhoto() } }
-                        .font(BrandFont.body(14, .semibold))
-                        .foregroundStyle(BrandColor.accent)
+                    Button("Try sending your photos again") {
+                        Task { await model.retryPhoto() }
+                    }
+                    .font(BrandFont.body(14, .semibold))
+                    .foregroundStyle(BrandColor.accent)
                 }
                 Text("\(model.acceptedShotCount) / \(model.totalShotCount) photos accepted")
                     .font(BrandFont.mono(10))
@@ -852,7 +873,13 @@ private struct ConsultPhotoPickerSlot: View {
     let shot: ConsultCaptureShot
     let slot: ConsultCaptureSlot?
     let thumbnail: UIImage?
-    let busy: Bool
+    /// Where the durable queue has got to with this slot, if it owes anything.
+    let queueStage: ConsultCaptureStage?
+    /// The server's refusal for this slot, when retrying cannot fix it.
+    let queueBlockedReason: String?
+    /// Whether the queue's last attempt actually failed and it is backing off —
+    /// the difference between "sending" and "waiting on a connection".
+    let queueStalled: Bool
     let disabled: Bool
     let onJPEG: (Data) async -> Void
     let onThumbnailTap: (UIImage) -> Void
@@ -873,11 +900,19 @@ private struct ConsultPhotoPickerSlot: View {
                                 .font(BrandFont.body(16, .semibold))
                                 .foregroundStyle(BrandColor.textPrimary)
                             Spacer()
-                            status
+                            statusBadge
                         }
                         Text(shot.instruction)
                             .font(BrandFont.body(13))
                             .foregroundStyle(BrandColor.textSecondary)
+                        if let statusDetail {
+                            Text(statusDetail)
+                                .font(BrandFont.body(12))
+                                .foregroundStyle(
+                                    status == .couldNotSend
+                                        ? BrandColor.ember : BrandColor.textMuted
+                                )
+                        }
                     }
                     if let thumbnail {
                         Button { onThumbnailTap(thumbnail) } label: {
@@ -982,25 +1017,109 @@ private struct ConsultPhotoPickerSlot: View {
         }
     }
 
+    /// What this slot HONESTLY is.
+    ///
+    /// 🔴 The old version had three outcomes — Passed, Retake, and "Required"
+    /// for everything else — so a photograph that had been taken and was still
+    /// working its way to the server read as one that had never been taken.
+    /// That is what made the prod failure invisible to the client: she was told
+    /// to do again the thing she had already done.
+    ///
+    /// The queue's own stage OUTRANKS the served slot state whenever it has
+    /// one, because the queue knows about a shot the server has not been told
+    /// about yet. "Required" is now reachable only when the queue owes nothing
+    /// for this slot AND the server has nothing for it either.
+    private enum SlotStatus {
+        case uploading
+        case waiting
+        case checking
+        case passed
+        case retake
+        case couldNotSend
+        case required
+    }
+
+    private var status: SlotStatus {
+        if queueBlockedReason != nil { return .couldNotSend }
+        switch queueStage {
+        case .queued, .ticketed, .transferring:
+            return queueStalled ? .waiting : .uploading
+        case .uploaded, .attached:
+            return .checking
+        case .blocked:
+            return .couldNotSend
+        case .checked, .released, .backoff, .viewDismissed, .none:
+            break
+        }
+        switch slot?.state {
+        case .accepted: return .passed
+        case .rejected: return .retake
+        // UPLOADED means the server holds bytes with no verdict yet — a shot in
+        // the middle of the chain, never an empty slot.
+        case .uploaded: return .checking
+        default: return .required
+        }
+    }
+
     @ViewBuilder
-    private var status: some View {
-        if busy {
-            ProgressView().tint(BrandColor.accent)
-        } else {
-            switch slot?.state {
-            case .accepted:
-                Label("Passed", systemImage: "checkmark.circle.fill")
-                    .font(BrandFont.body(12, .semibold))
-                    .foregroundStyle(BrandColor.emerald)
-            case .rejected:
-                Label("Retake", systemImage: "arrow.clockwise.circle.fill")
-                    .font(BrandFont.body(12, .semibold))
-                    .foregroundStyle(BrandColor.amber)
-            default:
-                Text("Required")
-                    .font(BrandFont.body(11, .semibold))
-                    .foregroundStyle(BrandColor.textMuted)
+    private var statusBadge: some View {
+        switch status {
+        case .uploading:
+            inlineStatus("Uploading", icon: "arrow.up.circle.fill",
+                         tone: BrandColor.accent, spinning: true)
+        case .waiting:
+            inlineStatus("Uploading", icon: "wifi.exclamationmark",
+                         tone: BrandColor.amber, spinning: false)
+        case .checking:
+            inlineStatus("Checking", icon: "hourglass",
+                         tone: BrandColor.accent, spinning: true)
+        case .passed:
+            inlineStatus("Passed", icon: "checkmark.circle.fill",
+                         tone: BrandColor.emerald, spinning: false)
+        case .retake:
+            inlineStatus("Retake", icon: "arrow.clockwise.circle.fill",
+                         tone: BrandColor.amber, spinning: false)
+        case .couldNotSend:
+            inlineStatus("Couldn’t send", icon: "exclamationmark.triangle.fill",
+                         tone: BrandColor.ember, spinning: false)
+        case .required:
+            Text("Required")
+                .font(BrandFont.body(11, .semibold))
+                .foregroundStyle(BrandColor.textMuted)
+        }
+    }
+
+    private func inlineStatus(
+        _ title: String, icon: String, tone: Color, spinning: Bool
+    ) -> some View {
+        HStack(spacing: 5) {
+            if spinning {
+                ProgressView().controlSize(.mini).tint(tone)
+            } else {
+                Image(systemName: icon).font(.system(size: 12, weight: .semibold))
             }
+            Text(title)
+        }
+        .font(BrandFont.body(12, .semibold))
+        .foregroundStyle(tone)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(shot.title): \(title)")
+    }
+
+    /// The sentence under the title when the badge alone would leave her
+    /// guessing. Silence is the right answer for the ordinary states.
+    private var statusDetail: String? {
+        switch status {
+        case .waiting:
+            return "Waiting for a connection — this keeps trying on its own, even if you close this screen."
+        case .uploading:
+            return "Sending — you can keep going; this finishes on its own."
+        case .checking:
+            return "Checking this photo."
+        case .couldNotSend:
+            return queueBlockedReason
+        case .passed, .retake, .required:
+            return nil
         }
     }
 }

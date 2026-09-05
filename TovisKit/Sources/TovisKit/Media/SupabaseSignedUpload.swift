@@ -14,20 +14,27 @@ public enum SupabaseSignedUpload {
     /// Upload only to the exact short-lived URL minted by the server, after
     /// proving it belongs to this build's configured Supabase origin and carries
     /// the token returned in the same response.
-    static func putSignedURL(
-        session: URLSession,
+    ///
+    /// The RLS contract is shaped ONCE, here, and both the foreground
+    /// `putSignedURL` below and the durable queue's BACKGROUND upload task go
+    /// through it — so "must be PUT, apikey only, no bearer, no upsert" is
+    /// stated in one place rather than copied into the queue.
+    ///
+    /// ⚠️ The returned request deliberately carries NO `httpBody`. A background
+    /// `URLSession` rejects a request with an in-memory body and must be given
+    /// `fromFile:`; the foreground caller attaches its own body.
+    public static func signedURLUploadRequest(
         supabaseURL: URL?,
         supabaseKey: String?,
         signedURL: URL,
         expectedToken: String,
-        data: Data,
         contentType: String
-    ) async throws {
+    ) throws -> URLRequest {
         guard let supabaseURL, let supabaseKey,
               signedURL.scheme == supabaseURL.scheme,
               signedURL.host == supabaseURL.host,
               signedURL.port == supabaseURL.port,
-              signedURL.path.hasPrefix("/storage/v1/object/upload/sign/"),
+              signedURL.path.hasPrefix("/" + uploadSignPrefix),
               URLComponents(url: signedURL, resolvingAgainstBaseURL: false)?
                 .queryItems?.contains(where: { $0.name == "token" && $0.value == expectedToken }) == true else {
             throw ConsultClientFailure.contractMismatch
@@ -38,6 +45,25 @@ public enum SupabaseSignedUpload {
         request.setValue(supabaseKey, forHTTPHeaderField: "apikey")
         request.setValue(contentType, forHTTPHeaderField: "Content-Type")
         request.setValue("false", forHTTPHeaderField: "x-upsert")
+        return request
+    }
+
+    static func putSignedURL(
+        session: URLSession,
+        supabaseURL: URL?,
+        supabaseKey: String?,
+        signedURL: URL,
+        expectedToken: String,
+        data: Data,
+        contentType: String
+    ) async throws {
+        var request = try signedURLUploadRequest(
+            supabaseURL: supabaseURL,
+            supabaseKey: supabaseKey,
+            signedURL: signedURL,
+            expectedToken: expectedToken,
+            contentType: contentType
+        )
         request.httpBody = data
 
         let response: URLResponse

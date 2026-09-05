@@ -1432,6 +1432,13 @@ struct RootView: View {
                     let uploads = SessionUploadQueue.shared
                     uploads.onMediaConfirmed = { session.signalRefresh() }
                     uploads.configure(client: session.client)
+                    // The CLIENT's consult capture chain has the same custody
+                    // problem and the same answer (P2d). Configured at the same
+                    // root and for the same reason: a consult photo must keep
+                    // going after the camera closes, after the flow closes, and
+                    // after a relaunch that finished a transfer we started in a
+                    // previous process.
+                    ConsultCaptureUploadQueue.shared.configure(client: session.client)
                 }
             }
         }

@@ -16,7 +16,10 @@ final class ConsultFlowViewModel {
     private(set) var results: ConsultClientResults?
     private(set) var answers: [String: String] = [:]
     private(set) var busy = false
-    private(set) var processingShot: ConsultCaptureShotKey?
+    /// The durable owner of every shot this flow has taken. `.shared` in the
+    /// app — one queue for the whole process, deliberately outliving every
+    /// flow — and injectable so tests can drive it without a live client.
+    @ObservationIgnored let uploads: ConsultCaptureUploadQueue
     private(set) var failure: ConsultClientFailure?
     private(set) var teaserTapped = false
     /// Local previews of this session's uploads. Rejected photos are purged
@@ -28,24 +31,25 @@ final class ConsultFlowViewModel {
     @ObservationIgnored private let service: any ConsultServicing
     @ObservationIgnored private var intakeIdempotencyKey = UUID().uuidString
     @ObservationIgnored private var analysisIdempotencyKey = UUID().uuidString
-    @ObservationIgnored private var pendingPhoto: PendingPhoto?
+    /// The tail of the serial queue `perform` forms. Nil when nothing is running.
+    @ObservationIgnored private var performTail: Task<Void, Never>?
     /// P4b: the live-run poll. Nil whenever nothing is being polled.
     @ObservationIgnored private var pollTask: Task<Void, Never>?
     // Signed read URL for the inspiration image; short-lived, so refreshed
     // shortly before expiry instead of per render.
     @ObservationIgnored private var inspirationImageCache: (url: URL, expiresAt: Date)?
 
-    private struct PendingPhoto {
-        let shot: ConsultCaptureShot
-        let data: Data
-        let keys: ConsultCaptureMutationKeys
-    }
-
     init(anchor: ConsultAnchor, professionalId: String,
-         service: any ConsultServicing) {
+         service: any ConsultServicing,
+         // Optional rather than `= .shared`: a default argument is evaluated in
+         // a NONISOLATED context, and reading a main-actor static from there is
+         // an error in the Swift 6 language mode. Resolved in the body instead,
+         // which is main-actor isolated like the rest of this type.
+         uploads: ConsultCaptureUploadQueue? = nil) {
         machine = ConsultFlowMachine(anchor: anchor)
         self.professionalId = professionalId
         self.service = service
+        self.uploads = uploads ?? .shared
     }
 
     var stage: ConsultFlowStage { machine.stage }
@@ -121,7 +125,33 @@ final class ConsultFlowViewModel {
             ?? questions.first { answers[$0.key] == nil }
     }
 
-    var canRetryPhoto: Bool { pendingPhoto != nil && !busy }
+    /// Whether anything is owed that a tap could usefully retry. True while the
+    /// queue is stalled on a connection as well as when a shot was refused —
+    /// both are states the client can act on, and neither is `busy`.
+    var canRetryPhoto: Bool {
+        guard let consultId = machine.consultId, uploads.owesAnything(consultId: consultId)
+        else { return false }
+        return uploads.stalled || uploads.hasBlocked(consultId: consultId)
+    }
+
+    /// What the queue is saying about this consult right now, for the one line
+    /// under the checklist. Nil when everything is healthy.
+    var captureQueueMessage: String? {
+        guard let consultId = machine.consultId,
+              uploads.owesAnything(consultId: consultId) else { return nil }
+        return uploads.statusMessage
+    }
+
+    /// Where the queue has got to with one slot, if it owes anything for it.
+    func captureStage(for shotKey: ConsultCaptureShotKey) -> ConsultCaptureStage? {
+        guard let consultId = machine.consultId else { return nil }
+        return uploads.stage(consultId: consultId, shotKey: shotKey)
+    }
+
+    func captureBlockedReason(for shotKey: ConsultCaptureShotKey) -> String? {
+        guard let consultId = machine.consultId else { return nil }
+        return uploads.blockedReason(consultId: consultId, shotKey: shotKey)
+    }
 
     var inspirationDone: Bool { inspirationState?.isComplete ?? false }
 
@@ -144,6 +174,7 @@ final class ConsultFlowViewModel {
     // pro), so entry carries no device-side copy of the founder gate. The one
     // local check left is the booking/pro pairing contract.
     func start() async {
+        bindUploads()
         await perform {
             // Create-or-resume, on the SERVER, for both anchors: asking twice
             // returns the SAME consult rather than a second one.
@@ -195,7 +226,7 @@ final class ConsultFlowViewModel {
                 consultId: consultId,
                 acceptanceId: acceptance.id
             )
-            pendingPhoto = nil
+            uploads.discardAll(consultId: consultId)
             localThumbnails = [:]
             inspirationImageCache = nil
             agreementState = state
@@ -370,15 +401,45 @@ final class ConsultFlowViewModel {
         }
     }
 
+    /// Hand one shot to the durable queue.
+    ///
+    /// 🔴 This does NOT run the upload chain, and that is the whole of P2d. The
+    /// bytes are written to `SessionByteVault` before this returns, and
+    /// `ConsultCaptureUploadQueue` owns them from there — through the camera
+    /// being dismissed, the app being backgrounded, and the process being
+    /// killed. There is deliberately no `perform` here either: `perform`'s
+    /// `guard !busy` silently DROPPED a second shot fired while the first was in
+    /// flight, and a queue exists precisely so a second shot is queued instead.
     func submitPhoto(_ data: Data, for shot: ConsultCaptureShot) async {
-        pendingPhoto = PendingPhoto(shot: shot, data: data, keys: ConsultCaptureMutationKeys())
-        // Decode the reviewable thumbnail before the upload: a rejected photo
-        // is purged server-side instantly, so this local copy is the only way
-        // to look at what the quality check refused.
+        guard let consultId = machine.consultId, let pack = captureState?.shotPack else {
+            failure = .invalidState
+            return
+        }
+        // Decode the reviewable thumbnail first: a rejected photo is purged
+        // server-side instantly, so this local copy is the only way to look at
+        // what the quality check refused.
         if let thumbnail = await ImageDownsample.thumbnail(from: data, maxPixel: 432) {
             localThumbnails[shot.key] = thumbnail
         }
-        await sendPendingPhoto()
+        guard let item = SessionByteVault.writeConsultCapture(
+            data,
+            consultId: consultId,
+            shotKey: shot.key,
+            shotPackVersion: pack.version,
+            schemaVersion: pack.schemaVersion,
+            capturedAt: Date()
+        ) else {
+            // Nowhere to put the bytes is a real failure, and the one thing that
+            // must never happen quietly — an unwritable vault would put us back
+            // to holding photographs in RAM.
+            ConsultCaptureTelemetry.stage(
+                .queued, outcome: .abandoned, shotKey: shot.key,
+                consultId: consultId, detail: "vault_write_failed"
+            )
+            failure = .invalidPhoto
+            return
+        }
+        uploads.enqueue(item)
     }
 
     /// Records the client's chart-copy choice (default-on but visibly
@@ -392,28 +453,31 @@ final class ConsultFlowViewModel {
         }
     }
 
-    func retryPhoto() async { await sendPendingPhoto() }
+    /// The client asking for one more honest attempt at everything still owed —
+    /// including shots the server refused.
+    func retryPhoto() async {
+        await uploads.retryNow()
+    }
 
-    private func sendPendingPhoto() async {
-        guard let pendingPhoto, let consultId = machine.consultId,
-              let pack = captureState?.shotPack else { return }
-        processingShot = pendingPhoto.shot.key
-        await perform {
-            let response = try await service.uploadAndCheckCapture(
-                consultId: consultId,
-                shot: pendingPhoto.shot,
-                pack: pack,
-                jpegData: pendingPhoto.data,
-                keys: pendingPhoto.keys
-            )
-            self.pendingPhoto = nil
-            captureState = response.capture
-            try machine.apply(capture: response.capture)
-            // The last accepted shot of a complete pack advances the session
-            // server-side; follow it into the analysis stage.
+    /// Re-read capture state from the SERVER after a queue leg lands.
+    ///
+    /// 🔴 A GET, not the mutation's own response. The chain now runs outside
+    /// this object — a leg can complete while the flow is closed, or in a
+    /// process this one never saw — so the server is the only thing that knows
+    /// what the slots actually are. Deliberately outside `perform`: it is
+    /// background work the client did not initiate, so it must not raise the
+    /// spinner or disable her buttons, and a dropped refresh is not a failure
+    /// worth a banner — the next leg, or `refreshCapture` on appear, asks again.
+    func refreshCapture() async {
+        guard let consultId = machine.consultId, machine.stage == .capture else { return }
+        do {
+            let capture = try await service.capture(consultId: consultId)
+            captureState = capture
+            try machine.apply(capture: capture)
             try await loadAnalysisIfEntered(consultId: consultId)
+        } catch {
+            ConsultCaptureTelemetry.queue("state_refresh_failed", level: .warning)
         }
-        processingShot = nil
     }
 
     /// P4b: START the analysis. The request claims it and returns a run in a
@@ -523,6 +587,19 @@ final class ConsultFlowViewModel {
 
     func clearFailure() { failure = nil }
 
+    /// Let the durable queue tell this flow when a leg has landed, so the
+    /// checklist re-reads the server instead of waiting for the client to do
+    /// something. `[weak self]` on purpose: the queue outlives every flow, and a
+    /// strong closure would pin a dismissed one forever. Only the consult on
+    /// screen refreshes — a leg landing for a different consult is the queue's
+    /// business, not this screen's.
+    private func bindUploads() {
+        uploads.onStageCompleted = { [weak self] consultId in
+            guard let self, self.machine.consultId == consultId else { return }
+            Task { await self.refreshCapture() }
+        }
+    }
+
     private func loadCurrentStage(consultId: String) async throws {
         switch machine.stage {
         case .prerequisites, .stopped:
@@ -593,11 +670,43 @@ final class ConsultFlowViewModel {
         teaserTapped = loaded.meCardTeaser.tapped
     }
 
+    /// Run one client-initiated mutation, one at a time, with the spinner up.
+    ///
+    /// 🔴 This used to open `guard !busy else { return }` — a SILENT DROP. A tap
+    /// landing while a slower call was still out simply did nothing: no
+    /// spinner, no error, no line anywhere. That is one of the ways a consult
+    /// photo went missing on prod, and it is the shape of failure this whole
+    /// change exists to remove.
+    ///
+    /// It now QUEUES. Each call takes a ticket at the tail, waits for the one in
+    /// front, then runs — FIFO, on the main actor, with `busy` still driving the
+    /// spinner exactly as before. The difference is that the work happens.
+    ///
+    /// (The capture path no longer comes through here at all — a shot goes
+    /// straight to `ConsultCaptureUploadQueue`. This gate covers the flow's own
+    /// mutations: agreements, intake, inspiration, chart copy, analysis.)
+    ///
+    /// ⚠️ An `operation` must never call `perform` itself: it would queue behind
+    /// its own ticket and wait forever. Nothing does today, and the background
+    /// refreshes (`refreshCapture`, `pollOnce`) deliberately stay outside.
     private func perform(_ operation: () async throws -> Void) async {
-        guard !busy else { return }
+        let ahead = performTail
+        // `mine` finishes when — and only when — this call finishes, so whoever
+        // queues behind it waits for exactly that. An AsyncStream rather than a
+        // continuation because a stream cannot be resumed twice, and because the
+        // operation stays non-escaping this way.
+        let (stream, ticket) = AsyncStream<Void>.makeStream()
+        let mine = Task<Void, Never> { for await _ in stream {} }
+        performTail = mine
+        await ahead?.value
+
         busy = true
         failure = nil
-        defer { busy = false }
+        defer {
+            busy = false
+            ticket.finish()
+            if performTail == mine { performTail = nil }
+        }
         do {
             try await operation()
         } catch {

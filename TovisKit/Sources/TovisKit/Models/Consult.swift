@@ -642,17 +642,19 @@ struct ConsultCaptureStateResponse: Decodable, Sendable {
     let capture: ConsultCaptureState
 }
 
-struct ConsultCaptureUpload: Decodable, Sendable {
-    let uploadSessionId: String
-    let shotKey: ConsultCaptureShotKey
-    let shotPackVersion: Int
-    let schemaVersion: Int
-    let contentType: String
-    let maxBytes: Int
-    let expiresAt: String
-    let rawExpiresAt: String
-    let token: String
-    let signedUrl: String?
+/// One issued upload ticket. Public because the durable capture queue holds it
+/// across a process death — see `ConsultCaptureUploadQueue`.
+public struct ConsultCaptureUpload: Decodable, Sendable {
+    public let uploadSessionId: String
+    public let shotKey: ConsultCaptureShotKey
+    public let shotPackVersion: Int
+    public let schemaVersion: Int
+    public let contentType: String
+    public let maxBytes: Int
+    public let expiresAt: String
+    public let rawExpiresAt: String
+    public let token: String
+    public let signedUrl: String?
 }
 
 struct ConsultCaptureIssueUploadResponse: Decodable, Sendable {
@@ -660,10 +662,10 @@ struct ConsultCaptureIssueUploadResponse: Decodable, Sendable {
     let replayed: Bool
 }
 
-struct ConsultCaptureAttachResponse: Decodable, Sendable {
-    let capture: ConsultCaptureState
-    let captureId: String
-    let replayed: Bool
+public struct ConsultCaptureAttachResponse: Decodable, Sendable {
+    public let capture: ConsultCaptureState
+    public let captureId: String
+    public let replayed: Bool
 }
 
 public struct ConsultCaptureQualityResult: Decodable, Sendable {
@@ -948,7 +950,11 @@ struct ConsultAnalysisStartResponse: Decodable, Sendable {
     let replayed: Bool
 }
 
-public struct ConsultCaptureMutationKeys: Sendable, Equatable {
+/// The three idempotency keys one photo's chain is driven by. `Codable`
+/// because they are PERSISTED beside the bytes: a retry days later must present
+/// the same keys, or the server mints a second upload session and spends a
+/// second paid quality check for the same photograph.
+public struct ConsultCaptureMutationKeys: Sendable, Equatable, Codable {
     public let issue: String
     public let attach: String
     public let quality: String
