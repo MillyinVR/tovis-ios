@@ -60,6 +60,19 @@ const CHECKS = [
 
   // ── Book the Look, B8 — the look-anchored consult and its booking door ──
   { file: 'consultFlow.json', def: 'ConsultLookSessionDTO', pick: (d) => [d.lookSession.consult] },
+
+  // ── P5a — the consult THREAD ────────────────────────────────────────────
+  //
+  // Both the envelope and every MESSAGE, because the message union is where the
+  // shape actually lives: a projection that renamed a field on one kind would
+  // pass an envelope-only check and still leave the device rendering a hole.
+  { file: 'consultFlow.json', def: 'ConsultThreadDTO', pick: (d) => [d.thread.thread] },
+  {
+    file: 'consultFlow.json',
+    def: 'ConsultThreadMessageDTO',
+    pick: (d) => d.thread.thread.messages,
+  },
+  { file: 'consultFlow.json', def: 'ConsultThreadBookCtaDTO', pick: (d) => [d.thread.thread.book] },
   // All four arms: open with an existing session, open with none, the DARK
   // answer that keeps the device's entry point hidden with no reason at all
   // (the founder gate must leak nothing), and a named refusal.

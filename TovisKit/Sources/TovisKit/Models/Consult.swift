@@ -607,6 +607,11 @@ public struct ConsultCaptureSlot: Decodable, Sendable, Identifiable {
     public let state: ConsultCaptureSlotStatus
     public let captureId: String?
     public let qualityReasonCode: String?
+    /// A caveat on an ACCEPTED shot, never a refusal — the server documents it
+    /// as non-null only on an accepted tight-crop shot. Rendered beside a passed
+    /// photo so "we can still use this, but the light was warm" is visible
+    /// without ever reading as a retake.
+    public let qualityWarningCode: String?
     public let retakeTip: String?
     public let rawExpiresAt: String?
     public let purgedAt: String?

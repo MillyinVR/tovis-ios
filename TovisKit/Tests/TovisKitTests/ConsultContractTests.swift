@@ -16,6 +16,80 @@ import Testing
         return try JSONDecoder().decode(T.self, from: JSONSerialization.data(withJSONObject: value))
     }
 
+    /// P5a — the THREAD, decoded off the same fixture the cross-repo contract
+    /// guard validates against the web's generated API schema.
+    ///
+    /// 🔴 The message union is what this exists for. Two different question
+    /// TYPES are served under the same key `question` (the intake pack's on a
+    /// QUESTION message, the inspiration pack's on an INSPIRATION message), so
+    /// `ConsultThreadMessage` decodes both by hand — and a hand-written decoder
+    /// that quietly stopped reading one of them would look exactly like a
+    /// feature that was never built.
+    @Test func decodesTheConsultThread() throws {
+        let thread = try decode(ConsultThreadResponse.self, key: "thread").thread
+
+        #expect(thread.consultId == "consult_fixture_1")
+        #expect(thread.status == .mediaReady)
+        // The pro is NAMED on the wire, honoring her display preference — the
+        // field "help <pro> get ready" needs and no consult DTO carried before.
+        #expect(thread.professionalDisplayName == "Susie")
+
+        // Every kind in the union decodes, and none lands as `.unknown`.
+        let kinds = Set(thread.messages.map(\.kind))
+        #expect(kinds == [.text, .consent, .question, .inspiration, .photoRequest, .plan, .booking])
+        #expect(!thread.messages.contains { $0.kind == .unknown })
+
+        // The resume pointer names a message that is actually in the thread and
+        // actually open — the whole of "reopening resumes at the next step".
+        let open = try #require(thread.messages.first { $0.id == thread.nextOpenMessageId })
+        #expect(open.state == .open)
+
+        // 🔴 BOTH question types come back, off the same wire key.
+        let intakeQuestion = try #require(
+            thread.messages.first { $0.kind == .question }?.question
+        )
+        #expect(!intakeQuestion.options.isEmpty)
+        let inspiration = try #require(thread.messages.first { $0.kind == .inspiration })
+        #expect(inspiration.inspirationQuestion != nil)
+        #expect(inspiration.schemaVersion != nil)
+
+        // A photo request carries its shot, its served slot and the versions its
+        // upload must echo.
+        let photo = try #require(thread.messages.first { $0.kind == .photoRequest })
+        #expect(photo.shot != nil)
+        #expect(photo.slot != nil)
+        #expect(photo.shotPackVersion != nil)
+        #expect(photo.schemaVersion != nil)
+
+        // The plan card carries the run AND the results.
+        let plan = try #require(thread.messages.first { $0.kind == .plan })
+        #expect(plan.run != nil)
+        #expect(plan.results?.recommendationDirections.isEmpty == false)
+
+        // The sticky CTA carries what the ORDINARY look-booking path needs, so
+        // the button does not have to go and find it.
+        #expect(thread.book.enabled)
+        #expect(thread.book.serviceId != nil)
+        #expect(thread.book.lookMediaId != nil)
+    }
+
+    /// A build that meets a message kind it has never heard of renders the rest
+    /// of the thread rather than failing the whole decode.
+    @Test func anUnknownThreadMessageKindDecodesAsUnknown() throws {
+        var envelope = try #require(try root()["thread"] as? [String: Any])
+        var thread = try #require(envelope["thread"] as? [String: Any])
+        var messages = try #require(thread["messages"] as? [[String: Any]])
+        messages.append([
+            "kind": "ZOOM_CARD", "id": "zoom:1", "author": "APP", "state": "OPEN",
+        ])
+        thread["messages"] = messages
+        envelope["thread"] = thread
+
+        let decoded = try decode(ConsultThreadResponse.self, value: envelope).thread
+        #expect(decoded.messages.last?.kind == .unknown)
+        #expect(decoded.messages.count == messages.count)
+    }
+
     @Test func decodesEveryC1ThroughC7ClientContract() throws {
         let session = try decode(ConsultSessionResponse.self, key: "session").consult
         #expect(session.status == .consentRequired)

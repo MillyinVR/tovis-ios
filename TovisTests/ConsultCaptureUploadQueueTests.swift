@@ -170,8 +170,12 @@ struct ConsultCaptureUploadQueueTests {
         func acceptAgreement(consultId: String, kind: ConsultAgreementKind,
                              agreementVersionId: String) async throws -> ConsultAgreementState { fail() }
         func revokeAgreement(consultId: String, acceptanceId: String) async throws -> ConsultAgreementState { fail() }
+        func thread(consultId: String) async throws -> ConsultThread { fail() }
         func intake(consultId: String) async throws -> ConsultIntakeState { fail() }
         func submitIntake(consultId: String, state: ConsultIntakeState, answers: [String: String],
+                          idempotencyKey: String) async throws -> ConsultIntakeState { fail() }
+        func submitIntake(consultId: String, packVersion: Int, schemaVersion: Int,
+                          answers: [String: String], complete: Bool,
                           idempotencyKey: String) async throws -> ConsultIntakeState { fail() }
         func inspiration(consultId: String) async throws -> ConsultInspirationState { fail() }
         func skipInspiration(consultId: String, schemaVersion: Int,

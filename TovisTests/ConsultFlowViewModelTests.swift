@@ -12,6 +12,9 @@ private actor MockConsultService: ConsultServicing {
     private var inspirationAnsweredCount = 0
     private var proceededWithPartialPack = false
     private var analysisStarted = false
+    /// The last intake revision this mock accepted, so its thread can render the
+    /// answered questions as history the way the server's projection does.
+    private var latestIntakeAnswers: [String: String] = [:]
     private(set) var captureKeys: [ConsultCaptureMutationKeys] = []
     private(set) var receivedByteCounts: [Int] = []
     private(set) var inspirationUploadByteCounts: [Int] = []
@@ -104,6 +107,20 @@ private actor MockConsultService: ConsultServicing {
     func submitIntake(consultId: String, state: ConsultIntakeState,
                       answers: [String: String], idempotencyKey: String) async throws
         -> ConsultIntakeState {
+        try await submitIntake(
+            consultId: consultId,
+            packVersion: state.questionPack.version,
+            schemaVersion: state.questionPack.schemaVersion,
+            answers: answers,
+            complete: true,
+            idempotencyKey: idempotencyKey
+        )
+    }
+
+    func submitIntake(consultId: String, packVersion: Int, schemaVersion: Int,
+                      answers: [String: String], complete: Bool,
+                      idempotencyKey: String) async throws -> ConsultIntakeState {
+        latestIntakeAnswers = answers
         var value = dictionary("intake", "intake")
         value["status"] = "MEDIA_READY"
         value["latestRevision"] = [
@@ -305,6 +322,7 @@ private actor MockConsultService: ConsultServicing {
     /// way the poll would. Empty means "behave as before".
     private var scriptedRuns: [[String: Any]] = []
     private var analysisError: Error?
+    private var threadError: Error?
     private(set) var analysisReadCount = 0
 
     func setScriptedRunsForTest(_ runs: [[String: Any]]) { scriptedRuns = runs }
@@ -339,6 +357,198 @@ private actor MockConsultService: ConsultServicing {
 
     func recordLockedTeaserTap(consultId: String) async throws {
         teaserRecorded = true
+    }
+
+    // MARK: - The thread (P5a)
+    //
+    // A test-only stand-in for the SERVER's projection
+    // (tovis-app `lib/consult/thread.ts`), composed from the states this mock
+    // already models. It is a mock of a server response, not a second
+    // implementation of the rule: the real ordering, the real open-step pointer
+    // and the real Book gate are proven against real PostgreSQL in tovis-app
+    // `tests/integration/consult-thread.test.ts`. What THIS stands up is the
+    // view model — that it renders, mutates and resumes off a served thread.
+
+    func thread(consultId: String) async throws -> ConsultThread {
+        if let threadError { throw threadError }
+        var messages: [[String: Any]] = [
+            message("TEXT", "opening", state: "DONE", extra: [
+                "text": "Love this one. Let’s work out what it would take on you.",
+            ]),
+        ]
+
+        let agreements = try agreementDictionary()
+        var consentRequirements = try #require(agreements["requirements"] as? [[String: Any]])
+        for index in consentRequirements.indices {
+            let raw = consentRequirements[index]["kind"] as? String
+            let kind = raw.flatMap(ConsultAgreementKind.init(rawValue:))
+            if kind.map({ !acceptedKinds.contains($0) }) ?? true {
+                consentRequirements[index]["currentAcceptance"] = NSNull()
+            }
+        }
+        let consentOutstanding = acceptedKinds.count < 2
+        messages.append(message("CONSENT", "consent",
+                                state: consentOutstanding ? "OPEN" : "DONE",
+                                extra: [
+                                    "text": "Quick bit first: two things to agree to before any photos.",
+                                    "requirements": consentRequirements,
+                                ]))
+
+        if !consentOutstanding {
+            messages.append(contentsOf: try intakeMessages())
+            messages.append(try inspirationMessage())
+            messages.append(contentsOf: try photoMessages())
+            messages.append(try planMessage())
+        }
+
+        let nextOpen = messages.first { $0["state"] as? String == "OPEN" }?["id"] as? String
+        let selfieIn = acceptedShots.contains(.faceFront)
+
+        return try decode(ConsultThread.self, value: [
+            "consultId": consultId,
+            "status": threadStatus(consentOutstanding: consentOutstanding),
+            "professionalId": sessionProfessionalId,
+            "professionalDisplayName": "Susie",
+            "nextOpenMessageId": nextOpen ?? NSNull(),
+            "messages": messages,
+            "chartCopy": (consentOutstanding
+                ? NSNull()
+                : ["optIn": true, "decidedAt": NSNull()] as [String: Any]) as Any,
+            "book": [
+                "enabled": selfieIn,
+                "reason": (selfieIn ? NSNull() : "SELFIE_REQUIRED") as Any,
+                "lookPostId": "look_fixture_1",
+                "serviceId": "service_fixture_1",
+                "lookMediaId": "media_fixture_1",
+            ],
+        ] as [String: Any])
+    }
+
+    private func threadStatus(consentOutstanding: Bool) -> String {
+        if consentRevoked { return "CONSENT_REVOKED" }
+        if consentOutstanding { return "CONSENT_REQUIRED" }
+        if latestIntakeAnswers.isEmpty { return "INTAKE_READY" }
+        if analysisStarted { return "COMPLETED" }
+        return sessionAdvancedToAnalysis ? "ANALYSIS_PENDING" : "MEDIA_READY"
+    }
+
+    private func intakeMessages() throws -> [[String: Any]] {
+        let intake = dictionary("intake", "intake")
+        let pack = try #require(intake["questionPack"] as? [String: Any])
+        let questions = try #require(pack["questions"] as? [[String: Any]])
+        var out: [[String: Any]] = []
+        var openTaken = false
+        for question in questions {
+            let key = try #require(question["key"] as? String)
+            let answer = latestIntakeAnswers[key]
+            // Everything after the open question is still unasked — a thread
+            // shows history plus the one thing being asked, never a form.
+            if answer == nil && openTaken { continue }
+            let isOpen = answer == nil && !openTaken
+            if isOpen { openTaken = true }
+            out.append(message("QUESTION", "intake:\(key)",
+                               state: isOpen ? "OPEN" : "DONE",
+                               extra: [
+                                   "question": question,
+                                   "answer": answer ?? NSNull(),
+                                   "packVersion": pack["version"] ?? 1,
+                                   "schemaVersion": pack["schemaVersion"] ?? 1,
+                               ]))
+        }
+        return out
+    }
+
+    private func inspirationMessage() throws -> [String: Any] {
+        let key: String
+        if inspirationSource == nil {
+            key = "inspirationSourceDecision"
+        } else if inspirationSource == "NONE" {
+            key = "inspirationSkipped"
+        } else if inspirationAnsweredCount >= 7 {
+            key = "inspirationComplete"
+        } else if inspirationAnsweredCount == 6 {
+            key = "inspirationTextQuestion"
+        } else {
+            key = "inspirationQuestion"
+        }
+        let state = dictionary(key, "inspiration")
+        let progress = try #require(state["progress"] as? [String: Any])
+        let question = progress["currentQuestion"]
+        let complete = inspirationComplete && !(question is [String: Any])
+        return message("INSPIRATION", "inspiration",
+                       state: complete ? "DONE" : "OPEN",
+                       extra: [
+                           "text": "Now tell me what you like about it.",
+                           "sourceDecisionRequired": inspirationSource == nil,
+                           "source": state["source"] ?? NSNull(),
+                           "question": question ?? NSNull(),
+                           "answeredQuestionCount": min(inspirationAnsweredCount, 7),
+                           "specificDetailCount": progress["specificDetailCount"] ?? 0,
+                           "requiredSpecificDetailCount": 3,
+                           "schemaVersion": state["schemaVersion"] ?? 1,
+                       ])
+    }
+
+    private func photoMessages() throws -> [[String: Any]] {
+        let capture = try captureDictionary(rejectedShot: rejectedShotKey)
+        let pack = try #require(capture["shotPack"] as? [String: Any])
+        let shots = try #require(pack["shots"] as? [[String: Any]])
+        let slots = try #require(capture["slots"] as? [[String: Any]])
+        var out: [[String: Any]] = []
+        var openTaken = false
+        for shot in shots {
+            let key = try #require(shot["key"] as? String)
+            let slot = slots.first { $0["shotKey"] as? String == key }
+            let settled = (slot?["state"] as? String) == "ACCEPTED"
+            let isOpen = !settled && !openTaken
+            if isOpen { openTaken = true }
+            out.append(message("PHOTO_REQUEST", "photo:\(key)",
+                               state: settled ? "DONE" : (isOpen ? "OPEN" : "BLOCKED"),
+                               extra: [
+                                   "shot": shot,
+                                   "shotPackVersion": pack["version"] ?? 2,
+                                   "schemaVersion": pack["schemaVersion"] ?? 1,
+                                   "slot": slot ?? NSNull(),
+                               ]))
+        }
+        return out
+    }
+
+    private func planMessage() throws -> [String: Any] {
+        let value = dictionary("analysis", "analysis")
+        // Mirrors the server: the run is present only once one exists — the
+        // fixture's analysis always carries a COMPLETED run, and treating that
+        // as "there is a run" would mean the plan card never offered a start.
+        var run: Any = NSNull()
+        if !scriptedRuns.isEmpty {
+            run = scriptedRuns.count > 1 ? scriptedRuns.removeFirst() : scriptedRuns[0]
+        } else if analysisStarted {
+            run = value["run"] ?? NSNull()
+        }
+        let runStatus = (run as? [String: Any])?["status"] as? String
+        let awaitingStart = sessionAdvancedToAnalysis && !analysisStarted
+        let completed = analysisStarted && (runStatus ?? "COMPLETED") == "COMPLETED"
+        return message("PLAN", "plan",
+                       state: completed ? "DONE" : (awaitingStart ? "OPEN" : "BLOCKED"),
+                       extra: [
+                           "text": "Here’s where you’re starting from.",
+                           "run": run,
+                           "results": (completed
+                               ? dictionary("results", "results")
+                               : NSNull()) as Any,
+                           "awaitingStart": awaitingStart,
+                           "schemaVersion": value["schemaVersion"] ?? 3,
+                           "promptVersion": value["promptVersion"] ?? "v4",
+                       ])
+    }
+
+    private func message(_ kind: String, _ id: String, state: String,
+                         extra: [String: Any]) -> [String: Any] {
+        var value: [String: Any] = [
+            "kind": kind, "id": id, "author": "APP", "state": state,
+        ]
+        for (key, entry) in extra { value[key] = entry }
+        return value
     }
 
     private func agreementState() throws -> ConsultAgreementState {
@@ -435,6 +645,70 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
         )
     }
 
+    // ── Reading the thread ───────────────────────────────────────────────────
+    //
+    // The flow is a message list now, so the assertions below ask the THREAD
+    // what is on screen rather than asking the view model for a stage. That is
+    // the point of P5a: there is no local stage to disagree with the server.
+
+    private func messages(
+        _ model: ConsultFlowViewModel, _ kind: ConsultThreadMessage.Kind
+    ) -> [ConsultThreadMessage] {
+        model.messages.filter { $0.kind == kind }
+    }
+
+    private func openMessage(_ model: ConsultFlowViewModel) -> ConsultThreadMessage? {
+        model.messages.first { $0.id == model.nextOpenMessageId }
+    }
+
+    private func consentRequirements(
+        _ model: ConsultFlowViewModel
+    ) -> [ConsultAgreementRequirement] {
+        messages(model, .consent).first?.requirements ?? []
+    }
+
+    private func photoMessage(
+        _ model: ConsultFlowViewModel, _ key: ConsultCaptureShotKey
+    ) -> ConsultThreadMessage? {
+        messages(model, .photoRequest).first { $0.shot?.key == key }
+    }
+
+    private func slot(
+        _ model: ConsultFlowViewModel, _ key: ConsultCaptureShotKey
+    ) -> ConsultCaptureSlot? {
+        photoMessage(model, key)?.slot
+    }
+
+    private func inspirationMessage(_ model: ConsultFlowViewModel) -> ConsultThreadMessage? {
+        messages(model, .inspiration).first
+    }
+
+    private func planMessage(_ model: ConsultFlowViewModel) -> ConsultThreadMessage? {
+        messages(model, .plan).first
+    }
+
+    /// Answer both agreements, whatever order the thread serves them in.
+    private func acceptBothAgreements(_ model: ConsultFlowViewModel) async throws {
+        for kind in [ConsultAgreementKind.sensitiveDataConsent, .adult18PlusAttestation] {
+            let requirement = try #require(consentRequirements(model).first { $0.kind == kind })
+            await model.accept(requirement)
+        }
+    }
+
+    /// Tap through the intake by answering ONLY the question the thread is
+    /// currently offering — which is what "one question per message" means.
+    @discardableResult
+    private func answerWholeIntake(_ model: ConsultFlowViewModel) async throws -> Int {
+        var taps = 0
+        while let open = openMessage(model), open.kind == .question {
+            let question = try #require(open.question)
+            await model.answerIntake(open, value: try #require(question.options.first?.value))
+            taps += 1
+            #expect(taps <= 30, "intake did not terminate")
+        }
+        return taps
+    }
+
     /// A queue wired to the mock service, with the transfer completing inline so
     /// a "round trip" is deterministic. Everything else — the leg ordering, the
     /// persisted keys, the vault — is the real thing.
@@ -454,143 +728,146 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
     /// separate — that separation is the point of P2d — so a test that wants to
     /// assert on the outcome has to wait for the queue rather than for the call.
     private func submit(
-        _ model: ConsultFlowViewModel, _ jpeg: Data, for shot: ConsultCaptureShot
+        _ model: ConsultFlowViewModel, _ jpeg: Data, for message: ConsultThreadMessage
     ) async {
-        await model.submitPhoto(jpeg, for: shot)
+        await model.submitPhoto(jpeg, for: message)
         await model.uploads.settle()
+        await model.refreshThread()
+    }
+
+    private func model(_ service: MockConsultService,
+                       uploads: ConsultCaptureUploadQueue? = nil) -> ConsultFlowViewModel {
+        ConsultFlowViewModel(
+            anchor: .booking("booking_fixture_1"),
+            professionalId: "cmq9p645v0002jp04fttoatlq",
+            service: service,
+            uploads: uploads
+        )
     }
 
     @Test func completeMockedGuidedBookingConsultFlowIncludesLocalAndServerRetakes() async throws {
         try await withCaptureVault("flow-full") {
             let service = MockConsultService(root: try fixtureRoot())
-            let model = ConsultFlowViewModel(
-                anchor: .booking("booking_fixture_1"),
-                professionalId: "cmq9p645v0002jp04fttoatlq",
-                service: service,
-                uploads: await testQueue(service)
-            )
+            let model = model(service, uploads: await testQueue(service))
 
             await model.start()
-            #expect(model.stage == .prerequisites)
-            let sensitive = try #require(model.agreementState?.requirements.first {
-                $0.kind == .sensitiveDataConsent
-            })
-            await model.accept(sensitive)
-            let adult = try #require(model.agreementState?.requirements.first {
-                $0.kind == .adult18PlusAttestation
-            })
-            await model.accept(adult)
-            #expect(model.stage == .intake)
-            #expect(model.answers["change_scale"] == "noticeable")
+            // The thread opens on consent, and consent is the one open step.
+            #expect(openMessage(model)?.kind == .consent)
+            #expect(messages(model, .question).isEmpty)
+            try await acceptBothAgreements(model)
 
-            let questions = try #require(model.intakeState?.questionPack.questions)
-            for question in questions where question.requirement == .required
-                && model.answers[question.key] == nil {
-                model.selectAnswer(
-                    questionKey: question.key,
-                    value: try #require(question.options.first?.value)
-                )
-            }
-            await model.submitIntake()
-            #expect(model.stage == .capture)
-            #expect(model.inspirationState?.progress.blocker == .sourceDecisionRequired)
-            #expect(!model.inspirationDone)
+            // Now the intake, one question per message.
+            #expect(openMessage(model)?.kind == .question)
+            try await answerWholeIntake(model)
+            // Every answered question stays on screen as history carrying the
+            // client's own answer — the difference between a thread and a form.
+            #expect(messages(model, .question).allSatisfy { $0.answer != nil })
+            #expect(inspirationMessage(model)?.sourceDecisionRequired == true)
 
-            let shots = try #require(model.captureState?.shotPack.shots)
-            let back = try #require(shots.first { $0.key == .hairBack })
             let guidedPipeline = ConsultTransientPhotoPipeline(
                 quality: FirstSoftThenPassingConsultQC(),
                 preparation: IdentityConsultJPEGPreparation()
             )
+            let back = try #require(photoMessage(model, .hairBack))
             let localFailure = await guidedPipeline.process(
                 Data("soft-back".utf8),
-                expectations: ConsultShotGuidance.expectations(for: back.key)
+                expectations: ConsultShotGuidance.expectations(for: .hairBack)
             )
             #expect(localFailure == .retake("It came out soft"))
             #expect(await service.receivedByteCounts.isEmpty)
 
             let firstBack = await guidedPipeline.process(
                 Data("first-back".utf8),
-                expectations: ConsultShotGuidance.expectations(for: back.key)
+                expectations: ConsultShotGuidance.expectations(for: .hairBack)
             )
             guard case let .accepted(firstBackJPEG) = firstBack else {
                 Issue.record("Guided post-capture QC should accept the retry")
                 return
             }
             await submit(model, firstBackJPEG, for: back)
-            #expect(model.captureState?.slots.first { $0.shotKey == .hairBack }?.state == .rejected)
-            #expect(model.captureState?.slots.first { $0.shotKey == .hairBack }?.retakeTip != nil)
+            // The server's refusal reaches the client ON the photo message.
+            #expect(slot(model, .hairBack)?.state == .rejected)
+            #expect(slot(model, .hairBack)?.retakeTip != nil)
+
             let serverRetake = await guidedPipeline.process(
                 Data("retake-back".utf8),
-                expectations: ConsultShotGuidance.expectations(for: back.key)
+                expectations: ConsultShotGuidance.expectations(for: .hairBack)
             )
             guard case let .accepted(serverRetakeJPEG) = serverRetake else {
                 Issue.record("Guided QC should accept the server-requested retake")
                 return
             }
-            await submit(model, serverRetakeJPEG, for: back)
-            for shot in shots where shot.key != .hairBack {
+            await submit(model, serverRetakeJPEG, for: try #require(photoMessage(model, .hairBack)))
+
+            for key in ConsultCaptureShotKey.hairPack where key != .hairBack {
                 let outcome = await guidedPipeline.process(
-                    Data("photo-\(shot.key.rawValue)".utf8),
-                    expectations: ConsultShotGuidance.expectations(for: shot.key)
+                    Data("photo-\(key.rawValue)".utf8),
+                    expectations: ConsultShotGuidance.expectations(for: key)
                 )
                 guard case let .accepted(jpeg) = outcome else {
                     Issue.record("Every deterministic guided shot should pass local QC")
                     return
                 }
-                await submit(model, jpeg, for: shot)
+                await submit(model, jpeg, for: try #require(photoMessage(model, key)))
             }
-            // 7/7 accepted but the inspiration review is still open: the server
-            // holds the session at MEDIA_READY, and the client must not jump ahead
-            // locally (the old hasAllAcceptedShots shortcut dead-ended exactly here).
-            #expect(model.captureState?.hasAllAcceptedShots == true)
-            #expect(model.stage == .capture)
-            #expect(!model.canOfferPartialContinue)
 
-            await model.uploadInspirationPhoto(Data("inspiration-look".utf8))
+            // 7/7 accepted but the inspiration review is still open: the server
+            // holds the session at MEDIA_READY, and the client must not jump
+            // ahead locally.
+            #expect(model.acceptedShotCount == 7)
+            #expect(!model.canOfferPartialContinue)
+            #expect(planMessage(model)?.awaitingStart != true)
+
+            // 🔴 The selfie is in, so the spark is bookable — with no analysis,
+            // no estimate and the flow still mid-prep.
+            #expect(model.thread?.book.enabled == true)
+
+            await model.uploadInspirationPhoto(
+                try #require(inspirationMessage(model)), Data("inspiration-look".utf8)
+            )
             var answeredRounds = 0
-            while let question = model.inspirationState?.progress.currentQuestion,
+            while let message = inspirationMessage(model),
+                  let question = message.inspirationQuestion,
                   answeredRounds < 10 {
                 answeredRounds += 1
-                if question.kind == .text {
-                    await model.answerInspiration(
-                        question: question, selectedValues: [], text: "", sentiment: nil
-                    )
-                } else {
-                    let value = try #require(question.options.first?.value)
-                    await model.answerInspiration(
-                        question: question, selectedValues: [value], text: "", sentiment: nil
-                    )
-                }
+                let values = question.kind == .text
+                    ? []
+                    : [try #require(question.options.first?.value)]
+                await model.answerInspiration(
+                    message, question: question, selectedValues: values
+                )
             }
             #expect(answeredRounds == 7)
-            #expect(model.inspirationDone)
+            #expect(inspirationMessage(model)?.state == .done)
             #expect(await service.inspirationUploadByteCounts == [Data("inspiration-look".utf8).count])
             #expect(await service.answeredInspirationKeys.count == 7)
-            // The completed review advances the session server-side; the client
-            // follows it into the analysis stage instead of deciding locally.
-            #expect(model.stage == .analysis)
-            #expect(model.analysisState?.status == .analysisPending)
+
+            // The completed review advances the session server-side; the thread
+            // follows it rather than deciding locally.
+            #expect(planMessage(model)?.awaitingStart == true)
 
             await model.startAnalysis()
-            #expect(model.stage == .results)
-            #expect(model.results?.clientIntake.first?.questionKey == "desired_color")
-            #expect(model.results?.safetyFlags.first?.code == "RECENT_BOX_DYE")
-            #expect(model.results?.recommendationDirections.count == 2)
-            #expect(model.results?.meCardTeaser.locked == true)
+            let plan = try #require(planMessage(model))
+            let results = try #require(plan.results)
+            #expect(results.clientIntake.first?.questionKey == "desired_color")
+            #expect(results.safetyFlags.first?.code == "RECENT_BOX_DYE")
+            #expect(results.recommendationDirections.count == 2)
+            #expect(results.meCardTeaser.locked == true)
+            // 🔴 The provenance check still runs on a results payload that now
+            // arrives inside a message.
+            #expect(!model.resultsContractMismatch)
 
             await model.tapLockedMeCard()
             #expect(model.teaserTapped)
             #expect(await service.teaserRecorded)
             #expect(await service.receivedByteCounts.count == 8)
             #expect(await guidedPipeline.retainedByteCount() == 0)
-            // Eight photographs, eight DISTINCT issue keys — and no more than eight,
-            // which is what says a retry replayed its key instead of minting a
-            // second upload session and a second paid quality check.
-            let issued = await service.issuedKeys
-            #expect(Set(issued).count == 8)
+            // Eight photographs, eight DISTINCT issue keys — and no more than
+            // eight, which is what says a retry replayed its key instead of
+            // minting a second upload session and a second paid quality check.
+            #expect(await Set(service.issuedKeys).count == 8)
             #expect(await Set(service.qualityKeys).count == 8)
-            // Nothing is still owed: every shot's bytes were released on its verdict.
+            // Nothing is still owed: every shot's bytes were released.
             #expect(model.uploads.items(consultId: "consult_fixture_1").isEmpty)
             #expect(model.failure == nil)
         }
@@ -599,46 +876,29 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
     @Test func partialPackContinuesThroughProceedOnceInspirationIsDone() async throws {
         try await withCaptureVault("flow-partial") {
             let service = MockConsultService(root: try fixtureRoot())
-            let model = ConsultFlowViewModel(
-                anchor: .booking("booking_fixture_1"),
-                professionalId: "cmq9p645v0002jp04fttoatlq",
-                service: service,
-                uploads: await testQueue(service)
-            )
+            let model = model(service, uploads: await testQueue(service))
 
             await model.start()
-            for requirement in model.agreementState?.requirements ?? [] {
-                await model.accept(requirement)
-            }
-            let questions = try #require(model.intakeState?.questionPack.questions)
-            for question in questions where question.requirement == .required
-                && model.answers[question.key] == nil {
-                model.selectAnswer(
-                    questionKey: question.key,
-                    value: try #require(question.options.first?.value)
-                )
-            }
-            await model.submitIntake()
-            #expect(model.stage == .capture)
+            try await acceptBothAgreements(model)
+            try await answerWholeIntake(model)
 
             // Continuing without an inspiration photo is a complete review.
-            await model.skipInspiration()
-            #expect(model.inspirationDone)
-            #expect(model.stage == .capture)
+            await model.skipInspiration(try #require(inspirationMessage(model)))
+            #expect(inspirationMessage(model)?.state == .done)
 
             // One accepted photo out of seven unlocks the partial-pack path.
-            let left = try #require(model.captureState?.shotPack.shots.first { $0.key == .hairLeft })
-            await submit(model, Data("left".utf8), for: left)
+            await submit(model, Data("left".utf8), for: try #require(photoMessage(model, .hairLeft)))
             #expect(model.acceptedShotCount == 1)
-            #expect(model.stage == .capture)
             #expect(model.canOfferPartialContinue)
+            // A hair shot is not a selfie: the Book gate must not have moved.
+            #expect(model.thread?.book.enabled == false)
+            #expect(model.thread?.book.reason == .selfieRequired)
 
             await model.proceedWithAccepted()
-            #expect(model.stage == .analysis)
-            #expect(model.analysisState?.status == .analysisPending)
+            #expect(planMessage(model)?.awaitingStart == true)
 
             await model.startAnalysis()
-            #expect(model.stage == .results)
+            #expect(planMessage(model)?.results != nil)
             #expect(model.failure == nil)
         }
     }
@@ -652,25 +912,40 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
             runJSON(status: "RUNNING", stage: "BUILDING_PLAN"),
             runJSON(status: "COMPLETED", stage: "DONE"),
         ])
-        let model = ConsultFlowViewModel(
-            anchor: .booking("booking_fixture_1"),
-            professionalId: "cmq9p645v0002jp04fttoatlq",
-            service: service
-        )
+        let model = model(service)
         await model.start()
-
-        // Reading the analysis directly is enough — the poll starts from the
-        // load, not from a particular route through the wizard.
+        // Consent first: the thread serves nothing past it, and a run that
+        // existed before consent would not be a state the server can reach.
+        try await acceptBothAgreements(model)
         await model.refreshAnalysis()
-        #expect(model.analysisState?.run?.stage == .readingPhotos)
+        // A LIVE run is on the plan card, and the card is not offering a start.
+        let first = try #require(planMessage(model)?.run)
+        #expect(first.status.isLive)
+        #expect(planMessage(model)?.awaitingStart != true)
 
-        // The poll ticks every 5s; drive it by hand instead of sleeping 15
-        // seconds in a unit test.
-        await model.pollOnceForTest()
-        #expect(model.analysisState?.run?.stage == .buildingPlan)
-        await model.pollOnceForTest()
-        #expect(model.analysisState?.run?.status == .completed)
-        #expect(model.stage == .results)
+        // The poll ticks every 5s; drive it by hand instead of sleeping fifteen
+        // real seconds in a unit test. Each tick re-reads the THREAD — the plan
+        // card is where the run lives now — and the run advances through the
+        // scripted stages until it settles.
+        //
+        // The stages are collected rather than pinned one-per-call: how many
+        // thread reads the SETUP costs is the mock's business, and a test that
+        // counted them would break every time the flow read the thread once
+        // more. What must be true is that polling walks the run forward and
+        // stops when it settles.
+        var seen: [ConsultAnalysisRunStage] = [first.stage]
+        var settled = false
+        for _ in 0..<5 where !settled {
+            settled = await model.pollOnceForTest()
+            if let stage = planMessage(model)?.run?.stage { seen.append(stage) }
+        }
+        #expect(settled)
+        #expect(seen.contains(.buildingPlan))
+        #expect(planMessage(model)?.run?.status == .completed)
+        // 🔴 A completed run does NOT navigate away. The plan lands in the
+        // thread and the thread stays open — that is the difference between a
+        // wizard that ends and a consult that continues as prep.
+        #expect(!model.messages.isEmpty)
         #expect(model.failure == nil)
     }
 
@@ -682,20 +957,19 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
         await service.setScriptedRunsForTest([
             runJSON(status: "RUNNING", stage: "BUILDING_PLAN"),
         ])
-        let model = ConsultFlowViewModel(
-            anchor: .booking("booking_fixture_1"),
-            professionalId: "cmq9p645v0002jp04fttoatlq",
-            service: service
-        )
+        let model = model(service)
         await model.start()
+        // Consent first: the thread serves nothing past it, and a run that
+        // existed before consent would not be a state the server can reach.
+        try await acceptBothAgreements(model)
         await model.refreshAnalysis()
 
-        await service.setAnalysisErrorForTest(URLError(.timedOut))
+        await service.setThreadErrorForTest(URLError(.timedOut))
         await model.pollOnceForTest()
         #expect(model.failure == nil)
         #expect(model.busy == false)
         // The last good state is still on screen rather than being cleared.
-        #expect(model.analysisState?.run?.stage == .buildingPlan)
+        #expect(planMessage(model)?.run?.stage == .buildingPlan)
     }
 
     /// A FAILED run is the one state that gives the client something to press.
@@ -709,15 +983,14 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
                 failureCode: "ANALYSIS_UNAVAILABLE"
             ),
         ])
-        let model = ConsultFlowViewModel(
-            anchor: .booking("booking_fixture_1"),
-            professionalId: "cmq9p645v0002jp04fttoatlq",
-            service: service
-        )
+        let model = model(service)
         await model.start()
+        // Consent first: the thread serves nothing past it, and a run that
+        // existed before consent would not be a state the server can reach.
+        try await acceptBothAgreements(model)
         await model.refreshAnalysis()
 
-        let run = try #require(model.analysisState?.run)
+        let run = try #require(planMessage(model)?.run)
         #expect(run.status == .failed)
         #expect(run.retryable)
         #expect(!run.status.isLive)
@@ -748,53 +1021,43 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
         ]
     }
 
-    /// The gate lives server-side now: a pro the pilot is dark for gets a 404
-    /// from every consult route, and the device renders that as hidden — no
-    /// local copy of the exposure rule exists to disagree with the server.
+    /// The gate lives server-side: a pro the pilot is dark for gets a 404 from
+    /// every consult route, and the device renders that as hidden — no local
+    /// copy of the exposure rule exists to disagree with the server.
     @Test func serverHiddenAnswerKeepsTheConsultDark() async throws {
         let service = MockConsultService(root: try fixtureRoot())
         await service.setCreateErrorForTest(
             APIError.server(status: 404, message: "Not found.", code: nil)
         )
-        let model = ConsultFlowViewModel(
-            anchor: .booking("booking_fixture_1"),
-            professionalId: "cmq9p645v0002jp04fttoatlq",
-            service: service
-        )
+        let model = model(service)
         await model.start()
-        #expect(model.stage == .prerequisites)
+        #expect(model.thread == nil)
         #expect(model.failure == .hidden)
         #expect(model.machine.consultId == nil)
     }
 
     @Test func revokingSensitiveConsentStopsTheFlow() async throws {
         let service = MockConsultService(root: try fixtureRoot())
-        let model = ConsultFlowViewModel(
-            anchor: .booking("booking_fixture_1"),
-            professionalId: "cmq9p645v0002jp04fttoatlq",
-            service: service
-        )
+        let model = model(service)
 
         await model.start()
-        let sensitive = try #require(model.agreementState?.requirements.first {
+        let sensitive = try #require(consentRequirements(model).first {
             $0.kind == .sensitiveDataConsent
         })
         await model.accept(sensitive)
         await model.revokeSensitiveConsent()
 
-        #expect(model.stage == .stopped)
         #expect(await service.consentRevoked)
+        #expect(model.thread?.status == .consentRevoked)
+        // Nothing in a revoked consult is actionable, so the revoke footer goes.
+        #expect(!model.canRevokeConsent)
         #expect(model.failure == nil)
     }
 
     @Test func serverProfessionalMustMatchTheFounderGatedBooking() async throws {
         let service = MockConsultService(root: try fixtureRoot())
         await service.setSessionProfessionalIdForTest("professional_other")
-        let model = ConsultFlowViewModel(
-            anchor: .booking("booking_fixture_1"),
-            professionalId: "cmq9p645v0002jp04fttoatlq",
-            service: service
-        )
+        let model = model(service)
 
         await model.start()
         #expect(model.failure == .hidden)
@@ -806,29 +1069,14 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
     private func modelAtInspiration(
         _ service: MockConsultService
     ) async throws -> ConsultFlowViewModel {
-        let model = ConsultFlowViewModel(
-            anchor: .booking("booking_fixture_1"),
-            professionalId: "cmq9p645v0002jp04fttoatlq",
-            service: service
-        )
+        let model = model(service)
         await model.start()
-        for kind in [ConsultAgreementKind.sensitiveDataConsent, .adult18PlusAttestation] {
-            let requirement = try #require(model.agreementState?.requirements.first {
-                $0.kind == kind
-            })
-            await model.accept(requirement)
-        }
-        let questions = try #require(model.intakeState?.questionPack.questions)
-        for question in questions where question.requirement == .required
-            && model.answers[question.key] == nil {
-            model.selectAnswer(
-                questionKey: question.key,
-                value: try #require(question.options.first?.value)
-            )
-        }
-        await model.submitIntake()
-        await model.uploadInspirationPhoto(Data("inspiration".utf8))
-        #expect(model.inspirationState?.source?.imageAvailable == true)
+        try await acceptBothAgreements(model)
+        try await answerWholeIntake(model)
+        await model.uploadInspirationPhoto(
+            try #require(inspirationMessage(model)), Data("inspiration".utf8)
+        )
+        #expect(inspirationMessage(model)?.source?.imageAvailable == true)
         return model
     }
 
@@ -857,11 +1105,7 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
     /// does not render at all in this state.
     @Test func anAbsentInspirationSourceIsUnavailableNotFailed() async throws {
         let service = MockConsultService(root: try fixtureRoot())
-        let model = ConsultFlowViewModel(
-            anchor: .booking("booking_fixture_1"),
-            professionalId: "cmq9p645v0002jp04fttoatlq",
-            service: service
-        )
+        let model = model(service)
         await model.start()
         #expect(await model.inspirationImage() == .unavailable)
         #expect(await service.inspirationImageReads == 0)
@@ -903,11 +1147,13 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
         ]
     }
 
-    /// Drives the intake by tapping ONLY the question the screen is currently
-    /// offering, and returns how many taps it took to reach the photo step —
-    /// including the final Continue. Fails if the screen ever offers a
-    /// question that is not the pack's first unanswered one, which is what
-    /// "one question at a time" has to mean.
+    /// Drives the intake by tapping ONLY the question the thread is currently
+    /// offering, and returns how many taps it took to reach the photo step.
+    ///
+    /// 🔴 The thread costs ONE TAP FEWER than the wizard did: there is no final
+    /// "Continue to photos" button, because the photo requests were already in
+    /// the thread the whole time. The saved tap is the shape change, not a
+    /// change to the pack.
     private func tapsToThePhotoStep(
         questions: [[String: Any]], nextQuestionKey: String
     ) async throws -> Int {
@@ -928,60 +1174,42 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
         root["intake"] = intakeEnvelope
 
         let service = MockConsultService(root: root)
-        let model = ConsultFlowViewModel(
-            anchor: .booking("booking_fixture_1"),
-            professionalId: "cmq9p645v0002jp04fttoatlq",
-            service: service
-        )
+        let model = model(service)
         await model.start()
-        await model.accept(try #require(model.agreementState?.requirements.first {
-            $0.kind == .sensitiveDataConsent
-        }))
-        await model.accept(try #require(model.agreementState?.requirements.first {
-            $0.kind == .adult18PlusAttestation
-        }))
-        #expect(model.stage == .intake)
+        try await acceptBothAgreements(model)
+        #expect(openMessage(model)?.kind == .question)
 
         let keys = questions.compactMap { $0["key"] as? String }
-        let required = Set(
-            questions
-                .filter { $0["requirement"] as? String == "REQUIRED" }
-                .compactMap { $0["key"] as? String }
-        )
         var taps = 0
-        while let question = model.intakeQuestion {
-            // The server's own order: every REQUIRED question first, then
-            // whatever is left (the conditional goal direction, and anything
-            // skippable) — which is exactly what the web wizard walks.
-            let expected =
-                keys.first { required.contains($0) && model.answers[$0] == nil }
-                ?? keys.first { model.answers[$0] == nil }
+        while let open = openMessage(model), open.kind == .question {
+            let question = try #require(open.question)
+            // The thread never runs ahead: the open question is always the
+            // pack's first unanswered one.
+            let answered = Set(
+                model.messages.compactMap { $0.answer == nil ? nil : $0.question?.key }
+            )
+            let expected = keys.first { !answered.contains($0) }
             #expect(
                 question.key == expected,
                 "tap \(taps): got \(question.key), expected \(expected ?? "nil")"
             )
-            #expect(model.intakeAnsweredCount == taps)
-            model.selectAnswer(
-                questionKey: question.key,
-                value: try #require(question.options.first?.value)
-            )
+            await model.answerIntake(open, value: try #require(question.options.first?.value))
             taps += 1
             #expect(taps <= keys.count)
         }
-        #expect(model.intakeAnsweredCount == keys.count)
-        #expect(model.canSubmitIntake)
-        await model.submitIntake()
-        #expect(model.stage == .capture)
-        return taps + 1
+        #expect(taps == keys.count)
+        // The photo requests are already on screen — no Continue to press.
+        #expect(!messages(model, .photoRequest).isEmpty)
+        return taps
     }
 
     /// The product principle, measured: the consult must feel like an impulse,
-    /// not a form. Sixteen taps to reach the camera was a form.
+    /// not a form.
     @Test func theIntakeDietCutsTheTapsToThePhotoStep() async throws {
         let before = try await tapsToThePhotoStep(
             questions: hairColorV2Questions(), nextQuestionKey: "current_color"
         )
-        #expect(before == 16)
+        #expect(before == 15)
 
         // The SHIPPED pack, read out of the same fixture the contract tests
         // validate — not a copy of it.
@@ -994,50 +1222,69 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
         let after = try await tapsToThePhotoStep(
             questions: shippedQuestions, nextQuestionKey: "change_scale"
         )
-        #expect(after == 8)
+        #expect(after == 7)
     }
 
-    /// The header names the service — the thing the look-based flow never did
-    /// (handoff B6). With no service resolvable it must not render a hole.
-    @Test func theIntakeHeaderNamesTheService() async throws {
+    /// 🔴 The app speaks in ITS OWN voice, and every sentence it says arrives
+    /// from the server.
+    ///
+    /// This is what replaced the old `intakeServiceName` assertion. Naming the
+    /// service (handoff B6) moved into the server-composed opening bubble
+    /// (`openingWithService` in the brand copy table), so the device's half of
+    /// that contract is now "render what you were sent, and never compose a
+    /// system sentence locally" — which is what this asserts.
+    @Test func everySystemBubbleComesFromTheServer() async throws {
         let service = MockConsultService(root: try fixtureRoot())
-        let model = ConsultFlowViewModel(
-            anchor: .booking("booking_fixture_1"),
-            professionalId: "cmq9p645v0002jp04fttoatlq",
-            service: service
-        )
+        let model = model(service)
         await model.start()
-        await model.accept(try #require(model.agreementState?.requirements.first {
-            $0.kind == .sensitiveDataConsent
-        }))
-        await model.accept(try #require(model.agreementState?.requirements.first {
-            $0.kind == .adult18PlusAttestation
-        }))
-        // The CLIENT-facing name (the pro's offering title), not the catalog one.
-        #expect(model.intakeServiceName == "Signature Balayage")
 
-        var root = try fixtureRoot()
-        var envelope = try #require(root["intake"] as? [String: Any])
-        var intake = try #require(envelope["intake"] as? [String: Any])
-        intake["service"] = [
-            "serviceId": NSNull(), "name": NSNull(), "proFacingName": NSNull(),
-        ]
-        envelope["intake"] = intake
-        root["intake"] = envelope
-        let unnamedService = MockConsultService(root: root)
-        let unnamed = ConsultFlowViewModel(
-            anchor: .booking("booking_fixture_1"),
-            professionalId: "cmq9p645v0002jp04fttoatlq",
-            service: unnamedService
+        let opening = try #require(model.messages.first)
+        #expect(opening.kind == .text)
+        #expect(opening.author == .app)
+        #expect(!(opening.text ?? "").isEmpty)
+        // The pro is NAMED by the server too, honoring her display preference.
+        #expect(model.professionalDisplayName == "Susie")
+    }
+
+    /// Reopening a consult resumes at the next open step — the one field that
+    /// makes that true, asserted directly.
+    @Test func nextOpenMessageIsTheFirstStepStillWaiting() async throws {
+        let service = MockConsultService(root: try fixtureRoot())
+        let model = model(service)
+        await model.start()
+        // Before consent there is exactly one thing she can do.
+        #expect(model.messages.filter { $0.state == .open }.count == 1)
+        #expect(openMessage(model)?.kind == .consent)
+
+        try await acceptBothAgreements(model)
+        // 🔴 After consent SEVERAL steps are genuinely open at once — the
+        // inspiration review and the photo pack are concurrent on the server,
+        // and marking either blocked would be a lie. What must stay true is
+        // that `nextOpenMessageId` names where to RESUME, and that it is the
+        // FIRST of them in thread order.
+        let awaiting = model.messages.filter { $0.state == .open }
+        #expect(awaiting.count >= 1)
+        #expect(openMessage(model)?.id == awaiting.first?.id)
+        #expect(openMessage(model)?.kind == .question)
+
+        try await answerWholeIntake(model)
+        // With the intake done the open step moves on, and it is never a
+        // question the client has already answered.
+        let next = try #require(openMessage(model))
+        #expect(next.kind != .question)
+    }
+
+    /// A brand-new build meeting a server that learned a new message type must
+    /// render the rest of the thread, not crash or blank.
+    @Test func anUnknownMessageKindIsSkippedNotFatal() async throws {
+        let json = """
+        {"kind":"ZOOM_CARD","id":"zoom:1","author":"APP","state":"OPEN"}
+        """
+        let message = try JSONDecoder().decode(
+            ConsultThreadMessage.self, from: Data(json.utf8)
         )
-        await unnamed.start()
-        await unnamed.accept(try #require(unnamed.agreementState?.requirements.first {
-            $0.kind == .sensitiveDataConsent
-        }))
-        await unnamed.accept(try #require(unnamed.agreementState?.requirements.first {
-            $0.kind == .adult18PlusAttestation
-        }))
-        #expect(unnamed.intakeServiceName == nil)
+        #expect(message.kind == .unknown)
+        #expect(message.id == "zoom:1")
     }
 }
 
@@ -1052,6 +1299,12 @@ private extension MockConsultService {
 
     func setAnalysisErrorForTest(_ error: Error?) {
         analysisError = error
+    }
+
+    /// The thread read is what the poll drives now, so a dropped poll is a
+    /// dropped THREAD read.
+    func setThreadErrorForTest(_ error: Error?) {
+        threadError = error
     }
 
     func setInspirationImageErrorForTest(_ error: Error?) {
