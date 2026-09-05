@@ -378,7 +378,7 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
         })
         await model.accept(adult)
         #expect(model.stage == .intake)
-        #expect(model.answers["desired_color"] == "copper")
+        #expect(model.answers["change_scale"] == "noticeable")
 
         let questions = try #require(model.intakeState?.questionPack.questions)
         for question in questions where question.requirement == .required
@@ -752,6 +752,179 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
         await model.start()
         #expect(await model.inspirationImage() == .unavailable)
         #expect(await service.inspirationImageReads == 0)
+    }
+
+    // ── P6: one question at a time, and what the diet actually cost ────────
+
+    /// Every question a pack asks, as the wire shape, so a pack version can be
+    /// stood up in a fixture and DRIVEN rather than described.
+    private func packQuestion(
+        _ key: String, _ requirement: String, _ option: String
+    ) -> [String: Any] {
+        [
+            "key": key, "label": "\(key)?", "helpText": NSNull(),
+            "kind": "SINGLE_SELECT", "requirement": requirement,
+            "options": [["value": option, "label": option]],
+        ]
+    }
+
+    /// The colour pack as it shipped BEFORE the diet (v2, 15 questions), so
+    /// the tap count is measured against the real thing rather than recalled.
+    private func hairColorV2Questions() -> [[String: Any]] {
+        [
+            packQuestion("current_color", "REQUIRED", "brunette"),
+            packQuestion("desired_color", "REQUIRED", "red"),
+            packQuestion("change_scale", "REQUIRED", "noticeable"),
+            packQuestion("goal_direction", "CONDITIONAL", "lighter"),
+            packQuestion("box_dye_history", "REQUIRED", "never"),
+            packQuestion("prior_lightening", "REQUIRED", "never"),
+            packQuestion("henna_plant_dye_history", "REQUIRED", "never"),
+            packQuestion("perm_history", "REQUIRED", "never"),
+            packQuestion("relaxer_texturizer_history", "REQUIRED", "never"),
+            packQuestion("keratin_smoothing_history", "REQUIRED", "never"),
+            packQuestion("other_chemical_history", "REQUIRED", "never"),
+            packQuestion("last_color_service_timing", "REQUIRED", "1-3-months"),
+            packQuestion("prior_reaction", "REQUIRED", "no"),
+            packQuestion("event_timing", "SKIPPABLE", "no-deadline"),
+            packQuestion("budget", "SKIPPABLE", "150-250"),
+        ]
+    }
+
+    /// Drives the intake by tapping ONLY the question the screen is currently
+    /// offering, and returns how many taps it took to reach the photo step —
+    /// including the final Continue. Fails if the screen ever offers a
+    /// question that is not the pack's first unanswered one, which is what
+    /// "one question at a time" has to mean.
+    private func tapsToThePhotoStep(
+        questions: [[String: Any]], nextQuestionKey: String
+    ) async throws -> Int {
+        var root = try fixtureRoot()
+        var intakeEnvelope = try #require(root["intake"] as? [String: Any])
+        var intake = try #require(intakeEnvelope["intake"] as? [String: Any])
+        var pack = try #require(intake["questionPack"] as? [String: Any])
+        pack["questions"] = questions
+        intake["questionPack"] = pack
+        intake["progress"] = [
+            "canComplete": false, "nextQuestionKey": nextQuestionKey,
+            "blocker": "REQUIRED_ANSWERS_MISSING",
+        ]
+        // Measured with no prefill on either side, so the comparison is the
+        // PACK's cost and not a prefill discount that differs between them.
+        intake["prefillSuggestions"] = [[String: Any]]()
+        intakeEnvelope["intake"] = intake
+        root["intake"] = intakeEnvelope
+
+        let service = MockConsultService(root: root)
+        let model = ConsultFlowViewModel(
+            anchor: .booking("booking_fixture_1"),
+            professionalId: "cmq9p645v0002jp04fttoatlq",
+            service: service
+        )
+        await model.start()
+        await model.accept(try #require(model.agreementState?.requirements.first {
+            $0.kind == .sensitiveDataConsent
+        }))
+        await model.accept(try #require(model.agreementState?.requirements.first {
+            $0.kind == .adult18PlusAttestation
+        }))
+        #expect(model.stage == .intake)
+
+        let keys = questions.compactMap { $0["key"] as? String }
+        let required = Set(
+            questions
+                .filter { $0["requirement"] as? String == "REQUIRED" }
+                .compactMap { $0["key"] as? String }
+        )
+        var taps = 0
+        while let question = model.intakeQuestion {
+            // The server's own order: every REQUIRED question first, then
+            // whatever is left (the conditional goal direction, and anything
+            // skippable) — which is exactly what the web wizard walks.
+            let expected =
+                keys.first { required.contains($0) && model.answers[$0] == nil }
+                ?? keys.first { model.answers[$0] == nil }
+            #expect(
+                question.key == expected,
+                "tap \(taps): got \(question.key), expected \(expected ?? "nil")"
+            )
+            #expect(model.intakeAnsweredCount == taps)
+            model.selectAnswer(
+                questionKey: question.key,
+                value: try #require(question.options.first?.value)
+            )
+            taps += 1
+            #expect(taps <= keys.count)
+        }
+        #expect(model.intakeAnsweredCount == keys.count)
+        #expect(model.canSubmitIntake)
+        await model.submitIntake()
+        #expect(model.stage == .capture)
+        return taps + 1
+    }
+
+    /// The product principle, measured: the consult must feel like an impulse,
+    /// not a form. Sixteen taps to reach the camera was a form.
+    @Test func theIntakeDietCutsTheTapsToThePhotoStep() async throws {
+        let before = try await tapsToThePhotoStep(
+            questions: hairColorV2Questions(), nextQuestionKey: "current_color"
+        )
+        #expect(before == 16)
+
+        // The SHIPPED pack, read out of the same fixture the contract tests
+        // validate — not a copy of it.
+        let root = try fixtureRoot()
+        let envelope = try #require(root["intake"] as? [String: Any])
+        let shippedIntake = try #require(envelope["intake"] as? [String: Any])
+        let shipped = try #require(shippedIntake["questionPack"] as? [String: Any])
+        let shippedQuestions = try #require(shipped["questions"] as? [[String: Any]])
+        #expect(shippedQuestions.count == 7)
+        let after = try await tapsToThePhotoStep(
+            questions: shippedQuestions, nextQuestionKey: "change_scale"
+        )
+        #expect(after == 8)
+    }
+
+    /// The header names the service — the thing the look-based flow never did
+    /// (handoff B6). With no service resolvable it must not render a hole.
+    @Test func theIntakeHeaderNamesTheService() async throws {
+        let service = MockConsultService(root: try fixtureRoot())
+        let model = ConsultFlowViewModel(
+            anchor: .booking("booking_fixture_1"),
+            professionalId: "cmq9p645v0002jp04fttoatlq",
+            service: service
+        )
+        await model.start()
+        await model.accept(try #require(model.agreementState?.requirements.first {
+            $0.kind == .sensitiveDataConsent
+        }))
+        await model.accept(try #require(model.agreementState?.requirements.first {
+            $0.kind == .adult18PlusAttestation
+        }))
+        // The CLIENT-facing name (the pro's offering title), not the catalog one.
+        #expect(model.intakeServiceName == "Signature Balayage")
+
+        var root = try fixtureRoot()
+        var envelope = try #require(root["intake"] as? [String: Any])
+        var intake = try #require(envelope["intake"] as? [String: Any])
+        intake["service"] = [
+            "serviceId": NSNull(), "name": NSNull(), "proFacingName": NSNull(),
+        ]
+        envelope["intake"] = intake
+        root["intake"] = envelope
+        let unnamedService = MockConsultService(root: root)
+        let unnamed = ConsultFlowViewModel(
+            anchor: .booking("booking_fixture_1"),
+            professionalId: "cmq9p645v0002jp04fttoatlq",
+            service: unnamedService
+        )
+        await unnamed.start()
+        await unnamed.accept(try #require(unnamed.agreementState?.requirements.first {
+            $0.kind == .sensitiveDataConsent
+        }))
+        await unnamed.accept(try #require(unnamed.agreementState?.requirements.first {
+            $0.kind == .adult18PlusAttestation
+        }))
+        #expect(unnamed.intakeServiceName == nil)
     }
 }
 

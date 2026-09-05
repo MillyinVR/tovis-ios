@@ -60,33 +60,32 @@
     "intake": {
       "consultId": "consult_fixture_1",
       "status": "INTAKE_READY",
+      "service": {"serviceId":"service_fixture_1","name":"Signature Balayage","proFacingName":"Balayage"},
       "questionPack": {
         "id": "hair-color",
         "categorySlug": "hair-color",
-        "version": 1,
-        "schemaVersion": 1,
+        "version": 3,
+        "schemaVersion": 2,
         "questions": [
-          {"key":"current_color","label":"Your current color?","helpText":null,"kind":"SINGLE_SELECT","requirement":"REQUIRED","options":[{"value":"dark-brown","label":"Dark brown"}]},
-          {"key":"desired_color","label":"Your dream color?","helpText":null,"kind":"SINGLE_SELECT","requirement":"REQUIRED","options":[{"value":"copper","label":"Copper"}]},
           {"key":"change_scale","label":"How big a change are you after?","helpText":null,"kind":"SINGLE_SELECT","requirement":"REQUIRED","options":[{"value":"noticeable","label":"Noticeable"}]},
+          {"key":"goal_direction","label":"What would you most like to change about your color?","helpText":"This helps your professional understand what “subtle” or “a change” means to you. It is okay to revise your answer.","kind":"SINGLE_SELECT","requirement":"CONDITIONAL","options":[{"value":"lighter","label":"Go lighter"}]},
           {"key":"box_dye_history","label":"When did you last use box dye on your hair?","helpText":"Treatments besides hair color can change how your hair responds and what result is safely achievable.","kind":"SINGLE_SELECT","requirement":"REQUIRED","options":[{"value":"within-6-months","label":"Within 6 months"}]},
           {"key":"prior_lightening","label":"When was your hair last lightened?","helpText":"Treatments besides hair color can change how your hair responds and what result is safely achievable.","kind":"SINGLE_SELECT","requirement":"REQUIRED","options":[{"value":"6-12-months","label":"6–12 months ago"}]},
-          {"key":"last_color_service_timing","label":"When was your last color service?","helpText":null,"kind":"SINGLE_SELECT","requirement":"REQUIRED","options":[{"value":"4-6-months","label":"4–6 months ago"}]},
-          {"key":"prior_reaction","label":"Have you ever had a reaction during or after a hair color service?","helpText":null,"kind":"SINGLE_SELECT","requirement":"REQUIRED","options":[{"value":"no","label":"No"}]},
-          {"key":"event_timing","label":"Do you have an event or deadline?","helpText":null,"kind":"SINGLE_SELECT","requirement":"SKIPPABLE","options":[{"value":"1-3-months","label":"1–3 months"}]},
-          {"key":"budget","label":"What budget would you like to stay within?","helpText":null,"kind":"SINGLE_SELECT","requirement":"SKIPPABLE","options":[{"value":"251-400","label":"$251–$400"}]}
+          {"key":"henna_plant_dye_history","label":"When did you last use henna or another plant-based hair dye?","helpText":"Treatments besides hair color can change how your hair responds and what result is safely achievable.","kind":"SINGLE_SELECT","requirement":"REQUIRED","options":[{"value":"never","label":"Never"}]},
+          {"key":"other_chemical_history","label":"When did you last have a perm, relaxer, keratin or other chemical treatment?","helpText":"Treatments besides hair color can change how your hair responds and what result is safely achievable.","kind":"SINGLE_SELECT","requirement":"REQUIRED","options":[{"value":"never","label":"Never"}]},
+          {"key":"prior_reaction","label":"Have you ever had a reaction during or after a hair color service?","helpText":null,"kind":"SINGLE_SELECT","requirement":"REQUIRED","options":[{"value":"no","label":"No"}]}
         ]
       },
-      "progress": {"canComplete":false,"nextQuestionKey":"current_color","blocker":"REQUIRED_ANSWERS_MISSING"},
+      "progress": {"canComplete":false,"nextQuestionKey":"change_scale","blocker":"REQUIRED_ANSWERS_MISSING"},
       "prefillSuggestions": [
-        {"questionKey":"desired_color","value":"copper","provenance":[{"source":"SAVED_LOOK","sourceId":"look_fixture_1"}]}
+        {"questionKey":"change_scale","value":"noticeable","provenance":[{"source":"BOARD","sourceId":"board_fixture_1"}]}
       ],
       "prefillSignals": [
-        {"source":"SELF_PROFILE","available":true},
-        {"source":"BOARD","available":false},
-        {"source":"SAVED_LOOK","available":true},
-        {"source":"TASTE_VECTOR","available":true},
-        {"source":"BOOKING_HISTORY","available":true}
+        {"source":"SELF_PROFILE","available":false},
+        {"source":"BOARD","available":true},
+        {"source":"SAVED_LOOK","available":false},
+        {"source":"TASTE_VECTOR","available":false},
+        {"source":"BOOKING_HISTORY","available":false}
       ],
       "latestRevision": null
     }

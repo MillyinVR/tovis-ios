@@ -75,6 +75,52 @@ final class ConsultFlowViewModel {
         return locallyComplete
     }
 
+    /// The service this consult is about, in the client's own language — the
+    /// pro's offering title where they set one, the catalog name otherwise.
+    /// Nil when the Look's linked service row is gone, which is a real state
+    /// and reads as "your consult" rather than as a wrong service name.
+    var intakeServiceName: String? {
+        guard let name = intakeState?.service?.name?.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        ), !name.isEmpty else { return nil }
+        return name
+    }
+
+    var intakeQuestionCount: Int {
+        intakeState?.questionPack.questions.count ?? 0
+    }
+
+    var intakeAnsweredCount: Int {
+        intakeState?.questionPack.questions.filter { answers[$0.key] != nil }.count ?? 0
+    }
+
+    /// The ONE question on screen, and the same rule the web wizard uses: the
+    /// server's `progress.nextQuestionKey` where it still applies, otherwise
+    /// the first question with no answer.
+    ///
+    /// Why the served key cannot simply be trusted throughout: it describes the
+    /// answers the server has SAVED, and this flow saves once, on submit. Left
+    /// alone it would pin the screen to the first question while the client
+    /// answered the whole pack. So it is authoritative only while local answers
+    /// still match the saved ones (the same trust boundary `canSubmitIntake`
+    /// draws); after that the pack's own order decides — required questions
+    /// first, then anything else unanswered, which is what surfaces the
+    /// conditional goal-direction question exactly where the web wizard
+    /// surfaces it.
+    ///
+    /// Nil means every question has an answer: the step is done, and the
+    /// Continue button takes its place.
+    var intakeQuestion: ConsultIntakeQuestion? {
+        guard let questions = intakeState?.questionPack.questions else { return nil }
+        if answers == (intakeState?.latestRevision?.answers ?? [:]),
+           let servedKey = intakeState?.progress?.nextQuestionKey,
+           let served = questions.first(where: { $0.key == servedKey }) {
+            return served
+        }
+        return questions.first { $0.requirement.mustAnswer && answers[$0.key] == nil }
+            ?? questions.first { answers[$0.key] == nil }
+    }
+
     var canRetryPhoto: Bool { pendingPhoto != nil && !busy }
 
     var inspirationDone: Bool { inspirationState?.isComplete ?? false }
