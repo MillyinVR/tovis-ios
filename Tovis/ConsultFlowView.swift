@@ -184,34 +184,68 @@ struct ConsultFlowView: View {
         }
     }
 
+    /// ONE question per screen, with a count — the web wizard's shape, and the
+    /// shape the whole step is for: an impulse, not a form.
+    ///
+    /// The header names the SERVICE. It used to be fixed colour-specific copy
+    /// ("including color and chemical history") on a flow that is look-based
+    /// and asks about extensions, lashes and nails too, and that never told the
+    /// client which service any of it was about (handoff B6). The service name
+    /// is served on the intake state; with none resolvable the copy stays
+    /// generic rather than guessing.
     private func intake(_ model: ConsultFlowViewModel) -> some View {
-        VStack(alignment: .leading, spacing: 18) {
+        let serviceName = model.intakeServiceName
+        return VStack(alignment: .leading, spacing: 18) {
             consultHeader(
                 eyebrow: "In your words",
-                title: "Tell your professional what you want",
-                body: "Your answers—including color and chemical history—stay in your booking-attached consult and appear before AI observations."
+                title: serviceName.map { "About your \($0)" }
+                    ?? "Tell your professional what you want",
+                body: serviceName.map {
+                    "A few quick taps about \($0), so your professional knows what you want before you arrive. Your answers stay in this consult and appear before any AI observations."
+                }
+                    ?? "A few quick taps, so your professional knows what you want before you arrive. Your answers stay in this consult and appear before any AI observations."
             )
-            if let intake = model.intakeState {
-                ForEach(intake.questionPack.questions) { question in
+            if model.intakeState != nil {
+                Text("\(model.intakeAnsweredCount) of \(model.intakeQuestionCount) answered")
+                    .font(BrandFont.mono(10))
+                    .tracking(1.2)
+                    .foregroundStyle(BrandColor.textMuted)
+                if let question = model.intakeQuestion {
                     BrandSection(
                         title: question.label,
                         trailing: question.requirement.mustAnswer ? "Required" : "Optional"
                     ) {
-                        FlowLayout(spacing: 8, lineSpacing: 8) {
-                            ForEach(question.options) { option in
-                                answerChip(
-                                    option,
-                                    selected: model.answers[question.key] == option.value
-                                ) {
-                                    model.selectAnswer(questionKey: question.key, value: option.value)
+                        VStack(alignment: .leading, spacing: 10) {
+                            FlowLayout(spacing: 8, lineSpacing: 8) {
+                                ForEach(question.options) { option in
+                                    answerChip(
+                                        option,
+                                        selected: model.answers[question.key] == option.value
+                                    ) {
+                                        model.selectAnswer(questionKey: question.key, value: option.value)
+                                    }
                                 }
+                            }
+                            if let helpText = question.helpText, !helpText.isEmpty {
+                                Text(helpText)
+                                    .font(BrandFont.body(12))
+                                    .foregroundStyle(BrandColor.textSecondary)
                             }
                         }
                     }
-                }
-                primaryButton("Continue to photos", busy: model.busy,
-                              disabled: !model.canSubmitIntake) {
-                    Task { await model.submitIntake() }
+                } else {
+                    // One tap advances to the next question, so Continue only
+                    // appears once there is nothing left to ask — the same
+                    // place the web wizard shows it.
+                    BrandSurface {
+                        Text("That’s everything we need for this part.")
+                            .font(BrandFont.body(14))
+                            .foregroundStyle(BrandColor.textPrimary)
+                    }
+                    primaryButton("Continue to photos", busy: model.busy,
+                                  disabled: !model.canSubmitIntake) {
+                        Task { await model.submitIntake() }
+                    }
                 }
             } else {
                 loadingCard("Loading intake…")

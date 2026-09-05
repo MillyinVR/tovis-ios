@@ -230,6 +230,10 @@ public struct ConsultIntakeOption: Decodable, Sendable, Identifiable, Equatable 
 public struct ConsultIntakeQuestion: Decodable, Sendable, Identifiable {
     public let key: String
     public let label: String
+    /// The server's own explanation of why a question is asked. Optional on the
+    /// wire (most questions carry none) and rendered under the options, the
+    /// same place the web wizard puts it.
+    public let helpText: String?
     public let kind: String
     public let requirement: ConsultIntakeRequirement
     public let options: [ConsultIntakeOption]
@@ -280,9 +284,28 @@ public struct ConsultIntakeProgress: Decodable, Sendable {
     public let blocker: String?
 }
 
+/// WHICH SERVICE this consult is about. The booking's service on a booking
+/// anchor, the Look's primary service on a look anchor.
+///
+/// The flow is look-based, so before this it named the service NOWHERE and the
+/// intake opened on "Have you had this kind of service before?" with nothing
+/// for "this" to refer to (handoff B6). `name` is the plain-language name the
+/// CLIENT is shown — the pro's own offering title where they set one;
+/// `proFacingName` is the catalog name their menu uses.
+///
+/// Every field is nullable together: a Look whose linked service row was
+/// deleted names nothing, and the screen says "your consult" rather than the
+/// wrong service. Optional as a whole so a fixture written before it decodes.
+public struct ConsultServiceIdentity: Decodable, Sendable {
+    public let serviceId: String?
+    public let name: String?
+    public let proFacingName: String?
+}
+
 public struct ConsultIntakeState: Decodable, Sendable {
     public let consultId: String
     public let status: ConsultSessionStatus
+    public let service: ConsultServiceIdentity?
     public let questionPack: ConsultIntakeQuestionPack
     public let progress: ConsultIntakeProgress?
     public let prefillSuggestions: [ConsultIntakePrefillSuggestion]

@@ -29,8 +29,26 @@ import Testing
 
         let intake = try decode(ConsultIntakeStateResponse.self, key: "intake").intake
         #expect(intake.questionPack.id == "hair-color")
-        #expect(intake.questionPack.questions.count == 9)
+        // P6 — the intake diet. The colour pack is v3 and asks only what the
+        // analysis cannot read off the photographs.
+        #expect(intake.questionPack.version == 3)
+        #expect(intake.questionPack.questions.count == 7)
         #expect(intake.questionPack.questions.first { $0.key == "box_dye_history" } != nil)
+        #expect(intake.questionPack.questions.first { $0.key == "current_color" } == nil)
+        // The service the consult is about, named on the wire at last (B6).
+        let service = try #require(intake.service)
+        #expect(service.serviceId == "service_fixture_1")
+        #expect(service.name == "Signature Balayage")
+        #expect(service.proFacingName == "Balayage")
+        // Nullable together, and the whole object is optional, so a fixture
+        // written before it — and a Look whose service row is gone — decode.
+        var noService = try #require(try root()["intake"] as? [String: Any])
+        var noServiceInner = try #require(noService["intake"] as? [String: Any])
+        noServiceInner.removeValue(forKey: "service")
+        noService["intake"] = noServiceInner
+        #expect(
+            try decode(ConsultIntakeStateResponse.self, value: noService).intake.service == nil
+        )
 
         let capture = try decode(ConsultCaptureStateResponse.self, key: "capture").capture
         #expect(capture.shotPack.shots.map(\.key) == ConsultCaptureShotKey.hairPack)
@@ -419,7 +437,7 @@ import Testing
         let intake = try decode(ConsultIntakeStateResponse.self, key: "intake").intake
         let progress = try #require(intake.progress)
         #expect(progress.canComplete == false)
-        #expect(progress.nextQuestionKey == "current_color")
+        #expect(progress.nextQuestionKey == "change_scale")
         #expect(progress.blocker == "REQUIRED_ANSWERS_MISSING")
 
         var stripped = try #require(try root()["intake"] as? [String: Any])
