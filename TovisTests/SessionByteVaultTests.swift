@@ -238,3 +238,123 @@ struct SessionByteVaultTests {
         #expect(abs((found.capturedAt ?? .distantPast).timeIntervalSince(moment)) < 0.01)
     }
 }
+
+// MARK: - Consult capture custody (P2d)
+//
+// The consult bucket is separate from `.pendingUpload` on purpose, and these
+// pin the two properties the durable consult queue rests on: a shot's whole
+// identity survives a process death (the three idempotency keys included), and
+// nothing a consult writes can ever be picked up by the PRO media queue.
+@Suite(.serialized)
+struct SessionByteVaultConsultTests {
+    /// Own vault per test — suites run in parallel and this one shares the
+    /// consult bucket with the queue's tests. See `ConsultCaptureVaultIsolation`.
+    private func isolated(_ name: String, _ body: () throws -> Void) async rethrows {
+        try await ConsultCaptureVaultIsolation.$suffix.withValue(
+            "test-vault-\(name)-\(UUID().uuidString)"
+        ) {
+            defer {
+                for item in SessionByteVault.allConsultCaptures() {
+                    SessionByteVault.removeConsultCapture(item.id)
+                }
+            }
+            try body()
+        }
+    }
+
+    private func write(_ consultId: String, shot: ConsultCaptureShotKey = .hairBack)
+        -> SessionByteVault.ConsultCaptureItem? {
+        SessionByteVault.writeConsultCapture(
+            Data("consult-bytes".utf8),
+            consultId: consultId,
+            shotKey: shot,
+            shotPackVersion: 2,
+            schemaVersion: 1,
+            capturedAt: Date()
+        )
+    }
+
+    /// The whole point: everything needed to finish the chain comes back off
+    /// disk, in a process that never saw the capture.
+    @Test func aShotSurvivesWithItsIdempotencyKeysIntact() async throws {
+        try await isolated("aShotSurvivesWithItsIdempotencyKeysIntact") {
+            let consultId = "consult-\(UUID().uuidString)"
+
+            let written = try #require(write(consultId, shot: .eyesCloseup))
+            let recovered = try #require(
+                SessionByteVault.allConsultCaptures().first { $0.id == written.id }
+            )
+
+            #expect(recovered.consultId == consultId)
+            #expect(recovered.shotKey == .eyesCloseup)
+            #expect(recovered.shotPackVersion == 2)
+            #expect(recovered.schemaVersion == 1)
+            #expect(recovered.sizeBytes == Data("consult-bytes".utf8).count)
+            // 🔴 The keys are the part that cannot be re-derived. A retry that mints
+            // new ones spends a second paid quality check on the same photograph.
+            #expect(recovered.keys == written.keys)
+            let bytes = try #require(SessionByteVault.consultCaptureBytes(written.id))
+            #expect(SessionByteVault.read(bytes) == Data("consult-bytes".utf8))
+        }
+    }
+
+    @Test func chainProgressIsPersistedAndReadBack() async throws {
+        try await isolated("chainProgressIsPersistedAndReadBack") {
+            let consultId = "consult-\(UUID().uuidString)"
+
+            var item = try #require(write(consultId))
+            item.uploadSessionId = "upload_9"
+            item.storagePath = "consult-raw/v1/opaque.jpg"
+            item.bytesUploaded = true
+            item.captureId = "capture_9"
+            #expect(SessionByteVault.saveConsultCapture(item))
+
+            let recovered = try #require(
+                SessionByteVault.allConsultCaptures().first { $0.id == item.id }
+            )
+            #expect(recovered.uploadSessionId == "upload_9")
+            #expect(recovered.storagePath == "consult-raw/v1/opaque.jpg")
+            #expect(recovered.bytesUploaded)
+            #expect(recovered.captureId == "capture_9")
+        }
+    }
+
+    /// 🔴 Two owed-photo queues, two namespaces. A consult shot appearing in
+    /// `allPendingUploads()` would be presigned against the PRO media endpoints
+    /// under a booking id it does not have.
+    @Test func consultBytesAreInvisibleToTheProMediaQueue() async throws {
+        try await isolated("consultBytesAreInvisibleToTheProMediaQueue") {
+            let consultId = "consult-\(UUID().uuidString)"
+
+            let written = try #require(write(consultId))
+            let proOwed = SessionByteVault.allPendingUploads()
+            #expect(!proOwed.contains { $0.url.lastPathComponent.contains(written.id.uuidString) })
+            #expect(SessionByteVault.allConsultCaptures().contains { $0.id == written.id })
+        }
+    }
+
+    /// A camera start sweeps harvest. It must not sweep a consult shot the
+    /// server has not accepted — the same mistake `.pendingUpload` once made.
+    @Test func resetKeepsConsultCaptures() async throws {
+        try await isolated("resetKeepsConsultCaptures") {
+            let consultId = "consult-\(UUID().uuidString)"
+
+            let written = try #require(write(consultId))
+            SessionByteVault.reset()
+            #expect(SessionByteVault.allConsultCaptures().contains { $0.id == written.id })
+        }
+    }
+
+    /// Releasing a shot takes BOTH files. A manifest left behind would re-offer
+    /// a photograph that no longer exists on every launch.
+    @Test func removingReleasesBytesAndManifest() async throws {
+        try await isolated("removingReleasesBytesAndManifest") {
+            let consultId = "consult-\(UUID().uuidString)"
+
+            let written = try #require(write(consultId))
+            SessionByteVault.removeConsultCapture(written.id)
+            #expect(SessionByteVault.consultCaptureBytes(written.id) == nil)
+            #expect(!SessionByteVault.allConsultCaptures().contains { $0.id == written.id })
+        }
+    }
+}

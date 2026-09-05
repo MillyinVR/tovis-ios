@@ -125,13 +125,18 @@ final class SessionUploadQueue {
 
     // MARK: - The background session
 
+    /// Named, not a literal, so `AppDelegate` can ROUTE a relaunch's background
+    /// events to the queue that owns them — there is more than one background
+    /// session in the app now (see `ConsultCaptureUploadQueue`).
+    static let backgroundSessionIdentifier = "app.tovis.session-photo-uploads"
+
     /// ⚠️ Created exactly once per process. A second `URLSession` with the same
     /// background identifier is a hard crash, so this is `lazy` and nothing else
     /// may construct one.
     @ObservationIgnored
     private lazy var session: URLSession = {
         let config = URLSessionConfiguration.background(
-            withIdentifier: "app.tovis.session-photo-uploads"
+            withIdentifier: Self.backgroundSessionIdentifier
         )
         // The pro is standing in front of a client waiting on these — the system
         // must not defer them to a "convenient" moment tonight on wifi.

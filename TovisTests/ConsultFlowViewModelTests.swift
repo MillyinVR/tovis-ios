@@ -115,8 +115,16 @@ private actor MockConsultService: ConsultServicing {
     }
 
     func capture(consultId: String) async throws -> ConsultCaptureState {
-        try captureState()
+        // 🔴 The GET must reflect what the server DECIDED, not a blank pack. The
+        // flow re-reads capture state from here after every queue leg (P2d), so
+        // a mock that forgot its own rejection would make a real regression —
+        // a retake the client is never told about — look like passing code.
+        try decode(ConsultCaptureState.self,
+                   value: try captureDictionary(rejectedShot: rejectedShotKey))
     }
+
+    /// The shot this mock has rejected and not yet seen replaced.
+    private var rejectedShotKey: ConsultCaptureShotKey?
 
     func inspiration(consultId: String) async throws -> ConsultInspirationState {
         try inspirationState()
@@ -189,23 +197,91 @@ private actor MockConsultService: ConsultServicing {
         return try decode(ConsultInspirationState.self, value: value)
     }
 
-    func uploadAndCheckCapture(consultId: String, shot: ConsultCaptureShot,
-                               pack: ConsultCaptureShotPack, jpegData: Data,
-                               keys: ConsultCaptureMutationKeys) async throws
-        -> ConsultCaptureQualityResponse {
-        captureKeys.append(keys)
-        receivedByteCounts.append(jpegData.count)
+    // MARK: - The three capture legs (P2d)
+    //
+    // The mock models what the server actually does, because the durable queue's
+    // whole correctness argument rests on it: issue REPLAYS under the same key
+    // (same upload session, fresh token), attach REPLAYS under its key and hands
+    // back the SAME captureId, and quality is short-circuited by a verdict that
+    // already exists. A mock that minted something new each time would let a
+    // duplicate-spending queue pass.
+
+    private(set) var issuedKeys: [String] = []
+    private(set) var attachedKeys: [String] = []
+    private(set) var qualityKeys: [String] = []
+    private var uploadSessionsByIssueKey: [String: String] = [:]
+    private var captureIdsByAttachKey: [String: String] = [:]
+    private var verdictByCaptureId: [String: Bool] = [:]
+    private var issueTokenSerial = 0
+    /// Errors the next call of each leg should throw, popped in order.
+    var issueErrors: [Error] = []
+    var attachErrors: [Error] = []
+    var qualityErrors: [Error] = []
+
+    func issueCaptureUpload(consultId: String, shotKey: ConsultCaptureShotKey,
+                            shotPackVersion: Int, schemaVersion: Int, sizeBytes: Int,
+                            idempotencyKey: String) async throws -> ConsultCaptureUpload {
+        issuedKeys.append(idempotencyKey)
+        receivedByteCounts.append(sizeBytes)
+        if !issueErrors.isEmpty { throw issueErrors.removeFirst() }
+        let sessionId = uploadSessionsByIssueKey[idempotencyKey]
+            ?? "upload_\(idempotencyKey.prefix(8))"
+        uploadSessionsByIssueKey[idempotencyKey] = sessionId
+        issueTokenSerial += 1
+        let token = "token-\(issueTokenSerial)"
+        return try decode(ConsultCaptureUpload.self, value: [
+            "uploadSessionId": sessionId,
+            "shotKey": shotKey.rawValue,
+            "shotPackVersion": shotPackVersion,
+            "schemaVersion": schemaVersion,
+            "contentType": "image/jpeg",
+            "maxBytes": sizeBytes,
+            "expiresAt": "2026-08-11T19:00:00.000Z",
+            "rawExpiresAt": "2026-08-12T18:00:00.000Z",
+            "token": token,
+            "signedUrl": "https://storage.test/storage/v1/object/upload/sign/media-private/consult-raw/v1/\(sessionId).jpg?token=\(token)",
+        ])
+    }
+
+    func attachCapture(consultId: String, uploadSessionId: String,
+                       shotKey: ConsultCaptureShotKey, shotPackVersion: Int,
+                       schemaVersion: Int,
+                       idempotencyKey: String) async throws -> ConsultCaptureAttachResponse {
+        attachedKeys.append(idempotencyKey)
+        if !attachErrors.isEmpty { throw attachErrors.removeFirst() }
+        let captureId = captureIdsByAttachKey[idempotencyKey]
+            ?? "capture_\(shotKey.rawValue)_\(attachedKeys.count)"
+        captureIdsByAttachKey[idempotencyKey] = captureId
+        let stateValue = try captureDictionary(rejectedShot: nil)
+        return try decode(ConsultCaptureAttachResponse.self, value: [
+            "capture": stateValue, "captureId": captureId, "replayed": false,
+        ])
+    }
+
+    func checkCaptureQuality(consultId: String, captureId: String, shotPackVersion: Int,
+                             schemaVersion: Int,
+                             idempotencyKey: String) async throws -> ConsultCaptureQualityResponse {
+        qualityKeys.append(idempotencyKey)
+        if !qualityErrors.isEmpty { throw qualityErrors.removeFirst() }
+        let shotKey = ConsultCaptureShotKey(
+            captureId.replacingOccurrences(of: "capture_", with: "")
+                .components(separatedBy: "_").dropLast().joined(separator: "_")
+        )
         let accepted: Bool
-        if shot.key == .hairBack, !rejectedBackOnce {
+        if let settled = verdictByCaptureId[captureId] {
+            accepted = settled
+        } else if shotKey == .hairBack, !rejectedBackOnce {
             rejectedBackOnce = true
             accepted = false
         } else {
-            acceptedShots.insert(shot.key)
+            acceptedShots.insert(shotKey)
             accepted = true
         }
-        let stateValue = try captureDictionary(rejectedShot: accepted ? nil : shot.key)
+        rejectedShotKey = accepted ? (rejectedShotKey == shotKey ? nil : rejectedShotKey) : shotKey
+        verdictByCaptureId[captureId] = accepted
+        let stateValue = try captureDictionary(rejectedShot: accepted ? nil : shotKey)
         let quality: [String: Any] = [
-            "captureId": "capture_\(shot.key.rawValue)",
+            "captureId": captureId,
             "accepted": accepted,
             "reasonCode": accepted ? "PASS" : "WARM_INDOOR_LIGHT",
             "retakeTip": accepted ? NSNull() : "Move near a window and face the daylight.",
@@ -359,175 +435,212 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
         )
     }
 
+    /// A queue wired to the mock service, with the transfer completing inline so
+    /// a "round trip" is deterministic. Everything else — the leg ordering, the
+    /// persisted keys, the vault — is the real thing.
+    private func testQueue(_ service: MockConsultService) async -> ConsultCaptureUploadQueue {
+        await ConsultCaptureUploadQueueTestSupport.freshQueue(service: service)
+    }
+
+    /// Both capture tests write real bytes to the real vault, so they run inside
+    /// their own isolated one — suites run in parallel and a shared vault means
+    /// one suite's queue drains another's items. See
+    /// `ConsultCaptureVaultIsolation`.
+    private func withCaptureVault(_ name: String, _ body: () async throws -> Void) async throws {
+        try await ConsultCaptureUploadQueueTestSupport.isolated(name, body)
+    }
+
+    /// Take one shot AND let the durable queue finish it. In the app these are
+    /// separate — that separation is the point of P2d — so a test that wants to
+    /// assert on the outcome has to wait for the queue rather than for the call.
+    private func submit(
+        _ model: ConsultFlowViewModel, _ jpeg: Data, for shot: ConsultCaptureShot
+    ) async {
+        await model.submitPhoto(jpeg, for: shot)
+        await model.uploads.settle()
+    }
+
     @Test func completeMockedGuidedBookingConsultFlowIncludesLocalAndServerRetakes() async throws {
-        let service = MockConsultService(root: try fixtureRoot())
-        let model = ConsultFlowViewModel(
-            anchor: .booking("booking_fixture_1"),
-            professionalId: "cmq9p645v0002jp04fttoatlq",
-            service: service
-        )
-
-        await model.start()
-        #expect(model.stage == .prerequisites)
-        let sensitive = try #require(model.agreementState?.requirements.first {
-            $0.kind == .sensitiveDataConsent
-        })
-        await model.accept(sensitive)
-        let adult = try #require(model.agreementState?.requirements.first {
-            $0.kind == .adult18PlusAttestation
-        })
-        await model.accept(adult)
-        #expect(model.stage == .intake)
-        #expect(model.answers["change_scale"] == "noticeable")
-
-        let questions = try #require(model.intakeState?.questionPack.questions)
-        for question in questions where question.requirement == .required
-            && model.answers[question.key] == nil {
-            model.selectAnswer(
-                questionKey: question.key,
-                value: try #require(question.options.first?.value)
+        try await withCaptureVault("flow-full") {
+            let service = MockConsultService(root: try fixtureRoot())
+            let model = ConsultFlowViewModel(
+                anchor: .booking("booking_fixture_1"),
+                professionalId: "cmq9p645v0002jp04fttoatlq",
+                service: service,
+                uploads: await testQueue(service)
             )
-        }
-        await model.submitIntake()
-        #expect(model.stage == .capture)
-        #expect(model.inspirationState?.progress.blocker == .sourceDecisionRequired)
-        #expect(!model.inspirationDone)
 
-        let shots = try #require(model.captureState?.shotPack.shots)
-        let back = try #require(shots.first { $0.key == .hairBack })
-        let guidedPipeline = ConsultTransientPhotoPipeline(
-            quality: FirstSoftThenPassingConsultQC(),
-            preparation: IdentityConsultJPEGPreparation()
-        )
-        let localFailure = await guidedPipeline.process(
-            Data("soft-back".utf8),
-            expectations: ConsultShotGuidance.expectations(for: back.key)
-        )
-        #expect(localFailure == .retake("It came out soft"))
-        #expect(await service.receivedByteCounts.isEmpty)
+            await model.start()
+            #expect(model.stage == .prerequisites)
+            let sensitive = try #require(model.agreementState?.requirements.first {
+                $0.kind == .sensitiveDataConsent
+            })
+            await model.accept(sensitive)
+            let adult = try #require(model.agreementState?.requirements.first {
+                $0.kind == .adult18PlusAttestation
+            })
+            await model.accept(adult)
+            #expect(model.stage == .intake)
+            #expect(model.answers["change_scale"] == "noticeable")
 
-        let firstBack = await guidedPipeline.process(
-            Data("first-back".utf8),
-            expectations: ConsultShotGuidance.expectations(for: back.key)
-        )
-        guard case let .accepted(firstBackJPEG) = firstBack else {
-            Issue.record("Guided post-capture QC should accept the retry")
-            return
-        }
-        await model.submitPhoto(firstBackJPEG, for: back)
-        #expect(model.captureState?.slots.first { $0.shotKey == .hairBack }?.state == .rejected)
-        #expect(model.captureState?.slots.first { $0.shotKey == .hairBack }?.retakeTip != nil)
-        let serverRetake = await guidedPipeline.process(
-            Data("retake-back".utf8),
-            expectations: ConsultShotGuidance.expectations(for: back.key)
-        )
-        guard case let .accepted(serverRetakeJPEG) = serverRetake else {
-            Issue.record("Guided QC should accept the server-requested retake")
-            return
-        }
-        await model.submitPhoto(serverRetakeJPEG, for: back)
-        for shot in shots where shot.key != .hairBack {
-            let outcome = await guidedPipeline.process(
-                Data("photo-\(shot.key.rawValue)".utf8),
-                expectations: ConsultShotGuidance.expectations(for: shot.key)
+            let questions = try #require(model.intakeState?.questionPack.questions)
+            for question in questions where question.requirement == .required
+                && model.answers[question.key] == nil {
+                model.selectAnswer(
+                    questionKey: question.key,
+                    value: try #require(question.options.first?.value)
+                )
+            }
+            await model.submitIntake()
+            #expect(model.stage == .capture)
+            #expect(model.inspirationState?.progress.blocker == .sourceDecisionRequired)
+            #expect(!model.inspirationDone)
+
+            let shots = try #require(model.captureState?.shotPack.shots)
+            let back = try #require(shots.first { $0.key == .hairBack })
+            let guidedPipeline = ConsultTransientPhotoPipeline(
+                quality: FirstSoftThenPassingConsultQC(),
+                preparation: IdentityConsultJPEGPreparation()
             )
-            guard case let .accepted(jpeg) = outcome else {
-                Issue.record("Every deterministic guided shot should pass local QC")
+            let localFailure = await guidedPipeline.process(
+                Data("soft-back".utf8),
+                expectations: ConsultShotGuidance.expectations(for: back.key)
+            )
+            #expect(localFailure == .retake("It came out soft"))
+            #expect(await service.receivedByteCounts.isEmpty)
+
+            let firstBack = await guidedPipeline.process(
+                Data("first-back".utf8),
+                expectations: ConsultShotGuidance.expectations(for: back.key)
+            )
+            guard case let .accepted(firstBackJPEG) = firstBack else {
+                Issue.record("Guided post-capture QC should accept the retry")
                 return
             }
-            await model.submitPhoto(jpeg, for: shot)
-        }
-        // 7/7 accepted but the inspiration review is still open: the server
-        // holds the session at MEDIA_READY, and the client must not jump ahead
-        // locally (the old hasAllAcceptedShots shortcut dead-ended exactly here).
-        #expect(model.captureState?.hasAllAcceptedShots == true)
-        #expect(model.stage == .capture)
-        #expect(!model.canOfferPartialContinue)
-
-        await model.uploadInspirationPhoto(Data("inspiration-look".utf8))
-        var answeredRounds = 0
-        while let question = model.inspirationState?.progress.currentQuestion,
-              answeredRounds < 10 {
-            answeredRounds += 1
-            if question.kind == .text {
-                await model.answerInspiration(
-                    question: question, selectedValues: [], text: "", sentiment: nil
-                )
-            } else {
-                let value = try #require(question.options.first?.value)
-                await model.answerInspiration(
-                    question: question, selectedValues: [value], text: "", sentiment: nil
-                )
+            await submit(model, firstBackJPEG, for: back)
+            #expect(model.captureState?.slots.first { $0.shotKey == .hairBack }?.state == .rejected)
+            #expect(model.captureState?.slots.first { $0.shotKey == .hairBack }?.retakeTip != nil)
+            let serverRetake = await guidedPipeline.process(
+                Data("retake-back".utf8),
+                expectations: ConsultShotGuidance.expectations(for: back.key)
+            )
+            guard case let .accepted(serverRetakeJPEG) = serverRetake else {
+                Issue.record("Guided QC should accept the server-requested retake")
+                return
             }
+            await submit(model, serverRetakeJPEG, for: back)
+            for shot in shots where shot.key != .hairBack {
+                let outcome = await guidedPipeline.process(
+                    Data("photo-\(shot.key.rawValue)".utf8),
+                    expectations: ConsultShotGuidance.expectations(for: shot.key)
+                )
+                guard case let .accepted(jpeg) = outcome else {
+                    Issue.record("Every deterministic guided shot should pass local QC")
+                    return
+                }
+                await submit(model, jpeg, for: shot)
+            }
+            // 7/7 accepted but the inspiration review is still open: the server
+            // holds the session at MEDIA_READY, and the client must not jump ahead
+            // locally (the old hasAllAcceptedShots shortcut dead-ended exactly here).
+            #expect(model.captureState?.hasAllAcceptedShots == true)
+            #expect(model.stage == .capture)
+            #expect(!model.canOfferPartialContinue)
+
+            await model.uploadInspirationPhoto(Data("inspiration-look".utf8))
+            var answeredRounds = 0
+            while let question = model.inspirationState?.progress.currentQuestion,
+                  answeredRounds < 10 {
+                answeredRounds += 1
+                if question.kind == .text {
+                    await model.answerInspiration(
+                        question: question, selectedValues: [], text: "", sentiment: nil
+                    )
+                } else {
+                    let value = try #require(question.options.first?.value)
+                    await model.answerInspiration(
+                        question: question, selectedValues: [value], text: "", sentiment: nil
+                    )
+                }
+            }
+            #expect(answeredRounds == 7)
+            #expect(model.inspirationDone)
+            #expect(await service.inspirationUploadByteCounts == [Data("inspiration-look".utf8).count])
+            #expect(await service.answeredInspirationKeys.count == 7)
+            // The completed review advances the session server-side; the client
+            // follows it into the analysis stage instead of deciding locally.
+            #expect(model.stage == .analysis)
+            #expect(model.analysisState?.status == .analysisPending)
+
+            await model.startAnalysis()
+            #expect(model.stage == .results)
+            #expect(model.results?.clientIntake.first?.questionKey == "desired_color")
+            #expect(model.results?.safetyFlags.first?.code == "RECENT_BOX_DYE")
+            #expect(model.results?.recommendationDirections.count == 2)
+            #expect(model.results?.meCardTeaser.locked == true)
+
+            await model.tapLockedMeCard()
+            #expect(model.teaserTapped)
+            #expect(await service.teaserRecorded)
+            #expect(await service.receivedByteCounts.count == 8)
+            #expect(await guidedPipeline.retainedByteCount() == 0)
+            // Eight photographs, eight DISTINCT issue keys — and no more than eight,
+            // which is what says a retry replayed its key instead of minting a
+            // second upload session and a second paid quality check.
+            let issued = await service.issuedKeys
+            #expect(Set(issued).count == 8)
+            #expect(await Set(service.qualityKeys).count == 8)
+            // Nothing is still owed: every shot's bytes were released on its verdict.
+            #expect(model.uploads.items(consultId: "consult_fixture_1").isEmpty)
+            #expect(model.failure == nil)
         }
-        #expect(answeredRounds == 7)
-        #expect(model.inspirationDone)
-        #expect(await service.inspirationUploadByteCounts == [Data("inspiration-look".utf8).count])
-        #expect(await service.answeredInspirationKeys.count == 7)
-        // The completed review advances the session server-side; the client
-        // follows it into the analysis stage instead of deciding locally.
-        #expect(model.stage == .analysis)
-        #expect(model.analysisState?.status == .analysisPending)
-
-        await model.startAnalysis()
-        #expect(model.stage == .results)
-        #expect(model.results?.clientIntake.first?.questionKey == "desired_color")
-        #expect(model.results?.safetyFlags.first?.code == "RECENT_BOX_DYE")
-        #expect(model.results?.recommendationDirections.count == 2)
-        #expect(model.results?.meCardTeaser.locked == true)
-
-        await model.tapLockedMeCard()
-        #expect(model.teaserTapped)
-        #expect(await service.teaserRecorded)
-        #expect(await service.receivedByteCounts.count == 8)
-        #expect(await guidedPipeline.retainedByteCount() == 0)
-        let keys = await service.captureKeys
-        #expect(Set(keys.map(\.issue)).count == 8)
-        #expect(model.failure == nil)
     }
 
     @Test func partialPackContinuesThroughProceedOnceInspirationIsDone() async throws {
-        let service = MockConsultService(root: try fixtureRoot())
-        let model = ConsultFlowViewModel(
-            anchor: .booking("booking_fixture_1"),
-            professionalId: "cmq9p645v0002jp04fttoatlq",
-            service: service
-        )
-
-        await model.start()
-        for requirement in model.agreementState?.requirements ?? [] {
-            await model.accept(requirement)
-        }
-        let questions = try #require(model.intakeState?.questionPack.questions)
-        for question in questions where question.requirement == .required
-            && model.answers[question.key] == nil {
-            model.selectAnswer(
-                questionKey: question.key,
-                value: try #require(question.options.first?.value)
+        try await withCaptureVault("flow-partial") {
+            let service = MockConsultService(root: try fixtureRoot())
+            let model = ConsultFlowViewModel(
+                anchor: .booking("booking_fixture_1"),
+                professionalId: "cmq9p645v0002jp04fttoatlq",
+                service: service,
+                uploads: await testQueue(service)
             )
+
+            await model.start()
+            for requirement in model.agreementState?.requirements ?? [] {
+                await model.accept(requirement)
+            }
+            let questions = try #require(model.intakeState?.questionPack.questions)
+            for question in questions where question.requirement == .required
+                && model.answers[question.key] == nil {
+                model.selectAnswer(
+                    questionKey: question.key,
+                    value: try #require(question.options.first?.value)
+                )
+            }
+            await model.submitIntake()
+            #expect(model.stage == .capture)
+
+            // Continuing without an inspiration photo is a complete review.
+            await model.skipInspiration()
+            #expect(model.inspirationDone)
+            #expect(model.stage == .capture)
+
+            // One accepted photo out of seven unlocks the partial-pack path.
+            let left = try #require(model.captureState?.shotPack.shots.first { $0.key == .hairLeft })
+            await submit(model, Data("left".utf8), for: left)
+            #expect(model.acceptedShotCount == 1)
+            #expect(model.stage == .capture)
+            #expect(model.canOfferPartialContinue)
+
+            await model.proceedWithAccepted()
+            #expect(model.stage == .analysis)
+            #expect(model.analysisState?.status == .analysisPending)
+
+            await model.startAnalysis()
+            #expect(model.stage == .results)
+            #expect(model.failure == nil)
         }
-        await model.submitIntake()
-        #expect(model.stage == .capture)
-
-        // Continuing without an inspiration photo is a complete review.
-        await model.skipInspiration()
-        #expect(model.inspirationDone)
-        #expect(model.stage == .capture)
-
-        // One accepted photo out of seven unlocks the partial-pack path.
-        let left = try #require(model.captureState?.shotPack.shots.first { $0.key == .hairLeft })
-        await model.submitPhoto(Data("left".utf8), for: left)
-        #expect(model.acceptedShotCount == 1)
-        #expect(model.stage == .capture)
-        #expect(model.canOfferPartialContinue)
-
-        await model.proceedWithAccepted()
-        #expect(model.stage == .analysis)
-        #expect(model.analysisState?.status == .analysisPending)
-
-        await model.startAnalysis()
-        #expect(model.stage == .results)
-        #expect(model.failure == nil)
     }
 
     /// P4b: the analysis became a background run, so the screen has to follow

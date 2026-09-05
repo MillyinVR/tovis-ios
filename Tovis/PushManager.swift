@@ -144,13 +144,31 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         completionHandler: @escaping () -> Void
     ) {
         Task { @MainActor in
-            let uploads = SessionUploadQueue.shared
-            uploads.backgroundEventsCompletion = completionHandler
-            // Register the delegate now. Waiting for the signed-in shell's
-            // `configure` would mean waiting on `bootstrap()` — i.e. on the
-            // network — before the events this relaunch exists to deliver can
-            // arrive at all.
-            uploads.prepareForBackgroundEvents()
+            // ⚠️ ROUTE BY IDENTIFIER. There are two background sessions now (pro
+            // session media, and the client's consult capture chain), and the
+            // completion handler belongs to exactly the one iOS named. Handing
+            // it to the wrong queue leaves the real one unanswered — which the
+            // app is killed for — and calls the handler before the events it
+            // covers have been delivered.
+            switch identifier {
+            case ConsultCaptureUploadQueue.backgroundSessionIdentifier:
+                let uploads = ConsultCaptureUploadQueue.shared
+                uploads.backgroundEventsCompletion = completionHandler
+                uploads.prepareForBackgroundEvents()
+            case SessionUploadQueue.backgroundSessionIdentifier:
+                let uploads = SessionUploadQueue.shared
+                uploads.backgroundEventsCompletion = completionHandler
+                // Register the delegate now. Waiting for the signed-in shell's
+                // `configure` would mean waiting on `bootstrap()` — i.e. on the
+                // network — before the events this relaunch exists to deliver can
+                // arrive at all.
+                uploads.prepareForBackgroundEvents()
+            default:
+                // An identifier neither queue owns. Nothing here can deliver its
+                // events — but the handler still MUST run, or the app is killed
+                // for not answering a relaunch it was given.
+                completionHandler()
+            }
         }
     }
 

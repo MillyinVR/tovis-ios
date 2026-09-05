@@ -36,14 +36,23 @@ enum SessionByteVault {
         case harvest = "harvested-shots"
         /// Captured photos whose upload hasn't been confirmed. Durable.
         case pendingUpload = "pending-uploads"
+        /// CLIENT consult capture shots whose issue→upload→attach→quality chain
+        /// hasn't finished. Durable, and deliberately a SEPARATE directory from
+        /// `.pendingUpload`: that bucket is drained by `SessionUploadQueue`
+        /// against the PRO media endpoints, and a consult shot landing in it
+        /// would be presigned as booking media. Two owed-photo queues, two
+        /// namespaces, no way for one to pick up the other's work.
+        case consultCapture = "consult-captures"
 
         /// Harvest is disposable, so Caches (OS-reclaimable) is correct.
         /// Un-uploaded photos are the pro's work — Application Support, like
-        /// `ClipVault`, because Caches can be evicted under disk pressure.
+        /// `ClipVault`, because Caches can be evicted under disk pressure. A
+        /// consult shot is the CLIENT's work and owed to the server in exactly
+        /// the same way, so it gets the same durable domain.
         var domain: FileManager.SearchPathDirectory {
             switch self {
             case .harvest: return .cachesDirectory
-            case .pendingUpload: return .applicationSupportDirectory
+            case .pendingUpload, .consultCapture: return .applicationSupportDirectory
             }
         }
     }
@@ -68,7 +77,10 @@ enum SessionByteVault {
         guard let root = FileManager.default.urls(
             for: bucket.domain, in: .userDomainMask
         ).first else { return nil }
-        let dir = root.appendingPathComponent(bucket.rawValue, isDirectory: true)
+        var dir = root.appendingPathComponent(bucket.rawValue, isDirectory: true)
+        if let suffix = ConsultCaptureVaultIsolation.suffix {
+            dir = dir.appendingPathComponent(suffix, isDirectory: true)
+        }
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
@@ -213,6 +225,154 @@ enum SessionByteVault {
                   at: dir, includingPropertiesForKeys: nil
               ) else { return }
         for url in entries { try? FileManager.default.removeItem(at: url) }
+    }
+
+    // MARK: - Consult capture custody
+
+    /// One consult shot still owed to the server, recovered from disk.
+    ///
+    /// ⚠️ Unlike `.pendingUpload`, the metadata does NOT ride in the filename.
+    /// A consult item carries seven fields — including a server-defined
+    /// `shotKey` and three idempotency keys — and a `__`-joined name would put
+    /// the whole chain at the mercy of a future pack key that happens to
+    /// contain the separator. So each item is a pair: `<uuid>.jpg` holding the
+    /// bytes and `<uuid>.json` holding the manifest. The directory listing is
+    /// still the whole source of truth (there is no central index to lose), and
+    /// the JPEG is still the thing that says "this is owed".
+    struct ConsultCaptureItem: Codable, Equatable, Identifiable {
+        let id: UUID
+        let consultId: String
+        let shotKey: ConsultCaptureShotKey
+        let shotPackVersion: Int
+        let schemaVersion: Int
+        let sizeBytes: Int
+        let capturedAt: Date
+        /// The three keys the whole chain replays under. Rotated ONLY when the
+        /// server says this ticket is past saving; see the queue.
+        var keys: ConsultCaptureMutationKeys
+        /// The issued ticket, once leg 1 has run.
+        var uploadSessionId: String?
+        /// The object path the signed URL wrote to — how a background task that
+        /// outlived its process is matched back to this item.
+        var storagePath: String?
+        /// Set once storage has accepted the bytes (or is believed to have).
+        var bytesUploaded: Bool
+        /// Set once the attach leg has bound a `ConsultCapture` row.
+        var captureId: String?
+        /// Set once the server has REFUSED this photo in a way retrying cannot
+        /// fix. The bytes are kept: a refusal is the one case where this copy
+        /// is the only one that exists.
+        var blockedReason: String?
+
+        var isBlocked: Bool { blockedReason != nil }
+    }
+
+    /// Spill a consult shot the instant the shutter fires, with everything the
+    /// chain needs to finish it in a later process.
+    ///
+    /// Order matters: the manifest is written FIRST and the bytes second, so a
+    /// crash between the two can only ever leave a manifest with no photo —
+    /// swept below — never a photo whose identity is unknowable.
+    static func writeConsultCapture(
+        _ data: Data,
+        consultId: String,
+        shotKey: ConsultCaptureShotKey,
+        shotPackVersion: Int,
+        schemaVersion: Int,
+        capturedAt: Date
+    ) -> ConsultCaptureItem? {
+        guard let dir = directory(.consultCapture), !data.isEmpty else { return nil }
+        let item = ConsultCaptureItem(
+            id: UUID(),
+            consultId: consultId,
+            shotKey: shotKey,
+            shotPackVersion: shotPackVersion,
+            schemaVersion: schemaVersion,
+            sizeBytes: data.count,
+            capturedAt: capturedAt,
+            keys: ConsultCaptureMutationKeys(),
+            uploadSessionId: nil,
+            storagePath: nil,
+            bytesUploaded: false,
+            captureId: nil,
+            blockedReason: nil
+        )
+        guard saveConsultCapture(item) else { return nil }
+        guard write(data, to: dir, named: "\(item.id.uuidString).jpg") != nil else {
+            try? FileManager.default.removeItem(at: consultManifestURL(item.id, in: dir))
+            return nil
+        }
+        return item
+    }
+
+    /// Persist a changed manifest. Atomic, so a kill mid-write leaves the
+    /// previous manifest rather than a truncated one.
+    @discardableResult
+    static func saveConsultCapture(_ item: ConsultCaptureItem) -> Bool {
+        guard let dir = directory(.consultCapture),
+              let encoded = try? JSONEncoder().encode(item) else { return false }
+        do {
+            try encoded.write(to: consultManifestURL(item.id, in: dir), options: .atomic)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// The bytes for one consult item.
+    static func consultCaptureBytes(_ id: UUID) -> URL? {
+        guard let dir = directory(.consultCapture) else { return nil }
+        let url = consultBytesURL(id, in: dir)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    /// Every consult shot still owed, across every consult. Oldest first, so a
+    /// pack uploads in the order it was shot.
+    ///
+    /// 🔴 Deliberately not scoped to one consult: the whole point of the durable
+    /// queue is that it keeps working after the flow is closed and after a
+    /// relaunch, neither of which has a "current consult" to filter on.
+    static func allConsultCaptures() -> [ConsultCaptureItem] {
+        guard let dir = directory(.consultCapture),
+              let entries = try? FileManager.default.contentsOfDirectory(
+                  at: dir, includingPropertiesForKeys: nil
+              ) else { return [] }
+        let decoder = JSONDecoder()
+        return entries
+            .filter { $0.pathExtension == "json" }
+            .compactMap { manifest -> ConsultCaptureItem? in
+                guard let data = try? Data(contentsOf: manifest),
+                      let item = try? decoder.decode(ConsultCaptureItem.self, from: data)
+                else { return nil }
+                // A manifest whose photo is gone is a crash between the two
+                // writes, or bytes released without their manifest. Nothing is
+                // owed for it, and leaving it would re-offer a photo that no
+                // longer exists on every launch.
+                guard FileManager.default.fileExists(
+                    atPath: consultBytesURL(item.id, in: dir).path
+                ) else {
+                    try? FileManager.default.removeItem(at: manifest)
+                    return nil
+                }
+                return item
+            }
+            .sorted { $0.capturedAt < $1.capturedAt }
+    }
+
+    /// Release one consult item — bytes and manifest — once the server has a
+    /// quality verdict for it, or when the client withdraws consent.
+    static func removeConsultCapture(_ id: UUID) {
+        guard let dir = directory(.consultCapture) else { return }
+        try? FileManager.default.removeItem(at: consultBytesURL(id, in: dir))
+        try? FileManager.default.removeItem(at: consultManifestURL(id, in: dir))
+    }
+
+    private static func consultBytesURL(_ id: UUID, in dir: URL) -> URL {
+        dir.appendingPathComponent("\(id.uuidString).jpg")
+    }
+
+    private static func consultManifestURL(_ id: UUID, in dir: URL) -> URL {
+        dir.appendingPathComponent("\(id.uuidString).json")
     }
 
     // MARK: - Focal encoding

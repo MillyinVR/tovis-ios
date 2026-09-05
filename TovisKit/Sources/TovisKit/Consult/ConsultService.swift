@@ -28,9 +28,23 @@ public protocol ConsultServicing: Sendable {
     func inspirationImage(consultId: String,
                           readEndpoint: String) async throws -> ConsultInspirationSignedRead
     func capture(consultId: String) async throws -> ConsultCaptureState
-    func uploadAndCheckCapture(consultId: String, shot: ConsultCaptureShot,
-                               pack: ConsultCaptureShotPack, jpegData: Data,
-                               keys: ConsultCaptureMutationKeys) async throws -> ConsultCaptureQualityResponse
+    // The capture chain is THREE separately-durable legs, not one call. Each is
+    // driven by `ConsultCaptureUploadQueue`, which persists the bytes and all
+    // three idempotency keys before the first one runs — so a leg that is
+    // interrupted by a dismissed camera, a backgrounded app or a killed process
+    // resumes at exactly the leg it stopped on, days later if it has to.
+    // (The old single `uploadAndCheckCapture` held the ticket in RAM and did
+    // its PUT on the foreground session; losing either lost the photo.)
+    func issueCaptureUpload(consultId: String, shotKey: ConsultCaptureShotKey,
+                            shotPackVersion: Int, schemaVersion: Int, sizeBytes: Int,
+                            idempotencyKey: String) async throws -> ConsultCaptureUpload
+    func attachCapture(consultId: String, uploadSessionId: String,
+                       shotKey: ConsultCaptureShotKey, shotPackVersion: Int,
+                       schemaVersion: Int,
+                       idempotencyKey: String) async throws -> ConsultCaptureAttachResponse
+    func checkCaptureQuality(consultId: String, captureId: String, shotPackVersion: Int,
+                             schemaVersion: Int,
+                             idempotencyKey: String) async throws -> ConsultCaptureQualityResponse
     func proceedWithAccepted(consultId: String) async throws -> ConsultCaptureState
     func setChartCopy(consultId: String, optIn: Bool) async throws -> ConsultCaptureState
     func analysis(consultId: String) async throws -> ConsultAnalysisState
@@ -52,7 +66,6 @@ public final class ConsultService: ConsultServicing, Sendable {
     private let uploadSession: URLSession
     private let supabaseURL: URL?
     private let supabaseKey: String?
-    private let captureAttempts = ConsultCaptureAttemptStore()
 
     public init(api: APIClient, uploadSession: URLSession,
                 supabaseURL: URL?, supabaseKey: String?) {
@@ -408,15 +421,28 @@ public final class ConsultService: ConsultServicing, Sendable {
         return response.capture
     }
 
-    public func uploadAndCheckCapture(
+    /// Leg 1 — mint (or replay) the upload ticket for one shot.
+    ///
+    /// Replaying the same `idempotencyKey` returns the SAME `uploadSessionId`
+    /// and storage path with a FRESH signed URL, which is exactly what a queue
+    /// resuming after a dead connection needs. It throws
+    /// `CONSULT_CAPTURE_UPLOAD_EXPIRED` (410) once that upload session is no
+    /// longer PENDING or has passed its one-hour TTL — see
+    /// `issueConsultCaptureUpload` in lib/consult/captureContract.ts.
+    ///
+    /// The server hashes `sizeBytes` into the request hash, so a replay MUST
+    /// present the identical bytes. That is why the queue persists the JPEG
+    /// rather than re-encoding it.
+    public func issueCaptureUpload(
         consultId: String,
-        shot: ConsultCaptureShot,
-        pack: ConsultCaptureShotPack,
-        jpegData: Data,
-        keys: ConsultCaptureMutationKeys
-    ) async throws -> ConsultCaptureQualityResponse {
-        guard !jpegData.isEmpty else { throw ConsultClientFailure.invalidPhoto }
-        guard jpegData.count <= Self.maximumPhotoBytes else { throw ConsultClientFailure.photoTooLarge }
+        shotKey: ConsultCaptureShotKey,
+        shotPackVersion: Int,
+        schemaVersion: Int,
+        sizeBytes: Int,
+        idempotencyKey: String
+    ) async throws -> ConsultCaptureUpload {
+        guard sizeBytes > 0 else { throw ConsultClientFailure.invalidPhoto }
+        guard sizeBytes <= Self.maximumPhotoBytes else { throw ConsultClientFailure.photoTooLarge }
 
         struct IssueBody: Encodable {
             let idempotencyKey: String
@@ -426,53 +452,46 @@ public final class ConsultService: ConsultServicing, Sendable {
             let contentType: String
             let sizeBytes: Int
         }
-        let issueBody = try JSONEncoder.canonical.encode(IssueBody(
-            idempotencyKey: keys.issue,
-            shotKey: shot.key,
-            shotPackVersion: pack.version,
-            schemaVersion: pack.schemaVersion,
+        let body = try JSONEncoder.canonical.encode(IssueBody(
+            idempotencyKey: idempotencyKey,
+            shotKey: shotKey,
+            shotPackVersion: shotPackVersion,
+            schemaVersion: schemaVersion,
             contentType: "image/jpeg",
-            sizeBytes: jpegData.count
+            sizeBytes: sizeBytes
         ))
-        let issued: ConsultCaptureIssueUploadResponse
-        if let prior = await captureAttempts.upload(for: keys.issue) {
-            issued = prior
-        } else {
-            issued = try await api.request(
-                "/client/consult/\(consultId)/capture/uploads", method: .post, body: issueBody
-            )
-            await captureAttempts.save(upload: issued, for: keys.issue)
-        }
-        guard issued.upload.shotKey == shot.key,
-              issued.upload.shotPackVersion == pack.version,
-              issued.upload.schemaVersion == pack.schemaVersion,
+        let issued: ConsultCaptureIssueUploadResponse = try await api.request(
+            "/client/consult/\(consultId)/capture/uploads", method: .post, body: body
+        )
+        // The ticket must describe the photo we are actually holding. A ticket
+        // bound to another slot, pack or size is not a bad connection — it is a
+        // contract the app must refuse rather than upload into.
+        guard issued.upload.shotKey == shotKey,
+              issued.upload.shotPackVersion == shotPackVersion,
+              issued.upload.schemaVersion == schemaVersion,
               issued.upload.contentType == "image/jpeg",
-              issued.upload.maxBytes == jpegData.count,
-              let signed = issued.upload.signedUrl.flatMap(URL.init(string:)) else {
+              issued.upload.maxBytes == sizeBytes,
+              issued.upload.signedUrl.flatMap(URL.init(string:)) != nil else {
             throw ConsultClientFailure.contractMismatch
         }
+        return issued.upload
+    }
 
-        if await !captureAttempts.didUpload(for: keys.issue) {
-            do {
-                try await SupabaseSignedUpload.putSignedURL(
-                    session: uploadSession,
-                    supabaseURL: supabaseURL,
-                    supabaseKey: supabaseKey,
-                    signedURL: signed,
-                    expectedToken: issued.upload.token,
-                    data: jpegData,
-                    contentType: "image/jpeg"
-                )
-                await captureAttempts.markUploaded(for: keys.issue)
-            } catch ConsultClientFailure.contractMismatch {
-                throw ConsultClientFailure.contractMismatch
-            } catch {
-                // A lost upload response can still mean the private write landed.
-                // Continue to attach: the server validates exact binding, media
-                // type and byte count, and otherwise returns a stable failure.
-            }
-        }
-
+    /// Leg 3 — bind the uploaded object to a `ConsultCapture` row.
+    ///
+    /// Idempotent on `attachIdempotencyKey`: a replay returns the SAME
+    /// `captureId`, which is how the queue recovers a capture whose attach
+    /// response was lost (offline the instant it landed, or the process died).
+    /// Attach is also what CONSUMES the upload session, so it is always tried
+    /// before any thought of re-issuing.
+    public func attachCapture(
+        consultId: String,
+        uploadSessionId: String,
+        shotKey: ConsultCaptureShotKey,
+        shotPackVersion: Int,
+        schemaVersion: Int,
+        idempotencyKey: String
+    ) async throws -> ConsultCaptureAttachResponse {
         struct AttachBody: Encodable {
             let idempotencyKey: String
             let uploadSessionId: String
@@ -480,41 +499,43 @@ public final class ConsultService: ConsultServicing, Sendable {
             let shotPackVersion: Int
             let schemaVersion: Int
         }
-        let attachBody = try JSONEncoder.canonical.encode(AttachBody(
-            idempotencyKey: keys.attach,
-            uploadSessionId: issued.upload.uploadSessionId,
-            shotKey: shot.key,
-            shotPackVersion: pack.version,
-            schemaVersion: pack.schemaVersion
+        let body = try JSONEncoder.canonical.encode(AttachBody(
+            idempotencyKey: idempotencyKey,
+            uploadSessionId: uploadSessionId,
+            shotKey: shotKey,
+            shotPackVersion: shotPackVersion,
+            schemaVersion: schemaVersion
         ))
-        let captureId: String
-        if let prior = await captureAttempts.captureId(for: keys.issue) {
-            captureId = prior
-        } else {
-            let attached: ConsultCaptureAttachResponse = try await api.request(
-                "/client/consult/\(consultId)/capture/attach", method: .post, body: attachBody
-            )
-            captureId = attached.captureId
-            await captureAttempts.save(captureId: captureId, for: keys.issue)
-        }
+        return try await api.request(
+            "/client/consult/\(consultId)/capture/attach", method: .post, body: body
+        )
+    }
 
+    /// Leg 4 — the paid quality verdict. Idempotent on its own key, and the
+    /// server also short-circuits any capture that already has a verdict, so a
+    /// replayed check never spends a second provider call.
+    public func checkCaptureQuality(
+        consultId: String,
+        captureId: String,
+        shotPackVersion: Int,
+        schemaVersion: Int,
+        idempotencyKey: String
+    ) async throws -> ConsultCaptureQualityResponse {
         struct QualityBody: Encodable {
             let idempotencyKey: String
             let shotPackVersion: Int
             let schemaVersion: Int
         }
-        let qualityBody = try JSONEncoder.canonical.encode(QualityBody(
-            idempotencyKey: keys.quality,
-            shotPackVersion: pack.version,
-            schemaVersion: pack.schemaVersion
+        let body = try JSONEncoder.canonical.encode(QualityBody(
+            idempotencyKey: idempotencyKey,
+            shotPackVersion: shotPackVersion,
+            schemaVersion: schemaVersion
         ))
-        let response: ConsultCaptureQualityResponse = try await api.request(
+        return try await api.request(
             "/client/consult/\(consultId)/capture/\(captureId)/quality",
             method: .post,
-            body: qualityBody
+            body: body
         )
-        await captureAttempts.remove(keys.issue)
-        return response
     }
 
     public func analysis(consultId: String) async throws -> ConsultAnalysisState {
@@ -564,24 +585,3 @@ public final class ConsultService: ConsultServicing, Sendable {
     }
 }
 
-private actor ConsultCaptureAttemptStore {
-    private struct Attempt {
-        var upload: ConsultCaptureIssueUploadResponse
-        var uploaded = false
-        var captureId: String?
-    }
-
-    private var attempts: [String: Attempt] = [:]
-
-    func upload(for key: String) -> ConsultCaptureIssueUploadResponse? { attempts[key]?.upload }
-    func didUpload(for key: String) -> Bool { attempts[key]?.uploaded == true }
-    func captureId(for key: String) -> String? { attempts[key]?.captureId }
-
-    func save(upload: ConsultCaptureIssueUploadResponse, for key: String) {
-        attempts[key] = Attempt(upload: upload)
-    }
-
-    func markUploaded(for key: String) { attempts[key]?.uploaded = true }
-    func save(captureId: String, for key: String) { attempts[key]?.captureId = captureId }
-    func remove(_ key: String) { attempts.removeValue(forKey: key) }
-}

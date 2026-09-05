@@ -123,17 +123,45 @@ private final class ConsultURLProtocol: URLProtocol {
             ConsultCaptureState.self,
             from: json(rejected)
         )
-        let shot = try #require(rejectedState.shotPack.shots.first)
+        let pack = rejectedState.shotPack
+        let shot = try #require(pack.shots.first)
         let bytes = Data("0123456789".utf8)
         let keys = ConsultCaptureMutationKeys(issue: "issue-key", attach: "attach-key", quality: "quality-key")
-        let response = try await makeService().uploadAndCheckCapture(
-            consultId: "consult_fixture_1",
-            shot: shot,
-            pack: rejectedState.shotPack,
-            jpegData: bytes,
-            keys: keys
+        let service = await makeService()
+
+        // The three legs the durable queue drives, in the order it drives them.
+        let ticket = try await service.issueCaptureUpload(
+            consultId: "consult_fixture_1", shotKey: shot.key,
+            shotPackVersion: pack.version, schemaVersion: pack.schemaVersion,
+            sizeBytes: bytes.count, idempotencyKey: keys.issue
+        )
+        // The PUT goes only to the exact server-minted URL, shaped by the one
+        // place that shapes it — the same call the queue's background task makes.
+        try await SupabaseSignedUpload.putSignedURL(
+            session: URLSession(configuration: {
+                let configuration = URLSessionConfiguration.ephemeral
+                configuration.protocolClasses = [ConsultURLProtocol.self]
+                return configuration
+            }()),
+            supabaseURL: URL(string: "https://storage.test"),
+            supabaseKey: "publishable-test-key",
+            signedURL: try #require(ticket.signedUrl.flatMap(URL.init(string:))),
+            expectedToken: ticket.token,
+            data: bytes,
+            contentType: "image/jpeg"
+        )
+        let attached = try await service.attachCapture(
+            consultId: "consult_fixture_1", uploadSessionId: ticket.uploadSessionId,
+            shotKey: shot.key, shotPackVersion: pack.version,
+            schemaVersion: pack.schemaVersion, idempotencyKey: keys.attach
+        )
+        let response = try await service.checkCaptureQuality(
+            consultId: "consult_fixture_1", captureId: attached.captureId,
+            shotPackVersion: pack.version, schemaVersion: pack.schemaVersion,
+            idempotencyKey: keys.quality
         )
 
+        #expect(attached.captureId == "capture_back_1")
         #expect(response.quality.accepted)
         #expect(response.capture.hasAllAcceptedShots)
         #expect(ConsultURLProtocol.requests.count == 4)
@@ -156,14 +184,19 @@ private final class ConsultURLProtocol: URLProtocol {
         #expect(bodies.contains { $0.contains("quality-key") })
     }
 
-    @Test func retryReusesIssueUploadAndAttachIdentitiesWithoutUploadingTwice() async throws {
+    /// The issue leg REPLAYS: the same key returns the same upload session with
+    /// a fresh signed URL, and the service must accept that rather than treat a
+    /// second call as a contract violation. (Resuming a chain across a process
+    /// death is the durable queue's job and is tested there; this is the piece
+    /// of it the service owns.)
+    @Test func issueReplaysUnderTheSameKeyAndBindsToTheSameUploadSession() async throws {
         reset()
-        let accepted = try captureState()
         let rejected = try captureState("captureRejected")
-        nonisolated(unsafe) var attachCalls = 0
+        nonisolated(unsafe) var issueCalls = 0
         ConsultURLProtocol.responder = { request in
             switch request.url!.path {
             case "/api/v1/client/consult/consult_fixture_1/capture/uploads":
+                issueCalls += 1
                 return (200, self.json([
                     "upload": [
                         "uploadSessionId": "upload_retry", "shotKey": "hair_back",
@@ -171,24 +204,9 @@ private final class ConsultURLProtocol: URLProtocol {
                         "contentType": "image/jpeg", "maxBytes": 3,
                         "expiresAt": "2026-08-11T19:00:00.000Z",
                         "rawExpiresAt": "2026-08-12T18:00:00.000Z",
-                        "token": "retry-token",
-                        "signedUrl": "https://storage.test/storage/v1/object/upload/sign/media-private/consult-raw/v1/retry.jpg?token=retry-token"
-                    ], "replayed": false
-                ]))
-            case "/storage/v1/object/upload/sign/media-private/consult-raw/v1/retry.jpg":
-                return (200, Data("{}".utf8))
-            case "/api/v1/client/consult/consult_fixture_1/capture/attach":
-                attachCalls += 1
-                if attachCalls == 1 {
-                    return (503, Data("{\"ok\":false,\"error\":\"private content must not surface\"}".utf8))
-                }
-                return (200, self.json([
-                    "capture": rejected, "captureId": "capture_retry", "replayed": true,
-                ]))
-            case "/api/v1/client/consult/consult_fixture_1/capture/capture_retry/quality":
-                return (200, self.json([
-                    "quality": ["captureId":"capture_retry","accepted":true,"reasonCode":"PASS","retakeTip":NSNull(),"checkedAt":"2026-08-11T18:10:00.000Z"],
-                    "capture": accepted, "replayed": false
+                        "token": "retry-token-\(issueCalls)",
+                        "signedUrl": "https://storage.test/storage/v1/object/upload/sign/media-private/consult-raw/v1/retry.jpg?token=retry-token-\(issueCalls)"
+                    ], "replayed": issueCalls > 1
                 ]))
             default:
                 return (404, Data())
@@ -196,27 +214,61 @@ private final class ConsultURLProtocol: URLProtocol {
         }
 
         let state = try JSONDecoder().decode(ConsultCaptureState.self, from: json(rejected))
-        let shot = try #require(state.shotPack.shots.first)
+        let pack = state.shotPack
+        let shot = try #require(pack.shots.first)
         let service = await makeService()
-        let keys = ConsultCaptureMutationKeys(issue: "same-issue", attach: "same-attach", quality: "same-quality")
 
-        await #expect(throws: APIError.self) {
-            _ = try await service.uploadAndCheckCapture(
-                consultId: "consult_fixture_1", shot: shot, pack: state.shotPack,
-                jpegData: Data("abc".utf8), keys: keys
-            )
-        }
-        _ = try await service.uploadAndCheckCapture(
-            consultId: "consult_fixture_1", shot: shot, pack: state.shotPack,
-            jpegData: Data("abc".utf8), keys: keys
+        let first = try await service.issueCaptureUpload(
+            consultId: "consult_fixture_1", shotKey: shot.key,
+            shotPackVersion: pack.version, schemaVersion: pack.schemaVersion,
+            sizeBytes: 3, idempotencyKey: "same-issue"
+        )
+        let second = try await service.issueCaptureUpload(
+            consultId: "consult_fixture_1", shotKey: shot.key,
+            shotPackVersion: pack.version, schemaVersion: pack.schemaVersion,
+            sizeBytes: 3, idempotencyKey: "same-issue"
         )
 
-        let paths = ConsultURLProtocol.requests.map { $0.url!.path }
-        #expect(paths.filter { $0.hasSuffix("/capture/uploads") }.count == 1)
-        #expect(paths.filter { $0 == "/storage/v1/object/upload/sign/media-private/consult-raw/v1/retry.jpg" }.count == 1)
-        let attaches = ConsultURLProtocol.requests.filter { $0.url!.path.hasSuffix("/capture/attach") }
-        #expect(attaches.count == 2)
-        #expect(attaches[0].httpBody == attaches[1].httpBody)
+        #expect(first.uploadSessionId == second.uploadSessionId)
+        #expect(first.token != second.token)
+        let bodies = ConsultURLProtocol.requests
+            .compactMap(\.httpBody)
+            .compactMap { String(data: $0, encoding: .utf8) }
+        #expect(bodies.count == 2)
+        #expect(bodies.allSatisfy { $0.contains("same-issue") })
+        #expect(bodies[0] == bodies[1])
+    }
+
+    /// A ticket that does not describe the photo in hand is refused rather than
+    /// uploaded into. `maxBytes` is part of the server's request hash, so a
+    /// mismatch here means the ticket belongs to different bytes.
+    @Test func issueRefusesATicketBoundToDifferentBytes() async throws {
+        reset()
+        let rejected = try captureState("captureRejected")
+        ConsultURLProtocol.responder = { _ in
+            (200, self.json([
+                "upload": [
+                    "uploadSessionId": "upload_x", "shotKey": "hair_back",
+                    "shotPackVersion": 2, "schemaVersion": 1,
+                    "contentType": "image/jpeg", "maxBytes": 999,
+                    "expiresAt": "2026-08-11T19:00:00.000Z",
+                    "rawExpiresAt": "2026-08-12T18:00:00.000Z",
+                    "token": "t",
+                    "signedUrl": "https://storage.test/storage/v1/object/upload/sign/media-private/consult-raw/v1/x.jpg?token=t"
+                ], "replayed": false
+            ]))
+        }
+        let state = try JSONDecoder().decode(ConsultCaptureState.self, from: json(rejected))
+        let shot = try #require(state.shotPack.shots.first)
+        let service = await makeService()
+        await #expect(throws: ConsultClientFailure.contractMismatch) {
+            _ = try await service.issueCaptureUpload(
+                consultId: "consult_fixture_1", shotKey: shot.key,
+                shotPackVersion: state.shotPack.version,
+                schemaVersion: state.shotPack.schemaVersion,
+                sizeBytes: 3, idempotencyKey: "k"
+            )
+        }
     }
 
     private func inspirationEnvelope(_ key: String) throws -> [String: Any] {
