@@ -13,8 +13,16 @@ public protocol ConsultServicing: Sendable {
     func acceptAgreement(consultId: String, kind: ConsultAgreementKind,
                          agreementVersionId: String) async throws -> ConsultAgreementState
     func revokeAgreement(consultId: String, acceptanceId: String) async throws -> ConsultAgreementState
+    /// P5a — the WHOLE flow state as an ordered thread, in one read.
+    func thread(consultId: String) async throws -> ConsultThread
     func intake(consultId: String) async throws -> ConsultIntakeState
     func submitIntake(consultId: String, state: ConsultIntakeState, answers: [String: String],
+                      idempotencyKey: String) async throws -> ConsultIntakeState
+    /// P5a — the thread's twin: the pack VERSIONS rather than the whole state,
+    /// because a thread carries them on the question message and never loads
+    /// `ConsultIntakeState`.
+    func submitIntake(consultId: String, packVersion: Int, schemaVersion: Int,
+                      answers: [String: String], complete: Bool,
                       idempotencyKey: String) async throws -> ConsultIntakeState
     func inspiration(consultId: String) async throws -> ConsultInspirationState
     func skipInspiration(consultId: String, schemaVersion: Int,
@@ -195,6 +203,20 @@ public final class ConsultService: ConsultServicing, Sendable {
         return response.agreementState
     }
 
+    /// P5a — one read for the whole screen.
+    ///
+    /// It replaces the five per-stage reads this flow used to make on every
+    /// resume, and carries `nextOpenMessageId`, so landing on the step that is
+    /// waiting is the server's answer rather than four progress blockers
+    /// re-interpreted here. The per-stage endpoints below are UNCHANGED and stay
+    /// the only way to answer anything.
+    public func thread(consultId: String) async throws -> ConsultThread {
+        let response: ConsultThreadResponse = try await api.request(
+            "/client/consult/\(consultId)/thread"
+        )
+        return response.thread
+    }
+
     public func intake(consultId: String) async throws -> ConsultIntakeState {
         let response: ConsultIntakeStateResponse = try await api.request(
             "/client/consult/\(consultId)/intake"
@@ -205,6 +227,22 @@ public final class ConsultService: ConsultServicing, Sendable {
     public func submitIntake(consultId: String, state: ConsultIntakeState,
                              answers: [String: String], idempotencyKey: String) async throws
         -> ConsultIntakeState {
+        // Delegates rather than repeating the body: ONE encoder for this call,
+        // so the wizard's caller and the thread's caller cannot drift about what
+        // an intake revision looks like.
+        try await submitIntake(
+            consultId: consultId,
+            packVersion: state.questionPack.version,
+            schemaVersion: state.questionPack.schemaVersion,
+            answers: answers,
+            complete: true,
+            idempotencyKey: idempotencyKey
+        )
+    }
+
+    public func submitIntake(consultId: String, packVersion: Int, schemaVersion: Int,
+                             answers: [String: String], complete: Bool,
+                             idempotencyKey: String) async throws -> ConsultIntakeState {
         struct Body: Encodable {
             let idempotencyKey: String
             let packVersion: Int
@@ -214,9 +252,9 @@ public final class ConsultService: ConsultServicing, Sendable {
         }
         let body = try JSONEncoder.canonical.encode(Body(
             idempotencyKey: idempotencyKey,
-            packVersion: state.questionPack.version,
-            schemaVersion: state.questionPack.schemaVersion,
-            complete: true,
+            packVersion: packVersion,
+            schemaVersion: schemaVersion,
+            complete: complete,
             answers: answers
         ))
         let response: ConsultIntakeSubmitResponse = try await api.request(

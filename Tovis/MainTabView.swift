@@ -105,6 +105,21 @@ struct MainTabView: View {
         guard let value = MainTabView.debugScreenValue, value.hasPrefix("look-detail:") else { return nil }
         return String(value.dropFirst("look-detail:".count))
     }()
+    /// P5a — the consult THREAD, which is otherwise reachable only by tapping
+    /// Book on a look. Same reason as the four screens above: this machine
+    /// cannot drive the simulator with synthetic taps, and a thread nobody has
+    /// looked at is exactly the artefact the final self-review rule is about.
+    ///
+    ///     SIMCTL_CHILD_TOVIS_DEBUG_OPEN_SCREEN=consult:<lookId>:<proId> \
+    ///       xcrun simctl launch <udid> app.tovis.Tovis
+    @State private var debugConsult: (lookId: String, proId: String)? = {
+        guard let value = MainTabView.debugScreenValue, value.hasPrefix("consult:") else {
+            return nil
+        }
+        let parts = value.dropFirst("consult:".count).components(separatedBy: ":")
+        guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else { return nil }
+        return (parts[0], parts[1])
+    }()
     #endif
 
     /// The tab a launch starts on — Looks, unless a DEBUG build was launched
@@ -318,6 +333,17 @@ struct MainTabView: View {
                 }
             }
             .tint(BrandColor.accent)
+        }
+        .fullScreenCover(isPresented: Binding(
+            get: { debugConsult != nil },
+            set: { if !$0 { debugConsult = nil } }
+        )) {
+            if let debugConsult {
+                ConsultFlowView(
+                    anchor: .look(debugConsult.lookId),
+                    professionalId: debugConsult.proId
+                )
+            }
         }
         #endif
     }

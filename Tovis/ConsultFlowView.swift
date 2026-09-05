@@ -38,6 +38,11 @@ struct ConsultFlowView: View {
     @State private var model: ConsultFlowViewModel?
     @State private var showRevokeConfirmation = false
     @State private var fullscreen: FullscreenMedia?
+    /// The sticky CTA's destination, once she taps it.
+    @State private var bookLaunch: ConsultThreadBookCta?
+    /// Resolved from the look's own service when the sheet opens.
+    @State private var bookOffering: ProOffering?
+    @State private var bookUnavailable = false
 
     var body: some View {
         NavigationStack {
@@ -65,7 +70,7 @@ struct ConsultFlowView: View {
                     // finished legs while it was gone — in another process,
                     // even — so the served slot state is re-read rather than
                     // trusted from whenever this view last saw it.
-                    await model?.refreshCapture()
+                    await model?.refreshThread()
                     return
                 }
                 let created = ConsultFlowViewModel(
@@ -93,39 +98,67 @@ struct ConsultFlowView: View {
                 Text("No more intake, photos, or analysis can be added. The server will make raw consult photos purge-eligible and verify their removal.")
             }
             .mediaFullscreenCover($fullscreen)
+            // 🔴 Book the look runs the ORDINARY look-booking path, NOT the
+            // consult proposal. The proposal refuses with ESTIMATE_MISSING until
+            // the analysis commits an estimate, and the analysis takes about 100
+            // seconds — longer than the spark lasts. The consult attaches to the
+            // resulting booking and carries on as prep.
+            .sheet(item: $bookLaunch) { book in
+                if let offering = bookOffering {
+                    BookingFlowView(
+                        professionalId: professionalId,
+                        proName: model?.professionalDisplayName ?? "",
+                        offering: offering,
+                        lookMediaId: book.lookMediaId ?? lookMediaId
+                    )
+                } else {
+                    // Resolving the offering is a network read, so the sheet
+                    // opens on it rather than making the tap feel dead. A look
+                    // whose service the pro no longer offers says so instead of
+                    // silently reserving a different appointment.
+                    VStack(spacing: 14) {
+                        if bookUnavailable {
+                            Text("We couldn’t open times for this look. Message your professional and she can set it up.")
+                                .font(BrandFont.body(14))
+                                .foregroundStyle(BrandColor.textSecondary)
+                                .multilineTextAlignment(.center)
+                                .padding(24)
+                        } else {
+                            ProgressView().tint(BrandColor.accent)
+                        }
+                    }
+                    .task {
+                        bookUnavailable = false
+                        bookOffering = await LookBooking.offering(
+                            client: session.client,
+                            professionalId: professionalId,
+                            serviceId: book.serviceId
+                        )
+                        bookUnavailable = bookOffering == nil
+                    }
+                }
+            }
+            .onChange(of: bookLaunch?.id) { _, _ in bookOffering = nil }
         }
         .tint(BrandColor.accent)
     }
 
+    /// P5a — the whole flow, as a thread.
+    ///
+    /// The six-arm `switch model.stage` this replaced showed exactly ONE step at
+    /// a time and threw the rest away. The thread shows the history, the one
+    /// step that is open, and a sticky Book the look button — all from the one
+    /// served message list.
     @ViewBuilder
     private func content(_ model: ConsultFlowViewModel) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                if let failure = model.failure {
-                    BrandErrorBanner(message: failure.message)
-                }
-
-                switch model.stage {
-                case .prerequisites:
-                    prerequisites(model)
-                case .intake:
-                    intake(model)
-                case .capture:
-                    capture(model)
-                case .analysis:
-                    analysis(model)
-                case .results:
-                    if let results = model.results { resultsView(results, model: model) }
-                    else { loadingCard("Loading your consult…") }
-                case .stopped:
-                    stopped(model)
-                }
-            }
-            .padding(20)
-        }
+        ConsultThreadView(
+            model: model,
+            lookMediaId: lookMediaId,
+            onFullscreen: { media in fullscreen = media },
+            onBook: { book in bookLaunch = book }
+        )
         .safeAreaInset(edge: .bottom) {
-            if model.stage != .prerequisites, model.stage != .stopped,
-               model.agreementState?.allCurrent == true {
+            if model.canRevokeConsent {
                 Button("Privacy & revoke consent") { showRevokeConfirmation = true }
                     .font(BrandFont.body(12, .semibold))
                     .foregroundStyle(BrandColor.textMuted)
@@ -135,718 +168,9 @@ struct ConsultFlowView: View {
             }
         }
     }
-
-    private func prerequisites(_ model: ConsultFlowViewModel) -> some View {
-        // A session she previously revoked lands here rather than on a dead
-        // end, so say why she is being asked again instead of pretending this
-        // is the first time.
-        let resuming = model.agreementState?.status == .consentRevoked
-        return VStack(alignment: .leading, spacing: 16) {
-            consultHeader(
-                eyebrow: resuming ? "Picking this back up" : "Before photos or intake",
-                title: resuming ? "Start this consult again?" : "Your consent comes first",
-                body: resuming
-                    ? "You revoked consent, so this consult stopped where it was. Accepting again starts it up from there."
-                    : "Review sensitive-data consent and confirm that you’re 18 or older. They are separate prerequisites."
-            )
-            if let state = model.agreementState {
-                ForEach(state.requirements) { requirement in
-                    BrandSurface {
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack {
-                                Text(requirement.requiredVersion.title)
-                                    .font(BrandFont.body(16, .semibold))
-                                    .foregroundStyle(BrandColor.textPrimary)
-                                Spacer()
-                                if requirement.isAccepted {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundStyle(BrandColor.emerald)
-                                }
-                            }
-                            Text(requirement.requiredVersion.body)
-                                .font(BrandFont.body(13))
-                                .foregroundStyle(BrandColor.textSecondary)
-                            if !requirement.isAccepted {
-                                Button {
-                                    Task { await model.accept(requirement) }
-                                } label: {
-                                    Text(requirement.kind == .adult18PlusAttestation
-                                         ? "I confirm I’m 18 or older"
-                                         : "I consent")
-                                        .font(BrandFont.body(14, .semibold))
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 12)
-                                        .foregroundStyle(BrandColor.onAccent)
-                                        .background(BrandColor.accent)
-                                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                }
-                                .disabled(model.busy)
-                            }
-                        }
-                    }
-                }
-            } else if model.failure == nil {
-                loadingCard("Loading prerequisites…")
-            }
-        }
-    }
-
-    /// ONE question per screen, with a count — the web wizard's shape, and the
-    /// shape the whole step is for: an impulse, not a form.
-    ///
-    /// The header names the SERVICE. It used to be fixed colour-specific copy
-    /// ("including color and chemical history") on a flow that is look-based
-    /// and asks about extensions, lashes and nails too, and that never told the
-    /// client which service any of it was about (handoff B6). The service name
-    /// is served on the intake state; with none resolvable the copy stays
-    /// generic rather than guessing.
-    private func intake(_ model: ConsultFlowViewModel) -> some View {
-        let serviceName = model.intakeServiceName
-        return VStack(alignment: .leading, spacing: 18) {
-            consultHeader(
-                eyebrow: "In your words",
-                title: serviceName.map { "About your \($0)" }
-                    ?? "Tell your professional what you want",
-                body: serviceName.map {
-                    "A few quick taps about \($0), so your professional knows what you want before you arrive. Your answers stay in this consult and appear before any AI observations."
-                }
-                    ?? "A few quick taps, so your professional knows what you want before you arrive. Your answers stay in this consult and appear before any AI observations."
-            )
-            if model.intakeState != nil {
-                Text("\(model.intakeAnsweredCount) of \(model.intakeQuestionCount) answered")
-                    .font(BrandFont.mono(10))
-                    .tracking(1.2)
-                    .foregroundStyle(BrandColor.textMuted)
-                if let question = model.intakeQuestion {
-                    BrandSection(
-                        title: question.label,
-                        trailing: question.requirement.mustAnswer ? "Required" : "Optional"
-                    ) {
-                        VStack(alignment: .leading, spacing: 10) {
-                            FlowLayout(spacing: 8, lineSpacing: 8) {
-                                ForEach(question.options) { option in
-                                    answerChip(
-                                        option,
-                                        selected: model.answers[question.key] == option.value
-                                    ) {
-                                        model.selectAnswer(questionKey: question.key, value: option.value)
-                                    }
-                                }
-                            }
-                            if let helpText = question.helpText, !helpText.isEmpty {
-                                Text(helpText)
-                                    .font(BrandFont.body(12))
-                                    .foregroundStyle(BrandColor.textSecondary)
-                            }
-                        }
-                    }
-                } else {
-                    // One tap advances to the next question, so Continue only
-                    // appears once there is nothing left to ask — the same
-                    // place the web wizard shows it.
-                    BrandSurface {
-                        Text("That’s everything we need for this part.")
-                            .font(BrandFont.body(14))
-                            .foregroundStyle(BrandColor.textPrimary)
-                    }
-                    primaryButton("Continue to photos", busy: model.busy,
-                                  disabled: !model.canSubmitIntake) {
-                        Task { await model.submitIntake() }
-                    }
-                }
-            } else {
-                loadingCard("Loading intake…")
-            }
-        }
-    }
-
-    private func capture(_ model: ConsultFlowViewModel) -> some View {
-        VStack(alignment: .leading, spacing: 18) {
-            inspirationSection(model)
-            // The count and the views come from the SERVED pack: seven for hair,
-            // three for the face and area packs, whatever a fourth pack says.
-            let pack = model.captureState?.shotPack
-            consultHeader(
-                eyebrow: pack.map { "\(ConsultCaptureCopy.countWord($0.shots.count).capitalized) daylight views" }
-                    ?? "Daylight views",
-                title: pack.map(ConsultCaptureCopy.title) ?? "Take guided photos",
-                body: pack.map(ConsultCaptureCopy.intro) ?? "Each photo is checked right away, and if one can’t be used you’ll see why."
-            )
-            if let capture = model.captureState {
-                ForEach(capture.shotPack.shots) { shot in
-                    let slot = capture.slots.first { $0.shotKey == shot.key }
-                    ConsultPhotoPickerSlot(
-                        shot: shot,
-                        slot: slot,
-                        thumbnail: model.localThumbnails[shot.key],
-                        // Where the DURABLE queue has got to with this slot.
-                        // Nil means it owes nothing and the served slot state is
-                        // the whole story; anything else outranks the served
-                        // state, because the queue knows about a shot the server
-                        // has not been told about yet.
-                        queueStage: model.captureStage(for: shot.key),
-                        queueBlockedReason: model.captureBlockedReason(for: shot.key),
-                        queueStalled: model.uploads.stalled,
-                        disabled: model.busy,
-                        onJPEG: { data in await model.submitPhoto(data, for: shot) },
-                        onThumbnailTap: { image in
-                            fullscreen = .local(id: "consult-shot-\(shot.key.rawValue)", image: image)
-                        }
-                    )
-                }
-                chartCopyToggle(model, capture: capture)
-                if let queueMessage = model.captureQueueMessage {
-                    Text(queueMessage)
-                        .font(BrandFont.body(12))
-                        .foregroundStyle(BrandColor.amber)
-                }
-                if model.canRetryPhoto {
-                    Button("Try sending your photos again") {
-                        Task { await model.retryPhoto() }
-                    }
-                    .font(BrandFont.body(14, .semibold))
-                    .foregroundStyle(BrandColor.accent)
-                }
-                Text("\(model.acceptedShotCount) / \(model.totalShotCount) photos accepted")
-                    .font(BrandFont.mono(10))
-                    .foregroundStyle(BrandColor.textMuted)
-                if model.canOfferPartialContinue {
-                    partialContinueCard(model)
-                }
-            } else {
-                loadingCard("Loading photo checklist…")
-            }
-        }
-    }
-
-    private func partialContinueCard(_ model: ConsultFlowViewModel) -> some View {
-        BrandSurface {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("You can keep going with the photos that were accepted. The views you skip can’t be analyzed, so those parts of your results will honestly say unknown.")
-                    .font(BrandFont.body(13))
-                    .foregroundStyle(BrandColor.textSecondary)
-                primaryButton(
-                    "Continue with \(model.acceptedShotCount) of \(model.totalShotCount) photos",
-                    busy: model.busy,
-                    disabled: !model.inspirationDone
-                ) {
-                    Task { await model.proceedWithAccepted() }
-                }
-                if !model.inspirationDone {
-                    Text("Finish the inspiration step above first.")
-                        .font(BrandFont.body(12))
-                        .foregroundStyle(BrandColor.textMuted)
-                }
-            }
-        }
-        .accessibilityIdentifier("consult-partial-continue")
-    }
-
-    @ViewBuilder
-    private func inspirationSection(_ model: ConsultFlowViewModel) -> some View {
-        if let inspiration = model.inspirationState {
-            if inspiration.isComplete {
-                BrandSurface {
-                    Label(
-                        inspiration.source == nil
-                            ? "Inspiration: continuing without a photo"
-                            : "Inspiration done — your professional sees exactly what you picked out",
-                        systemImage: "checkmark.circle.fill"
-                    )
-                    .font(BrandFont.body(13, .semibold))
-                    .foregroundStyle(BrandColor.textSecondary)
-                }
-                .accessibilityIdentifier("consult-inspiration-complete")
-            } else {
-                VStack(alignment: .leading, spacing: 14) {
-                    consultHeader(
-                        eyebrow: "Your inspiration",
-                        title: "Show us the look you’re drawn to",
-                        body: inspiration.introduction
-                    )
-                    if inspiration.progress.blocker == .sourceDecisionRequired {
-                        inspirationSourceDecision(model)
-                    }
-                    if let question = inspiration.progress.currentQuestion {
-                        if let source = inspiration.source, source.imageAvailable {
-                            ConsultInspirationImagePanel(
-                                model: model,
-                                questionKey: question.key,
-                                referenceNote: inspiration.referenceNote,
-                                onTap: { url in
-                                    fullscreen = FullscreenMedia(
-                                        id: "consult-inspiration",
-                                        source: .remote(url: url, isVideo: false),
-                                        overlay: nil
-                                    )
-                                }
-                            )
-                        }
-                        if inspiration.progress.blocker == .atLeastThreeDetailsRequired {
-                            Text("Pick out at least three specific details you love or want to avoid across these questions — answers like “not sure” don’t give your professional anything to work from, so a couple of questions are coming back around.")
-                                .font(BrandFont.body(12))
-                                .foregroundStyle(BrandColor.textPrimary)
-                                .padding(10)
-                                .background(BrandColor.amber.opacity(0.12))
-                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        }
-                        ConsultInspirationQuestionView(
-                            question: question,
-                            busy: model.busy,
-                            onAnswer: { values, text, sentiment in
-                                Task {
-                                    await model.answerInspiration(
-                                        question: question,
-                                        selectedValues: values,
-                                        text: text,
-                                        sentiment: sentiment
-                                    )
-                                }
-                            }
-                        )
-                        .id(question.key)
-                    }
-                }
-            }
-        } else {
-            loadingCard("Loading your inspiration step…")
-        }
-    }
-
-    private func inspirationSourceDecision(_ model: ConsultFlowViewModel) -> some View {
-        ConsultInspirationPhotoPicker(
-            busy: model.busy,
-            onJPEG: { data in await model.uploadInspirationPhoto(data) },
-            onSkip: { Task { await model.skipInspiration() } }
-        )
-    }
-
-    private func analysis(_ model: ConsultFlowViewModel) -> some View {
-        VStack(alignment: .leading, spacing: 18) {
-            consultHeader(
-                eyebrow: "Analysis",
-                title: "Run your analysis",
-                body: "Your professional remains the authority on what’s safe and achievable. Raw photos are made purge-eligible as soon as analysis consumes them."
-            )
-            if let analysis = model.analysisState, analysis.status == .analysisPending {
-                BrandSurface {
-                    Text("Your photos and answers are ready. The analysis takes a minute or two, and your photos are deleted from processing storage right after it finishes.")
-                        .font(BrandFont.body(13))
-                        .foregroundStyle(BrandColor.textSecondary)
-                }
-                primaryButton(
-                    model.busy ? "Starting…" : "Run my analysis",
-                    busy: model.busy, disabled: false
-                ) {
-                    Task { await model.startAnalysis() }
-                }
-            } else if let run = model.analysisState?.run {
-                // P4b: the analysis is a background run now, so this is a live
-                // progress view rather than an indefinite spinner. It polls
-                // itself (ConsultFlowViewModel.startPollingIfLive) and stops
-                // when the screen goes away.
-                analysisRunProgress(run, model: model)
-            } else {
-                loadingCard(model.busy ? "Reviewing your photos…" : "Analysis is still processing.")
-                if !model.busy {
-                    primaryButton("Check results", busy: false, disabled: false) {
-                        Task { await model.refreshAnalysis() }
-                    }
-                }
-            }
-        }
-    }
-
-    private func resultsView(_ results: ConsultClientResults,
-                             model: ConsultFlowViewModel) -> some View {
-        VStack(alignment: .leading, spacing: 18) {
-            consultHeader(
-                eyebrow: "Your beauty consult",
-                title: "Directions to discuss with your professional",
-                body: "These are conversation starters, not promises. Your professional will assess you in person and tell you what’s actually achievable."
-            )
-
-            // Keep this sequence aligned with ConsultResultPresentation.sections.
-            clientWords(results)
-            observations(results.aiObservations)
-            featureProfile(results.profile)
-            styleDirectionsSection(results.styleDirections)
-            safety(results.safetyFlags)
-            achievability(results.achievabilityDirection)
-            directions(results.recommendationDirections, title: results.directionsTitle)
-            lockedMeCard(model)
-            bookThisLook(model)
-        }
-    }
-
-    /// Book the Look, B8 — the results CTA, and ONLY on a look-anchored
-    /// consult. A booking-anchored consult already HAS its appointment; the
-    /// proposal endpoint refuses one with `ESTIMATE_MISSING`, so rendering the
-    /// door there would be a button whose only outcome is an explained refusal.
-    @ViewBuilder
-    private func bookThisLook(_ model: ConsultFlowViewModel) -> some View {
-        if model.isLookAnchored, let consultId = model.consultId {
-            NavigationLink {
-                ConsultBookingView(consultId: consultId, lookMediaId: lookMediaId)
-            } label: {
-                Text(ConsultBookingCopy.unnamedLookTitle)
-                    .font(BrandFont.body(16, .semibold))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .foregroundStyle(BrandColor.onAccent)
-                    .background(BrandColor.accent)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            }
-            .accessibilityIdentifier("consult-results-book-this-look")
-        }
-    }
-
-    private func chartCopyToggle(_ model: ConsultFlowViewModel,
-                                 capture: ConsultCaptureState) -> some View {
-        BrandSurface {
-            Toggle(isOn: Binding(
-                get: { capture.chartCopy.optIn },
-                set: { newValue in Task { await model.setChartCopy(newValue) } }
-            )) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Keep these photos on my chart")
-                        .font(BrandFont.body(14, .semibold))
-                        .foregroundStyle(BrandColor.textPrimary)
-                    Text("Private to you and your professional, for future appointments. Turn it off any time before analysis runs — otherwise photos are deleted after analysis either way.")
-                        .font(BrandFont.body(12))
-                        .foregroundStyle(BrandColor.textSecondary)
-                }
-            }
-            .tint(BrandColor.accent)
-            .disabled(model.busy)
-        }
-        .accessibilityIdentifier("consult-chart-copy-toggle")
-    }
-
-    private func featureProfile(_ profile: ConsultFeatureProfile) -> some View {
-        BrandSection(title: "Your feature profile") {
-            VStack(spacing: 8) {
-                Text("What the photos suggest about your features, so recommendations enhance what is already yours. Your professional confirms these in person — color readings from photos are approximate.")
-                    .font(BrandFont.body(12))
-                    .foregroundStyle(BrandColor.textSecondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                ForEach(Array(profile.orderedEntries.enumerated()), id: \.offset) { _, entry in
-                    observationRow(entry.label, value: entry.observation.value,
-                                   confidence: entry.observation.confidence)
-                }
-            }
-        }
-        .accessibilityIdentifier("consult-results-feature-profile")
-    }
-
-    private func styleDirectionsSection(_ directions: [ConsultStyleDirection]) -> some View {
-        BrandSection(title: "What will flatter you most", trailing: "\(directions.count)") {
-            VStack(spacing: 10) {
-                Text("One direction per area, chosen to enhance your actual features rather than follow a trend. Each is a starting point to discuss with your professional.")
-                    .font(BrandFont.body(12))
-                    .foregroundStyle(BrandColor.textSecondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                ForEach(directions) { direction in
-                    BrandSurface {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(direction.domainLabel.uppercased())
-                                .font(BrandFont.mono(10))
-                                .foregroundStyle(BrandColor.accent)
-                            Text(direction.title)
-                                .font(BrandFont.body(16, .semibold))
-                                .foregroundStyle(BrandColor.textPrimary)
-                            Text(direction.direction)
-                                .font(BrandFont.body(13))
-                                .foregroundStyle(BrandColor.textSecondary)
-                            Text("Why this flatters you: \(direction.whyItFlatters)")
-                                .font(BrandFont.body(13, .semibold))
-                                .foregroundStyle(BrandColor.textPrimary)
-                        }
-                    }
-                }
-            }
-        }
-        .accessibilityIdentifier("consult-results-style-directions-\(directions.count)")
-    }
-
-    private func clientWords(_ results: ConsultClientResults) -> some View {
-        BrandSection(title: "What you told us") {
-            BrandSurface {
-                VStack(alignment: .leading, spacing: 12) {
-                    ForEach(results.clientIntake) { item in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(item.question)
-                                .font(BrandFont.body(12, .semibold))
-                                .foregroundStyle(BrandColor.textMuted)
-                            Text(item.answer)
-                                .font(BrandFont.body(14, .semibold))
-                                .foregroundStyle(BrandColor.textPrimary)
-                        }
-                    }
-                }
-            }
-        }
-        .accessibilityIdentifier("consult-results-client-words")
-    }
-
-    private func observations(_ observations: ConsultAIObservations) -> some View {
-        BrandSection(title: "Photo-based observations") {
-            VStack(spacing: 8) {
-                // Two named levels, not a range. `codeLabel` renders LEVEL_7 as
-                // "Level 7" and UNKNOWN as "Unknown", exactly as it does for
-                // every other observation's enum.
-                observationRow("Base level", value: observations.baseLevel.value,
-                               confidence: observations.baseLevel.confidence)
-                observationRow("Lightest level", value: observations.lightestLevel.value,
-                               confidence: observations.lightestLevel.confidence)
-                observationRow("Tone", value: observations.currentTone.value,
-                               confidence: observations.currentTone.confidence)
-                observationRow("Visible condition", value: observations.visibleCondition.value,
-                               confidence: observations.visibleCondition.confidence)
-                observationRow("Density", value: observations.density.value,
-                               confidence: observations.density.confidence)
-                observationRow("Texture", value: observations.texture.value,
-                               confidence: observations.texture.confidence)
-            }
-        }
-        .accessibilityIdentifier("consult-results-ai-observations")
-    }
-
-    private func safety(_ flags: [ConsultSafetyFlag]) -> some View {
-        BrandSection(title: "Safety to discuss") {
-            BrandSurface(tint: BrandColor.amber.opacity(0.12)) {
-                VStack(alignment: .leading, spacing: 8) {
-                    if flags.isEmpty {
-                        Text("No specific safety flags were identified. Your professional still needs to assess your hair and history in person.")
-                            .font(BrandFont.body(13))
-                            .foregroundStyle(BrandColor.textSecondary)
-                    } else {
-                        ForEach(flags) { flag in
-                            Text("\(ConsultResultPresentation.codeLabel(flag.code)): \(flag.summary) Discuss this with your professional.")
-                                .font(BrandFont.body(13))
-                                .foregroundStyle(BrandColor.textPrimary)
-                        }
-                    }
-                }
-            }
-        }
-        .accessibilityIdentifier("consult-results-safety-always-visible")
-    }
-
-    private func achievability(_ direction: ConsultAchievabilityDirection) -> some View {
-        BrandSection(title: "What may be achievable") {
-            BrandSurface {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(ConsultResultPresentation.codeLabel(direction.assessment))
-                        .font(BrandFont.body(15, .semibold))
-                        .foregroundStyle(BrandColor.textPrimary)
-                    Text(direction.context)
-                        .font(BrandFont.body(13))
-                        .foregroundStyle(BrandColor.textSecondary)
-                    Text(direction.direction)
-                        .font(BrandFont.body(13, .semibold))
-                        .foregroundStyle(BrandColor.textPrimary)
-                    Text("Your professional will confirm the plan after an in-person assessment.")
-                        .font(BrandFont.body(12, .semibold))
-                        .foregroundStyle(BrandColor.accent)
-                }
-            }
-        }
-    }
-
-    private func directions(_ recommendations: [ConsultRecommendationDirection],
-                            title: String?) -> some View {
-        BrandSection(title: title ?? "Directions to discuss", trailing: "\(recommendations.count)") {
-            VStack(spacing: 10) {
-                ForEach(Array(recommendations.enumerated()), id: \.element.id) { index, item in
-                    BrandSurface {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("\(index + 1) / \(recommendations.count)")
-                                .font(BrandFont.mono(10))
-                                .foregroundStyle(BrandColor.accent)
-                            Text(item.title)
-                                .font(BrandFont.body(16, .semibold))
-                                .foregroundStyle(BrandColor.textPrimary)
-                            Text(item.why)
-                                .font(BrandFont.body(13))
-                                .foregroundStyle(BrandColor.textSecondary)
-                            Text("A direction to discuss with your professional: \(item.title).")
-                                .font(BrandFont.body(13, .semibold))
-                                .foregroundStyle(BrandColor.textPrimary)
-                        }
-                    }
-                }
-            }
-        }
-        .accessibilityIdentifier("consult-results-directions-\(recommendations.count)")
-    }
-
-    private func lockedMeCard(_ model: ConsultFlowViewModel) -> some View {
-        BrandSection(title: "Me card · locked") {
-            BrandSurface(tint: BrandColor.bgSecondary) {
-                VStack(alignment: .leading, spacing: 9) {
-                    Label("Your full Me card", systemImage: "lock.fill")
-                        .font(BrandFont.display(19, .semibold))
-                        .foregroundStyle(BrandColor.textPrimary)
-                    Text("A future Me card could hold a deeper private analysis. It isn’t available in this pilot.")
-                        .font(BrandFont.body(13))
-                        .foregroundStyle(BrandColor.textSecondary)
-                    Button(model.teaserTapped ? "Interest noted" : "I’d use this") {
-                        Task { await model.tapLockedMeCard() }
-                    }
-                    .font(BrandFont.body(14, .semibold))
-                    .foregroundStyle(BrandColor.textPrimary)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(BrandColor.bgSurface)
-                    .clipShape(Capsule())
-                    .disabled(model.teaserTapped || model.busy)
-                }
-            }
-        }
-        .accessibilityIdentifier("consult-me-card-locked")
-    }
-
-    /// Reached two ways, and they are not the same thing: the client revoking
-    /// consent from the footer just now, or a consult CANCELLED server-side
-    /// (purged mid-analysis), which nothing can revive. The revoked half is a
-    /// full stop she chose and can undo by tapping Book again; saying "your
-    /// consent was revoked" over a cancelled consult would be false.
-    private func stopped(_ model: ConsultFlowViewModel) -> some View {
-        let revoked = model.agreementState?.status == .consentRevoked
-        return consultHeader(
-            eyebrow: "Consult stopped",
-            title: revoked ? "Your consent was revoked" : "This consult was stopped",
-            body: revoked
-                ? "No more intake, photos, or analysis can be added. You can start it again any time from this look."
-                : "No more intake, photos, or analysis can be added to this consult."
-        )
-    }
-
-    private func consultHeader(eyebrow: String, title: String, body: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(eyebrow.uppercased())
-                .font(BrandFont.mono(10))
-                .tracking(1.3)
-                .foregroundStyle(BrandColor.accent)
-            Text(title)
-                .font(BrandFont.display(26, .semibold))
-                .foregroundStyle(BrandColor.textPrimary)
-            Text(body)
-                .font(BrandFont.body(14))
-                .foregroundStyle(BrandColor.textSecondary)
-        }
-    }
-
-    private func answerChip(_ option: ConsultIntakeOption, selected: Bool,
-                            action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(option.label)
-                .font(BrandFont.body(13, .semibold))
-                .foregroundStyle(selected ? BrandColor.onAccent : BrandColor.textPrimary)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 9)
-                .background(selected ? BrandColor.accent : BrandColor.bgSurface)
-                .clipShape(Capsule())
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func observationRow(_ label: String, value: String,
-                                confidence: ConsultConfidence) -> some View {
-        BrandSurface {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(label.uppercased())
-                    .font(BrandFont.mono(10))
-                    .foregroundStyle(BrandColor.textMuted)
-                Text("\(ConsultResultPresentation.codeLabel(value)) · \(ConsultResultPresentation.confidence(confidence))")
-                    .font(BrandFont.body(13, .semibold))
-                    .foregroundStyle(BrandColor.textPrimary)
-            }
-        }
-    }
-
-    /// P4b: the waiting screen for a background analysis run.
-    ///
-    /// A LIVE run shows progress and no buttons — there is nothing useful to
-    /// press, and it says so ("you can close this"), because the notification
-    /// is what brings her back. A FAILED run shows the retry, which is the
-    /// whole reason she is not stranded.
-    @ViewBuilder
-    private func analysisRunProgress(
-        _ run: ConsultAnalysisRun,
-        model: ConsultFlowViewModel
-    ) -> some View {
-        let progress = ConsultAnalysisRunCopy.progress(for: run)
-
-        BrandSurface {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 10) {
-                    if run.status.isLive { ProgressView().tint(BrandColor.accent) }
-                    Text(progress.headline)
-                        .font(BrandFont.body(14, .semibold))
-                        .foregroundStyle(BrandColor.textPrimary)
-                }
-                if let detail = progress.detail {
-                    Text(detail)
-                        .font(BrandFont.body(13))
-                        .foregroundStyle(BrandColor.textSecondary)
-                }
-                ProgressView(value: progress.fraction)
-                    .tint(BrandColor.accent)
-                    // The headline above already says the status out loud; an
-                    // unlabelled bar repeating it is noise to a screen reader.
-                    .accessibilityHidden(true)
-                if run.status.isLive {
-                    Text("You can close this — we’ll let you know when it’s ready.")
-                        .font(BrandFont.body(12))
-                        .foregroundStyle(BrandColor.textSecondary)
-                }
-            }
-            .accessibilityElement(children: .combine)
-        }
-
-        if run.retryable {
-            primaryButton(model.busy ? "Starting…" : "Try again",
-                          busy: model.busy, disabled: false) {
-                Task { await model.startAnalysis() }
-            }
-        } else if !run.status.isLive {
-            primaryButton("Check results", busy: model.busy, disabled: false) {
-                Task { await model.refreshAnalysis() }
-            }
-        }
-    }
-
-    private func loadingCard(_ text: String) -> some View {
-        BrandSurface {
-            HStack(spacing: 10) {
-                ProgressView().tint(BrandColor.accent)
-                Text(text).font(BrandFont.body(14)).foregroundStyle(BrandColor.textSecondary)
-            }
-        }
-    }
-
-    private func primaryButton(_ title: String, busy: Bool, disabled: Bool,
-                               action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Group {
-                if busy { ProgressView().tint(BrandColor.onAccent) }
-                else { Text(title).font(BrandFont.body(16, .semibold)) }
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
-            .foregroundStyle(BrandColor.onAccent)
-            .background(BrandColor.accent)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        }
-        .disabled(disabled || busy)
-    }
 }
 
-/// Client-readable reasons for a refused photo, mirroring the web wizard's
-/// QUALITY_REASON_COPY map. The retake tip is appended separately.
-private func consultQualityReasonMessage(_ code: String?) -> String {
+func consultQualityReasonMessage(_ code: String?) -> String {
     switch code {
     case "WARM_INDOOR_LIGHT":
         return "Warm indoor lighting — true colors can’t be read accurately under it."
@@ -869,7 +193,7 @@ private func consultQualityReasonMessage(_ code: String?) -> String {
     }
 }
 
-private struct ConsultPhotoPickerSlot: View {
+struct ConsultPhotoPickerSlot: View {
     let shot: ConsultCaptureShot
     let slot: ConsultCaptureSlot?
     let thumbnail: UIImage?
@@ -1126,7 +450,7 @@ private struct ConsultPhotoPickerSlot: View {
 
 /// Where to look in the inspiration photo for each question — presentation-only
 /// guidance beside the server-served question copy, mirrored from the web wizard.
-private let consultInspirationFocusHints: [String: String] = [
+let consultInspirationFocusHints: [String: String] = [
     "favorite_colors": "Zoom into the hair and look at the mix of colors — the brightest pieces, the deepest pieces, and the tones in between.",
     "avoid_colors": "Look over each color in the hair again — is there any you would not want on you?",
     "length_goal": "Look at where the hair ends — how long it falls.",
@@ -1139,7 +463,7 @@ private let consultInspirationFocusHints: [String: String] = [
 /// The inspiration source decision: add one reference photo of a look, or
 /// continue without one. Uses the photo library only — an inspiration picture
 /// is of a LOOK someone else wears, not something the guided camera frames.
-private struct ConsultInspirationPhotoPicker: View {
+struct ConsultInspirationPhotoPicker: View {
     let busy: Bool
     let onJPEG: (Data) async -> Void
     let onSkip: () -> Void
@@ -1210,7 +534,7 @@ private struct ConsultInspirationPhotoPicker: View {
 /// Keeps the uploaded inspiration photo on screen through the question flow,
 /// with the per-question focus hint. Tapping opens the zoomable fullscreen
 /// viewer — the parity of web's pinch/scroll/double-tap zoom.
-private struct ConsultInspirationImagePanel: View {
+struct ConsultInspirationImagePanel: View {
     let model: ConsultFlowViewModel
     let questionKey: String
     let referenceNote: String
@@ -1304,67 +628,56 @@ private struct ConsultInspirationImagePanel: View {
 /// free-text question the first text-entry surface in the consult flow —
 /// a bounded note with a GOOD/BAD/BOTH sentiment, where leaving everything
 /// blank means "nothing else".
-private struct ConsultInspirationQuestionView: View {
+/// The inspiration question, as taps only.
+///
+/// 🔴 The free-text note and its GOOD/BAD/BOTH sentiment picker are GONE from
+/// the thread (P5a: "no free-text input"). Nothing is lost from the contract:
+/// every question that allowed a note also carries a tappable option, and the
+/// server treats a blank note as that option. What the removal buys is the
+/// property that makes a scripted thread worth having — every prompt is
+/// deterministic, instant, and free per message.
+struct ConsultInspirationQuestionView: View {
     let question: ConsultInspirationQuestion
     let busy: Bool
-    let onAnswer: ([String], String, ConsultInspirationSentiment?) -> Void
+    let onAnswer: ([String]) -> Void
 
     @State private var selected: [String] = []
-    @State private var text = ""
-    @State private var sentiment: ConsultInspirationSentiment?
-
-    private var trimmed: String {
-        question.allowText ? text.trimmingCharacters(in: .whitespacesAndNewlines) : ""
-    }
-
-    private var traitBlocked: Bool {
-        !trimmed.isEmpty && ConsultInspirationTextRules.containsUnsupportedTraitLanguage(trimmed)
-    }
-
-    private var needsSentiment: Bool { !trimmed.isEmpty && sentiment == nil }
 
     private var needsSelection: Bool {
         question.kind != .text && selected.count < question.minSelections
     }
 
+    // No BrandSurface of its own: in the thread this always renders INSIDE a
+    // message card, and a surface nested in a surface is an invisible box.
     var body: some View {
-        BrandSurface {
-            VStack(alignment: .leading, spacing: 10) {
-                Text(question.label)
-                    .font(BrandFont.body(16, .semibold))
-                    .foregroundStyle(BrandColor.textPrimary)
-                if let helpText = question.helpText {
-                    Text(helpText)
-                        .font(BrandFont.body(13))
-                        .foregroundStyle(BrandColor.textSecondary)
-                }
-                FlowLayout(spacing: 8, lineSpacing: 8) {
-                    ForEach(question.options) { option in
-                        optionChip(option)
-                    }
-                }
-                if question.allowText {
-                    noteEntry
-                }
-                Button {
-                    onAnswer(selected, text, sentiment)
-                } label: {
-                    Text("Next")
-                        .font(BrandFont.body(14, .semibold))
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 11)
-                        .foregroundStyle(BrandColor.onAccent)
-                        .background(BrandColor.accent)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                }
-                .disabled(busy || needsSelection || needsSentiment || traitBlocked)
-                if needsSentiment {
-                    Text("Tell us whether that note is something you like, something to avoid, or a bit of both.")
-                        .font(BrandFont.body(12))
-                        .foregroundStyle(BrandColor.textMuted)
+        VStack(alignment: .leading, spacing: 10) {
+            Text(question.label)
+                .font(BrandFont.body(16, .semibold))
+                .foregroundStyle(BrandColor.textPrimary)
+            if let helpText = question.helpText {
+                Text(helpText)
+                    .font(BrandFont.body(13))
+                    .foregroundStyle(BrandColor.textSecondary)
+            }
+            FlowLayout(spacing: 8, lineSpacing: 8) {
+                ForEach(question.options) { option in
+                    optionChip(option)
                 }
             }
+            Button {
+                onAnswer(selected)
+            } label: {
+                Text(ConsultThreadCopy.questionNext)
+                    .font(BrandFont.body(14, .semibold))
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 11)
+                    .foregroundStyle(BrandColor.onAccent)
+                    .background(BrandColor.accent)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            .disabled(busy || needsSelection)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityIdentifier("consult-inspiration-question-\(question.key)")
     }
 
@@ -1374,11 +687,6 @@ private struct ConsultInspirationQuestionView: View {
             selected = ConsultInspirationAnswering.toggle(
                 option.value, in: selected, question: question
             )
-            // "Nothing else" and a written note are mutually exclusive.
-            if question.kind == .text {
-                text = ""
-                sentiment = nil
-            }
         } label: {
             Text(option.label)
                 .font(BrandFont.body(13, .semibold))
@@ -1387,67 +695,18 @@ private struct ConsultInspirationQuestionView: View {
                 .padding(.vertical, 9)
                 .background(active ? BrandColor.accent : BrandColor.bgSurface)
                 .clipShape(Capsule())
+                // The outline is what makes an unselected chip read as a
+                // button inside a card whose fill is the same colour.
+                .overlay(
+                    active
+                        ? nil
+                        : Capsule().stroke(
+                            BrandColor.textMuted.opacity(0.28), lineWidth: 1
+                        )
+                )
         }
         .buttonStyle(.plain)
         .disabled(busy)
-    }
-
-    private var noteEntry: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            TextField(
-                "Anything else, in your own words — or leave this blank",
-                text: $text,
-                axis: .vertical
-            )
-            .lineLimit(2...5)
-            .font(BrandFont.body(14))
-            .foregroundStyle(BrandColor.textPrimary)
-            .padding(12)
-            .background(BrandColor.bgSecondary)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .disabled(busy)
-            .accessibilityIdentifier("consult-inspiration-note")
-            .onChange(of: text) { _, newValue in
-                if newValue.count > ConsultInspirationTextRules.maxCharacters {
-                    text = String(newValue.prefix(ConsultInspirationTextRules.maxCharacters))
-                }
-                if !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    selected.removeAll { $0 == "nothing-else" }
-                }
-            }
-            if !trimmed.isEmpty {
-                HStack(spacing: 8) {
-                    Text("This is…")
-                        .font(BrandFont.body(12))
-                        .foregroundStyle(BrandColor.textSecondary)
-                    ForEach(ConsultInspirationSentiment.allCases, id: \.rawValue) { option in
-                        Button {
-                            sentiment = option
-                        } label: {
-                            Text(option.label)
-                                .font(BrandFont.body(12, .semibold))
-                                .foregroundStyle(sentiment == option
-                                                 ? BrandColor.onAccent : BrandColor.textPrimary)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 7)
-                                .background(sentiment == option
-                                            ? BrandColor.accent : BrandColor.bgSurface)
-                                .clipShape(Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(busy)
-                    }
-                }
-            }
-            if traitBlocked {
-                Text("Keep this note about the look itself — words about the face, eyes, skin, or body can’t be included here. Your photos already show your professional everything they need.")
-                    .font(BrandFont.body(12))
-                    .foregroundStyle(BrandColor.textPrimary)
-                    .padding(10)
-                    .background(BrandColor.amber.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            }
-        }
     }
 }
 

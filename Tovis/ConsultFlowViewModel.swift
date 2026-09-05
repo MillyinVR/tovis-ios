@@ -4,17 +4,34 @@ import OSLog
 import TovisKit
 import UIKit
 
+/// P5a — the consult, driven as a THREAD.
+///
+/// ONE read owns the screen: `GET /client/consult/{id}/thread` serves the whole
+/// flow state as an ordered message list plus `nextOpenMessageId`, so "reopening
+/// a consult resumes at the next open step" is the server's answer rather than
+/// four progress blockers re-interpreted here. Every mutation below still goes
+/// through the SAME per-stage endpoint it always did — those contracts are
+/// untouched — and then re-reads the thread.
+///
+/// 🔴 Two things survived the rewrite deliberately, and must keep surviving:
+///
+///   * the durable upload queue (P2d). `submitPhoto` still writes bytes to the
+///     vault and hands them to `ConsultCaptureUploadQueue`, which owns them
+///     through the camera closing, the app backgrounding and the process being
+///     killed. The thread renders the SERVED slot; the queue's own stage
+///     outranks it, because the queue knows about a shot the server has not been
+///     told about yet.
+///   * the C7 results provenance check. Results now arrive inside a thread
+///     message instead of from `GET /results`, and a payload that skipped
+///     `ConsultFlowMachine.apply(results:)` would be rendered with none of its
+///     anchor and revision checks run. `bind(threadResults:)` below is where
+///     that check still happens.
 @MainActor
 @Observable
 final class ConsultFlowViewModel {
     private(set) var machine: ConsultFlowMachine
-    private(set) var agreementState: ConsultAgreementState?
-    private(set) var intakeState: ConsultIntakeState?
-    private(set) var inspirationState: ConsultInspirationState?
-    private(set) var captureState: ConsultCaptureState?
-    private(set) var analysisState: ConsultAnalysisState?
-    private(set) var results: ConsultClientResults?
-    private(set) var answers: [String: String] = [:]
+    /// The whole screen, in one value.
+    private(set) var thread: ConsultThread?
     private(set) var busy = false
     /// The durable owner of every shot this flow has taken. `.shared` in the
     /// app — one queue for the whole process, deliberately outliving every
@@ -25,11 +42,13 @@ final class ConsultFlowViewModel {
     /// Local previews of this session's uploads. Rejected photos are purged
     /// server-side immediately, so this decoded copy is the only reviewable one.
     private(set) var localThumbnails: [ConsultCaptureShotKey: UIImage] = [:]
+    /// True when a results payload failed the provenance check — rendered as a
+    /// refusal, never as a missing section.
+    private(set) var resultsContractMismatch = false
 
     let professionalId: String
 
     @ObservationIgnored private let service: any ConsultServicing
-    @ObservationIgnored private var intakeIdempotencyKey = UUID().uuidString
     @ObservationIgnored private var analysisIdempotencyKey = UUID().uuidString
     /// The tail of the serial queue `perform` forms. Nil when nothing is running.
     @ObservationIgnored private var performTail: Task<Void, Never>?
@@ -52,90 +71,24 @@ final class ConsultFlowViewModel {
         self.uploads = uploads ?? .shared
     }
 
-    var stage: ConsultFlowStage { machine.stage }
-
-    /// The consult the flow is on, once the server has named it. Book the Look
-    /// (B8) reads it to open the booking door from the results screen.
+    /// The consult the flow is on, once the server has named it.
     var consultId: String? { machine.consultId }
 
-    /// True when this flow was opened from a LOOK rather than from a booking —
-    /// the only case where a booking DOOR belongs on the results screen.
+    /// True when this flow was opened from a LOOK rather than from a booking.
     var isLookAnchored: Bool { machine.anchor.lookPostId != nil }
 
-    /// Whether Continue is offered. The served `progress.canComplete` is the
-    /// authority — it is the web wizard's gate and it knows the pack's
-    /// goal-direction rule — but it describes the answers the server has SAVED,
-    /// and this flow saves only on submit. So a served "cannot complete" is
-    /// trusted only while nothing has changed locally; once the client has
-    /// answered further, the local rule (REQUIRED answered) decides, and the
-    /// server has the final word when the submit lands.
-    var canSubmitIntake: Bool {
-        guard let intakeState else { return false }
-        let locallyComplete = intakeState.questionPack.questions.allSatisfy {
-            !$0.requirement.mustAnswer || answers[$0.key] != nil
-        }
-        guard let served = intakeState.progress?.canComplete else { return locallyComplete }
-        if answers == (intakeState.latestRevision?.answers ?? [:]) { return served }
-        return locallyComplete
-    }
+    var messages: [ConsultThreadMessage] { thread?.messages ?? [] }
+    var nextOpenMessageId: String? { thread?.nextOpenMessageId }
+    var professionalDisplayName: String { thread?.professionalDisplayName ?? "" }
 
-    /// The service this consult is about, in the client's own language — the
-    /// pro's offering title where they set one, the catalog name otherwise.
-    /// Nil when the Look's linked service row is gone, which is a real state
-    /// and reads as "your consult" rather than as a wrong service name.
-    var intakeServiceName: String? {
-        guard let name = intakeState?.service?.name?.trimmingCharacters(
-            in: .whitespacesAndNewlines
-        ), !name.isEmpty else { return nil }
-        return name
-    }
+    /// A consult that can no longer be worked on. The thread still renders — it
+    /// carries its own explanation — but nothing in it is actionable.
+    var isStopped: Bool { thread?.status == .cancelled }
 
-    var intakeQuestionCount: Int {
-        intakeState?.questionPack.questions.count ?? 0
-    }
-
-    var intakeAnsweredCount: Int {
-        intakeState?.questionPack.questions.filter { answers[$0.key] != nil }.count ?? 0
-    }
-
-    /// The ONE question on screen, and the same rule the web wizard uses: the
-    /// server's `progress.nextQuestionKey` where it still applies, otherwise
-    /// the first question with no answer.
-    ///
-    /// Why the served key cannot simply be trusted throughout: it describes the
-    /// answers the server has SAVED, and this flow saves once, on submit. Left
-    /// alone it would pin the screen to the first question while the client
-    /// answered the whole pack. So it is authoritative only while local answers
-    /// still match the saved ones (the same trust boundary `canSubmitIntake`
-    /// draws); after that the pack's own order decides — required questions
-    /// first, then anything else unanswered, which is what surfaces the
-    /// conditional goal-direction question exactly where the web wizard
-    /// surfaces it.
-    ///
-    /// Nil means every question has an answer: the step is done, and the
-    /// Continue button takes its place.
-    var intakeQuestion: ConsultIntakeQuestion? {
-        guard let questions = intakeState?.questionPack.questions else { return nil }
-        if answers == (intakeState?.latestRevision?.answers ?? [:]),
-           let servedKey = intakeState?.progress?.nextQuestionKey,
-           let served = questions.first(where: { $0.key == servedKey }) {
-            return served
-        }
-        return questions.first { $0.requirement.mustAnswer && answers[$0.key] == nil }
-            ?? questions.first { answers[$0.key] == nil }
-    }
-
-    /// Whether anything is owed that a tap could usefully retry. True while the
-    /// queue is stalled on a connection as well as when a shot was refused —
-    /// both are states the client can act on, and neither is `busy`.
-    var canRetryPhoto: Bool {
-        guard let consultId = machine.consultId, uploads.owesAnything(consultId: consultId)
-        else { return false }
-        return uploads.stalled || uploads.hasBlocked(consultId: consultId)
-    }
+    // MARK: - Capture chrome, off the durable queue
 
     /// What the queue is saying about this consult right now, for the one line
-    /// under the checklist. Nil when everything is healthy.
+    /// under the photo requests. Nil when everything is healthy.
     var captureQueueMessage: String? {
         guard let consultId = machine.consultId,
               uploads.owesAnything(consultId: consultId) else { return nil }
@@ -153,21 +106,36 @@ final class ConsultFlowViewModel {
         return uploads.blockedReason(consultId: consultId, shotKey: shotKey)
     }
 
-    var inspirationDone: Bool { inspirationState?.isComplete ?? false }
-
-    var acceptedShotCount: Int {
-        captureState?.slots.filter { $0.state == .accepted }.count ?? 0
+    /// Whether anything is owed that a tap could usefully retry. True while the
+    /// queue is stalled on a connection as well as when a shot was refused —
+    /// both are states the client can act on, and neither is `busy`.
+    var canRetryPhoto: Bool {
+        guard let consultId = machine.consultId, uploads.owesAnything(consultId: consultId)
+        else { return false }
+        return uploads.stalled || uploads.hasBlocked(consultId: consultId)
     }
 
-    var totalShotCount: Int { captureState?.shotPack.shots.count ?? 0 }
+    private var photoMessages: [ConsultThreadMessage] {
+        messages.filter { $0.kind == .photoRequest }
+    }
+
+    var acceptedShotCount: Int {
+        photoMessages.filter { $0.slot?.state == .accepted }.count
+    }
+
+    var totalShotCount: Int { photoMessages.count }
 
     /// The partial-pack affordance: some but not all photos accepted while the
     /// session still sits at MEDIA_READY. (A full accepted pack advances
     /// server-side on its own once inspiration is done.)
     var canOfferPartialContinue: Bool {
-        guard let capture = captureState, capture.status == .mediaReady else { return false }
+        guard thread?.status == .mediaReady else { return false }
         return acceptedShotCount >= 1 && acceptedShotCount < totalShotCount
     }
+
+    var chartCopy: ConsultChartCopyState? { thread?.chartCopy }
+
+    // MARK: - Lifecycle
 
     // Exposure is server-decided (GET /client/consult/availability gates the
     // entry point; every consult route 404s while the pilot is dark for this
@@ -178,7 +146,6 @@ final class ConsultFlowViewModel {
         await perform {
             // Create-or-resume, on the SERVER, for both anchors: asking twice
             // returns the SAME consult rather than a second one.
-            let consultId: String
             switch machine.anchor {
             case let .booking(bookingId):
                 let session = try await service.create(bookingId: bookingId)
@@ -186,21 +153,70 @@ final class ConsultFlowViewModel {
                     throw ConsultClientFailure.hidden
                 }
                 try machine.apply(session: session)
-                consultId = session.id
             case let .look(lookPostId):
                 let session = try await service.createFromLook(lookPostId: lookPostId)
                 guard session.professionalId == professionalId else {
                     throw ConsultClientFailure.hidden
                 }
                 try machine.apply(lookSession: session)
-                consultId = session.id
             }
-            let agreements = try await service.agreements(consultId: consultId)
-            agreementState = agreements
-            try machine.apply(agreements: agreements)
-            try await loadCurrentStage(consultId: consultId)
+            try await loadThread()
+        }
+        startPollingIfLive()
+    }
+
+    /// The one read. Everything on screen comes from it.
+    private func loadThread() async throws {
+        guard let consultId = machine.consultId else { return }
+        let served = try await service.thread(consultId: consultId)
+        bind(thread: served)
+    }
+
+    /// Re-read after a mutation, and after a queue leg lands.
+    ///
+    /// Deliberately outside `perform` when called from the queue: it is
+    /// background work the client did not initiate, so it must not raise the
+    /// spinner or disable her buttons, and a dropped refresh is not a failure
+    /// worth a banner.
+    func refreshThread() async {
+        do { try await loadThread() } catch {
+            ConsultCaptureTelemetry.queue("state_refresh_failed", level: .warning)
         }
     }
+
+    /// Bind a served thread, running the checks the per-stage applies used to.
+    ///
+    /// 🔴 The results provenance check is the load-bearing half. Before P5a,
+    /// results reached the screen through `ConsultFlowMachine.apply(results:)`,
+    /// which refuses a payload whose anchor, service category or revision ids do
+    /// not match the flow it was opened on — the check that stops one client's
+    /// analysis rendering inside another's consult. Results now ride on a thread
+    /// message, so the same check is run here or it is not run at all.
+    private func bind(thread served: ConsultThread) {
+        if let results = served.messages.first(where: { $0.kind == .plan })?.results {
+            do {
+                try machine.apply(results: results)
+                resultsContractMismatch = false
+            } catch {
+                // Refuse the PLAN's contents, keep the rest of the thread. A
+                // consult whose results cannot be trusted still has its own
+                // history, and the client is TOLD rather than shown a section
+                // that quietly vanished.
+                //
+                // The flag is what the view reads; the message is left intact on
+                // purpose, because rebuilding a decoded wire struct to blank one
+                // field would be a second, hand-maintained copy of the thread
+                // shape — and a rendering rule belongs in the renderer.
+                resultsContractMismatch = true
+                thread = served
+                return
+            }
+        }
+        resultsContractMismatch = false
+        thread = served
+    }
+
+    // MARK: - Consent
 
     func accept(_ requirement: ConsultAgreementRequirement) async {
         guard let consultId = machine.consultId else { return }
@@ -210,116 +226,136 @@ final class ConsultFlowViewModel {
                 kind: requirement.kind,
                 agreementVersionId: requirement.requiredVersion.id
             )
-            agreementState = state
             try machine.apply(agreements: state)
-            if state.allCurrent { try await loadIntake(consultId: consultId) }
+            try await loadThread()
         }
     }
 
     func revokeSensitiveConsent() async {
         guard let consultId = machine.consultId,
-              let acceptance = agreementState?.requirements.first(where: {
-                  $0.kind == .sensitiveDataConsent
-              })?.currentAcceptance else { return }
+              let acceptance = messages
+                  .first(where: { $0.kind == .consent })?
+                  .requirements?
+                  .first(where: { $0.kind == .sensitiveDataConsent })?
+                  .currentAcceptance
+        else { return }
         await perform {
             let state = try await service.revokeAgreement(
-                consultId: consultId,
-                acceptanceId: acceptance.id
+                consultId: consultId, acceptanceId: acceptance.id
             )
-            uploads.discardAll(consultId: consultId)
-            localThumbnails = [:]
-            inspirationImageCache = nil
-            agreementState = state
             try machine.apply(agreements: state)
-            // She asked for this one. Show the full stop, not an immediate
-            // request to accept again — tapping Book later is what offers the
-            // way back in (ConsultFlowMachine.stopAfterRevoke).
-            if state.status == .consentRevoked { machine.stopAfterRevoke() }
+            machine.stopAfterRevoke()
+            try await loadThread()
         }
     }
 
-    func selectAnswer(questionKey: String, value: String) {
-        guard intakeState?.questionPack.questions.contains(where: {
-            $0.key == questionKey && $0.options.contains(where: { $0.value == value })
-        }) == true else { return }
-        if answers[questionKey] != value {
-            answers[questionKey] = value
-            intakeIdempotencyKey = UUID().uuidString
-        }
-        failure = nil
+    /// Whether the privacy/revoke footer belongs on screen: only once consent is
+    /// actually current, and never on a consult that has already stopped.
+    var canRevokeConsent: Bool {
+        guard !isStopped else { return false }
+        guard let consent = messages.first(where: { $0.kind == .consent }) else { return false }
+        return consent.state == .done
     }
 
-    func submitIntake() async {
-        guard canSubmitIntake, let consultId = machine.consultId,
-              let intakeState else { return }
+    // MARK: - Intake
+
+    /// One tap answers one question, and the POST carries the WHOLE revision —
+    /// so the answers already in the thread are read back out of it rather than
+    /// kept in a second copy here that could drift from what the server holds.
+    func answerIntake(_ message: ConsultThreadMessage, value: String) async {
+        guard let consultId = machine.consultId,
+              let question = message.question,
+              let packVersion = message.packVersion,
+              let schemaVersion = message.schemaVersion,
+              question.options.contains(where: { $0.value == value })
+        else { return }
+
+        var answers: [String: String] = [:]
+        for entry in messages where entry.kind == .question {
+            if let key = entry.question?.key, let existing = entry.answer {
+                answers[key] = existing
+            }
+        }
+        answers[question.key] = value
+
+        // `complete` is the server's own judgement, echoed: every REQUIRED
+        // question now has an answer. Claiming it early is refused; claiming it
+        // late leaves the client on a step with no way forward.
+        let complete = messages
+            .filter { $0.kind == .question && $0.question?.requirement.mustAnswer == true }
+            .allSatisfy { entry in
+                guard let key = entry.question?.key else { return true }
+                return answers[key] != nil
+            }
+
         await perform {
-            let updated = try await service.submitIntake(
+            _ = try await service.submitIntake(
                 consultId: consultId,
-                state: intakeState,
+                packVersion: packVersion,
+                schemaVersion: schemaVersion,
                 answers: answers,
-                idempotencyKey: intakeIdempotencyKey
+                complete: complete,
+                idempotencyKey: UUID().uuidString
             )
-            self.intakeState = updated
-            try machine.apply(intake: updated)
-            try await loadMediaStage(consultId: consultId)
+            try await loadThread()
         }
     }
 
     // MARK: - Inspiration
 
-    func skipInspiration() async {
+    func skipInspiration(_ message: ConsultThreadMessage) async {
         guard let consultId = machine.consultId,
-              let inspiration = inspirationState else { return }
+              let schemaVersion = message.schemaVersion else { return }
         await perform {
-            let state = try await service.skipInspiration(
+            _ = try await service.skipInspiration(
                 consultId: consultId,
-                schemaVersion: inspiration.schemaVersion,
+                schemaVersion: schemaVersion,
                 idempotencyKey: UUID().uuidString
             )
-            try await apply(inspiration: state, consultId: consultId)
+            try await loadThread()
         }
     }
 
-    func uploadInspirationPhoto(_ jpegData: Data) async {
+    func uploadInspirationPhoto(_ message: ConsultThreadMessage, _ jpegData: Data) async {
         guard let consultId = machine.consultId,
-              let inspiration = inspirationState else { return }
+              let schemaVersion = message.schemaVersion else { return }
         await perform {
-            let state = try await service.uploadInspiration(
+            _ = try await service.uploadInspiration(
                 consultId: consultId,
-                schemaVersion: inspiration.schemaVersion,
+                schemaVersion: schemaVersion,
                 jpegData: jpegData,
                 keys: ConsultInspirationMutationKeys()
             )
             inspirationImageCache = nil
-            try await apply(inspiration: state, consultId: consultId)
+            try await loadThread()
         }
     }
 
+    /// 🔴 No free text reaches this call, by construction: the thread has no
+    /// text input at all (P5a). Nothing is lost from the contract — every
+    /// question that allowed a note also carries a tappable option, and the
+    /// server treats a blank note as that option.
     func answerInspiration(
+        _ message: ConsultThreadMessage,
         question: ConsultInspirationQuestion,
-        selectedValues: [String],
-        text: String,
-        sentiment: ConsultInspirationSentiment?
+        selectedValues: [String]
     ) async {
         guard let consultId = machine.consultId,
-              let inspiration = inspirationState else { return }
-        let trimmed = question.allowText
-            ? text.trimmingCharacters(in: .whitespacesAndNewlines)
-            : ""
+              let schemaVersion = message.schemaVersion else { return }
         let values = ConsultInspirationAnswering.effectiveValues(
-            question: question, selected: selectedValues, trimmedText: trimmed
+            question: question, selected: selectedValues, trimmedText: ""
         )
         await perform {
-            let state = try await service.answerInspiration(
+            _ = try await service.answerInspiration(
                 consultId: consultId,
-                schemaVersion: inspiration.schemaVersion,
+                schemaVersion: schemaVersion,
                 questionKey: question.key,
                 selectedValues: values,
-                text: trimmed.isEmpty ? nil : trimmed,
-                sentiment: trimmed.isEmpty ? nil : sentiment,
+                text: nil,
+                sentiment: nil,
                 idempotencyKey: UUID().uuidString
             )
-            try await apply(inspiration: state, consultId: consultId)
+            try await loadThread()
         }
     }
 
@@ -346,7 +382,8 @@ final class ConsultFlowViewModel {
     /// feature that was never built.
     func inspirationImage() async -> InspirationImageOutcome {
         guard let consultId = machine.consultId,
-              let source = inspirationState?.source, source.imageAvailable else {
+              let source = messages.first(where: { $0.kind == .inspiration })?.source,
+              source.imageAvailable else {
             return .unavailable
         }
         if let cached = inspirationImageCache,
@@ -391,13 +428,13 @@ final class ConsultFlowViewModel {
         )
     }
 
+    // MARK: - Photos
+
     func proceedWithAccepted() async {
         guard let consultId = machine.consultId else { return }
         await perform {
-            let capture = try await service.proceedWithAccepted(consultId: consultId)
-            captureState = capture
-            try machine.apply(capture: capture)
-            try await loadAnalysisIfEntered(consultId: consultId)
+            _ = try await service.proceedWithAccepted(consultId: consultId)
+            try await loadThread()
         }
     }
 
@@ -410,8 +447,15 @@ final class ConsultFlowViewModel {
     /// killed. There is deliberately no `perform` here either: `perform`'s
     /// `guard !busy` silently DROPPED a second shot fired while the first was in
     /// flight, and a queue exists precisely so a second shot is queued instead.
-    func submitPhoto(_ data: Data, for shot: ConsultCaptureShot) async {
-        guard let consultId = machine.consultId, let pack = captureState?.shotPack else {
+    ///
+    /// The pack versions come from the photo-request MESSAGE rather than from a
+    /// separately loaded capture state — one read, and the versions travel with
+    /// the shot they belong to.
+    func submitPhoto(_ data: Data, for message: ConsultThreadMessage) async {
+        guard let consultId = machine.consultId,
+              let shot = message.shot,
+              let shotPackVersion = message.shotPackVersion,
+              let schemaVersion = message.schemaVersion else {
             failure = .invalidState
             return
         }
@@ -425,8 +469,8 @@ final class ConsultFlowViewModel {
             data,
             consultId: consultId,
             shotKey: shot.key,
-            shotPackVersion: pack.version,
-            schemaVersion: pack.schemaVersion,
+            shotPackVersion: shotPackVersion,
+            schemaVersion: schemaVersion,
             capturedAt: Date()
         ) else {
             // Nowhere to put the bytes is a real failure, and the one thing that
@@ -447,9 +491,8 @@ final class ConsultFlowViewModel {
     func setChartCopy(_ optIn: Bool) async {
         guard let consultId = machine.consultId else { return }
         await perform {
-            let capture = try await service.setChartCopy(consultId: consultId, optIn: optIn)
-            captureState = capture
-            try machine.apply(capture: capture)
+            _ = try await service.setChartCopy(consultId: consultId, optIn: optIn)
+            try await loadThread()
         }
     }
 
@@ -459,29 +502,10 @@ final class ConsultFlowViewModel {
         await uploads.retryNow()
     }
 
-    /// Re-read capture state from the SERVER after a queue leg lands.
-    ///
-    /// 🔴 A GET, not the mutation's own response. The chain now runs outside
-    /// this object — a leg can complete while the flow is closed, or in a
-    /// process this one never saw — so the server is the only thing that knows
-    /// what the slots actually are. Deliberately outside `perform`: it is
-    /// background work the client did not initiate, so it must not raise the
-    /// spinner or disable her buttons, and a dropped refresh is not a failure
-    /// worth a banner — the next leg, or `refreshCapture` on appear, asks again.
-    func refreshCapture() async {
-        guard let consultId = machine.consultId, machine.stage == .capture else { return }
-        do {
-            let capture = try await service.capture(consultId: consultId)
-            captureState = capture
-            try machine.apply(capture: capture)
-            try await loadAnalysisIfEntered(consultId: consultId)
-        } catch {
-            ConsultCaptureTelemetry.queue("state_refresh_failed", level: .warning)
-        }
-    }
+    // MARK: - Analysis (P4b)
 
-    /// P4b: START the analysis. The request claims it and returns a run in a
-    /// fraction of a second; everything after that is `pollAnalysis` below.
+    /// START the analysis. The request claims it and returns a run in a fraction
+    /// of a second; everything after that is `pollOnce` below.
     ///
     /// This is also the RETRY: the server keeps the session in ANALYZING and
     /// starts a fresh run, under the SAME idempotency key — the artefact a
@@ -489,40 +513,34 @@ final class ConsultFlowViewModel {
     func startAnalysis() async {
         guard let consultId = machine.consultId else { return }
         await perform {
-            let analysis = try await service.startAnalysis(
+            _ = try await service.startAnalysis(
                 consultId: consultId,
                 idempotencyKey: analysisIdempotencyKey
             )
-            analysisState = analysis
-            try machine.apply(analysis: analysis)
-            if analysis.status == .completed { try await loadResults(consultId: consultId) }
+            try await loadThread()
         }
         startPollingIfLive()
     }
 
     func refreshAnalysis() async {
-        guard let consultId = machine.consultId else { return }
-        await perform {
-            let analysis = try await service.analysis(consultId: consultId)
-            analysisState = analysis
-            try machine.apply(analysis: analysis)
-            if analysis.status == .completed { try await loadResults(consultId: consultId) }
-        }
+        await perform { try await loadThread() }
         startPollingIfLive()
     }
 
-    // MARK: - The poll (P4b)
+    private var liveRun: ConsultAnalysisRun? {
+        guard let run = messages.first(where: { $0.kind == .plan })?.run,
+              run.status.isLive else { return nil }
+        return run
+    }
 
     /// Begin polling if — and only if — there is a live run to poll.
     ///
     /// Idempotent: a second call while a poll is already running is a no-op, so
-    /// every entry point into the analysis stage can call it without
-    /// coordinating. `stopPolling` is called from the view's `onDisappear`, so
-    /// a backgrounded or navigated-away screen stops asking.
+    /// every entry point can call it without coordinating. `stopPolling` is
+    /// called from the view's `onDisappear`, so a screen nobody is looking at
+    /// stops asking.
     func startPollingIfLive() {
-        guard pollTask == nil else { return }
-        guard let run = analysisState?.run, run.status.isLive else { return }
-        guard let consultId = machine.consultId else { return }
+        guard pollTask == nil, liveRun != nil, let consultId = machine.consultId else { return }
 
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -551,23 +569,20 @@ final class ConsultFlowViewModel {
 
     /// One tick. Returns true when the run has settled and polling should stop.
     ///
-    /// Deliberately does NOT go through `perform`: that sets `busy`, which
-    /// drives the spinner and the disabled state on the buttons, and a poll is
+    /// Deliberately does NOT go through `perform`: that sets `busy`, which drives
+    /// the spinner and the disabled state on the buttons, and a poll is
     /// background work the client did not initiate. It also swallows its own
     /// errors — a dropped poll is not a failed analysis, the run is still going
-    /// on the server, and the next tick asks again. Surfacing a network blip
-    /// here would tell her something is wrong when nothing is.
+    /// on the server, and the next tick asks again.
+    ///
+    /// 🔴 A completed run does NOT navigate away. The plan lands in the thread
+    /// and the thread stays open — that is the difference between a wizard that
+    /// ends and a consult that continues as prep.
     private func pollOnce(consultId: String) async -> Bool {
         do {
-            let analysis = try await service.analysis(consultId: consultId)
-            analysisState = analysis
-            try machine.apply(analysis: analysis)
-            if analysis.status == .completed {
-                try await loadResults(consultId: consultId)
-                pollTask = nil
-                return true
-            }
-            if let run = analysis.run, !run.status.isLive {
+            let served = try await service.thread(consultId: consultId)
+            bind(thread: served)
+            if liveRun == nil {
                 pollTask = nil
                 return true
             }
@@ -587,108 +602,26 @@ final class ConsultFlowViewModel {
 
     func clearFailure() { failure = nil }
 
-    /// Let the durable queue tell this flow when a leg has landed, so the
-    /// checklist re-reads the server instead of waiting for the client to do
-    /// something. `[weak self]` on purpose: the queue outlives every flow, and a
-    /// strong closure would pin a dismissed one forever. Only the consult on
-    /// screen refreshes — a leg landing for a different consult is the queue's
+    /// Let the durable queue tell this flow when a leg has landed, so the thread
+    /// re-reads the server instead of waiting for the client to do something.
+    /// `[weak self]` on purpose: the queue outlives every flow, and a strong
+    /// closure would pin a dismissed one forever. Only the consult on screen
+    /// refreshes — a leg landing for a different consult is the queue's
     /// business, not this screen's.
     private func bindUploads() {
         uploads.onStageCompleted = { [weak self] consultId in
             guard let self, self.machine.consultId == consultId else { return }
-            Task { await self.refreshCapture() }
+            Task { await self.refreshThread() }
         }
     }
 
-    private func loadCurrentStage(consultId: String) async throws {
-        switch machine.stage {
-        case .prerequisites, .stopped:
-            return
-        case .intake:
-            try await loadIntake(consultId: consultId)
-        case .capture:
-            try await loadMediaStage(consultId: consultId)
-        case .analysis:
-            let analysis = try await service.analysis(consultId: consultId)
-            analysisState = analysis
-            try machine.apply(analysis: analysis)
-            if analysis.status == .completed { try await loadResults(consultId: consultId) }
-            // A cold launch straight into a running analysis — the client left
-            // and came back — has to resume polling, or the screen sits on
-            // whatever stage it happened to load.
-            startPollingIfLive()
-        case .results:
-            try await loadResults(consultId: consultId)
-        }
-    }
-
-    /// MEDIA_READY covers both the inspiration review and the photo pack —
-    /// load them together, the way the web wizard renders them together.
-    private func loadMediaStage(consultId: String) async throws {
-        let inspiration = try await service.inspiration(consultId: consultId)
-        inspirationState = inspiration
-        try machine.apply(inspiration: inspiration)
-        let capture = try await service.capture(consultId: consultId)
-        captureState = capture
-        try machine.apply(capture: capture)
-        try await loadAnalysisIfEntered(consultId: consultId)
-    }
-
-    /// An inspiration mutation can complete the review and, with a full
-    /// accepted pack, advance the whole session — bind the returned state and
-    /// follow any stage change.
-    private func apply(inspiration: ConsultInspirationState, consultId: String) async throws {
-        inspirationState = inspiration
-        try machine.apply(inspiration: inspiration)
-        try await loadAnalysisIfEntered(consultId: consultId)
-    }
-
-    private func loadAnalysisIfEntered(consultId: String) async throws {
-        guard machine.stage == .analysis, analysisState == nil else { return }
-        let analysis = try await service.analysis(consultId: consultId)
-        analysisState = analysis
-        try machine.apply(analysis: analysis)
-        if analysis.status == .completed { try await loadResults(consultId: consultId) }
-        startPollingIfLive()
-    }
-
-    private func loadIntake(consultId: String) async throws {
-        let intake = try await service.intake(consultId: consultId)
-        intakeState = intake
-        var seeded = intake.latestRevision?.answers ?? [:]
-        for suggestion in intake.prefillSuggestions where seeded[suggestion.questionKey] == nil {
-            seeded[suggestion.questionKey] = suggestion.value
-        }
-        answers = seeded
-        try machine.apply(intake: intake)
-    }
-
-    private func loadResults(consultId: String) async throws {
-        let loaded = try await service.results(consultId: consultId)
-        try machine.apply(results: loaded)
-        results = loaded
-        teaserTapped = loaded.meCardTeaser.tapped
-    }
-
-    /// Run one client-initiated mutation, one at a time, with the spinner up.
+    /// Serialize the client's own actions, and surface exactly one failure.
     ///
-    /// 🔴 This used to open `guard !busy else { return }` — a SILENT DROP. A tap
-    /// landing while a slower call was still out simply did nothing: no
-    /// spinner, no error, no line anywhere. That is one of the ways a consult
-    /// photo went missing on prod, and it is the shape of failure this whole
-    /// change exists to remove.
-    ///
-    /// It now QUEUES. Each call takes a ticket at the tail, waits for the one in
-    /// front, then runs — FIFO, on the main actor, with `busy` still driving the
-    /// spinner exactly as before. The difference is that the work happens.
-    ///
-    /// (The capture path no longer comes through here at all — a shot goes
-    /// straight to `ConsultCaptureUploadQueue`. This gate covers the flow's own
-    /// mutations: agreements, intake, inspiration, chart copy, analysis.)
-    ///
-    /// ⚠️ An `operation` must never call `perform` itself: it would queue behind
-    /// its own ticket and wait forever. Nothing does today, and the background
-    /// refreshes (`refreshCapture`, `pollOnce`) deliberately stay outside.
+    /// 🔴 It QUEUES, it does not drop. A `guard !busy` here would silently
+    /// discard a second action fired while the first was in flight — which is
+    /// precisely why `submitPhoto` deliberately does not route through this at
+    /// all, and why a rewrite that swapped this for a busy-guard would
+    /// reintroduce the dropped-shot bug the durable queue exists to prevent.
     private func perform(_ operation: () async throws -> Void) async {
         let ahead = performTail
         // `mine` finishes when — and only when — this call finishes, so whoever
