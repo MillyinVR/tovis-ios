@@ -69,6 +69,10 @@ struct ConsultFlowView: View {
                 model = created
                 await created.start()
             }
+            // A screen nobody is looking at must not keep polling. `.task`
+            // above is not enough on its own: it is cancelled on disappear, but
+            // the poll lives on the view model, which outlives it.
+            .onDisappear { model?.stopPolling() }
             .confirmationDialog(
                 "Stop this consult and revoke consent?",
                 isPresented: $showRevokeConfirmation,
@@ -376,11 +380,17 @@ struct ConsultFlowView: View {
                         .foregroundStyle(BrandColor.textSecondary)
                 }
                 primaryButton(
-                    model.busy ? "Analyzing — hold tight…" : "Run my analysis",
+                    model.busy ? "Starting…" : "Run my analysis",
                     busy: model.busy, disabled: false
                 ) {
                     Task { await model.startAnalysis() }
                 }
+            } else if let run = model.analysisState?.run {
+                // P4b: the analysis is a background run now, so this is a live
+                // progress view rather than an indefinite spinner. It polls
+                // itself (ConsultFlowViewModel.startPollingIfLive) and stops
+                // when the screen goes away.
+                analysisRunProgress(run, model: model)
             } else {
                 loadingCard(model.busy ? "Reviewing your photos…" : "Analysis is still processing.")
                 if !model.busy {
@@ -697,6 +707,58 @@ struct ConsultFlowView: View {
                 Text("\(ConsultResultPresentation.codeLabel(value)) · \(ConsultResultPresentation.confidence(confidence))")
                     .font(BrandFont.body(13, .semibold))
                     .foregroundStyle(BrandColor.textPrimary)
+            }
+        }
+    }
+
+    /// P4b: the waiting screen for a background analysis run.
+    ///
+    /// A LIVE run shows progress and no buttons — there is nothing useful to
+    /// press, and it says so ("you can close this"), because the notification
+    /// is what brings her back. A FAILED run shows the retry, which is the
+    /// whole reason she is not stranded.
+    @ViewBuilder
+    private func analysisRunProgress(
+        _ run: ConsultAnalysisRun,
+        model: ConsultFlowViewModel
+    ) -> some View {
+        let progress = ConsultAnalysisRunCopy.progress(for: run)
+
+        BrandSurface {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
+                    if run.status.isLive { ProgressView().tint(BrandColor.accent) }
+                    Text(progress.headline)
+                        .font(BrandFont.body(14, .semibold))
+                        .foregroundStyle(BrandColor.textPrimary)
+                }
+                if let detail = progress.detail {
+                    Text(detail)
+                        .font(BrandFont.body(13))
+                        .foregroundStyle(BrandColor.textSecondary)
+                }
+                ProgressView(value: progress.fraction)
+                    .tint(BrandColor.accent)
+                    // The headline above already says the status out loud; an
+                    // unlabelled bar repeating it is noise to a screen reader.
+                    .accessibilityHidden(true)
+                if run.status.isLive {
+                    Text("You can close this — we’ll let you know when it’s ready.")
+                        .font(BrandFont.body(12))
+                        .foregroundStyle(BrandColor.textSecondary)
+                }
+            }
+            .accessibilityElement(children: .combine)
+        }
+
+        if run.retryable {
+            primaryButton(model.busy ? "Starting…" : "Try again",
+                          busy: model.busy, disabled: false) {
+                Task { await model.startAnalysis() }
+            }
+        } else if !run.status.isLive {
+            primaryButton("Check results", busy: model.busy, disabled: false) {
+                Task { await model.refreshAnalysis() }
             }
         }
     }

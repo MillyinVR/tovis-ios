@@ -392,7 +392,20 @@
       "status": "COMPLETED",
       "schemaVersion": 3,
       "promptVersion": "service-analysis-v3",
-      "result": null
+      "result": null,
+      "run": {
+        "runId": "run_fixture_1",
+        "status": "COMPLETED",
+        "stage": "DONE",
+        "photoCount": 4,
+        "attemptCount": 1,
+        "maxAttempts": 3,
+        "queuedAt": "2026-09-04T10:00:00.000Z",
+        "startedAt": "2026-09-04T10:00:01.000Z",
+        "finishedAt": "2026-09-04T10:01:12.000Z",
+        "failureCode": null,
+        "retryable": false
+      }
     },
     "replayed": false
   },

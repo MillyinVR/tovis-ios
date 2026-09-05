@@ -842,6 +842,53 @@ struct ConsultTeaserTapResponse: Decodable, Sendable {
     let replayed: Bool
 }
 
+/// P4b: how far the background analysis has got. The waiting screen's copy is
+/// keyed off this and nothing else.
+public enum ConsultAnalysisRunStage: String, Decodable, Sendable {
+    case queued = "QUEUED"
+    case readingPhotos = "READING_PHOTOS"
+    case understandingReference = "UNDERSTANDING_REFERENCE"
+    case buildingPlan = "BUILDING_PLAN"
+    case finalizing = "FINALIZING"
+    case done = "DONE"
+}
+
+public enum ConsultAnalysisRunStatus: String, Decodable, Sendable {
+    case queued = "QUEUED"
+    case running = "RUNNING"
+    case completed = "COMPLETED"
+    case failed = "FAILED"
+
+    /// The two states the client is still waiting through, and therefore the
+    /// two the app should still be polling in.
+    public var isLive: Bool { self == .queued || self == .running }
+}
+
+/// P4b: one background analysis run.
+///
+/// The analysis stopped being something a request does and became something a
+/// job does, so the client needs a handle on the job. Everything here is a
+/// lifecycle fact or a count — `failureCode` is a code this app maps to its own
+/// copy, never a message to render.
+public struct ConsultAnalysisRun: Decodable, Sendable {
+    public let runId: String
+    public let status: ConsultAnalysisRunStatus
+    public let stage: ConsultAnalysisRunStage
+    /// How many of her photos this run reads — the number in "reading your 4
+    /// photos". A partial pack is supported, so it is not always the full pack.
+    public let photoCount: Int
+    public let attemptCount: Int
+    public let maxAttempts: Int
+    public let queuedAt: String
+    public let startedAt: String?
+    public let finishedAt: String?
+    public let failureCode: String?
+    /// Whether starting again would begin a fresh run. The SERVER decides this
+    /// (it is true only for a FAILED run), so web and iOS cannot disagree about
+    /// when the retry button is live.
+    public let retryable: Bool
+}
+
 public struct ConsultAnalysisState: Decodable, Sendable {
     public let consultId: String
     public let status: ConsultSessionStatus
@@ -851,6 +898,14 @@ public struct ConsultAnalysisState: Decodable, Sendable {
     // C8 needs only completion/provenance here, so the large provider payload is
     // deliberately skipped instead of becoming a second render source.
     public let result: ConsultAnalysisRevision?
+    /// P4b: the most recent run, or nil when the analysis was never started.
+    ///
+    /// Optional in the decoder even though the server always sends it, because
+    /// a shipped build must keep decoding a response from a server that has not
+    /// deployed P4b yet — the same reason every other additive field here is
+    /// optional. `nil` simply means "no run to show", which is the correct
+    /// rendering on an old server.
+    public let run: ConsultAnalysisRun?
 }
 
 public struct ConsultAnalysisRevision: Decodable, Sendable {

@@ -29,6 +29,8 @@ final class ConsultFlowViewModel {
     @ObservationIgnored private var intakeIdempotencyKey = UUID().uuidString
     @ObservationIgnored private var analysisIdempotencyKey = UUID().uuidString
     @ObservationIgnored private var pendingPhoto: PendingPhoto?
+    /// P4b: the live-run poll. Nil whenever nothing is being polled.
+    @ObservationIgnored private var pollTask: Task<Void, Never>?
     // Signed read URL for the inspiration image; short-lived, so refreshed
     // shortly before expiry instead of per render.
     @ObservationIgnored private var inspirationImageCache: (url: URL, expiresAt: Date)?
@@ -368,6 +370,12 @@ final class ConsultFlowViewModel {
         processingShot = nil
     }
 
+    /// P4b: START the analysis. The request claims it and returns a run in a
+    /// fraction of a second; everything after that is `pollAnalysis` below.
+    ///
+    /// This is also the RETRY: the server keeps the session in ANALYZING and
+    /// starts a fresh run, under the SAME idempotency key — the artefact a
+    /// retried run writes is the artefact the first attempt would have written.
     func startAnalysis() async {
         guard let consultId = machine.consultId else { return }
         await perform {
@@ -379,6 +387,7 @@ final class ConsultFlowViewModel {
             try machine.apply(analysis: analysis)
             if analysis.status == .completed { try await loadResults(consultId: consultId) }
         }
+        startPollingIfLive()
     }
 
     func refreshAnalysis() async {
@@ -388,6 +397,73 @@ final class ConsultFlowViewModel {
             analysisState = analysis
             try machine.apply(analysis: analysis)
             if analysis.status == .completed { try await loadResults(consultId: consultId) }
+        }
+        startPollingIfLive()
+    }
+
+    // MARK: - The poll (P4b)
+
+    /// Begin polling if — and only if — there is a live run to poll.
+    ///
+    /// Idempotent: a second call while a poll is already running is a no-op, so
+    /// every entry point into the analysis stage can call it without
+    /// coordinating. `stopPolling` is called from the view's `onDisappear`, so
+    /// a backgrounded or navigated-away screen stops asking.
+    func startPollingIfLive() {
+        guard pollTask == nil else { return }
+        guard let run = analysisState?.run, run.status.isLive else { return }
+        guard let consultId = machine.consultId else { return }
+
+        pollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: ConsultAnalysisRunCopy.pollInterval)
+                if Task.isCancelled { return }
+                guard let self else { return }
+                let finished = await self.pollOnce(consultId: consultId)
+                if finished { return }
+            }
+        }
+    }
+
+    func stopPolling() {
+        pollTask?.cancel()
+        pollTask = nil
+    }
+
+    /// Drive exactly one poll tick. The timing of the loop is not the thing
+    /// worth testing — five real seconds per assertion would be — but what a
+    /// tick DOES is, so the tick is reachable and the loop is not.
+    @discardableResult
+    func pollOnceForTest() async -> Bool {
+        guard let consultId = machine.consultId else { return true }
+        return await pollOnce(consultId: consultId)
+    }
+
+    /// One tick. Returns true when the run has settled and polling should stop.
+    ///
+    /// Deliberately does NOT go through `perform`: that sets `busy`, which
+    /// drives the spinner and the disabled state on the buttons, and a poll is
+    /// background work the client did not initiate. It also swallows its own
+    /// errors — a dropped poll is not a failed analysis, the run is still going
+    /// on the server, and the next tick asks again. Surfacing a network blip
+    /// here would tell her something is wrong when nothing is.
+    private func pollOnce(consultId: String) async -> Bool {
+        do {
+            let analysis = try await service.analysis(consultId: consultId)
+            analysisState = analysis
+            try machine.apply(analysis: analysis)
+            if analysis.status == .completed {
+                try await loadResults(consultId: consultId)
+                pollTask = nil
+                return true
+            }
+            if let run = analysis.run, !run.status.isLive {
+                pollTask = nil
+                return true
+            }
+            return false
+        } catch {
+            return false
         }
     }
 
@@ -414,6 +490,10 @@ final class ConsultFlowViewModel {
             analysisState = analysis
             try machine.apply(analysis: analysis)
             if analysis.status == .completed { try await loadResults(consultId: consultId) }
+            // A cold launch straight into a running analysis — the client left
+            // and came back — has to resume polling, or the screen sits on
+            // whatever stage it happened to load.
+            startPollingIfLive()
         case .results:
             try await loadResults(consultId: consultId)
         }
@@ -446,6 +526,7 @@ final class ConsultFlowViewModel {
         analysisState = analysis
         try machine.apply(analysis: analysis)
         if analysis.status == .completed { try await loadResults(consultId: consultId) }
+        startPollingIfLive()
     }
 
     private func loadIntake(consultId: String) async throws {

@@ -224,8 +224,26 @@ private actor MockConsultService: ConsultServicing {
         return try decode(ConsultCaptureState.self, value: value)
     }
 
+    /// P4b: a scripted sequence of run states, consumed one per `analysis`
+    /// call, so a test can drive a run from QUEUED through to its outcome the
+    /// way the poll would. Empty means "behave as before".
+    private var scriptedRuns: [[String: Any]] = []
+    private var analysisError: Error?
+    private(set) var analysisReadCount = 0
+
+    func setScriptedRunsForTest(_ runs: [[String: Any]]) { scriptedRuns = runs }
+
     func analysis(consultId: String) async throws -> ConsultAnalysisState {
+        analysisReadCount += 1
+        if let analysisError { throw analysisError }
         var value = dictionary("analysis", "analysis")
+        if !scriptedRuns.isEmpty {
+            let run = scriptedRuns.count > 1 ? scriptedRuns.removeFirst() : scriptedRuns[0]
+            value["run"] = run
+            let status = run["status"] as? String
+            value["status"] = status == "COMPLETED" ? "COMPLETED" : "ANALYZING"
+            return try decode(ConsultAnalysisState.self, value: value)
+        }
         value["status"] = analysisStarted ? "COMPLETED" : "ANALYSIS_PENDING"
         return try decode(ConsultAnalysisState.self, value: value)
     }
@@ -512,6 +530,111 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
         #expect(model.failure == nil)
     }
 
+    /// P4b: the analysis became a background run, so the screen has to follow
+    /// it rather than block on one request.
+    @Test func aLiveRunIsPolledUntilItSettles() async throws {
+        let service = MockConsultService(root: try fixtureRoot())
+        await service.setScriptedRunsForTest([
+            runJSON(status: "RUNNING", stage: "READING_PHOTOS"),
+            runJSON(status: "RUNNING", stage: "BUILDING_PLAN"),
+            runJSON(status: "COMPLETED", stage: "DONE"),
+        ])
+        let model = ConsultFlowViewModel(
+            anchor: .booking("booking_fixture_1"),
+            professionalId: "cmq9p645v0002jp04fttoatlq",
+            service: service
+        )
+        await model.start()
+
+        // Reading the analysis directly is enough — the poll starts from the
+        // load, not from a particular route through the wizard.
+        await model.refreshAnalysis()
+        #expect(model.analysisState?.run?.stage == .readingPhotos)
+
+        // The poll ticks every 5s; drive it by hand instead of sleeping 15
+        // seconds in a unit test.
+        await model.pollOnceForTest()
+        #expect(model.analysisState?.run?.stage == .buildingPlan)
+        await model.pollOnceForTest()
+        #expect(model.analysisState?.run?.status == .completed)
+        #expect(model.stage == .results)
+        #expect(model.failure == nil)
+    }
+
+    /// A dropped poll is not a failed analysis. The run is still going on the
+    /// server; showing an error here would tell her something is wrong when
+    /// nothing is.
+    @Test func aDroppedPollDoesNotSurfaceAsAFailure() async throws {
+        let service = MockConsultService(root: try fixtureRoot())
+        await service.setScriptedRunsForTest([
+            runJSON(status: "RUNNING", stage: "BUILDING_PLAN"),
+        ])
+        let model = ConsultFlowViewModel(
+            anchor: .booking("booking_fixture_1"),
+            professionalId: "cmq9p645v0002jp04fttoatlq",
+            service: service
+        )
+        await model.start()
+        await model.refreshAnalysis()
+
+        await service.setAnalysisErrorForTest(URLError(.timedOut))
+        await model.pollOnceForTest()
+        #expect(model.failure == nil)
+        #expect(model.busy == false)
+        // The last good state is still on screen rather than being cleared.
+        #expect(model.analysisState?.run?.stage == .buildingPlan)
+    }
+
+    /// A FAILED run is the one state that gives the client something to press.
+    @Test func aFailedRunOffersTheRetryAndStopsPolling() async throws {
+        let service = MockConsultService(root: try fixtureRoot())
+        await service.setScriptedRunsForTest([
+            runJSON(
+                status: "FAILED",
+                stage: "BUILDING_PLAN",
+                retryable: true,
+                failureCode: "ANALYSIS_UNAVAILABLE"
+            ),
+        ])
+        let model = ConsultFlowViewModel(
+            anchor: .booking("booking_fixture_1"),
+            professionalId: "cmq9p645v0002jp04fttoatlq",
+            service: service
+        )
+        await model.start()
+        await model.refreshAnalysis()
+
+        let run = try #require(model.analysisState?.run)
+        #expect(run.status == .failed)
+        #expect(run.retryable)
+        #expect(!run.status.isLive)
+        // The copy layer turns that into a retry, and says nothing about why.
+        let progress = ConsultAnalysisRunCopy.progress(for: run)
+        #expect(progress.headline == "We couldn’t finish your plan.")
+        #expect(!progress.headline.contains("ANALYSIS_UNAVAILABLE"))
+    }
+
+    private func runJSON(
+        status: String,
+        stage: String,
+        retryable: Bool = false,
+        failureCode: String? = nil
+    ) -> [String: Any] {
+        [
+            "runId": "run_fixture_1",
+            "status": status,
+            "stage": stage,
+            "photoCount": 4,
+            "attemptCount": 1,
+            "maxAttempts": 3,
+            "queuedAt": "2026-09-04T10:00:00.000Z",
+            "startedAt": "2026-09-04T10:00:01.000Z",
+            "finishedAt": NSNull(),
+            "failureCode": failureCode ?? NSNull(),
+            "retryable": retryable,
+        ]
+    }
+
     /// The gate lives server-side now: a pro the pilot is dark for gets a 404
     /// from every consult route, and the device renders that as hidden — no
     /// local copy of the exposure rule exists to disagree with the server.
@@ -639,6 +762,10 @@ private extension MockConsultService {
 
     func setCreateErrorForTest(_ error: Error) {
         createError = error
+    }
+
+    func setAnalysisErrorForTest(_ error: Error?) {
+        analysisError = error
     }
 
     func setInspirationImageErrorForTest(_ error: Error?) {
