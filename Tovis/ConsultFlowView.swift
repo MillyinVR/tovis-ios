@@ -448,17 +448,16 @@ struct ConsultPhotoPickerSlot: View {
     }
 }
 
-/// Where to look in the inspiration photo for each question — presentation-only
-/// guidance beside the server-served question copy, mirrored from the web wizard.
-let consultInspirationFocusHints: [String: String] = [
-    "favorite_colors": "Zoom into the hair and look at the mix of colors — the brightest pieces, the deepest pieces, and the tones in between.",
-    "avoid_colors": "Look over each color in the hair again — is there any you would not want on you?",
-    "length_goal": "Look at where the hair ends — how long it falls.",
-    "fullness_goal": "Look at how thick and full the hair appears overall.",
-    "current_styling": "Look at how the hair is styled — straight, waves, curls, or something else.",
-    "styling_walkthrough": "Think about whether you could get it styled this way on your own.",
-    "other_detail": "One last look — anything else stand out, good or bad?",
-]
+// 🔴 P5d DELETED `consultInspirationFocusHints` (and its web twin,
+// `INSPIRATION_FOCUS`).
+//
+// It was a sentence telling the client where to LOOK — "zoom into the hair and
+// look at the mix of colors" — written once per question key and guessed at per
+// pack. A card does not need one: it shows her the crop.
+//
+// Do not reintroduce it. A hint that describes a region the server can send is
+// a second, hand-maintained answer to a question the reading already answers,
+// and it drifts silently the moment a pack asks something it was never taught.
 
 /// The inspiration source decision: add one reference photo of a look, or
 /// continue without one. Uses the photo library only — an inspiration picture
@@ -592,11 +591,6 @@ struct ConsultInspirationImagePanel: View {
                         .foregroundStyle(BrandColor.textSecondary)
                 }
             }
-            if let hint = consultInspirationFocusHints[questionKey] {
-                Text("\(hint) Tap the photo to zoom.")
-                    .font(BrandFont.body(12))
-                    .foregroundStyle(BrandColor.textSecondary)
-            }
             Text(referenceNote)
                 .font(BrandFont.body(11))
                 .foregroundStyle(BrandColor.textMuted)
@@ -639,6 +633,13 @@ struct ConsultInspirationImagePanel: View {
 struct ConsultInspirationQuestionView: View {
     let question: ConsultInspirationQuestion
     let busy: Bool
+    /// 🔴 False on a CARD, which renders the question itself — after its crop
+    /// and its plain-language name, which is the whole point of the card's
+    /// ordering. Left true it renders a SECOND copy of the same sentence, above
+    /// the name, putting the jargon-free word after a question the client has
+    /// already been asked. The web twin shipped exactly that until a browser
+    /// caught it; both copies are correct on their own, so no unit test can.
+    var showLabel: Bool = true
     let onAnswer: ([String]) -> Void
 
     @State private var selected: [String] = []
@@ -651,9 +652,11 @@ struct ConsultInspirationQuestionView: View {
     // message card, and a surface nested in a surface is an invisible box.
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(question.label)
-                .font(BrandFont.body(16, .semibold))
-                .foregroundStyle(BrandColor.textPrimary)
+            if showLabel {
+                Text(question.label)
+                    .font(BrandFont.body(16, .semibold))
+                    .foregroundStyle(BrandColor.textPrimary)
+            }
             if let helpText = question.helpText {
                 Text(helpText)
                     .font(BrandFont.body(13))

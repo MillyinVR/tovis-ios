@@ -129,6 +129,12 @@ public struct ConsultThreadMessage: Decodable, Sendable, Identifiable {
     public let sourceDecisionRequired: Bool?
     public let source: ConsultInspirationSourceState?
     public let inspirationQuestion: ConsultInspirationQuestion?
+    /// P5d — the CARD this message is, when it is one.
+    ///
+    /// Optional on the wire: a build that predates cards keeps rendering
+    /// `inspirationQuestion` and simply shows no crop, which is the same thing
+    /// it shows when a reference could not be read.
+    public let card: ConsultInspirationCard?
     public let answeredQuestionCount: Int?
     public let specificDetailCount: Int?
     public let requiredSpecificDetailCount: Int?
@@ -155,7 +161,7 @@ public struct ConsultThreadMessage: Decodable, Sendable, Identifiable {
         case kind, id, author, state, text
         case requirements
         case question, answer, packVersion
-        case sourceDecisionRequired, source
+        case sourceDecisionRequired, source, card
         case answeredQuestionCount, specificDetailCount, requiredSpecificDetailCount
         case shot, shotPackVersion, slot
         case run, results, awaitingStart, promptVersion
@@ -199,6 +205,12 @@ public struct ConsultThreadMessage: Decodable, Sendable, Identifiable {
         )
         source = try container.decodeIfPresent(
             ConsultInspirationSourceState.self, forKey: .source
+        )
+        // `try?` for the same reason the two questions above use it: a card of
+        // a shape this build does not understand lands as nil rather than
+        // failing the whole thread.
+        card = try? container.decodeIfPresent(
+            ConsultInspirationCard.self, forKey: .card
         )
         answeredQuestionCount = try container.decodeIfPresent(
             Int.self, forKey: .answeredQuestionCount
