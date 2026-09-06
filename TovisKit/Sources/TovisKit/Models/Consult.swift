@@ -372,11 +372,78 @@ public enum ConsultInspirationBlocker: String, Decodable, Sendable {
 
 public struct ConsultInspirationProgress: Decodable, Sendable {
     public let currentQuestion: ConsultInspirationQuestion?
+    /// P5d — the first unanswered PREP card, once the coarse tier is done.
+    /// Absent on a server (or a contract-v1 consult) with no prep tier.
+    public let nextPrepQuestionKey: String?
     public let answeredQuestionCount: Int
     public let specificDetailCount: Int
     public let requiredSpecificDetailCount: Int
     public let canComplete: Bool
     public let blocker: ConsultInspirationBlocker?
+}
+
+/// P5d — which tier an inspiration card belongs to.
+///
+/// COARSE is the three cards asked before the booking; PREP is the fine
+/// per-attribute cards asked after it, as "help <pro> get ready".
+public enum ConsultInspirationCardTier: String, Decodable, Sendable, Equatable {
+    case coarse = "COARSE"
+    case prep = "PREP"
+    case unknown
+
+    public init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = Self(rawValue: raw) ?? .unknown
+    }
+}
+
+/// Where on the reference an attribute was read from, normalized to the image
+/// (0..1, top-left origin).
+public struct ConsultInspirationRegion: Decodable, Sendable, Equatable {
+    public let x: Double
+    public let y: Double
+    public let w: Double
+    public let h: Double
+}
+
+/// One option of a card whose OPTIONS crop to different parts of the picture.
+///
+/// A nil `region` means show the whole reference — either because the option is
+/// about the whole picture, or because the reading did not settle the
+/// attributes it groups. Both are the same instruction to the client.
+public struct ConsultInspirationCardOption: Decodable, Sendable, Equatable, Identifiable {
+    public let value: String
+    public let label: String
+    public let region: ConsultInspirationRegion?
+    public var id: String { value }
+}
+
+/// P5d — an inspiration CARD: a crop of the client's own reference, a plain
+/// word for what is in the crop, and a question about it.
+///
+/// 🔴 Nothing here is composed on the device. The crop comes from the server's
+/// reading of the photograph, the words come from the brand copy table, and the
+/// answer that goes back is the question key plus the option enum — the same
+/// mutation the wizard already used.
+///
+/// 🔴 `name` is shown UNDER the crop, never above it. The client is looking at
+/// the silvery part of her own reference before anything calls it "ash".
+public struct ConsultInspirationCard: Decodable, Sendable, Equatable, Identifiable {
+    public let questionKey: String
+    public let tier: ConsultInspirationCardTier
+    /// The reading attribute this card is about, or nil for a coarse card.
+    public let attribute: String?
+    /// That attribute's read value, so the device and the pro's brief agree.
+    public let attributeValue: String?
+    public let name: String?
+    /// The crop for the card. Nil means show the whole reference.
+    public let region: ConsultInspirationRegion?
+    public let optionRegions: [ConsultInspirationCardOption]
+    public let question: ConsultInspirationQuestion
+    public let selectedValues: [String]
+
+    public var id: String { questionKey }
+    public var isAnswered: Bool { !selectedValues.isEmpty }
 }
 
 public struct ConsultInspirationSourceState: Decodable, Sendable {
@@ -399,6 +466,9 @@ public struct ConsultInspirationState: Decodable, Sendable {
     public let reflectionPrompt: String
     public let source: ConsultInspirationSourceState?
     public let progress: ConsultInspirationProgress
+    /// P5d — every card this client is shown, coarse first then prep. Absent on
+    /// a server that predates cards, and empty for a contract-v1 consult.
+    public let cards: [ConsultInspirationCard]?
 
     /// Done means the source decision was made AND every question is answered
     /// with enough specific detail — the analysis prerequisite this stage exists

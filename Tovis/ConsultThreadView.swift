@@ -151,9 +151,17 @@ private struct ConsultThreadMessageView: View {
         case .question:
             QuestionMessageView(message: message, model: model)
         case .inspiration:
-            InspirationMessageView(
-                message: message, model: model, onFullscreen: onFullscreen
-            )
+            // A CARD message renders as a card; the step's own message (the one
+            // that asks for a reference) renders as before.
+            if let card = message.card {
+                ConsultInspirationCardView(
+                    message: message, card: card, model: model, onFullscreen: onFullscreen
+                )
+            } else {
+                InspirationMessageView(
+                    message: message, model: model, onFullscreen: onFullscreen
+                )
+            }
         case .photoRequest:
             PhotoRequestMessageView(
                 message: message, model: model, onFullscreen: onFullscreen
@@ -288,12 +296,12 @@ private struct QuestionMessageView: View {
     }
 }
 
-/// The inspiration card.
+/// The inspiration STEP: the bubble, the reference, and — for a contract-v1
+/// consult only — its wizard question.
 ///
-/// P5a renders the CURRENT v1 questions inside a card; P5 replaces the content
-/// with the zoom-card script (a crop of the attribute's region + "is this part
-/// of what you like?"). The card is what is being fixed in place here, not the
-/// wording inside it.
+/// P5d moved the questions onto their own CARD messages
+/// (`ConsultInspirationCardView`), so for a card consult this message carries
+/// no question at all and renders the picture and the source decision.
 private struct InspirationMessageView: View {
     let message: ConsultThreadMessage
     let model: ConsultFlowViewModel

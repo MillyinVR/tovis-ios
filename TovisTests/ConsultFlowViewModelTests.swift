@@ -1286,6 +1286,97 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
         #expect(message.kind == .unknown)
         #expect(message.id == "zoom:1")
     }
+
+    /// P5d — an inspiration CARD decodes with its crop, its plain word and its
+    /// question, and a null `text` is a message with no bubble rather than a
+    /// decode failure.
+    @Test func anInspirationCardDecodesWithItsCropAndItsWords() throws {
+        let json = """
+        {"kind":"INSPIRATION","id":"inspiration:attr_tone","author":"APP",
+         "state":"OPEN","text":null,"sourceDecisionRequired":false,"source":null,
+         "question":{"key":"attr_tone","label":"Is this part of what you like?",
+          "helpText":null,"kind":"SINGLE_SELECT","options":[
+           {"value":"yes","label":"Yes"},{"value":"not-this","label":"Not this"},
+           {"value":"not-sure","label":"Not sure"}],
+          "minSelections":1,"maxSelections":1,"allowText":false},
+         "card":{"questionKey":"attr_tone","tier":"PREP","attribute":"tone",
+          "attributeValue":"COOL",
+          "name":"This is the cooler, silvery cast in it.",
+          "region":{"x":0.32,"y":0.5,"w":0.36,"h":0.25},"optionRegions":[],
+          "question":{"key":"attr_tone","label":"Is this part of what you like?",
+           "helpText":null,"kind":"SINGLE_SELECT","options":[
+            {"value":"yes","label":"Yes"}],"minSelections":1,"maxSelections":1,
+           "allowText":false},
+          "selectedValues":["yes"]},
+         "answeredQuestionCount":1,"specificDetailCount":1,
+         "requiredSpecificDetailCount":0,"schemaVersion":2}
+        """
+        let message = try JSONDecoder().decode(
+            ConsultThreadMessage.self, from: Data(json.utf8)
+        )
+        #expect(message.kind == .inspiration)
+        // 🔴 A card message carries NO bubble. `text` is nullable since P5d.
+        #expect(message.text == nil)
+        let card = try #require(message.card)
+        #expect(card.tier == .prep)
+        #expect(card.attribute == "tone")
+        #expect(card.attributeValue == "COOL")
+        #expect(card.region?.w == 0.36)
+        #expect(card.isAnswered)
+        // The word is on the card, and it is the word the SERVER chose — the
+        // device composes nothing.
+        #expect(card.name == "This is the cooler, silvery cast in it.")
+    }
+
+    /// A coarse card's OPTIONS each carry their own crop, and the two that are
+    /// about the whole picture carry none.
+    @Test func aCoarseCardCarriesAPerOptionCrop() throws {
+        let json = """
+        {"questionKey":"spark_focus","tier":"COARSE","attribute":null,
+         "attributeValue":null,"name":null,"region":null,
+         "optionRegions":[
+          {"value":"the-color","label":"The color",
+           "region":{"x":0.3,"y":0.5,"w":0.4,"h":0.4}},
+          {"value":"the-shape","label":"The shape of it",
+           "region":{"x":0.1,"y":0.2,"w":0.8,"h":0.6}},
+          {"value":"the-whole-thing","label":"The whole thing","region":null},
+          {"value":"not-sure","label":"Not sure","region":null}],
+         "question":{"key":"spark_focus","label":"What made you stop scrolling?",
+          "helpText":null,"kind":"SINGLE_SELECT","options":[
+           {"value":"the-color","label":"The color"}],
+          "minSelections":1,"maxSelections":1,"allowText":false},
+         "selectedValues":[]}
+        """
+        let card = try JSONDecoder().decode(
+            ConsultInspirationCard.self, from: Data(json.utf8)
+        )
+        #expect(card.tier == .coarse)
+        #expect(card.name == nil)
+        #expect(!card.isAnswered)
+        let cropped = card.optionRegions.filter { $0.region != nil }
+        #expect(cropped.map(\.value) == ["the-color", "the-shape"])
+        // Different boxes: "the color" and "the shape of it" are two visibly
+        // different parts of one photograph, which is what makes the question
+        // answerable by someone never asked it before.
+        #expect(cropped[0].region != cropped[1].region)
+    }
+
+    /// A build meeting a CARD it cannot parse renders the thread without it,
+    /// rather than failing the whole read.
+    @Test func aMalformedCardIsNilNotFatal() throws {
+        let json = """
+        {"kind":"INSPIRATION","id":"inspiration:x","author":"APP","state":"OPEN",
+         "text":null,"sourceDecisionRequired":false,"source":null,"question":null,
+         "card":{"questionKey":"x"},
+         "answeredQuestionCount":0,"specificDetailCount":0,
+         "requiredSpecificDetailCount":0,"schemaVersion":2}
+        """
+        let message = try JSONDecoder().decode(
+            ConsultThreadMessage.self, from: Data(json.utf8)
+        )
+        #expect(message.kind == .inspiration)
+        #expect(message.card == nil)
+    }
 }
 
 private extension MockConsultService {
