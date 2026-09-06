@@ -26,6 +26,58 @@ nonisolated enum VisionDetect {
         return CGRect(x: bb.minX, y: 1 - bb.maxY, width: bb.width, height: bb.height)
     }
 
+    /// The band a face's EYES and BROWS occupy, normalized TOP-LEFT in the
+    /// handler's (oriented) space. Nil when no face, or when the face carries no
+    /// eye/brow landmarks.
+    ///
+    /// 🔴 This is a landmarks read (`VNDetectFaceLandmarksRequest`), NOT the
+    /// face box `largestFace` returns, and the difference is the whole reason it
+    /// exists. Where the brow line sits inside a face box moves with head tilt,
+    /// hairline and how much forehead is in frame, so a fixed fraction of the box
+    /// clips a brow on a real person often enough to be useless. The landmark
+    /// regions ARE the eyes and the brows.
+    ///
+    /// Returned RAW — the union of the four regions and nothing else. Padding it
+    /// out to a photographable band is the caller's job
+    /// (`ConsultCaptureCrop.band`), so this stays a measurement and the band
+    /// stays tunable without touching Vision.
+    ///
+    /// Runs its own request rather than extending `largestFace`: landmarks are
+    /// materially more expensive than rectangles, and `largestFace` is on the
+    /// LIVE frame path at `CoachTuning.analysisFPS`. This one runs once, on a
+    /// captured still.
+    static func eyeAndBrowBand(performing handler: VNImageRequestHandler) -> CGRect? {
+        let request = VNDetectFaceLandmarksRequest()
+        try? handler.perform([request])
+        guard let faces = request.results, !faces.isEmpty else { return nil }
+        let largest = faces.max {
+            $0.boundingBox.width * $0.boundingBox.height
+                < $1.boundingBox.width * $1.boundingBox.height
+        }
+        guard let face = largest, let landmarks = face.landmarks else { return nil }
+
+        let box = face.boundingBox
+        var union: CGRect?
+        for region in [landmarks.leftEye, landmarks.rightEye,
+                       landmarks.leftEyebrow, landmarks.rightEyebrow] {
+            guard let points = region?.normalizedPoints, !points.isEmpty else { continue }
+            for point in points {
+                // Landmark points are normalized to the FACE BOX, not the image
+                // — the single easiest thing to get wrong here, and it fails
+                // quietly by producing a band near the frame's top-left corner.
+                let x = box.minX + point.x * box.width
+                let y = box.minY + point.y * box.height
+                let dot = CGRect(x: x, y: y, width: 0, height: 0)
+                union = union.map { $0.union(dot) } ?? dot
+            }
+        }
+        guard let band = union, band.width > 0, band.height > 0 else { return nil }
+        // Vision origin is bottom-left → flip Y to top-left, matching
+        // `largestFace` and everything downstream of it.
+        return CGRect(x: band.minX, y: 1 - band.maxY,
+                      width: band.width, height: band.height)
+    }
+
     /// Body-pose read (upright, top-left normalized). Nil unless a body is
     /// confidently detected. Drives the clipping tip AND the pose rules.
     static func poseSignal(performing handler: VNImageRequestHandler) -> PoseSignal? {

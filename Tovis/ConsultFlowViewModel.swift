@@ -42,6 +42,23 @@ final class ConsultFlowViewModel {
     /// Local previews of this session's uploads. Rejected photos are purged
     /// server-side immediately, so this decoded copy is the only reviewable one.
     private(set) var localThumbnails: [ConsultCaptureShotKey: UIImage] = [:]
+    /// The UNCROPPED frame behind a cropped upload — inspection only (P3).
+    ///
+    /// A client whose eyes crop came out wrong should be able to see the whole
+    /// photograph she took, not just the strip. Nothing re-uploads from this and
+    /// nothing re-crops it: retake means reshoot (Tori, 2026-09-06). Only
+    /// populated for a shot that was actually cropped.
+    private(set) var localFullFrames: [ConsultCaptureShotKey: UIImage] = [:]
+    /// The ON-DEVICE quality refusal per shot, when the last still did not pass.
+    ///
+    /// 🔴 This lives here rather than in the camera because P3 closes the camera
+    /// on the shutter: by the time the check has a verdict, the view that used
+    /// to show it is gone. Cleared the moment a new still for that shot is
+    /// accepted, so it can never outlive the photo it refused.
+    private(set) var localRetakeReasons: [ConsultCaptureShotKey: String] = [:]
+    /// The transient-byte owner. One per model, not one per slot view — a view
+    /// that is dismissed on the shutter cannot own the bytes it just took.
+    @ObservationIgnored private let photoPipeline: ConsultTransientPhotoPipeline
     /// True when a results payload failed the provenance check — rendered as a
     /// refusal, never as a missing section.
     private(set) var resultsContractMismatch = false
@@ -64,11 +81,15 @@ final class ConsultFlowViewModel {
          // a NONISOLATED context, and reading a main-actor static from there is
          // an error in the Swift 6 language mode. Resolved in the body instead,
          // which is main-actor isolated like the rest of this type.
-         uploads: ConsultCaptureUploadQueue? = nil) {
+         uploads: ConsultCaptureUploadQueue? = nil,
+         // The quality gate moved here from the camera view when P3 closed the
+         // camera on the shutter, so its injection point moved with it.
+         photoPipeline: ConsultTransientPhotoPipeline = ConsultTransientPhotoPipeline()) {
         machine = ConsultFlowMachine(anchor: anchor)
         self.professionalId = professionalId
         self.service = service
         self.uploads = uploads ?? .shared
+        self.photoPipeline = photoPipeline
     }
 
     /// The consult the flow is on, once the server has named it.
@@ -467,10 +488,18 @@ final class ConsultFlowViewModel {
         }
     }
 
-    /// Hand one shot to the durable queue.
+    /// Take a RAW still from the camera or the picker, judge it, crop it if this
+    /// shot asks for a crop, and hand the result to the durable queue.
     ///
-    /// 🔴 This does NOT run the upload chain, and that is the whole of P2d. The
-    /// bytes are written to `SessionByteVault` before this returns, and
+    /// 🔴 P3 moved the judging and cropping stage off the camera screen and into
+    /// here. It runs after the camera has closed and the client is already back
+    /// on her list, so every outcome has to be renderable THERE: an acceptance
+    /// shows as `Uploading` on the slot, a refusal as
+    /// `localRetakeReasons[shot.key]` beside it. The camera has no verdict to
+    /// show because by the time there is one it is gone.
+    ///
+    /// 🔴 It does NOT run the upload chain, and that is the whole of P2d. The
+    /// bytes are written to `SessionByteVault` before `enqueue` returns, and
     /// `ConsultCaptureUploadQueue` owns them from there — through the camera
     /// being dismissed, the app being backgrounded, and the process being
     /// killed. There is deliberately no `perform` here either: `perform`'s
@@ -480,7 +509,7 @@ final class ConsultFlowViewModel {
     /// The pack versions come from the photo-request MESSAGE rather than from a
     /// separately loaded capture state — one read, and the versions travel with
     /// the shot they belong to.
-    func submitPhoto(_ data: Data, for message: ConsultThreadMessage) async {
+    func submitPhoto(_ source: Data, for message: ConsultThreadMessage) async {
         guard let consultId = machine.consultId,
               let shot = message.shot,
               let shotPackVersion = message.shotPackVersion,
@@ -488,14 +517,61 @@ final class ConsultFlowViewModel {
             failure = .invalidState
             return
         }
-        // Decode the reviewable thumbnail first: a rejected photo is purged
-        // server-side instantly, so this local copy is the only way to look at
-        // what the quality check refused.
-        if let thumbnail = await ImageDownsample.thumbnail(from: data, maxPixel: 432) {
+
+        switch await photoPipeline.process(
+            source,
+            shot: shot,
+            expectations: ConsultShotGuidance.expectations(for: shot.key)
+        ) {
+        case let .accepted(prepared):
+            await enqueue(prepared, shot: shot, consultId: consultId,
+                          shotPackVersion: shotPackVersion, schemaVersion: schemaVersion)
+        case let .retake(reason):
+            localRetakeReasons[shot.key] = reason
+        case .invalid:
+            localRetakeReasons[shot.key] =
+                "That image couldn’t be prepared for upload. Try taking it again."
+        case .cancelled:
+            // Nothing cancels this task: it is detached from the camera view
+            // precisely so dismissing the camera cannot reach it. Logged rather
+            // than swallowed — this line appearing means something started
+            // cancelling again, which is how a shot used to disappear.
+            ConsultCaptureTelemetry.queue(
+                "pipeline_cancelled shot=\(shot.key.rawValue)", level: .error
+            )
+        }
+    }
+
+    private func enqueue(
+        _ prepared: ConsultPreparedPhoto,
+        shot: ConsultCaptureShot,
+        consultId: String,
+        shotPackVersion: Int,
+        schemaVersion: Int
+    ) async {
+        // A verdict for this shot only survives as long as the photo it refused.
+        localRetakeReasons[shot.key] = nil
+        // Decode the reviewable thumbnail from the UPLOADED bytes: a rejected
+        // photo is purged server-side instantly, so this local copy is the only
+        // way to look at what the quality check refused — and it must be the
+        // crop, not the frame, or the client is shown something the server never
+        // saw.
+        if let thumbnail = await ImageDownsample.thumbnail(from: prepared.upload, maxPixel: 432) {
             localThumbnails[shot.key] = thumbnail
         }
+        if let fullFrame = prepared.fullFrame,
+           let image = await ImageDownsample.thumbnail(from: fullFrame, maxPixel: 1_024) {
+            localFullFrames[shot.key] = image
+        } else {
+            localFullFrames[shot.key] = nil
+        }
+        if let source = prepared.cropSource {
+            ConsultCaptureTelemetry.queue(
+                "capture_cropped shot=\(shot.key.rawValue) source=\(source)"
+            )
+        }
         guard let item = SessionByteVault.writeConsultCapture(
-            data,
+            prepared.upload,
             consultId: consultId,
             shotKey: shot.key,
             shotPackVersion: shotPackVersion,
