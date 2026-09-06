@@ -432,6 +432,23 @@ public struct ConsultInspirationCardOption: Decodable, Sendable, Equatable, Iden
 ///
 /// 🔴 `name` is shown UNDER the crop, never above it. The client is looking at
 /// the silvery part of her own reference before anything calls it "ash".
+/// P5g — how a card is DRAWN: one crop with buttons, or the whole reference
+/// with every readable attribute on it as a tappable area.
+///
+/// 🔴 An unknown value decodes to `.crop`, and that is the correct default
+/// rather than merely the safe one: the question and every option are on the
+/// wire either way, so a build that has not learned a new presentation asks the
+/// same question with buttons instead of rendering nothing.
+public enum ConsultInspirationCardPresentation: String, Decodable, Sendable, Equatable {
+    case crop = "CROP"
+    case regionPicker = "REGION_PICKER"
+
+    public init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = ConsultInspirationCardPresentation(rawValue: raw) ?? .crop
+    }
+}
+
 public struct ConsultInspirationCard: Decodable, Sendable, Equatable, Identifiable {
     public let questionKey: String
     public let tier: ConsultInspirationCardTier
@@ -442,12 +459,22 @@ public struct ConsultInspirationCard: Decodable, Sendable, Equatable, Identifiab
     public let name: String?
     /// The crop for the card. Nil means show the whole reference.
     public let region: ConsultInspirationRegion?
+    /// P5g. Optional at the decoder so a server that predates it still decodes;
+    /// `presentation` below is the value the views read.
+    public let presentationRaw: ConsultInspirationCardPresentation?
     public let optionRegions: [ConsultInspirationCardOption]
     public let question: ConsultInspirationQuestion
     public let selectedValues: [String]
 
     public var id: String { questionKey }
     public var isAnswered: Bool { !selectedValues.isEmpty }
+    public var presentation: ConsultInspirationCardPresentation { presentationRaw ?? .crop }
+
+    private enum CodingKeys: String, CodingKey {
+        case questionKey, tier, attribute, attributeValue, name, region
+        case presentationRaw = "presentation"
+        case optionRegions, question, selectedValues
+    }
 }
 
 public struct ConsultInspirationSourceState: Decodable, Sendable {

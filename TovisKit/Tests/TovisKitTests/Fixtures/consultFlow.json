@@ -300,6 +300,7 @@
           "attributeValue": null,
           "name": null,
           "region": null,
+          "presentation": "CROP",
           "optionRegions": [
             {
               "value": "the-color",
@@ -373,6 +374,7 @@
             "w": 0.36,
             "h": 0.25
           },
+          "presentation": "CROP",
           "optionRegions": [],
           "question": {
             "key": "attr_tone",
@@ -400,6 +402,80 @@
           "selectedValues": [
             "yes"
           ]
+        },
+        {
+          "questionKey": "love_regions",
+          "tier": "PREP",
+          "attribute": null,
+          "attributeValue": null,
+          "name": null,
+          "region": null,
+          "presentation": "REGION_PICKER",
+          "optionRegions": [
+            {
+              "value": "lightest-level",
+              "label": "light blonde",
+              "region": {
+                "x": 0.3,
+                "y": 0.42,
+                "w": 0.4,
+                "h": 0.3
+              }
+            },
+            {
+              "value": "tone",
+              "label": "cool, silvery cast",
+              "region": {
+                "x": 0.32,
+                "y": 0.5,
+                "w": 0.36,
+                "h": 0.25
+              }
+            },
+            {
+              "value": "technique",
+              "label": "painted-on sweeps",
+              "region": {
+                "x": 0.18,
+                "y": 0.3,
+                "w": 0.6,
+                "h": 0.5
+              }
+            },
+            {
+              "value": "not-sure",
+              "label": "Not sure yet",
+              "region": null
+            }
+          ],
+          "question": {
+            "key": "love_regions",
+            "label": "Tap what you love.",
+            "helpText": null,
+            "kind": "MULTI_SELECT",
+            "options": [
+              {
+                "value": "lightest-level",
+                "label": "light blonde"
+              },
+              {
+                "value": "tone",
+                "label": "cool, silvery cast"
+              },
+              {
+                "value": "technique",
+                "label": "painted-on sweeps"
+              },
+              {
+                "value": "not-sure",
+                "label": "Not sure yet"
+              }
+            ],
+            "minSelections": 1,
+            "maxSelections": 3,
+            "allowText": false
+          },
+          "selectedValues": []
         }
       ]
     }
@@ -1943,6 +2019,7 @@
             "attributeValue": null,
             "name": null,
             "region": null,
+            "presentation": "CROP",
             "optionRegions": [
               {
                 "value": "the-color",
@@ -2052,6 +2129,7 @@
               "w": 0.36,
               "h": 0.25
             },
+            "presentation": "CROP",
             "optionRegions": [],
             "question": {
               "key": "attr_tone",
@@ -2082,6 +2160,120 @@
           },
           "answeredQuestionCount": 1,
           "specificDetailCount": 1,
+          "requiredSpecificDetailCount": 0,
+          "schemaVersion": 2
+        },
+        {
+          "kind": "INSPIRATION",
+          "id": "inspiration:love_regions",
+          "author": "APP",
+          "state": "DONE",
+          "text": null,
+          "sourceDecisionRequired": false,
+          "source": null,
+          "question": {
+            "key": "love_regions",
+            "label": "Tap what you love.",
+            "helpText": null,
+            "kind": "MULTI_SELECT",
+            "options": [
+              {
+                "value": "lightest-level",
+                "label": "light blonde"
+              },
+              {
+                "value": "tone",
+                "label": "cool, silvery cast"
+              },
+              {
+                "value": "technique",
+                "label": "painted-on sweeps"
+              },
+              {
+                "value": "not-sure",
+                "label": "Not sure yet"
+              }
+            ],
+            "minSelections": 1,
+            "maxSelections": 3,
+            "allowText": false
+          },
+          "card": {
+            "questionKey": "love_regions",
+            "tier": "PREP",
+            "attribute": null,
+            "attributeValue": null,
+            "name": null,
+            "region": null,
+            "presentation": "REGION_PICKER",
+            "optionRegions": [
+              {
+                "value": "lightest-level",
+                "label": "light blonde",
+                "region": {
+                  "x": 0.3,
+                  "y": 0.42,
+                  "w": 0.4,
+                  "h": 0.3
+                }
+              },
+              {
+                "value": "tone",
+                "label": "cool, silvery cast",
+                "region": {
+                  "x": 0.32,
+                  "y": 0.5,
+                  "w": 0.36,
+                  "h": 0.25
+                }
+              },
+              {
+                "value": "technique",
+                "label": "painted-on sweeps",
+                "region": {
+                  "x": 0.18,
+                  "y": 0.3,
+                  "w": 0.6,
+                  "h": 0.5
+                }
+              },
+              {
+                "value": "not-sure",
+                "label": "Not sure yet",
+                "region": null
+              }
+            ],
+            "question": {
+              "key": "love_regions",
+              "label": "Tap what you love.",
+              "helpText": null,
+              "kind": "MULTI_SELECT",
+              "options": [
+                {
+                  "value": "lightest-level",
+                  "label": "light blonde"
+                },
+                {
+                  "value": "tone",
+                  "label": "cool, silvery cast"
+                },
+                {
+                  "value": "technique",
+                  "label": "painted-on sweeps"
+                },
+                {
+                  "value": "not-sure",
+                  "label": "Not sure yet"
+                }
+              ],
+              "minSelections": 1,
+              "maxSelections": 3,
+              "allowText": false
+            },
+            "selectedValues": []
+          },
+          "answeredQuestionCount": 3,
+          "specificDetailCount": 2,
           "requiredSpecificDetailCount": 0,
           "schemaVersion": 2
         },

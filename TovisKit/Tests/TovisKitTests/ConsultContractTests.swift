@@ -91,7 +91,14 @@ import Testing
         // A CARD carries its crop, its plain word, its question, and the tier
         // that decides where in the thread it belongs.
         let cards = thread.messages.compactMap(\.card)
-        #expect(cards.map(\.tier) == [.coarse, .prep])
+        // P5g adds a third: the region picker, which is also PREP. The two prep
+        // cards here are deliberately of DIFFERENT presentations — a v2 consult
+        // pinned to the eight `attr_*` cards and a v3 one on the two region
+        // moves both have to render, and this fixture carries one of each.
+        #expect(cards.map(\.tier) == [.coarse, .prep, .prep])
+        #expect(
+            cards.map(\.presentation) == [.crop, .crop, .regionPicker]
+        )
         let coarse = try #require(cards.first { $0.tier == .coarse })
         // The coarse card's OPTIONS crop to different parts of one photograph;
         // two of the four are about the whole picture and carry no region.
@@ -100,7 +107,7 @@ import Testing
                 == ["the-color", "the-shape"]
         )
         #expect(coarse.name == nil)
-        let prep = try #require(cards.first { $0.tier == .prep })
+        let prep = try #require(cards.first { $0.presentation == .crop && $0.tier == .prep })
         #expect(prep.attribute == "tone")
         #expect(prep.attributeValue == "COOL")
         #expect(prep.region != nil)
@@ -144,6 +151,122 @@ import Testing
         let decoded = try decode(ConsultThreadResponse.self, value: envelope).thread
         #expect(decoded.messages.last?.kind == .unknown)
         #expect(decoded.messages.count == messages.count)
+    }
+
+    /// P5g — the FOLLOW_UP message decodes, both the generated and the fallback
+    /// shape.
+    ///
+    /// 🔴 Built inline rather than read from `consultFlow.json`, and that is a
+    /// MERGE-ORDER fact, not a style choice. FOLLOW_UP is a new member of the
+    /// `ConsultThreadMessageDTO` union, so a fixture carrying one cannot
+    /// validate against the tovis-app schema on `main` — unlike a new PROPERTY,
+    /// which validates either way because the generator sets
+    /// `additionalProperties` nowhere. Putting it in the contract fixture now
+    /// would redden this repo's CI until the web side merges. The fixture entry
+    /// lands in the follow-up commit once it has; this test is what proves the
+    /// decoder in the meantime, and it is the same JSON.
+    @Test func decodesAnAdaptiveFollowUpMessage() throws {
+        var envelope = try #require(try root()["thread"] as? [String: Any])
+        var thread = try #require(envelope["thread"] as? [String: Any])
+        var messages = try #require(thread["messages"] as? [[String: Any]])
+        messages.append([
+            "kind": "FOLLOW_UP",
+            "id": "follow-up:1:prior_lightening",
+            "author": "APP",
+            "state": "OPEN",
+            "text": "You’re at a light brown now and you loved the ash — that’s usually two visits. When was your hair last lightened?",
+            "questionKey": "prior_lightening",
+            "options": [
+                ["value": "never", "label": "Never"],
+                ["value": "within-3-months", "label": "In the last few months"],
+                ["value": "not-sure", "label": "I don’t remember"],
+            ],
+            "selectedValues": [String](),
+            "fallback": false,
+            "round": 1,
+        ])
+        messages.append([
+            "kind": "FOLLOW_UP",
+            "id": "follow-up:2:henna_plant_dye_history",
+            "author": "APP",
+            "state": "BLOCKED",
+            "text": "When did you last use henna or another plant-based hair dye?",
+            "questionKey": "henna_plant_dye_history",
+            "options": [
+                ["value": "never", "label": "Never"],
+                ["value": "within-6-months", "label": "Within 6 months"],
+            ],
+            "selectedValues": ["never"],
+            "fallback": true,
+            "round": 2,
+        ])
+        thread["messages"] = messages
+        envelope["thread"] = thread
+
+        let decoded = try decode(ConsultThreadResponse.self, value: envelope).thread
+        let followUps = decoded.messages.filter { $0.kind == .followUp }
+        #expect(followUps.count == 2)
+
+        let generated = try #require(followUps.first)
+        #expect(generated.questionKey == "prior_lightening")
+        #expect(generated.followUpOptions?.count == 3)
+        #expect(generated.fallback == false)
+        #expect(generated.round == 1)
+        #expect(generated.selectedValues == [])
+        // The question itself is the model's sentence, carried verbatim.
+        #expect(generated.text?.contains("light brown") == true)
+
+        let fallback = try #require(followUps.last)
+        // 🔴 The fallback is visible to the client, which is the whole reason
+        // this flag is on the wire: Part 0 rule 4 forbids a silent fallback,
+        // and one the client cannot see is a silent one.
+        #expect(fallback.fallback == true)
+        #expect(fallback.selectedValues == ["never"])
+    }
+
+    /// P5g — a region-picker card decodes, and a card WITHOUT `presentation`
+    /// still decodes as a crop card.
+    ///
+    /// The second half is the one worth having: `presentation` is required on
+    /// the wire from P5g on, but a build that meets an older server (or a
+    /// replayed fixture) must render the question with buttons rather than
+    /// render nothing.
+    @Test func decodesARegionPickerCardAndDefaultsAMissingPresentation() throws {
+        let state = try decode(
+            ConsultInspirationStateResponse.self, key: "inspirationQuestion"
+        ).inspiration
+        let cards = try #require(state.cards)
+
+        let picker = try #require(cards.first { $0.questionKey == "love_regions" })
+        #expect(picker.presentation == .regionPicker)
+        #expect(picker.tier == .prep)
+        // 🔴 The picker draws boxes over the WHOLE reference, so the card's own
+        // region is nil — a crop here would move every box off the part of the
+        // photograph it was measured against.
+        #expect(picker.region == nil)
+        #expect(picker.optionRegions.filter { $0.region != nil }.count == 3)
+        // The neutral option carries no region: "not sure" is about the whole
+        // picture and is always offered, including when nothing could be read.
+        #expect(picker.optionRegions.filter { $0.region == nil }.count == 1)
+        // Every region option's label describes THIS photograph rather than
+        // naming a category — that is what makes it tappable without jargon.
+        #expect(picker.optionRegions.contains { $0.label == "cool, silvery cast" })
+
+        let crop = try #require(cards.first { $0.questionKey == "attr_tone" })
+        #expect(crop.presentation == .crop)
+
+        var raw = try #require(try root()["inspirationQuestion"] as? [String: Any])
+        var inspiration = try #require(raw["inspiration"] as? [String: Any])
+        var rawCards = try #require(inspiration["cards"] as? [[String: Any]])
+        rawCards = rawCards.map { card in
+            var copy = card
+            copy.removeValue(forKey: "presentation")
+            return copy
+        }
+        inspiration["cards"] = rawCards
+        raw["inspiration"] = inspiration
+        let older = try decode(ConsultInspirationStateResponse.self, value: raw).inspiration
+        #expect(try #require(older.cards).allSatisfy { $0.presentation == .crop })
     }
 
     @Test func decodesEveryC1ThroughC7ClientContract() throws {

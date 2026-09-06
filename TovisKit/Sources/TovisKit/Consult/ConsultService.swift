@@ -35,6 +35,15 @@ public protocol ConsultServicing: Sendable {
                            idempotencyKey: String) async throws -> ConsultInspirationState
     func inspirationImage(consultId: String,
                           readEndpoint: String) async throws -> ConsultInspirationSignedRead
+    /// P5g — answer one adaptive follow-up question.
+    ///
+    /// 🔴 The device sends a key and an enum and nothing else. WHERE the answer
+    /// is filed — the intake revision, or the follow-up round — is the server's
+    /// decision, made from the vocabulary home the round already recorded. A
+    /// client that had to know that routing is a client that can get it wrong.
+    func answerFollowUp(consultId: String, questionKey: String,
+                        selectedValues: [String],
+                        idempotencyKey: String) async throws
     func capture(consultId: String) async throws -> ConsultCaptureState
     // The capture chain is THREE separately-durable legs, not one call. Each is
     // driven by `ConsultCaptureUploadQueue`, which persists the bytes and all
@@ -215,6 +224,32 @@ public final class ConsultService: ConsultServicing, Sendable {
             "/client/consult/\(consultId)/thread"
         )
         return response.thread
+    }
+
+    public func answerFollowUp(
+        consultId: String,
+        questionKey: String,
+        selectedValues: [String],
+        idempotencyKey: String
+    ) async throws {
+        struct Body: Encodable {
+            let idempotencyKey: String
+            let questionKey: String
+            let selectedValues: [String]
+        }
+        let body = try JSONEncoder.canonical.encode(Body(
+            idempotencyKey: idempotencyKey,
+            questionKey: questionKey,
+            selectedValues: selectedValues
+        ))
+        // The response carries the follow-up state, and the caller ignores it:
+        // every mutation in this thread is followed by a full thread re-read,
+        // which is the ONE projection both clients render. A second shape to
+        // merge would be a second thing to disagree with it.
+        struct Ignored: Decodable {}
+        let _: Ignored = try await api.request(
+            "/client/consult/\(consultId)/follow-up", method: .post, body: body
+        )
     }
 
     public func intake(consultId: String) async throws -> ConsultIntakeState {

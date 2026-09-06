@@ -115,6 +115,9 @@ public struct ConsultThreadMessage: Decodable, Sendable, Identifiable {
         /// after the first.
         case planUpdate = "PLAN_UPDATE"
         case booking = "BOOKING"
+        /// P5g — one adaptive follow-up question, written for this client from
+        /// everything read so far.
+        case followUp = "FOLLOW_UP"
         /// A kind this build does not know. Rendered as nothing rather than as a
         /// crash — an older build must survive a server that learned a new
         /// message type, and silently skipping one message is the mildest
@@ -190,6 +193,19 @@ public struct ConsultThreadMessage: Decodable, Sendable, Identifiable {
     // BOOKING
     public let bookingId: String?
 
+    // FOLLOW_UP (P5g)
+    /// The question itself is in `text`. This is the key her answer echoes back;
+    /// where that answer is FILED is the server's decision, not this client's.
+    public let questionKey: String?
+    public let followUpOptions: [ConsultInspirationQuestionOption]?
+    public let selectedValues: [String]?
+    /// 🔴 True when the model call failed and these are the intake pack's own
+    /// remaining SAFETY questions instead. The server also sends its own bubble
+    /// saying so; this is what lets a card mark itself.
+    public let fallback: Bool?
+    /// Which round of at most three this is.
+    public let round: Int?
+
     /// Shared by QUESTION, INSPIRATION, PHOTO_REQUEST and PLAN — each names the
     /// schema its own mutation must echo.
     public let schemaVersion: Int?
@@ -204,6 +220,8 @@ public struct ConsultThreadMessage: Decodable, Sendable, Identifiable {
         case run, results, awaitingStart, promptVersion
         case planVersion, updatePending, previousPlanVersion, changes
         case bookingId
+        case questionKey, fallback, round, selectedValues
+        case followUpOptions = "options"
         case schemaVersion
     }
 
@@ -278,6 +296,17 @@ public struct ConsultThreadMessage: Decodable, Sendable, Identifiable {
         )
 
         bookingId = try container.decodeIfPresent(String.self, forKey: .bookingId)
+
+        questionKey = try container.decodeIfPresent(String.self, forKey: .questionKey)
+        followUpOptions = try? container.decodeIfPresent(
+            [ConsultInspirationQuestionOption].self, forKey: .followUpOptions
+        )
+        selectedValues = try container.decodeIfPresent(
+            [String].self, forKey: .selectedValues
+        )
+        fallback = try container.decodeIfPresent(Bool.self, forKey: .fallback)
+        round = try container.decodeIfPresent(Int.self, forKey: .round)
+
         schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion)
     }
 }

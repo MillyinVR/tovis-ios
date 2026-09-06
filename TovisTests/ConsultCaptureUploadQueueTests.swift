@@ -188,6 +188,8 @@ struct ConsultCaptureUploadQueueTests {
                                idempotencyKey: String) async throws -> ConsultInspirationState { fail() }
         func inspirationImage(consultId: String,
                               readEndpoint: String) async throws -> ConsultInspirationSignedRead { fail() }
+        func answerFollowUp(consultId: String, questionKey: String,
+                            selectedValues: [String], idempotencyKey: String) async throws { fail() }
         func capture(consultId: String) async throws -> ConsultCaptureState {
             try Self.decode(ConsultCaptureState.self, Self.captureState)
         }

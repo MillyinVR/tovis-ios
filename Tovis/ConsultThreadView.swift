@@ -170,9 +170,85 @@ private struct ConsultThreadMessageView: View {
             PlanMessageView(message: message, model: model)
         case .planUpdate:
             PlanUpdateMessageView(message: message)
+        case .followUp:
+            FollowUpMessageView(
+                message: message,
+                busy: model.busy,
+                onAnswer: { value in
+                    Task { await model.answerFollowUp(message, value: value) }
+                }
+            )
         case .unknown:
             EmptyView()
         }
+    }
+}
+
+/// P5g — one adaptive follow-up question.
+///
+/// A plain card: the model's sentence, then its options as chips. No crop,
+/// because this question is not about the picture — it is about what everything
+/// read so far implies, which is exactly why it could not have been asked any
+/// earlier.
+///
+/// 🔴 A FALLBACK round is marked. When the model call fails the server asks the
+/// intake pack's own remaining SAFETY questions instead and sends its own
+/// bubble saying so; this identifier is what lets a test tell the two apart,
+/// because Part 0 rule 4 forbids a fallback the client cannot see.
+/// 🔴 Takes `busy` and a closure rather than the whole view model, the same
+/// shape `PlanUpdateMessageView` has. A leaf view that holds the model cannot
+/// be rendered without one, and this card's PNG — the thing that catches a
+/// swallowed option row or an unreadable prompt — is worth more than the
+/// convenience of reaching through.
+struct FollowUpMessageView: View {
+    let message: ConsultThreadMessage
+    let busy: Bool
+    let onAnswer: (String) -> Void
+
+    private var answered: Bool { !(message.selectedValues ?? []).isEmpty }
+
+    var body: some View {
+        ConsultThreadCardView(dimmed: answered) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(message.text ?? "")
+                    .font(BrandFont.body(15, .semibold))
+                    .foregroundStyle(BrandColor.textPrimary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityIdentifier(
+                        message.fallback == true
+                            ? "consult-follow-up-question-fallback"
+                            : "consult-follow-up-question"
+                    )
+
+                if answered {
+                    Text(
+                        (message.followUpOptions ?? [])
+                            .filter { (message.selectedValues ?? []).contains($0.value) }
+                            .map(\.label)
+                            .joined(separator: ", ")
+                    )
+                    .font(BrandFont.body(12))
+                    .foregroundStyle(BrandColor.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    FlowLayout(spacing: 8, lineSpacing: 8) {
+                        ForEach(message.followUpOptions ?? []) { option in
+                            Button {
+                                onAnswer(option.value)
+                            } label: {
+                                ConsultRegionChipLabel(text: option.label, filled: false)
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(busy)
+                            .accessibilityIdentifier(
+                                "consult-follow-up-option-\(option.value)"
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        .accessibilityIdentifier("consult-follow-up")
     }
 }
 
