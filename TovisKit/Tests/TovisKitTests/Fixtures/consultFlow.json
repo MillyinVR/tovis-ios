@@ -2872,6 +2872,82 @@
           "state": "DONE",
           "text": "You’re on Susie’s calendar. Nice.",
           "bookingId": "booking_fixture_1"
+        },
+        {
+          "kind": "TEXT",
+          "id": "follow-up-intro",
+          "author": "APP",
+          "state": "DONE",
+          "text": "A couple of things I want to check with you, now that I’ve had a proper look. They’re quick, and they change what Susie plans."
+        },
+        {
+          "kind": "FOLLOW_UP",
+          "id": "follow-up:1:prior_lightening",
+          "author": "APP",
+          "state": "OPEN",
+          "text": "You’re at a light brown now and you loved the ash — that’s usually two visits. When was your hair last lightened?",
+          "questionKey": "prior_lightening",
+          "options": [
+            {
+              "value": "never",
+              "label": "Never"
+            },
+            {
+              "value": "within-3-months",
+              "label": "In the last few months"
+            },
+            {
+              "value": "over-12-months",
+              "label": "Over a year ago"
+            },
+            {
+              "value": "not-sure",
+              "label": "I don’t remember"
+            }
+          ],
+          "selectedValues": [],
+          "fallback": false,
+          "round": 1
+        },
+        {
+          "kind": "TEXT",
+          "id": "follow-up-fallback:2",
+          "author": "APP",
+          "state": "DONE",
+          "text": "I couldn’t think of the next question just now — so here are the essentials, the ones Susie needs either way."
+        },
+        {
+          "kind": "FOLLOW_UP",
+          "id": "follow-up:2:henna_plant_dye_history",
+          "author": "APP",
+          "state": "BLOCKED",
+          "text": "When did you last use henna or another plant-based hair dye?",
+          "questionKey": "henna_plant_dye_history",
+          "options": [
+            {
+              "value": "never",
+              "label": "Never"
+            },
+            {
+              "value": "within-6-months",
+              "label": "Within 6 months"
+            },
+            {
+              "value": "6-12-months",
+              "label": "6–12 months ago"
+            },
+            {
+              "value": "over-12-months",
+              "label": "Over 12 months ago"
+            },
+            {
+              "value": "not-sure",
+              "label": "Not sure"
+            }
+          ],
+          "selectedValues": [],
+          "fallback": true,
+          "round": 2
         }
       ],
       "chartCopy": {

@@ -39,7 +39,7 @@ import Testing
         #expect(
             kinds == [
                 .text, .consent, .question, .inspiration, .photoRequest,
-                .plan, .planUpdate, .booking,
+                .plan, .planUpdate, .booking, .followUp,
             ]
         )
         #expect(!thread.messages.contains { $0.kind == .unknown })
@@ -153,75 +153,43 @@ import Testing
         #expect(decoded.messages.count == messages.count)
     }
 
-    /// P5g — the FOLLOW_UP message decodes, both the generated and the fallback
-    /// shape.
+    /// P5g — the FOLLOW_UP message, off the contract fixture.
     ///
-    /// 🔴 Built inline rather than read from `consultFlow.json`, and that is a
-    /// MERGE-ORDER fact, not a style choice. FOLLOW_UP is a new member of the
-    /// `ConsultThreadMessageDTO` union, so a fixture carrying one cannot
-    /// validate against the tovis-app schema on `main` — unlike a new PROPERTY,
-    /// which validates either way because the generator sets
-    /// `additionalProperties` nowhere. Putting it in the contract fixture now
-    /// would redden this repo's CI until the web side merges. The fixture entry
-    /// lands in the follow-up commit once it has; this test is what proves the
-    /// decoder in the meantime, and it is the same JSON.
+    /// It moved here from an inline JSON string once tovis-app merged: FOLLOW_UP
+    /// is a new member of the `ConsultThreadMessageDTO` union, so a fixture
+    /// carrying one could not validate against the backend schema on `main`
+    /// until that schema knew about it. The inline version proved the decoder
+    /// through the window; this proves the WIRE.
     @Test func decodesAnAdaptiveFollowUpMessage() throws {
-        var envelope = try #require(try root()["thread"] as? [String: Any])
-        var thread = try #require(envelope["thread"] as? [String: Any])
-        var messages = try #require(thread["messages"] as? [[String: Any]])
-        messages.append([
-            "kind": "FOLLOW_UP",
-            "id": "follow-up:1:prior_lightening",
-            "author": "APP",
-            "state": "OPEN",
-            "text": "You’re at a light brown now and you loved the ash — that’s usually two visits. When was your hair last lightened?",
-            "questionKey": "prior_lightening",
-            "options": [
-                ["value": "never", "label": "Never"],
-                ["value": "within-3-months", "label": "In the last few months"],
-                ["value": "not-sure", "label": "I don’t remember"],
-            ],
-            "selectedValues": [String](),
-            "fallback": false,
-            "round": 1,
-        ])
-        messages.append([
-            "kind": "FOLLOW_UP",
-            "id": "follow-up:2:henna_plant_dye_history",
-            "author": "APP",
-            "state": "BLOCKED",
-            "text": "When did you last use henna or another plant-based hair dye?",
-            "questionKey": "henna_plant_dye_history",
-            "options": [
-                ["value": "never", "label": "Never"],
-                ["value": "within-6-months", "label": "Within 6 months"],
-            ],
-            "selectedValues": ["never"],
-            "fallback": true,
-            "round": 2,
-        ])
-        thread["messages"] = messages
-        envelope["thread"] = thread
-
-        let decoded = try decode(ConsultThreadResponse.self, value: envelope).thread
-        let followUps = decoded.messages.filter { $0.kind == .followUp }
+        let thread = try decode(ConsultThreadResponse.self, key: "thread").thread
+        let followUps = thread.messages.filter { $0.kind == .followUp }
         #expect(followUps.count == 2)
 
         let generated = try #require(followUps.first)
         #expect(generated.questionKey == "prior_lightening")
-        #expect(generated.followUpOptions?.count == 3)
+        #expect(generated.followUpOptions?.count == 4)
         #expect(generated.fallback == false)
         #expect(generated.round == 1)
         #expect(generated.selectedValues == [])
-        // The question itself is the model's sentence, carried verbatim.
+        // The question is the MODEL's sentence, carried verbatim — the device
+        // composes none of it.
         #expect(generated.text?.contains("light brown") == true)
+        // 🔴 And it names something specific it was told. A question that would
+        // be the same for everybody is the question P5g exists to delete.
+        #expect(generated.text?.contains("loved the ash") == true)
 
         let fallback = try #require(followUps.last)
-        // 🔴 The fallback is visible to the client, which is the whole reason
-        // this flag is on the wire: Part 0 rule 4 forbids a silent fallback,
-        // and one the client cannot see is a silent one.
+        // 🔴 The fallback is visible to the client, which is why this flag is on
+        // the wire: Part 0 rule 4 forbids a silent fallback, and one she cannot
+        // see is a silent one. The server also sends its own bubble saying so.
         #expect(fallback.fallback == true)
-        #expect(fallback.selectedValues == ["never"])
+        #expect(fallback.round == 2)
+        #expect(
+            thread.messages.contains {
+                $0.kind == .text
+                    && $0.text?.contains("couldn’t think of the next question") == true
+            }
+        )
     }
 
     /// P5g — a region-picker card decodes, and a card WITHOUT `presentation`
