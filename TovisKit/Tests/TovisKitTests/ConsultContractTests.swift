@@ -49,9 +49,37 @@ import Testing
             thread.messages.first { $0.kind == .question }?.question
         )
         #expect(!intakeQuestion.options.isEmpty)
-        let inspiration = try #require(thread.messages.first { $0.kind == .inspiration })
-        #expect(inspiration.inspirationQuestion != nil)
-        #expect(inspiration.schemaVersion != nil)
+        // 🔴 P5d: the inspiration STEP message carries no question. Its
+        // questions moved onto CARD messages, and serving the same question on
+        // both would render it twice. The question comes back off the same wire
+        // key as the intake one — the reason this decoder is hand-written — but
+        // it arrives on the card.
+        let inspirationStep = try #require(
+            thread.messages.first { $0.kind == .inspiration && $0.card == nil }
+        )
+        #expect(inspirationStep.inspirationQuestion == nil)
+        #expect(inspirationStep.schemaVersion != nil)
+
+        // A CARD carries its crop, its plain word, its question, and the tier
+        // that decides where in the thread it belongs.
+        let cards = thread.messages.compactMap(\.card)
+        #expect(cards.map(\.tier) == [.coarse, .prep])
+        let coarse = try #require(cards.first { $0.tier == .coarse })
+        // The coarse card's OPTIONS crop to different parts of one photograph;
+        // two of the four are about the whole picture and carry no region.
+        #expect(
+            coarse.optionRegions.filter { $0.region != nil }.map(\.value)
+                == ["the-color", "the-shape"]
+        )
+        #expect(coarse.name == nil)
+        let prep = try #require(cards.first { $0.tier == .prep })
+        #expect(prep.attribute == "tone")
+        #expect(prep.attributeValue == "COOL")
+        #expect(prep.region != nil)
+        // The plain word, which the SERVER chose — the device composes nothing.
+        #expect(prep.name?.contains("some people call it ash") == true)
+        // 🔴 A card message has no bubble of its own.
+        #expect(thread.messages.first { $0.card != nil }?.text == nil)
 
         // A photo request carries its shot, its served slot and the versions its
         // upload must echo.
