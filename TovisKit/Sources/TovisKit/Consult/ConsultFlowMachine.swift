@@ -182,6 +182,11 @@ public struct ConsultFlowMachine: Sendable, Equatable {
     private static func stage(for status: ConsultSessionStatus) -> ConsultFlowStage {
         switch status {
         case .consentRequired: return .prerequisites
+        // P7a-1: the early photo is a CAPTURE stage, not an intake one — it is
+        // a photograph, taken through the same durable queue as every other
+        // consult photo. The thread renders the whole flow either way; this
+        // mapping is what the older non-thread screens key off.
+        case .earlyPhotoReady: return .capture
         case .intakeReady, .intakeInProgress: return .intake
         case .mediaReady: return .capture
         case .analysisPending, .analyzing: return .analysis

@@ -618,6 +618,16 @@
           }
         ]
       },
+      "earlyPhoto": {
+        "shotKey": "early_photo",
+        "state": "ACCEPTED",
+        "captureId": "capture_early_0",
+        "qualityReasonCode": "PASS",
+        "qualityWarningCode": null,
+        "retakeTip": null,
+        "rawExpiresAt": "2026-08-12T18:00:00.000Z",
+        "purgedAt": null
+      },
       "slots": [
         {
           "shotKey": "hair_back",
@@ -748,6 +758,16 @@
           "requirement": "REQUIRED"
         }
       ]
+    },
+    "earlyPhoto": {
+      "shotKey": "early_photo",
+      "state": "ACCEPTED",
+      "captureId": "capture_early_1",
+      "qualityReasonCode": "PASS",
+      "qualityWarningCode": "WARM_INDOOR_LIGHT",
+      "retakeTip": null,
+      "rawExpiresAt": "2026-08-12T18:00:00.000Z",
+      "purgedAt": null
     },
     "slots": [
       {
@@ -881,6 +901,7 @@
           }
         ]
       },
+      "earlyPhoto": null,
       "slots": [
         {
           "shotKey": "hair_back",

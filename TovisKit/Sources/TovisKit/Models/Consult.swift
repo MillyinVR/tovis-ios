@@ -7,6 +7,10 @@ import Foundation
 
 public enum ConsultSessionStatus: String, Decodable, Sendable {
     case consentRequired = "CONSENT_REQUIRED"
+    /// P7a-1: consent is in, nothing is answered. She is looking at the coarse
+    /// inspiration cards and taking one photo of herself, in whatever light she
+    /// is in. Leaving this state requires one accepted early photo.
+    case earlyPhotoReady = "EARLY_PHOTO_READY"
     case intakeReady = "INTAKE_READY"
     case intakeInProgress = "INTAKE_IN_PROGRESS"
     case mediaReady = "MEDIA_READY"
@@ -627,6 +631,10 @@ public struct ConsultCaptureShotKey: RawRepresentable, Codable, Sendable, Hashab
     // The area pack: the treatment area in context, then close.
     public static let areaWide = ConsultCaptureShotKey("area_wide")
     public static let areaCloseup = ConsultCaptureShotKey("area_closeup")
+    /// P7a-1 — the early photo, taken at the spark before any intake. A member
+    /// of NO pack: the server resolves it for every service family, so it never
+    /// appears in `hairPack` or in a pack's `shots`.
+    public static let earlyPhoto = ConsultCaptureShotKey("early_photo")
 
     /// The hair pack's seven keys, in the server's evidence order.
     public static let hairPack: [ConsultCaptureShotKey] = [
@@ -700,6 +708,13 @@ public struct ConsultCaptureState: Decodable, Sendable {
     public let status: ConsultSessionStatus
     public let shotPack: ConsultCaptureShotPack
     public let slots: [ConsultCaptureSlot]
+    /// P7a-1 — the early photo: the one taken at the spark, before any intake.
+    ///
+    /// Deliberately NOT a member of `slots`. `slots` is the guided checklist and
+    /// drives every "N of M photos" this app renders, so an extra entry there
+    /// would read as an extra chore. `nil` until she takes one. One accepted
+    /// early photo is what unlocks the sticky Book CTA.
+    public let earlyPhoto: ConsultCaptureSlot?
     public let chartCopy: ConsultChartCopyState
 
     /// Every slot of the pack the server SERVED is accepted. The pack decides
