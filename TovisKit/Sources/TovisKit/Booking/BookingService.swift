@@ -274,6 +274,9 @@ public final class BookingService: Sendable {
         /// exactly as it was.
         lookPostId: String? = nil,
         consultId: String? = nil,
+        /// P7a-2 — the spark link. Mutually exclusive with `consultId`; see
+        /// `FinalizeBookingRequest.sparkConsultId`.
+        sparkConsultId: String? = nil,
         consultEnhancementLineIds: [String]? = nil,
         idempotencyKey: String? = nil
     ) async throws -> FinalizedBooking {
@@ -283,6 +286,7 @@ public final class BookingService: Sendable {
             openingId: openingId,
             cancellationPolicyAccepted: cancellationPolicyAccepted,
             lookPostId: lookPostId, consultId: consultId,
+            sparkConsultId: sparkConsultId,
             consultEnhancementLineIds: consultEnhancementLineIds
         ))
         let key = idempotencyKey ?? buildClientIdempotencyKey(

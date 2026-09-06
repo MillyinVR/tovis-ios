@@ -52,6 +52,19 @@ struct BookingFlowView: View {
     /// header. `nil` when the flow was entered from a pro's profile, an
     /// appointment or an opening rather than from a look.
     var lookMediaId: String? = nil
+    /// P7a-2 — the `LookPost.id` this booking started from.
+    ///
+    /// 🔴 Distinct from `lookMediaId`, and both are needed. The media id is what
+    /// resolves the sheet's COVER; only this one makes the server stamp
+    /// `Booking.sourceLookPostId` (`resolveDiscoveryFinalize` — a media-only
+    /// body carries null). Before P7a-2 the spark path sent only the media id,
+    /// so an iOS spark booking had no look provenance at all and the consult
+    /// thread could never find it. `nil` outside a look-started flow.
+    var lookPostId: String? = nil
+    /// P7a-2 — the consult this booking is being made AT THE SPARK from.
+    /// Mutually exclusive with `consultProposal`; see
+    /// `FinalizeBookingRequest.sparkConsultId`.
+    var sparkConsultId: String? = nil
     /// The `LastMinuteOpening.id` when this flow is CLAIMING a last-minute opening
     /// (openings feed / priority offer). Passed through to `finalize` so the server
     /// consumes the opening and applies the tier incentive the client was shown —
@@ -838,6 +851,8 @@ struct BookingFlowView: View {
                     addOns: addOns,
                     cancellationPolicy: cancellationPolicy,
                     openingId: openingId,
+                    lookPostId: lookPostId,
+                    sparkConsultId: sparkConsultId,
                     onBooked: booked
                 )
             }

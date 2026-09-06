@@ -346,6 +346,18 @@ struct FinalizeBookingRequest: Encodable, Sendable {
     /// the whole proposal under the session lock before it sizes or prices
     /// anything, so this stamps the booking — it does not carry a number.
     let consultId: String?
+    /// P7a-2 — the consult this booking is being made AT THE SPARK from.
+    ///
+    /// 🔴 A different field from `consultId`, not a mode of it. `consultId`
+    /// means the consult's PROPOSAL: the server sizes and prices the booking
+    /// from a committed estimate, which only a COMPLETED consult has. The spark
+    /// books ~100 seconds before the analysis exists, so it carries this
+    /// instead — "book the ordinary way at the pro's menu starting price, and
+    /// stamp the link." The write boundary REFUSES a body carrying both.
+    ///
+    /// Optional so a non-spark booking's encoded body, and the idempotency
+    /// nonce derived from it, are unchanged.
+    let sparkConsultId: String?
     /// Book the Look, B8 — the enhancements she TICKED, as estimate-line ids.
     ///
     /// 🔴 This list decides WHICH, never HOW MUCH: the server re-derives each

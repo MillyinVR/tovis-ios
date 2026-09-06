@@ -109,7 +109,15 @@ struct ConsultFlowView: View {
                         professionalId: professionalId,
                         proName: model?.professionalDisplayName ?? "",
                         offering: offering,
-                        lookMediaId: book.lookMediaId ?? lookMediaId
+                        lookMediaId: book.lookMediaId ?? lookMediaId,
+                        // P7a-2 — the look and the consult travel with the tap.
+                        // `lookPostId` is what makes the server stamp
+                        // `Booking.sourceLookPostId`; `sparkConsultId` is what
+                        // makes it stamp the consult link. Before this, an iOS
+                        // spark booking carried neither and the thread could
+                        // never find the appointment it had just made.
+                        lookPostId: book.lookPostId,
+                        sparkConsultId: model?.thread?.consultId
                     )
                 } else {
                     // Resolving the offering is a network read, so the sheet

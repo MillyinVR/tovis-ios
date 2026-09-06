@@ -117,7 +117,8 @@ private extension URLRequest {
             holdId: "hold_1", offeringId: "off_1",
             locationType: "SALON", addOnIds: [], source: "REQUESTED",
             openingId: nil, cancellationPolicyAccepted: false,
-            lookPostId: nil, consultId: nil, consultEnhancementLineIds: nil))
+            lookPostId: nil, consultId: nil, sparkConsultId: nil,
+            consultEnhancementLineIds: nil))
         // Pinned to the bucket the sent key used — the body nonce is still compared
         // exactly; only the 60s clock rollover is taken out of it.
         let capturedKey = try #require(FinalizeURLProtocol.capturedIdempotencyKey)
