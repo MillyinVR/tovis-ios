@@ -46,6 +46,46 @@ public enum ConsultAnalysisRunCopy {
         }
     }
 
+    /// P2e — what a FAILED run says, by what actually failed.
+    ///
+    /// Before this, every failure produced the same sentence. On 2026-09-06 a
+    /// production run failed six times across two runs on a reference the
+    /// server had already refused and would refuse every time, and the client
+    /// was told only that the plan could not be finished — nothing about which
+    /// picture was the problem or what would change the outcome.
+    ///
+    /// The codes are the server's own analysis vocabulary; `failureCode` is a
+    /// code the client maps to its own copy, never a message to render.
+    ///
+    /// ⚠️ Mirrors `failureCopy` in tovis-app `lib/consult/analysisRunCopy.ts`.
+    /// A change here is a change there.
+    static let referenceFailureCodes: Set<String> = [
+        "INSPIRATION_OBJECT_INVALID",
+        "INSPIRATION_IMAGE_UNREADABLE",
+        "INSPIRATION_ANALYSIS_UNREADABLE",
+    ]
+
+    static let photoFailureCodes: Set<String> = ["CAPTURE_OBJECT_INVALID"]
+
+    static func failureCopy(_ failureCode: String?) -> (headline: String, detail: String) {
+        if let failureCode, referenceFailureCodes.contains(failureCode) {
+            return (
+                "We couldn’t read your inspiration photo.",
+                "Everything else you’ve added is saved. Swap in a different picture and we’ll pick this back up."
+            )
+        }
+        if let failureCode, photoFailureCodes.contains(failureCode) {
+            return (
+                "We couldn’t read one of your photos.",
+                "Everything else you’ve added is saved. Retake that one and we’ll pick this back up."
+            )
+        }
+        return (
+            "We couldn’t finish your plan.",
+            "Your photos and answers are still saved — you can try again from here."
+        )
+    }
+
     static func photosPhrase(_ photoCount: Int) -> String {
         guard photoCount > 0 else { return "your photos" }
         return photoCount == 1 ? "your photo" : "your \(photoCount) photos"
@@ -60,9 +100,10 @@ public enum ConsultAnalysisRunCopy {
                 fraction: 1
             )
         case .failed:
+            let copy = failureCopy(run.failureCode)
             return ConsultAnalysisRunProgress(
-                headline: "We couldn’t finish your plan.",
-                detail: "Your photos and answers are still saved — you can try again from here.",
+                headline: copy.headline,
+                detail: copy.detail,
                 fraction: fraction(for: run.stage)
             )
         case .queued, .running:

@@ -98,6 +98,49 @@ struct ConsultAnalysisRunCopyTests {
         #expect(!shown.lowercased().contains("provider"))
     }
 
+    /// P2e. The 2026-09-06 production failure: a reference the server refused
+    /// six times, and the client told only that the plan could not be
+    /// finished. The sentence has to name the picture that is the problem.
+    @Test("names the inspiration photo when that is what failed")
+    func referenceFailure() throws {
+        for code in [
+            "INSPIRATION_OBJECT_INVALID",
+            "INSPIRATION_IMAGE_UNREADABLE",
+            "INSPIRATION_ANALYSIS_UNREADABLE",
+        ] {
+            let failed = ConsultAnalysisRunCopy.progress(
+                for: try run(status: .failed, stage: .understandingReference,
+                             retryable: true, failureCode: code)
+            )
+            #expect(failed.headline == "We couldn’t read your inspiration photo.")
+            #expect(failed.detail?.contains("Swap in a different picture") == true)
+            // Still leaks nothing: the code is branched on, never rendered.
+            #expect(!"\(failed.headline) \(failed.detail ?? "")".contains(code))
+        }
+    }
+
+    @Test("names a capture when that is what failed")
+    func captureFailure() throws {
+        let failed = ConsultAnalysisRunCopy.progress(
+            for: try run(status: .failed, stage: .readingPhotos,
+                         retryable: true, failureCode: "CAPTURE_OBJECT_INVALID")
+        )
+        #expect(failed.headline == "We couldn’t read one of your photos.")
+        #expect(failed.detail?.contains("Retake that one") == true)
+    }
+
+    /// Web and iOS must not drift: these are the same two sets, spelled twice
+    /// because there is no shared module.
+    @Test("mirrors the web failure-code sets exactly")
+    func failureCodeSetsMatchWeb() {
+        #expect(ConsultAnalysisRunCopy.referenceFailureCodes == [
+            "INSPIRATION_OBJECT_INVALID",
+            "INSPIRATION_IMAGE_UNREADABLE",
+            "INSPIRATION_ANALYSIS_UNREADABLE",
+        ])
+        #expect(ConsultAnalysisRunCopy.photoFailureCodes == ["CAPTURE_OBJECT_INVALID"])
+    }
+
     @Test("counts only QUEUED and RUNNING as still worth polling")
     func liveness() throws {
         #expect(try run(status: .queued).status.isLive)
