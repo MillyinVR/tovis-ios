@@ -1,0 +1,1264 @@
+{
+  "ok": true,
+  "thread": {
+    "consultId": "cmtpo7ujh000spojr8oavtpdm",
+    "status": "COMPLETED",
+    "professionalId": "cmtpo7uif0006pojrcpdi0rml",
+    "professionalDisplayName": "Estimate Professional",
+    "nextOpenMessageId": null,
+    "messages": [
+      {
+        "kind": "TEXT",
+        "id": "opening",
+        "author": "APP",
+        "state": "DONE",
+        "text": "Love this one. Let’s work out what it would take on your device_seed_1788690629153_10v4nu Balayage — a few taps, then you can book."
+      },
+      {
+        "kind": "CONSENT",
+        "id": "consent",
+        "author": "APP",
+        "state": "DONE",
+        "text": "Quick bit first: two things to agree to before any photos. Estimate Professional only ever sees what you send her.",
+        "requirements": [
+          {
+            "kind": "SENSITIVE_DATA_CONSENT",
+            "requiredVersion": {
+              "id": "cmtpo7uix000mpojrvdy5d1k3",
+              "kind": "SENSITIVE_DATA_CONSENT",
+              "version": 4092425,
+              "title": "Look fixture consent",
+              "body": "Look fixture consent only.",
+              "publishedAt": "2026-09-06T10:30:29.194Z"
+            },
+            "currentAcceptance": {
+              "id": "cmtpo7ujt000vpojrn8jrvl0k",
+              "agreementVersionId": "cmtpo7uix000mpojrvdy5d1k3",
+              "version": 4092425,
+              "acceptedAt": "2026-09-06T10:30:29.225Z"
+            },
+            "latestRevocation": null
+          },
+          {
+            "kind": "ADULT_18_PLUS_ATTESTATION",
+            "requiredVersion": {
+              "id": "cmtpo7uix000lpojrml8xe1it",
+              "kind": "ADULT_18_PLUS_ATTESTATION",
+              "version": 4092425,
+              "title": "Look fixture adult attestation",
+              "body": "Look fixture adult attestation only.",
+              "publishedAt": "2026-09-06T10:30:29.194Z"
+            },
+            "currentAcceptance": {
+              "id": "cmtpo7ujy000zpojri1k42xg2",
+              "agreementVersionId": "cmtpo7uix000lpojrml8xe1it",
+              "version": 4092425,
+              "acceptedAt": "2026-09-06T10:30:29.230Z"
+            },
+            "latestRevocation": null
+          }
+        ]
+      },
+      {
+        "kind": "INSPIRATION",
+        "id": "inspiration",
+        "author": "APP",
+        "state": "DONE",
+        "text": "Got it. Estimate Professional will see exactly what you picked out.",
+        "sourceDecisionRequired": false,
+        "source": {
+          "inspirationId": "cmtpo7uk50015pojri9k8y09w",
+          "source": "BOOKED_PRO_LOOK",
+          "lookPostId": "cmtpo7uj0000qpojr4rrqxdbd",
+          "imageReadEndpoint": "/api/v1/client/consult/cmtpo7ujh000spojr8oavtpdm/inspiration/media",
+          "imageAvailable": true,
+          "useExpiresAt": null,
+          "analysisReady": true
+        },
+        "question": null,
+        "card": null,
+        "answeredQuestionCount": 3,
+        "specificDetailCount": 2,
+        "requiredSpecificDetailCount": 0,
+        "schemaVersion": 2
+      },
+      {
+        "kind": "INSPIRATION",
+        "id": "inspiration:spark_focus",
+        "author": "APP",
+        "state": "DONE",
+        "text": null,
+        "sourceDecisionRequired": false,
+        "source": {
+          "inspirationId": "cmtpo7uk50015pojri9k8y09w",
+          "source": "BOOKED_PRO_LOOK",
+          "lookPostId": "cmtpo7uj0000qpojr4rrqxdbd",
+          "imageReadEndpoint": "/api/v1/client/consult/cmtpo7ujh000spojr8oavtpdm/inspiration/media",
+          "imageAvailable": true,
+          "useExpiresAt": null,
+          "analysisReady": true
+        },
+        "question": {
+          "key": "spark_focus",
+          "label": "What made you stop scrolling?",
+          "helpText": null,
+          "kind": "SINGLE_SELECT",
+          "options": [
+            {
+              "value": "the-color",
+              "label": "The color"
+            },
+            {
+              "value": "the-shape",
+              "label": "The shape of it"
+            },
+            {
+              "value": "the-whole-thing",
+              "label": "The whole thing"
+            },
+            {
+              "value": "not-sure",
+              "label": "Not sure"
+            }
+          ],
+          "minSelections": 1,
+          "maxSelections": 1,
+          "allowText": false
+        },
+        "card": {
+          "questionKey": "spark_focus",
+          "tier": "COARSE",
+          "attribute": null,
+          "attributeValue": null,
+          "name": null,
+          "region": null,
+          "optionRegions": [
+            {
+              "value": "the-color",
+              "label": "The color",
+              "region": {
+                "x": 0.15,
+                "y": 0.2,
+                "w": 0.6,
+                "h": 0.49999999999999994
+              }
+            },
+            {
+              "value": "the-shape",
+              "label": "The shape of it",
+              "region": {
+                "x": 0.15,
+                "y": 0.2,
+                "w": 0.6,
+                "h": 0.49999999999999994
+              }
+            },
+            {
+              "value": "the-whole-thing",
+              "label": "The whole thing",
+              "region": null
+            },
+            {
+              "value": "not-sure",
+              "label": "Not sure",
+              "region": null
+            }
+          ],
+          "question": {
+            "key": "spark_focus",
+            "label": "What made you stop scrolling?",
+            "helpText": null,
+            "kind": "SINGLE_SELECT",
+            "options": [
+              {
+                "value": "the-color",
+                "label": "The color"
+              },
+              {
+                "value": "the-shape",
+                "label": "The shape of it"
+              },
+              {
+                "value": "the-whole-thing",
+                "label": "The whole thing"
+              },
+              {
+                "value": "not-sure",
+                "label": "Not sure"
+              }
+            ],
+            "minSelections": 1,
+            "maxSelections": 1,
+            "allowText": false
+          },
+          "selectedValues": [
+            "the-color"
+          ]
+        },
+        "answeredQuestionCount": 3,
+        "specificDetailCount": 2,
+        "requiredSpecificDetailCount": 0,
+        "schemaVersion": 2
+      },
+      {
+        "kind": "INSPIRATION",
+        "id": "inspiration:keep_as_is",
+        "author": "APP",
+        "state": "DONE",
+        "text": null,
+        "sourceDecisionRequired": false,
+        "source": {
+          "inspirationId": "cmtpo7uk50015pojri9k8y09w",
+          "source": "BOOKED_PRO_LOOK",
+          "lookPostId": "cmtpo7uj0000qpojr4rrqxdbd",
+          "imageReadEndpoint": "/api/v1/client/consult/cmtpo7ujh000spojr8oavtpdm/inspiration/media",
+          "imageAvailable": true,
+          "useExpiresAt": null,
+          "analysisReady": true
+        },
+        "question": {
+          "key": "keep_as_is",
+          "label": "Anything about your hair you don’t want to change?",
+          "helpText": null,
+          "kind": "MULTI_SELECT",
+          "options": [
+            {
+              "value": "my-length",
+              "label": "My length"
+            },
+            {
+              "value": "my-natural-roots",
+              "label": "My natural roots"
+            },
+            {
+              "value": "nothing-in-particular",
+              "label": "Nothing in particular"
+            }
+          ],
+          "minSelections": 1,
+          "maxSelections": 2,
+          "allowText": false
+        },
+        "card": {
+          "questionKey": "keep_as_is",
+          "tier": "COARSE",
+          "attribute": null,
+          "attributeValue": null,
+          "name": null,
+          "region": null,
+          "optionRegions": [],
+          "question": {
+            "key": "keep_as_is",
+            "label": "Anything about your hair you don’t want to change?",
+            "helpText": null,
+            "kind": "MULTI_SELECT",
+            "options": [
+              {
+                "value": "my-length",
+                "label": "My length"
+              },
+              {
+                "value": "my-natural-roots",
+                "label": "My natural roots"
+              },
+              {
+                "value": "nothing-in-particular",
+                "label": "Nothing in particular"
+              }
+            ],
+            "minSelections": 1,
+            "maxSelections": 2,
+            "allowText": false
+          },
+          "selectedValues": [
+            "my-length"
+          ]
+        },
+        "answeredQuestionCount": 3,
+        "specificDetailCount": 2,
+        "requiredSpecificDetailCount": 0,
+        "schemaVersion": 2
+      },
+      {
+        "kind": "INSPIRATION",
+        "id": "inspiration:understanding_check",
+        "author": "APP",
+        "state": "DONE",
+        "text": null,
+        "sourceDecisionRequired": false,
+        "source": {
+          "inspirationId": "cmtpo7uk50015pojri9k8y09w",
+          "source": "BOOKED_PRO_LOOK",
+          "lookPostId": "cmtpo7uj0000qpojr4rrqxdbd",
+          "imageReadEndpoint": "/api/v1/client/consult/cmtpo7ujh000spojr8oavtpdm/inspiration/media",
+          "imageAvailable": true,
+          "useExpiresAt": null,
+          "analysisReady": true
+        },
+        "question": {
+          "key": "understanding_check",
+          "label": "You like the medium blonde and want to keep your length. We’ll help Estimate Professional work out the details.",
+          "helpText": null,
+          "kind": "SINGLE_SELECT",
+          "options": [
+            {
+              "value": "thats-right",
+              "label": "That’s right"
+            },
+            {
+              "value": "change-something",
+              "label": "Change something"
+            }
+          ],
+          "minSelections": 1,
+          "maxSelections": 1,
+          "allowText": false
+        },
+        "card": {
+          "questionKey": "understanding_check",
+          "tier": "COARSE",
+          "attribute": null,
+          "attributeValue": null,
+          "name": null,
+          "region": null,
+          "optionRegions": [],
+          "question": {
+            "key": "understanding_check",
+            "label": "You like the medium blonde and want to keep your length. We’ll help Estimate Professional work out the details.",
+            "helpText": null,
+            "kind": "SINGLE_SELECT",
+            "options": [
+              {
+                "value": "thats-right",
+                "label": "That’s right"
+              },
+              {
+                "value": "change-something",
+                "label": "Change something"
+              }
+            ],
+            "minSelections": 1,
+            "maxSelections": 1,
+            "allowText": false
+          },
+          "selectedValues": [
+            "thats-right"
+          ]
+        },
+        "answeredQuestionCount": 3,
+        "specificDetailCount": 2,
+        "requiredSpecificDetailCount": 0,
+        "schemaVersion": 2
+      },
+      {
+        "kind": "PHOTO_REQUEST",
+        "id": "photo:early_photo",
+        "author": "APP",
+        "state": "DONE",
+        "shot": {
+          "key": "early_photo",
+          "title": "What you have right now",
+          "instruction": "One photo of you as you are — camera or camera roll, whatever light you are in. It does not need to be a good photo.",
+          "requirement": "REQUIRED"
+        },
+        "shotPackVersion": 1,
+        "schemaVersion": 1,
+        "slot": {
+          "shotKey": "early_photo",
+          "state": "ACCEPTED",
+          "captureId": "cmtpo7ukw001dpojrom2df326",
+          "qualityReasonCode": "PASS",
+          "qualityWarningCode": null,
+          "retakeTip": null,
+          "rawExpiresAt": "2026-09-07T10:30:29.246Z",
+          "purgedAt": null
+        }
+      },
+      {
+        "kind": "TEXT",
+        "id": "intake-intro",
+        "author": "APP",
+        "state": "DONE",
+        "text": "A few quick things about you. Tap what fits."
+      },
+      {
+        "kind": "QUESTION",
+        "id": "intake:change_scale",
+        "author": "APP",
+        "state": "DONE",
+        "question": {
+          "key": "change_scale",
+          "label": "How big a change are you after?",
+          "helpText": null,
+          "kind": "SINGLE_SELECT",
+          "requirement": "REQUIRED",
+          "options": [
+            {
+              "value": "subtle",
+              "label": "Subtle"
+            },
+            {
+              "value": "noticeable",
+              "label": "Noticeable"
+            },
+            {
+              "value": "total",
+              "label": "Total transformation"
+            }
+          ]
+        },
+        "answer": "noticeable",
+        "packVersion": 3,
+        "schemaVersion": 2
+      },
+      {
+        "kind": "QUESTION",
+        "id": "intake:goal_direction",
+        "author": "APP",
+        "state": "BLOCKED",
+        "question": {
+          "key": "goal_direction",
+          "label": "What would you most like to change about your color?",
+          "helpText": "This helps your professional understand what “subtle” or “a change” means to you. It is okay to revise your answer.",
+          "kind": "SINGLE_SELECT",
+          "requirement": "CONDITIONAL",
+          "options": [
+            {
+              "value": "lighter",
+              "label": "Go lighter"
+            },
+            {
+              "value": "darker",
+              "label": "Go darker"
+            },
+            {
+              "value": "warmer",
+              "label": "Make the tone warmer"
+            },
+            {
+              "value": "less-warm",
+              "label": "Make the tone less warm"
+            },
+            {
+              "value": "brighter-pieces",
+              "label": "Add brighter pieces"
+            },
+            {
+              "value": "softer-root-contrast",
+              "label": "Make the roots blend more softly"
+            },
+            {
+              "value": "gray-blending",
+              "label": "Blend gray or silver"
+            },
+            {
+              "value": "richer-color",
+              "label": "Make the color look richer"
+            },
+            {
+              "value": "more-shine",
+              "label": "Add shine or refresh the tone"
+            },
+            {
+              "value": "not-sure",
+              "label": "I am still not sure"
+            }
+          ]
+        },
+        "answer": null,
+        "packVersion": 3,
+        "schemaVersion": 2
+      },
+      {
+        "kind": "QUESTION",
+        "id": "intake:box_dye_history",
+        "author": "APP",
+        "state": "DONE",
+        "question": {
+          "key": "box_dye_history",
+          "label": "When did you last use box dye on your hair?",
+          "helpText": "Treatments besides hair color can change how your hair responds and what result is safely achievable.",
+          "kind": "SINGLE_SELECT",
+          "requirement": "REQUIRED",
+          "options": [
+            {
+              "value": "never",
+              "label": "Never"
+            },
+            {
+              "value": "within-6-months",
+              "label": "Within 6 months"
+            },
+            {
+              "value": "6-12-months",
+              "label": "6–12 months ago"
+            },
+            {
+              "value": "over-12-months",
+              "label": "More than a year ago"
+            },
+            {
+              "value": "not-sure",
+              "label": "Not sure"
+            }
+          ]
+        },
+        "answer": "over-12-months",
+        "packVersion": 3,
+        "schemaVersion": 2
+      },
+      {
+        "kind": "QUESTION",
+        "id": "intake:prior_lightening",
+        "author": "APP",
+        "state": "DONE",
+        "question": {
+          "key": "prior_lightening",
+          "label": "When was your hair last lightened?",
+          "helpText": "Treatments besides hair color can change how your hair responds and what result is safely achievable.",
+          "kind": "SINGLE_SELECT",
+          "requirement": "REQUIRED",
+          "options": [
+            {
+              "value": "never",
+              "label": "Never"
+            },
+            {
+              "value": "within-3-months",
+              "label": "Within 3 months"
+            },
+            {
+              "value": "3-6-months",
+              "label": "3–6 months ago"
+            },
+            {
+              "value": "6-12-months",
+              "label": "6–12 months ago"
+            },
+            {
+              "value": "over-12-months",
+              "label": "More than a year ago"
+            },
+            {
+              "value": "not-sure",
+              "label": "Not sure"
+            }
+          ]
+        },
+        "answer": "over-12-months",
+        "packVersion": 3,
+        "schemaVersion": 2
+      },
+      {
+        "kind": "QUESTION",
+        "id": "intake:henna_plant_dye_history",
+        "author": "APP",
+        "state": "DONE",
+        "question": {
+          "key": "henna_plant_dye_history",
+          "label": "When did you last use henna or another plant-based hair dye?",
+          "helpText": "Treatments besides hair color can change how your hair responds and what result is safely achievable.",
+          "kind": "SINGLE_SELECT",
+          "requirement": "REQUIRED",
+          "options": [
+            {
+              "value": "never",
+              "label": "Never"
+            },
+            {
+              "value": "within-6-months",
+              "label": "Within 6 months"
+            },
+            {
+              "value": "6-12-months",
+              "label": "6–12 months ago"
+            },
+            {
+              "value": "over-12-months",
+              "label": "More than a year ago"
+            },
+            {
+              "value": "not-sure",
+              "label": "Not sure"
+            }
+          ]
+        },
+        "answer": "never",
+        "packVersion": 3,
+        "schemaVersion": 2
+      },
+      {
+        "kind": "QUESTION",
+        "id": "intake:other_chemical_history",
+        "author": "APP",
+        "state": "DONE",
+        "question": {
+          "key": "other_chemical_history",
+          "label": "When did you last have a perm, relaxer, keratin or other chemical treatment?",
+          "helpText": "Treatments besides hair color can change how your hair responds and what result is safely achievable.",
+          "kind": "SINGLE_SELECT",
+          "requirement": "REQUIRED",
+          "options": [
+            {
+              "value": "never",
+              "label": "Never"
+            },
+            {
+              "value": "within-6-months",
+              "label": "Within 6 months"
+            },
+            {
+              "value": "6-12-months",
+              "label": "6–12 months ago"
+            },
+            {
+              "value": "over-12-months",
+              "label": "More than a year ago"
+            },
+            {
+              "value": "not-sure",
+              "label": "Not sure"
+            }
+          ]
+        },
+        "answer": "never",
+        "packVersion": 3,
+        "schemaVersion": 2
+      },
+      {
+        "kind": "QUESTION",
+        "id": "intake:prior_reaction",
+        "author": "APP",
+        "state": "DONE",
+        "question": {
+          "key": "prior_reaction",
+          "label": "Have you ever had a reaction during or after a hair color service?",
+          "helpText": null,
+          "kind": "SINGLE_SELECT",
+          "requirement": "REQUIRED",
+          "options": [
+            {
+              "value": "no",
+              "label": "No"
+            },
+            {
+              "value": "yes",
+              "label": "Yes"
+            },
+            {
+              "value": "not-sure",
+              "label": "Not sure"
+            }
+          ]
+        },
+        "answer": "no",
+        "packVersion": 3,
+        "schemaVersion": 2
+      },
+      {
+        "kind": "TEXT",
+        "id": "capture-intro",
+        "author": "APP",
+        "state": "DONE",
+        "text": "Now a few of you, in daylight if you can. Each one gets checked straight away, and I’ll tell you why if one won’t work. Seven daylight photos: four of your hair and three of your face. Each one is checked right away, and if one can’t be used you’ll see why. You can run the analysis without all seven — anything the missing photos would have shown just comes back as unknown."
+      },
+      {
+        "kind": "PHOTO_REQUEST",
+        "id": "photo:hair_back",
+        "author": "APP",
+        "state": "DONE",
+        "shot": {
+          "key": "hair_back",
+          "title": "Hair back",
+          "instruction": "Face away from the camera in indirect daylight. Frame the full back canvas—color, roots, lengths, and ends—with sharp edges.",
+          "requirement": "REQUIRED"
+        },
+        "shotPackVersion": 2,
+        "schemaVersion": 1,
+        "slot": {
+          "shotKey": "hair_back",
+          "state": "ACCEPTED",
+          "captureId": "cmtpo7unv0029pojrana0dyw5",
+          "qualityReasonCode": "PASS",
+          "qualityWarningCode": null,
+          "retakeTip": null,
+          "rawExpiresAt": "2026-09-07T10:30:29.360Z",
+          "purgedAt": null
+        }
+      },
+      {
+        "kind": "PHOTO_REQUEST",
+        "id": "photo:hair_left",
+        "author": "APP",
+        "state": "DONE",
+        "shot": {
+          "key": "hair_left",
+          "title": "Left side",
+          "instruction": "Turn the left side toward the camera in indirect daylight. Show roots through ends without filters or warm indoor light.",
+          "requirement": "REQUIRED"
+        },
+        "shotPackVersion": 2,
+        "schemaVersion": 1,
+        "slot": {
+          "shotKey": "hair_left",
+          "state": "ACCEPTED",
+          "captureId": "cmtpo7uou002jpojrogvgj5jj",
+          "qualityReasonCode": "PASS",
+          "qualityWarningCode": null,
+          "retakeTip": null,
+          "rawExpiresAt": "2026-09-07T10:30:29.395Z",
+          "purgedAt": null
+        }
+      },
+      {
+        "kind": "PHOTO_REQUEST",
+        "id": "photo:hair_right",
+        "author": "APP",
+        "state": "DONE",
+        "shot": {
+          "key": "hair_right",
+          "title": "Right side",
+          "instruction": "Turn the right side toward the camera in indirect daylight. Show roots through ends without filters or warm indoor light.",
+          "requirement": "REQUIRED"
+        },
+        "shotPackVersion": 2,
+        "schemaVersion": 1,
+        "slot": {
+          "shotKey": "hair_right",
+          "state": "ACCEPTED",
+          "captureId": "cmtpo7ups002tpojrpk8rmtmd",
+          "qualityReasonCode": "PASS",
+          "qualityWarningCode": null,
+          "retakeTip": null,
+          "rawExpiresAt": "2026-09-07T10:30:29.429Z",
+          "purgedAt": null
+        }
+      },
+      {
+        "kind": "PHOTO_REQUEST",
+        "id": "photo:hair_crown",
+        "author": "APP",
+        "state": "DONE",
+        "shot": {
+          "key": "hair_crown",
+          "title": "Crown",
+          "instruction": "Angle the crown toward the camera in indirect daylight. Keep the roots, part, and surrounding hair sharp and fully visible.",
+          "requirement": "REQUIRED"
+        },
+        "shotPackVersion": 2,
+        "schemaVersion": 1,
+        "slot": {
+          "shotKey": "hair_crown",
+          "state": "ACCEPTED",
+          "captureId": "cmtpo7uqp0033pojra95uz0q8",
+          "qualityReasonCode": "PASS",
+          "qualityWarningCode": null,
+          "retakeTip": null,
+          "rawExpiresAt": "2026-09-07T10:30:29.464Z",
+          "purgedAt": null
+        }
+      },
+      {
+        "kind": "PHOTO_REQUEST",
+        "id": "photo:face_front",
+        "author": "APP",
+        "state": "DONE",
+        "shot": {
+          "key": "face_front",
+          "title": "Face front",
+          "instruction": "Face the camera straight on in indirect daylight with a relaxed, neutral expression. Pull hair off your face so your hairline, brows, eyes, and jawline are fully visible. No filters.",
+          "requirement": "REQUIRED"
+        },
+        "shotPackVersion": 2,
+        "schemaVersion": 1,
+        "slot": {
+          "shotKey": "face_front",
+          "state": "ACCEPTED",
+          "captureId": "cmtpo7urn003dpojr12ru769l",
+          "qualityReasonCode": "PASS",
+          "qualityWarningCode": null,
+          "retakeTip": null,
+          "rawExpiresAt": "2026-09-07T10:30:29.497Z",
+          "purgedAt": null
+        }
+      },
+      {
+        "kind": "PHOTO_REQUEST",
+        "id": "photo:face_side",
+        "author": "APP",
+        "state": "DONE",
+        "shot": {
+          "key": "face_side",
+          "title": "Profile",
+          "instruction": "Turn fully to one side in indirect daylight. Keep your profile—forehead, nose, lips, chin, and jawline—sharp and unobstructed, with hair tucked behind your ear.",
+          "requirement": "REQUIRED"
+        },
+        "shotPackVersion": 2,
+        "schemaVersion": 1,
+        "slot": {
+          "shotKey": "face_side",
+          "state": "ACCEPTED",
+          "captureId": "cmtpo7usl003npojrj113vkcf",
+          "qualityReasonCode": "PASS",
+          "qualityWarningCode": null,
+          "retakeTip": null,
+          "rawExpiresAt": "2026-09-07T10:30:29.531Z",
+          "purgedAt": null
+        }
+      },
+      {
+        "kind": "PHOTO_REQUEST",
+        "id": "photo:eyes_closeup",
+        "author": "APP",
+        "state": "DONE",
+        "shot": {
+          "key": "eyes_closeup",
+          "title": "Eyes & brows",
+          "instruction": "Fill the frame with both eyes and brows, looking straight at the camera with eyes open, in indirect daylight. Keep lashes, lids, and full brows sharp.",
+          "requirement": "REQUIRED"
+        },
+        "shotPackVersion": 2,
+        "schemaVersion": 1,
+        "slot": {
+          "shotKey": "eyes_closeup",
+          "state": "ACCEPTED",
+          "captureId": "cmtpo7utg003xpojrkygl3tbd",
+          "qualityReasonCode": "PASS",
+          "qualityWarningCode": null,
+          "retakeTip": null,
+          "rawExpiresAt": "2026-09-07T10:30:29.563Z",
+          "purgedAt": null
+        }
+      },
+      {
+        "kind": "TEXT",
+        "id": "capture-done",
+        "author": "APP",
+        "state": "DONE",
+        "text": "All of them came through. That’s the hard part done."
+      },
+      {
+        "kind": "PLAN",
+        "id": "plan",
+        "author": "APP",
+        "state": "DONE",
+        "text": "Here’s where you’re starting from and what it would take. These are things to talk through with Estimate Professional, not promises.",
+        "run": {
+          "runId": "cmtpo7ux60058pojrbusqdg5h",
+          "status": "COMPLETED",
+          "stage": "DONE",
+          "photoCount": 8,
+          "attemptCount": 1,
+          "maxAttempts": 3,
+          "queuedAt": "2026-09-06T10:30:29.706Z",
+          "startedAt": "2026-09-06T10:32:04.695Z",
+          "finishedAt": "2026-09-06T10:32:04.695Z",
+          "failureCode": null,
+          "retryable": false
+        },
+        "results": {
+          "consultId": "cmtpo7ujh000spojr8oavtpdm",
+          "bookingId": null,
+          "lookPostId": "cmtpo7uj0000qpojr4rrqxdbd",
+          "serviceCategoryId": "cmtpnyxip000ppo55isy5szob",
+          "briefRevisionId": "cmtpo7uyg005epojr8otvsbeq",
+          "briefRevision": 10,
+          "analysisRevisionId": "cmtpo7uy6005apojr5sdv5d1s",
+          "analysisRevision": 9,
+          "intakeRevisionId": "cmtpo7uwr0052pojr1phr1iph",
+          "clientIntake": [
+            {
+              "questionKey": "change_scale",
+              "question": "How big a change are you after?",
+              "answerCode": "noticeable",
+              "answer": "Noticeable"
+            },
+            {
+              "questionKey": "box_dye_history",
+              "question": "When did you last use box dye on your hair?",
+              "answerCode": "over-12-months",
+              "answer": "More than a year ago"
+            },
+            {
+              "questionKey": "prior_lightening",
+              "question": "When was your hair last lightened?",
+              "answerCode": "over-12-months",
+              "answer": "More than a year ago"
+            },
+            {
+              "questionKey": "henna_plant_dye_history",
+              "question": "When did you last use henna or another plant-based hair dye?",
+              "answerCode": "never",
+              "answer": "Never"
+            },
+            {
+              "questionKey": "other_chemical_history",
+              "question": "When did you last have a perm, relaxer, keratin or other chemical treatment?",
+              "answerCode": "never",
+              "answer": "Never"
+            },
+            {
+              "questionKey": "prior_reaction",
+              "question": "Have you ever had a reaction during or after a hair color service?",
+              "answerCode": "no",
+              "answer": "No"
+            }
+          ],
+          "aiObservations": {
+            "baseLevel": {
+              "value": "LEVEL_4",
+              "confidence": {
+                "min": 0.5,
+                "max": 0.75
+              },
+              "evidence": [
+                "hair_back",
+                "hair_crown"
+              ]
+            },
+            "lightestLevel": {
+              "value": "LEVEL_5",
+              "confidence": {
+                "min": 0.5,
+                "max": 0.75
+              },
+              "evidence": [
+                "hair_back",
+                "hair_crown"
+              ]
+            },
+            "currentTone": {
+              "value": "MIXED",
+              "confidence": {
+                "min": 0.4,
+                "max": 0.7
+              },
+              "evidence": [
+                "hair_back"
+              ]
+            },
+            "visibleCondition": {
+              "value": "NO_VISIBLE_CONCERN",
+              "confidence": {
+                "min": 0.4,
+                "max": 0.7
+              },
+              "evidence": [
+                "hair_back"
+              ]
+            },
+            "density": {
+              "value": "UNKNOWN",
+              "confidence": {
+                "min": 0,
+                "max": 0.25
+              },
+              "evidence": []
+            },
+            "texture": {
+              "value": "WAVY",
+              "confidence": {
+                "min": 0.4,
+                "max": 0.7
+              },
+              "evidence": [
+                "hair_back"
+              ]
+            },
+            "goalSummary": "A noticeable red direction grounded in the intake goal.",
+            "historySummary": "Prior lightening and box-dye timing affect the range.",
+            "constraintsSummary": "Allergy history and other constraints are unknown.",
+            "maintenanceSummary": "Maintenance tolerance was not collected and is unknown.",
+            "appointmentContextSummary": "Appointment context uses the intake timing and budget."
+          },
+          "profile": {
+            "skinUndertone": {
+              "value": "NEUTRAL",
+              "confidence": {
+                "min": 0.4,
+                "max": 0.7
+              },
+              "evidence": [
+                "face_front"
+              ]
+            },
+            "contrastLevel": {
+              "value": "MEDIUM",
+              "confidence": {
+                "min": 0.4,
+                "max": 0.7
+              },
+              "evidence": [
+                "face_front"
+              ]
+            },
+            "colorSeason": {
+              "value": "UNKNOWN",
+              "confidence": {
+                "min": 0,
+                "max": 0.25
+              },
+              "evidence": []
+            },
+            "faceProportion": {
+              "value": "BALANCED",
+              "confidence": {
+                "min": 0.4,
+                "max": 0.7
+              },
+              "evidence": [
+                "face_front"
+              ]
+            },
+            "jawline": {
+              "value": "SOFTLY_ROUNDED",
+              "confidence": {
+                "min": 0.4,
+                "max": 0.7
+              },
+              "evidence": [
+                "face_side"
+              ]
+            },
+            "foreheadProportion": {
+              "value": "BALANCED",
+              "confidence": {
+                "min": 0.4,
+                "max": 0.7
+              },
+              "evidence": [
+                "face_side"
+              ]
+            },
+            "featureBalance": {
+              "value": "SOFT",
+              "confidence": {
+                "min": 0.4,
+                "max": 0.7
+              },
+              "evidence": [
+                "face_front"
+              ]
+            },
+            "eyeShape": {
+              "value": "HOODED",
+              "confidence": {
+                "min": 0.4,
+                "max": 0.7
+              },
+              "evidence": [
+                "eyes_closeup"
+              ]
+            },
+            "eyeSpacing": {
+              "value": "BALANCED",
+              "confidence": {
+                "min": 0.4,
+                "max": 0.7
+              },
+              "evidence": [
+                "eyes_closeup"
+              ]
+            },
+            "browDensity": {
+              "value": "FULL",
+              "confidence": {
+                "min": 0.4,
+                "max": 0.7
+              },
+              "evidence": [
+                "eyes_closeup"
+              ]
+            },
+            "browShape": {
+              "value": "SOFT_ARCH",
+              "confidence": {
+                "min": 0.4,
+                "max": 0.7
+              },
+              "evidence": [
+                "eyes_closeup"
+              ]
+            }
+          },
+          "styleDirections": [
+            {
+              "domain": "HAIR_COLOR_HARMONY",
+              "title": "A soft, harmonizing direction",
+              "direction": "Discuss a soft, blended direction for this domain together.",
+              "whyItFlatters": "Low observed contrast and soft feature balance favor blended choices.",
+              "confidence": {
+                "min": 0.4,
+                "max": 0.7
+              },
+              "evidence": [
+                "face_front"
+              ],
+              "discussWithProfessional": true
+            },
+            {
+              "domain": "CUT_AND_SHAPE",
+              "title": "A soft, harmonizing direction",
+              "direction": "Discuss a soft, blended direction for this domain together.",
+              "whyItFlatters": "Low observed contrast and soft feature balance favor blended choices.",
+              "confidence": {
+                "min": 0.4,
+                "max": 0.7
+              },
+              "evidence": [
+                "face_front"
+              ],
+              "discussWithProfessional": true
+            },
+            {
+              "domain": "BANGS",
+              "title": "A soft, harmonizing direction",
+              "direction": "Discuss a soft, blended direction for this domain together.",
+              "whyItFlatters": "Low observed contrast and soft feature balance favor blended choices.",
+              "confidence": {
+                "min": 0.4,
+                "max": 0.7
+              },
+              "evidence": [
+                "face_front"
+              ],
+              "discussWithProfessional": true
+            },
+            {
+              "domain": "BROWS",
+              "title": "A soft, harmonizing direction",
+              "direction": "Discuss a soft, blended direction for this domain together.",
+              "whyItFlatters": "Low observed contrast and soft feature balance favor blended choices.",
+              "confidence": {
+                "min": 0.4,
+                "max": 0.7
+              },
+              "evidence": [
+                "face_front"
+              ],
+              "discussWithProfessional": true
+            },
+            {
+              "domain": "LASHES",
+              "title": "A soft, harmonizing direction",
+              "direction": "Discuss a soft, blended direction for this domain together.",
+              "whyItFlatters": "Low observed contrast and soft feature balance favor blended choices.",
+              "confidence": {
+                "min": 0.4,
+                "max": 0.7
+              },
+              "evidence": [
+                "face_front"
+              ],
+              "discussWithProfessional": true
+            },
+            {
+              "domain": "MAKEUP",
+              "title": "A soft, harmonizing direction",
+              "direction": "Discuss a soft, blended direction for this domain together.",
+              "whyItFlatters": "Low observed contrast and soft feature balance favor blended choices.",
+              "confidence": {
+                "min": 0.4,
+                "max": 0.7
+              },
+              "evidence": [
+                "face_front"
+              ],
+              "discussWithProfessional": true
+            },
+            {
+              "domain": "COLOR_PALETTE",
+              "title": "A soft, harmonizing direction",
+              "direction": "Discuss a soft, blended direction for this domain together.",
+              "whyItFlatters": "Low observed contrast and soft feature balance favor blended choices.",
+              "confidence": {
+                "min": 0.4,
+                "max": 0.7
+              },
+              "evidence": [
+                "face_front"
+              ],
+              "discussWithProfessional": true
+            }
+          ],
+          "safetyFlags": [
+            {
+              "code": "ALLERGY_HISTORY_UNKNOWN",
+              "summary": "Allergy information was not collected in this intake. Discuss known allergies, sensitivities, and appropriate precautions with your professional.",
+              "discussWithProfessional": true
+            }
+          ],
+          "achievabilityDirection": {
+            "direction": "Discuss this assessment with the professional; they will decide what is achievable in person.",
+            "assessment": "LIKELY_MULTI_APPOINTMENT",
+            "context": "The professional should assess condition and history.",
+            "discussWithProfessional": true
+          },
+          "recommendationDirections": [
+            {
+              "title": "Hand-painted dimension",
+              "why": "A hand-painted approach suits the blended direction.",
+              "direction": "Direction to discuss with the professional: Hand-painted dimension.",
+              "reference": {
+                "type": "SERVICE",
+                "serviceId": "cmtpo7uil000bpojrkqz8zp3x",
+                "serviceCategoryId": "cmtpnyxip000ppo55isy5szob"
+              },
+              "discussWithProfessional": true
+            },
+            {
+              "title": "A gloss to hold the tone",
+              "why": "The mid-lengths would otherwise read brassy in weeks.",
+              "direction": "Direction to discuss with the professional: A gloss to hold the tone.",
+              "reference": {
+                "type": "SERVICE",
+                "serviceId": "cmtpo7uil000cpojr3dju1eol",
+                "serviceCategoryId": "cmtpnyxip000ppo55isy5szob"
+              },
+              "discussWithProfessional": true
+            }
+          ],
+          "meCardTeaser": {
+            "locked": true,
+            "tapped": false
+          },
+          "createdAt": "2026-09-06T10:30:29.752Z"
+        },
+        "awaitingStart": false,
+        "planVersion": 2,
+        "updatePending": false,
+        "schemaVersion": 4,
+        "promptVersion": "service-analysis-v5"
+      },
+      {
+        "kind": "PLAN_UPDATE",
+        "id": "plan-update:cmtpo7uy6005apojr5sdv5d1s",
+        "author": "APP",
+        "state": "DONE",
+        "text": "Your plan moved. Here’s what changed:",
+        "planVersion": 2,
+        "previousPlanVersion": 1,
+        "changes": [
+          {
+            "key": "achievability",
+            "label": "How big a job it is",
+            "from": "Your pro will need to see it first",
+            "to": "More than one visit"
+          }
+        ],
+        "createdAt": "2026-09-06T10:30:29.742Z"
+      }
+    ],
+    "chartCopy": {
+      "optIn": true,
+      "decidedAt": null
+    },
+    "book": {
+      "enabled": true,
+      "reason": null,
+      "lookPostId": "cmtpo7uj0000qpojr4rrqxdbd",
+      "serviceId": "cmtpo7uil000bpojrkqz8zp3x",
+      "lookMediaId": "cmtpo7uiz000opojrtmfy6u45"
+    }
+  }
+}

@@ -83,6 +83,22 @@ public struct ConsultThreadBookCta: Decodable, Sendable, Equatable, Identifiable
     public var id: String { lookPostId ?? "no-look" }
 }
 
+/// P7a-3 — one line of a plan diff, already in the client's language.
+///
+/// 🔴 `label`, `from` and `to` are SERVER copy, rendered verbatim. They come
+/// from the brand's plan-diff table (tovis-app `lib/brand/…PlanDiffCopy.ts`) so
+/// that this bubble and the pro's Brief say the same words about the same
+/// change — which is the one thing a versioned Brief exists to guarantee. Never
+/// re-word them here.
+public struct ConsultPlanDiffEntry: Decodable, Sendable, Equatable, Identifiable {
+    public let key: String
+    public let label: String
+    public let from: String?
+    public let to: String?
+
+    public var id: String { key }
+}
+
 /// One message. A single type with an optional payload per kind rather than an
 /// enum with associated values: the wire is one JSON object shape, and a
 /// `Decodable` enum over it would need a hand-written `init(from:)` that has to
@@ -95,6 +111,9 @@ public struct ConsultThreadMessage: Decodable, Sendable, Identifiable {
         case inspiration = "INSPIRATION"
         case photoRequest = "PHOTO_REQUEST"
         case plan = "PLAN"
+        /// P7a-3 — "your plan moved, and here is what changed". One per version
+        /// after the first.
+        case planUpdate = "PLAN_UPDATE"
         case booking = "BOOKING"
         /// A kind this build does not know. Rendered as nothing rather than as a
         /// crash — an older build must survive a server that learned a new
@@ -149,6 +168,24 @@ public struct ConsultThreadMessage: Decodable, Sendable, Identifiable {
     public let results: ConsultClientResults?
     public let awaitingStart: Bool?
     public let promptVersion: String?
+    /// P7a-3 — which plan version `results` is; 0 while none exists.
+    ///
+    /// Optional on the wire like every field added since P5a: a build that
+    /// predates versioning keeps rendering the plan card exactly as it did, and
+    /// simply never says which version it is looking at.
+    public let planVersion: Int?
+    /// P7a-3 — an input changed after this version was built, so a new one is
+    /// coming. The card's own copy already says so; this is for a client that
+    /// wants to disable an action while it is true.
+    public let updatePending: Bool?
+
+    // PLAN_UPDATE
+    /// The version this bubble announces (>= 2), and the one it is against.
+    public let previousPlanVersion: Int?
+    /// 🔴 EMPTY is a real value, not a missing one: a rerun that changed nothing
+    /// still gets a bubble, with its own sentence. Hiding it would make the
+    /// client's edit look ignored.
+    public let changes: [ConsultPlanDiffEntry]?
 
     // BOOKING
     public let bookingId: String?
@@ -165,6 +202,7 @@ public struct ConsultThreadMessage: Decodable, Sendable, Identifiable {
         case answeredQuestionCount, specificDetailCount, requiredSpecificDetailCount
         case shot, shotPackVersion, slot
         case run, results, awaitingStart, promptVersion
+        case planVersion, updatePending, previousPlanVersion, changes
         case bookingId
         case schemaVersion
     }
@@ -230,6 +268,14 @@ public struct ConsultThreadMessage: Decodable, Sendable, Identifiable {
         results = try container.decodeIfPresent(ConsultClientResults.self, forKey: .results)
         awaitingStart = try container.decodeIfPresent(Bool.self, forKey: .awaitingStart)
         promptVersion = try container.decodeIfPresent(String.self, forKey: .promptVersion)
+        planVersion = try container.decodeIfPresent(Int.self, forKey: .planVersion)
+        updatePending = try container.decodeIfPresent(Bool.self, forKey: .updatePending)
+        previousPlanVersion = try container.decodeIfPresent(
+            Int.self, forKey: .previousPlanVersion
+        )
+        changes = try container.decodeIfPresent(
+            [ConsultPlanDiffEntry].self, forKey: .changes
+        )
 
         bookingId = try container.decodeIfPresent(String.self, forKey: .bookingId)
         schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion)

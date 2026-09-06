@@ -36,8 +36,36 @@ import Testing
 
         // Every kind in the union decodes, and none lands as `.unknown`.
         let kinds = Set(thread.messages.map(\.kind))
-        #expect(kinds == [.text, .consent, .question, .inspiration, .photoRequest, .plan, .booking])
+        #expect(
+            kinds == [
+                .text, .consent, .question, .inspiration, .photoRequest,
+                .plan, .planUpdate, .booking,
+            ]
+        )
         #expect(!thread.messages.contains { $0.kind == .unknown })
+
+        // P7a-3 — the plan is VERSIONED, and the version bubble carries the DIFF.
+        //
+        // 🔴 `changes` is asserted non-empty here on purpose. The field is
+        // optional on the wire (an older build must survive it) and an optional
+        // array that silently decodes to nil looks exactly like a bubble the
+        // server sent with nothing in it — which is a real and different state
+        // the server has its own sentence for.
+        let planCard = try #require(thread.messages.first { $0.kind == .plan })
+        #expect(planCard.planVersion == 2)
+        #expect(planCard.updatePending == false)
+
+        let update = try #require(thread.messages.first { $0.kind == .planUpdate })
+        #expect(update.planVersion == 2)
+        #expect(update.previousPlanVersion == 1)
+        let changes = try #require(update.changes)
+        #expect(changes.map(\.key) == ["achievability", "steps"])
+        // The words are the SERVER's, rendered verbatim — the pro's Brief shows
+        // these same labels, and a device that re-worded them would be the
+        // disagreement a versioned Brief exists to prevent.
+        #expect(changes.first?.label == "How big a job it is")
+        #expect(changes.first?.from == "One visit")
+        #expect(changes.first?.to == "More than one visit")
 
         // The resume pointer names a message that is actually in the thread and
         // actually open — the whole of "reopening resumes at the next step".
