@@ -2645,7 +2645,33 @@
           },
           "awaitingStart": false,
           "schemaVersion": 3,
-          "promptVersion": "service-analysis-v3"
+          "promptVersion": "service-analysis-v3",
+          "planVersion": 2,
+          "updatePending": false
+        },
+        {
+          "kind": "PLAN_UPDATE",
+          "id": "plan-update:rev_analysis_v2",
+          "author": "APP",
+          "state": "DONE",
+          "text": "Your plan moved. Here’s what changed:",
+          "planVersion": 2,
+          "previousPlanVersion": 1,
+          "changes": [
+            {
+              "key": "achievability",
+              "label": "How big a job it is",
+              "from": "One visit",
+              "to": "More than one visit"
+            },
+            {
+              "key": "steps",
+              "label": "What we’d do",
+              "from": "Gloss & Tone",
+              "to": "Balayage → Gloss & Tone"
+            }
+          ],
+          "createdAt": "2026-09-06T10:14:00.000Z"
         },
         {
           "kind": "BOOKING",

@@ -168,8 +168,102 @@ private struct ConsultThreadMessageView: View {
             )
         case .plan:
             PlanMessageView(message: message, model: model)
+        case .planUpdate:
+            PlanUpdateMessageView(message: message)
         case .unknown:
             EmptyView()
+        }
+    }
+}
+
+/// P7a-3 — "your plan moved, and here is what changed."
+///
+/// A bubble, not a card: the app is telling her something, not asking. The diff
+/// rows sit inside it as a small two-column list so a change she cares about
+/// ("One visit → More than one visit") is legible at a glance.
+///
+/// 🔴 An empty `changes` list still renders. The SERVER sends its own sentence
+/// for that case ("I looked again — the plan still holds"), and hiding the
+/// bubble would make her edit look ignored. Nothing here re-words the server's
+/// copy: the pro's Brief shows the same labels, and two clients writing their
+/// own would be the disagreement a versioned Brief exists to prevent.
+// Internal, not private, for ONE reason: `PlanUpdateMessageRenderTests` renders
+// this exact view to a PNG a person looks at. Every other container in this
+// file (`ConsultThreadBubble`, `ConsultThreadCardView`, `ConsultThreadView`) is
+// internal for the same module already.
+struct PlanUpdateMessageView: View {
+    let message: ConsultThreadMessage
+
+    private func oldValue(_ text: String?) -> some View {
+        Text(text ?? "—").strikethrough().foregroundStyle(BrandColor.textMuted)
+    }
+
+    private func newValue(_ text: String?) -> some View {
+        Text(text ?? "—").foregroundStyle(BrandColor.textPrimary)
+    }
+
+    private enum ArrowDirection { case right, down }
+
+    private func arrow(_ direction: ArrowDirection) -> some View {
+        Image(systemName: direction == .right ? "arrow.right" : "arrow.turn.down.right")
+            .font(BrandFont.body(11, .semibold))
+            .foregroundStyle(BrandColor.textMuted)
+    }
+
+    var body: some View {
+        ConsultThreadBubble(author: message.author) {
+            VStack(alignment: .leading, spacing: 10) {
+                if let text = message.text {
+                    Text(text).frame(maxWidth: .infinity, alignment: .leading)
+                }
+                let changes = message.changes ?? []
+                if !changes.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(changes) { change in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(change.label)
+                                    .font(BrandFont.body(12, .semibold))
+                                    .foregroundStyle(BrandColor.textMuted)
+                                // 🔴 `ViewThatFits`, because these two values
+                                // are SERVER copy and can be sentences. Side by
+                                // side is the reading order when they fit; on a
+                                // narrow phone with a long value the row wrapped
+                                // into two ragged blocks with an arrow floating
+                                // between them, which is legible and horrible.
+                                // Rendered at 375pt and 430pt in
+                                // PlanUpdateMessageRenderTests.
+                                ViewThatFits(in: .horizontal) {
+                                    HStack(spacing: 6) {
+                                        oldValue(change.from)
+                                        arrow(.right)
+                                        newValue(change.to)
+                                    }
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        oldValue(change.from)
+                                        HStack(spacing: 6) {
+                                            arrow(.down)
+                                            newValue(change.to)
+                                        }
+                                    }
+                                }
+                                .font(BrandFont.body(13, .semibold))
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    // The web twin uses `bg-surfaceGlass/10`; iOS has no glass
+                    // token, and `textPrimary` at 10% is what that token IS in
+                    // both modes (they are byte-identical in the web palette).
+                    // Spelled with its alpha, always — solid it would paint the
+                    // label's own colour over the label.
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(BrandColor.textPrimary.opacity(0.08))
+                    )
+                }
+            }
         }
     }
 }
