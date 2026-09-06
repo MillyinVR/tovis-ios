@@ -359,6 +359,35 @@ final class ConsultFlowViewModel {
         }
     }
 
+    // MARK: - Adaptive follow-ups (P5g)
+
+    /// Answer one follow-up question.
+    ///
+    /// 🔴 The device sends a key and an enum. Where that answer is FILED — the
+    /// intake revision (so the safety policy can read it) or the follow-up
+    /// round — is the server's decision, and this client deliberately does not
+    /// know it: a routing rule implemented twice is a routing rule that can
+    /// disagree with itself.
+    ///
+    /// Answering the LAST open question of a round is what buys the next one,
+    /// which happens inside that POST. So the thread re-read below is what
+    /// brings the next question back, and there is nothing to poll.
+    func answerFollowUp(_ message: ConsultThreadMessage, value: String) async {
+        guard let consultId = machine.consultId,
+              let questionKey = message.questionKey,
+              message.followUpOptions?.contains(where: { $0.value == value }) == true
+        else { return }
+        await perform {
+            try await service.answerFollowUp(
+                consultId: consultId,
+                questionKey: questionKey,
+                selectedValues: [value],
+                idempotencyKey: UUID().uuidString
+            )
+            try await loadThread()
+        }
+    }
+
     /// What the inspiration panel got back for its image.
     ///
     /// Three OUTCOMES, not two: "there is no image to show" and "there is one

@@ -170,6 +170,17 @@ private actor MockConsultService: ConsultServicing {
         return try inspirationState()
     }
 
+    /// P5g — every follow-up answer this double was asked to file, in order.
+    /// Recorded rather than discarded so a test can assert the device sent the
+    /// KEY and the ENUM and decided no routing of its own.
+    private(set) var answeredFollowUps: [(key: String, values: [String])] = []
+
+    func answerFollowUp(consultId: String, questionKey: String,
+                        selectedValues: [String],
+                        idempotencyKey: String) async throws {
+        answeredFollowUps.append((questionKey, selectedValues))
+    }
+
     /// When set, the image read throws it — the server-side half of B4 (a
     /// route that refuses, or a contract the client will not follow).
     var inspirationImageError: Error?

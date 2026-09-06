@@ -122,6 +122,237 @@ struct ConsultInspirationCropView: View {
     }
 }
 
+/// A chip, styled like the option chips the intake and inspiration questions
+/// already use — the same shapes, so a follow-up move does not read as a
+/// different app. Written once here rather than copied into three call sites.
+struct ConsultRegionChipLabel: View {
+    let text: String
+    let filled: Bool
+
+    var body: some View {
+        Text(text)
+            .font(BrandFont.body(14, .semibold))
+            .foregroundStyle(filled ? BrandColor.onAccent : BrandColor.textPrimary)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 11)
+            .background(filled ? BrandColor.accent : BrandColor.bgSurface)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                filled
+                    ? nil
+                    : RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(BrandColor.textMuted.opacity(0.28), lineWidth: 1)
+            )
+    }
+}
+
+/// One tappable region drawn over the reference.
+///
+/// Its own view for a plain reason: as one expression inside the picker's
+/// `ZStack` this exceeded the Swift type-checker's budget outright ("unable to
+/// type-check this expression in reasonable time"). Splitting it is also the
+/// honest shape — a hotspot has one job and one piece of state.
+///
+/// 🔴 Laid out against the IMAGE's frame, which the caller passes in, not the
+/// card's. The picture is drawn `.scaledToFit` inside a fixed-aspect box and
+/// this offset is a fraction of THAT box, so a region sits over the part of the
+/// photograph it was measured against at any screen width.
+// Internal, not private, for ONE reason: `FollowUpMessageRenderTests` lays
+// three of these out at a known size and renders them to a PNG a person looks
+// at. The offset arithmetic is the part of the picker that can be silently
+// wrong, and it is not expressible as an expectation about a value.
+struct ConsultRegionHotspot: View {
+    let option: ConsultInspirationCardOption
+    let size: CGSize
+    let active: Bool
+    let onTap: () -> Void
+
+    // 🔴 `surfaceGlass` and `scrim` are WEB tokens; this palette has neither
+    // (Tovis/Theme/BrandColor.swift). An unselected box sits on an arbitrary
+    // photograph, so it gets a shadow as well as a colour — the same call Tori
+    // made for the rail icons over a photo, and for the same reason: a mid-tone
+    // outline disappears on a mid-tone picture.
+    private var border: Color {
+        active ? BrandColor.accent : BrandColor.textMuted.opacity(0.85)
+    }
+
+    private var fill: Color {
+        active ? BrandColor.accent.opacity(0.25) : BrandColor.bgPrimary.opacity(0.12)
+    }
+
+    var body: some View {
+        if let region = option.region {
+            let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+            Button(action: onTap) {
+                shape
+                    .fill(fill)
+                    .overlay(shape.strokeBorder(border, lineWidth: 2))
+                    .shadow(color: BrandColor.bgPrimary.opacity(0.45), radius: 3)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(option.label)
+            .accessibilityAddTraits(active ? [.isSelected] : [])
+            .accessibilityIdentifier("consult-region-\(option.value)")
+            .frame(
+                width: max(1, CGFloat(region.w) * size.width),
+                height: max(1, CGFloat(region.h) * size.height)
+            )
+            .offset(
+                x: CGFloat(region.x) * size.width,
+                y: CGFloat(region.y) * size.height
+            )
+        }
+    }
+}
+
+/// P5g — "Tap what you love", and its twin "Anything you'd change?".
+///
+/// The WHOLE reference with every readable attribute drawn on it as a tappable
+/// area, multi-select. Two moves replace the eight one-question cards P5d
+/// shipped — same reading, same regions, same stored vocabulary, a fifth of the
+/// taps.
+///
+/// 🔴 The boxes are laid out against the IMAGE's frame, not the card's. The
+/// picture is drawn `.scaledToFit` inside a fixed aspect box and the overlay is
+/// that same box measured by a `GeometryReader`, so a region sits over the part
+/// of the photograph it was measured against at any screen width. Sizing the
+/// overlay to the card instead would drift the moment the photo's aspect
+/// differed from it.
+///
+/// 🔴 Tapping a region zooms to it and names it — the Stage 2 rule surviving
+/// the redesign. She sees the part of her own picture before anything calls it
+/// "ash", and the word arrives UNDER the zoom.
+struct ConsultInspirationRegionPickerView: View {
+    let card: ConsultInspirationCard
+    let model: ConsultFlowViewModel
+    let url: URL?
+    let onFullscreen: (URL) -> Void
+    let onAnswer: ([String]) -> Void
+
+    @State private var selected: [String] = []
+    @State private var zoomed: String?
+    @State private var image: UIImage?
+
+    private var regions: [ConsultInspirationCardOption] {
+        card.optionRegions.filter { $0.region != nil }
+    }
+
+    private var neutral: [ConsultInspirationCardOption] {
+        card.optionRegions.filter { $0.region == nil }
+    }
+
+    private var zoomedOption: ConsultInspirationCardOption? {
+        regions.first { $0.value == zoomed }
+    }
+
+    private func toggle(_ value: String) {
+        if let index = selected.firstIndex(of: value) {
+            selected.remove(at: index)
+        } else {
+            selected.append(value)
+        }
+    }
+
+    @ViewBuilder
+    private func picker(_ url: URL, _ image: UIImage) -> some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .topLeading) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                ForEach(regions) { option in
+                    ConsultRegionHotspot(
+                        option: option,
+                        size: proxy.size,
+                        active: selected.contains(option.value),
+                        onTap: {
+                            toggle(option.value)
+                            zoomed = option.value
+                        }
+                    )
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .aspectRatio(image.size.width / max(image.size.height, 1), contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .accessibilityIdentifier("consult-region-picker")
+        .onTapGesture(count: 2) { onFullscreen(url) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let url, let zoomedOption, zoomedOption.region != nil {
+                // A REPLACEMENT for the picker, not an overlay on it: she looks
+                // at one thing at a time, and a box drawn over a zoomed crop
+                // would point at the wrong part of it.
+                ConsultInspirationCropView(
+                    url: url,
+                    region: zoomedOption.region,
+                    accessibilityLabel: zoomedOption.label,
+                    onTap: { onFullscreen(url) }
+                )
+                // 🔴 UNDER the crop. Never above it.
+                Text(zoomedOption.label)
+                    .font(BrandFont.body(14))
+                    .foregroundStyle(BrandColor.textPrimary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityIdentifier("consult-region-zoom-name")
+                Button { zoomed = nil } label: {
+                    ConsultRegionChipLabel(text: "Back to the whole photo", filled: false)
+                }
+                .buttonStyle(.plain)
+            } else if let url, let image {
+                picker(url, image)
+            } else {
+                ProgressView()
+                    .tint(BrandColor.accent)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 30)
+            }
+
+            Text(card.question.label)
+                .font(BrandFont.body(15, .semibold))
+                .foregroundStyle(BrandColor.textPrimary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("consult-inspiration-card-prompt")
+
+            // What she has tapped, in words. A row of highlighted boxes is not
+            // a receipt — she should be able to read back what she said.
+            if !selected.isEmpty {
+                Text(
+                    regions
+                        .filter { selected.contains($0.value) }
+                        .map(\.label)
+                        .joined(separator: ", ")
+                )
+                .font(BrandFont.body(12))
+                .foregroundStyle(BrandColor.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("consult-region-selection")
+            }
+
+            ForEach(neutral) { option in
+                Button { onAnswer([option.value]) } label: {
+                    ConsultRegionChipLabel(text: option.label, filled: false)
+                }
+                .buttonStyle(.plain)
+                .disabled(model.busy)
+            }
+            Button { onAnswer(selected) } label: {
+                ConsultRegionChipLabel(text: ConsultThreadCopy.questionNext, filled: true)
+            }
+            .buttonStyle(.plain)
+            .disabled(model.busy || selected.isEmpty)
+        }
+        .task(id: url) {
+            guard let url else { return }
+            image = await ConsultInspirationReferenceStore.shared.image(for: url)
+        }
+    }
+}
+
 /// One card: the crop, then the plain word for it, then the question.
 struct ConsultInspirationCardView: View {
     let message: ConsultThreadMessage
@@ -140,6 +371,23 @@ struct ConsultInspirationCardView: View {
 
     var body: some View {
         ConsultThreadCardView(dimmed: card.isAnswered) {
+            // P5g — the two region moves render as a picker over the whole
+            // photograph. Everything else is P5d's crop card, unchanged.
+            if card.presentation == .regionPicker && !card.isAnswered {
+                ConsultInspirationRegionPickerView(
+                    card: card,
+                    model: model,
+                    url: url,
+                    onFullscreen: { open($0) },
+                    onAnswer: { values in
+                        Task {
+                            await model.answerInspiration(
+                                message, question: card.question, selectedValues: values
+                            )
+                        }
+                    }
+                )
+            } else {
             VStack(alignment: .leading, spacing: 10) {
                 if let url {
                     ConsultInspirationCropView(
@@ -211,6 +459,7 @@ struct ConsultInspirationCardView: View {
                     )
                     .id("\(card.questionKey):\(card.selectedValues.joined(separator: ","))")
                 }
+            }
             }
         }
         .accessibilityIdentifier("consult-inspiration-card")

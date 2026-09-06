@@ -1,0 +1,139 @@
+// P5g — the adaptive follow-up card and the region picker, rendered on the iOS
+// toolchain and written to a PNG a person can look at.
+//
+// Same shape and same limits as `PlanUpdateMessageRenderTests`: this renders
+// the SHIPPING views over the SHIPPING wire shape. It does not claim the card
+// was reached by tapping through the app.
+//
+// 🔴 Why a render test and not only a decode test. The web side of P5g had two
+// defects that every assertion passed and only a screenshot showed: a portrait
+// reference rendered a card one and a half viewports tall, and the boxes over
+// the photograph were too faint to read as controls. Neither is expressible as
+// an expectation about a value. The PNG is the point.
+import Foundation
+import SwiftUI
+import Testing
+import TovisKit
+import UIKit
+@testable import Tovis
+
+@MainActor
+@Suite struct FollowUpMessageRenderTests {
+    /// The wire shape of one generated follow-up, and one fallback.
+    private func message(fallback: Bool) throws -> ConsultThreadMessage {
+        let json = """
+        {
+          "kind": "FOLLOW_UP",
+          "id": "follow-up:1:prior_lightening",
+          "author": "APP",
+          "state": "OPEN",
+          "text": \(fallback
+            ? "\"When was your hair last lightened?\""
+            : "\"You’re at a light brown now and you loved the ash — that’s usually two visits. When was your hair last lightened?\""),
+          "questionKey": "prior_lightening",
+          "options": [
+            { "value": "never", "label": "Never" },
+            { "value": "within-3-months", "label": "In the last few months" },
+            { "value": "over-12-months", "label": "Over a year ago" },
+            { "value": "not-sure", "label": "I don’t remember" }
+          ],
+          "selectedValues": [],
+          "fallback": \(fallback),
+          "round": 1
+        }
+        """
+        return try JSONDecoder().decode(
+            ConsultThreadMessage.self, from: Data(json.utf8)
+        )
+    }
+
+    @Test func decodesBothShapes() throws {
+        let generated = try message(fallback: false)
+        #expect(generated.kind == .followUp)
+        #expect(generated.questionKey == "prior_lightening")
+        #expect(generated.followUpOptions?.count == 4)
+        #expect(generated.fallback == false)
+        // 🔴 The fallback flag is what the card marks itself with. Part 0 rule 4
+        // forbids a fallback the client cannot see.
+        #expect(try message(fallback: true).fallback == true)
+    }
+
+    /// P5g — the region hotspots, laid out at a known size.
+    ///
+    /// 🔴 The offset arithmetic is the part of the picker that can be silently
+    /// wrong: a box positioned against the CARD rather than against the image,
+    /// or a fraction applied to the wrong axis, renders a plausible grid over
+    /// the wrong parts of a photograph and no assertion about a value would
+    /// notice. This lays three regions out over a known 300x450 box — the same
+    /// three the blonde reference produces — and writes the PNG.
+    @Test func rendersTheRegionHotspots() throws {
+        let size = CGSize(width: 300, height: 450)
+        // Decoded from the wire shape rather than constructed: TovisKit's
+        // memberwise inits are internal to that module, and decoding proves the
+        // same JSON the server sends produces these boxes.
+        let options = try JSONDecoder().decode(
+            [ConsultInspirationCardOption].self,
+            from: Data("""
+            [
+              {"value":"base-level","label":"light brown",
+               "region":{"x":0.35,"y":0.05,"w":0.3,"h":0.15}},
+              {"value":"tone","label":"cool, silvery cast",
+               "region":{"x":0.32,"y":0.42,"w":0.36,"h":0.16}},
+              {"value":"lightest-level","label":"light blonde",
+               "region":{"x":0.3,"y":0.6,"w":0.4,"h":0.3}}
+            ]
+            """.utf8)
+        )
+        let view = ZStack(alignment: .topLeading) {
+            Rectangle().fill(BrandColor.bgSecondary)
+            ForEach(options) { option in
+                ConsultRegionHotspot(
+                    option: option,
+                    size: size,
+                    // One selected, so both states are in the same picture.
+                    active: option.value == "tone",
+                    onTap: {}
+                )
+            }
+        }
+        .frame(width: size.width, height: size.height)
+
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 3
+        let image = try #require(renderer.uiImage)
+        let png = try #require(image.pngData())
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tovis-region-hotspots.png")
+        try png.write(to: url)
+        print("REGION HOTSPOTS SNAPSHOT → \(url.path)")
+        #expect(image.size.width == size.width)
+        #expect(image.size.height == size.height)
+    }
+
+    @Test func rendersTheFollowUpCard() throws {
+        for fallback in [false, true] {
+            let view = FollowUpMessageView(
+                message: try message(fallback: fallback),
+                busy: false,
+                onAnswer: { _ in }
+            )
+            .padding(20)
+            .frame(width: 390)
+            .background(BrandColor.bgPrimary)
+            let renderer = ImageRenderer(content: view)
+            renderer.scale = 3
+            let image = try #require(renderer.uiImage)
+            let png = try #require(image.pngData())
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent(
+                    "tovis-follow-up-\(fallback ? "fallback" : "generated").png"
+                )
+            try png.write(to: url)
+            print("FOLLOW UP SNAPSHOT \(fallback ? "fallback" : "generated") → \(url.path)")
+            // A card that rendered its question and swallowed its four options
+            // would still produce an image; the HEIGHT is what says the options
+            // are on screen.
+            #expect(image.size.height > 160)
+        }
+    }
+}
