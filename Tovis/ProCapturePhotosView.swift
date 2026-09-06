@@ -1222,12 +1222,9 @@ struct ProCapturePhotosView: View {
     /// caring about the rotation direction. Falls back to a naive screen-space
     /// box before the layer has geometry.
     private func previewRect(uprightNormalized r: CGRect, in size: CGSize) -> CGRect {
-        if let layer = camera.previewLayer, layer.bounds.width > 0 {
-            let metadata = CGRect(x: r.minY, y: r.minX, width: r.height, height: r.width)
-            return layer.layerRectConverted(fromMetadataOutputRect: metadata)
-        }
-        return CGRect(x: size.width * r.minX, y: size.height * r.minY,
-                      width: size.width * r.width, height: size.height * r.height)
+        CameraPreviewGeometry.previewRect(
+            uprightNormalized: r, in: size, layer: camera.previewLayer
+        )
     }
 
     #if DEBUG

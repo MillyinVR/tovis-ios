@@ -568,12 +568,22 @@ private struct PhotoRequestMessageView: View {
                 queueBlockedReason: model.captureBlockedReason(for: shot.key),
                 queueStalled: model.uploads.stalled,
                 disabled: model.busy,
-                onJPEG: { data in await model.submitPhoto(data, for: message) },
+                onStill: { data in await model.submitPhoto(data, for: message) },
                 onThumbnailTap: { image in
+                    // 🔴 The FULL frame when there is one, not the thumbnail.
+                    // For a tight-crop shot the thumbnail is the crop, and a
+                    // client whose eyes band came out wrong needs to see the
+                    // photograph she actually took — otherwise a correct crop
+                    // and a broken one look identical to her. Inspection only:
+                    // nothing here re-uploads or re-crops (Tori, 2026-09-06).
                     onFullscreen(
-                        .local(id: "consult-shot-\(shot.key.rawValue)", image: image)
+                        .local(
+                            id: "consult-shot-\(shot.key.rawValue)",
+                            image: model.localFullFrames[shot.key] ?? image
+                        )
                     )
-                }
+                },
+                localRetakeReason: model.localRetakeReasons[shot.key]
             )
             .opacity(message.slot?.state == .accepted ? 0.75 : 1)
         }

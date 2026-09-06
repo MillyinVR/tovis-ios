@@ -213,14 +213,21 @@ struct ConsultPhotoPickerSlot: View {
     /// the difference between "sending" and "waiting on a connection".
     let queueStalled: Bool
     let disabled: Bool
-    let onJPEG: (Data) async -> Void
+    /// The RAW still, from the guided camera or the picker. Quality checking,
+    /// the P3 crop and the encode all happen behind this, in the flow model.
+    let onStill: (Data) async -> Void
     let onThumbnailTap: (UIImage) -> Void
+    /// The on-device refusal for this slot, if the last still did not pass.
+    ///
+    /// 🔴 Owned by the MODEL, not by this view (P3). The camera used to hold
+    /// this and show it in place, which is exactly the in-camera quality gate
+    /// P3 removed — the client is back on this list before there is a verdict,
+    /// so the verdict has to live somewhere that is still on screen.
+    let localRetakeReason: String?
 
     @State private var pick: PhotosPickerItem?
     @State private var preparationError: ConsultClientFailure?
-    @State private var localRetakeReason: String?
     @State private var showGuidedCamera = false
-    @State private var pipeline = ConsultTransientPhotoPipeline()
 
     var body: some View {
         BrandSurface {
@@ -256,6 +263,7 @@ struct ConsultPhotoPickerSlot: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("View your \(shot.title) photo")
+                        .accessibilityHint("Opens the full photo you took")
                     }
                 }
 
@@ -276,6 +284,7 @@ struct ConsultPhotoPickerSlot: View {
                     Text(localRetakeReason)
                         .font(BrandFont.body(12, .semibold))
                         .foregroundStyle(BrandColor.amber)
+                        .accessibilityLabel("This photo needs another try: \(localRetakeReason)")
                 }
 
                 Button { showGuidedCamera = true } label: {
@@ -298,7 +307,7 @@ struct ConsultPhotoPickerSlot: View {
             }
         }
         .fullScreenCover(isPresented: $showGuidedCamera) {
-            ConsultGuidedCaptureView(shot: shot, onJPEG: onJPEG)
+            ConsultGuidedCaptureView(shot: shot, onStill: onStill)
         }
         .onChange(of: pick) { _, item in
             guard let item else { return }
@@ -309,23 +318,11 @@ struct ConsultPhotoPickerSlot: View {
                         preparationError = .invalidPhoto
                         return
                     }
-                    switch await pipeline.process(
-                        source,
-                        expectations: ConsultShotGuidance.expectations(for: shot.key)
-                    ) {
-                    case let .accepted(jpeg):
-                        preparationError = nil
-                        localRetakeReason = nil
-                        await onJPEG(jpeg)
-                    case let .retake(reason):
-                        preparationError = nil
-                        localRetakeReason = reason
-                    case .invalid:
-                        localRetakeReason = nil
-                        preparationError = .invalidPhoto
-                    case .cancelled:
-                        break
-                    }
+                    preparationError = nil
+                    // One road for both doors: a picked photo goes through the
+                    // same model path as a shuttered one, so it gets the same
+                    // quality check, the same crop, and the same place to say so.
+                    await onStill(source)
                 } catch {
                     preparationError = .invalidPhoto
                 }
@@ -721,27 +718,3 @@ struct ConsultInspirationQuestionView: View {
     }
 }
 
-enum ConsultPhotoPreparation {
-    static func jpeg(from data: Data) async -> Data? {
-        await Task.detached(priority: .userInitiated) {
-            autoreleasepool {
-                let maximumDimension: CGFloat = 1_568
-                let qualities: [CGFloat] = [0.9, 0.78, 0.65, 0.52]
-                guard let image = UIImage(data: data) else { return nil }
-                let scale = min(1, maximumDimension / max(image.size.width, image.size.height))
-                let size = CGSize(width: max(1, image.size.width * scale),
-                                  height: max(1, image.size.height * scale))
-                let rendered = UIGraphicsImageRenderer(size: size).image { _ in
-                    image.draw(in: CGRect(origin: .zero, size: size))
-                }
-                for quality in qualities {
-                    if let jpeg = rendered.jpegData(compressionQuality: quality),
-                       jpeg.count <= ConsultService.maximumPhotoBytes {
-                        return jpeg
-                    }
-                }
-                return nil
-            }
-        }.value
-    }
-}

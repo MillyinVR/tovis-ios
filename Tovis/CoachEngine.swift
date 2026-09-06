@@ -47,6 +47,35 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     func setDeviceTilt(_ value: Double?) { tiltLock.lock(); _deviceTilt = value; tiltLock.unlock() }
     private func currentDeviceTilt() -> Double? { tiltLock.lock(); defer { tiltLock.unlock() }; return _deviceTilt }
 
+    // Which way up the incoming buffers are. Set by the camera surface from
+    // `CameraController.sourceOrientation(for:)`; same cross-queue lock pattern
+    // as the tilt/expectations/crop above.
+    //
+    // 🔴 This used to be the literal `.right`, written into six call sites.
+    // P3 gave the consult a flip button, and the orientation a buffer needs is
+    // a property of the SESSION — of which camera is live and what its
+    // connection does with mirroring — not a constant of this file. An analyzer
+    // that assumes one is an analyzer that reads an upside-down or mirrored
+    // frame the moment that assumption stops holding: Vision then finds no
+    // face, and readiness, the face-metered exposure and the sharpness region
+    // are all judged off a frame the coach cannot see a person in. Silently.
+    //
+    // ⚠️ As it happens the measured answer today is `.right` for BOTH cameras
+    // — because `pinConnectionGeometry` turns connection mirroring off — so
+    // this currently carries the same value it was hard-coded to. That is a
+    // RESULT, not a reason to hard-code it again: it was measured on hardware
+    // (`CameraDeviceTests`), it depends on a session setting this file cannot
+    // see, and the conventional guess for a front camera (`.leftMirrored`) was
+    // the first thing tried here and was wrong.
+    private let orientationLock = NSLock()
+    private var _sourceOrientation: CGImagePropertyOrientation = .right
+    func setSourceOrientation(_ value: CGImagePropertyOrientation) {
+        orientationLock.lock(); _sourceOrientation = value; orientationLock.unlock()
+    }
+    private func currentSourceOrientation() -> CGImagePropertyOrientation {
+        orientationLock.lock(); defer { orientationLock.unlock() }; return _sourceOrientation
+    }
+
     // The current guided shot's expectations (nil = freeform), written from the
     // camera view on step change and read per frame — same cross-queue pattern.
     private let expectationsLock = NSLock()
@@ -161,9 +190,13 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         autoreleasepool {
             // One upright, downscaled image drives all the CoreImage math so face/luma/
             // sharpness math share a single coordinate space (upright, top-left normalized).
-            let working = downscaled(CIImage(cvPixelBuffer: pixelBuffer).oriented(.right))
+            // ONE reading of the orientation for this whole frame: the working
+            // image, the Vision requests and any harvest must agree, and a lock
+            // read between them could return two different answers across a flip.
+            let orientation = currentSourceOrientation()
+            let working = downscaled(CIImage(cvPixelBuffer: pixelBuffer).oriented(orientation))
 
-            let face = detectFace(pixelBuffer)
+            let face = detectFace(pixelBuffer, orientation: orientation)
             let cropGuide = currentCropGuide()
             // Heavy Vision (segmentation + pose) on its own slower cadence; reuse last.
             //
@@ -174,12 +207,13 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             // already been jetsam-killed once.
             if now - lastHeavyAt >= heavyInterval {
                 lastHeavyAt = now
-                let seg = segment(pixelBuffer, working: working, cropGuide: cropGuide)
+                let seg = segment(pixelBuffer, working: working, cropGuide: cropGuide,
+                                  orientation: orientation)
                 cachedClutter = seg?.clutter
                 cachedSubjectFill = seg?.subjectFill
                 cachedCropSubjectFill = seg?.cropSubjectFill
                 cachedBackgroundLuma = seg?.backgroundLuma
-                cachedPose = bodyPose(pixelBuffer)
+                cachedPose = bodyPose(pixelBuffer, orientation: orientation)
                 cachedColor = FrameMath.colorSignal(working, background: seg?.background,
                                                     context: ciContext)
             }
@@ -274,12 +308,13 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                 let banked = readiness
                 // The subject focal for the smart 9:16 feed crop (camera C6): the
                 // face center already computed for THIS frame, in the same upright
-                // top-left space as the harvested JPEG (both from `.oriented(.right)`),
+                // top-left space as the harvested JPEG (both from this frame's
+                // `orientation`, whichever camera produced it),
                 // so it maps directly onto the render. Free — no extra detection.
                 let faceCenter = face.map { CGPoint(x: $0.midX, y: $0.midY) }
                 harvestQueue.async { [weak self] in
                     guard let self else { return }
-                    guard let data = self.harvest(frame) else {
+                    guard let data = self.harvest(frame, orientation: orientation) else {
                         self.releaseHarvestSlots()   // encode failed — hand the slot back
                         return
                     }
@@ -292,8 +327,9 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     /// Convert the current frame to an upright JPEG for the best-shots tray. High
     /// JPEG quality — these can end up on the profile / Looks feed. Runs on the
     /// harvest queue against its own CIContext (never the frame queue's).
-    private func harvest(_ pixelBuffer: CVPixelBuffer) -> Data? {
-        let image = CIImage(cvPixelBuffer: pixelBuffer).oriented(.right)
+    private func harvest(_ pixelBuffer: CVPixelBuffer,
+                         orientation: CGImagePropertyOrientation) -> Data? {
+        let image = CIImage(cvPixelBuffer: pixelBuffer).oriented(orientation)
         let quality = CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String)
         return harvestContext.jpegRepresentation(
             of: image,
@@ -317,9 +353,10 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     /// Largest face (upright top-left normalized). Back camera in portrait →
     /// orient `.right` so Vision works in an upright frame. Shared extraction
     /// lives in VisionDetect (the reference-look analyzer uses the same eyes).
-    private func detectFace(_ pixelBuffer: CVPixelBuffer) -> CGRect? {
+    private func detectFace(_ pixelBuffer: CVPixelBuffer,
+                            orientation: CGImagePropertyOrientation) -> CGRect? {
         VisionDetect.largestFace(performing: VNImageRequestHandler(
-            cvPixelBuffer: pixelBuffer, orientation: .right, options: [:]))
+            cvPixelBuffer: pixelBuffer, orientation: orientation, options: [:]))
     }
 
     /// Scale an image down so its largest side ≈ `workingMaxDim` (cheap aggregate math).
@@ -346,12 +383,14 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     /// The derivation lives in `FrameMath.segmentSignals`; this is only the
     /// pixel-buffer plumbing, so the offline bench measures the same numbers
     /// from the same code rather than from a copy of it.
-    private func segment(_ pixelBuffer: CVPixelBuffer, working: CIImage, cropGuide: CGRect?)
+    private func segment(_ pixelBuffer: CVPixelBuffer, working: CIImage, cropGuide: CGRect?,
+                         orientation: CGImagePropertyOrientation)
         -> FrameMath.SegmentedFrame? {
         let request = VNGeneratePersonSegmentationRequest()
         request.qualityLevel = .balanced
         request.outputPixelFormat = kCVPixelFormatType_OneComponent8
-        let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .right, options: [:])
+        let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer,
+                                            orientation: orientation, options: [:])
         try? handler.perform([request])
         guard let maskBuffer = request.results?.first?.pixelBuffer else { return nil }
         return FrameMath.segmentSignals(maskBuffer: maskBuffer, working: working,
@@ -360,9 +399,10 @@ final class CoachAnalyzer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
 
     /// Body-pose read (upright, top-left normalized). Nil unless a body is
     /// confidently detected. Shared extraction lives in VisionDetect.
-    private func bodyPose(_ pixelBuffer: CVPixelBuffer) -> PoseSignal? {
+    private func bodyPose(_ pixelBuffer: CVPixelBuffer,
+                          orientation: CGImagePropertyOrientation) -> PoseSignal? {
         VisionDetect.poseSignal(performing: VNImageRequestHandler(
-            cvPixelBuffer: pixelBuffer, orientation: .right, options: [:]))
+            cvPixelBuffer: pixelBuffer, orientation: orientation, options: [:]))
     }
 }
 

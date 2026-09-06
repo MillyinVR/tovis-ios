@@ -623,6 +623,16 @@ private actor MockConsultService: ConsultServicing {
     }
 }
 
+/// Accepts everything. The default for tests that are not ABOUT the quality
+/// gate: the real `NativeConsultPhotoQC` decodes an image, and these tests
+/// submit short byte strings rather than photographs.
+nonisolated private struct PassingConsultQC: ConsultPhotoQCEvaluating {
+    func evaluate(_ jpeg: Data, checkBlink: Bool) async -> PhotoQCReport {
+        PhotoQCReport(retakeReason: nil, sharpness: 0.8, luma: 0.5,
+                      faceLuma: 0.5, eyesClosed: false, focalPoint: nil)
+    }
+}
+
 private actor FirstSoftThenPassingConsultQC: ConsultPhotoQCEvaluating {
     private var first = true
 
@@ -640,7 +650,11 @@ private actor FirstSoftThenPassingConsultQC: ConsultPhotoQCEvaluating {
 }
 
 nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing {
-    func prepare(_ source: Data) async -> Data? { source }
+    func prepare(
+        _ source: Data, for shot: ConsultCaptureShot
+    ) async -> ConsultPreparedPhoto? {
+        ConsultPreparedPhoto(upload: source, fullFrame: nil, cropSource: nil)
+    }
 }
 
 @Suite(.serialized) @MainActor struct ConsultFlowViewModelTests {
@@ -747,19 +761,34 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
     }
 
     private func model(_ service: MockConsultService,
-                       uploads: ConsultCaptureUploadQueue? = nil) -> ConsultFlowViewModel {
+                       uploads: ConsultCaptureUploadQueue? = nil,
+                       photoPipeline: ConsultTransientPhotoPipeline
+                           = ConsultTransientPhotoPipeline(
+                               quality: PassingConsultQC(),
+                               preparation: IdentityConsultJPEGPreparation()
+                           )) -> ConsultFlowViewModel {
         ConsultFlowViewModel(
             anchor: .booking("booking_fixture_1"),
             professionalId: "cmq9p645v0002jp04fttoatlq",
             service: service,
-            uploads: uploads
+            uploads: uploads,
+            photoPipeline: photoPipeline
         )
     }
 
     @Test func completeMockedGuidedBookingConsultFlowIncludesLocalAndServerRetakes() async throws {
         try await withCaptureVault("flow-full") {
             let service = MockConsultService(root: try fixtureRoot())
-            let model = model(service, uploads: await testQueue(service))
+            // Held here, not inline, so the transient-byte invariant can still
+            // be asserted at the end: the pipeline must be holding nothing.
+            let guidedPipeline = ConsultTransientPhotoPipeline(
+                quality: FirstSoftThenPassingConsultQC(),
+                preparation: IdentityConsultJPEGPreparation()
+            )
+            let model = model(
+                service, uploads: await testQueue(service),
+                photoPipeline: guidedPipeline
+            )
 
             await model.start()
             // The thread opens on consent, and consent is the one open step.
@@ -775,53 +804,32 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
             #expect(messages(model, .question).allSatisfy { $0.answer != nil })
             #expect(inspirationMessage(model)?.sourceDecisionRequired == true)
 
-            let guidedPipeline = ConsultTransientPhotoPipeline(
-                quality: FirstSoftThenPassingConsultQC(),
-                preparation: IdentityConsultJPEGPreparation()
-            )
+            // 🔴 P3: the MODEL runs the quality gate, because the camera is
+            // already gone by the time there is a verdict. So the test hands
+            // over RAW stills, exactly as the camera now does, and reads the
+            // refusal off the place the client actually sees it.
             let back = try #require(photoMessage(model, .hairBack))
-            let localFailure = await guidedPipeline.process(
-                Data("soft-back".utf8),
-                expectations: ConsultShotGuidance.expectations(for: .hairBack)
-            )
-            #expect(localFailure == .retake("It came out soft"))
+            await submit(model, Data("soft-back".utf8), for: back)
+            #expect(model.localRetakeReasons[.hairBack] == "It came out soft")
+            // A local refusal never reaches the server.
             #expect(await service.receivedByteCounts.isEmpty)
+            #expect(model.localThumbnails[.hairBack] == nil)
 
-            let firstBack = await guidedPipeline.process(
-                Data("first-back".utf8),
-                expectations: ConsultShotGuidance.expectations(for: .hairBack)
-            )
-            guard case let .accepted(firstBackJPEG) = firstBack else {
-                Issue.record("Guided post-capture QC should accept the retry")
-                return
-            }
-            await submit(model, firstBackJPEG, for: back)
+            await submit(model, Data("first-back".utf8), for: back)
+            // The retry clears the refusal it replaced — a verdict must never
+            // outlive the photograph it was about.
+            #expect(model.localRetakeReasons[.hairBack] == nil)
             // The server's refusal reaches the client ON the photo message.
             #expect(slot(model, .hairBack)?.state == .rejected)
             #expect(slot(model, .hairBack)?.retakeTip != nil)
 
-            let serverRetake = await guidedPipeline.process(
-                Data("retake-back".utf8),
-                expectations: ConsultShotGuidance.expectations(for: .hairBack)
-            )
-            guard case let .accepted(serverRetakeJPEG) = serverRetake else {
-                Issue.record("Guided QC should accept the server-requested retake")
-                return
-            }
-            await submit(model, serverRetakeJPEG, for: try #require(photoMessage(model, .hairBack)))
+            await submit(model, Data("retake-back".utf8),
+                         for: try #require(photoMessage(model, .hairBack)))
 
             for key in ConsultCaptureShotKey.hairPack where key != .hairBack {
-                let outcome = await guidedPipeline.process(
-                    Data("photo-\(key.rawValue)".utf8),
-                    expectations: ConsultShotGuidance.expectations(for: key)
-                )
-                guard case let .accepted(jpeg) = outcome else {
-                    Issue.record("Every deterministic guided shot should pass local QC")
-                    return
-                }
-                await submit(model, jpeg, for: try #require(photoMessage(model, key)))
+                await submit(model, Data("photo-\(key.rawValue)".utf8),
+                             for: try #require(photoMessage(model, key)))
             }
-
             // 7/7 accepted but the inspiration review is still open: the server
             // holds the session at MEDIA_READY, and the client must not jump
             // ahead locally.

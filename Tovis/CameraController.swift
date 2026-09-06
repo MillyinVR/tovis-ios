@@ -67,6 +67,17 @@ final class CameraController: NSObject {
     /// on that queue; reading it from the main actor would be an unsynchronized
     /// read of a property another thread writes.
     @ObservationIgnored nonisolated(unsafe) private var device: AVCaptureDevice?
+    /// The input `configureSession` added, so `flip()` removes exactly that one
+    /// rather than every input it finds. **sessionQueue only**, same rule as
+    /// `device`. Kept beside it because the two are written together and a flip
+    /// that updated one but not the other would leave tap-to-focus configuring a
+    /// camera that is no longer in the session.
+    @ObservationIgnored nonisolated(unsafe) private var deviceInput: AVCaptureDeviceInput?
+    /// Which camera is live, for the view (a flip button) and for the coach
+    /// (which orientation its frames arrive in). **Main actor**, mirrored from
+    /// the session queue after a successful configure or flip — never read from
+    /// the queue as the source of truth.
+    private(set) var cameraPosition: AVCaptureDevice.Position = .back
     /// The live preview layer, for converting tap points to device coordinates.
     /// **Main actor only** — it is created by `CameraPreview.makeUIView` on the
     /// main thread and every read (`focus(atLayerPoint:)`, the framing overlay)
@@ -155,6 +166,9 @@ final class CameraController: NSObject {
     /// Notification tokens (subject-area change + session interruption), removed
     /// on deinit. sessionQueue (+ deinit).
     @ObservationIgnored nonisolated(unsafe) private var observers: [any NSObjectProtocol] = []
+    /// The subject-area observer's token, so a flip can re-point it at the new
+    /// camera instead of stacking a second one. See `registerDeviceObserver`.
+    @ObservationIgnored nonisolated(unsafe) private var deviceObserver: (any NSObjectProtocol)?
     private let sessionQueue = DispatchQueue(label: "tovis.camera.session")
     private let frameQueue = DispatchQueue(label: "tovis.camera.frames")
 
@@ -212,7 +226,10 @@ final class CameraController: NSObject {
 
     /// Request permission, configure once, and start the preview. Idempotent.
     /// Pass `frameDelegate` to feed the on-device coach the live frames.
-    func start(frameDelegate: AVCaptureVideoDataOutputSampleBufferDelegate? = nil) async {
+    func start(
+        frameDelegate: AVCaptureVideoDataOutputSampleBufferDelegate? = nil,
+        position: AVCaptureDevice.Position = .back
+    ) async {
         Self.installExceptionLogging()
         guard await Self.ensureAuthorized() else { status = .denied; return }
         sessionQueue.async { self.isScreenActive = true }
@@ -223,10 +240,21 @@ final class CameraController: NSObject {
         let alreadyConfigured = await onSessionQueue { self.configured }
         if !alreadyConfigured {
             status = .configuring
-            if let failure = await configureSession(frameDelegate: frameDelegate) {
+            if let failure = await configureSession(
+                frameDelegate: frameDelegate, position: position
+            ) {
                 status = .failed(failure)
                 return
             }
+            cameraPosition = await onSessionQueue {
+                self.deviceInput?.device.position ?? .back
+            }
+        } else if cameraPosition != position {
+            // Already configured, on the OTHER camera. `configureSession` runs
+            // once by design, so without this the requested position would be
+            // silently ignored — a consult shot asking for the front camera and
+            // getting whichever one the last caller left running.
+            _ = await flip()
         }
 
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
@@ -323,6 +351,132 @@ final class CameraController: NSObject {
                 device.videoZoomFactor = safe
             }
             device.unlockForConfiguration()
+        }
+    }
+
+    /// Which way up this camera's buffers arrive, in portrait.
+    ///
+    /// `.right` for BOTH cameras — and that is a MEASURED result, not the
+    /// obvious one. The conventional answer for a front camera is
+    /// `.leftMirrored`, this function was first written to return exactly that,
+    /// and `CameraDeviceTests` refused it on real hardware:
+    /// `.right` scored 0.899 against the camera's own still, `.leftMirrored`
+    /// 0.148.
+    ///
+    /// 🔴 The reason is `pinConnectionGeometry`, and the two are a PAIR. The
+    /// conventional answer assumes the connection's default automatic
+    /// mirroring, which flips a front-camera buffer; this session pins
+    /// `isVideoMirrored = false` on the data and photo connections, so the
+    /// front buffer arrives in the same handedness as the rear one and needs
+    /// the same rotation. Stop pinning mirroring and this becomes wrong again —
+    /// which is why the device test measures rather than asserts, and why it
+    /// covers both cameras.
+    ///
+    /// A wrong value here does not crash or log: Vision simply finds no face,
+    /// so the coach never greens and the eyes crop falls back to the guide box
+    /// on every shot. It is not a thing to reason about. Measure it.
+    nonisolated static func sourceOrientation(
+        for position: AVCaptureDevice.Position
+    ) -> CGImagePropertyOrientation {
+        // The parameter is kept even though the answer no longer varies by it:
+        // it makes every call site state which camera it means, so if the two
+        // ever diverge again there is one function to change and no caller to
+        // hunt down.
+        .right
+    }
+
+    /// Swap the session's camera. Returns the position actually live afterwards.
+    ///
+    /// P3: the consult's flip button. The client is alone, so the camera she
+    /// needs differs per shot — her own eyes on the front, the back of her head
+    /// on the rear — and the choice is remembered per shot
+    /// (`ConsultCameraMemory`).
+    ///
+    /// 🔴 It reconfigures rather than rebuilding: outputs, their delegates and
+    /// the running state all stay put, so the coach keeps receiving frames
+    /// across the swap and no photo in flight is dropped. If the requested
+    /// camera cannot be added, the ORIGINAL input goes back and the reported
+    /// position is unchanged — a flip that half-succeeded would leave a session
+    /// with no input at all, which is a black preview that still says `.ready`.
+    func flip() async -> AVCaptureDevice.Position {
+        let target: AVCaptureDevice.Position = cameraPosition == .front ? .back : .front
+        let settled = await onSessionQueue { () -> AVCaptureDevice.Position in
+            guard self.configured, let current = self.deviceInput else {
+                return self.deviceInput?.device.position ?? .back
+            }
+            guard let device = Self.preferredCaptureDevice(position: target),
+                  device.position == target,
+                  let input = try? AVCaptureDeviceInput(device: device) else {
+                // No camera on that side (or the Simulator). Say so by reporting
+                // the position that is still live, rather than pretending.
+                return current.device.position
+            }
+
+            CaptureExceptionShield.perform("beginConfiguration(flip)") {
+                self.session.beginConfiguration()
+            }
+            self.session.removeInput(current)
+            guard self.session.canAddInput(input),
+                  !CaptureExceptionShield.perform("addInput(flip)", {
+                      self.session.addInput(input)
+                  }).didThrow
+            else {
+                // Put back exactly what was there. `canAddInput` was true for it
+                // moments ago and no output changed, so this is the same session
+                // it was before the attempt.
+                if self.session.canAddInput(current) {
+                    CaptureExceptionShield.settings("addInput(flip-restore)") {
+                        self.session.addInput(current)
+                    }
+                }
+                self.commitConfigurationShielded()
+                return current.device.position
+            }
+            self.device = device
+            self.deviceInput = input
+            self.commitConfigurationShielded()
+
+            // Same ordering rule as `configureSession`: everything that reads
+            // `activeFormat` runs AFTER the commit, because the session settles
+            // the format on commit and an unsupported value is an uncatchable
+            // ObjC exception. A flip renegotiates the format — different camera,
+            // different supported list — so these must run again, not be
+            // inherited from the camera that just left.
+            self.applyFormatDependentSettings(device: device)
+            self.pinConnectionGeometry()
+            self.registerDeviceObserver(device: device)
+            return device.position
+        }
+        cameraPosition = settled
+        return settled
+    }
+
+    /// Pin what the connections do to the geometry of a frame, for BOTH cameras.
+    ///
+    /// 🔴 Both properties are pinned rather than left at their defaults, and
+    /// that is the point. Mirroring in particular is auto-adjusted by default,
+    /// so what a front-camera buffer looks like would be AVFoundation's call and
+    /// not ours — and the coach's Vision reads, the still, and the crop computed
+    /// from the still all have to agree about it. Unmirrored is the choice: the
+    /// upload is evidence a colourist reads, so it is the true optics, not the
+    /// flattering flip. The PREVIEW layer keeps its own automatic mirroring, so
+    /// the client still sees herself the way a selfie camera has always looked.
+    ///
+    /// Rotation is left alone deliberately. The buffers stay sensor-native and
+    /// the readers orient them (`CoachAnalyzer.sourceOrientation`, and EXIF for
+    /// the still) — pinning `videoRotationAngle` here would change what every
+    /// existing back-camera surface receives, including the pro camera, which is
+    /// far more than P3 is allowed to touch.
+    nonisolated private func pinConnectionGeometry() {
+        for connection in [self.photoOutput.connection(with: .video),
+                           self.videoOutput.connection(with: .video)] {
+            guard let connection else { continue }
+            CaptureExceptionShield.settings("isVideoMirrored") {
+                if connection.isVideoMirroringSupported {
+                    connection.automaticallyAdjustsVideoMirroring = false
+                    connection.isVideoMirrored = false
+                }
+            }
         }
     }
 
@@ -925,18 +1079,33 @@ final class CameraController: NSObject {
     /// dual-wide / dual) is one input that auto-switches between its
     /// constituents, so close focus and zoom become available without the app
     /// managing lenses. The single wide camera stays the last resort.
-    nonisolated static func preferredCaptureDevice() -> AVCaptureDevice? {
-        let preferred: [AVCaptureDevice.DeviceType] = [
-            .builtInTripleCamera,     // ultra-wide + wide + tele — macro auto-switch
-            .builtInDualWideCamera,   // ultra-wide + wide — macro auto-switch
-            .builtInDualCamera,       // wide + tele
-            .builtInWideAngleCamera,
-        ]
+    /// P3: the FRONT camera exists for the consult, where the client is alone
+    /// and every shot containing her face is one she has to be able to compose.
+    /// TrueDepth first only because it is the front wide camera on the phones
+    /// that have one; nothing here uses depth.
+    nonisolated static func preferredCaptureDevice(
+        position: AVCaptureDevice.Position = .back
+    ) -> AVCaptureDevice? {
+        let preferred: [AVCaptureDevice.DeviceType]
+        switch position {
+        case .front:
+            preferred = [.builtInTrueDepthCamera, .builtInWideAngleCamera]
+        default:
+            preferred = [
+                .builtInTripleCamera,     // ultra-wide + wide + tele — macro auto-switch
+                .builtInDualWideCamera,   // ultra-wide + wide — macro auto-switch
+                .builtInDualCamera,       // wide + tele
+                .builtInWideAngleCamera,
+            ]
+        }
         for type in preferred {
-            if let device = AVCaptureDevice.default(type, for: .video, position: .back) {
+            if let device = AVCaptureDevice.default(type, for: .video, position: position) {
                 return device
             }
         }
+        // Only ever reached when the REQUESTED position has no camera at all
+        // (a device with no front camera, the Simulator). The caller checks the
+        // position it got back before claiming the flip succeeded.
         return AVCaptureDevice.default(for: .video)
     }
 
@@ -1023,7 +1192,8 @@ final class CameraController: NSObject {
     /// Configure inputs/outputs on the session queue. Returns an error message
     /// on failure, nil on success.
     private func configureSession(
-        frameDelegate: AVCaptureVideoDataOutputSampleBufferDelegate?
+        frameDelegate: AVCaptureVideoDataOutputSampleBufferDelegate?,
+        position: AVCaptureDevice.Position = .back
     ) async -> String? {
         // Handing the coach's frame delegate to the session queue is a genuine
         // non-Sendable transfer that the type system cannot verify, so it is
@@ -1062,7 +1232,7 @@ final class CameraController: NSObject {
                 self.session.automaticallyConfiguresCaptureDeviceForWideColor = false
 
                 guard
-                    let device = Self.preferredCaptureDevice(),
+                    let device = Self.preferredCaptureDevice(position: position),
                     let input = try? AVCaptureDeviceInput(device: device),
                     self.session.canAddInput(input)
                 else {
@@ -1081,6 +1251,7 @@ final class CameraController: NSObject {
                     return
                 }
                 self.device = device
+                self.deviceInput = input
 
                 guard self.session.canAddOutput(self.photoOutput),
                       !CaptureExceptionShield.perform("addOutput(photo)", {
@@ -1146,6 +1317,7 @@ final class CameraController: NSObject {
                 // hardware that has a second lens, which is every phone a pro
                 // actually shoots on and no simulator.
                 self.applyFormatDependentSettings(device: device)
+                self.pinConnectionGeometry()
                 cont.resume(returning: nil)
             }
         }
@@ -1155,15 +1327,36 @@ final class CameraController: NSObject {
     /// session queue: revert tap-to-focus when the scene changes, and surface
     /// session interruptions (phone call, camera claimed elsewhere) instead of
     /// leaving a frozen preview that still claims to be ready.
-    nonisolated private func registerObservers(device: AVCaptureDevice) {
+    /// The ONE device-scoped observer, re-pointed whenever the camera changes.
+    ///
+    /// 🔴 Kept separate from the session-scoped two because `flip()` has to
+    /// re-register this one and must NOT re-register those. They observe
+    /// `session`, which does not change across a flip, so registering them again
+    /// would leave two live observers per notification — and the interruption
+    /// handler restarts the session, so a doubled one is not a harmless
+    /// duplicate log line, it is `startRunning` racing itself. The old device
+    /// observer is removed first for the same reason: the camera it watches is
+    /// no longer in the session.
+    nonisolated private func registerDeviceObserver(device: AVCaptureDevice) {
         let center = NotificationCenter.default
-        observers.append(center.addObserver(
+        if let previous = deviceObserver {
+            center.removeObserver(previous)
+            observers.removeAll { $0 === previous }
+        }
+        let observer = center.addObserver(
             forName: AVCaptureDevice.subjectAreaDidChangeNotification,
             object: device, queue: nil
         ) { [weak self] _ in
             guard let self else { return }
             self.sessionQueue.async { self.restoreContinuousFocus() }
-        })
+        }
+        deviceObserver = observer
+        observers.append(observer)
+    }
+
+    nonisolated private func registerObservers(device: AVCaptureDevice) {
+        let center = NotificationCenter.default
+        registerDeviceObserver(device: device)
         observers.append(center.addObserver(
             forName: AVCaptureSession.wasInterruptedNotification,
             object: session, queue: nil

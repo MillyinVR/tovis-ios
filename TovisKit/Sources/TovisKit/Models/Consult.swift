@@ -669,12 +669,54 @@ public struct ConsultCaptureShotKey: RawRepresentable, Codable, Sendable, Hashab
     ]
 }
 
+/// How much of the world this view asks for — the SERVER's answer, served on
+/// the wire (P3).
+///
+/// `fullView` uploads as framed. `tightCrop` is composed as an ordinary
+/// portrait behind a guide box and auto-cropped on device to the band the shot
+/// actually asks for, because a portrait selfie of a face is refused
+/// `VIEW_MISMATCH` by a gate that was told "both eyes and both full brows fill
+/// most of the frame".
+///
+/// Open, like `ConsultCaptureShotKey`, and for the same reason: a value this
+/// build has not seen must not fail the decode of the whole capture state. An
+/// unknown value is treated as `fullView` at the one place that asks
+/// (`ConsultCaptureCrop.plan`), which is the no-crop behaviour every shipped
+/// build had before P3 — the safe direction to be wrong in.
+public struct ConsultCaptureShotFraming: RawRepresentable, Codable, Sendable, Hashable {
+    public let rawValue: String
+
+    public init(rawValue: String) { self.rawValue = rawValue }
+    public init(_ rawValue: String) { self.rawValue = rawValue }
+
+    public init(from decoder: Decoder) throws {
+        self.rawValue = try decoder.singleValueContainer().decode(String.self)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+
+    public static let fullView = ConsultCaptureShotFraming("FULL_VIEW")
+    public static let tightCrop = ConsultCaptureShotFraming("TIGHT_CROP")
+}
+
 public struct ConsultCaptureShot: Decodable, Sendable, Identifiable {
     public let key: ConsultCaptureShotKey
     public let title: String
     public let instruction: String
     public let requirement: String
+    /// Server-served since P3. Optional in the DECODER only, so a build of this
+    /// client can still read a capture state written by a server that predates
+    /// the field — a nil decodes to `fullView` through `framingOrDefault`,
+    /// which is the pre-P3 behaviour.
+    public let framing: ConsultCaptureShotFraming?
     public var id: ConsultCaptureShotKey { key }
+
+    /// The framing to act on: what the server said, or `fullView` when it said
+    /// nothing. Never read `framing` directly at a decision site.
+    public var framingOrDefault: ConsultCaptureShotFraming { framing ?? .fullView }
 }
 
 public struct ConsultCaptureShotPack: Decodable, Sendable {

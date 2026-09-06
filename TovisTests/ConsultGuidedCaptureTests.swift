@@ -11,14 +11,38 @@ nonisolated private struct StubConsultQC: ConsultPhotoQCEvaluating {
 
 private actor CountingPreparation: ConsultJPEGPreparing {
     private(set) var calls = 0
-    let output: Data?
+    private(set) var shots: [ConsultCaptureShotKey] = []
+    let output: ConsultPreparedPhoto?
 
-    init(output: Data?) { self.output = output }
+    init(output: Data?) {
+        self.output = output.map {
+            ConsultPreparedPhoto(upload: $0, fullFrame: nil, cropSource: nil)
+        }
+    }
 
-    func prepare(_ source: Data) async -> Data? {
+    func prepare(
+        _ source: Data, for shot: ConsultCaptureShot
+    ) async -> ConsultPreparedPhoto? {
         calls += 1
+        shots.append(shot.key)
         return output
     }
+}
+
+/// A shot as the SERVER serves it.
+///
+/// Decoded rather than constructed: `ConsultCaptureShot` is a wire type whose
+/// memberwise init is internal to TovisKit, and decoding is what the app does
+/// with one — so a fixture built this way cannot drift from the real decode.
+private func testShot(
+    _ key: ConsultCaptureShotKey,
+    framing: ConsultCaptureShotFraming = .fullView
+) -> ConsultCaptureShot {
+    let json = "{\"key\": \"\(key.rawValue)\", \"title\": \"t\", "
+        + "\"instruction\": \"i\", \"requirement\": \"REQUIRED\", "
+        + "\"framing\": \"\(framing.rawValue)\"}"
+    // A failure here is a broken fixture, not a runtime condition.
+    return try! JSONDecoder().decode(ConsultCaptureShot.self, from: Data(json.utf8))
 }
 
 nonisolated private struct SlowConsultQC: ConsultPhotoQCEvaluating {
@@ -168,6 +192,7 @@ nonisolated private struct SlowConsultQC: ConsultPhotoQCEvaluating {
 
         let outcome = await pipeline.process(
             Data("synthetic-frame".utf8),
+            shot: testShot(.hairBack),
             expectations: ConsultShotGuidance.expectations(for: .hairBack)
         )
 
@@ -185,10 +210,13 @@ nonisolated private struct SlowConsultQC: ConsultPhotoQCEvaluating {
 
         let outcome = await pipeline.process(
             Data("synthetic-frame".utf8),
+            shot: testShot(.hairRight),
             expectations: ConsultShotGuidance.expectations(for: .hairRight)
         )
 
-        #expect(outcome == .accepted(prepared))
+        #expect(outcome == .accepted(ConsultPreparedPhoto(
+            upload: prepared, fullFrame: nil, cropSource: nil
+        )))
         #expect(await pipeline.retainedByteCount() == 0)
     }
 
@@ -200,6 +228,7 @@ nonisolated private struct SlowConsultQC: ConsultPhotoQCEvaluating {
         let task = Task {
             await pipeline.process(
                 Data(repeating: 7, count: 512),
+                shot: testShot(.hairCrown),
                 expectations: ConsultShotGuidance.expectations(for: .hairCrown)
             )
         }

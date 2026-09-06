@@ -147,6 +147,28 @@ nonisolated enum ConsultShotGuidance {
         }
     }
 
+    /// A line for a shot the client cannot reasonably take by herself.
+    ///
+    /// The consult's premise is a client alone in bed with her phone, and the
+    /// hair pack asks her for the back of her own head. Pretending that is an
+    /// ordinary framing problem is what makes an app feel like it is not on your
+    /// side, so this says the true thing instead — including that she can just
+    /// not do it. She can: partial capture is the norm, and the thread already
+    /// offers "continue with N of M" once one shot is accepted
+    /// (`canOfferPartialContinue`), so this promises nothing that is not built.
+    ///
+    /// Only `hair_back` gets one. The crown is awkward but reachable with the
+    /// rear camera held overhead; the sides are reachable in a mirror. The back
+    /// is the one that genuinely needs someone else.
+    static func helperLine(
+        for key: ConsultCaptureShotKey
+    ) -> (title: String, detail: String)? {
+        guard key == .hairBack else { return nil }
+        return (
+            title: "This one’s tricky solo",
+            detail: "Have someone take this one, or skip it for now."
+        )
+    }
 }
 
 nonisolated protocol ConsultPhotoQCEvaluating: Sendable {
@@ -160,17 +182,23 @@ nonisolated struct NativeConsultPhotoQC: ConsultPhotoQCEvaluating {
 }
 
 nonisolated protocol ConsultJPEGPreparing: Sendable {
-    func prepare(_ source: Data) async -> Data?
+    /// Decide the crop (P3) and produce the bytes to upload.
+    func prepare(
+        _ source: Data, for shot: ConsultCaptureShot
+    ) async -> ConsultPreparedPhoto?
 }
 
 nonisolated struct NativeConsultJPEGPreparation: ConsultJPEGPreparing {
-    func prepare(_ source: Data) async -> Data? {
-        await ConsultPhotoPreparation.jpeg(from: source)
+    func prepare(
+        _ source: Data, for shot: ConsultCaptureShot
+    ) async -> ConsultPreparedPhoto? {
+        let plan = await ConsultPhotoPreparation.plan(source, for: shot)
+        return await ConsultPhotoPreparation.prepare(source, plan: plan)
     }
 }
 
 nonisolated enum ConsultPhotoCandidateOutcome: Sendable, Equatable {
-    case accepted(Data)
+    case accepted(ConsultPreparedPhoto)
     case retake(String)
     case invalid
     case cancelled
@@ -190,7 +218,17 @@ actor ConsultTransientPhotoPipeline {
         self.preparation = preparation
     }
 
+    /// Judge a captured still and produce the bytes to upload.
+    ///
+    /// 🔴 QC runs on the FULL frame, BEFORE the crop, and the order is
+    /// load-bearing. `PhotoQC` finds a face with `CIDetector` to read blink and
+    /// to meter sharpness on the subject — and an `eyes_closeup` crop is a strip
+    /// with no detectable face in it. Cropping first would therefore silently
+    /// switch off blink detection on the one shot whose acceptance rule is
+    /// "both OPEN eyes", and hand back a whole-strip sharpness instead of a
+    /// face-region one. Measure the photograph; then cut it.
     func process(_ source: Data,
+                 shot: ConsultCaptureShot,
                  expectations: ShotExpectations) async -> ConsultPhotoCandidateOutcome {
         candidate = source
         defer { candidate = nil }
@@ -204,11 +242,12 @@ actor ConsultTransientPhotoPipeline {
         guard report.passed else {
             return .retake(report.retakeReason ?? "That photo needs another try.")
         }
-        guard let jpeg = await preparation.prepare(source), !jpeg.isEmpty else {
+        guard let prepared = await preparation.prepare(source, for: shot),
+              !prepared.upload.isEmpty else {
             return .invalid
         }
         guard !Task.isCancelled else { return .cancelled }
-        return .accepted(jpeg)
+        return .accepted(prepared)
     }
 
     func discard() { candidate = nil }
@@ -223,7 +262,14 @@ struct ConsultGuidedCaptureView: View {
     @Environment(\.dismiss) private var dismiss
 
     let shot: ConsultCaptureShot
-    let onJPEG: (Data) async -> Void
+    /// The RAW still, handed straight out.
+    ///
+    /// 🔴 P3 moved quality checking, cropping and encoding OUT of this view and
+    /// behind this closure, into the flow model that owns the durable queue.
+    /// The camera's whole job is now: take a photograph, hand it over, leave.
+    /// It cannot show a verdict because by the time there is one it is gone —
+    /// which is the point. The verdict lands on the checklist row.
+    let onStill: (Data) async -> Void
 
     @State private var camera = CameraController()
     @State private var coach: CoachEngine?
@@ -231,12 +277,27 @@ struct ConsultGuidedCaptureView: View {
     @State private var pickerItem: PhotosPickerItem?
     @State private var captureTask: Task<Void, Never>?
     @State private var fallbackBusy = false
-
-    @State private var pipeline = ConsultTransientPhotoPipeline()
+    /// Which camera is live. Seeded from what the client chose LAST time for
+    /// this shot, else the policy default (`ConsultCaptureCrop.defaultCamera`).
+    @State private var position: ConsultCameraPosition = .front
+    @State private var flipping = false
+    /// A camera-hardware failure to tell the client about, while the shutter
+    /// stays live.
+    ///
+    /// 🔴 Not the machine's `.localRetake` phase. Going straight back to
+    /// `.ready` (so the shutter IS the retry, with no button) also leaves that
+    /// phase instantly, so its card renders for zero frames — a shutter press
+    /// that produced neither a photograph nor a word, which is the exact
+    /// failure this whole chain exists to remove. This outlives the transition.
+    @State private var cameraNotice: String?
 
     private var expectations: ShotExpectations {
         ConsultShotGuidance.expectations(for: shot.key)
     }
+
+    /// The box the client composes inside for a tight-crop shot. Nil for
+    /// FULL_VIEW, which is composed and uploaded as framed.
+    private var guideBox: CGRect? { ConsultCaptureCrop.guideBox(for: shot) }
 
     var body: some View {
         ZStack {
@@ -245,6 +306,7 @@ struct ConsultGuidedCaptureView: View {
                 CameraPreview(session: camera.session) { camera.previewLayer = $0 }
                     .ignoresSafeArea()
                     .overlay(Color.black.opacity(camera.status == .interrupted ? 0.62 : 0))
+                    .overlay { guideBoxOverlay }
             }
 
             VStack(spacing: 0) {
@@ -257,17 +319,26 @@ struct ConsultGuidedCaptureView: View {
             .padding(.vertical, 12)
         }
         .task {
+            let opening = ConsultCameraMemory.camera(for: shot.key)
+            position = opening
             let engine = CoachEngine(runtimeOptions: .visualOnly)
             coach = engine
             engine.start()
             engine.analyzer.setExpectations(expectations)
-            engine.analyzer.setCropGuide(nil)
+            // The coach judges composition inside the guide box on a tight-crop
+            // shot, for the same reason the pro camera judges inside the publish
+            // crop: what is outside it is not what gets uploaded.
+            engine.analyzer.setCropGuide(guideBox)
             engine.onFaceCenter = { [weak camera = camera] center in
                 camera?.setFaceExposure(
                     center: expectations.face == .absent ? nil : center
                 )
             }
-            await camera.start(frameDelegate: engine.analyzer)
+            await camera.start(
+                frameDelegate: engine.analyzer,
+                position: opening == .front ? .front : .back
+            )
+            syncCoachOrientation()
             apply(camera.status)
         }
         .onChange(of: camera.status) { _, status in apply(status) }
@@ -309,9 +380,19 @@ struct ConsultGuidedCaptureView: View {
             guidanceCard(icon: "camera.fill", title: "Starting camera…",
                          detail: "Camera frames stay on this device.")
         case .ready:
-            if let nudge = coach?.nudge {
+            if let cameraNotice {
+                guidanceCard(icon: "exclamationmark.triangle.fill",
+                             title: "That one didn’t take", detail: cameraNotice)
+            } else if let nudge = coach?.nudge {
                 guidanceCard(icon: "viewfinder", title: nudge.message,
                              detail: "Adjust until the ring turns green.")
+            } else if let helper = ConsultShotGuidance.helperLine(for: shot.key) {
+                // Below the coach's nudge, not above it. The line says "have
+                // someone take this one" — and whoever IS holding the phone
+                // still needs to hear "it's too dark". It replaces the GENERIC
+                // filler card below, which is the one that has nothing to say.
+                guidanceCard(icon: "person.2.fill", title: helper.title,
+                             detail: helper.detail)
             } else {
                 guidanceCard(
                     icon: coach?.isReady == true ? "checkmark.circle.fill" : "viewfinder",
@@ -326,14 +407,16 @@ struct ConsultGuidedCaptureView: View {
             guidanceCard(icon: "photo.on.rectangle", title: "Use your photo library",
                          detail: "Camera access isn’t available. You can still finish this slot with the system photo picker.")
         case .capturing:
-            guidanceCard(icon: "hourglass", title: "Checking the photo…",
-                         detail: "Only this chosen JPEG can continue to the private upload.")
+            guidanceCard(icon: "camera.fill", title: "Got it",
+                         detail: "Taking you back to your list.")
         case let .localRetake(reason):
-            guidanceCard(icon: "arrow.clockwise.circle.fill", title: "Take one more",
-                         detail: reason)
+            // Camera FAILURE only — never a quality verdict. Quality is judged
+            // after this screen has gone and lands on the checklist row.
+            guidanceCard(icon: "exclamationmark.triangle.fill",
+                         title: "That one didn’t take", detail: reason)
         case .delivered:
-            guidanceCard(icon: "checkmark.circle.fill", title: "Photo sent for quality review",
-                         detail: "The server still makes the final quality decision.")
+            guidanceCard(icon: "checkmark.circle.fill", title: "Got it",
+                         detail: "Taking you back to your list.")
         case .cancelled:
             EmptyView()
         }
@@ -341,26 +424,31 @@ struct ConsultGuidedCaptureView: View {
 
     private var controls: some View {
         VStack(spacing: 14) {
-            if case .localRetake = machine.phase, camera.status == .ready {
-                Button("Retake with guidance") { machine.retry() }
-                    .buttonStyle(ConsultCameraPrimaryButtonStyle())
-            } else if machine.phase == .ready {
-                Button { captureTask = Task { await capture() } } label: {
-                    ZStack {
-                        Circle()
-                            .stroke(.white.opacity(0.45), lineWidth: 5)
-                            .frame(width: 82, height: 82)
-                        Circle()
-                            .trim(from: 0, to: max(0.04, coach?.readiness ?? 0.04))
-                            .stroke(coach?.isReady == true ? BrandColor.emerald : BrandColor.amber,
-                                    style: StrokeStyle(lineWidth: 5, lineCap: .round))
-                            .rotationEffect(.degrees(-90))
-                            .frame(width: 82, height: 82)
-                        Circle().fill(.white).frame(width: 62, height: 62)
+            // 🔴 No retry button in ANY state (P3). A camera failure returns
+            // straight to `.ready` — the shutter is right there and is the retry
+            // — and a quality refusal is not this screen's news to give.
+            if machine.phase == .ready {
+                HStack(spacing: 22) {
+                    flipButton
+                    Button { captureTask = Task { await capture() } } label: {
+                        ZStack {
+                            Circle()
+                                .stroke(.white.opacity(0.45), lineWidth: 5)
+                                .frame(width: 82, height: 82)
+                            Circle()
+                                .trim(from: 0, to: max(0.04, coach?.readiness ?? 0.04))
+                                .stroke(coach?.isReady == true ? BrandColor.emerald : BrandColor.amber,
+                                        style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                                .rotationEffect(.degrees(-90))
+                                .frame(width: 82, height: 82)
+                            Circle().fill(.white).frame(width: 62, height: 62)
+                        }
                     }
+                    .disabled(captureTask != nil)
+                    .accessibilityLabel("Take " + shot.title + " photo")
+                    // Balances the flip button so the shutter stays centred.
+                    Color.clear.frame(width: 52, height: 52)
                 }
-                .disabled(captureTask != nil)
-                .accessibilityLabel("Take " + shot.title + " photo")
             }
 
             if machine.phase != .capturing, machine.phase != .delivered {
@@ -377,6 +465,45 @@ struct ConsultGuidedCaptureView: View {
             }
         }
         .padding(.top, 14)
+    }
+
+    private var flipButton: some View {
+        Button {
+            captureTask = Task { await flipCamera() }
+        } label: {
+            Image(systemName: "arrow.triangle.2.circlepath.camera.fill")
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 52, height: 52)
+                .background(.black.opacity(0.52), in: Circle())
+        }
+        .disabled(flipping || captureTask != nil)
+        .accessibilityLabel(
+            position == .front ? "Switch to the rear camera" : "Switch to the front camera"
+        )
+    }
+
+    /// The box the client composes inside on a tight-crop shot.
+    ///
+    /// It is drawn through the same mapper the pro camera's publish-crop rails
+    /// use (`CameraPreviewGeometry`), so what is inside the lines is what the
+    /// preview is actually showing — under `.resizeAspectFill` a proportional
+    /// rect would not be.
+    @ViewBuilder
+    private var guideBoxOverlay: some View {
+        if let guideBox {
+            GeometryReader { geo in
+                let box = CameraPreviewGeometry.previewRect(
+                    uprightNormalized: guideBox, in: geo.size, layer: camera.previewLayer
+                )
+                Rectangle()
+                    .strokeBorder(.white.opacity(0.62), lineWidth: 1.5)
+                    .frame(width: box.width, height: box.height)
+                    .position(x: box.midX, y: box.midY)
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
     }
 
     private var visionExpectationCopy: String {
@@ -407,21 +534,41 @@ struct ConsultGuidedCaptureView: View {
         machine.cameraChanged(ConsultGuidedCameraAvailability(cameraStatus: status))
     }
 
+    /// Shutter → photograph → gone.
+    ///
+    /// 🔴 The ONLY thing between the shutter and `dismiss()` is AVFoundation
+    /// delivering the frame. No quality check, no crop, no encode, no preview,
+    /// no confirm (P3). Those all happen behind `onStill`, in the flow model
+    /// that owns the durable queue, and their verdict appears on the checklist
+    /// row the client is already looking at by then.
+    ///
+    /// `onStill` is deliberately NOT awaited before dismissing, and is launched
+    /// as a detached task rather than left on `captureTask`: once the shutter
+    /// has fired the shot is OWED, and nothing about this view going away is
+    /// allowed to be the reason it does not arrive.
     private func capture() async {
+        cameraNotice = nil
         machine.beginCapture()
         do {
             let source = try await camera.capturePhoto()
-            await finish(source)
+            handOff(source)
+            machine.delivered()
+            dismiss()
         } catch {
-            // Nothing cancels this task any more, so a failure here is a real
-            // camera failure. It gets a line either way: a shutter press that
-            // produces neither a photograph nor a word is the failure this
-            // whole change exists to remove.
+            // A failure here is a real camera failure — nothing cancels this
+            // task. It gets a line either way: a shutter press that produces
+            // neither a photograph nor a word is the failure this whole chain
+            // exists to remove.
             ConsultCaptureTelemetry.queue(
                 "camera_capture_failed shot=\(shot.key.rawValue) cancelled=\(Task.isCancelled)",
                 level: .error
             )
-            machine.requestRetake("The camera didn’t finish that photo. Please try again.")
+            cameraNotice = "The camera didn’t finish that one — the shutter is ready when you are."
+            machine.requestRetake(cameraNotice ?? "")
+            // Straight back to a live shutter: the retry IS the shutter, so
+            // there is no button to press to get one. The notice above is what
+            // keeps the failure on screen across that transition.
+            machine.retry()
         }
         captureTask = nil
     }
@@ -439,40 +586,43 @@ struct ConsultGuidedCaptureView: View {
         }
         if machine.phase != .ready { machine.cameraChanged(.ready) }
         machine.beginCapture()
-        await finish(source)
+        handOff(source)
+        machine.delivered()
+        dismiss()
     }
 
-    private func finish(_ source: Data) async {
-        switch await pipeline.process(source, expectations: expectations) {
-        case let .accepted(jpeg):
-            // 🔴 No cancellation guard, deliberately. This used to read
-            // `guard !Task.isCancelled, machine.phase != .cancelled else { return }`,
-            // and combined with `tearDown()` cancelling `captureTask` it meant
-            // dismissing the camera in the moment after the shutter fired threw
-            // the photograph away — silently, in RAM, with nothing logged. Once
-            // the shutter has fired the shot is OWED: `onJPEG` persists it to
-            // the vault and `ConsultCaptureUploadQueue` finishes it whether or
-            // not this view still exists.
-            await onJPEG(jpeg)
-            machine.delivered()
-            dismiss()
-        case let .retake(reason):
-            machine.requestRetake(reason)
-        case .invalid:
-            machine.requestRetake("That image couldn’t be prepared as a private JPEG. Try another photo.")
-        case .cancelled:
-            // Unreachable now that nothing cancels the capture task — which is
-            // exactly why it is logged rather than swallowed. A silent `break`
-            // here is how a shot used to disappear; if this line ever appears,
-            // something has started cancelling again.
-            ConsultCaptureTelemetry.queue(
-                "pipeline_cancelled shot=\(shot.key.rawValue)", level: .error
-            )
-        }
+    /// Hand the still to the flow model, outside this view's lifetime.
+    private func handOff(_ source: Data) {
+        let deliver = onStill
+        Task.detached(priority: .userInitiated) { await deliver(source) }
+    }
+
+    /// Swap cameras and re-point the coach at the new frame geometry.
+    ///
+    /// 🔴 `syncCoachOrientation` is not optional housekeeping. The analyzer
+    /// orients every buffer it reads, and the two cameras need different
+    /// corrections; leaving it on the old value after a flip means Vision reads
+    /// an upside-down, mirrored frame, finds no face, and the coach quietly
+    /// stops working — with a green-looking UI and nothing in the log.
+    private func flipCamera() async {
+        flipping = true
+        defer { flipping = false; captureTask = nil }
+        let settled = await camera.flip()
+        let now: ConsultCameraPosition = settled == .front ? .front : .rear
+        syncCoachOrientation()
+        guard now != position else { return }   // no camera on that side
+        position = now
+        ConsultCameraMemory.remember(now, for: shot.key)
+    }
+
+    private func syncCoachOrientation() {
+        coach?.analyzer.setSourceOrientation(
+            CameraController.sourceOrientation(for: camera.cameraPosition)
+        )
     }
 
     /// Close the camera. It does NOT cancel a capture already under way — see
-    /// `finish`. Backing out before pressing the shutter takes nothing with it;
+    /// `handOff`. Backing out before pressing the shutter takes nothing with it;
     /// backing out after is not a way to un-take a photograph.
     private func cancel() {
         if machine.phase != .capturing { machine.cancel() }
@@ -504,17 +654,5 @@ struct ConsultGuidedCaptureView: View {
             await pending?.value
             controller.stop()
         }
-    }
-}
-
-private struct ConsultCameraPrimaryButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(BrandFont.body(15, .semibold))
-            .foregroundStyle(BrandColor.onAccent)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 13)
-            .background(BrandColor.accent.opacity(configuration.isPressed ? 0.75 : 1))
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
