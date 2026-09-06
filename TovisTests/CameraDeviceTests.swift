@@ -162,10 +162,20 @@ private final class OneFrameGrabber: NSObject,
                        bounds: CGRect(x: 0, y: 0, width: side, height: side),
                        format: .RGBA8,
                        colorSpace: CGColorSpaceCreateDeviceRGB())
-        return stride(from: 0, to: bytes.count, by: 4).map { i in
-            (0.299 * Double(bytes[i]) + 0.587 * Double(bytes[i + 1])
-                + 0.114 * Double(bytes[i + 2])) / 255.0
+        // Spelled out in statements rather than one expression: as a single
+        // `map` closure this took the type checker past its budget on a CI
+        // runner (fine locally, "unable to type-check in reasonable time"
+        // there) — an inference cost, not a complexity one.
+        var luma: [Double] = []
+        luma.reserveCapacity(side * side)
+        for i in stride(from: 0, to: bytes.count, by: 4) {
+            let r = Double(bytes[i])
+            let g = Double(bytes[i + 1])
+            let b = Double(bytes[i + 2])
+            let y: Double = 0.299 * r + 0.587 * g + 0.114 * b
+            luma.append(y / 255.0)
         }
+        return luma
     }
 
     /// Pearson correlation — brightness- and contrast-invariant, so an exposure
