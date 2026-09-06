@@ -47,6 +47,17 @@ struct BookingAddOnsView: View {
     /// the acceptance is sent to finalize.
     let cancellationPolicy: String?
     let openingId: String?
+    /// P7a-2 — the LOOK this booking started from, and the consult it was
+    /// sparked in.
+    ///
+    /// 🔴 `lookPostId` is not decoration. The server's discovery resolver sets
+    /// `Booking.sourceLookPostId` ONLY from this field — a `mediaId`-only body
+    /// carries null — and the spark link refuses to stamp a booking whose
+    /// server-resolved look does not match the consult's anchor. Without it
+    /// every iOS spark booking was invisible to the consult thread: the
+    /// confirmation never appeared and the Book button stayed live.
+    let lookPostId: String?
+    let sparkConsultId: String?
     /// Reports the booking AND the minutes of add-ons that went into it — the
     /// confirmation card states the width of the appointment that was actually
     /// booked, which the base service alone under-states.
@@ -458,7 +469,9 @@ struct BookingAddOnsView: View {
             let booked = try await session.client.booking.finalize(
                 holdId: holdId, offeringId: offeringId, locationType: locationType,
                 addOnIds: Array(selected).sorted(), openingId: openingId,
-                cancellationPolicyAccepted: policyAccepted
+                cancellationPolicyAccepted: policyAccepted,
+                lookPostId: lookPostId,
+                sparkConsultId: sparkConsultId
             )
             onBooked(booked, extraMinutes)
         } catch let apiError as APIError {
