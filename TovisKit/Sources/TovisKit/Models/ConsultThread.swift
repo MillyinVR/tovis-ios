@@ -165,6 +165,20 @@ public struct ConsultThreadMessage: Decodable, Sendable, Identifiable {
     public let shot: ConsultCaptureShot?
     public let shotPackVersion: Int?
     public let slot: ConsultCaptureSlot?
+    /// May this shot be taken RIGHT NOW? (P3b.)
+    ///
+    /// 🔴 NOT `state`, and reading `state` instead is the bug this replaced.
+    /// `state == .blocked` means "not where resume lands" — a blocked photo
+    /// request is deliberately still tappable, which is how she jumps between
+    /// guided shots and how she retakes one after her plan exists. This asks
+    /// the other question: would the SERVER accept the upload? The server
+    /// derives it from the same predicates its write boundary uses, so a shot
+    /// can never be offered here and refused there — which is exactly what
+    /// happened on 2026-09-06, twice, on `eyes_closeup`.
+    ///
+    /// Optional: a server that predates the field means "yes", the behaviour
+    /// every shipped build already had.
+    public let shootable: Bool?
 
     // PLAN
     public let run: ConsultAnalysisRun?
@@ -216,7 +230,7 @@ public struct ConsultThreadMessage: Decodable, Sendable, Identifiable {
         case question, answer, packVersion
         case sourceDecisionRequired, source, card
         case answeredQuestionCount, specificDetailCount, requiredSpecificDetailCount
-        case shot, shotPackVersion, slot
+        case shot, shotPackVersion, slot, shootable
         case run, results, awaitingStart, promptVersion
         case planVersion, updatePending, previousPlanVersion, changes
         case bookingId
@@ -281,6 +295,7 @@ public struct ConsultThreadMessage: Decodable, Sendable, Identifiable {
         shot = try container.decodeIfPresent(ConsultCaptureShot.self, forKey: .shot)
         shotPackVersion = try container.decodeIfPresent(Int.self, forKey: .shotPackVersion)
         slot = try container.decodeIfPresent(ConsultCaptureSlot.self, forKey: .slot)
+        shootable = try container.decodeIfPresent(Bool.self, forKey: .shootable)
 
         run = try container.decodeIfPresent(ConsultAnalysisRun.self, forKey: .run)
         results = try container.decodeIfPresent(ConsultClientResults.self, forKey: .results)
