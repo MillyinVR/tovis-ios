@@ -204,6 +204,9 @@ func consultQualityReasonMessage(_ code: String?) -> String {
 struct ConsultPhotoPickerSlot: View {
     let shot: ConsultCaptureShot
     let slot: ConsultCaptureSlot?
+    /// The consult this slot belongs to — only used to key the daylight
+    /// reminder, so two consults cannot share one pending notification.
+    let consultId: String
     let thumbnail: UIImage?
     /// Where the durable queue has got to with this slot, if it owes anything.
     let queueStage: ConsultCaptureStage?
@@ -233,6 +236,8 @@ struct ConsultPhotoPickerSlot: View {
     @State private var pick: PhotosPickerItem?
     @State private var preparationError: ConsultClientFailure?
     @State private var showGuidedCamera = false
+    @State private var daylightReminder: ConsultDaylightReminder.Availability = .unavailable
+    @State private var daylightReminderFailed = false
 
     var body: some View {
         BrandSurface {
@@ -273,13 +278,91 @@ struct ConsultPhotoPickerSlot: View {
                 }
 
                 if slot?.state == .rejected {
-                    let reason = consultQualityReasonMessage(slot?.qualityReasonCode)
-                    let tip = slot?.retakeTip
-                    Text(tip.map { "\(reason) \($0)" } ?? reason)
-                        .font(BrandFont.body(13, .semibold))
-                        .foregroundStyle(BrandColor.amber)
-                        .accessibilityLabel("Why this photo was refused: \(reason)\(tip.map { " Retake tip: \($0)" } ?? "")")
+                    // 🔴 A second refusal must not be byte-identical to the
+                    // first — that is what made a working retake read as a
+                    // stuck upload (2026-09-07). The count, the "too", and a
+                    // DIFFERENT lever are the three things that differ.
+                    let guidance = consultSlotRetakeGuidance(
+                        reasonCode: slot?.qualityReasonCode,
+                        previousReasonCode: slot?.previousReasonCode,
+                        retakeTip: slot?.retakeTip,
+                        attemptCount: slot?.attemptCount ?? 0
+                    )
+                    let reason = guidance.repeatedLine
+                        ?? consultQualityReasonMessage(slot?.qualityReasonCode)
+                    let step = guidance.nextStep
+                    VStack(alignment: .leading, spacing: 3) {
+                        if let attempt = guidance.attemptLabel {
+                            Text(attempt)
+                                .font(BrandFont.mono(10))
+                                .foregroundStyle(BrandColor.textMuted)
+                        }
+                        Text(step.map { "\(reason) \($0)" } ?? reason)
+                            .font(BrandFont.body(13, .semibold))
+                            .foregroundStyle(BrandColor.amber)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(
+                        "\(guidance.attemptLabel.map { "\($0). " } ?? "")Why this photo was refused: \(reason)\(step.map { " Try this: \($0)" } ?? "")"
+                    )
                 }
+                // The coach's aside on a warm ACCEPTANCE. Never between her and
+                // the next shot: the photo passed, this only says what the light
+                // costs the reading, and offers the one thing that would fix it.
+                if slot?.state == .accepted, slot?.qualityWarningCode != nil {
+                    VStack(alignment: .leading, spacing: 6) {
+                        // 🔴 A QUESTION only when it can be answered in one tap.
+                        // With notifications off there is no reminder to offer,
+                        // and "want to retake this tomorrow?" with no control
+                        // under it is a question left hanging — so it becomes a
+                        // statement she can act on whenever she likes.
+                        Text(
+                            daylightReminder == .unavailable
+                                ? "Daylight reads truer — worth retaking this one tomorrow if you get the chance."
+                                : "Daylight reads truer. Want to retake this one tomorrow?"
+                        )
+                            .font(BrandFont.body(12))
+                            .foregroundStyle(BrandColor.textSecondary)
+                        switch daylightReminder {
+                        case .offerable:
+                            Button {
+                                Task {
+                                    let ok = await ConsultDaylightReminder.schedule(
+                                        consultId: consultId,
+                                        shotKey: shot.key,
+                                        shotTitle: shot.title
+                                    )
+                                    daylightReminderFailed = !ok
+                                    if ok { daylightReminder = .alreadySet }
+                                }
+                            } label: {
+                                Label("Remind me tomorrow", systemImage: "bell")
+                                    .font(BrandFont.body(12, .semibold))
+                                    .foregroundStyle(BrandColor.accent)
+                            }
+                            .buttonStyle(.plain)
+                        case .alreadySet:
+                            Label("Reminder set for tomorrow", systemImage: "bell.fill")
+                                .font(BrandFont.body(12))
+                                .foregroundStyle(BrandColor.textMuted)
+                        case .unavailable:
+                            // Notifications are off. No offer rather than a
+                            // button that cannot do what it says.
+                            EmptyView()
+                        }
+                        if daylightReminderFailed {
+                            Text("We couldn’t set that reminder.")
+                                .font(BrandFont.body(12))
+                                .foregroundStyle(BrandColor.ember)
+                        }
+                    }
+                    .task(id: slot?.captureId) {
+                        daylightReminder = await ConsultDaylightReminder.availability(
+                            consultId: consultId, shotKey: shot.key
+                        )
+                    }
+                }
+
                 if let preparationError {
                     Text(preparationError.message)
                         .font(BrandFont.body(12))

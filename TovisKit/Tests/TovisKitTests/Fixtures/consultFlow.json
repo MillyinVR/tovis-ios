@@ -709,7 +709,9 @@
         "qualityWarningCode": null,
         "retakeTip": null,
         "rawExpiresAt": "2026-08-12T18:00:00.000Z",
-        "purgedAt": null
+        "purgedAt": null,
+        "attemptCount": 1,
+        "previousReasonCode": null
       },
       "slots": [
         {
@@ -720,7 +722,9 @@
           "qualityWarningCode": null,
           "retakeTip": null,
           "rawExpiresAt": "2026-08-12T18:00:00.000Z",
-          "purgedAt": null
+          "purgedAt": null,
+          "attemptCount": 1,
+          "previousReasonCode": null
         },
         {
           "shotKey": "hair_left",
@@ -730,7 +734,9 @@
           "qualityWarningCode": null,
           "retakeTip": null,
           "rawExpiresAt": "2026-08-12T18:00:00.000Z",
-          "purgedAt": null
+          "purgedAt": null,
+          "attemptCount": 1,
+          "previousReasonCode": null
         },
         {
           "shotKey": "hair_right",
@@ -740,7 +746,9 @@
           "qualityWarningCode": null,
           "retakeTip": null,
           "rawExpiresAt": "2026-08-12T18:00:00.000Z",
-          "purgedAt": null
+          "purgedAt": null,
+          "attemptCount": 1,
+          "previousReasonCode": null
         },
         {
           "shotKey": "hair_crown",
@@ -750,7 +758,9 @@
           "qualityWarningCode": null,
           "retakeTip": null,
           "rawExpiresAt": "2026-08-12T18:00:00.000Z",
-          "purgedAt": null
+          "purgedAt": null,
+          "attemptCount": 1,
+          "previousReasonCode": null
         },
         {
           "shotKey": "face_front",
@@ -760,7 +770,9 @@
           "qualityWarningCode": null,
           "retakeTip": null,
           "rawExpiresAt": "2026-08-12T18:00:00.000Z",
-          "purgedAt": null
+          "purgedAt": null,
+          "attemptCount": 2,
+          "previousReasonCode": "WARM_INDOOR_LIGHT"
         },
         {
           "shotKey": "face_side",
@@ -770,7 +782,9 @@
           "qualityWarningCode": null,
           "retakeTip": null,
           "rawExpiresAt": "2026-08-12T18:00:00.000Z",
-          "purgedAt": null
+          "purgedAt": null,
+          "attemptCount": 1,
+          "previousReasonCode": null
         },
         {
           "shotKey": "eyes_closeup",
@@ -780,7 +794,9 @@
           "qualityWarningCode": "WARM_INDOOR_LIGHT",
           "retakeTip": null,
           "rawExpiresAt": "2026-08-12T18:00:00.000Z",
-          "purgedAt": null
+          "purgedAt": null,
+          "attemptCount": 1,
+          "previousReasonCode": null
         }
       ],
       "chartCopy": {
@@ -857,7 +873,9 @@
       "qualityWarningCode": "WARM_INDOOR_LIGHT",
       "retakeTip": null,
       "rawExpiresAt": "2026-08-12T18:00:00.000Z",
-      "purgedAt": null
+      "purgedAt": null,
+      "attemptCount": 1,
+      "previousReasonCode": null
     },
     "slots": [
       {
@@ -868,7 +886,9 @@
         "qualityWarningCode": null,
         "retakeTip": "Move near a window and face the daylight.",
         "rawExpiresAt": null,
-        "purgedAt": "2026-08-11T18:10:00.000Z"
+        "purgedAt": "2026-08-11T18:10:00.000Z",
+        "attemptCount": 1,
+        "previousReasonCode": null
       },
       {
         "shotKey": "hair_left",
@@ -878,7 +898,9 @@
         "qualityWarningCode": null,
         "retakeTip": null,
         "rawExpiresAt": null,
-        "purgedAt": null
+        "purgedAt": null,
+        "attemptCount": 1,
+        "previousReasonCode": null
       },
       {
         "shotKey": "hair_right",
@@ -888,7 +910,9 @@
         "qualityWarningCode": null,
         "retakeTip": null,
         "rawExpiresAt": null,
-        "purgedAt": null
+        "purgedAt": null,
+        "attemptCount": 1,
+        "previousReasonCode": null
       },
       {
         "shotKey": "hair_crown",
@@ -898,7 +922,9 @@
         "qualityWarningCode": null,
         "retakeTip": null,
         "rawExpiresAt": null,
-        "purgedAt": null
+        "purgedAt": null,
+        "attemptCount": 1,
+        "previousReasonCode": null
       },
       {
         "shotKey": "face_front",
@@ -908,7 +934,9 @@
         "qualityWarningCode": null,
         "retakeTip": null,
         "rawExpiresAt": null,
-        "purgedAt": null
+        "purgedAt": null,
+        "attemptCount": 2,
+        "previousReasonCode": "WARM_INDOOR_LIGHT"
       },
       {
         "shotKey": "face_side",
@@ -918,7 +946,9 @@
         "qualityWarningCode": null,
         "retakeTip": null,
         "rawExpiresAt": null,
-        "purgedAt": null
+        "purgedAt": null,
+        "attemptCount": 1,
+        "previousReasonCode": null
       },
       {
         "shotKey": "eyes_closeup",
@@ -928,7 +958,9 @@
         "qualityWarningCode": null,
         "retakeTip": null,
         "rawExpiresAt": null,
-        "purgedAt": null
+        "purgedAt": null,
+        "attemptCount": 1,
+        "previousReasonCode": null
       }
     ],
     "chartCopy": {
@@ -1008,7 +1040,9 @@
           "qualityWarningCode": null,
           "retakeTip": null,
           "rawExpiresAt": "2026-08-12T18:00:00.000Z",
-          "purgedAt": null
+          "purgedAt": null,
+          "attemptCount": 1,
+          "previousReasonCode": null
         },
         {
           "shotKey": "hair_left",
@@ -1018,7 +1052,9 @@
           "qualityWarningCode": null,
           "retakeTip": null,
           "rawExpiresAt": "2026-08-12T18:00:00.000Z",
-          "purgedAt": null
+          "purgedAt": null,
+          "attemptCount": 1,
+          "previousReasonCode": null
         },
         {
           "shotKey": "hair_right",
@@ -1028,7 +1064,9 @@
           "qualityWarningCode": null,
           "retakeTip": "Move near a window and face the daylight.",
           "rawExpiresAt": null,
-          "purgedAt": "2026-08-11T18:10:00.000Z"
+          "purgedAt": "2026-08-11T18:10:00.000Z",
+          "attemptCount": 1,
+          "previousReasonCode": null
         },
         {
           "shotKey": "hair_crown",
@@ -1038,7 +1076,9 @@
           "qualityWarningCode": null,
           "retakeTip": null,
           "rawExpiresAt": null,
-          "purgedAt": null
+          "purgedAt": null,
+          "attemptCount": 1,
+          "previousReasonCode": null
         },
         {
           "shotKey": "face_front",
@@ -1048,7 +1088,9 @@
           "qualityWarningCode": null,
           "retakeTip": null,
           "rawExpiresAt": null,
-          "purgedAt": null
+          "purgedAt": null,
+          "attemptCount": 2,
+          "previousReasonCode": "WARM_INDOOR_LIGHT"
         },
         {
           "shotKey": "face_side",
@@ -1058,7 +1100,9 @@
           "qualityWarningCode": null,
           "retakeTip": null,
           "rawExpiresAt": null,
-          "purgedAt": null
+          "purgedAt": null,
+          "attemptCount": 1,
+          "previousReasonCode": null
         },
         {
           "shotKey": "eyes_closeup",
@@ -1068,7 +1112,9 @@
           "qualityWarningCode": null,
           "retakeTip": null,
           "rawExpiresAt": null,
-          "purgedAt": null
+          "purgedAt": null,
+          "attemptCount": 1,
+          "previousReasonCode": null
         }
       ],
       "chartCopy": {
@@ -2321,7 +2367,9 @@
             "qualityWarningCode": null,
             "retakeTip": null,
             "rawExpiresAt": "2026-08-12T18:00:00.000Z",
-            "purgedAt": null
+            "purgedAt": null,
+            "attemptCount": 1,
+            "previousReasonCode": null
           }
         },
         {
@@ -2347,7 +2395,9 @@
             "qualityWarningCode": null,
             "retakeTip": null,
             "rawExpiresAt": "2026-08-12T18:00:00.000Z",
-            "purgedAt": null
+            "purgedAt": null,
+            "attemptCount": 1,
+            "previousReasonCode": null
           }
         },
         {
@@ -2373,7 +2423,9 @@
             "qualityWarningCode": null,
             "retakeTip": null,
             "rawExpiresAt": "2026-08-12T18:00:00.000Z",
-            "purgedAt": null
+            "purgedAt": null,
+            "attemptCount": 1,
+            "previousReasonCode": null
           }
         },
         {
@@ -2399,7 +2451,9 @@
             "qualityWarningCode": null,
             "retakeTip": null,
             "rawExpiresAt": "2026-08-12T18:00:00.000Z",
-            "purgedAt": null
+            "purgedAt": null,
+            "attemptCount": 1,
+            "previousReasonCode": null
           }
         },
         {
@@ -2425,7 +2479,9 @@
             "qualityWarningCode": null,
             "retakeTip": null,
             "rawExpiresAt": "2026-08-12T18:00:00.000Z",
-            "purgedAt": null
+            "purgedAt": null,
+            "attemptCount": 2,
+            "previousReasonCode": "WARM_INDOOR_LIGHT"
           }
         },
         {
@@ -2451,7 +2507,9 @@
             "qualityWarningCode": null,
             "retakeTip": null,
             "rawExpiresAt": "2026-08-12T18:00:00.000Z",
-            "purgedAt": null
+            "purgedAt": null,
+            "attemptCount": 1,
+            "previousReasonCode": null
           }
         },
         {
@@ -2477,7 +2535,9 @@
             "qualityWarningCode": "WARM_INDOOR_LIGHT",
             "retakeTip": null,
             "rawExpiresAt": "2026-08-12T18:00:00.000Z",
-            "purgedAt": null
+            "purgedAt": null,
+            "attemptCount": 1,
+            "previousReasonCode": null
           }
         },
         {

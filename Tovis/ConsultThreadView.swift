@@ -559,6 +559,7 @@ private struct PhotoRequestMessageView: View {
             ConsultPhotoPickerSlot(
                 shot: shot,
                 slot: message.slot,
+                consultId: model.consultId ?? "",
                 thumbnail: model.localThumbnails[shot.key],
                 // Where the DURABLE queue has got to with this slot. Nil means it
                 // owes nothing and the served slot state is the whole story;
