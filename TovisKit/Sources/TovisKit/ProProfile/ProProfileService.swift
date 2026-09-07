@@ -179,6 +179,55 @@ public final class ProProfileService: Sendable {
         return response.offering
     }
 
+    /// GET /api/v1/pro/category-booking-policy — P7a-5. One row per category the
+    /// pro sells in, carrying her setting or the inherited default.
+    public func categoryBookingPolicies() async throws -> ProCategoryBookingPolicyResponse {
+        try await api.request("/pro/category-booking-policy")
+    }
+
+    /// PATCH /api/v1/pro/category-booking-policy — P7a-5, one category at a time.
+    ///
+    /// SPARSE, like `updateOffering`: a field that is nil is left out of the body
+    /// entirely and the server leaves that column alone. That matters more than
+    /// usual here — this object holds money configuration, and a request that
+    /// echoed every field would let a stale form wipe a deposit the pro set on
+    /// another device.
+    ///
+    /// `depositType` is a double optional so that "not sent" (nil) and "clear the
+    /// override, inherit my usual amount" (.some(nil)) stay different requests.
+    @discardableResult
+    public func updateCategoryBookingPolicy(
+        serviceCategoryId: String,
+        bookingGate: ProCategoryBookingGate? = nil,
+        depositType: String?? = nil,
+        depositFlatAmount: String? = nil,
+        depositPercent: Int? = nil
+    ) async throws -> ProCategoryBookingPolicy {
+        var fields: [String: JSONValue] = [
+            "serviceCategoryId": .string(serviceCategoryId)
+        ]
+        if let bookingGate { fields["bookingGate"] = .string(bookingGate.rawValue) }
+        if let depositType { fields["depositType"] = .stringOrNull(depositType) }
+        if let depositFlatAmount { fields["depositFlatAmount"] = .string(depositFlatAmount) }
+        if let depositPercent { fields["depositPercent"] = .int(depositPercent) }
+
+        let payload = try JSONEncoder.canonical.encode(fields)
+        let response: ProCategoryBookingPolicySaveResponse = try await api.request(
+            "/pro/category-booking-policy", method: .patch, body: payload
+        )
+        // The save response carries no category NAME — the screen already has it
+        // and reloads anyway. Reconstructed rather than re-fetched so the caller
+        // gets a value back, exactly as `updateOffering` does.
+        return ProCategoryBookingPolicy(
+            serviceCategoryId: response.policy.serviceCategoryId,
+            categoryName: "",
+            bookingGate: response.policy.bookingGate,
+            depositType: response.policy.depositType,
+            depositFlatAmount: response.policy.depositFlatAmount,
+            depositPercent: response.policy.depositPercent
+        )
+    }
+
     /// DELETE /api/v1/pro/offerings/{id} — soft-deletes (sets isActive=false).
     public func deleteOffering(id: String) async throws {
         try await api.requestVoid("/pro/offerings/\(id)", method: .delete)

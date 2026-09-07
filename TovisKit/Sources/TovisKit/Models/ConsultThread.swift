@@ -53,6 +53,13 @@ public enum ConsultThreadBookGateReason: String, Decodable, Sendable, Equatable 
     case notLookAnchored = "NOT_LOOK_ANCHORED"
     case consultStopped = "CONSULT_STOPPED"
     case lookNotBookable = "LOOK_NOT_BOOKABLE"
+    /// P7a-5 — this pro asks clients in this service category to finish the
+    /// safety questions before a slot is held.
+    ///
+    /// 🔴 Unlike every other reason here, the client can CLEAR this one herself
+    /// without leaving the thread, so the bar stays visible and disabled with
+    /// `gateNote` under it. See `ConsultThreadBookBar.shouldShow`.
+    case prepRequired = "PREP_REQUIRED"
     case unknown
 
     public init(from decoder: Decoder) throws {
@@ -77,6 +84,17 @@ public struct ConsultThreadBookCta: Decodable, Sendable, Equatable, Identifiable
     public let serviceId: String?
     /// The look's primary media, so the booking sheet's cover is her photo.
     public let lookMediaId: String?
+    /// P7a-5 — the money line under the button: "From $180 · $25.00 deposit".
+    ///
+    /// 🔴 Composed by the SERVER and rendered verbatim. A percentage deposit
+    /// arrives as a percentage, never as dollars — at the spark there is no
+    /// location mode and no add-ons, so a dollar figure would be a guess shown
+    /// as a promise. Never re-assemble or reformat it here.
+    public let priceNote: String?
+    /// P7a-5 — why the bar is dark when `reason == .prepRequired`, in the pro's
+    /// own name. Server copy (it carries a `{pro}` slot), so it is rendered
+    /// verbatim like every other filled bubble in this thread.
+    public let gateNote: String?
 
     /// Identity for a presentation binding. The look is what is being booked, so
     /// it is the id — two taps on the same look must not reopen the sheet.

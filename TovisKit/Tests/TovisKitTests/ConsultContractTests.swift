@@ -134,6 +134,63 @@ import Testing
         #expect(thread.book.enabled)
         #expect(thread.book.serviceId != nil)
         #expect(thread.book.lookMediaId != nil)
+        // P7a-5 — the money line arrives COMPOSED. The device must not be able
+        // to reassemble it, so what is asserted is that the whole sentence
+        // survives the wire, not that two numbers did.
+        #expect(thread.book.priceNote == "From $180 · $25.00 deposit")
+        #expect(thread.book.gateNote == nil)
+    }
+
+    /// P7a-5 — the prep gate decodes, and the CTA it produces is one the client
+    /// can clear herself.
+    ///
+    /// 🔴 INLINE JSON, deliberately NOT the contract fixture. `PREP_REQUIRED` is
+    /// a new member of an enum union, and a fixture carrying it would match no
+    /// arm of the web's CURRENT schema — reddening this repo's contract check
+    /// the moment it landed and forcing a three-landing dance for a case a unit
+    /// test can prove on its own. A new PROPERTY (priceNote/gateNote above) has
+    /// no such problem, which is why those DO ride the fixture.
+    @Test func decodesThePrepRequiredBookGate() throws {
+        let cta = try decode(
+            ConsultThreadBookCta.self,
+            value: [
+                "enabled": false,
+                "reason": "PREP_REQUIRED",
+                "lookPostId": "look_1",
+                "serviceId": "service_1",
+                "lookMediaId": "media_1",
+                "priceNote": "From $180 · 20% deposit",
+                "gateNote": "Susie asks clients to finish a few questions first.",
+            ] as [String: Any]
+        )
+
+        #expect(cta.reason == .prepRequired)
+        #expect(!cta.enabled)
+        // The gate note is SERVER copy — it names the pro, so there is no local
+        // string for it and nothing here may invent one.
+        #expect(cta.gateNote == "Susie asks clients to finish a few questions first.")
+        // A percentage deposit stays a percentage. At the spark there is no
+        // location mode and no add-ons, so dollars would be a guess.
+        #expect(cta.priceNote?.contains("20% deposit") == true)
+    }
+
+    /// A build that meets a gate reason it has never heard of still renders the
+    /// bar, rather than failing the whole thread decode.
+    @Test func anUnknownBookGateReasonDecodesAsUnknown() throws {
+        let cta = try decode(
+            ConsultThreadBookCta.self,
+            value: [
+                "enabled": false,
+                "reason": "SOMETHING_NEW",
+                "lookPostId": "look_1",
+                "serviceId": "service_1",
+                "lookMediaId": "media_1",
+                "priceNote": nil as String? as Any,
+                "gateNote": nil as String? as Any,
+            ] as [String: Any]
+        )
+
+        #expect(cta.reason == .unknown)
     }
 
     /// A build that meets a message kind it has never heard of renders the rest

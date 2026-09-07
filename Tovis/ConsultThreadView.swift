@@ -787,10 +787,31 @@ private struct ConsultThreadBookBar: View {
                         )
                 }
                 .disabled(!book.enabled || model.busy)
+                // P7a-5 — "From $180 · $25.00 deposit". Server-composed, drawn
+                // verbatim: the price and the deposit are ONE string on the
+                // wire precisely so this view cannot join them its own way and
+                // drift from the web's.
+                if let priceNote = book.priceNote, !priceNote.isEmpty {
+                    Text(priceNote)
+                        .font(BrandFont.body(12))
+                        .foregroundStyle(BrandColor.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .accessibilityIdentifier("consult-thread-book-price-note")
+                }
                 if book.reason == .selfieRequired {
                     Text(ConsultThreadCopy.bookCtaSelfieRequired)
                         .font(BrandFont.body(12))
                         .foregroundStyle(BrandColor.textMuted)
+                }
+                // P7a-5 — the prep gate's reason, in the pro's own name. Server
+                // copy because it carries a slot; there is no local string for
+                // it on purpose.
+                if let gateNote = book.gateNote, !gateNote.isEmpty {
+                    Text(gateNote)
+                        .font(BrandFont.body(12))
+                        .foregroundStyle(BrandColor.textMuted)
+                        .multilineTextAlignment(.center)
+                        .accessibilityIdentifier("consult-thread-book-gate-note")
                 }
                 if book.reason == .lookNotBookable {
                     Text(ConsultThreadCopy.bookCtaNotBookable)
@@ -807,6 +828,11 @@ private struct ConsultThreadBookBar: View {
         }
     }
 
+    /// 🔴 P7a-5's `.prepRequired` deliberately falls through to `true`. It is
+    /// the ONE gate the client can clear herself, in this same thread, by
+    /// answering the questions above the bar — so the bar stays visible and
+    /// disabled with `gateNote` under it. Adding it to the hide list would
+    /// remove the only thing telling her that answering leads anywhere.
     private func shouldShow(_ book: ConsultThreadBookCta) -> Bool {
         switch book.reason {
         case .notLookAnchored, .consultStopped, .alreadyBooked: return false
