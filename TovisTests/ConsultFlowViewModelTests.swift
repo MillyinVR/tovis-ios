@@ -333,6 +333,7 @@ private actor MockConsultService: ConsultServicing {
     /// way the poll would. Empty means "behave as before".
     private var scriptedRuns: [[String: Any]] = []
     private var analysisError: Error?
+    private var startAnalysisError: Error?
     private var threadError: Error?
     private(set) var analysisReadCount = 0
 
@@ -355,6 +356,10 @@ private actor MockConsultService: ConsultServicing {
 
     func startAnalysis(consultId: String, idempotencyKey: String) async throws
         -> ConsultAnalysisState {
+        // A server refusal of the START itself, injectable so the refusals
+        // production actually returned (a 409 on the version pin) can be driven
+        // from the state the client is really in — plan button on screen.
+        if let startAnalysisError { throw startAnalysisError }
         guard sessionAdvancedToAnalysis else {
             throw ConsultClientFailure.analysisInspirationRequired
         }
@@ -548,8 +553,13 @@ private actor MockConsultService: ConsultServicing {
                                ? dictionary("results", "results")
                                : NSNull()) as Any,
                            "awaitingStart": awaitingStart,
-                           "schemaVersion": value["schemaVersion"] ?? 3,
-                           "promptVersion": value["promptVersion"] ?? "v4",
+                           // Fall back to the pin this build SENDS, never to a
+                           // literal — a stale pair here is invisible until the
+                           // fixture stops carrying its own.
+                           "schemaVersion": value["schemaVersion"]
+                               ?? ConsultService.analysisSchemaVersion,
+                           "promptVersion": value["promptVersion"]
+                               ?? ConsultService.analysisPromptVersion,
                        ])
     }
 
@@ -922,6 +932,58 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
         }
     }
 
+    /// Deploy A, reproduced: the plan button on screen, and the server refusing
+    /// the start with the version pin.
+    ///
+    /// This is the exact shape of the production failure (Tori, 2026-09-07,
+    /// prod `dpl_CUgVdwjCQdz9DuGpoETzKx2itVd6`): three POSTs to
+    /// …/analysis, three 409s, and a button that looked dead because the only
+    /// thing that changed was a generic banner at the top of the thread. The
+    /// refusal must name the real reason, and be readable AT the button.
+    @Test func aRefusedStartNamesTheReasonAtTheButtonItAnswers() async throws {
+        try await withCaptureVault("flow-refused-start") {
+            let service = MockConsultService(root: try fixtureRoot())
+            let model = model(service, uploads: await testQueue(service))
+
+            await model.start()
+            try await acceptBothAgreements(model)
+            try await answerWholeIntake(model)
+            await model.skipInspiration(try #require(inspirationMessage(model)))
+            await submit(model, Data("left".utf8), for: try #require(photoMessage(model, .hairLeft)))
+            await model.proceedWithAccepted()
+
+            // The state she was in: the plan button is on screen.
+            #expect(planMessage(model)?.awaitingStart == true)
+
+            // The refusal prod returned, verbatim.
+            await service.setStartAnalysisErrorForTest(APIError.server(
+                status: 409,
+                message: "The analysis schema version is no longer current.",
+                code: "CONSULT_ANALYSIS_SCHEMA_VERSION_MISMATCH"
+            ))
+            await model.startAnalysis()
+
+            // Named, not generic — and never "try again", which cannot help.
+            #expect(model.failure == .appUpdateRequired)
+            #expect(model.failure?.message.contains("Update Tovis") == true)
+            #expect(model.failure?.message.lowercased().contains("try again") == false)
+            // Drawn at the button, which is still on screen to draw under.
+            #expect(model.failurePlacement == .planButton)
+            #expect(planMessage(model)?.awaitingStart == true)
+
+            // The consult that simply reached its appointment says so instead.
+            await service.setStartAnalysisErrorForTest(APIError.server(
+                status: 409,
+                message: "This consult closed when the appointment started.",
+                code: "CONSULT_APPOINTMENT_STARTED"
+            ))
+            await model.startAnalysis()
+            #expect(model.failure == .appointmentClosed)
+            #expect(model.failure?.message == "Your appointment already happened, so this consult is closed.")
+            #expect(model.failurePlacement == .planButton)
+        }
+    }
+
     /// P4b: the analysis became a background run, so the screen has to follow
     /// it rather than block on one request.
     @Test func aLiveRunIsPolledUntilItSettles() async throws {
@@ -1118,6 +1180,32 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
         #expect(await refusing.inspirationImageReads == 1)
         #expect(await refused.inspirationImage() == .failed)
         #expect(await refusing.inspirationImageReads == 2)
+    }
+
+    /// The refusal that answers "Build my plan" is drawn AT that button.
+    ///
+    /// On Deploy A a Release build looked like a dead control (Tori,
+    /// 2026-09-07): the POST was refused, the failure was set correctly, and
+    /// it rendered as one banner at the TOP of the thread — off screen below a
+    /// long consult. Nothing was broken about the failure itself, which is
+    /// exactly why every test stayed green; the PLACEMENT is the contract, so
+    /// it is asserted here.
+    @Test func aRefusedPlanStartIsPlacedAtTheButtonNotTheThreadTop() async throws {
+        let service = MockConsultService(root: try fixtureRoot())
+        let model = model(service)
+        await model.start()
+
+        // The mock refuses a start before the flow has advanced, exactly as
+        // the server does.
+        await model.startAnalysis()
+        #expect(model.failure == .analysisInspirationRequired)
+        #expect(model.failurePlacement == .planButton)
+
+        // Clearing returns the flow to the ordinary thread-level placement, so
+        // a stale plan failure can never capture a later thread error.
+        model.clearFailure()
+        #expect(model.failure == nil)
+        #expect(model.failurePlacement == .thread)
     }
 
     /// No source attached → nothing to show, and nothing to report. The panel
@@ -1409,6 +1497,10 @@ private extension MockConsultService {
 
     func setAnalysisErrorForTest(_ error: Error?) {
         analysisError = error
+    }
+
+    func setStartAnalysisErrorForTest(_ error: Error?) {
+        startAnalysisError = error
     }
 
     /// The thread read is what the poll drives now, so a dropped poll is a

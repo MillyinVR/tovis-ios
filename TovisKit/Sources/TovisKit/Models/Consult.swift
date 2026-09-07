@@ -1187,7 +1187,7 @@ public struct ConsultCaptureMutationKeys: Sendable, Equatable, Codable {
     }
 }
 
-public enum ConsultClientFailure: Error, Sendable, Equatable {
+public enum ConsultClientFailure: Error, Sendable, Hashable {
     case hidden
     case unavailable
     case invalidState
@@ -1197,6 +1197,14 @@ public enum ConsultClientFailure: Error, Sendable, Equatable {
     case analysisPrerequisitesRequired
     case analysisCapturesRequired
     case analysisInspirationRequired
+    /// P7a-3's own code. The consult worked and has simply reached its
+    /// appointment — the ordinary end of its life, not a failure, and never
+    /// "try again", which is the one thing she cannot do.
+    case appointmentClosed
+    /// The analysis version pin this build was compiled with is not the one the
+    /// server now speaks. Retrying cannot fix it and neither can she — only a
+    /// newer build can, so the message says so instead of "try again".
+    case appUpdateRequired
 
     public var message: String {
         switch self {
@@ -1209,7 +1217,11 @@ public enum ConsultClientFailure: Error, Sendable, Equatable {
         case .analysisPrerequisitesRequired:
             return "Your intake, inspiration, and photos need to be finished before the analysis can run."
         case .analysisCapturesRequired:
-            return "At least one accepted photo is needed before the analysis can run."
+            return "Add one photo first."
+        case .appointmentClosed:
+            return "Your appointment already happened, so this consult is closed."
+        case .appUpdateRequired:
+            return "Update Tovis to build your plan — this version is out of date."
         case .analysisInspirationRequired:
             return "Finish the inspiration step — add a photo and answer its questions, or continue without one — before the analysis can run."
         }
@@ -1228,6 +1240,17 @@ public enum ConsultClientFailure: Error, Sendable, Equatable {
             if code == "CONSULT_ANALYSIS_PREREQUISITES_REQUIRED" { return .analysisPrerequisitesRequired }
             if code == "CONSULT_ANALYSIS_CAPTURES_REQUIRED" { return .analysisCapturesRequired }
             if code == "CONSULT_ANALYSIS_INSPIRATION_REQUIRED" { return .analysisInspirationRequired }
+            // P7a-3 gave this its own code precisely so both clients could say
+            // their own sentence; iOS never added the case, so a closed consult
+            // fell through to "unavailable … try again" — the generic line, and
+            // the wrong advice.
+            if code == "CONSULT_APPOINTMENT_STARTED" { return .appointmentClosed }
+            // A stale build, named as such. Both halves of the analysis pin
+            // land here: retrying is useless, so the copy must not ask for it.
+            if code == "CONSULT_ANALYSIS_SCHEMA_VERSION_MISMATCH"
+                || code == "CONSULT_ANALYSIS_PROMPT_VERSION_MISMATCH" {
+                return .appUpdateRequired
+            }
             return .unavailable
         case .decoding: return .contractMismatch
         case .unauthorized, .invalidResponse, .transport: return .unavailable

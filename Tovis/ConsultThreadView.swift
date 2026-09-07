@@ -111,7 +111,9 @@ struct ConsultThreadView: View {
 
     var body: some View {
         ConsultThreadScroll(openMessageId: model.nextOpenMessageId) {
-            if let failure = model.failure {
+            // A plan refusal is drawn at the plan button instead — see
+            // PlanMessageView. Exactly one of the two renders any failure.
+            if let failure = model.failure, model.failurePlacement == .thread {
                 BrandErrorBanner(message: failure.message)
             }
             ForEach(model.messages) { message in
@@ -630,6 +632,18 @@ private struct PlanMessageView: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         }
                         .disabled(model.busy)
+                    }
+
+                    // The reason the plan did not start, at the control that
+                    // was pressed and in the app's own voice. It used to render
+                    // as one generic banner at the TOP of the thread, which on
+                    // a long consult is off screen — so the button read as
+                    // dead. Both the first "Build my plan" and the run card's
+                    // "Try again" route through `startAnalysis`, so both are
+                    // answered here.
+                    if let failure = model.failure, model.failurePlacement == .planButton {
+                        BrandErrorBanner(message: failure.message)
+                            .accessibilityIdentifier("consult-plan-failure")
                     }
 
                     // 🔴 A results payload that failed the C7 provenance check is

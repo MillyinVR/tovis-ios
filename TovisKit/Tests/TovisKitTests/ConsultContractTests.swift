@@ -334,8 +334,13 @@ import Testing
 
         let analysis = try decode(ConsultAnalysisStartResponse.self, key: "analysis").analysis
         #expect(analysis.status == .completed)
-        #expect(analysis.schemaVersion == 3)
-        #expect(analysis.promptVersion == "service-analysis-v3")
+        #expect(analysis.schemaVersion == 4)
+        #expect(analysis.promptVersion == "service-analysis-v5")
+        // The fixture must speak the pair this build SENDS, or the machine
+        // refuses it — which is exactly how a stale pin reaches production
+        // green (#406 moved the shape and left the pin on v3).
+        #expect(analysis.schemaVersion == ConsultService.analysisSchemaVersion)
+        #expect(analysis.promptVersion == ConsultService.analysisPromptVersion)
 
         let results = try decode(ConsultClientResultsResponse.self, key: "results").results
         #expect(results.hasFaithfulClientContract)
@@ -680,11 +685,14 @@ import Testing
         }
     }
 
-    @Test func analysisPrerequisiteCodesMapToActionableContentFreeMessages() {
+    @Test func consultRefusalCodesMapToActionableContentFreeMessages() {
         let cases: [(String, ConsultClientFailure)] = [
             ("CONSULT_ANALYSIS_PREREQUISITES_REQUIRED", .analysisPrerequisitesRequired),
             ("CONSULT_ANALYSIS_CAPTURES_REQUIRED", .analysisCapturesRequired),
             ("CONSULT_ANALYSIS_INSPIRATION_REQUIRED", .analysisInspirationRequired),
+            ("CONSULT_APPOINTMENT_STARTED", .appointmentClosed),
+            ("CONSULT_ANALYSIS_SCHEMA_VERSION_MISMATCH", .appUpdateRequired),
+            ("CONSULT_ANALYSIS_PROMPT_VERSION_MISMATCH", .appUpdateRequired),
         ]
         let privateContent = "consult-raw/v1/private.jpg"
         for (code, expected) in cases {
@@ -694,7 +702,15 @@ import Testing
             #expect(mapped == expected)
             #expect(!mapped.message.contains(privateContent))
         }
-        #expect(Set(cases.map(\.1.message)).count == cases.count)
+        // Distinct FAILURES must read distinctly — but two codes may share one
+        // failure on purpose (both halves of the analysis version pin mean the
+        // same thing to her: this build is too old). Comparing against
+        // `cases.count` would forbid that deliberate sharing.
+        #expect(Set(cases.map(\.1.message)).count == Set(cases.map(\.1)).count)
+        // Never "try again" for the two she cannot retry her way out of.
+        for failure in [ConsultClientFailure.appointmentClosed, .appUpdateRequired] {
+            #expect(!failure.message.lowercased().contains("try again"))
+        }
     }
 
     // MARK: - Pre-deploy fixes (2026-09-03)
