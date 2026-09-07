@@ -224,6 +224,11 @@ struct ConsultPhotoPickerSlot: View {
     /// P3 removed — the client is back on this list before there is a verdict,
     /// so the verdict has to live somewhere that is still on screen.
     let localRetakeReason: String?
+    /// Would the SERVER accept this shot right now? (P3b.)
+    ///
+    /// 🔴 Never derived from the message's `state`. A BLOCKED request is
+    /// deliberately tappable — see `ConsultThreadMessage.shootable`.
+    let shootable: Bool
 
     @State private var pick: PhotosPickerItem?
     @State private var preparationError: ConsultClientFailure?
@@ -287,23 +292,33 @@ struct ConsultPhotoPickerSlot: View {
                         .accessibilityLabel("This photo needs another try: \(localRetakeReason)")
                 }
 
-                Button { showGuidedCamera = true } label: {
-                    Label(guidedButtonTitle, systemImage: "camera.viewfinder")
-                        .font(BrandFont.body(13, .semibold))
-                        .foregroundStyle(BrandColor.onAccent)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 11)
-                        .background(BrandColor.accent)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                }
-                .disabled(disabled)
+                if shootable {
+                    Button { showGuidedCamera = true } label: {
+                        Label(guidedButtonTitle, systemImage: "camera.viewfinder")
+                            .font(BrandFont.body(13, .semibold))
+                            .foregroundStyle(BrandColor.onAccent)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 11)
+                            .background(BrandColor.accent)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                    .disabled(disabled)
 
-                PhotosPicker(selection: $pick, matching: .images) {
-                    Label(pickerButtonTitle, systemImage: "photo.on.rectangle")
-                        .font(BrandFont.body(12, .semibold))
-                        .foregroundStyle(disabled ? BrandColor.textMuted : BrandColor.textSecondary)
+                    PhotosPicker(selection: $pick, matching: .images) {
+                        Label(pickerButtonTitle, systemImage: "photo.on.rectangle")
+                            .font(BrandFont.body(12, .semibold))
+                            .foregroundStyle(disabled ? BrandColor.textMuted : BrandColor.textSecondary)
+                    }
+                    .disabled(disabled)
+                } else {
+                    // 🔴 No camera and no picker — not a disabled one. A control
+                    // that is present but refuses is what taught the client to
+                    // press it twice; both of her `eyes_closeup` attempts on
+                    // 2026-09-06 came back "This consult changed".
+                    Text("This one opens after you book.")
+                        .font(BrandFont.body(12))
+                        .foregroundStyle(BrandColor.textMuted)
                 }
-                .disabled(disabled)
             }
         }
         .fullScreenCover(isPresented: $showGuidedCamera) {

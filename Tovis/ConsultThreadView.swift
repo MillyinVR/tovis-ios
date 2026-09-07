@@ -583,7 +583,10 @@ private struct PhotoRequestMessageView: View {
                         )
                     )
                 },
-                localRetakeReason: model.localRetakeReasons[shot.key]
+                localRetakeReason: model.localRetakeReasons[shot.key],
+                // Absent from an older server means shootable — the
+                // behaviour every shipped build already had.
+                shootable: message.shootable ?? true
             )
             .opacity(message.slot?.state == .accepted ? 0.75 : 1)
         }

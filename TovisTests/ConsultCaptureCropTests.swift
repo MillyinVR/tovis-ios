@@ -195,3 +195,61 @@ private func shot(
         }
     }
 }
+
+/// P3b — a photo request the server would refuse must not offer a camera.
+@Suite struct ConsultShootableGateTests {
+    private func message(state: String, shootable: Bool?) -> ConsultThreadMessage {
+        var json = "{\"kind\": \"PHOTO_REQUEST\", \"id\": \"photo:eyes_closeup\", "
+            + "\"author\": \"APP\", \"state\": \"\(state)\", "
+            + "\"shotPackVersion\": 2, \"schemaVersion\": 1, "
+            + "\"shot\": {\"key\": \"eyes_closeup\", \"title\": \"Eyes & brows\", "
+            + "\"instruction\": \"i\", \"requirement\": \"REQUIRED\", "
+            + "\"framing\": \"TIGHT_CROP\"}"
+        if let shootable { json += ", \"shootable\": \(shootable)" }
+        json += "}"
+        return try! JSONDecoder().decode(ConsultThreadMessage.self, from: Data(json.utf8))
+    }
+
+    @Test func theServerDecidesShootability_notTheMessageState() {
+        // 🔴 The pairing that matters. BLOCKED is deliberately still tappable —
+        // it means "not where resume lands", and gating a camera on it would
+        // take away jumping between guided shots and retaking one after a plan
+        // exists. Only `shootable` may close the camera.
+        #expect(message(state: "BLOCKED", shootable: true).shootable == true)
+        #expect(message(state: "OPEN", shootable: false).shootable == false)
+    }
+
+    @Test func anOlderServerThatSendsNoFlagStillOffersTheCamera() {
+        // The field is additive; absent must mean "yes", which is what every
+        // build shipped before P3b did.
+        let legacy = message(state: "OPEN", shootable: nil)
+        #expect(legacy.shootable == nil)
+        #expect((legacy.shootable ?? true) == true)
+    }
+
+    @Test func theGuidedPackIsShootableInTheServedFixture() throws {
+        // The contract fixture is the served shape; every photo request in it
+        // is one the server would accept.
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent(
+                "TovisKit/Tests/TovisKitTests/Fixtures/consultFlow.json")
+        let raw = try #require(
+            try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        var seen = 0
+        func walk(_ any: Any) {
+            if let dict = any as? [String: Any] {
+                if dict["kind"] as? String == "PHOTO_REQUEST" {
+                    seen += 1
+                    #expect(dict["shootable"] as? Bool == true,
+                            "served photo request must say whether it is shootable")
+                }
+                dict.values.forEach(walk)
+            } else if let list = any as? [Any] {
+                list.forEach(walk)
+            }
+        }
+        walk(raw)
+        #expect(seen > 0, "fixture carried no photo requests")
+    }
+}

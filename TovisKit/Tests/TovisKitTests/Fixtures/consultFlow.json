@@ -2311,6 +2311,7 @@
             "framing": "FULL_VIEW"
           },
           "shotPackVersion": 2,
+          "shootable": true,
           "schemaVersion": 1,
           "slot": {
             "shotKey": "hair_back",
@@ -2336,6 +2337,7 @@
             "framing": "FULL_VIEW"
           },
           "shotPackVersion": 2,
+          "shootable": true,
           "schemaVersion": 1,
           "slot": {
             "shotKey": "hair_left",
@@ -2361,6 +2363,7 @@
             "framing": "FULL_VIEW"
           },
           "shotPackVersion": 2,
+          "shootable": true,
           "schemaVersion": 1,
           "slot": {
             "shotKey": "hair_right",
@@ -2386,6 +2389,7 @@
             "framing": "FULL_VIEW"
           },
           "shotPackVersion": 2,
+          "shootable": true,
           "schemaVersion": 1,
           "slot": {
             "shotKey": "hair_crown",
@@ -2411,6 +2415,7 @@
             "framing": "FULL_VIEW"
           },
           "shotPackVersion": 2,
+          "shootable": true,
           "schemaVersion": 1,
           "slot": {
             "shotKey": "face_front",
@@ -2436,6 +2441,7 @@
             "framing": "FULL_VIEW"
           },
           "shotPackVersion": 2,
+          "shootable": true,
           "schemaVersion": 1,
           "slot": {
             "shotKey": "face_side",
@@ -2461,6 +2467,7 @@
             "framing": "TIGHT_CROP"
           },
           "shotPackVersion": 2,
+          "shootable": true,
           "schemaVersion": 1,
           "slot": {
             "shotKey": "eyes_closeup",
