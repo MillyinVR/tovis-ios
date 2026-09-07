@@ -2994,7 +2994,9 @@
         "reason": null,
         "lookPostId": "look_fixture_1",
         "serviceId": "service_fixture_1",
-        "lookMediaId": "media_fixture_1"
+        "lookMediaId": "media_fixture_1",
+        "priceNote": "From $180 · $25.00 deposit",
+        "gateNote": null
       }
     }
   }

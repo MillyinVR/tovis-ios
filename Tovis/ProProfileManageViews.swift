@@ -434,6 +434,12 @@ struct ProOfferingsView: View {
                         ForEach(items) { row($0) }
                     }
                 }
+
+                // P7a-5 — when clients can book each category, and that
+                // category's deposit. Here rather than on a new screen: it is
+                // about this menu, so it lives with it.
+                ProCategoryBookingPolicySection()
+                    .padding(.top, 6)
             }
             .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 40)
         }

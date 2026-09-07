@@ -66,6 +66,16 @@ struct ProMainTabView: View {
     /// the screen ships build-green, unit-tested, and never once looked at —
     /// which is precisely the failure that key exists to stop repeating.
     @State private var debugPractice = false
+
+    /// DEBUG ONLY — open the pro's SERVICES screen straight from the launch
+    /// environment (P7a-5). Same reason as `TOVIS_DEBUG_OPEN_PRACTICE` above:
+    /// this machine cannot drive the simulator with synthetic taps, and "When
+    /// clients can book" lives two pushes behind the Profile tab. Without this
+    /// the section would ship build-green, unit-tested, and never once looked
+    /// at — the exact failure these keys exist to stop repeating.
+    ///
+    ///     SIMCTL_CHILD_TOVIS_DEBUG_OPEN_SERVICES=1 xcrun simctl launch …
+    @State private var debugServices = false
     #endif
 
     /// The tab a launch starts on — Calendar, unless a DEBUG build was launched
@@ -206,6 +216,18 @@ struct ProMainTabView: View {
             }
             .tint(BrandColor.accent)
         }
+        .sheet(isPresented: $debugServices) {
+            NavigationStack {
+                ProOfferingsView()
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Done") { debugServices = false }
+                                .tint(BrandColor.textSecondary)
+                        }
+                    }
+            }
+            .tint(BrandColor.accent)
+        }
         .sheet(isPresented: $debugPractice) {
             NavigationStack {
                 ProPracticeLibraryView()
@@ -221,6 +243,9 @@ struct ProMainTabView: View {
         .onAppear {
             if ProcessInfo.processInfo.environment["TOVIS_DEBUG_OPEN_PRACTICE"] == "1" {
                 debugPractice = true
+            }
+            if ProcessInfo.processInfo.environment["TOVIS_DEBUG_OPEN_SERVICES"] == "1" {
+                debugServices = true
             }
             // DEBUG ONLY — open the standalone camera itself (not the library),
             // i.e. exactly what the centre button does out of session. The
