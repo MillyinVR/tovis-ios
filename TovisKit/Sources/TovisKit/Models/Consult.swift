@@ -754,15 +754,76 @@ public struct ConsultCaptureSlot: Decodable, Sendable, Identifiable {
     public let state: ConsultCaptureSlotStatus
     public let captureId: String?
     public let qualityReasonCode: String?
-    /// A caveat on an ACCEPTED shot, never a refusal — the server documents it
-    /// as non-null only on an accepted tight-crop shot. Rendered beside a passed
-    /// photo so "we can still use this, but the light was warm" is visible
-    /// without ever reading as a retake.
+    /// A caveat on an ACCEPTED shot, never a refusal. Since 2026-09-07 a warm
+    /// or cast reading lands here on ANY shot rather than refusing a full view,
+    /// so this is now the ordinary outcome of shooting indoors — rendered
+    /// beside a passed photo so "we can still use this, but the light was warm"
+    /// is visible without ever reading as a retake.
     public let qualityWarningCode: String?
     public let retakeTip: String?
     public let rawExpiresAt: String?
     public let purgedAt: String?
+    /// How many verdicts this slot has had, ever. 0 on an empty slot.
+    ///
+    /// 🔴 Decoded leniently, defaulting to 0: a build carrying this field can
+    /// reach a server that predates it (the app ships through review, the
+    /// server ships when Tori says so), and a slot that fails to decode is a
+    /// photo request that vanishes from the thread.
+    public let attemptCount: Int
+    /// Why the attempt BEFORE this one was refused, if it was. Lets the slot say
+    /// "this one's warm too" instead of repeating itself and looking stuck.
+    public let previousReasonCode: String?
     public var id: ConsultCaptureShotKey { shotKey }
+
+    private enum CodingKeys: String, CodingKey {
+        case shotKey, state, captureId, qualityReasonCode, qualityWarningCode
+        case retakeTip, rawExpiresAt, purgedAt, attemptCount, previousReasonCode
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        shotKey = try container.decode(ConsultCaptureShotKey.self, forKey: .shotKey)
+        state = try container.decode(ConsultCaptureSlotStatus.self, forKey: .state)
+        captureId = try container.decodeIfPresent(String.self, forKey: .captureId)
+        qualityReasonCode = try container.decodeIfPresent(
+            String.self, forKey: .qualityReasonCode
+        )
+        qualityWarningCode = try container.decodeIfPresent(
+            String.self, forKey: .qualityWarningCode
+        )
+        retakeTip = try container.decodeIfPresent(String.self, forKey: .retakeTip)
+        rawExpiresAt = try container.decodeIfPresent(String.self, forKey: .rawExpiresAt)
+        purgedAt = try container.decodeIfPresent(String.self, forKey: .purgedAt)
+        attemptCount = try container.decodeIfPresent(Int.self, forKey: .attemptCount) ?? 0
+        previousReasonCode = try container.decodeIfPresent(
+            String.self, forKey: .previousReasonCode
+        )
+    }
+
+    /// Test-only construction. The wire shape is the real initializer above.
+    public init(
+        shotKey: ConsultCaptureShotKey,
+        state: ConsultCaptureSlotStatus,
+        captureId: String? = nil,
+        qualityReasonCode: String? = nil,
+        qualityWarningCode: String? = nil,
+        retakeTip: String? = nil,
+        rawExpiresAt: String? = nil,
+        purgedAt: String? = nil,
+        attemptCount: Int = 0,
+        previousReasonCode: String? = nil
+    ) {
+        self.shotKey = shotKey
+        self.state = state
+        self.captureId = captureId
+        self.qualityReasonCode = qualityReasonCode
+        self.qualityWarningCode = qualityWarningCode
+        self.retakeTip = retakeTip
+        self.rawExpiresAt = rawExpiresAt
+        self.purgedAt = purgedAt
+        self.attemptCount = attemptCount
+        self.previousReasonCode = previousReasonCode
+    }
 }
 
 /// The client's chart-copy choice (decision 2026-08-26): default-on but
