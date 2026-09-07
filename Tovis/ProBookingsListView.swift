@@ -216,6 +216,15 @@ struct ProBookingsListView: View {
                         BrandPill(text: confirmation.label, tint: wireBadgeTone(confirmation.tone))
                             .accessibilityLabel(confirmation.description)
                     }
+                    // P7a-4 — the day-of prep flag. Its `significant` gate is
+                    // what keeps it off the great majority of bookings, which
+                    // have no consult at all. 🔴 It FLAGS and never blocks: an
+                    // unanswered safety question is a prompt to reach out, and
+                    // the appointment stands either way.
+                    if let prep = booking.consultPrep?.display, prep.significant {
+                        BrandPill(text: prep.label, tint: wireBadgeTone(prep.tone))
+                            .accessibilityLabel(prep.description)
+                    }
                     if booking.needsCloseout {
                         BrandPill(text: "Payment due", tint: BrandColor.gold)
                     }

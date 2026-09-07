@@ -59,6 +59,14 @@ public struct ProBookingListItem: Decodable, Sendable, Identifiable {
     /// flag is off), so a payload from a server that predates web #806 decodes
     /// identically to one from a server that has it.
     public let clientConfirmation: ProClientConfirmation?
+    /// P7a-4 — whether the consult attached to this booking still has safety
+    /// questions outstanding, and whether their deadline has passed. Derived
+    /// server-side and printed verbatim.
+    ///
+    /// Optional AND omitted for every booking with no consult (the great
+    /// majority), so a payload from a server that predates web #1107 decodes
+    /// identically to one that has it.
+    public let consultPrep: ConsultPrepBadge?
 
     public var isInProgress: Bool { status.uppercased() == "IN_PROGRESS" }
 }

@@ -14,7 +14,35 @@ import TovisKit
 struct ProOverviewHomeView: View {
     @Environment(SessionModel.self) private var session
 
-    @State private var selection: ProHeaderTab = .overview
+    @State private var selection: ProHeaderTab = Self.launchTab
+
+    /// The header tab a launch starts on — Finance, unless a DEBUG build was
+    /// launched with `TOVIS_DEBUG_OPEN_PRO_TAB` naming another one.
+    ///
+    /// DEBUG ONLY, and for exactly the reason `ProMainTabView.launchTab` gives
+    /// for its own key: this machine cannot drive the simulator with synthetic
+    /// taps, so a screen behind a header tap is a screen nobody ever looks at.
+    /// The Bookings tab is where the P7a-4 prep flag renders, and it was two
+    /// taps past anything a script could reach.
+    ///
+    /// Accepts a `ProHeaderTab` raw value (`overview` · `reviews` · `aftercare`
+    /// · `bookings` · `lastMinute` · `locations`); anything else lands on
+    /// Finance as usual.
+    ///
+    ///     SIMCTL_CHILD_TOVIS_DEBUG_OPEN_PRO_TAB=bookings xcrun simctl launch …
+    ///
+    /// Read as the STATE'S INITIAL VALUE rather than applied in `onAppear`, the
+    /// same way `ProMainTabView` learned to: the shell swaps view identity when
+    /// a live pro session resolves, which resets `@State` and threw an onAppear
+    /// assignment away about half the time.
+    private static var launchTab: ProHeaderTab {
+        #if DEBUG
+        let raw = ProcessInfo.processInfo.environment["TOVIS_DEBUG_OPEN_PRO_TAB"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let raw, let wanted = ProHeaderTab(rawValue: raw) { return wanted }
+        #endif
+        return .overview
+    }
     @State private var showNotifications = false
     @State private var hasUnread = false
 
