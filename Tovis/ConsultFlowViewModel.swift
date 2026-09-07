@@ -4,6 +4,15 @@ import OSLog
 import TovisKit
 import UIKit
 
+/// Which view renders the flow's current failure.
+///
+/// Exactly one does: the thread's banner draws `.thread`, the plan card draws
+/// `.planButton` directly under the control that was pressed.
+enum ConsultFailurePlacement {
+    case thread
+    case planButton
+}
+
 /// P5a — the consult, driven as a THREAD.
 ///
 /// ONE read owns the screen: `GET /client/consult/{id}/thread` serves the whole
@@ -38,6 +47,15 @@ final class ConsultFlowViewModel {
     /// flow — and injectable so tests can drive it without a live client.
     @ObservationIgnored let uploads: ConsultCaptureUploadQueue
     private(set) var failure: ConsultClientFailure?
+    /// WHERE the current `failure` belongs on screen.
+    ///
+    /// A refusal that answers a button press has to be readable from that
+    /// button. "Build my plan" appeared to do nothing on a Release build
+    /// (Tori, 2026-09-07) because every failure rendered as one banner at the
+    /// TOP of the thread — off screen below a long consult, so the tap looked
+    /// like a dead control. The failure is still exactly one value; this only
+    /// says which view draws it, so the two can never double-report.
+    private(set) var failurePlacement: ConsultFailurePlacement = .thread
     private(set) var teaserTapped = false
     /// Local previews of this session's uploads. Rejected photos are purged
     /// server-side immediately, so this decoded copy is the only reviewable one.
@@ -617,7 +635,8 @@ final class ConsultFlowViewModel {
     /// retried run writes is the artefact the first attempt would have written.
     func startAnalysis() async {
         guard let consultId = machine.consultId else { return }
-        await perform {
+        // A refusal here answers "Build my plan", so it is drawn at that button.
+        await perform(placement: .planButton) {
             _ = try await service.startAnalysis(
                 consultId: consultId,
                 idempotencyKey: analysisIdempotencyKey
@@ -628,7 +647,7 @@ final class ConsultFlowViewModel {
     }
 
     func refreshAnalysis() async {
-        await perform { try await loadThread() }
+        await perform(placement: .planButton) { try await loadThread() }
         startPollingIfLive()
     }
 
@@ -705,7 +724,10 @@ final class ConsultFlowViewModel {
         }
     }
 
-    func clearFailure() { failure = nil }
+    func clearFailure() {
+        failure = nil
+        failurePlacement = .thread
+    }
 
     /// Let the durable queue tell this flow when a leg has landed, so the thread
     /// re-reads the server instead of waiting for the client to do something.
@@ -727,7 +749,10 @@ final class ConsultFlowViewModel {
     /// precisely why `submitPhoto` deliberately does not route through this at
     /// all, and why a rewrite that swapped this for a busy-guard would
     /// reintroduce the dropped-shot bug the durable queue exists to prevent.
-    private func perform(_ operation: () async throws -> Void) async {
+    private func perform(
+        placement: ConsultFailurePlacement = .thread,
+        _ operation: () async throws -> Void
+    ) async {
         let ahead = performTail
         // `mine` finishes when — and only when — this call finishes, so whoever
         // queues behind it waits for exactly that. An AsyncStream rather than a
@@ -740,6 +765,7 @@ final class ConsultFlowViewModel {
 
         busy = true
         failure = nil
+        failurePlacement = .thread
         defer {
             busy = false
             ticket.finish()
@@ -749,6 +775,7 @@ final class ConsultFlowViewModel {
             try await operation()
         } catch {
             failure = ConsultClientFailure.stable(error)
+            failurePlacement = placement
         }
     }
 }

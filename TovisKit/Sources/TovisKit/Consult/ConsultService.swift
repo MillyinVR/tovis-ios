@@ -71,12 +71,24 @@ public protocol ConsultServicing: Sendable {
 }
 
 public final class ConsultService: ConsultServicing, Sendable {
-    // Schema v3 / prompt v3 (2026-09-03, service-aware consult, tovis-app
-    // slice 2): the analysis is told which service the consult is for and the
-    // pro's menu; the colour lens became a service lens. The server refuses a
-    // start that names an older pair, so these move with the server.
-    public static let analysisSchemaVersion = 3
-    public static let analysisPromptVersion = "service-analysis-v3"
+    // Schema v4 / prompt v5 (P4a, tovis-app #1081): the analysis is split into
+    // two provider calls, and `core.currentLevel: {min, max}` became the two
+    // NAMED observations `baseLevel` / `lightestLevel`.
+    //
+    // 🔴 This pair is a HARD CUTOVER and it is the whole contract: the server
+    // compares both against its own constants in `validInput` and refuses a
+    // mismatch with ANALYSIS_SCHEMA_VERSION_MISMATCH (409) — so a stale pin
+    // means "Build my plan" can never start a run, no matter what else is
+    // right. `ConsultFlowMachine.apply(analysis:)` compares the same pair on
+    // the way back, so a stale pin also refuses every poll.
+    //
+    // It has drifted once already: #406 migrated the DECODING to v4's shape
+    // (`ConsultAIObservations.baseLevel`) and left these two lines on v3, so
+    // every shipped build after tovis-app #1081 deployed (2026-09-05) sent
+    // schemaVersion 3 to a server demanding 4 and died at the button. The
+    // shape and the pin are one change — never move one without the other.
+    public static let analysisSchemaVersion = 4
+    public static let analysisPromptVersion = "service-analysis-v5"
     public static let maximumPhotoBytes = 5_000_000
 
     private let api: APIClient
