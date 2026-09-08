@@ -1128,8 +1128,8 @@
     "analysis": {
       "consultId": "consult_fixture_1",
       "status": "COMPLETED",
-      "schemaVersion": 5,
-      "promptVersion": "service-analysis-v6",
+      "schemaVersion": 6,
+      "promptVersion": "service-analysis-v7",
       "result": null,
       "run": {
         "runId": "run_fixture_1",
@@ -2931,8 +2931,8 @@
             "createdAt": "2026-08-11T18:20:00.000Z"
           },
           "awaitingStart": false,
-          "schemaVersion": 5,
-          "promptVersion": "service-analysis-v6",
+          "schemaVersion": 6,
+          "promptVersion": "service-analysis-v7",
           "planVersion": 2,
           "updatePending": false
         },

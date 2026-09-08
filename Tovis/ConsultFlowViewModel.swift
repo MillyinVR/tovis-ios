@@ -411,6 +411,23 @@ final class ConsultFlowViewModel {
     /// Answering the LAST open question of a round is what buys the next one,
     /// which happens inside that POST. So the thread re-read below is what
     /// brings the next question back, and there is nothing to poll.
+    func confirmLook(version: Int) async {
+        guard let consultId = machine.consultId else { return }
+        await perform {
+            try await service.confirmLook(consultId: consultId, expectedVersion: version)
+            try await loadThread()
+        }
+    }
+
+    func chooseLook(version: Int, pathIndex: Int, locationType: String) async {
+        guard let consultId = machine.consultId else { return }
+        await perform {
+            try await service.chooseLook(consultId: consultId, expectedVersion: version, pathIndex: pathIndex,
+                                         locationType: locationType, idempotencyKey: UUID().uuidString)
+            try await loadThread()
+        }
+    }
+
     func answerFollowUp(_ message: ConsultThreadMessage, value: String) async {
         guard let consultId = machine.consultId,
               let questionKey = message.questionKey,

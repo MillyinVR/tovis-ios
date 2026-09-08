@@ -96,7 +96,6 @@ struct ConsultBookingReviewView: View {
 
                     BrandSurface {
                         VStack(alignment: .leading, spacing: 12) {
-                            ConsultProposalLines(proposal: proposal)
 
                             HStack(alignment: .firstTextBaseline) {
                                 Text(ConsultBookingCopy.durationLabel)

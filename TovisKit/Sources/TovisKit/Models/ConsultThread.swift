@@ -77,6 +77,7 @@ public enum ConsultThreadBookGateReason: String, Decodable, Sendable, Equatable 
 /// ESTIMATE_MISSING until the analysis commits an estimate, and the analysis
 /// takes about 100 seconds — longer than a spark lasts.
 public struct ConsultThreadBookCta: Decodable, Sendable, Equatable, Identifiable {
+    public let proposalConsultId: String?
     public let enabled: Bool
     public let reason: ConsultThreadBookGateReason?
     public let lookPostId: String?

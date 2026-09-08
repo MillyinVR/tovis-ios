@@ -655,7 +655,7 @@ private struct PlanMessageView: View {
                             .font(BrandFont.body(13))
                             .foregroundStyle(BrandColor.ember)
                     } else if let results = message.results {
-                        ConsultPlanSummaryView(results: results)
+                        ConsultPlanSummaryView(results: results, model: model)
                     }
                 }
             }
@@ -669,11 +669,15 @@ private struct PlanMessageView: View {
 /// its own history — is later work.
 private struct ConsultPlanSummaryView: View {
     let results: ConsultClientResults
+    let model: ConsultFlowViewModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             // Optional on the wire (additive), so the same fallback the results
             // screen has always used.
+            if let plan = results.lookPlan {
+                ConsultLookPlanView(plan: plan, brief: results.lookBrief, model: model)
+            } else {
             Text(results.directionsTitle ?? "Directions to discuss")
                 .font(BrandFont.body(16, .semibold))
                 .foregroundStyle(BrandColor.textPrimary)
@@ -682,6 +686,7 @@ private struct ConsultPlanSummaryView: View {
                     .font(BrandFont.body(14))
                     .foregroundStyle(BrandColor.textPrimary)
                     .frame(maxWidth: .infinity, alignment: .leading)
+            }
             }
             DisclosureGroup(ConsultThreadCopy.profileDetailsTitle) {
                 VStack(alignment: .leading, spacing: 10) {
@@ -943,5 +948,101 @@ struct ConsultAnalysisRunProgressView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .disabled(busy)
+    }
+}
+
+
+private struct ConsultLookPlanView: View {
+    let plan: ConsultLookPlan
+    let brief: ConsultLookBriefVersion?
+    let model: ConsultFlowViewModel
+
+
+    private var heading: String {
+        switch plan.tier {
+        case .exact: "Your look"
+        case .close: "A close direction"
+        case .toward: "A first step toward your look"
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(heading).font(BrandFont.body(16, .bold))
+            if plan.provisional || brief?.awaitingAnalysis == true {
+                Text("Draft — a few details still need confirming")
+                    .font(BrandFont.body(12, .semibold))
+                    .foregroundStyle(BrandColor.textSecondary)
+            }
+            Text(plan.summary).font(BrandFont.body(14))
+            if brief?.correctionsNeedReview == true {
+                Text("Earlier professional corrections need review before this look can be chosen or confirmed.").font(BrandFont.body(13))
+            }
+            if brief?.professionalPlanReason != nil {
+                Text("Plan authored by your pro after reviewing your details.").font(BrandFont.body(12))
+            }
+            ForEach(Array(plan.paths.enumerated()), id: \.offset) { index, path in
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(path.title).font(BrandFont.body(14, .semibold))
+                    Text(path.whyThisWorksForYou).font(BrandFont.body(14))
+                    ForEach((brief?.adjustments ?? []).filter { $0.field == "EXPECTATIONS" && $0.pathIndex == index }, id: \.pathIndex) { note in
+                        Text("Your pro’s note: \(note.value)").font(BrandFont.body(14))
+                    }
+                    Text(path.sessionCount == 1 ? "Planned in one visit" : "Planned over \(path.sessionCount) visits")
+                        .font(BrandFont.body(12))
+                        .foregroundStyle(BrandColor.textSecondary)
+                }
+                .padding(.vertical, 6)
+                if let brief {
+                    ForEach(brief.pathEstimates.filter { $0.pathIndex == index }, id: \.locationType) { estimate in
+                        let selected = brief.selectedPathIndex == index && brief.selectedLocationType == estimate.locationType
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(estimate.locationType == "SALON" ? "At the salon" : "Mobile appointment")
+                                .font(BrandFont.body(13, .semibold))
+                            Text("First appointment: \(estimate.firstAppointment.formattedSummary)")
+                            if path.sessionCount > 1 { Text("Whole transformation: \(estimate.transformation.formattedSummary)") }
+                            if plan.status == .readyToChoose && !plan.provisional && !brief.awaitingAnalysis {
+                                Button(selected ? "Look selected" : "Choose this look") {
+                                    Task { await model.chooseLook(version: brief.version, pathIndex: index, locationType: estimate.locationType) }
+                                }
+                                .buttonStyle(.bordered)
+                                .tint(BrandColor.accent)
+                                .disabled(model.busy || (brief.confirmationOpen ?? brief.inputOpen) == false || brief.correctionsNeedReview || selected || !estimate.visits.allSatisfy { $0.steps.allSatisfy(\.available) })
+                            }
+                        }
+                        .font(BrandFont.body(12))
+                        .foregroundStyle(BrandColor.textSecondary)
+                    }
+                }
+            }
+            if let brief {
+                Text("Version \(brief.version) · Estimate — your pro will confirm. Tip not included.")
+                    .font(BrandFont.body(12))
+                ForEach(brief.additionalClientAnswers ?? []) { item in
+                    Text("\(item.question): \(item.answer)").font(BrandFont.body(12))
+                }
+                ForEach(Array(brief.changes.enumerated()), id: \.offset) { _, change in Text(change).font(BrandFont.body(12)) }
+                Text(brief.clientConfirmed ? "You confirmed this version." : "Waiting for your confirmation.").font(BrandFont.body(12))
+                Text(brief.professionalConfirmed ? "Your pro confirmed this version." : "Waiting for your pro’s confirmation.").font(BrandFont.body(12))
+                if brief.selectedPathIndex != nil && !brief.awaitingAnalysis {
+                    Button(brief.clientConfirmed ? "Version confirmed" : "Confirm this look") {
+                        Task { await model.confirmLook(version: brief.version) }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(BrandColor.accent)
+                    .disabled(model.busy || brief.confirmationOpen == false || brief.correctionsNeedReview || brief.clientConfirmed)
+                }
+                if let visit = brief.completedVisit { ConsultCompletedVisitView(visit: visit) }
+                if let reserved = brief.reservedDurationMinutes {
+                    Text("Your reserved appointment: \(reserved) min. Changes to this time need a new availability check and confirmation.")
+                        .font(BrandFont.body(12))
+                }
+            }
+            Text(brief?.selectedPathIndex != nil && brief?.awaitingAnalysis == false
+                ? (brief?.clientConfirmed == true && brief?.professionalConfirmed == true ? "You both confirmed this look." : "Review and confirm this version together.")
+                : plan.nextStep).font(BrandFont.body(14, .semibold))
+        }
+        .foregroundStyle(BrandColor.textPrimary)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

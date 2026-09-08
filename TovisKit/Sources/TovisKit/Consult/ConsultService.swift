@@ -66,6 +66,8 @@ public protocol ConsultServicing: Sendable {
     func setChartCopy(consultId: String, optIn: Bool) async throws -> ConsultCaptureState
     func analysis(consultId: String) async throws -> ConsultAnalysisState
     func startAnalysis(consultId: String, idempotencyKey: String) async throws -> ConsultAnalysisState
+    func confirmLook(consultId: String, expectedVersion: Int) async throws
+    func chooseLook(consultId: String, expectedVersion: Int, pathIndex: Int, locationType: String, idempotencyKey: String) async throws
     func results(consultId: String) async throws -> ConsultClientResults
     func recordLockedTeaserTap(consultId: String) async throws
 }
@@ -87,8 +89,8 @@ public final class ConsultService: ConsultServicing, Sendable {
     // every shipped build after tovis-app #1081 deployed (2026-09-05) sent
     // schemaVersion 3 to a server demanding 4 and died at the button. The
     // shape and the pin are one change — never move one without the other.
-    public static let analysisSchemaVersion = 5
-    public static let analysisPromptVersion = "service-analysis-v6"
+    public static let analysisSchemaVersion = 6
+    public static let analysisPromptVersion = "service-analysis-v7"
     public static let maximumPhotoBytes = 5_000_000
 
     private let api: APIClient
@@ -658,6 +660,18 @@ public final class ConsultService: ConsultServicing, Sendable {
             "/client/consult/\(consultId)/analysis", method: .post, body: body
         )
         return response.analysis
+    }
+
+    public func confirmLook(consultId: String, expectedVersion: Int) async throws {
+        struct Body: Encodable { let expectedVersion: Int }
+        let body = try JSONEncoder.canonical.encode(Body(expectedVersion: expectedVersion))
+        try await api.requestVoid("/client/consult/\(consultId)/look-plan/acknowledge", method: .post, body: body)
+    }
+
+    public func chooseLook(consultId: String, expectedVersion: Int, pathIndex: Int, locationType: String, idempotencyKey: String) async throws {
+        struct Body: Encodable { let expectedVersion: Int; let pathIndex: Int; let locationType: String; let idempotencyKey: String }
+        let body = try JSONEncoder.canonical.encode(Body(expectedVersion: expectedVersion, pathIndex: pathIndex, locationType: locationType, idempotencyKey: idempotencyKey))
+        try await api.requestVoid("/client/consult/\(consultId)/look-plan/choice", method: .post, body: body)
     }
 
     public func results(consultId: String) async throws -> ConsultClientResults {

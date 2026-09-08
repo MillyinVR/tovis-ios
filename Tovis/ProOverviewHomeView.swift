@@ -78,6 +78,8 @@ struct ProOverviewHomeView: View {
             // Folded Finance & Tax hub (web repointed Overview → /pro/finance).
             // Its Overview sub-tab still renders the retained performance stats.
             ProFinanceView()
+        case .consults:
+            ProConsultQueueView()
         case .reviews:
             ProReviewsListView()
         case .aftercare:

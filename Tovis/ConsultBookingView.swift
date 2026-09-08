@@ -241,7 +241,6 @@ struct ConsultBookingView: View {
                             .foregroundStyle(BrandColor.textSecondary)
                     }
 
-                    ConsultProposalLines(proposal: proposal)
 
                     HStack(alignment: .firstTextBaseline) {
                         Text(ConsultBookingCopy.durationLabel)
@@ -373,35 +372,6 @@ private struct ConsultBookLaunch: Identifiable {
 }
 
 // MARK: - Shared pieces (this screen and the review step render the same rows)
-
-/// The lines of the appointment. ONE implementation, used by the proposal
-/// screen and by the review step, because the two render the same rows and
-/// would otherwise grow two answers to "what is this made of".
-struct ConsultProposalLines: View {
-    let proposal: ConsultBookingProposal
-
-    var body: some View {
-        VStack(spacing: 8) {
-            ForEach(Array(proposal.lines.enumerated()), id: \.offset) { _, line in
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text(line.serviceName)
-                        .font(BrandFont.body(13, .semibold))
-                        .foregroundStyle(BrandColor.textPrimary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 8)
-                    Text("\(ConsultDurationLabel.text(line.durationMinutes)) · \(ConsultMoney.text(line.price))")
-                        .font(BrandFont.body(12, .semibold))
-                        .foregroundStyle(BrandColor.textMuted)
-                        .layoutPriority(1)
-                }
-                .padding(.vertical, 10).padding(.horizontal, 12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(BrandColor.bgPrimary)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
-        }
-    }
-}
 
 /// Decision 5, rendered: THE NUMBER NEVER STANDS ON ITS OWN. `startingAtLabel`
 /// is composed server-side and is nil when the total is not positive, which

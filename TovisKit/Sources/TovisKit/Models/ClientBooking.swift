@@ -55,6 +55,7 @@ public struct BookingProfessional: Decodable, Sendable, Identifiable, ProPublicN
 // MARK: - Booking
 
 public struct ClientBooking: Decodable, Sendable, Identifiable {
+    public let isLookBooking: Bool?
     public let id: String
     public let status: String?
     public let source: String?
@@ -395,6 +396,18 @@ public struct ClientBookingConsultation: Decodable, Sendable {
 /// written by `buildProposalJson` in the web `consultation-proposal` route as
 /// `{ currency, items: [...] }`.
 public struct ClientBookingProposedServices: Decodable, Sendable {
+    public let lookBriefVersionId: String?
+    public var lookDurationMinutes: Int? {
+        guard let pin = lookBriefVersionId, !pin.isEmpty, !items.isEmpty else { return nil }
+        var total = 0
+        for item in items {
+            guard let minutes = item.durationMinutes, minutes > 0 else { return nil }
+            let sum = total.addingReportingOverflow(minutes)
+            guard !sum.overflow else { return nil }
+            total = sum.partialValue
+        }
+        return total
+    }
     public let currency: String?
     public let items: [ClientBookingProposedServiceItem]
 }
@@ -402,17 +415,19 @@ public struct ClientBookingProposedServices: Decodable, Sendable {
 /// One proposed line item. Only the fields the client is shown are modeled; the
 /// blob also carries the ids/duration/sort metadata the pro's form round-trips.
 public struct ClientBookingProposedServiceItem: Decodable, Sendable {
+    public let durationMinutes: Int?
     public let label: String?
     public let categoryName: String?
     /// Decimal-dollars string, e.g. "45.00" — feed it to `Wire.money`.
     public let price: String?
 
     private enum CodingKeys: String, CodingKey {
-        case label, categoryName, price
+        case label, categoryName, price, durationMinutes
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        durationMinutes = try? c.decodeIfPresent(Int.self, forKey: .durationMinutes)
         label = try? c.decodeIfPresent(String.self, forKey: .label)
         categoryName = try? c.decodeIfPresent(String.self, forKey: .categoryName)
         // The backend always writes `price` as a decimal string, but the column is

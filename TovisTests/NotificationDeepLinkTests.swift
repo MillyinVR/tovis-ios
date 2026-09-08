@@ -245,3 +245,21 @@ struct ProNotificationDeepLinkTests {
         #expect(try proNotification(href: "").deepLink == nil)
     }
 }
+
+@Suite("Versioned look brief notification links")
+struct LookBriefNotificationLinkTests {
+    @Test func clientBriefOpensInTheClientShell() {
+        let link = PushDeepLink(href: "/client/consult/consult-1")
+        #expect(link?.target == .clientConsult(id: "consult-1"))
+        #expect(link?.role == .client)
+    }
+    @Test func professionalBriefOpensInTheProfessionalShell() {
+        let link = PushDeepLink(href: "/pro/consults/consult-1")
+        #expect(link?.target == .proConsult(id: "consult-1"))
+        #expect(link?.role == .pro)
+    }
+    @Test func incompleteLinksDoNotOpenAnUnscopedBrief() {
+        #expect(PushDeepLink(href: "/client/consult")?.target == .clientHome)
+        #expect(PushDeepLink(href: "/pro/consults")?.target == .proHome)
+    }
+}
