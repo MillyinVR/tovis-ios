@@ -683,6 +683,35 @@ private struct ConsultPlanSummaryView: View {
                     .foregroundStyle(BrandColor.textPrimary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            DisclosureGroup(ConsultThreadCopy.profileDetailsTitle) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(ConsultThreadCopy.profileDetailsBody)
+                        .font(BrandFont.body(12))
+                        .foregroundStyle(BrandColor.textSecondary)
+                    ForEach(results.profile.orderedEntries, id: \.label) { entry in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(entry.label).font(BrandFont.body(12, .semibold))
+                            Text(entry.observation.value.lowercased().replacingOccurrences(of: "_", with: " "))
+                                .font(BrandFont.body(13))
+                        }
+                    }
+                    Text(ConsultThreadCopy.styleOptionsTitle).font(BrandFont.body(14, .semibold))
+                    Text(ConsultThreadCopy.styleOptionsBody).font(BrandFont.body(12))
+                    ForEach(results.styleDirections) { direction in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(direction.title).font(BrandFont.body(14, .semibold))
+                            Text(direction.direction)
+                            Text("\(ConsultThreadCopy.styleReasonLabel): \(direction.whyItFlatters)")
+                        }
+                        .font(BrandFont.body(13))
+                    }
+                }
+                .foregroundStyle(BrandColor.textSecondary)
+                .padding(.top, 8)
+            }
+            .font(BrandFont.body(14, .semibold))
+            .tint(BrandColor.accent)
+            .accessibilityIdentifier("consult-profile-details")
         }
     }
 }

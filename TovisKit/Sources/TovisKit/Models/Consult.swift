@@ -988,6 +988,7 @@ public struct ConsultFeatureProfile: Decodable, Sendable {
     public let jawline: ConsultObservation
     public let foreheadProportion: ConsultObservation
     public let featureBalance: ConsultObservation
+    public let eyeColor: ConsultObservation?
     public let eyeShape: ConsultObservation
     public let eyeSpacing: ConsultObservation
     public let browDensity: ConsultObservation
@@ -1007,7 +1008,7 @@ public struct ConsultFeatureProfile: Decodable, Sendable {
             ("Eye spacing", eyeSpacing),
             ("Brow density", browDensity),
             ("Brow shape", browShape),
-        ]
+        ] + (eyeColor.map { [(label: "Visible eye color", observation: $0)] } ?? [])
     }
 }
 

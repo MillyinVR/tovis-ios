@@ -3,6 +3,22 @@ import Testing
 @testable import TovisKit
 
 @Suite struct ConsultContractTests {
+    @Test func visibleEyeColorDecodesAndRendersAlongsideHistoricalProfile() throws {
+        var response = try #require(try root()["results"] as? [String: Any])
+        var results = try #require(response["results"] as? [String: Any])
+        var profile = try #require(results["profile"] as? [String: Any])
+        profile["eyeColor"] = [
+            "value": "BROWN",
+            "confidence": ["min": 0.4, "max": 0.7],
+            "evidence": ["eyes_closeup"],
+        ]
+        results["profile"] = profile
+        response["results"] = results
+        let decoded = try decode(ConsultClientResultsResponse.self, value: response).results
+        #expect(decoded.profile.eyeColor?.value == "BROWN")
+        #expect(decoded.profile.orderedEntries.contains { $0.label == "Visible eye color" })
+    }
+
     private func root() throws -> [String: Any] {
         try #require(JSONSerialization.jsonObject(with: fixture("consultFlow")) as? [String: Any])
     }
@@ -334,8 +350,8 @@ import Testing
 
         let analysis = try decode(ConsultAnalysisStartResponse.self, key: "analysis").analysis
         #expect(analysis.status == .completed)
-        #expect(analysis.schemaVersion == 4)
-        #expect(analysis.promptVersion == "service-analysis-v5")
+        #expect(analysis.schemaVersion == 5)
+        #expect(analysis.promptVersion == "service-analysis-v6")
         // The fixture must speak the pair this build SENDS, or the machine
         // refuses it — which is exactly how a stale pin reaches production
         // green (#406 moved the shape and left the pin on v3).
@@ -349,6 +365,7 @@ import Testing
         #expect(results.recommendationDirections.count == 2)
         #expect(results.styleDirections.count == 7)
         #expect(results.profile.eyeShape.value == "HOODED")
+        #expect(results.profile.eyeColor == nil) // historical payload remains readable
         #expect(results.safetyFlags.count == 1)
         #expect(results.meCardTeaser.locked)
 
