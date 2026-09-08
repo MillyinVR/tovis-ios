@@ -705,10 +705,10 @@ private struct ConsultPlanSummaryView: View {
                     Text(ConsultThreadCopy.profileDetailsBody)
                         .font(BrandFont.body(12))
                         .foregroundStyle(BrandColor.textSecondary)
-                    ForEach(results.profile.orderedEntries, id: \.label) { entry in
+                    ForEach(results.profile.clientEntries, id: \.label) { entry in
                         VStack(alignment: .leading, spacing: 2) {
                             Text(entry.label).font(BrandFont.body(12, .semibold))
-                            Text(entry.observation.value.lowercased().replacingOccurrences(of: "_", with: " "))
+                            Text(entry.value)
                                 .font(BrandFont.body(13))
                         }
                     }
@@ -973,7 +973,7 @@ private struct ConsultLookPlanView: View {
     private var heading: String {
         switch plan.tier {
         case .exact: "Your look"
-        case .close: "A close direction"
+        case .close: "A similar look"
         case .toward: "A first step toward your look"
         }
     }
@@ -988,10 +988,10 @@ private struct ConsultLookPlanView: View {
             }
             Text(plan.summary).font(BrandFont.body(14))
             if brief?.correctionsNeedReview == true {
-                Text("Earlier professional corrections need review before this look can be chosen or confirmed.").font(BrandFont.body(13))
+                Text("Your professional needs to check the earlier changes before you choose or confirm this look.").font(BrandFont.body(13))
             }
             if brief?.professionalPlanReason != nil {
-                Text("Plan authored by your pro after reviewing your details.").font(BrandFont.body(12))
+                Text("Your professional made this plan after reviewing what you shared.").font(BrandFont.body(12))
             }
             ForEach(Array(plan.paths.enumerated()), id: \.offset) { index, path in
                 VStack(alignment: .leading, spacing: 6) {
@@ -1009,10 +1009,10 @@ private struct ConsultLookPlanView: View {
                     ForEach(brief.pathEstimates.filter { $0.pathIndex == index }, id: \.locationType) { estimate in
                         let selected = brief.selectedPathIndex == index && brief.selectedLocationType == estimate.locationType
                         VStack(alignment: .leading, spacing: 6) {
-                            Text(estimate.locationType == "SALON" ? "At the salon" : "Mobile appointment")
+                            Text(estimate.locationType == "SALON" ? "At the salon" : "Your professional comes to you")
                                 .font(BrandFont.body(13, .semibold))
                             Text("First appointment: \(estimate.firstAppointment.formattedSummary)")
-                            if path.sessionCount > 1 { Text("Whole transformation: \(estimate.transformation.formattedSummary)") }
+                            if path.sessionCount > 1 { Text("All planned visits: \(estimate.transformation.formattedSummary)") }
                             if !estimate.visits.allSatisfy({ $0.steps.allSatisfy(\.available) }) {
                                 Text("Your pro needs to update this option before you can choose it.")
                             }
@@ -1031,8 +1031,8 @@ private struct ConsultLookPlanView: View {
                 }
             }
             if let brief {
-                if brief.inputOpen == false { Text("The appointment has started. Consult inputs are closed.").font(BrandFont.body(12)) }
-                if brief.invalidatedProfessionalPlan == true { Text("The client’s details changed. The previous professional plan needs a fresh review.").font(BrandFont.body(12)) }
+                if brief.inputOpen == false { Text("Your appointment has started, so you can’t add more answers or photos.").font(BrandFont.body(12)) }
+                if brief.invalidatedProfessionalPlan == true { Text("The details shared have changed. Your professional needs to check the plan again.").font(BrandFont.body(12)) }
                 Text("Version \(brief.version) · Estimate — your pro will confirm. Tip not included.")
                     .font(BrandFont.body(12))
                 ForEach(brief.chartSources ?? []) { source in Text(source.summary).font(BrandFont.body(12)) }

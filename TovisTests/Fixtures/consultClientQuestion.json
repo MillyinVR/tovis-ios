@@ -1,0 +1,29 @@
+{
+  "key": "other_chemical_history",
+  "label": "When did you last have another hair treatment besides hair color?",
+  "helpText": "Include treatments that add lasting curls, straighten or loosen curls, or smooth hair. These may be called perms, relaxers, or keratin treatments. Include other chemical treatments too, but not everyday washing, conditioning, or heat styling. Choose “Not sure” if you don’t know.",
+  "kind": "SINGLE_SELECT",
+  "requirement": "REQUIRED",
+  "options": [
+    {
+      "value": "never",
+      "label": "Never"
+    },
+    {
+      "value": "within-6-months",
+      "label": "Within 6 months"
+    },
+    {
+      "value": "6-12-months",
+      "label": "6–12 months ago"
+    },
+    {
+      "value": "over-12-months",
+      "label": "More than a year ago"
+    },
+    {
+      "value": "not-sure",
+      "label": "Not sure"
+    }
+  ]
+}

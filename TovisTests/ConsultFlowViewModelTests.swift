@@ -882,6 +882,38 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
         #expect(!model.canOfferPartialContinue)
     }
 
+    @Test func rendersPlainLanguageQuestionAtPhoneWidth() async throws {
+        var root = try fixtureRoot()
+        var response = try #require(root["intake"] as? [String: Any])
+        var intake = try #require(response["intake"] as? [String: Any])
+        var pack = try #require(intake["questionPack"] as? [String: Any])
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/consultClientQuestion.json")
+        let question = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        pack["questions"] = [question]
+        intake["questionPack"] = pack; response["intake"] = intake; root["intake"] = response
+        let service = MockConsultService(root: root)
+        let model = model(service)
+        await model.start()
+        try await acceptBothAgreements(model)
+        let message = try #require(openMessage(model))
+        #expect(message.question?.helpText == question["helpText"] as? String)
+        for (scheme, name) in [(ColorScheme.light, "light"), (ColorScheme.dark, "dark")] {
+            let view = QuestionMessageView(message: message, model: model)
+                .padding(16).frame(width: 390).background(BrandColor.bgPrimary)
+                .environment(\.colorScheme, scheme).tint(BrandColor.accent)
+            let renderer = ImageRenderer(content: view)
+            renderer.scale = 2
+            let image = try #require(renderer.uiImage)
+            #expect(image.size.width == 390)
+            let output = FileManager.default.temporaryDirectory.appendingPathComponent("consult-client-wording-\(name).png")
+            try #require(image.pngData()).write(to: output)
+            print("CLIENT WORDING SNAPSHOT → \(output.path)")
+        }
+        await model.answerIntake(message, value: "not-sure")
+        #expect(model.messages.first { $0.id == message.id }?.answer == "not-sure")
+    }
+
     @Test func rendersEditableIntakeAndManagementAtPhoneWidth() async throws {
         let service = MockConsultService(root: try editingRoot())
         await service.configureManagement(canDelete: true)
