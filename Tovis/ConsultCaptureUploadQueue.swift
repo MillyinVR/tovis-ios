@@ -310,12 +310,12 @@ final class ConsultCaptureUploadQueue {
     /// sensitive-data consent: the server purges its side, and keeping her
     /// photographs on this device afterwards would be the app quietly holding
     /// what she just took back.
-    func discardAll(consultId: String) {
+    func discardAll(consultId: String, reason: String = "consent_revoked") {
         for item in items(consultId: consultId) {
             SessionByteVault.removeConsultCapture(item.id)
             ConsultCaptureTelemetry.stage(
                 .released, outcome: .abandoned, shotKey: item.shotKey,
-                consultId: item.consultId, detail: "consent_revoked"
+                consultId: item.consultId, detail: reason
             )
         }
         refreshStages()
