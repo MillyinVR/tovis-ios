@@ -89,6 +89,7 @@ final class ProCaptureBodyURLProtocol: URLProtocol {
             firstName: "Tori",
             lastName: "Morales",
             phone: "+15551234567",
+            signupInviteCode: "TVS-TEST-CODE",
             professionType: .barber,
             licenseState: "CA",
             businessName: "Fade Lab",
@@ -118,6 +119,7 @@ final class ProCaptureBodyURLProtocol: URLProtocol {
         #expect(json["licenseState"] as? String == "CA")
         #expect(json["businessName"] as? String == "Fade Lab")
         #expect(json["handle"] as? String == "fadelab")
+        #expect(json["signupInviteCode"] as? String == "TVS-TEST-CODE")
         #expect(json["licenseNumber"] as? String == "COS123")
         #expect((json["mobileRadiusMiles"] as? NSNumber)?.intValue == 15)
         #expect(json["licenseExpiry"] == nil)
@@ -149,6 +151,7 @@ final class ProCaptureBodyURLProtocol: URLProtocol {
             firstName: "Amara",
             lastName: "Stone",
             phone: "+15559876543",
+            signupInviteCode: "TVS-TEST-CODE",
             professionType: .cosmetologist,
             licenseState: "NY",
             businessName: nil,

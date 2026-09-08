@@ -42,6 +42,7 @@ struct ClientSignupView: View {
     @State private var phone: String
     @State private var email: String
     @State private var password = ""
+    @State private var signupInviteCode = ""
     @State private var smsConsent = false
     @State private var tosAccepted = false
 
@@ -69,6 +70,10 @@ struct ClientSignupView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     header
+
+                    SignupInviteCodeField(code: $signupInviteCode) {
+                        formError = nil
+                    }
 
                     HStack(spacing: 12) {
                         field(label: "First name", text: $firstName)
@@ -285,7 +290,12 @@ struct ClientSignupView: View {
         let trimmedLast = lastName.trimmingCharacters(in: .whitespaces)
         let trimmedPhone = phone.trimmingCharacters(in: .whitespaces)
         let trimmedEmail = email.trimmingCharacters(in: .whitespaces)
+        let trimmedInviteCode = signupInviteCode.trimmingCharacters(in: .whitespaces)
 
+        guard !trimmedInviteCode.isEmpty else {
+            formError = "Invite code is required while signup is private."
+            return
+        }
         guard !trimmedFirst.isEmpty else { formError = "First name is required."; return }
         guard !trimmedLast.isEmpty else { formError = "Last name is required."; return }
 
@@ -317,6 +327,7 @@ struct ClientSignupView: View {
             firstName: trimmedFirst,
             lastName: trimmedLast,
             phone: trimmedPhone,
+            signupInviteCode: trimmedInviteCode,
             location: location,
             intent: claimContext != nil ? "CLAIM_INVITE" : nil,
             inviteToken: claimContext?.inviteToken,

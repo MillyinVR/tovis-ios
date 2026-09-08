@@ -100,6 +100,9 @@ struct RegisterRequest: Encodable, Sendable {
     /// Omitted (nil → key absent) when App Attest is unavailable, e.g. the
     /// Simulator; the backend then relies on its local dev fail-open.
     let appAttest: AppAttestPayload?
+    /// Founder-issued private-beta code. The backend consumes it atomically
+    /// with account creation and rejects missing, expired, revoked, or used codes.
+    let signupInviteCode: String
 
     // MARK: Claim-invite handoff (nil → key omitted). When a client signs up from
     // a claim link, `intent = "CLAIM_INVITE"` + `inviteToken` let the backend ADOPT

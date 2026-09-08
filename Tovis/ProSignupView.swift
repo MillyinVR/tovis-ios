@@ -53,6 +53,7 @@ struct ProSignupView: View {
     // Step 2 — account
     @State private var email = ""
     @State private var password = ""
+    @State private var signupInviteCode = ""
     @State private var tosAccepted = false
 
     @State private var step = 0
@@ -425,6 +426,10 @@ struct ProSignupView: View {
 
     private var accountStep: some View {
         VStack(alignment: .leading, spacing: 18) {
+            SignupInviteCodeField(code: $signupInviteCode) {
+                formError = nil
+            }
+
             VStack(alignment: .leading, spacing: 6) {
                 SignupFieldLabel("Email address")
                 BrandField(placeholder: "you@email.com", text: $email, isSecure: false)
@@ -633,6 +638,7 @@ struct ProSignupView: View {
             firstName: firstName.trimmingCharacters(in: .whitespaces),
             lastName: lastName.trimmingCharacters(in: .whitespaces),
             phone: phone.trimmingCharacters(in: .whitespaces),
+            signupInviteCode: signupInviteCode.trimmingCharacters(in: .whitespaces),
             professionType: profession,
             licenseState: licenseState,
             businessName: trimmedBusiness.isEmpty ? nil : trimmedBusiness,
@@ -685,6 +691,9 @@ struct ProSignupView: View {
             if !smsConsent { return "Please agree to receive verification and appointment texts." }
             return nil
         default:
+            if signupInviteCode.trimmingCharacters(in: .whitespaces).isEmpty {
+                return "Invite code is required while signup is private."
+            }
             if email.trimmingCharacters(in: .whitespaces).isEmpty { return "Email is required." }
             if password.count < Self.passwordMinLength {
                 return "Password must be at least \(Self.passwordMinLength) characters."

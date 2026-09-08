@@ -55,6 +55,7 @@ final class CannedResponseURLProtocol: URLProtocol {
             firstName: "Tori",
             lastName: "Morales",
             phone: "+15551234567",
+            signupInviteCode: "TVS-TEST-CODE",
             location: ClientSignupLocation(
                 postalCode: "90210",
                 city: "Beverly Hills",

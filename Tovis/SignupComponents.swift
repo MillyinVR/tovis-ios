@@ -30,6 +30,34 @@ struct SignupFieldLabel: View {
     }
 }
 
+/// The private-beta code field shared by client and pro signup. Formatting is
+/// cosmetic only; the backend normalizes spaces and hyphens before validation.
+struct SignupInviteCodeField: View {
+    @Binding var code: String
+    var onChange: () -> Void = {}
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            SignupFieldLabel("Invite code")
+            BrandField(
+                placeholder: "TVS-XXXX-XXXX-XXXX-XXXX-XXXX",
+                text: $code,
+                isSecure: false
+            )
+            .textInputAutocapitalization(.characters)
+            .autocorrectionDisabled()
+            .onChange(of: code) { _, value in
+                let uppercased = value.uppercased()
+                if uppercased != value { code = uppercased }
+                onChange()
+            }
+            Text("Private beta: use the one-time code from your invitation.")
+                .font(BrandFont.body(12))
+                .foregroundStyle(BrandColor.textMuted)
+        }
+    }
+}
+
 /// A tappable consent checkbox row (transactional-SMS / Terms), styled as a
 /// surface card. `text` carries its own markdown links (Terms / Privacy).
 struct SignupConsentRow: View {
