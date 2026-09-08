@@ -9,7 +9,7 @@
 import Foundation
 
 enum ProHeaderTab: String, CaseIterable, Identifiable {
-    case overview, reviews, aftercare, bookings, lastMinute, locations
+    case overview, consults, reviews, aftercare, bookings, lastMinute, locations
 
     var id: String { rawValue }
 
@@ -19,6 +19,7 @@ enum ProHeaderTab: String, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .overview:   return "Finance"
+        case .consults:   return "Look briefs"
         case .reviews:    return "Reviews"
         case .aftercare:  return "Aftercare"
         case .bookings:   return "Bookings"

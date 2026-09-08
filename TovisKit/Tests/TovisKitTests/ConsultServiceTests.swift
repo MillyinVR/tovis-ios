@@ -489,4 +489,31 @@ private final class ConsultURLProtocol: URLProtocol {
         ConsultURLProtocol.responder = { _ in (404, self.json(["ok": false, "error": "Not found."])) }
         try await makeService().deleteSession(consultId: "consult_already_removed")
     }
+    @Test func proExpectationCorrectionSendsVersionAndExplicitNullTargets() async throws {
+        reset()
+        ConsultURLProtocol.responder = { _ in (200, Data("{\"ok\":true}".utf8)) }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [ConsultURLProtocol.self]
+        let api = APIClient(config: TovisConfig(baseURL: URL(string: "https://test.local/api/v1")!),
+            session: URLSession(configuration: config), tokenStore: TokenStore(service: "consult.pro.tests"))
+        try await ProConsultService(api: api).expectations(id: "consult_1", version: 7, pathIndex: 1, value: "Buttery blonde with your natural root")
+        let request = try #require(ConsultURLProtocol.requests.last)
+        #expect(request.url?.path == "/api/v1/pro/consults/consult_1/look-plan/adjust")
+        #expect(request.httpMethod == "POST")
+        struct Body: Decodable {
+            let expectedVersion: Int
+            let adjustments: [Entry]
+            struct Entry: Decodable { let field: String; let pathIndex: Int; let value: String }
+        }
+        let data = try #require(request.httpBody)
+        let body = try JSONDecoder().decode(Body.self, from: data)
+        #expect(body.expectedVersion == 7)
+        #expect(body.adjustments.first?.field == "EXPECTATIONS")
+        #expect(body.adjustments.first?.pathIndex == 1)
+        let raw = try #require(String(data: data, encoding: .utf8))
+        for key in ["visitIndex", "offeringId", "locationType", "reason"] {
+            #expect(raw.contains("\"\(key)\":null"))
+        }
+    }
+
 }

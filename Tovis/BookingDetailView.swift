@@ -347,7 +347,7 @@ struct BookingDetailView: View {
 
                 aiConsultCard
 
-                if !booking.items.isEmpty {
+                if booking.isLookBooking != true && !booking.items.isEmpty {
                     BrandSection(title: "Services") {
                         VStack(spacing: 10) {
                             ForEach(booking.items) { LineRow(name: itemName($0), amount: $0.price) }
@@ -2883,7 +2883,16 @@ struct BookingDetailView: View {
             // What the client is actually approving — itemized, as the web
             // consultation card does. The proposal always accompanies a pending
             // approval, so a nil consultation means there's nothing to itemize.
-            if booking.consultation != nil {
+            if booking.isLookBooking == true {
+                Text("Review your shared look brief and the proposed total before approving.")
+                    .font(BrandFont.body(14))
+                    .foregroundStyle(BrandColor.textSecondary)
+                if let minutes = booking.consultation?.proposedServices?.lookDurationMinutes {
+                    Text("Updated appointment: \(minutes) min")
+                        .font(BrandFont.body(14, .semibold))
+                        .foregroundStyle(BrandColor.textPrimary)
+                }
+            } else if booking.consultation != nil {
                 proposedServicesList
             }
 

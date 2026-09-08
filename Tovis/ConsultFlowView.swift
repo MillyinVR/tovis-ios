@@ -104,7 +104,9 @@ struct ConsultFlowView: View {
             // seconds — longer than the spark lasts. The consult attaches to the
             // resulting booking and carries on as prep.
             .sheet(item: $bookLaunch) { book in
-                if let offering = bookOffering {
+                if let consultId = book.proposalConsultId {
+                    ConsultBookingView(consultId: consultId, lookMediaId: book.lookMediaId ?? lookMediaId)
+                } else if let offering = bookOffering {
                     BookingFlowView(
                         professionalId: professionalId,
                         proName: model?.professionalDisplayName ?? "",

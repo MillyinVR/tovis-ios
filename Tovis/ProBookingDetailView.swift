@@ -218,6 +218,13 @@ struct ProBookingDetailView: View {
     private func content(_ booking: ProBookingDetail) -> some View {
         statusRow(booking)
         headerCard(booking)
+        if let brief = booking.lookBrief {
+            NavigationLink { ProConsultBriefView(consultId: brief.consultId) } label: {
+                Text("Look brief · Version \(brief.version) · \(brief.confirmed ? "Both confirmed" : "Confirmation needed")")
+                    .font(BrandFont.body(14, .semibold))
+                    .foregroundStyle(BrandColor.accent)
+            }
+        }
         seriesCard()
         servicesCard(booking)
         timingCard(booking)

@@ -136,10 +136,12 @@ struct PushDeepLink: Equatable {
         /// buzzes. Without it the href fell through to `.clientHome`, so the tap
         /// dropped the client on Home with no explanation and no way to answer.
         case chartAccess
+        case clientConsult(id: String)
         case clientHome                      // any other /client/*
 
         // Pro-shell targets.
         case proBooking(id: String, step: String?)  // /pro/bookings/{id}[/session|/aftercare|…]
+        case proConsult(id: String)
         case proReviews(id: String?)         // /pro/reviews[/{id}] or #review-{id}
         case membership                      // /pro/membership
         case proProfile                      // /pro/profile/public-profile
@@ -163,9 +165,9 @@ struct PushDeepLink: Equatable {
         // screen from their client roster (ProClientsView).
         case .thread, .look, .publicClient, .publicPro:
             return nil
-        case .booking, .offers, .opening, .referrals, .activity, .chartAccess, .clientHome:
+        case .booking, .offers, .opening, .referrals, .activity, .chartAccess, .clientConsult, .clientHome:
             return .client
-        case .proBooking, .proReviews, .membership, .proProfile, .proCalendar, .proHome:
+        case .proBooking, .proConsult, .proReviews, .membership, .proProfile, .proCalendar, .proHome:
             return .pro
         }
     }
@@ -222,6 +224,8 @@ struct PushDeepLink: Equatable {
                 // A `#review` fragment is folded into `step` so the target is
                 // distinct and a future scroll-to-section can use it.
                 target = .booking(id: parts[2], step: step ?? (fragment == "review" ? "review" : nil))
+            case "consult" where parts.count == 3:
+                target = .clientConsult(id: parts[2])
             case "offers":
                 // The priority-offer push is `/client/offers?accept={recipientId}`;
                 // carry that id so the offers screen floats + highlights it.
@@ -252,6 +256,8 @@ struct PushDeepLink: Equatable {
                 // The 4th segment (session|aftercare|before-photos|…) is the step;
                 // `nil` = the plain booking detail. Carried for a future step-jump.
                 target = .proBooking(id: parts[2], step: parts.count >= 4 ? parts[3] : nil)
+            case "consults" where parts.count == 3:
+                target = .proConsult(id: parts[2])
             case "reviews":
                 // /pro/reviews/{id} (path) or /pro/reviews#review-{id} — the
                 // review-received push mirrors the web `review-<id>` anchor in the

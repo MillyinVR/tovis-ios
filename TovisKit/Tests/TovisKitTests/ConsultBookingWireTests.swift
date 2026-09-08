@@ -235,3 +235,15 @@ private extension URLRequest {
         #expect(items["locationType"] == "SALON")
     }
 }
+
+@Suite("Look proposal appointment timing")
+struct LookProposalTimingTests {
+    @Test func requiresCompleteVersionPinnedTiming() throws {
+        func decode(_ json: String) throws -> ClientBookingProposedServices {
+            try JSONDecoder().decode(ClientBookingProposedServices.self, from: Data(json.utf8))
+        }
+        #expect(try decode(#"{"lookBriefVersionId":"v4","items":[{"durationMinutes":120},{"durationMinutes":30}]}"#).lookDurationMinutes == 150)
+        #expect(try decode(#"{"items":[{"durationMinutes":120}]}"#).lookDurationMinutes == nil)
+        #expect(try decode(#"{"lookBriefVersionId":"v4","items":[{"durationMinutes":120},{}]}"#).lookDurationMinutes == nil)
+    }
+}

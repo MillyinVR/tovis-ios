@@ -139,6 +139,13 @@ struct ProSessionHubView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                if let brief = detail?.lookBrief {
+                    NavigationLink { ProConsultBriefView(consultId: brief.consultId) } label: {
+                        Text("Look brief · Version \(brief.version) · \(brief.confirmed ? "Both confirmed" : "Confirmation needed")")
+                            .font(BrandFont.body(14, .semibold))
+                            .foregroundStyle(BrandColor.accent)
+                    }
+                }
                 switch phase {
                 case .loading:
                     HStack { Spacer(); ProgressView().tint(BrandColor.accent); Spacer() }

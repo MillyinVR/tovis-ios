@@ -12,6 +12,12 @@ public struct ProBookingDetailResponse: Decodable, Sendable {
 }
 
 public struct ProBookingDetail: Decodable, Sendable, Identifiable {
+    public struct LookBrief: Decodable, Sendable {
+        public let consultId: String
+        public let version: Int
+        public let confirmed: Bool
+    }
+    public let lookBrief: LookBrief?
     public let id: String
     public let status: String
     public let scheduledFor: String

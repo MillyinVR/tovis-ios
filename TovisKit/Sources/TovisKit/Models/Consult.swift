@@ -948,7 +948,7 @@ public struct ConsultServiceReference: Decodable, Sendable {
     public let serviceCategoryId: String
 }
 
-public struct ConsultClientIntakeItem: Decodable, Sendable, Identifiable {
+public struct ConsultClientIntakeItem: Decodable, Sendable, Identifiable, Equatable {
     public let questionKey: String
     public let question: String
     public let answerCode: String
@@ -1038,7 +1038,52 @@ public struct ConsultStyleDirection: Decodable, Sendable, Identifiable {
     }
 }
 
+/// An immutable result plan. Menu identities are booking inputs for the server,
+/// never labels for the client-facing Looks consultation.
+public struct ConsultLookPlan: Decodable, Sendable {
+    public enum Tier: String, Decodable, Sendable { case exact = "EXACT", close = "CLOSE", toward = "TOWARD" }
+    public enum Status: String, Decodable, Sendable {
+        case readyToChoose = "READY_TO_CHOOSE", needsInput = "NEEDS_INPUT", proReview = "PRO_REVIEW", noOffering = "NO_OFFERING"
+    }
+    public struct Step: Decodable, Sendable {
+        public let serviceId: String
+        public let offeringId: String
+        public let serviceCategoryId: String
+        public let serviceName: String
+    }
+    public struct Visit: Decodable, Sendable { public let steps: [Step] }
+    public struct Path: Decodable, Sendable {
+        public let title: String
+        public let whyThisWorksForYou: String
+        public let featureEvidence: [String]
+        public let sessionCount: Int
+        public let visits: [Visit]
+    }
+    public let schemaVersion: Int
+    public let tier: Tier
+    public let status: Status
+    public let provisional: Bool
+    public let summary: String
+    public let nextStep: String
+    public let paths: [Path]
+
+    public var isConsistent: Bool {
+        schemaVersion == 1 && provisional == (status != .readyToChoose)
+            && !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !nextStep.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && paths.count <= 3
+            && (status != .readyToChoose || !paths.isEmpty)
+            && (!(status == .proReview || status == .noOffering) || paths.isEmpty)
+            && paths.allSatisfy { path in
+                path.sessionCount == path.visits.count && (1...8).contains(path.sessionCount)
+                    && path.visits.allSatisfy { (1...6).contains($0.steps.count) }
+            }
+    }
+}
+
 public struct ConsultClientResults: Decodable, Sendable {
+    public let lookBrief: ConsultLookBriefVersion?
+    public let lookPlan: ConsultLookPlan?
     public let consultId: String
     // Book the Look, B2/B8 — EXACTLY ONE anchor is set. `bookingId` widened to
     // optional rather than being joined by a second results type, because a
@@ -1069,7 +1114,8 @@ public struct ConsultClientResults: Decodable, Sendable {
     public let createdAt: String
 
     public var hasFaithfulClientContract: Bool {
-        (2...3).contains(recommendationDirections.count)
+        (1...3).contains(recommendationDirections.count)
+            && (lookPlan?.isConsistent ?? true)
             && !styleDirections.isEmpty
             && meCardTeaser.locked
             && achievabilityDirection.discussWithProfessional
@@ -1257,4 +1303,82 @@ public enum ConsultClientFailure: Error, Sendable, Hashable {
         case .unauthorized, .invalidResponse, .transport: return .unavailable
         }
     }
+}
+
+
+public struct ConsultLookEstimateAmount: Decodable, Sendable, Equatable {
+    public enum PriceStatus: String, Decodable, Sendable { case paid = "PAID", complimentary = "COMPLIMENTARY", unset = "UNSET" }
+    public let price: String?
+    public let priceStatus: PriceStatus
+    public let knownSubtotal: String
+    public let durationMinutes: Int?
+    public var formattedSummary: String {
+        let label = priceStatus == .complimentary ? "Complimentary" : Wire.money(price) ?? "Price set at consultation"
+        return label + " · " + (durationMinutes.map { "\($0) min" } ?? "Time set at consultation")
+    }
+
+}
+
+public struct ConsultLookPathEstimate: Decodable, Sendable, Equatable {
+    public struct Step: Decodable, Sendable, Equatable {
+        public let offeringId: String
+        public let serviceId: String
+        public let available: Bool
+        public let price: String?
+        public let durationMinutes: Int?
+    }
+    public struct Visit: Decodable, Sendable, Equatable { public let steps: [Step] }
+    public let pathIndex: Int
+    public let locationType: String
+    public let firstAppointment: ConsultLookEstimateAmount
+    public let transformation: ConsultLookEstimateAmount
+    public let visits: [Visit]
+}
+
+public struct ConsultLookAdjustment: Decodable, Sendable, Equatable {
+    public let field: String
+    public let pathIndex: Int
+    public let value: String
+    public let reason: String?
+}
+
+public struct ConsultLookBriefVersion: Decodable, Sendable, Equatable {
+    public let adjustments: [ConsultLookAdjustment]?
+    public let invalidatedAdjustments: [ConsultLookAdjustment]?
+    public let invalidatedProfessionalPlan: Bool?
+    public var correctionsNeedReview: Bool { invalidatedProfessionalPlan == true || !(invalidatedAdjustments ?? []).isEmpty }
+    public let professionalPlanReason: String?
+
+    public let completedVisit: ConsultLookCompletedVisit?
+    public let bookingId: String?
+    public let confirmationOpen: Bool?
+    public let inputOpen: Bool?
+    public let additionalClientAnswers: [ConsultClientIntakeItem]?
+    public let awaitingAnalysis: Bool
+    public let changes: [String]
+    public let id: String
+    public let version: Int
+    public let sourceAnalysisRevisionId: String
+    public let selectedPathIndex: Int?
+    public let selectedLocationType: String?
+    public let clientConfirmed: Bool
+    public let professionalConfirmed: Bool
+    public let pathEstimates: [ConsultLookPathEstimate]
+    public let reservedDurationMinutes: Int?
+}
+
+public struct ConsultLookCompletedVisit: Decodable, Sendable, Equatable {
+    public struct Care: Decodable, Sendable, Equatable {
+        public struct Section: Decodable, Sendable, Equatable { public let label: String; public let body: String }
+        public struct Product: Decodable, Sendable, Equatable { public let name: String; public let note: String? }
+        public let notes: String?
+        public let sections: [Section]
+        public let products: [Product]
+    }
+    public let bookingId: String
+    public let lookBriefVersionId: String
+    public let observedServiceMinutes: Int?
+    public let finalServiceSubtotal: String?
+    public let completedAt: String
+    public let aftercare: Care?
 }

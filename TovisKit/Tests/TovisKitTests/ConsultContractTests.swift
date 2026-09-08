@@ -350,8 +350,8 @@ import Testing
 
         let analysis = try decode(ConsultAnalysisStartResponse.self, key: "analysis").analysis
         #expect(analysis.status == .completed)
-        #expect(analysis.schemaVersion == 5)
-        #expect(analysis.promptVersion == "service-analysis-v6")
+        #expect(analysis.schemaVersion == 6)
+        #expect(analysis.promptVersion == "service-analysis-v7")
         // The fixture must speak the pair this build SENDS, or the machine
         // refuses it — which is exactly how a stale pin reaches production
         // green (#406 moved the shape and left the pin on v3).
@@ -792,4 +792,48 @@ import Testing
         #expect(decoded.directionsTitle == nil)
         #expect(decoded.hasFaithfulClientContract)
     }
+    @Test func oneUsefulLookAndOrderedVisitsSurviveTheWire() throws {
+        var response = try #require(try root()["results"] as? [String: Any])
+        var results = try #require(response["results"] as? [String: Any])
+        let directions = try #require(results["recommendationDirections"] as? [[String: Any]])
+        results["recommendationDirections"] = Array(directions.prefix(1))
+        let step: [String: Any] = ["serviceId": "color", "offeringId": "pro-color", "serviceCategoryId": "hair-color", "serviceName": "Dimensional color"]
+        let plan: [String: Any] = [
+            "schemaVersion": 1, "tier": "EXACT", "status": "READY_TO_CHOOSE", "provisional": false,
+            "summary": "Keep your length with warm dimension.", "nextStep": "Confirm your look.",
+            "paths": [["title": "Warm dimension", "whyThisWorksForYou": "Keeps the length you love.",
+                "featureEvidence": [], "sessionCount": 2, "visits": [["steps": [step]], ["steps": [step]]]]],
+        ]
+        results["lookPlan"] = plan
+        response["results"] = results
+        let decoded = try decode(ConsultClientResultsResponse.self, value: response).results
+        #expect(decoded.hasFaithfulClientContract)
+        #expect(decoded.lookPlan?.paths.first?.sessionCount == 2)
+        #expect(decoded.lookPlan?.paths.first?.visits.count == 2)
+        #expect(decoded.lookPlan?.tier == .exact)
+        var invalid = plan
+        invalid["provisional"] = true
+        results["lookPlan"] = invalid
+        response["results"] = results
+        #expect(try !decode(ConsultClientResultsResponse.self, value: response).results.hasFaithfulClientContract)
+    }
+
+    @Test func sharedBriefKeepsExpectationNotesAndUnknownCompletedTiming() throws {
+        let data = Data("""
+        {"id":"v7","version":7,"sourceAnalysisRevisionId":"a1","awaitingAnalysis":false,
+         "changes":[],"clientConfirmed":true,"professionalConfirmed":true,"pathEstimates":[],
+         "confirmationOpen":false,"inputOpen":false,
+         "adjustments":[{"field":"EXPECTATIONS","pathIndex":0,"value":"Buttery blonde","reason":null}],
+         "professionalPlanReason":"Reviewed together",
+         "completedVisit":{"bookingId":"b1","lookBriefVersionId":"v7","observedServiceMinutes":null,
+           "finalServiceSubtotal":"0.00","completedAt":"2026-09-08T10:00:00Z","aftercare":null}}
+        """.utf8)
+        let brief = try JSONDecoder().decode(ConsultLookBriefVersion.self, from: data)
+        #expect(brief.adjustments?.first?.value == "Buttery blonde")
+        #expect(brief.professionalPlanReason == "Reviewed together")
+        #expect(brief.completedVisit?.observedServiceMinutes == nil)
+        #expect(brief.completedVisit?.finalServiceSubtotal == "0.00")
+        #expect(brief.confirmationOpen == false)
+    }
+
 }

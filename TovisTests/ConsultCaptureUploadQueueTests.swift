@@ -197,7 +197,9 @@ struct ConsultCaptureUploadQueueTests {
         func setChartCopy(consultId: String, optIn: Bool) async throws -> ConsultCaptureState { fail() }
         func analysis(consultId: String) async throws -> ConsultAnalysisState { fail() }
         func startAnalysis(consultId: String, idempotencyKey: String) async throws -> ConsultAnalysisState { fail() }
-        func results(consultId: String) async throws -> ConsultClientResults { fail() }
+        func confirmLook(consultId: String, expectedVersion: Int) async throws { throw URLError(.unsupportedURL) }
+    func chooseLook(consultId: String, expectedVersion: Int, pathIndex: Int, locationType: String, idempotencyKey: String) async throws { throw URLError(.unsupportedURL) }
+    func results(consultId: String) async throws -> ConsultClientResults { fail() }
         func recordLockedTeaserTap(consultId: String) async throws { fail() }
 
         private func fail() -> Never {

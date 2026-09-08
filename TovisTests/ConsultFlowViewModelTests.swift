@@ -367,6 +367,8 @@ private actor MockConsultService: ConsultServicing {
         return try await analysis(consultId: consultId)
     }
 
+    func confirmLook(consultId: String, expectedVersion: Int) async throws { throw URLError(.unsupportedURL) }
+    func chooseLook(consultId: String, expectedVersion: Int, pathIndex: Int, locationType: String, idempotencyKey: String) async throws { throw URLError(.unsupportedURL) }
     func results(consultId: String) async throws -> ConsultClientResults {
         try decode(ConsultClientResults.self, value: dictionary("results", "results"))
     }

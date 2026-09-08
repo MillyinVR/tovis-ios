@@ -30,6 +30,8 @@ struct ProMainTabView: View {
     @State private var deepLinkProBooking: DeepLinkBookingRef?
     /// The pro reviews list surfaced by a `/pro/reviews[#review-{id}]` push
     /// (review-received); carries the review id to scroll to. nil = not presented.
+    private struct ConsultLink: Identifiable { let id: String }
+    @State private var consultLink: ConsultLink?
     @State private var reviewsLink: ReviewsDeepLink?
     /// The membership screen surfaced by a `/pro/membership` push (handle-expiry).
     @State private var showMembership = false
@@ -280,6 +282,12 @@ struct ProMainTabView: View {
         }
         // A tapped `/pro/reviews[#review-{id}]` push (review-received) → the list,
         // scrolled to that review when the id is present.
+        .sheet(item: $consultLink) { link in
+            NavigationStack {
+                ProConsultBriefView(consultId: link.id)
+                    .toolbar { ToolbarItem(placement: .topBarLeading) { Button("Done") { consultLink = nil } } }
+            }.tint(BrandColor.accent)
+        }
         .sheet(item: $reviewsLink) { link in
             NavigationStack {
                 ProReviewsListView(focusReviewId: link.focusReviewId)
@@ -372,6 +380,8 @@ struct ProMainTabView: View {
             // Carry the `step` so the detail scrolls to that section (aftercare);
             // the booking detail also links onward to the session hub.
             deepLinkProBooking = DeepLinkBookingRef(id: id, step: step)
+        case let .proConsult(id):
+            consultLink = ConsultLink(id: id)
         case let .proReviews(id):
             // Carry the review id (lifted from the `#review-{id}` fragment) so the
             // list scrolls to that review; nil opens the list at the top.
@@ -386,7 +396,7 @@ struct ProMainTabView: View {
             tab = .overview
         // Client-shell targets are handled by the workspace switch above;
         // unreachable here, but the switch must stay exhaustive.
-        case .booking, .offers, .opening, .referrals, .activity, .chartAccess, .clientHome:
+        case .booking, .offers, .opening, .referrals, .activity, .chartAccess, .clientConsult, .clientHome:
             break
         }
         session.clearPushDeepLink()

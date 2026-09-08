@@ -21,6 +21,8 @@ import TovisKit
 
 struct MainTabView: View {
     @Environment(SessionModel.self) private var session
+    private struct ConsultLink: Identifiable { let id: String }
+    @State private var consultLink: ConsultLink?
     @State private var tab: ClientTab.ID = Self.launchTab
     @State private var messagesBadge: String?
     /// A booking surfaced by a tapped push (`tovis://`-style `href` deep link),
@@ -181,6 +183,7 @@ struct MainTabView: View {
         .onChange(of: session.pushDeepLink) { _, link in
             Task { await routeDeepLink(link) }
         }
+        .sheet(item: $consultLink) { link in ConsultNotificationView(consultId: link.id) }
         .sheet(item: $deepLinkBooking) { booking in
             NavigationStack {
                 BookingDetailView(booking: booking, onDecision: { session.signalRefresh() }, focusStep: deepLinkBookingStep)
@@ -364,6 +367,8 @@ struct MainTabView: View {
             return
         }
         switch link.target {
+        case let .clientConsult(id):
+            consultLink = ConsultLink(id: id)
         case let .booking(id, step):
             // Carry the `step` so the detail scrolls to that section (consult /
             // aftercare); unknown steps just open at the top.
@@ -411,7 +416,7 @@ struct MainTabView: View {
             tab = .home
         // Pro-shell targets are handled by the workspace switch above; unreachable
         // here, but the switch must stay exhaustive.
-        case .proBooking, .proReviews, .membership, .proProfile, .proCalendar, .proHome:
+        case .proBooking, .proConsult, .proReviews, .membership, .proProfile, .proCalendar, .proHome:
             break
         }
         session.clearPushDeepLink()
