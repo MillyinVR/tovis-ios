@@ -255,6 +255,8 @@ public struct ConsultIntakeQuestionPack: Decodable, Sendable {
 public struct ConsultIntakePrefillProvenance: Decodable, Sendable {
     public let source: String
     public let sourceId: String?
+    public let recordedAt: String?
+    public let validUntil: String?
 }
 
 public struct ConsultIntakePrefillSuggestion: Decodable, Sendable {
@@ -1343,6 +1345,7 @@ public struct ConsultLookAdjustment: Decodable, Sendable, Equatable {
 }
 
 public struct ConsultLookBriefVersion: Decodable, Sendable, Equatable {
+    public let chartSources: [ConsultChartSource]?
     public let adjustments: [ConsultLookAdjustment]?
     public let invalidatedAdjustments: [ConsultLookAdjustment]?
     public let invalidatedProfessionalPlan: Bool?
@@ -1381,4 +1384,12 @@ public struct ConsultLookCompletedVisit: Decodable, Sendable, Equatable {
     public let finalServiceSubtotal: String?
     public let completedAt: String
     public let aftercare: Care?
+}
+
+public struct ConsultChartSource: Decodable, Sendable, Equatable, Identifiable {
+    public var id: String { questionKey }
+    public let questionKey: String
+    public let recordedAt: String
+    public let confirmedAt: String
+    public let summary: String
 }

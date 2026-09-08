@@ -162,6 +162,9 @@ public struct ConsultThreadMessage: Decodable, Sendable, Identifiable {
 
     // QUESTION — the intake pack's question, and the versions answering it must
     // echo (answering POSTs a whole revision pinned to them).
+    public let chartPhotos: [ConsultChartPhoto]?
+    public let chartFactSourceId: String?
+    public let chartReviewFingerprint: String?
     public let question: ConsultIntakeQuestion?
     public let answer: String?
     public let packVersion: Int?
@@ -246,6 +249,9 @@ public struct ConsultThreadMessage: Decodable, Sendable, Identifiable {
     private enum CodingKeys: String, CodingKey {
         case kind, id, author, state, text
         case requirements
+        case chartPhotos
+        case chartFactSourceId
+        case chartReviewFingerprint
         case question, answer, packVersion
         case sourceDecisionRequired, source, card
         case answeredQuestionCount, specificDetailCount, requiredSpecificDetailCount
@@ -286,6 +292,9 @@ public struct ConsultThreadMessage: Decodable, Sendable, Identifiable {
         inspirationQuestion = try? container.decodeIfPresent(
             ConsultInspirationQuestion.self, forKey: .question
         )
+        chartPhotos = try container.decodeIfPresent([ConsultChartPhoto].self, forKey: .chartPhotos)
+        chartFactSourceId = try container.decodeIfPresent(String.self, forKey: .chartFactSourceId)
+        chartReviewFingerprint = try container.decodeIfPresent(String.self, forKey: .chartReviewFingerprint)
         answer = try container.decodeIfPresent(String.self, forKey: .answer)
         packVersion = try container.decodeIfPresent(Int.self, forKey: .packVersion)
 
@@ -363,4 +372,12 @@ public struct ConsultThread: Decodable, Sendable {
 
 struct ConsultThreadResponse: Decodable, Sendable {
     let thread: ConsultThread
+}
+
+public struct ConsultChartPhoto: Decodable, Equatable, Identifiable, Sendable {
+    public let mediaAssetId: String
+    public let url: String
+    public let label: String
+    public let recordedAt: String
+    public var id: String { mediaAssetId }
 }

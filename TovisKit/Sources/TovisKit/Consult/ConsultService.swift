@@ -15,6 +15,9 @@ public protocol ConsultServicing: Sendable {
     func revokeAgreement(consultId: String, acceptanceId: String) async throws -> ConsultAgreementState
     /// P5a — the WHOLE flow state as an ordered thread, in one read.
     func thread(consultId: String) async throws -> ConsultThread
+    func useChartPhoto(consultId: String, mediaAssetId: String, idempotencyKey: String) async throws
+    func answerChartFact(consultId: String, sourceId: String, questionKey: String, value: String, idempotencyKey: String) async throws
+    func reviewChart(consultId: String, fingerprint: String, decision: String, idempotencyKey: String) async throws
     func intake(consultId: String) async throws -> ConsultIntakeState
     func submitIntake(consultId: String, state: ConsultIntakeState, answers: [String: String],
                       idempotencyKey: String) async throws -> ConsultIntakeState
@@ -299,6 +302,26 @@ public final class ConsultService: ConsultServicing, Sendable {
             complete: true,
             idempotencyKey: idempotencyKey
         )
+    }
+
+    public func useChartPhoto(consultId: String, mediaAssetId: String, idempotencyKey: String) async throws {
+        struct Body: Encodable { let mediaAssetId: String; let idempotencyKey: String }
+        let _: ConsultCaptureStateResponse = try await api.request(
+            "/client/consult/\(consultId)/chart-photo", method: .post,
+            body: JSONEncoder.canonical.encode(Body(mediaAssetId: mediaAssetId, idempotencyKey: idempotencyKey)))
+    }
+
+    public func answerChartFact(consultId: String, sourceId: String, questionKey: String, value: String, idempotencyKey: String) async throws {
+        struct Body: Encodable { let sourceId: String; let questionKey: String; let value: String; let idempotencyKey: String }
+        let _: ConsultIntakeSubmitResponse = try await api.request("/client/consult/\(consultId)/chart-fact", method: .post,
+            body: JSONEncoder.canonical.encode(Body(sourceId: sourceId, questionKey: questionKey, value: value, idempotencyKey: idempotencyKey)))
+    }
+
+    public func reviewChart(consultId: String, fingerprint: String, decision: String, idempotencyKey: String) async throws {
+        struct Body: Encodable { let fingerprint: String; let decision: String; let idempotencyKey: String }
+        let _: ConsultIntakeSubmitResponse = try await api.request(
+            "/client/consult/\(consultId)/chart-review", method: .post,
+            body: JSONEncoder.canonical.encode(Body(fingerprint: fingerprint, decision: decision, idempotencyKey: idempotencyKey)))
     }
 
     public func submitIntake(consultId: String, packVersion: Int, schemaVersion: Int,
@@ -696,3 +719,16 @@ public final class ConsultService: ConsultServicing, Sendable {
     }
 }
 
+
+extension ConsultServicing {
+    public func answerChartFact(consultId: String, sourceId: String, questionKey: String, value: String, idempotencyKey: String) async throws {
+        throw ConsultClientFailure.unavailable
+    }
+
+    public func useChartPhoto(consultId: String, mediaAssetId: String, idempotencyKey: String) async throws {
+        throw ConsultClientFailure.unavailable
+    }
+    public func reviewChart(consultId: String, fingerprint: String, decision: String, idempotencyKey: String) async throws {
+        throw ConsultClientFailure.unavailable
+    }
+}

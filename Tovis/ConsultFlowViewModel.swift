@@ -309,33 +309,46 @@ final class ConsultFlowViewModel {
               question.options.contains(where: { $0.value == value })
         else { return }
 
-        var answers: [String: String] = [:]
-        for entry in messages where entry.kind == .question {
-            if let key = entry.question?.key, let existing = entry.answer {
-                answers[key] = existing
-            }
-        }
-        answers[question.key] = value
-
-        // `complete` is the server's own judgement, echoed: every REQUIRED
-        // question now has an answer. Claiming it early is refused; claiming it
-        // late leaves the client on a step with no way forward.
-        let complete = messages
-            .filter { $0.kind == .question && $0.question?.requirement.mustAnswer == true }
-            .allSatisfy { entry in
-                guard let key = entry.question?.key else { return true }
-                return answers[key] != nil
-            }
-
         await perform {
-            _ = try await service.submitIntake(
+            if let sourceId = message.chartFactSourceId {
+                try await service.answerChartFact(consultId: consultId, sourceId: sourceId, questionKey: question.key,
+                    value: value, idempotencyKey: UUID().uuidString)
+                try await loadThread(); return
+            }
+            if let fingerprint = message.chartReviewFingerprint {
+                try await service.reviewChart(consultId: consultId, fingerprint: fingerprint,
+                                              decision: value, idempotencyKey: UUID().uuidString)
+                try await loadThread()
+                return
+            }
+
+            // The chat exposes only the next question. Its visible bubbles
+            // cannot establish whether the full, versioned pack is complete.
+            let current = try await service.intake(consultId: consultId)
+            var answers = current.latestRevision?.answers ?? [:]
+            answers[question.key] = value
+            let saved = try await service.submitIntake(
                 consultId: consultId,
                 packVersion: packVersion,
                 schemaVersion: schemaVersion,
                 answers: answers,
-                complete: complete,
+                complete: current.latestRevision?.complete ?? false,
                 idempotencyKey: UUID().uuidString
             )
+            if saved.progress?.canComplete == true,
+               saved.latestRevision?.complete != true,
+               saved.questionPack.questions.allSatisfy({
+                   $0.requirement != .skippable || saved.latestRevision?.answers[$0.key] != nil
+               }) {
+                _ = try await service.submitIntake(
+                    consultId: consultId,
+                    packVersion: saved.questionPack.version,
+                    schemaVersion: saved.questionPack.schemaVersion,
+                    answers: saved.latestRevision?.answers ?? answers,
+                    complete: true,
+                    idempotencyKey: UUID().uuidString
+                )
+            }
             try await loadThread()
         }
     }
@@ -434,6 +447,11 @@ final class ConsultFlowViewModel {
               message.followUpOptions?.contains(where: { $0.value == value }) == true
         else { return }
         await perform {
+            if let sourceId = message.chartFactSourceId {
+                try await service.answerChartFact(consultId: consultId, sourceId: sourceId, questionKey: questionKey,
+                    value: value, idempotencyKey: UUID().uuidString)
+                try await loadThread(); return
+            }
             try await service.answerFollowUp(
                 consultId: consultId,
                 questionKey: questionKey,
@@ -519,6 +537,15 @@ final class ConsultFlowViewModel {
         guard let consultId = machine.consultId else { return }
         await perform {
             _ = try await service.proceedWithAccepted(consultId: consultId)
+            try await loadThread()
+        }
+    }
+
+    func useChartPhoto(_ photo: ConsultChartPhoto) async {
+        guard let consultId else { return }
+        await perform {
+            try await service.useChartPhoto(consultId: consultId, mediaAssetId: photo.mediaAssetId,
+                idempotencyKey: "chart-photo:\(photo.mediaAssetId)")
             try await loadThread()
         }
     }

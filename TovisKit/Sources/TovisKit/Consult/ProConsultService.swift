@@ -24,6 +24,7 @@ public struct ProConsultInspiration: Decodable, Sendable {
 }
 
 public struct ProConsultBrief: Decodable, Sendable {
+    public let mentor: ConsultMentor?
     public let inspiration: ProConsultInspiration?
 
     public let consultId: String
@@ -132,4 +133,17 @@ extension ProConsultService {
             reviewedClientDetails: reviewedClientDetails, visits: visits)
         try await api.requestVoid(path(id) + "/author", method: .post, body: JSONEncoder().encode(body))
     }
+}
+
+public struct ConsultMentor: Decodable, Sendable {
+    public struct Section: Decodable, Sendable, Identifiable {
+        public struct Item: Decodable, Sendable { public let text: String; public let sourceId: String }
+        public let id: Int
+        public let title: String
+        public let items: [Item]
+    }
+    public let title: String
+    public let authority: String
+    public let formulationNote: String
+    public let sections: [Section]
 }

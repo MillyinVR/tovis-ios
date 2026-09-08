@@ -94,6 +94,7 @@ struct ProProfileTabView: View {
         if !isApproved { approvalNotice }
 
         profileCard(mine: mine, pub: pub, isApproved: isApproved)
+        ConsultMentorProfileSettings(profile: mine)
         yourLinkCard(mine: mine, isApproved: isApproved)
         if let stats = pub?.stats { statsGrid(stats) }
         quickActions
@@ -628,5 +629,42 @@ struct ProProfileTabView: View {
         // dropped request hides the flag-held rows rather than resurrecting a
         // dead end, and never flickers a working row away mid-session.
         if let fresh = await capabilityRead { capabilities = fresh }
+    }
+}
+
+private struct ConsultMentorProfileSettings: View {
+    @Environment(SessionModel.self) private var session
+    let profile: ProMyProfile
+    @State private var enabled = false
+    @State private var lines = ""
+    @State private var busy = false
+    @State private var status = ""
+    var body: some View {
+        BrandSurface {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Mentor mode").font(BrandFont.body(18, .semibold))
+                Toggle("Show the hair mentor layer on my Look Briefs", isOn: $enabled)
+                Text("Your color product lines").font(BrandFont.body(14, .semibold))
+                TextField("One brand and line per row", text: $lines, axis: .vertical).lineLimit(3...12)
+                Text("Up to 12 lines. These are private profile preferences.").font(BrandFont.body(12))
+                Button("Save mentor preferences") {
+                    Task {
+                        busy = true; status = ""
+                        defer { busy = false }
+                        do {
+                            let values = lines.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                            let saved = try await session.client.proProfile.updateMentor(enabled: enabled, productLines: values)
+                            enabled = saved.consultMentorEnabled ?? false
+                            lines = (saved.consultProductLines ?? []).joined(separator: "\n")
+                            status = "Mentor preferences saved."
+                        } catch { status = "Mentor preferences could not be saved. Please try again." }
+                    }
+                }
+                if !status.isEmpty { Text(status).font(BrandFont.body(12)).accessibilityAddTraits(.updatesFrequently) }
+            }.disabled(busy)
+        }.task(id: profile.id) {
+            enabled = profile.consultMentorEnabled ?? false
+            lines = (profile.consultProductLines ?? []).joined(separator: "\n")
+        }
     }
 }

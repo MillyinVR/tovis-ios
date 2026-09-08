@@ -12,6 +12,8 @@ public struct ProMyProfileResponse: Decodable, Sendable {
 }
 
 public struct ProMyProfile: Decodable, Sendable {
+    public let consultMentorEnabled: Bool?
+    public let consultProductLines: [String]?
     public let id: String
     public let businessName: String?
     public let handle: String?

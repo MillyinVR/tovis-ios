@@ -15,6 +15,8 @@ private actor MockConsultService: ConsultServicing {
     /// The last intake revision this mock accepted, so its thread can render the
     /// answered questions as history the way the server's projection does.
     private var latestIntakeAnswers: [String: String] = [:]
+    private var latestIntakeState: ConsultIntakeState?
+    private(set) var intakeCompletionClaims: [Bool] = []
     private(set) var captureKeys: [ConsultCaptureMutationKeys] = []
     private(set) var receivedByteCounts: [Int] = []
     private(set) var inspirationUploadByteCounts: [Int] = []
@@ -101,7 +103,10 @@ private actor MockConsultService: ConsultServicing {
     }
 
     func intake(consultId: String) async throws -> ConsultIntakeState {
-        try decode(ConsultIntakeState.self, value: dictionary("intake", "intake"))
+        if let latestIntakeState { return latestIntakeState }
+        var value = dictionary("intake", "intake")
+        value["latestRevision"] = NSNull()
+        return try decode(ConsultIntakeState.self, value: value)
     }
 
     func submitIntake(consultId: String, state: ConsultIntakeState,
@@ -120,15 +125,31 @@ private actor MockConsultService: ConsultServicing {
     func submitIntake(consultId: String, packVersion: Int, schemaVersion: Int,
                       answers: [String: String], complete: Bool,
                       idempotencyKey: String) async throws -> ConsultIntakeState {
-        latestIntakeAnswers = answers
+        intakeCompletionClaims.append(complete)
         var value = dictionary("intake", "intake")
-        value["status"] = "MEDIA_READY"
+        let pack = try #require(value["questionPack"] as? [String: Any])
+        let questions = try #require(pack["questions"] as? [[String: Any]])
+        let missing = questions.first { question in
+            guard question["requirement"] as? String == "REQUIRED", let key = question["key"] as? String else { return false }
+            return answers[key] == nil
+        }
+        if complete && missing != nil {
+            throw NSError(domain: "MockConsultIntake", code: 400,
+                          userInfo: [NSLocalizedDescriptionKey: "Required intake answers are missing."])
+        }
+        latestIntakeAnswers = answers
+        value["status"] = complete ? "MEDIA_READY" : "INTAKE_IN_PROGRESS"
+        value["progress"] = ["canComplete": missing == nil,
+                             "nextQuestionKey": missing?["key"] ?? NSNull(),
+                             "blocker": missing == nil ? NSNull() : "REQUIRED_ANSWERS_MISSING"] as [String: Any]
         value["latestRevision"] = [
             "id": "revision_intake_1", "revision": 1, "packId": "hair-color",
-            "packVersion": 1, "schemaVersion": 1, "complete": true,
+            "packVersion": packVersion, "schemaVersion": schemaVersion, "complete": complete,
             "answers": answers, "createdAt": "2026-08-11T18:05:00.000Z",
         ]
-        return try decode(ConsultIntakeState.self, value: value)
+        let state = try decode(ConsultIntakeState.self, value: value)
+        latestIntakeState = state
+        return state
     }
 
     func capture(consultId: String) async throws -> ConsultCaptureState {
@@ -786,6 +807,22 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
             uploads: uploads,
             photoPipeline: photoPipeline
         )
+    }
+
+    @Test func oneVisibleIntakeQuestionDoesNotMeanTheWholePackIsComplete() async throws {
+        let service = MockConsultService(root: try fixtureRoot())
+        let model = model(service)
+        await model.start()
+        try await acceptBothAgreements(model)
+        let first = try #require(openMessage(model))
+        #expect(messages(model, .question).count == 1)
+        let question = try #require(first.question)
+        await model.answerIntake(first, value: try #require(question.options.first?.value))
+        #expect(await service.intakeCompletionClaims == [false])
+        #expect(model.messages.first { $0.question?.key == question.key }?.answer != nil)
+        #expect(openMessage(model)?.question?.key != question.key)
+        _ = try await answerWholeIntake(model)
+        #expect(await service.intakeCompletionClaims.contains(true))
     }
 
     @Test func completeMockedGuidedBookingConsultFlowIncludesLocalAndServerRetakes() async throws {

@@ -11,6 +11,14 @@ public final class ProProfileService: Sendable {
         self.api = api
     }
 
+    /// Save private mentor preferences on the professional's own profile.
+    public func updateMentor(enabled: Bool, productLines: [String]) async throws -> ProMyProfile {
+        struct Body: Encodable { let consultMentorEnabled: Bool; let consultProductLines: [String] }
+        let response: ProMyProfileResponse = try await api.request("/pro/profile", method: .patch,
+            body: JSONEncoder.canonical.encode(Body(consultMentorEnabled: enabled, consultProductLines: productLines)))
+        return response.profile
+    }
+
     /// GET /api/v1/pro/profile → the pro's own editable profile (incl. its id).
     public func myProfile() async throws -> ProMyProfile {
         let response: ProMyProfileResponse = try await api.request("/pro/profile")
