@@ -1590,7 +1590,7 @@ private struct SavedConsultationsCard: View {
                 }
                 Button("Keep consultation", role: .cancel) { selected = nil }
             } message: {
-                Text("Your answers and temporary consult photos will be deleted. You can start this look again. Photos already saved to your chart stay on your chart.")
+                Text("Your answers and temporary consult photos will be deleted. You can start this look again. Photos already saved in your appointment record will stay there.")
             }
             .sheet(item: $launch, onDismiss: { Task { await load() } }) { item in
                 ConsultFlowView(anchor: .look(item.lookPostId), professionalId: item.professionalId)

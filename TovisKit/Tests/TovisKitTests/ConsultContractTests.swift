@@ -16,6 +16,9 @@ import Testing
         response["results"] = results
         let decoded = try decode(ConsultClientResultsResponse.self, value: response).results
         #expect(decoded.profile.eyeColor?.value == "BROWN")
+        #expect(decoded.profile.clientEntries.contains { $0.label == "Visible eye color" && $0.value == "brown" })
+        #expect(decoded.profile.clientEntries.count == decoded.profile.orderedEntries.count)
+        #expect(ConsultClientProfileCopy.value(field: "eyeShape", value: "FUTURE_VALUE") == ConsultClientProfileCopy.value(field: "eyeShape", value: "UNKNOWN"))
         #expect(decoded.profile.orderedEntries.contains { $0.label == "Visible eye color" })
     }
 

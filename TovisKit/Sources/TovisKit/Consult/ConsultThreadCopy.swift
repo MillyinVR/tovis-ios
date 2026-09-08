@@ -18,8 +18,8 @@ import Foundation
 /// picture, never a question that sounds like a test, and never impersonating
 /// the professional — she is who the Brief is being prepared FOR.
 public enum ConsultThreadCopy {
-    public static let profileDetailsTitle = "Your feature profile"
-    public static let profileDetailsBody = "What the photos suggest about your features, so recommendations enhance what is already yours. Your professional confirms these in person — color readings from photos are approximate."
+    public static let profileDetailsTitle = "What your photos show"
+    public static let profileDetailsBody = "These details help explain the style ideas below. Photos can change how colors look. Your professional will check these details with you in person."
     public static let styleOptionsTitle = "Style options to discuss"
     public static let styleOptionsBody = "Your preferences come first. These photo-based suggestions are optional starting points to discuss with your professional."
     public static let styleReasonLabel = "Why this could work for you"
@@ -36,9 +36,9 @@ public enum ConsultThreadCopy {
     public static let loading = "Loading your consult…"
 
     /// The chart-copy control, which is a standing preference rather than a step.
-    public static let chartCopyTitle = "Keep these photos on my chart"
+    public static let chartCopyTitle = "Save these photos in my appointment record"
     public static let chartCopyBody =
-        "Private to you and your professional, for future appointments. Turn it off any time before the analysis runs — otherwise photos are deleted after analysis either way."
+        "Save a copy for you and your professional to use at future visits. You can turn this off before your plan is built. The temporary photos used to build the plan are deleted either way."
 
     /// The offer to analyze a partial pack.
     public static func partialContinue(accepted: Int, total: Int) -> String {
@@ -46,7 +46,7 @@ public enum ConsultThreadCopy {
     }
 
     public static let partialContinueBody =
-        "You can keep going with the photos that came through. The views you skip can’t be analyzed, so those parts of your plan will honestly say unknown."
+        "You can keep going with the photos that came through. We can’t check what the missing photos would show. Your professional can check those details in person."
 
     /// The plan card's own controls.
     public static let planStart = "Build my plan"

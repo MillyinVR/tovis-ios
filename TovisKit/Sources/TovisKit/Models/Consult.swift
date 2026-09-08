@@ -996,6 +996,23 @@ public struct ConsultFeatureProfile: Decodable, Sendable {
     public let browDensity: ConsultObservation
     public let browShape: ConsultObservation
 
+    /// Plain descriptions for client screens; professional labels stay unchanged.
+    public var clientEntries: [(label: String, value: String)] {
+        [
+            ("The shade beneath your skin’s surface", ConsultClientProfileCopy.value(field: "skinUndertone", value: skinUndertone.value)),
+            ("Difference between your hair, skin, and eye colors", ConsultClientProfileCopy.value(field: "contrastLevel", value: contrastLevel.value)),
+            ("Suggested group of colors to try", ConsultClientProfileCopy.value(field: "colorSeason", value: colorSeason.value)),
+            ("Face length compared with width", ConsultClientProfileCopy.value(field: "faceProportion", value: faceProportion.value)),
+            ("Jawline", ConsultClientProfileCopy.value(field: "jawline", value: jawline.value)),
+            ("Forehead", ConsultClientProfileCopy.value(field: "foreheadProportion", value: foreheadProportion.value)),
+            ("How soft or defined your features look", ConsultClientProfileCopy.value(field: "featureBalance", value: featureBalance.value)),
+            ("Eye shape", ConsultClientProfileCopy.value(field: "eyeShape", value: eyeShape.value)),
+            ("Eye spacing", ConsultClientProfileCopy.value(field: "eyeSpacing", value: eyeSpacing.value)),
+            ("How full your eyebrows look", ConsultClientProfileCopy.value(field: "browDensity", value: browDensity.value)),
+            ("Brow shape", ConsultClientProfileCopy.value(field: "browShape", value: browShape.value)),
+        ] + (eyeColor.map { [(label: "Visible eye color", value: ConsultClientProfileCopy.value(field: "eyeColor", value: $0.value))] } ?? [])
+    }
+
     /// Stable render order + display labels for the profile grid.
     public var orderedEntries: [(label: String, observation: ConsultObservation)] {
         [

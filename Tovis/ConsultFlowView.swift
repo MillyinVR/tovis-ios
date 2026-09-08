@@ -87,22 +87,22 @@ struct ConsultFlowView: View {
             // the poll lives on the view model, which outlives it.
             .onDisappear { model?.stopPolling() }
             .confirmationDialog(
-                "Stop this consult and revoke consent?",
+                "Stop this consult and withdraw your permission?",
                 isPresented: $showRevokeConfirmation,
                 titleVisibility: .visible
             ) {
-                Button("Revoke consent", role: .destructive) {
+                Button("Withdraw permission", role: .destructive) {
                     Task { await model?.revokeSensitiveConsent() }
                 }
                 Button("Keep consult", role: .cancel) {}
             } message: {
-                Text("No more intake, photos, or analysis can be added until you agree again. Temporary consult photos will be removed. Photos already saved to your chart stay on your chart.")
+                Text("You won’t be able to add answers or photos, or create a plan, until you agree again. Temporary consult photos will be removed. Photos already saved in your appointment record will stay there.")
             }
             .confirmationDialog("Delete this consultation?", isPresented: $showDeleteConfirmation, titleVisibility: .visible) {
                 Button("Delete consultation", role: .destructive) { Task { await model?.deleteConsult() } }
                 Button("Keep consultation", role: .cancel) {}
             } message: {
-                Text("Your answers and temporary consult photos will be deleted. You can start this look again. Photos already saved to your chart stay on your chart.")
+                Text("Your answers and temporary consult photos will be deleted. You can start this look again. Photos already saved in your appointment record will stay there.")
             }
             .onChange(of: model?.deleted) { _, deleted in if deleted == true { dismiss() } }
             .mediaFullscreenCover($fullscreen)
@@ -180,7 +180,7 @@ struct ConsultFlowView: View {
         }
         .safeAreaInset(edge: .bottom) {
             if model.canRevokeConsent {
-                Button("Privacy & revoke consent") { showRevokeConfirmation = true }
+                Button("Privacy & stop this consult") { showRevokeConfirmation = true }
                     .disabled(model.busy)
                     .font(BrandFont.body(12, .semibold))
                     .foregroundStyle(BrandColor.textMuted)
