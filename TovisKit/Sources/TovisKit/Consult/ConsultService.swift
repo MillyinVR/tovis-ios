@@ -1,6 +1,7 @@
 import Foundation
 
 public protocol ConsultServicing: Sendable {
+    func deleteSession(consultId: String) async throws
     func availability(bookingId: String) async throws -> ConsultAvailability
     func create(bookingId: String) async throws -> ConsultSession
     // Book the Look, B8 — the look-anchored twin of the two above, plus the
@@ -721,6 +722,10 @@ public final class ConsultService: ConsultServicing, Sendable {
 
 
 extension ConsultServicing {
+    public func deleteSession(consultId: String) async throws {
+        throw ConsultClientFailure.unavailable
+    }
+
     public func answerChartFact(consultId: String, sourceId: String, questionKey: String, value: String, idempotencyKey: String) async throws {
         throw ConsultClientFailure.unavailable
     }

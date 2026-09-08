@@ -58,6 +58,8 @@ struct ProConsultBriefView: View {
     @State private var adjustment: LookAdjustmentTarget?
     @State private var authoring = false
     @State private var expectations: LookExpectationTarget?
+    @State private var recordedFeedback: ProConsultFeedback?
+    @State private var fullscreen: FullscreenMedia?
     private var service: ProConsultService { ProConsultService(api: session.client.api) }
     var body: some View {
         ScrollView {
@@ -68,6 +70,7 @@ struct ProConsultBriefView: View {
                     if let mentor = brief.mentor {
                         ConsultMentorLayer(mentor: mentor)
                     }
+                    ProConsultVersionSummary(brief: brief)
                     if let inspiration = brief.inspiration {
                         Text("What matters in the inspiration").font(BrandFont.body(18, .semibold))
                         Text(inspiration.referenceNote).foregroundStyle(BrandColor.textSecondary)
@@ -82,9 +85,11 @@ struct ProConsultBriefView: View {
                     }
                     Button(photos == nil ? "View consultation photos" : "Refresh photos") { Task { await loadPhotos() } }.disabled(busy)
                     if let photos {
+                        if photos.inspirationUrl == nil && photos.captures.isEmpty { Text("No retained photos are available for this consultation.") }
                         if let url = photos.inspirationUrl { photo(url, label: "Inspiration look") }
                         ForEach(photos.captures) { capture in photo(capture.url, label: capture.label) }
                     }
+                    ProConsultEvidence(brief: brief)
                     ForEach(brief.styleDirections) { direction in
                         VStack(alignment: .leading, spacing: 4) {
                             Text(direction.title).fontWeight(.semibold)
@@ -92,11 +97,15 @@ struct ProConsultBriefView: View {
                             Text(direction.whyItFlatters).foregroundStyle(BrandColor.textSecondary)
                         }
                     }
-                    if let plan = brief.lookPlan, let version = brief.lookBrief {
+                    ProConsultSafety(brief: brief)
+                    if let plan = brief.lookBrief?.professionalPlan ?? brief.lookPlan, let version = brief.lookBrief {
                         Text("Look brief · version \(version.version)").font(BrandFont.body(18, .semibold))
                         Button("Author or revise the look plan") { authoring = true }
                             .disabled(busy || (version.confirmationOpen ?? version.inputOpen) == false)
                         Text(plan.summary)
+                        if version.professionalPlan != nil { Text("Plan authored by your pro after reviewing your details.") }
+                        if version.inputOpen == false { Text("The appointment has started. Consult inputs are closed.") }
+                        if version.invalidatedProfessionalPlan == true { Text("The client’s details changed. The previous professional plan needs a fresh review.") }
                         if version.correctionsNeedReview {
                             Text("Earlier corrections need review before this look can be confirmed.")
                             ForEach(Array((version.invalidatedAdjustments ?? []).enumerated()), id: \.offset) { _, entry in
@@ -150,13 +159,24 @@ struct ProConsultBriefView: View {
                             ? (version.clientConfirmed && version.professionalConfirmed ? "You both confirmed this look." : "Review and confirm this version together.")
                             : plan.nextStep)
                     }
+                    ProConsultEstimateAndDirections(brief: brief)
+                    if let feedback = recordedFeedback ?? brief.feedback {
+                        Text("Feedback recorded: \(feedback.rating == .accurateUseful ? "Accurate / useful" : "Off")")
+                    } else {
+                        Text("Was this brief accurate and useful?")
+                        HStack {
+                            Button("Accurate / useful") { Task { await submitFeedback(.accurateUseful) } }
+                            Button("Off") { Task { await submitFeedback(.off) } }
+                        }.buttonStyle(.bordered).disabled(busy)
+                    }
                 } else if !busy { Button("Reload brief") { Task { await load() } } }
             }.font(BrandFont.body(14)).foregroundStyle(BrandColor.textPrimary).padding()
         }
         .background(BrandColor.bgPrimary).navigationTitle("Look brief")
         .task { await load() }.refreshable { await load() }
+        .mediaFullscreenCover($fullscreen)
         .sheet(isPresented: $authoring) {
-            if let plan = brief?.lookPlan, let version = brief?.lookBrief {
+            if let plan = brief?.lookBrief?.professionalPlan ?? brief?.lookPlan, let version = brief?.lookBrief {
                 ProLookPlanAuthorSheet(consultId: consultId, plan: plan, version: version.version) { Task { await load() } }
             }
         }
@@ -168,17 +188,40 @@ struct ProConsultBriefView: View {
         }
     }
 
+    private func submitFeedback(_ rating: ProConsultFeedback.Rating) async {
+        guard !busy else { return }
+        busy = true; error = nil
+        defer { busy = false }
+        do { recordedFeedback = try await service.feedback(id: consultId, rating: rating) }
+        catch { self.error = "Feedback could not be saved. Try again." }
+    }
+
     private func photo(_ url: URL, label: String) -> some View {
         VStack(alignment: .leading) {
             Text(label).fontWeight(.semibold)
-            AsyncImage(url: url) { image in image.resizable().scaledToFit() } placeholder: { ProgressView() }
-                .frame(maxHeight: 360)
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    Button {
+                        fullscreen = FullscreenMedia(id: url.absoluteString, source: .remote(url: url, isVideo: false), overlay: nil)
+                    } label: { image.resizable().scaledToFit() }
+                    .buttonStyle(.plain).accessibilityLabel("Open \(label)")
+                case .failure:
+                    Text("A photo link expired. Refresh photos to view it again.")
+                case .empty: ProgressView()
+                @unknown default: EmptyView()
+                }
+            }.frame(maxHeight: 360)
         }
     }
     private func load() async {
         busy = true; error = nil
         defer { busy = false }
-        do { brief = try await service.brief(id: consultId) }
+        do {
+            let loaded = try await service.brief(id: consultId)
+            brief = loaded
+            recordedFeedback = loaded.feedback
+        }
         catch { self.error = "Could not load this look brief. Please try again." }
     }
     private func loadPhotos() async {
@@ -310,5 +353,134 @@ struct ConsultMentorLayer: View {
                 Text(mentor.formulationNote).font(BrandFont.body(12))
             }
         }.accessibilityIdentifier("consult-mentor")
+    }
+}
+
+private func consultBriefLabel(_ value: String) -> String {
+    value.replacingOccurrences(of: "_", with: " ").lowercased().capitalized
+}
+
+struct ProConsultVersionSummary: View {
+    let brief: ProConsultBrief
+    var body: some View {
+        if let version = brief.planVersion, version > 1 {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Updated plan · version \(version)").fontWeight(.semibold)
+                if (brief.planChanges ?? []).isEmpty { Text("Your client added something. Nothing in the plan moved.") }
+                ForEach(brief.planChanges ?? []) { change in
+                    Text("\(change.label): \(change.from ?? "—") → \(change.to ?? "—")")
+                }
+            }
+        }
+    }
+}
+
+struct ProConsultEvidence: View {
+    let brief: ProConsultBrief
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let ai = brief.aiObservations {
+                Text("AI observations").font(BrandFont.body(18, .semibold))
+                Text("Photo-based observations to verify in person.").foregroundStyle(BrandColor.textSecondary)
+                observation("Base level", ai.baseLevel)
+                observation("Lightest level", ai.lightestLevel)
+                observation("Tone", ai.currentTone)
+                observation("Visible condition", ai.visibleCondition)
+                observation("Density", ai.density)
+                observation("Texture", ai.texture)
+                summary("Goal summary", ai.goalSummary)
+                summary("History summary", ai.historySummary)
+                summary("Constraints", ai.constraintsSummary)
+                summary("Maintenance", ai.maintenanceSummary)
+                summary("Appointment context", ai.appointmentContextSummary)
+            }
+            Text("Feature profile").font(BrandFont.body(18, .semibold))
+            Text("Photo-based feature observations to confirm in person — color readings from phone photos are approximate; drape to verify.")
+                .fixedSize(horizontal: false, vertical: true)
+                .foregroundStyle(BrandColor.textSecondary)
+            ForEach(brief.profile.orderedEntries, id: \.label) { entry in observation(entry.label, entry.observation) }
+        }
+    }
+    private func observation(_ label: String, _ value: ConsultObservation) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label).fontWeight(.semibold)
+            Text("\(consultBriefLabel(value.value)) · \(Int((value.confidence.min * 100).rounded()))–\(Int((value.confidence.max * 100).rounded()))% confidence")
+                .foregroundStyle(BrandColor.textSecondary)
+        }
+    }
+    private func summary(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) { Text(label).fontWeight(.semibold); Text(value) }
+    }
+}
+
+struct ProConsultSafety: View {
+    let brief: ProConsultBrief
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Safety flags").font(BrandFont.body(18, .semibold))
+            if let flags = brief.safetyFlags {
+                if flags.isEmpty { Text("No flags were identified by this analysis. Confirm history and suitability in person before service.") }
+                ForEach(flags) { flag in
+                    Text("\(consultBriefLabel(flag.code)): \(flag.summary) Discuss with the professional before service.")
+                }
+            } else { Text("Safety information is unavailable. Confirm history and suitability in person before service.") }
+        }
+        .padding().background(BrandColor.amber.opacity(0.10), in: RoundedRectangle(cornerRadius: 16))
+    }
+}
+
+struct ProConsultEstimateAndDirections: View {
+    let brief: ProConsultBrief
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if brief.lookPlan == nil {
+                Text("Directions to discuss").font(BrandFont.body(18, .semibold))
+                if let direction = brief.achievabilityDirection {
+                    Text("Achievability: \(consultBriefLabel(direction.assessment))").fontWeight(.semibold)
+                    Text(direction.context)
+                    Text(direction.direction)
+                }
+                ForEach(brief.recommendationDirections ?? []) { direction in
+                    Text(direction.title).fontWeight(.semibold)
+                    Text(direction.why)
+                    Text(direction.direction)
+                }
+            }
+            if let estimate = brief.serviceEstimate {
+                Text("Service estimate").font(BrandFont.body(18, .semibold))
+                Text("Derived only from your own \(estimate.locationType == "SALON" ? "in-salon" : "mobile") prices and durations. Durations are rounded up to your slot length. You make the final call.")
+                if estimate.status == "REFUSED" {
+                    Text("No estimate: \(refusal(estimate.refusalCode))")
+                } else {
+                    ForEach(Array(estimate.lines.enumerated()), id: \.offset) { _, line in
+                        Text(line.source == "LOOK_PLAN_REQUIRED" ? "Required for the chosen look" : line.source == "LOOK_LINKED_SERVICE" ? "From the look" : "From the analysis")
+                            .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
+                        Text("\(line.serviceName) · \((Wire.money(line.estimatedPrice) ?? "—")) · \(line.estimatedDurationMinutes) min").fontWeight(.semibold)
+                        Text(line.rationale)
+                    }
+                    Text("Estimated total: \(total(estimate)) · \(estimate.lines.reduce(0) { $0 + $1.estimatedDurationMinutes }) min\((estimate.bufferMinutes ?? 0) > 0 ? " + \(estimate.bufferMinutes ?? 0) min buffer" : "")")
+                }
+            }
+        }
+    }
+    private func total(_ estimate: ProConsultServiceEstimate) -> String {
+        var amount = Decimal.zero
+        for line in estimate.lines {
+            guard let price = Decimal(string: line.estimatedPrice, locale: Locale(identifier: "en_US_POSIX")) else { return "—" }
+            amount += price
+        }
+        return (Wire.moneyDecimal(amount) ?? "—")
+    }
+    private func refusal(_ code: String?) -> String {
+        switch code {
+        case "LOOK_PLAN_SELECTION_REQUIRED": "The client needs to choose and confirm the current look before the first appointment can be sized."
+        case "LOOK_SERVICE_UNLINKED": "The look this consult started from no longer names a service."
+        case "SERVICE_NOT_ON_MENU": "The service behind this look is not an active offering on your menu."
+        case "MENU_MODE_UNAVAILABLE": "That service is not offered in this mode on your menu."
+        case "MENU_PRICE_UNSET": "That service has no price set on your menu for this mode."
+        case "MENU_DURATION_UNSET": "That service has no duration set on your menu for this mode."
+        case "PRO_SCHEDULING_NOT_READY": "There is no bookable location yet."
+        default: "Your menu cannot express this look."
+        }
     }
 }

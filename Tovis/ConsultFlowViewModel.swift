@@ -42,6 +42,26 @@ final class ConsultFlowViewModel {
     /// The whole screen, in one value.
     private(set) var thread: ConsultThread?
     private(set) var busy = false
+    var editingAnswers = false
+    private(set) var deleted = false
+    var inputsOpen: Bool { thread?.controls?.inputsOpen ?? true }
+    var canEditAnswers: Bool {
+        thread?.controls?.canEditAnswers == true && messages.contains {
+            ($0.kind == .question && $0.answer != nil) || ($0.card?.isAnswered == true)
+        }
+    }
+    var isEditingAnswers: Bool { editingAnswers && canEditAnswers }
+
+    func deleteConsult() async {
+        guard let id = machine.consultId, thread?.controls?.canDelete == true else { return }
+        await perform {
+            try await service.deleteSession(consultId: id)
+            uploads.discardAll(consultId: id, reason: "consult_deleted")
+            stopPolling()
+            deleted = true
+        }
+    }
+
     /// The durable owner of every shot this flow has taken. `.shared` in the
     /// app — one queue for the whole process, deliberately outliving every
     /// flow — and injectable so tests can drive it without a live client.
@@ -149,13 +169,14 @@ final class ConsultFlowViewModel {
     /// queue is stalled on a connection as well as when a shot was refused —
     /// both are states the client can act on, and neither is `busy`.
     var canRetryPhoto: Bool {
+        guard inputsOpen else { return false }
         guard let consultId = machine.consultId, uploads.owesAnything(consultId: consultId)
         else { return false }
         return uploads.stalled || uploads.hasBlocked(consultId: consultId)
     }
 
     private var photoMessages: [ConsultThreadMessage] {
-        messages.filter { $0.kind == .photoRequest }
+        messages.filter { $0.kind == .photoRequest && $0.shot?.key != .earlyPhoto }
     }
 
     var acceptedShotCount: Int {
@@ -168,6 +189,7 @@ final class ConsultFlowViewModel {
     /// session still sits at MEDIA_READY. (A full accepted pack advances
     /// server-side on its own once inspiration is done.)
     var canOfferPartialContinue: Bool {
+        guard inputsOpen else { return false }
         guard thread?.status == .mediaReady else { return false }
         return acceptedShotCount >= 1 && acceptedShotCount < totalShotCount
     }
@@ -291,6 +313,7 @@ final class ConsultFlowViewModel {
     /// Whether the privacy/revoke footer belongs on screen: only once consent is
     /// actually current, and never on a consult that has already stopped.
     var canRevokeConsent: Bool {
+        if let controls = thread?.controls { return controls.revokeAcceptanceId != nil }
         guard !isStopped else { return false }
         guard let consent = messages.first(where: { $0.kind == .consent }) else { return false }
         return consent.state == .done

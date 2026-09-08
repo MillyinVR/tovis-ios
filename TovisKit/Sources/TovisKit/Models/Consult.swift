@@ -1042,19 +1042,19 @@ public struct ConsultStyleDirection: Decodable, Sendable, Identifiable {
 
 /// An immutable result plan. Menu identities are booking inputs for the server,
 /// never labels for the client-facing Looks consultation.
-public struct ConsultLookPlan: Decodable, Sendable {
-    public enum Tier: String, Decodable, Sendable { case exact = "EXACT", close = "CLOSE", toward = "TOWARD" }
-    public enum Status: String, Decodable, Sendable {
+public struct ConsultLookPlan: Decodable, Sendable, Equatable {
+    public enum Tier: String, Decodable, Sendable, Equatable { case exact = "EXACT", close = "CLOSE", toward = "TOWARD" }
+    public enum Status: String, Decodable, Sendable, Equatable {
         case readyToChoose = "READY_TO_CHOOSE", needsInput = "NEEDS_INPUT", proReview = "PRO_REVIEW", noOffering = "NO_OFFERING"
     }
-    public struct Step: Decodable, Sendable {
+    public struct Step: Decodable, Sendable, Equatable {
         public let serviceId: String
         public let offeringId: String
         public let serviceCategoryId: String
         public let serviceName: String
     }
-    public struct Visit: Decodable, Sendable { public let steps: [Step] }
-    public struct Path: Decodable, Sendable {
+    public struct Visit: Decodable, Sendable, Equatable { public let steps: [Step] }
+    public struct Path: Decodable, Sendable, Equatable {
         public let title: String
         public let whyThisWorksForYou: String
         public let featureEvidence: [String]
@@ -1345,6 +1345,8 @@ public struct ConsultLookAdjustment: Decodable, Sendable, Equatable {
 }
 
 public struct ConsultLookBriefVersion: Decodable, Sendable, Equatable {
+    public let professionalPlan: ConsultLookPlan?
+
     public let chartSources: [ConsultChartSource]?
     public let adjustments: [ConsultLookAdjustment]?
     public let invalidatedAdjustments: [ConsultLookAdjustment]?

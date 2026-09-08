@@ -37,6 +37,7 @@ struct ConsultFlowView: View {
 
     @State private var model: ConsultFlowViewModel?
     @State private var showRevokeConfirmation = false
+    @State private var showDeleteConfirmation = false
     @State private var fullscreen: FullscreenMedia?
     /// The sticky CTA's destination, once she taps it.
     @State private var bookLaunch: ConsultThreadBookCta?
@@ -95,8 +96,15 @@ struct ConsultFlowView: View {
                 }
                 Button("Keep consult", role: .cancel) {}
             } message: {
-                Text("No more intake, photos, or analysis can be added. The server will make raw consult photos purge-eligible and verify their removal.")
+                Text("No more intake, photos, or analysis can be added until you agree again. Temporary consult photos will be removed. Photos already saved to your chart stay on your chart.")
             }
+            .confirmationDialog("Delete this consultation?", isPresented: $showDeleteConfirmation, titleVisibility: .visible) {
+                Button("Delete consultation", role: .destructive) { Task { await model?.deleteConsult() } }
+                Button("Keep consultation", role: .cancel) {}
+            } message: {
+                Text("Your answers and temporary consult photos will be deleted. You can start this look again. Photos already saved to your chart stay on your chart.")
+            }
+            .onChange(of: model?.deleted) { _, deleted in if deleted == true { dismiss() } }
             .mediaFullscreenCover($fullscreen)
             // 🔴 Book the look runs the ORDINARY look-booking path, NOT the
             // consult proposal. The proposal refuses with ESTIMATE_MISSING until
@@ -167,9 +175,13 @@ struct ConsultFlowView: View {
             onFullscreen: { media in fullscreen = media },
             onBook: { book in bookLaunch = book }
         )
+        .safeAreaInset(edge: .top) {
+            ConsultManagementControls(model: model, onDelete: { showDeleteConfirmation = true })
+        }
         .safeAreaInset(edge: .bottom) {
             if model.canRevokeConsent {
                 Button("Privacy & revoke consent") { showRevokeConfirmation = true }
+                    .disabled(model.busy)
                     .font(BrandFont.body(12, .semibold))
                     .foregroundStyle(BrandColor.textMuted)
                     .padding(.vertical, 10)
@@ -745,6 +757,7 @@ struct ConsultInspirationQuestionView: View {
     /// already been asked. The web twin shipped exactly that until a browser
     /// caught it; both copies are correct on their own, so no unit test can.
     var showLabel: Bool = true
+    var initialSelection: [String] = []
     let onAnswer: ([String]) -> Void
 
     @State private var selected: [String] = []
@@ -787,6 +800,7 @@ struct ConsultInspirationQuestionView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityIdentifier("consult-inspiration-question-\(question.key)")
+        .onAppear { selected = initialSelection }
     }
 
     private func optionChip(_ option: ConsultInspirationQuestionOption) -> some View {
@@ -818,3 +832,25 @@ struct ConsultInspirationQuestionView: View {
     }
 }
 
+
+struct ConsultManagementControls: View {
+    let model: ConsultFlowViewModel
+    let onDelete: () -> Void
+    var body: some View {
+            if model.canEditAnswers || model.thread?.controls?.canDelete == true {
+                HStack(spacing: 16) {
+                    if model.canEditAnswers {
+                        Button(model.isEditingAnswers ? "Done editing" : "Edit answers") { model.editingAnswers.toggle() }
+                    }
+                    Spacer(minLength: 0)
+                    if model.thread?.controls?.canDelete == true {
+                        Button("Delete consultation", role: .destructive) { onDelete() }
+                    }
+                }
+                .font(BrandFont.body(13, .semibold))
+                .padding()
+                .background(BrandColor.bgPrimary)
+                .disabled(model.busy)
+            }
+    }
+}

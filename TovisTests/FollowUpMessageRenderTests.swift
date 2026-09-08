@@ -158,3 +158,32 @@ import UIKit
         }
     }
 }
+
+
+@Suite @MainActor struct ConsultParityRenderTests {
+    @Test func rendersProfessionalEvidenceSafetyAndEstimateInBothModes() throws {
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/consultParityBrief.json")
+        let brief = try JSONDecoder().decode(ProConsultBrief.self, from: Data(contentsOf: fixture))
+        #expect(brief.aiObservations != nil)
+        #expect(brief.safetyFlags != nil)
+        #expect(brief.serviceEstimate?.lines.first?.estimatedPrice == "180.50")
+        for (scheme, name) in [(ColorScheme.light, "light"), (ColorScheme.dark, "dark")] {
+            let view = VStack(alignment: .leading, spacing: 18) {
+                ProConsultVersionSummary(brief: brief)
+                ProConsultEvidence(brief: brief)
+                ProConsultSafety(brief: brief)
+                ProConsultEstimateAndDirections(brief: brief)
+            }.font(BrandFont.body(14)).foregroundStyle(BrandColor.textPrimary)
+                .frame(width: 358).padding(16).background(BrandColor.bgPrimary).environment(\.colorScheme, scheme)
+            let renderer = ImageRenderer(content: view)
+            renderer.scale = 2
+            let image = try #require(renderer.uiImage)
+            #expect(image.size.width == 390)
+            let png = try #require(image.pngData())
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("consult-parity-pro-\(name).png")
+            try png.write(to: url)
+            print("PARITY SNAPSHOT → \(url.path)")
+        }
+    }
+}

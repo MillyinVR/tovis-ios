@@ -60,6 +60,7 @@ public enum ConsultThreadBookGateReason: String, Decodable, Sendable, Equatable 
     /// without leaving the thread, so the bar stays visible and disabled with
     /// `gateNote` under it. See `ConsultThreadBookBar.shouldShow`.
     case prepRequired = "PREP_REQUIRED"
+    case lookChoiceRequired = "LOOK_CHOICE_REQUIRED"
     case unknown
 
     public init(from decoder: Decoder) throws {
@@ -354,7 +355,16 @@ public struct ConsultThreadMessage: Decodable, Sendable, Identifiable {
     }
 }
 
+public struct ConsultThreadControls: Decodable, Sendable {
+    public let inputsOpen: Bool
+    public let canEditAnswers: Bool
+    public let canDelete: Bool
+    public let revokeAcceptanceId: String?
+}
+
 public struct ConsultThread: Decodable, Sendable {
+    public let controls: ConsultThreadControls?
+
     public let consultId: String
     public let status: ConsultSessionStatus
     public let professionalId: String
