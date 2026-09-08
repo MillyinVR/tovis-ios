@@ -825,12 +825,18 @@ import Testing
          "confirmationOpen":false,"inputOpen":false,
          "adjustments":[{"field":"EXPECTATIONS","pathIndex":0,"value":"Buttery blonde","reason":null}],
          "professionalPlanReason":"Reviewed together",
+         "professionalPlan":{"schemaVersion":1,"tier":"EXACT","status":"READY_TO_CHOOSE","provisional":false,
+           "summary":"The professional’s revised plan","nextStep":"Confirm together",
+           "paths":[{"title":"A revised look","whyThisWorksForYou":"Reviewed in person","featureEvidence":[],"sessionCount":1,
+             "visits":[{"steps":[{"serviceId":"s","offeringId":"o","serviceCategoryId":"c","serviceName":"Color"}]}]}]},
          "completedVisit":{"bookingId":"b1","lookBriefVersionId":"v7","observedServiceMinutes":null,
            "finalServiceSubtotal":"0.00","completedAt":"2026-09-08T10:00:00Z","aftercare":null}}
         """.utf8)
         let brief = try JSONDecoder().decode(ConsultLookBriefVersion.self, from: data)
         #expect(brief.adjustments?.first?.value == "Buttery blonde")
         #expect(brief.professionalPlanReason == "Reviewed together")
+        #expect(brief.professionalPlan?.summary == "The professional’s revised plan")
+        #expect(brief.professionalPlan?.isConsistent == true)
         #expect(brief.completedVisit?.observedServiceMinutes == nil)
         #expect(brief.completedVisit?.finalServiceSubtotal == "0.00")
         #expect(brief.confirmationOpen == false)

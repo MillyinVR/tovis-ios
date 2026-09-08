@@ -38,7 +38,7 @@ private final class ConsultURLProtocol: URLProtocol {
 }
 
 @Suite(.serialized) struct ConsultServiceTests {
-    private func makeService() async -> ConsultService {
+    private func makeAPI() async -> (APIClient, URLSession) {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [ConsultURLProtocol.self]
         configuration.httpCookieStorage = nil
@@ -50,6 +50,11 @@ private final class ConsultURLProtocol: URLProtocol {
             session: session,
             tokenStore: tokenStore
         )
+        return (api, session)
+    }
+
+    private func makeService() async -> ConsultService {
+        let (api, session) = await makeAPI()
         return ConsultService(
             api: api,
             uploadSession: session,
@@ -77,6 +82,23 @@ private final class ConsultURLProtocol: URLProtocol {
 
     private func json(_ value: Any) -> Data {
         try! JSONSerialization.data(withJSONObject: value)
+    }
+
+    @Test func professionalFeedbackUsesCanonicalEndpointAndRating() async throws {
+        reset()
+        let (api, _) = await makeAPI()
+        let service = ProConsultService(api: api)
+        ConsultURLProtocol.responder = { _ in
+            (200, self.json(["ok": true, "feedback": ["rating": "ACCURATE_USEFUL", "createdAt": "2026-09-08T18:00:00Z"]]))
+        }
+        let feedback = try await service.feedback(id: "consult_fixture_1", rating: .accurateUseful)
+        #expect(feedback.rating == .accurateUseful)
+        let request = try #require(ConsultURLProtocol.requests.last)
+        #expect(request.url?.path == "/api/v1/pro/consults/consult_fixture_1/feedback")
+        #expect(request.httpMethod == "POST")
+        let body = try #require(request.httpBody)
+        let payload = try #require(JSONSerialization.jsonObject(with: body) as? [String: String])
+        #expect(payload == ["rating": "ACCURATE_USEFUL"])
     }
 
     @Test func chartPhotoConfirmationPostsOnlyTheSelectedSourceAndStableKey() async throws {

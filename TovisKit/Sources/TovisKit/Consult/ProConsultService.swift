@@ -24,6 +24,14 @@ public struct ProConsultInspiration: Decodable, Sendable {
 }
 
 public struct ProConsultBrief: Decodable, Sendable {
+    public let aiObservations: ConsultAIObservations?
+    public let safetyFlags: [ConsultSafetyFlag]?
+    public let achievabilityDirection: ConsultAchievabilityDirection?
+    public let recommendationDirections: [ConsultRecommendationDirection]?
+    public let serviceEstimate: ProConsultServiceEstimate?
+    public let planVersion: Int?
+    public let planChanges: [ConsultPlanDiffEntry]?
+    public let feedback: ProConsultFeedback?
     public let mentor: ConsultMentor?
     public let inspiration: ProConsultInspiration?
 
@@ -146,4 +154,37 @@ public struct ConsultMentor: Decodable, Sendable {
     public let authority: String
     public let formulationNote: String
     public let sections: [Section]
+}
+
+public struct ProConsultFeedback: Decodable, Sendable {
+    public enum Rating: String, Codable, Sendable { case accurateUseful = "ACCURATE_USEFUL", off = "OFF" }
+    public let rating: Rating
+    public let createdAt: String
+}
+
+public struct ProConsultServiceEstimate: Decodable, Sendable {
+    public struct Line: Decodable, Sendable {
+        public let serviceId: String
+        public let serviceName: String
+        public let source: String
+        public let estimatedPrice: String
+        public let estimatedDurationMinutes: Int
+        public let rationale: String
+    }
+    public let status: String
+    public let locationType: String
+    public let refusalCode: String?
+    public let lines: [Line]
+    public let bufferMinutes: Int?
+}
+
+extension ProConsultService {
+    public func feedback(id: String, rating: ProConsultFeedback.Rating) async throws -> ProConsultFeedback {
+        struct Body: Encodable { let rating: ProConsultFeedback.Rating }
+        struct Response: Decodable { let feedback: ProConsultFeedback }
+        let briefPath = try path(id)
+        let feedbackPath = String(briefPath.dropLast("/look-plan".count)) + "/feedback"
+        let result: Response = try await api.request(feedbackPath, method: .post, body: JSONEncoder().encode(Body(rating: rating)))
+        return result.feedback
+    }
 }

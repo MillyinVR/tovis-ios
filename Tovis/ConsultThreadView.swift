@@ -175,7 +175,7 @@ private struct ConsultThreadMessageView: View {
         case .followUp:
             FollowUpMessageView(
                 message: message,
-                busy: model.busy,
+                busy: model.busy || !model.inputsOpen,
                 onAnswer: { value in
                     Task { await model.answerFollowUp(message, value: value) }
                 }
@@ -400,7 +400,7 @@ private struct ConsentMessageView: View {
 /// An ANSWERED question keeps its card — dimmed — and gains the client's own
 /// answer as a bubble on her side. That echo is the point: a thread you can
 /// scroll back through is the difference between a conversation and a form.
-private struct QuestionMessageView: View {
+struct QuestionMessageView: View {
     let message: ConsultThreadMessage
     let model: ConsultFlowViewModel
 
@@ -410,7 +410,7 @@ private struct QuestionMessageView: View {
                 question.options.first { $0.value == value }?.label ?? value
             }
             VStack(alignment: .leading, spacing: 8) {
-                ConsultThreadCardView(dimmed: answeredLabel != nil) {
+                ConsultThreadCardView(dimmed: answeredLabel != nil && !model.isEditingAnswers) {
                     VStack(alignment: .leading, spacing: 10) {
                         Text(question.label)
                             .font(BrandFont.body(16, .semibold))
@@ -420,7 +420,7 @@ private struct QuestionMessageView: View {
                                 .font(BrandFont.body(12))
                                 .foregroundStyle(BrandColor.textSecondary)
                         }
-                        if answeredLabel == nil {
+                        if answeredLabel == nil || model.isEditingAnswers {
                             FlowLayout(spacing: 8, lineSpacing: 8) {
                                 ForEach(question.options) { option in
                                     Button {
@@ -453,7 +453,7 @@ private struct QuestionMessageView: View {
                                             )
                                     }
                                     .buttonStyle(.plain)
-                                    .disabled(model.busy)
+                                    .disabled(model.busy || !model.inputsOpen)
                                 }
                             }
                         }
@@ -491,7 +491,7 @@ private struct InspirationMessageView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         if message.sourceDecisionRequired == true {
                             ConsultInspirationPhotoPicker(
-                                busy: model.busy,
+                                busy: model.busy || !model.inputsOpen,
                                 onJPEG: { data in
                                     await model.uploadInspirationPhoto(message, data)
                                 },
@@ -530,7 +530,7 @@ private struct InspirationMessageView: View {
                             }
                             ConsultInspirationQuestionView(
                                 question: question,
-                                busy: model.busy,
+                                busy: model.busy || !model.inputsOpen,
                                 onAnswer: { values in
                                     Task {
                                         await model.answerInspiration(
@@ -625,7 +625,7 @@ private struct PlanMessageView: View {
                     if let run = message.run {
                         ConsultAnalysisRunProgressView(
                             run: run,
-                            busy: model.busy,
+                            busy: model.busy || !model.inputsOpen,
                             onRetry: { Task { await model.startAnalysis() } },
                             onRefresh: { Task { await model.refreshAnalysis() } }
                         )
@@ -643,7 +643,7 @@ private struct PlanMessageView: View {
                                 .background(BrandColor.accent)
                                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         }
-                        .disabled(model.busy)
+                        .disabled(model.busy || !model.inputsOpen)
                     }
 
                     // The reason the plan did not start, at the control that
@@ -687,7 +687,7 @@ private struct ConsultPlanSummaryView: View {
         VStack(alignment: .leading, spacing: 8) {
             // Optional on the wire (additive), so the same fallback the results
             // screen has always used.
-            if let plan = results.lookPlan {
+            if let plan = results.lookBrief?.professionalPlan ?? results.lookPlan {
                 ConsultLookPlanView(plan: plan, brief: results.lookBrief, model: model)
             } else {
             Text(results.directionsTitle ?? "Directions to discuss")
@@ -773,7 +773,7 @@ private struct ConsultThreadPrepControls: View {
                         }
                     }
                     .tint(BrandColor.accent)
-                    .disabled(model.busy)
+                    .disabled(model.busy || !model.inputsOpen)
                 }
                 .accessibilityIdentifier("consult-chart-copy-toggle")
 
@@ -1013,6 +1013,9 @@ private struct ConsultLookPlanView: View {
                                 .font(BrandFont.body(13, .semibold))
                             Text("First appointment: \(estimate.firstAppointment.formattedSummary)")
                             if path.sessionCount > 1 { Text("Whole transformation: \(estimate.transformation.formattedSummary)") }
+                            if !estimate.visits.allSatisfy({ $0.steps.allSatisfy(\.available) }) {
+                                Text("Your pro needs to update this option before you can choose it.")
+                            }
                             if plan.status == .readyToChoose && !plan.provisional && !brief.awaitingAnalysis {
                                 Button(selected ? "Look selected" : "Choose this look") {
                                     Task { await model.chooseLook(version: brief.version, pathIndex: index, locationType: estimate.locationType) }
@@ -1028,6 +1031,8 @@ private struct ConsultLookPlanView: View {
                 }
             }
             if let brief {
+                if brief.inputOpen == false { Text("The appointment has started. Consult inputs are closed.").font(BrandFont.body(12)) }
+                if brief.invalidatedProfessionalPlan == true { Text("The client’s details changed. The previous professional plan needs a fresh review.").font(BrandFont.body(12)) }
                 Text("Version \(brief.version) · Estimate — your pro will confirm. Tip not included.")
                     .font(BrandFont.body(12))
                 ForEach(brief.chartSources ?? []) { source in Text(source.summary).font(BrandFont.body(12)) }

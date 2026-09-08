@@ -338,14 +338,15 @@ struct ConsultInspirationRegionPickerView: View {
                     ConsultRegionChipLabel(text: option.label, filled: false)
                 }
                 .buttonStyle(.plain)
-                .disabled(model.busy)
+                .disabled(model.busy || !model.inputsOpen)
             }
             Button { onAnswer(selected) } label: {
                 ConsultRegionChipLabel(text: ConsultThreadCopy.questionNext, filled: true)
             }
             .buttonStyle(.plain)
-            .disabled(model.busy || selected.isEmpty)
+            .disabled(model.busy || !model.inputsOpen || selected.isEmpty)
         }
+        .onAppear { selected = card.selectedValues }
         .task(id: url) {
             guard let url else { return }
             image = await ConsultInspirationReferenceStore.shared.image(for: url)
@@ -370,10 +371,10 @@ struct ConsultInspirationCardView: View {
     }
 
     var body: some View {
-        ConsultThreadCardView(dimmed: card.isAnswered) {
+        ConsultThreadCardView(dimmed: card.isAnswered && !model.isEditingAnswers) {
             // P5g — the two region moves render as a picker over the whole
             // photograph. Everything else is P5d's crop card, unchanged.
-            if card.presentation == .regionPicker && !card.isAnswered {
+            if card.presentation == .regionPicker && (!card.isAnswered || model.isEditingAnswers) {
                 ConsultInspirationRegionPickerView(
                     card: card,
                     model: model,
@@ -432,7 +433,7 @@ struct ConsultInspirationCardView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityIdentifier("consult-inspiration-card-prompt")
 
-                if card.isAnswered {
+                if card.isAnswered && !model.isEditingAnswers {
                     Text(
                         card.question.options
                             .filter { card.selectedValues.contains($0.value) }
@@ -445,10 +446,11 @@ struct ConsultInspirationCardView: View {
                 } else {
                     ConsultInspirationQuestionView(
                         question: card.question,
-                        busy: model.busy,
+                        busy: model.busy || !model.inputsOpen,
                         // The card already asked it, under the crop and after
                         // the plain word. Once is the product.
                         showLabel: false,
+                        initialSelection: card.selectedValues,
                         onAnswer: { values in
                             Task {
                                 await model.answerInspiration(

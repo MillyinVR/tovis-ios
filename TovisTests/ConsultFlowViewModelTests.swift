@@ -1,5 +1,7 @@
 import Foundation
 import Testing
+import SwiftUI
+import UIKit
 import TovisKit
 @testable import Tovis
 
@@ -23,6 +25,20 @@ private actor MockConsultService: ConsultServicing {
     private(set) var answeredInspirationKeys: [String] = []
     private(set) var teaserRecorded = false
     private(set) var consentRevoked = false
+    private(set) var deletedSessions: [String] = []
+    private var includesEarlyPhoto = false
+    func includeEarlyPhoto() { includesEarlyPhoto = true }
+    private var deletionAllowed = false
+    private var inputsAllowed = true
+    private var deletionFails = false
+    func configureManagement(canDelete: Bool, inputsOpen: Bool = true, fails: Bool = false) {
+        deletionAllowed = canDelete; inputsAllowed = inputsOpen; deletionFails = fails
+    }
+    func deleteSession(consultId: String) async throws {
+        if deletionFails { throw ConsultClientFailure.unavailable }
+        deletedSessions.append(consultId)
+    }
+
     var sessionProfessionalId = "cmq9p645v0002jp04fttoatlq"
 
     /// When set, `create` throws it — models the server hiding the consult
@@ -437,6 +453,13 @@ private actor MockConsultService: ConsultServicing {
             messages.append(contentsOf: try intakeMessages())
             messages.append(try inspirationMessage())
             messages.append(contentsOf: try photoMessages())
+            if includesEarlyPhoto, var early = try photoMessages().first,
+               var shot = early["shot"] as? [String: Any], var slot = early["slot"] as? [String: Any] {
+                early["id"] = "photo:early_photo"
+                shot["key"] = "early_photo"; slot["state"] = "ACCEPTED"
+                early["shot"] = shot; early["slot"] = slot
+                messages.append(early)
+            }
             messages.append(try planMessage())
         }
 
@@ -444,6 +467,8 @@ private actor MockConsultService: ConsultServicing {
         let selfieIn = acceptedShots.contains(.faceFront)
 
         return try decode(ConsultThread.self, value: [
+            "controls": ["canDelete": deletionAllowed, "inputsOpen": inputsAllowed && !consentOutstanding,
+                         "canEditAnswers": inputsAllowed && !consentOutstanding, "revokeAcceptanceId": consentRevoked ? NSNull() : consentRequirements.first(where: { $0["kind"] as? String == "SENSITIVE_DATA_CONSENT" })?["currentAcceptance"].flatMap { ($0 as? [String: Any])?["id"] } ?? NSNull()] as [String: Any],
             "consultId": consultId,
             "status": threadStatus(consentOutstanding: consentOutstanding),
             "professionalId": sessionProfessionalId,
@@ -807,6 +832,97 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
             uploads: uploads,
             photoPipeline: photoPipeline
         )
+    }
+
+    private func editingRoot() throws -> [String: Any] {
+        var root = try fixtureRoot()
+        var response = try #require(root["intake"] as? [String: Any])
+        var intake = try #require(response["intake"] as? [String: Any])
+        var pack = try #require(intake["questionPack"] as? [String: Any])
+        var questions = try #require(pack["questions"] as? [[String: Any]])
+        var options = try #require(questions[0]["options"] as? [[String: Any]])
+        options.append(["value": "subtle", "label": "Subtle"])
+        questions[0]["options"] = options
+        pack["questions"] = questions; intake["questionPack"] = pack; response["intake"] = intake; root["intake"] = response
+        return root
+    }
+
+    @Test func editingAnswersFollowsServerWindowAndPreservesHistory() async throws {
+        let service = MockConsultService(root: try editingRoot())
+        let model = model(service)
+        await model.start()
+        #expect(!model.canEditAnswers)
+        try await acceptBothAgreements(model)
+        let first = try #require(openMessage(model))
+        let question = try #require(first.question)
+        await model.answerIntake(first, value: try #require(question.options.first?.value))
+        #expect(model.canEditAnswers)
+        model.editingAnswers = true
+        #expect(model.isEditingAnswers)
+        let answered = try #require(model.messages.first { $0.question?.key == question.key })
+        let replacement = try #require(question.options.last?.value)
+        #expect(replacement != question.options.first?.value)
+        await model.answerIntake(answered, value: replacement)
+        #expect(model.messages.first { $0.question?.key == question.key }?.answer == replacement)
+        await service.configureManagement(canDelete: false, inputsOpen: false)
+        await model.refreshThread()
+        #expect(!model.isEditingAnswers)
+        #expect(!model.canOfferPartialContinue)
+    }
+
+    @Test func earlyPhotoDoesNotUnlockPartialGuidedPack() async throws {
+        let service = MockConsultService(root: try editingRoot())
+        await service.includeEarlyPhoto()
+        let model = model(service)
+        await model.start()
+        try await acceptBothAgreements(model)
+        _ = try await answerWholeIntake(model)
+        #expect(model.messages.contains { $0.shot?.key == .earlyPhoto && $0.slot?.state == .accepted })
+        #expect(model.acceptedShotCount == 0)
+        #expect(!model.canOfferPartialContinue)
+    }
+
+    @Test func rendersEditableIntakeAndManagementAtPhoneWidth() async throws {
+        let service = MockConsultService(root: try editingRoot())
+        await service.configureManagement(canDelete: true)
+        let model = model(service)
+        await model.start()
+        try await acceptBothAgreements(model)
+        let first = try #require(openMessage(model))
+        await model.answerIntake(first, value: try #require(first.question?.options.first?.value))
+        model.editingAnswers = true
+        let answered = try #require(model.messages.first { $0.id == first.id })
+        for (scheme, name) in [(ColorScheme.light, "light"), (ColorScheme.dark, "dark")] {
+            let view = VStack(spacing: 12) {
+                ConsultManagementControls(model: model, onDelete: {})
+                QuestionMessageView(message: answered, model: model).padding(.horizontal, 16)
+            }.frame(width: 390).padding(.vertical, 16).background(BrandColor.bgPrimary)
+                .environment(\.colorScheme, scheme).tint(BrandColor.accent)
+            let renderer = ImageRenderer(content: view)
+            renderer.scale = 2
+            let image = try #require(renderer.uiImage)
+            #expect(image.size.width == 390)
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("consult-parity-edit-\(name).png")
+            try #require(image.pngData()).write(to: url)
+            print("PARITY EDIT SNAPSHOT → \(url.path)")
+        }
+    }
+
+    @Test func deletingConsultRequiresServerEligibilityAndKeepsFailuresOpen() async throws {
+        let service = MockConsultService(root: try fixtureRoot())
+        let model = model(service)
+        await model.start()
+        await model.deleteConsult()
+        #expect(await service.deletedSessions.isEmpty)
+        await service.configureManagement(canDelete: true, fails: true)
+        await model.refreshThread()
+        await model.deleteConsult()
+        #expect(!model.deleted)
+        #expect(model.failure != nil)
+        await service.configureManagement(canDelete: true)
+        await model.deleteConsult()
+        #expect(model.deleted)
+        #expect(await service.deletedSessions == ["consult_fixture_1"])
     }
 
     @Test func oneVisibleIntakeQuestionDoesNotMeanTheWholePackIsComplete() async throws {
