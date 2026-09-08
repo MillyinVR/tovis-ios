@@ -10,6 +10,7 @@
     "professionType": "HAIRSTYLIST",
     "nameDisplay": "BUSINESS_NAME",
     "isPremium": true,
+    "isFoundingMember": true,
     "instagramHandle": "studio.lumen",
     "tiktokHandle": "studiolumen",
     "websiteUrl": "https://studiolumen.com/"

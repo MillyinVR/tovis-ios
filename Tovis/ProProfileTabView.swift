@@ -147,6 +147,9 @@ struct ProProfileTabView: View {
                                 .font(BrandFont.mono(12))
                                 .foregroundStyle(BrandColor.accent)
                         }
+                        if mine.isFoundingMember == true {
+                            BrandPill(text: "Founding Member", tint: BrandColor.gold)
+                        }
                     }
                     Spacer()
                 }
