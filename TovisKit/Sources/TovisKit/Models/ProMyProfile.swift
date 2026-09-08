@@ -21,6 +21,9 @@ public struct ProMyProfile: Decodable, Sendable {
     public let professionType: String?
     public let nameDisplay: String?
     public let isPremium: Bool
+    /// Permanent recognition for the first 100 professionals. The server sends
+    /// only this boolean; the private card-fulfilment number is admin-only.
+    public let isFoundingMember: Bool?
     /// Public social presence (tovis-app PR #478). Handles stored without "@";
     /// websiteUrl is a full https:// URL. Optional so an older backend decodes.
     public let instagramHandle: String?

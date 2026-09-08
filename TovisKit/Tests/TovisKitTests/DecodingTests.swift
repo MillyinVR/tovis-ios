@@ -1440,6 +1440,7 @@ func fixture(_ name: String) throws -> Data {
         #expect(res.profile.handle == "studio-lumen")
         #expect(res.profile.nameDisplay == "BUSINESS_NAME")
         #expect(res.profile.isPremium)
+        #expect(res.profile.isFoundingMember == true)
         #expect(res.profile.instagramHandle == "studio.lumen")
         #expect(res.profile.tiktokHandle == "studiolumen")
         #expect(res.profile.websiteUrl == "https://studiolumen.com/")
@@ -1456,6 +1457,7 @@ func fixture(_ name: String) throws -> Data {
         let res = try JSONDecoder().decode(ProMyProfileResponse.self, from: json)
         #expect(res.profile.instagramHandle == nil)
         #expect(res.profile.websiteUrl == nil)
+        #expect(res.profile.isFoundingMember == nil)
     }
 
     // GET /api/v1/pro/offerings — Fixtures/proOfferings.json. The pro's services
