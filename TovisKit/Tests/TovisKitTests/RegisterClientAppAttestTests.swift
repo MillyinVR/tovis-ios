@@ -98,6 +98,7 @@ final class CaptureBodyURLProtocol: URLProtocol {
             firstName: "Tori",
             lastName: "Morales",
             phone: "+15551234567",
+            signupInviteCode: "TVS-TEST-CODE",
             location: ClientSignupLocation(
                 postalCode: "90210",
                 city: "Beverly Hills",
@@ -112,6 +113,7 @@ final class CaptureBodyURLProtocol: URLProtocol {
 
         let body = try #require(CaptureBodyURLProtocol.capturedBody)
         let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        #expect(json["signupInviteCode"] as? String == "TVS-TEST-CODE")
         let att = try #require(json["appAttest"] as? [String: Any])
         #expect(att["keyId"] as? String == "key-xyz")
         #expect(att["attestation"] as? String == "YXR0ZXN0")
@@ -150,6 +152,7 @@ final class CaptureBodyURLProtocol: URLProtocol {
             firstName: "Tori",
             lastName: "Morales",
             phone: "+15551234567",
+            signupInviteCode: "TVS-TEST-CODE",
             location: ClientSignupLocation(
                 postalCode: "90210",
                 city: "Beverly Hills",
@@ -192,6 +195,7 @@ final class CaptureBodyURLProtocol: URLProtocol {
             firstName: "Tori",
             lastName: "Morales",
             phone: "+15551234567",
+            signupInviteCode: "TVS-TEST-CODE",
             location: ClientSignupLocation(
                 postalCode: "90210",
                 city: "Beverly Hills",

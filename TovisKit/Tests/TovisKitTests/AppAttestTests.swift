@@ -62,7 +62,8 @@ import Testing
                 timeZoneId: "America/Los_Angeles"
             ),
             deviceId: "device-1",
-            appAttest: appAttest
+            appAttest: appAttest,
+            signupInviteCode: "TVS-TEST-CODE"
         )
     }
 
