@@ -18,6 +18,12 @@ import Foundation
 /// picture, never a question that sounds like a test, and never impersonating
 /// the professional — she is who the Brief is being prepared FOR.
 public enum ConsultThreadCopy {
+    public static let profileDetailsTitle = "Your feature profile"
+    public static let profileDetailsBody = "What the photos suggest about your features, so recommendations enhance what is already yours. Your professional confirms these in person — color readings from photos are approximate."
+    public static let styleOptionsTitle = "Style options to discuss"
+    public static let styleOptionsBody = "Your preferences come first. These photo-based suggestions are optional starting points to discuss with your professional."
+    public static let styleReasonLabel = "Why this could work for you"
+
     public static let screenTitle = "Your consult"
 
     public static let bookCtaLabel = "Book the look"
