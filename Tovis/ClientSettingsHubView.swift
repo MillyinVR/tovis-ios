@@ -57,6 +57,8 @@ struct ClientSettingsHubView: View {
                     }
                 }
 
+                FounderPortalSection()
+
                 BrandSection(title: "Account") {
                     VStack(spacing: 10) {
                         SettingsLinkRow(

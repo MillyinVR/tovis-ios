@@ -42,6 +42,9 @@ public final class TovisClient: Sendable {
     /// The board LIST arrives in the `/me` payload; this covers everything else.
     public let boards: BoardsService
     public let messages: MessagesService
+    /// Invite-only product feedback community. The backend returns the exact
+    /// rooms this identity may see; native never duplicates its access rules.
+    public let founders: FoundersService
     public let discover: DiscoverService
     public let booking: BookingService
     public let addresses: AddressesService
@@ -209,6 +212,7 @@ public final class TovisClient: Sendable {
             supabaseURL: config.supabaseURL,
             supabaseKey: config.supabaseAnonKey
         )
+        self.founders = FoundersService(api: api)
         self.discover = DiscoverService(api: api)
         self.booking = BookingService(api: api)
         self.addresses = AddressesService(api: api)
