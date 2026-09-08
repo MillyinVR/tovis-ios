@@ -65,6 +65,9 @@ struct ProConsultBriefView: View {
                 if let error { Text(error).foregroundStyle(BrandColor.textSecondary) }
                 if busy { ProgressView() }
                 if let brief {
+                    if let mentor = brief.mentor {
+                        ConsultMentorLayer(mentor: mentor)
+                    }
                     if let inspiration = brief.inspiration {
                         Text("What matters in the inspiration").font(BrandFont.body(18, .semibold))
                         Text(inspiration.referenceNote).foregroundStyle(BrandColor.textSecondary)
@@ -73,6 +76,7 @@ struct ProConsultBriefView: View {
                         }
                     }
                     Text("Client’s words").font(BrandFont.body(18, .semibold))
+                    ForEach(brief.lookBrief?.chartSources ?? []) { source in Text(source.summary).font(BrandFont.body(12)) }
                     ForEach(brief.clientIntake + (brief.lookBrief?.additionalClientAnswers ?? [])) { item in
                         VStack(alignment: .leading) { Text(item.question).fontWeight(.semibold); Text(item.answer) }
                     }
@@ -287,5 +291,24 @@ private struct ProLookExpectationSheet: View {
             onSaved()
             dismiss()
         } catch { self.error = "Could not save expectations. Reload the brief and try again." }
+    }
+}
+
+struct ConsultMentorLayer: View {
+    let mentor: ConsultMentor
+    var body: some View {
+        BrandSurface {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(mentor.title).font(BrandFont.body(20, .semibold))
+                Text(mentor.authority).font(BrandFont.body(13))
+                ForEach(mentor.sections) { section in
+                    Text("\(section.id). \(section.title)").font(BrandFont.body(16, .semibold))
+                    ForEach(Array(section.items.enumerated()), id: \.offset) { _, item in
+                        Text(item.text).font(BrandFont.body(13))
+                    }
+                }
+                Text(mentor.formulationNote).font(BrandFont.body(12))
+            }
+        }.accessibilityIdentifier("consult-mentor")
     }
 }

@@ -137,3 +137,24 @@ import UIKit
         }
     }
 }
+
+@Suite @MainActor struct ConsultMentorRenderTests {
+    @Test func rendersDatabaseDerivedMentorInBothModes() throws {
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/consultMentor.json")
+        let mentor = try JSONDecoder().decode(ConsultMentor.self, from: Data(contentsOf: fixture))
+        #expect(mentor.sections.map(\.id) == [1, 2, 3, 4, 5])
+        for (scheme, name) in [(ColorScheme.light, "light"), (ColorScheme.dark, "dark")] {
+            let view = ConsultMentorLayer(mentor: mentor).frame(width: 358).padding(16)
+                .background(BrandColor.bgPrimary).environment(\.colorScheme, scheme)
+            let renderer = ImageRenderer(content: view)
+            renderer.scale = 2
+            let image = try #require(renderer.uiImage)
+            #expect(image.size.width == 390)
+            let png = try #require(image.pngData())
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("consult-mentor-\(name).png")
+            try png.write(to: url)
+            print("MENTOR SNAPSHOT → \(url.path)")
+        }
+    }
+}

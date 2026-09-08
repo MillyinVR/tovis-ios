@@ -557,41 +557,53 @@ private struct PhotoRequestMessageView: View {
     let onFullscreen: (FullscreenMedia) -> Void
 
     var body: some View {
-        if let shot = message.shot {
-            ConsultPhotoPickerSlot(
-                shot: shot,
-                slot: message.slot,
-                consultId: model.consultId ?? "",
-                thumbnail: model.localThumbnails[shot.key],
-                // Where the DURABLE queue has got to with this slot. Nil means it
-                // owes nothing and the served slot state is the whole story;
-                // anything else OUTRANKS the served state, because the queue
-                // knows about a shot the server has not been told about yet.
-                queueStage: model.captureStage(for: shot.key),
-                queueBlockedReason: model.captureBlockedReason(for: shot.key),
-                queueStalled: model.uploads.stalled,
-                disabled: model.busy,
-                onStill: { data in await model.submitPhoto(data, for: message) },
-                onThumbnailTap: { image in
-                    // 🔴 The FULL frame when there is one, not the thumbnail.
-                    // For a tight-crop shot the thumbnail is the crop, and a
-                    // client whose eyes band came out wrong needs to see the
-                    // photograph she actually took — otherwise a correct crop
-                    // and a broken one look identical to her. Inspection only:
-                    // nothing here re-uploads or re-crops (Tori, 2026-09-06).
-                    onFullscreen(
-                        .local(
-                            id: "consult-shot-\(shot.key.rawValue)",
-                            image: model.localFullFrames[shot.key] ?? image
+        VStack(alignment: .leading, spacing: 12) {
+            if message.shootable != false && message.slot?.state != .accepted {
+                ForEach(message.chartPhotos ?? []) { photo in
+                    if let url = URL(string: photo.url) {
+                        DownsampledRemoteImage(url: url) { Color.clear }
+                            .frame(width: 160, height: 160).clipped()
+                    }
+                    Button(photo.label) { Task { await model.useChartPhoto(photo) } }
+                        .disabled(model.busy)
+                }
+            }
+            if let shot = message.shot {
+                ConsultPhotoPickerSlot(
+                    shot: shot,
+                    slot: message.slot,
+                    consultId: model.consultId ?? "",
+                    thumbnail: model.localThumbnails[shot.key],
+                    // Where the DURABLE queue has got to with this slot. Nil means it
+                    // owes nothing and the served slot state is the whole story;
+                    // anything else OUTRANKS the served state, because the queue
+                    // knows about a shot the server has not been told about yet.
+                    queueStage: model.captureStage(for: shot.key),
+                    queueBlockedReason: model.captureBlockedReason(for: shot.key),
+                    queueStalled: model.uploads.stalled,
+                    disabled: model.busy,
+                    onStill: { data in await model.submitPhoto(data, for: message) },
+                    onThumbnailTap: { image in
+                        // 🔴 The FULL frame when there is one, not the thumbnail.
+                        // For a tight-crop shot the thumbnail is the crop, and a
+                        // client whose eyes band came out wrong needs to see the
+                        // photograph she actually took — otherwise a correct crop
+                        // and a broken one look identical to her. Inspection only:
+                        // nothing here re-uploads or re-crops (Tori, 2026-09-06).
+                        onFullscreen(
+                            .local(
+                                id: "consult-shot-\(shot.key.rawValue)",
+                                image: model.localFullFrames[shot.key] ?? image
+                            )
                         )
-                    )
-                },
-                localRetakeReason: model.localRetakeReasons[shot.key],
-                // Absent from an older server means shootable — the
-                // behaviour every shipped build already had.
-                shootable: message.shootable ?? true
-            )
-            .opacity(message.slot?.state == .accepted ? 0.75 : 1)
+                    },
+                    localRetakeReason: model.localRetakeReasons[shot.key],
+                    // Absent from an older server means shootable — the
+                    // behaviour every shipped build already had.
+                    shootable: message.shootable ?? true
+                )
+                .opacity(message.slot?.state == .accepted ? 0.75 : 1)
+            }
         }
     }
 }
@@ -1018,6 +1030,7 @@ private struct ConsultLookPlanView: View {
             if let brief {
                 Text("Version \(brief.version) · Estimate — your pro will confirm. Tip not included.")
                     .font(BrandFont.body(12))
+                ForEach(brief.chartSources ?? []) { source in Text(source.summary).font(BrandFont.body(12)) }
                 ForEach(brief.additionalClientAnswers ?? []) { item in
                     Text("\(item.question): \(item.answer)").font(BrandFont.body(12))
                 }

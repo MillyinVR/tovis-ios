@@ -1,0 +1,141 @@
+{
+  "title": "Mentor mode",
+  "authority": "Read alongside the Brief. You make the final call after checking the client in person.",
+  "formulationNote": "No formulation data for these product lines is included in this mentor layer.",
+  "sections": [
+    {
+      "id": 1,
+      "title": "What the consult saw",
+      "items": [
+        {
+          "text": "base level: level 5 (40–65% confidence)",
+          "sourceId": "cmtt4onrj00gapo0cg019428z"
+        },
+        {
+          "text": "lightest level: level 8 (40–65% confidence)",
+          "sourceId": "cmtt4onrj00gapo0cg019428z"
+        },
+        {
+          "text": "tone: cool (40–65% confidence)",
+          "sourceId": "cmtt4onrj00gapo0cg019428z"
+        },
+        {
+          "text": "technique: balayage (40–65% confidence)",
+          "sourceId": "cmtt4onrj00gapo0cg019428z"
+        },
+        {
+          "text": "placement: mids to ends (40–65% confidence)",
+          "sourceId": "cmtt4onrj00gapo0cg019428z"
+        },
+        {
+          "text": "root blend: shadow root (40–65% confidence)",
+          "sourceId": "cmtt4onrj00gapo0cg019428z"
+        },
+        {
+          "text": "finish: high shine (40–65% confidence)",
+          "sourceId": "cmtt4onrj00gapo0cg019428z"
+        },
+        {
+          "text": "dimension: medium (40–65% confidence)",
+          "sourceId": "cmtt4onrj00gapo0cg019428z"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "What the client likes and dislikes",
+      "items": [
+        {
+          "text": "like: The color",
+          "sourceId": "cmtt4onvy00hepo0c7l7yo16n"
+        },
+        {
+          "text": "goal: My length",
+          "sourceId": "cmtt4onvy00hepo0c7l7yo16n"
+        },
+        {
+          "text": "goal: Make those parts work for me",
+          "sourceId": "cmtt4onvy00hepo0c7l7yo16n"
+        },
+        {
+          "text": "context: That’s right",
+          "sourceId": "cmtt4onvy00hepo0c7l7yo16n"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Starting point and suitability",
+      "items": [
+        {
+          "text": "Base level: level 4 (50–75% confidence)",
+          "sourceId": "cmtt4oo4m00jmpo0czw9rlesu"
+        },
+        {
+          "text": "Lightest level: level 5 (50–75% confidence)",
+          "sourceId": "cmtt4oo4m00jmpo0czw9rlesu"
+        },
+        {
+          "text": "Tone: mixed (40–70% confidence)",
+          "sourceId": "cmtt4oo4m00jmpo0czw9rlesu"
+        },
+        {
+          "text": "Visible condition: no visible concern (60–80% confidence)",
+          "sourceId": "cmtt4oo4m00jmpo0czw9rlesu"
+        },
+        {
+          "text": "Face proportion: balanced (40–70% confidence)",
+          "sourceId": "cmtt4oo4m00jmpo0czw9rlesu"
+        },
+        {
+          "text": "Forehead proportion: balanced (40–70% confidence)",
+          "sourceId": "cmtt4oo4m00jmpo0czw9rlesu"
+        },
+        {
+          "text": "A soft, harmonizing direction: Low observed contrast and soft feature balance favor blended choices.",
+          "sourceId": "cmtt4oo4m00jmpo0czw9rlesu"
+        },
+        {
+          "text": "Allergy information was not collected in this intake. Discuss known allergies, sensitivities, and appropriate precautions with your professional.",
+          "sourceId": "cmtt4oo4m00jmpo0czw9rlesu"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Recommended path and why",
+      "items": [
+        {
+          "text": "Warm dimension · 1 visit. Keeps the length you love.",
+          "sourceId": "cmtt4oo4m00jmpo0czw9rlesu"
+        },
+        {
+          "text": "Keep your length with warm dimension. Confirm your starting point and history.",
+          "sourceId": "cmtt4oo4m00jmpo0czw9rlesu"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Placement tips",
+      "items": [
+        {
+          "text": "Reference placement: mids to ends (40–65% confidence)",
+          "sourceId": "cmtt4onrj00gapo0cg019428z"
+        },
+        {
+          "text": "Reference root blend: shadow root (40–65% confidence)",
+          "sourceId": "cmtt4onrj00gapo0cg019428z"
+        },
+        {
+          "text": "Discuss a soft, blended direction for this domain together. Low observed contrast and soft feature balance favor blended choices.",
+          "sourceId": "cmtt4oo4m00jmpo0czw9rlesu"
+        },
+        {
+          "text": "Confirm the hairline, face-framing boundaries and current condition in person before choosing placement. This Brief does not establish a hairline assessment.",
+          "sourceId": "cmtt4oo4z00jspo0cje2xkrez"
+        }
+      ]
+    }
+  ]
+}

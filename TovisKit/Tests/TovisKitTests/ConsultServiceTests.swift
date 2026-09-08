@@ -79,6 +79,20 @@ private final class ConsultURLProtocol: URLProtocol {
         try! JSONSerialization.data(withJSONObject: value)
     }
 
+    @Test func chartPhotoConfirmationPostsOnlyTheSelectedSourceAndStableKey() async throws {
+        reset()
+        let state = try captureState()
+        ConsultURLProtocol.responder = { _ in (200, self.json(["ok": true, "capture": state])) }
+        let service = await makeService()
+        try await service.useChartPhoto(consultId: "consult_1", mediaAssetId: "chart_photo_1", idempotencyKey: "same-tap")
+        let request = try #require(ConsultURLProtocol.requests.first)
+        #expect(request.url?.path == "/api/v1/client/consult/consult_1/chart-photo")
+        #expect(request.httpMethod == "POST")
+        let requestBody = try #require(request.httpBody)
+        let body = try #require(JSONSerialization.jsonObject(with: requestBody) as? [String: String])
+        #expect(body == ["mediaAssetId": "chart_photo_1", "idempotencyKey": "same-tap"])
+    }
+
     @Test func captureUsesOnlyServerMintedPrivateURLAndBoundMutationBodies() async throws {
         reset()
         let accepted = try captureState()
