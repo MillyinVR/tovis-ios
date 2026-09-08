@@ -455,4 +455,38 @@ private final class ConsultURLProtocol: URLProtocol {
         #expect(capture.status == .analysisPending)
         #expect(!capture.hasAllAcceptedShots)
     }
+
+    @Test func savedConsultationsDecodeAndPaginate() async throws {
+        reset()
+        let data = try fixture("clientConsultSessions")
+        ConsultURLProtocol.responder = { request in
+            #expect(request.url?.path == "/api/v1/client/consult/sessions")
+            #expect(URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first?.value == "previous")
+            return (200, data)
+        }
+        let page = try await makeService().savedSessions(cursor: "previous")
+        #expect(page.consultations.count == 2)
+        #expect(page.consultations[0].canResume)
+        #expect(!page.consultations[1].canResume)
+        #expect(page.nextCursor == "consult_saved_2")
+    }
+
+    @Test func deleteConsultationUsesDeleteAndSurfacesFailure() async throws {
+        reset()
+        ConsultURLProtocol.responder = { request in
+            #expect(request.httpMethod == "DELETE")
+            #expect(request.url?.path == "/api/v1/client/consult/consult_saved_1")
+            return (409, self.json(["ok": false, "error": "Appointment-linked consultation"]))
+        }
+        do {
+            try await makeService().deleteSession(consultId: "consult_saved_1")
+            Issue.record("Deletion must not report success on an appointment refusal")
+        } catch APIError.server(status: 409, message: _, code: _) { }
+    }
+
+    @Test func deletingAnAlreadyRemovedConsultationIsAnIdempotentSuccess() async throws {
+        reset()
+        ConsultURLProtocol.responder = { _ in (404, self.json(["ok": false, "error": "Not found."])) }
+        try await makeService().deleteSession(consultId: "consult_already_removed")
+    }
 }

@@ -322,3 +322,18 @@ public struct HomeViral: Decodable, Sendable, Identifiable {
         return "Link"
     }
 }
+
+/// Content-free list of unbooked look consultations.
+public struct ClientConsultSessions: Decodable, Sendable {
+    public let consultations: [SavedLookConsultation]
+    public let nextCursor: String?
+}
+
+public struct SavedLookConsultation: Decodable, Sendable, Identifiable {
+    public let id: String
+    public let lookPostId: String
+    public let professionalId: String
+    public let professionalName: String?
+    public let updatedAt: String
+    public let canResume: Bool
+}

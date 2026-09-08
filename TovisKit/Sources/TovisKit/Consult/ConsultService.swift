@@ -104,6 +104,18 @@ public final class ConsultService: ConsultServicing, Sendable {
         self.supabaseKey = supabaseKey
     }
 
+    public func savedSessions(cursor: String? = nil) async throws -> ClientConsultSessions {
+        try await api.request("/client/consult/sessions", query: cursor.map { [URLQueryItem(name: "cursor", value: $0)] } ?? [])
+    }
+
+    public func deleteSession(consultId: String) async throws {
+        do {
+            try await api.requestVoid("/client/consult/\(consultId)", method: .delete)
+        } catch APIError.server(status: 404, message: _, code: _) {
+            // Already removed, including a retry after the first response was lost.
+        }
+    }
+
     public func availability(bookingId: String) async throws -> ConsultAvailability {
         let response: ConsultAvailabilityResponse = try await api.request(
             "/client/consult/availability",

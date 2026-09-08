@@ -168,6 +168,8 @@ struct HomeView: View {
             rightColumn(home)
         }
 
+        SavedConsultationsCard()
+
         ViralLooksBand(liveLooks: home.viralLive, pending: home.viralPending.first,
                        pendingMore: max(0, home.viralPending.count - 1),
                        onSubmitted: { await load() })
@@ -1522,6 +1524,102 @@ private struct ViralLooksBand: View {
                 }
                 .frame(maxWidth: .infinity)
             }
+        }
+    }
+}
+
+/// Unbooked consultations are client-owned drafts. Appointment records stay
+/// on the booking; the server independently enforces this on every delete.
+private struct SavedConsultationsCard: View {
+    @Environment(SessionModel.self) private var session
+    @State private var items: [SavedLookConsultation] = []
+    @State private var cursor: String?
+    @State private var loading = true
+    @State private var loadFailed = false
+    @State private var unavailable = false
+    @State private var selected: SavedLookConsultation?
+    @State private var launch: SavedLookConsultation?
+    @State private var deleting = false
+    @State private var deleteFailed = false
+
+    var body: some View {
+        if !unavailable {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Your look consultations").font(BrandFont.display(22, .semibold))
+                if loadFailed {
+                    Text("We couldn’t load your consultations.")
+                    Button("Try again") { Task { await load() } }.disabled(loading)
+                }
+                if !loading && !loadFailed && items.isEmpty {
+                    Text("Start with a look you love. Your unbooked consultations will be here.")
+                        .font(BrandFont.body(14)).foregroundStyle(BrandColor.textMuted)
+                }
+                ForEach(items) { item in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(item.professionalName ?? "Your pro").font(BrandFont.body(16, .semibold))
+                        Text(Wire.dateTime(item.updatedAt, timeZone: TimeZone.current.identifier))
+                            .font(BrandFont.body(12)).foregroundStyle(BrandColor.textMuted)
+                        HStack {
+                            if item.canResume {
+                                Button("Continue consultation") { launch = item }.disabled(deleting)
+                            }
+                            Spacer()
+                            Button("Delete consultation", role: .destructive) { selected = item }
+                                .disabled(deleting)
+                        }.font(BrandFont.body(14)).frame(minHeight: 44)
+                    }
+                    Divider()
+                }
+                if cursor != nil { Button("Show more") { Task { await load(more: true) } }.disabled(loading) }
+                if loading || deleting { ProgressView() }
+                if deleteFailed {
+                    Text("We couldn’t finish deleting this consultation. Please try again.")
+                        .font(BrandFont.body(14)).accessibilityAddTraits(.updatesFrequently)
+                }
+            }
+            .padding(18)
+            .background(BrandColor.bgSecondary, in: RoundedRectangle(cornerRadius: 18))
+            .foregroundStyle(BrandColor.textPrimary)
+            .task { await load() }
+            .onChange(of: session.refreshTick) { Task { await load() } }
+            .confirmationDialog("Delete this consultation?", isPresented: Binding(
+                get: { selected != nil }, set: { if !$0 { selected = nil } }
+            ), titleVisibility: .visible) {
+                if let item = selected {
+                    Button("Delete consultation", role: .destructive) { Task { await remove(item) } }
+                }
+                Button("Keep consultation", role: .cancel) { selected = nil }
+            } message: {
+                Text("Your answers and temporary consult photos will be deleted. You can start this look again. Photos already saved to your chart stay on your chart.")
+            }
+            .sheet(item: $launch, onDismiss: { Task { await load() } }) { item in
+                ConsultFlowView(anchor: .look(item.lookPostId), professionalId: item.professionalId)
+            }
+        }
+    }
+
+    private func load(more: Bool = false) async {
+        loading = true; loadFailed = false
+        defer { loading = false }
+        do {
+            let page = try await session.client.consult.savedSessions(cursor: more ? cursor : nil)
+            items = more ? items + page.consultations : page.consultations
+            cursor = page.nextCursor
+        } catch APIError.server(status: 404, message: _, code: _) {
+            unavailable = true // The API has not been deployed yet.
+        } catch { loadFailed = true }
+    }
+
+    private func remove(_ item: SavedLookConsultation) async {
+        deleting = true; deleteFailed = false
+        defer { deleting = false }
+        do {
+            try await session.client.consult.deleteSession(consultId: item.id)
+            ConsultCaptureUploadQueue.shared.discardAll(consultId: item.id, reason: "consult_deleted")
+            items.removeAll { $0.id == item.id }
+        } catch {
+            deleteFailed = true
+            await load()
         }
     }
 }
