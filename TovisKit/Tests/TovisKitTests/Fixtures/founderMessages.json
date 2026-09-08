@@ -1,0 +1,30 @@
+{
+  "ok": true,
+  "room": {
+    "key": "PRO_BARBER",
+    "label": "Barbers",
+    "description": "Cuts, grooming, repeat cadence, and barber workflows.",
+    "audience": "PRO",
+    "unreadCount": 0
+  },
+  "messages": [
+    {
+      "id": "founder_message_1",
+      "room": "PRO_BARBER",
+      "kind": "QUESTION",
+      "body": "Can the camera help me keep every fade photo consistent?",
+      "createdAt": "2026-09-08T08:00:00.000Z",
+      "answeredAt": null,
+      "replyToId": null,
+      "author": {
+        "id": "user_1",
+        "displayName": "Northside Barber",
+        "avatarUrl": null,
+        "audience": "PRO",
+        "role": "MEMBER"
+      }
+    }
+  ],
+  "nextCursor": null,
+  "hasMore": false
+}

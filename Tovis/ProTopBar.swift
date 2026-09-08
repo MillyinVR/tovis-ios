@@ -138,6 +138,8 @@ struct ProAccountMenuSheet: View {
                 VStack(spacing: 14) {
                     WorkspaceSwitchRow(target: .client) { dismiss() }
 
+                    FounderPortalSection()
+
                     if let message = session.errorMessage {
                         Text(message)
                             .font(BrandFont.body(13))

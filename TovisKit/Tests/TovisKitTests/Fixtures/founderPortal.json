@@ -1,0 +1,24 @@
+{
+  "ok": true,
+  "portal": {
+    "canModerate": false,
+    "canAdminister": false,
+    "isOwner": false,
+    "rooms": [
+      {
+        "key": "PRO_ALL",
+        "label": "All Founding Pros",
+        "description": "The shared room for every founding professional.",
+        "audience": "PRO",
+        "unreadCount": 4
+      },
+      {
+        "key": "PRO_BARBER",
+        "label": "Barbers",
+        "description": "Cuts, grooming, repeat cadence, and barber workflows.",
+        "audience": "PRO",
+        "unreadCount": 0
+      }
+    ]
+  }
+}

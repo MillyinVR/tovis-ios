@@ -471,6 +471,8 @@ struct ProProfileTabView: View {
                 WorkspaceSwitchRow(target: .client)
             }
 
+            FounderPortalSection()
+
             if let message = session.errorMessage {
                 Text(message).font(BrandFont.body(13)).foregroundStyle(BrandColor.ember)
             }
