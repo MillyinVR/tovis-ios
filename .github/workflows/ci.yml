@@ -6,9 +6,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Cancel only obsolete PR commits; never interrupt a main/manual verification.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # The wire-contract gate. Validates every fixture in
@@ -29,15 +30,8 @@ jobs:
       # while the wire contract rotted — the exact failure the gate exists to
       # catch. Auth is a read-only deploy key (secret TOVIS_APP_DEPLOY_KEY).
       #
-      # ⚠️ The reason given for that key — "both repos are private, so some
-      # credential is unavoidable" — is no longer true. `gh repo view` reports
-      # BOTH MillyinVR/tovis-ios and MillyinVR/tovis-app as PUBLIC (re-checked
-      # 2026-08-20; the `app` job below has said so since 2026-08-12, so this
-      # file was contradicting itself). A public sparse checkout needs no
-      # credential at all, which makes TOVIS_APP_DEPLOY_KEY a secret this
-      # workflow may no longer need. Left in place deliberately — dropping it is
-      # a change to a green gate, not a comment fix — but do not re-justify it
-      # with the private-repo premise.
+      # Both repositories are private as of 2026-09-09. Retain the read-only
+      # deploy key so the cross-repository contract gate remains enforceable.
       - name: Fetch backend API schema (read-only deploy key)
         uses: actions/checkout@v7
         with:
@@ -160,14 +154,9 @@ jobs:
   #
   # ARMED on every PR and every push to main as of 2026-08-12 (TOV-REL-001).
   #
-  # It was `workflow_dispatch`-only because this is the job that exhausted the
-  # Actions allowance on 2026-07-19 and refused every workflow across BOTH repos
-  # for hours — macOS bills at 10x on PRIVATE repos. That reason is now dead:
-  # `gh repo view` reports BOTH MillyinVR/tovis-ios and MillyinVR/tovis-app as
-  # PUBLIC (checked 2026-08-12), and GitHub's standard runners — macos-latest
-  # included — are free for public repositories. There is no allowance left to
-  # exhaust; the only remaining ceiling is the concurrent-job limit, which the
-  # `concurrency:` block above already keeps to one run per ref.
+  # Both repositories are private as of 2026-09-09, so hosted macOS time
+  # consumes the Actions allowance. Preserve this gate on every PR and main
+  # push; superseded PR runs are cancelled above to avoid redundant work.
   #
   # Arming it is not cosmetic. While this job was dispatch-only, `Tovis/` was
   # not COMPILED by any PR, which is how the missing App Attest entitlement
@@ -185,9 +174,6 @@ jobs:
   # ~24% more. So a "cheaper" compile-only job is a false economy — once you pay
   # for the build, run the tests.
   #
-  # ⚠️ If either repo is ever made private again, this job starts billing at 10x
-  # and must be re-gated (`if: github.event_name != 'pull_request'`, or a paths
-  # filter for Tovis/**, TovisTests/**, tovis-ios.xcodeproj/**).
   app:
     name: App target (Tovis + TovisTests)
     runs-on: macos-latest
