@@ -30,7 +30,7 @@ import Testing
 
     @Test func dailyCap429MapsToDailyLimit() {
         let mapped = ProCameraAIError.from(
-            APIError.server(status: 429, message: "Too many requests. Please slow down.", code: "RATE_LIMITED"))
+            APIError.server(status: 429, message: "Too many requests. Please try again later.", code: "RATE_LIMITED"))
         #expect(mapped == .dailyLimitReached)
         #expect(!mapped.offersUpgrade)
         #expect(mapped.userMessage == "Daily AI limit reached — try again tomorrow.")

@@ -135,14 +135,14 @@ private extension URLRequest {
         reset()
         SupportURLProtocol.status = 429
         SupportURLProtocol.responseBody = Data("""
-        {"ok":false,"error":"Too many requests. Please slow down.","code":"RATE_LIMITED"}
+        {"ok":false,"error":"Too many requests. Please try again later.","code":"RATE_LIMITED"}
         """.utf8)
 
         // The form renders `userMessage`, so the server's copy is what a rate-limited
         // person actually reads — no native restatement of the ceiling.
         await #expect(throws: APIError.server(
             status: 429,
-            message: "Too many requests. Please slow down.",
+            message: "Too many requests. Please try again later.",
             code: "RATE_LIMITED"
         )) {
             _ = try await makeService().createTicket(subject: "s", message: "m")
