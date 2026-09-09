@@ -66,9 +66,12 @@ struct APIErrorBody: Decodable {
     }
 
     /// The `details` object a rate-limited (429) response carries. Built by
-    /// `buildRateLimitResponse` (app/api/_utils/rateLimit.ts), which nests the
-    /// whole decision — bucket/limit/remaining/reset/retryAfterSeconds/… — under
-    /// this one key. We only model the field we act on.
+    /// `rateLimitExceededResponse` (tovis-app lib/rateLimit/response.ts) — the
+    /// ONE 429 builder every rate-limited route goes through since 2026-09-08 —
+    /// which nests the whole decision — bucket/limit/remaining/reset/
+    /// retryAfterSeconds/… — under this one key. We only model the field we act
+    /// on. (Before that date the field came from a second builder that only the
+    /// auth routes used; the other ~40 routes sent no `details` at all.)
     ///
     /// ⚠️ `retryAfterSeconds` is NESTED, never top level. Web read it at the top
     /// level for the life of the feature and its countdown silently never fired

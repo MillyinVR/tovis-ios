@@ -6,8 +6,9 @@ import Testing
 // carries a 429's `retryAfterSeconds` from the wire to the model.
 //
 // The shape assertions matter more than they look. `retryAfterSeconds` is nested
-// under `details` — `buildRateLimitResponse` (app/api/_utils/rateLimit.ts) puts
-// the whole rate-limit decision there and `jsonFail` spreads it as-is. Web read
+// under `details` — `rateLimitExceededResponse` (tovis-app
+// lib/rateLimit/response.ts, the ONE 429 builder) puts the whole rate-limit
+// decision there and `jsonFail` spreads it as-is. Web read
 // it at the TOP level for the life of the feature, its unit tests mocked a
 // top-level field to match, and so reader and mocks agreed with each other while
 // disagreeing with the server: the countdown never fired once in production
@@ -129,7 +130,7 @@ import Testing
     /// Verbatim body of a real 429 from POST /api/v1/auth/phone-login/send,
     /// captured by tripping the auth:email:send bucket against a dev server.
     private static let realRateLimitBody = """
-    {"ok":false,"error":"Too many requests. Please slow down.","code":"RATE_LIMITED",
+    {"ok":false,"error":"Too many requests. Please try again later.","code":"RATE_LIMITED",
      "details":{"bucket":"auth:email:send","limit":5,"remaining":0,
      "reset":1784241270333,"retryAfterSeconds":899,"source":"redis",
      "reason":"rate_limited"}}
@@ -183,7 +184,7 @@ import Testing
     @Test func readsTheHintOffARateLimitedError() {
         let error = APIError.serverDetails(
             status: 429,
-            message: "Too many requests. Please slow down.",
+            message: "Too many requests. Please try again later.",
             code: "RATE_LIMITED",
             details: ServerErrorDetails(retryAfterSeconds: 899)
         )
@@ -237,7 +238,7 @@ final class RateLimitedURLProtocol: URLProtocol {
 /// every unit test still green).
 @Suite(.serialized) struct OTPResendCooldownTransportTests {
     private static let realRateLimitBody = Data("""
-    {"ok":false,"error":"Too many requests. Please slow down.","code":"RATE_LIMITED",
+    {"ok":false,"error":"Too many requests. Please try again later.","code":"RATE_LIMITED",
      "details":{"bucket":"auth:sms-phone-hour","limit":5,"remaining":0,
      "reset":1784241270333,"retryAfterSeconds":899,"source":"redis",
      "reason":"rate_limited"}}
