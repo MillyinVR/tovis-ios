@@ -584,6 +584,8 @@ struct ConsultInspirationPhotoPicker: View {
     let onJPEG: (Data) async -> Void
     let onSkip: () -> Void
 
+    var replacing = false
+
     @State private var pick: PhotosPickerItem?
     @State private var preparing = false
     @State private var preparationError: ConsultClientFailure?
@@ -608,7 +610,7 @@ struct ConsultInspirationPhotoPicker: View {
                         if busy || preparing {
                             ProgressView().tint(BrandColor.onAccent)
                         } else {
-                            Label("Add an inspiration photo", systemImage: "photo.on.rectangle")
+                            Label(replacing ? "Change reference photo" : "Add an inspiration photo", systemImage: "photo.on.rectangle")
                                 .font(BrandFont.body(14, .semibold))
                         }
                     }
@@ -619,16 +621,18 @@ struct ConsultInspirationPhotoPicker: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
                 .disabled(busy || preparing)
-                Button(action: onSkip) {
-                    Text("Continue without one")
-                        .font(BrandFont.body(14, .semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .foregroundStyle(BrandColor.textPrimary)
-                        .background(BrandColor.bgSurface)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                if !replacing {
+                    Button(action: onSkip) {
+                        Text("Continue without one")
+                            .font(BrandFont.body(14, .semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .foregroundStyle(BrandColor.textPrimary)
+                            .background(BrandColor.bgSurface)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                    .disabled(busy || preparing)
                 }
-                .disabled(busy || preparing)
             }
         }
         .accessibilityIdentifier("consult-inspiration-source-decision")

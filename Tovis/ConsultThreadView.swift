@@ -490,6 +490,13 @@ private struct InspirationMessageView: View {
                     Text(text).frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
+            if message.source != nil && message.sourceDecisionRequired != true {
+                ConsultInspirationPhotoPicker(
+                    busy: model.busy || !model.inputsOpen,
+                    onJPEG: { data in await model.uploadInspirationPhoto(message, data) },
+                    onSkip: {}, replacing: true
+                )
+            }
             if message.state != .done {
                 ConsultThreadCardView {
                     VStack(alignment: .leading, spacing: 12) {
