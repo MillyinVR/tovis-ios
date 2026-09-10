@@ -1101,6 +1101,10 @@ public struct ConsultLookPlan: Decodable, Sendable, Equatable {
 }
 
 public struct ConsultClientResults: Decodable, Sendable {
+    public let suitability: ClientSuitability?
+    public var currentSuitability: ClientSuitability? {
+        suitability?.analysisRevisionId == analysisRevisionId ? suitability : nil
+    }
     public let lookBrief: ConsultLookBriefVersion?
     public let lookPlan: ConsultLookPlan?
     public let consultId: String

@@ -21,6 +21,8 @@ const schemaPath = process.env.TOVIS_API_SCHEMA || defaultSchema
 // Each fixture is the FULL endpoint response (envelope included). `pick` returns
 // the object(s) to validate against the named backend schema definition.
 const CHECKS = [
+  { file: 'consultSuitability.json', def: 'ConsultClientResultsDTO', pick: (d) => [d.results.results] },
+  { file: 'consultSuitability.json', def: 'ConsultProBriefDTO', pick: (d) => [d.proBrief.brief] },
   { file: 'clientConsultSessions.json', def: 'ClientConsultSessionsDTO', pick: (d) => [d] },
   { file: 'clientHome.json', def: 'ClientHomeDTO', pick: (d) => [d.home] },
   { file: 'consultFlow.json', def: 'ConsultSessionDTO', pick: (d) => [d.session.consult] },

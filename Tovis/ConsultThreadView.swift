@@ -700,6 +700,9 @@ private struct ConsultPlanSummaryView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             }
+            if let suitability = results.currentSuitability {
+                ClientSuitabilityView(suitability: suitability)
+            }
             DisclosureGroup(ConsultThreadCopy.profileDetailsTitle) {
                 VStack(alignment: .leading, spacing: 10) {
                     Text(ConsultThreadCopy.profileDetailsBody)

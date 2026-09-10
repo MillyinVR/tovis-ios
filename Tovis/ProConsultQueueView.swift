@@ -71,6 +71,9 @@ struct ProConsultBriefView: View {
                         ConsultMentorLayer(mentor: mentor)
                     }
                     ProConsultVersionSummary(brief: brief)
+                    if let suitability = brief.currentSuitability {
+                        ProSuitabilityView(suitability: suitability)
+                    }
                     if let inspiration = brief.inspiration {
                         Text("What matters in the inspiration").font(BrandFont.body(18, .semibold))
                         Text(inspiration.referenceNote).foregroundStyle(BrandColor.textSecondary)
