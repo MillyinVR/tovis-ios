@@ -24,6 +24,13 @@ public struct ProConsultInspiration: Decodable, Sendable {
 }
 
 public struct ProConsultBrief: Decodable, Sendable {
+    public let sourceAnalysisRevisionId: String?
+    public let suitability: ProSuitability?
+    public var currentSuitability: ProSuitability? {
+        guard let sourceAnalysisRevisionId,
+              suitability?.analysisRevisionId == sourceAnalysisRevisionId else { return nil }
+        return suitability
+    }
     public let aiObservations: ConsultAIObservations?
     public let safetyFlags: [ConsultSafetyFlag]?
     public let achievabilityDirection: ConsultAchievabilityDirection?
