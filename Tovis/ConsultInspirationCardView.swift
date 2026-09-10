@@ -378,7 +378,12 @@ struct ConsultInspirationCardView: View {
         Group {
         if card.isAnswered && !model.isEditingAnswers {
             VStack(spacing: 8) {
-                ConsultThreadBubble(author: .app) { Text(card.question.label) }
+                ConsultThreadBubble(author: .app) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        if let name = card.name { Text(name) }
+                        Text(card.question.label)
+                    }
+                }
                 ConsultThreadBubble(author: .client) {
                     VStack(alignment: .leading, spacing: 4) {
                         let labels = card.question.options.filter { card.selectedValues.contains($0.value) }.map(\.label).joined(separator: ", ")
