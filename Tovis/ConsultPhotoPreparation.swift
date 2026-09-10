@@ -41,6 +41,28 @@ enum ConsultPhotoPreparation {
         await prepare(data, plan: .fullFrame)?.upload
     }
 
+    /// Inspiration selected by the uploader, in the upright preview's space.
+    /// A missing or invalid confirmation must never upload the full photograph.
+    /// This is separate from camera-shot plans: no automatic crop fallback and
+    /// no second, uncropped image retained in the prepared result.
+    static func confirmedInspirationJPEG(from data: Data, rect: CGRect) async -> Data? {
+        guard let validated = MediaCropRect(
+            x: Double(rect.origin.x), y: Double(rect.origin.y),
+            w: Double(rect.size.width), h: Double(rect.size.height)
+        ) else { return nil }
+        // The shared validator tolerates floating-point edge slack. Trim only
+        // that slack; do not slide or widen a client's confirmed selection.
+        let bounded = validated.rect.intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
+        guard !bounded.isNull, !bounded.isEmpty else { return nil }
+        return await Task.detached(priority: .userInitiated) {
+            autoreleasepool {
+                guard let image = UIImage(data: data),
+                      let cropped = cut(image, to: bounded) else { return nil }
+                return encode(cropped)
+            }
+        }.value
+    }
+
     /// The crop plan for a shot, measured off the captured still.
     ///
     /// The Vision read happens HERE, on the upright decode of the captured
