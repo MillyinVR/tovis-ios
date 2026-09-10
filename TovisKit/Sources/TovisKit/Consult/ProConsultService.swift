@@ -61,6 +61,21 @@ public struct ProConsultPhotos: Decodable, Sendable {
     public let expiresInSeconds: Int
 }
 
+public struct ProConsultTranscript: Decodable, Sendable {
+    public struct Event: Decodable, Sendable, Identifiable {
+        public struct Item: Decodable, Sendable { public let label: String; public let value: String }
+        public let id: String
+        public let createdAt: String
+        public let title: String
+        public let items: [Item]
+        public let unavailable: Bool
+    }
+    public let consultId: String
+    public let events: [Event]
+    public let nextCursor: String?
+    public let historyNote: String
+}
+
 /// All identities, prices and version guards are resolved again by the server.
 public final class ProConsultService: Sendable {
     private let api: APIClient
@@ -76,6 +91,14 @@ public final class ProConsultService: Sendable {
         struct Response: Decodable { let brief: ProConsultBrief }
         let result: Response = try await api.request(path(id))
         return result.brief
+    }
+    public func transcript(id: String, cursor: String? = nil) async throws -> ProConsultTranscript {
+        struct Response: Decodable { let transcript: ProConsultTranscript }
+        let base = try path(id).dropLast("/look-plan".count)
+        let result: Response = try await api.request(String(base) + "/transcript",
+            query: cursor.map { [URLQueryItem(name: "cursor", value: $0)] })
+        guard result.transcript.consultId == id else { throw APIError.invalidResponse }
+        return result.transcript
     }
     public func photos(id: String) async throws -> ProConsultPhotos { try await api.request(path(id) + "/photos") }
     public func confirm(id: String, version: Int) async throws {

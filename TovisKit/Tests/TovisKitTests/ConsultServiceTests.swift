@@ -68,6 +68,25 @@ private final class ConsultURLProtocol: URLProtocol {
         ConsultURLProtocol.responder = nil
     }
 
+    @Test func proTranscriptUsesScopedRouteAndCursor() async throws {
+        reset()
+        let (api, _) = await makeAPI()
+        ConsultURLProtocol.responder = { _ in (200, Data(#"{"ok":true,"transcript":{"consultId":"consult_1","events":[{"id":"REVISION:r1","createdAt":"2026-09-10T00:00:00Z","title":"Client answers","items":[{"label":"Your goal?","value":"Keep my length"}],"unavailable":false}],"nextCursor":"next","historyNote":"Saved revisions"}}"#.utf8)) }
+        let result = try await ProConsultService(api: api).transcript(id: "consult_1", cursor: "a+b/=")
+        #expect(result.events.first?.items.first?.value == "Keep my length")
+        #expect(result.nextCursor == "next")
+        let request = try #require(ConsultURLProtocol.requests.last)
+        #expect(request.url?.path == "/api/v1/pro/consults/consult_1/transcript")
+        #expect(URLComponents(url: try #require(request.url), resolvingAgainstBaseURL: false)?.queryItems?.first?.value == "a+b/=")
+    }
+
+    @Test func proTranscriptRejectsMismatchedConsult() async throws {
+        reset()
+        let (api, _) = await makeAPI()
+        ConsultURLProtocol.responder = { _ in (200, Data(#"{"ok":true,"transcript":{"consultId":"other","events":[],"nextCursor":null,"historyNote":""}}"#.utf8)) }
+        await #expect(throws: APIError.invalidResponse) { try await ProConsultService(api: api).transcript(id: "consult_1") }
+    }
+
     private func root() throws -> [String: Any] {
         try #require(JSONSerialization.jsonObject(with: fixture("consultFlow")) as? [String: Any])
     }
