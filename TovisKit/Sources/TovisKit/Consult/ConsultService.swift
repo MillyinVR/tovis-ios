@@ -465,9 +465,13 @@ public final class ConsultService: ConsultServicing, Sendable {
                 try container.encode(schemaVersion, forKey: .schemaVersion)
                 try container.encode(questionKey, forKey: .questionKey)
                 try container.encode(selectedValues, forKey: .selectedValues)
-                // The server requires text and sentiment together or not at
-                // all — omit the keys entirely rather than sending null.
-                try container.encodeIfPresent(text, forKey: .text)
+                // V2 uses explicit null to clear a previous client-authored note.
+                // Legacy v1 continues omitting absent text.
+                if schemaVersion == 2 {
+                    try container.encode(text, forKey: .text)
+                } else {
+                    try container.encodeIfPresent(text, forKey: .text)
+                }
                 try container.encodeIfPresent(sentiment, forKey: .sentiment)
             }
         }

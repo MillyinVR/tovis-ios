@@ -452,6 +452,26 @@ private final class ConsultURLProtocol: URLProtocol {
         #expect(bodies[1].contains("\"sentiment\":\"GOOD\""))
     }
 
+    @Test func inspirationV2SendsClientWordsAndExplicitClear() async throws {
+        reset()
+        let envelope = try inspirationMutationEnvelope("inspirationComplete")
+        ConsultURLProtocol.responder = { _ in (200, self.json(envelope)) }
+        let service = await makeService()
+        for text in ["Please look at the hair, not the pants", nil] {
+            _ = try await service.answerInspiration(
+                consultId: "consult_fixture_1", schemaVersion: 2,
+                questionKey: "spark_focus", selectedValues: [],
+                text: text, sentiment: nil, idempotencyKey: UUID().uuidString
+            )
+        }
+        let bodies = ConsultURLProtocol.requests.compactMap(\.httpBody)
+            .compactMap { String(data: $0, encoding: .utf8) }
+        #expect(bodies.count == 2)
+        #expect(bodies[0].contains("Please look at the hair, not the pants"))
+        #expect(bodies[1].contains("\"text\":null"))
+        #expect(bodies.allSatisfy { !$0.contains("\"sentiment\"") })
+    }
+
     @Test func inspirationImageReadsOnlyThisConsultsOwnMediaEndpoint() async throws {
         reset()
         ConsultURLProtocol.responder = { request in

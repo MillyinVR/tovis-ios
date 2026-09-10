@@ -227,9 +227,10 @@ struct ConsultInspirationRegionPickerView: View {
     let model: ConsultFlowViewModel
     let url: URL?
     let onFullscreen: (URL) -> Void
-    let onAnswer: ([String]) -> Void
+    let onAnswer: ([String], String) -> Void
 
     @State private var selected: [String] = []
+    @State private var text: String = ""
     @State private var zoomed: String?
     @State private var image: UIImage?
 
@@ -333,20 +334,23 @@ struct ConsultInspirationRegionPickerView: View {
                 .accessibilityIdentifier("consult-region-selection")
             }
 
+            if card.question.allowText {
+                ConsultClientWordsInput(text: $text, busy: model.busy || !model.inputsOpen)
+            }
             ForEach(neutral) { option in
-                Button { onAnswer([option.value]) } label: {
+                Button { onAnswer([option.value], text) } label: {
                     ConsultRegionChipLabel(text: option.label, filled: false)
                 }
                 .buttonStyle(.plain)
                 .disabled(model.busy || !model.inputsOpen)
             }
-            Button { onAnswer(selected) } label: {
+            Button { onAnswer(selected, text) } label: {
                 ConsultRegionChipLabel(text: ConsultThreadCopy.questionNext, filled: true)
             }
             .buttonStyle(.plain)
-            .disabled(model.busy || !model.inputsOpen || selected.isEmpty)
+            .disabled(model.busy || !model.inputsOpen || text.utf16.count > 600 || (selected.isEmpty && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
         }
-        .onAppear { selected = card.selectedValues }
+        .onAppear { selected = card.selectedValues; text = card.selectedText ?? "" }
         .task(id: url) {
             guard let url else { return }
             image = await ConsultInspirationReferenceStore.shared.image(for: url)
@@ -371,7 +375,20 @@ struct ConsultInspirationCardView: View {
     }
 
     var body: some View {
-        ConsultThreadCardView(dimmed: card.isAnswered && !model.isEditingAnswers) {
+        Group {
+        if card.isAnswered && !model.isEditingAnswers {
+            VStack(spacing: 8) {
+                ConsultThreadBubble(author: .app) { Text(card.question.label) }
+                ConsultThreadBubble(author: .client) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        let labels = card.question.options.filter { card.selectedValues.contains($0.value) }.map(\.label).joined(separator: ", ")
+                        if !labels.isEmpty { Text(labels) }
+                        if let words = card.selectedText { Text(words) }
+                    }
+                }
+            }
+        } else {
+        ConsultThreadCardView(dimmed: false) {
             // P5g — the two region moves render as a picker over the whole
             // photograph. Everything else is P5d's crop card, unchanged.
             if card.presentation == .regionPicker && (!card.isAnswered || model.isEditingAnswers) {
@@ -380,10 +397,10 @@ struct ConsultInspirationCardView: View {
                     model: model,
                     url: url,
                     onFullscreen: { open($0) },
-                    onAnswer: { values in
+                    onAnswer: { values, text in
                         Task {
                             await model.answerInspiration(
-                                message, question: card.question, selectedValues: values
+                                message, question: card.question, selectedValues: values, text: text
                             )
                         }
                     }
@@ -451,10 +468,11 @@ struct ConsultInspirationCardView: View {
                         // the plain word. Once is the product.
                         showLabel: false,
                         initialSelection: card.selectedValues,
-                        onAnswer: { values in
+                        initialText: card.selectedText ?? "",
+                        onAnswer: { values, text in
                             Task {
                                 await model.answerInspiration(
-                                    message, question: card.question, selectedValues: values
+                                    message, question: card.question, selectedValues: values, text: text
                                 )
                             }
                         }
@@ -463,6 +481,8 @@ struct ConsultInspirationCardView: View {
                 }
             }
             }
+        }
+        }
         }
         .accessibilityIdentifier("consult-inspiration-card")
         .task(id: card.questionKey) {
