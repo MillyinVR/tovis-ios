@@ -588,6 +588,13 @@ struct ConsultInspirationPhotoPicker: View {
     @State private var preparing = false
     @State private var preparationError: ConsultClientFailure?
 
+    private struct PendingFocus: Identifiable {
+        let id = UUID()
+        let source: Data
+        let image: UIImage
+    }
+    @State private var pendingFocus: PendingFocus?
+
     var body: some View {
         BrandSurface {
             VStack(alignment: .leading, spacing: 10) {
@@ -625,6 +632,23 @@ struct ConsultInspirationPhotoPicker: View {
             }
         }
         .accessibilityIdentifier("consult-inspiration-source-decision")
+        .sheet(item: $pendingFocus) { pending in
+            ConsultInspirationFocusView(image: pending.image, busy: busy || preparing,
+                onConfirm: { rect in
+                    guard !preparing, !busy else { return }
+                    preparing = true
+                    Task {
+                        defer { preparing = false }
+                        guard let jpeg = await ConsultPhotoPreparation.confirmedInspirationJPEG(from: pending.source, rect: rect) else {
+                            preparationError = .invalidPhoto
+                            pendingFocus = nil
+                            return
+                        }
+                        pendingFocus = nil
+                        await onJPEG(jpeg)
+                    }
+                }, onCancel: { pendingFocus = nil })
+        }
         .onChange(of: pick) { _, item in
             guard let item else { return }
             Task {
@@ -633,12 +657,13 @@ struct ConsultInspirationPhotoPicker: View {
                 defer { preparing = false }
                 do {
                     guard let source = try await item.loadTransferable(type: Data.self),
-                          let jpeg = await ConsultPhotoPreparation.jpeg(from: source) else {
+                          let preview = await ConsultPhotoPreparation.jpeg(from: source),
+                          let decoded = UIImage(data: preview) else {
                         preparationError = .invalidPhoto
                         return
                     }
                     preparationError = nil
-                    await onJPEG(jpeg)
+                    pendingFocus = PendingFocus(source: source, image: decoded)
                 } catch {
                     preparationError = .invalidPhoto
                 }
