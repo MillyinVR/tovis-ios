@@ -94,7 +94,7 @@ public final class ConsultService: ConsultServicing, Sendable {
     // schemaVersion 3 to a server demanding 4 and died at the button. The
     // shape and the pin are one change — never move one without the other.
     public static let analysisSchemaVersion = 6
-    public static let analysisPromptVersion = "service-analysis-v7"
+    public static let analysisPromptVersion = "service-analysis-v8"
     public static let maximumPhotoBytes = 5_000_000
 
     private let api: APIClient
