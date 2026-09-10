@@ -758,12 +758,16 @@ struct ConsultInspirationQuestionView: View {
     /// caught it; both copies are correct on their own, so no unit test can.
     var showLabel: Bool = true
     var initialSelection: [String] = []
-    let onAnswer: ([String]) -> Void
+    var initialText: String = ""
+    var allowClientWords: Bool = true
+    let onAnswer: ([String], String) -> Void
 
     @State private var selected: [String] = []
+    @State private var text: String = ""
 
     private var needsSelection: Bool {
-        question.kind != .text && selected.count < question.minSelections
+        text.utf16.count > 600 || (question.kind != .text && selected.count < question.minSelections &&
+            !(allowClientWords && question.allowText && question.key != "understanding_check" && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
     }
 
     // No BrandSurface of its own: in the thread this always renders INSIDE a
@@ -785,8 +789,11 @@ struct ConsultInspirationQuestionView: View {
                     optionChip(option)
                 }
             }
+            if allowClientWords && question.allowText {
+                ConsultClientWordsInput(text: $text, busy: busy)
+            }
             Button {
-                onAnswer(selected)
+                onAnswer(selected, text)
             } label: {
                 Text(ConsultThreadCopy.questionNext)
                     .font(BrandFont.body(14, .semibold))
@@ -800,7 +807,7 @@ struct ConsultInspirationQuestionView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityIdentifier("consult-inspiration-question-\(question.key)")
-        .onAppear { selected = initialSelection }
+        .onAppear { selected = initialSelection; text = initialText }
     }
 
     private func optionChip(_ option: ConsultInspirationQuestionOption) -> some View {
@@ -852,5 +859,24 @@ struct ConsultManagementControls: View {
                 .background(BrandColor.bgPrimary)
                 .disabled(model.busy)
             }
+    }
+}
+
+struct ConsultClientWordsInput: View {
+    @Binding var text: String
+    let busy: Bool
+
+    var body: some View {
+        Text(ConsultThreadCopy.ownWordsLabel)
+            .font(BrandFont.body(13, .semibold))
+            .foregroundStyle(BrandColor.textSecondary)
+        TextField(ConsultThreadCopy.ownWordsPlaceholder, text: $text, axis: .vertical)
+            .lineLimit(2...5)
+            .textFieldStyle(.roundedBorder)
+            .disabled(busy)
+            .accessibilityIdentifier("consult-inspiration-own-words")
+        if text.utf16.count > 600 {
+            Text(ConsultThreadCopy.ownWordsLimit).font(BrandFont.body(12))
+        }
     }
 }

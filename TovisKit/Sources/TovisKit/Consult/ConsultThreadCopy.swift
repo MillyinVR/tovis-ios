@@ -18,6 +18,9 @@ import Foundation
 /// picture, never a question that sounds like a test, and never impersonating
 /// the professional — she is who the Brief is being prepared FOR.
 public enum ConsultThreadCopy {
+    public static let ownWordsLabel = "Say it in your own words"
+    public static let ownWordsPlaceholder = "Tell me what you mean, or correct what I noticed…"
+    public static let ownWordsLimit = "Please keep your response to 600 characters."
     public static let profileDetailsTitle = "What your photos show"
     public static let profileDetailsBody = "These details help explain the style ideas below. Photos can change how colors look. Your professional will check these details with you in person."
     public static let styleOptionsTitle = "Style options to discuss"

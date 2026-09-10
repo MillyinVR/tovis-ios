@@ -469,13 +469,14 @@ public struct ConsultInspirationCard: Decodable, Sendable, Equatable, Identifiab
     public let selectedValues: [String]
 
     public var id: String { questionKey }
-    public var isAnswered: Bool { !selectedValues.isEmpty }
+    public let selectedText: String?
+    public var isAnswered: Bool { !selectedValues.isEmpty || !(selectedText?.isEmpty ?? true) }
     public var presentation: ConsultInspirationCardPresentation { presentationRaw ?? .crop }
 
     private enum CodingKeys: String, CodingKey {
         case questionKey, tier, attribute, attributeValue, name, region
         case presentationRaw = "presentation"
-        case optionRegions, question, selectedValues
+        case optionRegions, question, selectedValues, selectedText
     }
 }
 
