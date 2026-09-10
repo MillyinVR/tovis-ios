@@ -138,10 +138,6 @@ final class ConsultFlowViewModel {
 
     var messages: [ConsultThreadMessage] { thread?.messages ?? [] }
     var nextOpenMessageId: String? { thread?.nextOpenMessageId }
-    var visibleMessages: [ConsultThreadMessage] {
-        guard let index = messages.firstIndex(where: { $0.id == nextOpenMessageId }) else { return messages }
-        return Array(messages.prefix(through: index))
-    }
     var professionalDisplayName: String { thread?.professionalDisplayName ?? "" }
 
     /// A consult that can no longer be worked on. The thread still renders — it
