@@ -354,7 +354,7 @@ import Testing
         let analysis = try decode(ConsultAnalysisStartResponse.self, key: "analysis").analysis
         #expect(analysis.status == .completed)
         #expect(analysis.schemaVersion == 6)
-        #expect(analysis.promptVersion == "service-analysis-v7")
+        #expect(analysis.promptVersion == "service-analysis-v8")
         // The fixture must speak the pair this build SENDS, or the machine
         // refuses it — which is exactly how a stale pin reaches production
         // green (#406 moved the shape and left the pin on v3).
@@ -396,6 +396,20 @@ import Testing
         #expect(ConsultResultPresentation.sections.firstIndex(of: .featureProfile)! <
                 ConsultResultPresentation.sections.firstIndex(of: .safety)!)
         #expect(ConsultResultPresentation.sections.contains(.safety))
+    }
+
+    @Test func analysisRejectsUnexpectedSchemaOrPromptPins() throws {
+        for (key, value) in [("schemaVersion", 999 as Any), ("promptVersion", "service-analysis-v7" as Any)] {
+            var envelope = try #require(try root()["analysis"] as? [String: Any])
+            var state = try #require(envelope["analysis"] as? [String: Any])
+            state[key] = value
+            envelope["analysis"] = state
+            let analysis = try decode(ConsultAnalysisStartResponse.self, value: envelope).analysis
+            var machine = ConsultFlowMachine(bookingId: "booking_fixture_1")
+            #expect(throws: ConsultClientFailure.contractMismatch) {
+                try machine.apply(analysis: analysis)
+            }
+        }
     }
 
     @Test func stateMachinePinsBookingConsultAndImmutableRevisionProvenance() throws {

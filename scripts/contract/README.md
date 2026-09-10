@@ -23,6 +23,20 @@ By default it reads the schema from the sibling backend repo at
 TOVIS_API_SCHEMA=/abs/path/to/tovis-api.schema.json npm run validate
 ```
 
+## Before archiving a consultation build
+
+Schema validation checks data shapes but cannot detect a stale request prompt
+version. Compare the app and analysis fixture with the exact target server
+checkout (use the deployed commit for a production-bound build):
+
+```bash
+TOVIS_ANALYSIS_ENGINE=/absolute/server-checkout/lib/consult/analysisEngine.ts node scripts/contract/validate-analysis-pins.mjs
+```
+
+Run this from the iOS repository root, in addition to the Swift tests and fixture
+schema validation. The check fails if the source is unavailable or either pin
+differs. It does not contact production or run a model.
+
 ## Add a new fixture
 
 1. Drop `Fixtures/<name>.json` (the full endpoint response, envelope included).

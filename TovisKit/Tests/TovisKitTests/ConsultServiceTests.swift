@@ -84,6 +84,30 @@ private final class ConsultURLProtocol: URLProtocol {
         try! JSONSerialization.data(withJSONObject: value)
     }
 
+    @Test func analysisStartAndPollUseCurrentServerContract() async throws {
+        reset()
+        let service = await makeService()
+        let envelope = try #require(try root()["analysis"] as? [String: Any])
+        let response = json(envelope)
+        ConsultURLProtocol.responder = { _ in (200, response) }
+        let started = try await service.startAnalysis(consultId: "consult_fixture_1", idempotencyKey: "retry-same-plan")
+        let request = try #require(ConsultURLProtocol.requests.first)
+        #expect(request.httpMethod == "POST")
+        #expect(request.url?.path == "/api/v1/client/consult/consult_fixture_1/analysis")
+        let requestBody = try #require(request.httpBody)
+        let body = try #require(JSONSerialization.jsonObject(with: requestBody) as? [String: Any])
+        #expect(body["schemaVersion"] as? Int == 6)
+        #expect(body["promptVersion"] as? String == "service-analysis-v8")
+        #expect(body["idempotencyKey"] as? String == "retry-same-plan")
+        var machine = ConsultFlowMachine(bookingId: "booking_fixture_1")
+        try machine.apply(analysis: started)
+        #expect(machine.stage == .results)
+        let polled = try await service.analysis(consultId: "consult_fixture_1")
+        try machine.apply(analysis: polled)
+        #expect(machine.stage == .results)
+        #expect(ConsultURLProtocol.requests.last?.httpMethod == "GET")
+    }
+
     @Test func professionalFeedbackUsesCanonicalEndpointAndRating() async throws {
         reset()
         let (api, _) = await makeAPI()

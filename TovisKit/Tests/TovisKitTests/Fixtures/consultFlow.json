@@ -1129,7 +1129,7 @@
       "consultId": "consult_fixture_1",
       "status": "COMPLETED",
       "schemaVersion": 6,
-      "promptVersion": "service-analysis-v7",
+      "promptVersion": "service-analysis-v8",
       "result": null,
       "run": {
         "runId": "run_fixture_1",
@@ -2932,7 +2932,7 @@
           },
           "awaitingStart": false,
           "schemaVersion": 6,
-          "promptVersion": "service-analysis-v7",
+          "promptVersion": "service-analysis-v8",
           "planVersion": 2,
           "updatePending": false
         },
