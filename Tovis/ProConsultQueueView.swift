@@ -56,6 +56,7 @@ struct ProConsultBriefView: View {
     @State private var busy = false
     @State private var error: String?
     @State private var adjustment: LookAdjustmentTarget?
+    @State private var showingHistory = false
     @State private var authoring = false
     @State private var expectations: LookExpectationTarget?
     @State private var recordedFeedback: ProConsultFeedback?
@@ -71,6 +72,7 @@ struct ProConsultBriefView: View {
                         ConsultMentorLayer(mentor: mentor)
                     }
                     ProConsultVersionSummary(brief: brief)
+                    Button("Read consultation history") { showingHistory = true }
                     if let suitability = brief.currentSuitability {
                         ProSuitabilityView(suitability: suitability)
                     }
@@ -178,6 +180,7 @@ struct ProConsultBriefView: View {
         .background(BrandColor.bgPrimary).navigationTitle("Look brief")
         .task { await load() }.refreshable { await load() }
         .mediaFullscreenCover($fullscreen)
+        .sheet(isPresented: $showingHistory) { ProConsultTranscriptView(consultId: consultId) }
         .sheet(isPresented: $authoring) {
             if let plan = brief?.lookBrief?.professionalPlan ?? brief?.lookPlan, let version = brief?.lookBrief {
                 ProLookPlanAuthorSheet(consultId: consultId, plan: plan, version: version.version) { Task { await load() } }

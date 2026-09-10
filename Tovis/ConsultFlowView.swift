@@ -584,9 +584,18 @@ struct ConsultInspirationPhotoPicker: View {
     let onJPEG: (Data) async -> Void
     let onSkip: () -> Void
 
+    var replacing = false
+
     @State private var pick: PhotosPickerItem?
     @State private var preparing = false
     @State private var preparationError: ConsultClientFailure?
+
+    private struct PendingFocus: Identifiable {
+        let id = UUID()
+        let source: Data
+        let image: UIImage
+    }
+    @State private var pendingFocus: PendingFocus?
 
     var body: some View {
         BrandSurface {
@@ -601,7 +610,7 @@ struct ConsultInspirationPhotoPicker: View {
                         if busy || preparing {
                             ProgressView().tint(BrandColor.onAccent)
                         } else {
-                            Label("Add an inspiration photo", systemImage: "photo.on.rectangle")
+                            Label(replacing ? "Change reference photo" : "Add an inspiration photo", systemImage: "photo.on.rectangle")
                                 .font(BrandFont.body(14, .semibold))
                         }
                     }
@@ -612,19 +621,38 @@ struct ConsultInspirationPhotoPicker: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
                 .disabled(busy || preparing)
-                Button(action: onSkip) {
-                    Text("Continue without one")
-                        .font(BrandFont.body(14, .semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .foregroundStyle(BrandColor.textPrimary)
-                        .background(BrandColor.bgSurface)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                if !replacing {
+                    Button(action: onSkip) {
+                        Text("Continue without one")
+                            .font(BrandFont.body(14, .semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .foregroundStyle(BrandColor.textPrimary)
+                            .background(BrandColor.bgSurface)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                    .disabled(busy || preparing)
                 }
-                .disabled(busy || preparing)
             }
         }
         .accessibilityIdentifier("consult-inspiration-source-decision")
+        .sheet(item: $pendingFocus) { pending in
+            ConsultInspirationFocusView(image: pending.image, busy: busy || preparing,
+                onConfirm: { rect in
+                    guard !preparing, !busy else { return }
+                    preparing = true
+                    Task {
+                        defer { preparing = false }
+                        guard let jpeg = await ConsultPhotoPreparation.confirmedInspirationJPEG(from: pending.source, rect: rect) else {
+                            preparationError = .invalidPhoto
+                            pendingFocus = nil
+                            return
+                        }
+                        pendingFocus = nil
+                        await onJPEG(jpeg)
+                    }
+                }, onCancel: { pendingFocus = nil })
+        }
         .onChange(of: pick) { _, item in
             guard let item else { return }
             Task {
@@ -633,12 +661,13 @@ struct ConsultInspirationPhotoPicker: View {
                 defer { preparing = false }
                 do {
                     guard let source = try await item.loadTransferable(type: Data.self),
-                          let jpeg = await ConsultPhotoPreparation.jpeg(from: source) else {
+                          let preview = await ConsultPhotoPreparation.jpeg(from: source),
+                          let decoded = UIImage(data: preview) else {
                         preparationError = .invalidPhoto
                         return
                     }
                     preparationError = nil
-                    await onJPEG(jpeg)
+                    pendingFocus = PendingFocus(source: source, image: decoded)
                 } catch {
                     preparationError = .invalidPhoto
                 }
@@ -758,12 +787,16 @@ struct ConsultInspirationQuestionView: View {
     /// caught it; both copies are correct on their own, so no unit test can.
     var showLabel: Bool = true
     var initialSelection: [String] = []
-    let onAnswer: ([String]) -> Void
+    var initialText: String = ""
+    var allowClientWords: Bool = true
+    let onAnswer: ([String], String) -> Void
 
     @State private var selected: [String] = []
+    @State private var text: String = ""
 
     private var needsSelection: Bool {
-        question.kind != .text && selected.count < question.minSelections
+        text.utf16.count > 600 || (question.kind != .text && selected.count < question.minSelections &&
+            !(allowClientWords && question.allowText && question.key != "understanding_check" && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
     }
 
     // No BrandSurface of its own: in the thread this always renders INSIDE a
@@ -785,8 +818,11 @@ struct ConsultInspirationQuestionView: View {
                     optionChip(option)
                 }
             }
+            if allowClientWords && question.allowText {
+                ConsultClientWordsInput(text: $text, busy: busy)
+            }
             Button {
-                onAnswer(selected)
+                onAnswer(selected, text)
             } label: {
                 Text(ConsultThreadCopy.questionNext)
                     .font(BrandFont.body(14, .semibold))
@@ -800,7 +836,7 @@ struct ConsultInspirationQuestionView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityIdentifier("consult-inspiration-question-\(question.key)")
-        .onAppear { selected = initialSelection }
+        .onAppear { selected = initialSelection; text = initialText }
     }
 
     private func optionChip(_ option: ConsultInspirationQuestionOption) -> some View {
@@ -852,5 +888,24 @@ struct ConsultManagementControls: View {
                 .background(BrandColor.bgPrimary)
                 .disabled(model.busy)
             }
+    }
+}
+
+struct ConsultClientWordsInput: View {
+    @Binding var text: String
+    let busy: Bool
+
+    var body: some View {
+        Text(ConsultThreadCopy.ownWordsLabel)
+            .font(BrandFont.body(13, .semibold))
+            .foregroundStyle(BrandColor.textSecondary)
+        TextField(ConsultThreadCopy.ownWordsPlaceholder, text: $text, axis: .vertical)
+            .lineLimit(2...5)
+            .textFieldStyle(.roundedBorder)
+            .disabled(busy)
+            .accessibilityIdentifier("consult-inspiration-own-words")
+        if text.utf16.count > 600 {
+            Text(ConsultThreadCopy.ownWordsLimit).font(BrandFont.body(12))
+        }
     }
 }

@@ -61,14 +61,31 @@ public struct ProConsultPhotos: Decodable, Sendable {
     public let expiresInSeconds: Int
 }
 
+public struct ProConsultTranscript: Decodable, Sendable {
+    public struct Event: Decodable, Sendable, Identifiable {
+        public struct Item: Decodable, Sendable { public let label: String; public let value: String }
+        public let id: String
+        public let createdAt: String
+        public let title: String
+        public let items: [Item]
+        public let unavailable: Bool
+    }
+    public let consultId: String
+    public let events: [Event]
+    public let nextCursor: String?
+    public let historyNote: String
+}
+
 /// All identities, prices and version guards are resolved again by the server.
 public final class ProConsultService: Sendable {
     private let api: APIClient
     public init(api: APIClient) { self.api = api }
-    private func path(_ id: String) throws -> String {
+    /// `/pro/consults/{id}` — every pro consult resource hangs off this one root.
+    private func consultPath(_ id: String) throws -> String {
         guard let escaped = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/?#"))), !escaped.isEmpty else { throw URLError(.badURL) }
-        return "/pro/consults/\(escaped)/look-plan"
+        return "/pro/consults/\(escaped)"
     }
+    private func path(_ id: String) throws -> String { try consultPath(id) + "/look-plan" }
     public func queue(cursor: String? = nil) async throws -> ProConsultQueue {
         try await api.request("/pro/consults", query: cursor.map { [URLQueryItem(name: "cursor", value: $0)] })
     }
@@ -76,6 +93,13 @@ public final class ProConsultService: Sendable {
         struct Response: Decodable { let brief: ProConsultBrief }
         let result: Response = try await api.request(path(id))
         return result.brief
+    }
+    public func transcript(id: String, cursor: String? = nil) async throws -> ProConsultTranscript {
+        struct Response: Decodable { let transcript: ProConsultTranscript }
+        let result: Response = try await api.request(try consultPath(id) + "/transcript",
+            query: cursor.map { [URLQueryItem(name: "cursor", value: $0)] })
+        guard result.transcript.consultId == id else { throw APIError.invalidResponse }
+        return result.transcript
     }
     public func photos(id: String) async throws -> ProConsultPhotos { try await api.request(path(id) + "/photos") }
     public func confirm(id: String, version: Int) async throws {
@@ -189,9 +213,7 @@ extension ProConsultService {
     public func feedback(id: String, rating: ProConsultFeedback.Rating) async throws -> ProConsultFeedback {
         struct Body: Encodable { let rating: ProConsultFeedback.Rating }
         struct Response: Decodable { let feedback: ProConsultFeedback }
-        let briefPath = try path(id)
-        let feedbackPath = String(briefPath.dropLast("/look-plan".count)) + "/feedback"
-        let result: Response = try await api.request(feedbackPath, method: .post, body: JSONEncoder().encode(Body(rating: rating)))
+        let result: Response = try await api.request(try consultPath(id) + "/feedback", method: .post, body: JSONEncoder().encode(Body(rating: rating)))
         return result.feedback
     }
 }

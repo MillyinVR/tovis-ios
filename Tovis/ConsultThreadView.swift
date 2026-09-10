@@ -116,7 +116,7 @@ struct ConsultThreadView: View {
             if let failure = model.failure, model.failurePlacement == .thread {
                 BrandErrorBanner(message: failure.message)
             }
-            ForEach(model.messages) { message in
+            ForEach(model.visibleMessages) { message in
                 ConsultThreadMessageView(
                     message: message,
                     model: model,
@@ -124,10 +124,14 @@ struct ConsultThreadView: View {
                 )
                 .id(message.id)
             }
-            ConsultThreadPrepControls(model: model)
+            if model.visibleMessages.contains(where: { $0.kind == .photoRequest }) {
+                ConsultThreadPrepControls(model: model)
+            }
         }
         .safeAreaInset(edge: .bottom) {
-            ConsultThreadBookBar(model: model, onBook: onBook)
+            if model.visibleMessages.contains(where: { $0.kind == .photoRequest }) || model.thread?.book.enabled == true {
+                ConsultThreadBookBar(model: model, onBook: onBook)
+            }
         }
     }
 }
@@ -486,6 +490,13 @@ private struct InspirationMessageView: View {
                     Text(text).frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
+            if message.source != nil && message.sourceDecisionRequired != true {
+                ConsultInspirationPhotoPicker(
+                    busy: model.busy || !model.inputsOpen,
+                    onJPEG: { data in await model.uploadInspirationPhoto(message, data) },
+                    onSkip: {}, replacing: true
+                )
+            }
             if message.state != .done {
                 ConsultThreadCardView {
                     VStack(alignment: .leading, spacing: 12) {
@@ -531,10 +542,11 @@ private struct InspirationMessageView: View {
                             ConsultInspirationQuestionView(
                                 question: question,
                                 busy: model.busy || !model.inputsOpen,
-                                onAnswer: { values in
+                                allowClientWords: message.schemaVersion == 2,
+                                onAnswer: { values, text in
                                     Task {
                                         await model.answerInspiration(
-                                            message, question: question, selectedValues: values
+                                            message, question: question, selectedValues: values, text: text
                                         )
                                     }
                                 }

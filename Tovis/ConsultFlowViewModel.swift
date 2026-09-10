@@ -138,6 +138,10 @@ final class ConsultFlowViewModel {
 
     var messages: [ConsultThreadMessage] { thread?.messages ?? [] }
     var nextOpenMessageId: String? { thread?.nextOpenMessageId }
+    var visibleMessages: [ConsultThreadMessage] {
+        guard let index = messages.firstIndex(where: { $0.id == nextOpenMessageId }) else { return messages }
+        return Array(messages.prefix(through: index))
+    }
     var professionalDisplayName: String { thread?.professionalDisplayName ?? "" }
 
     /// A consult that can no longer be worked on. The thread still renders — it
@@ -413,20 +417,22 @@ final class ConsultFlowViewModel {
     func answerInspiration(
         _ message: ConsultThreadMessage,
         question: ConsultInspirationQuestion,
-        selectedValues: [String]
+        selectedValues: [String],
+        text: String = ""
     ) async {
         guard let consultId = machine.consultId,
               let schemaVersion = message.schemaVersion else { return }
-        let values = ConsultInspirationAnswering.effectiveValues(
-            question: question, selected: selectedValues, trimmedText: ""
-        )
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let values = schemaVersion == 1 ? ConsultInspirationAnswering.effectiveValues(
+            question: question, selected: selectedValues, trimmedText: trimmedText
+        ) : selectedValues
         await perform {
             _ = try await service.answerInspiration(
                 consultId: consultId,
                 schemaVersion: schemaVersion,
                 questionKey: question.key,
                 selectedValues: values,
-                text: nil,
+                text: trimmedText.isEmpty ? nil : trimmedText,
                 sentiment: nil,
                 idempotencyKey: UUID().uuidString
             )

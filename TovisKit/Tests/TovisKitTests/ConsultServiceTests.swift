@@ -68,6 +68,25 @@ private final class ConsultURLProtocol: URLProtocol {
         ConsultURLProtocol.responder = nil
     }
 
+    @Test func proTranscriptUsesScopedRouteAndCursor() async throws {
+        reset()
+        let (api, _) = await makeAPI()
+        ConsultURLProtocol.responder = { _ in (200, Data(#"{"ok":true,"transcript":{"consultId":"consult_1","events":[{"id":"REVISION:r1","createdAt":"2026-09-10T00:00:00Z","title":"Client answers","items":[{"label":"Your goal?","value":"Keep my length"}],"unavailable":false}],"nextCursor":"next","historyNote":"Saved revisions"}}"#.utf8)) }
+        let result = try await ProConsultService(api: api).transcript(id: "consult_1", cursor: "a+b/=")
+        #expect(result.events.first?.items.first?.value == "Keep my length")
+        #expect(result.nextCursor == "next")
+        let request = try #require(ConsultURLProtocol.requests.last)
+        #expect(request.url?.path == "/api/v1/pro/consults/consult_1/transcript")
+        #expect(URLComponents(url: try #require(request.url), resolvingAgainstBaseURL: false)?.queryItems?.first?.value == "a+b/=")
+    }
+
+    @Test func proTranscriptRejectsMismatchedConsult() async throws {
+        reset()
+        let (api, _) = await makeAPI()
+        ConsultURLProtocol.responder = { _ in (200, Data(#"{"ok":true,"transcript":{"consultId":"other","events":[],"nextCursor":null,"historyNote":""}}"#.utf8)) }
+        await #expect(throws: APIError.invalidResponse) { try await ProConsultService(api: api).transcript(id: "consult_1") }
+    }
+
     private func root() throws -> [String: Any] {
         try #require(JSONSerialization.jsonObject(with: fixture("consultFlow")) as? [String: Any])
     }
@@ -450,6 +469,26 @@ private final class ConsultURLProtocol: URLProtocol {
         #expect(bodies[0].contains("copper-red"))
         #expect(bodies[1].contains("\"text\":\"love the copper ribbons\""))
         #expect(bodies[1].contains("\"sentiment\":\"GOOD\""))
+    }
+
+    @Test func inspirationV2SendsClientWordsAndExplicitClear() async throws {
+        reset()
+        let envelope = try inspirationMutationEnvelope("inspirationComplete")
+        ConsultURLProtocol.responder = { _ in (200, self.json(envelope)) }
+        let service = await makeService()
+        for text in ["Please look at the hair, not the pants", nil] {
+            _ = try await service.answerInspiration(
+                consultId: "consult_fixture_1", schemaVersion: 2,
+                questionKey: "spark_focus", selectedValues: [],
+                text: text, sentiment: nil, idempotencyKey: UUID().uuidString
+            )
+        }
+        let bodies = ConsultURLProtocol.requests.compactMap(\.httpBody)
+            .compactMap { String(data: $0, encoding: .utf8) }
+        #expect(bodies.count == 2)
+        #expect(bodies[0].contains("Please look at the hair, not the pants"))
+        #expect(bodies[1].contains("\"text\":null"))
+        #expect(bodies.allSatisfy { !$0.contains("\"sentiment\"") })
     }
 
     @Test func inspirationImageReadsOnlyThisConsultsOwnMediaEndpoint() async throws {
