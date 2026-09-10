@@ -116,7 +116,7 @@ struct ConsultThreadView: View {
             if let failure = model.failure, model.failurePlacement == .thread {
                 BrandErrorBanner(message: failure.message)
             }
-            ForEach(model.visibleMessages) { message in
+            ForEach(model.messages) { message in
                 ConsultThreadMessageView(
                     message: message,
                     model: model,
@@ -124,14 +124,10 @@ struct ConsultThreadView: View {
                 )
                 .id(message.id)
             }
-            if model.visibleMessages.contains(where: { $0.kind == .photoRequest }) {
-                ConsultThreadPrepControls(model: model)
-            }
+            ConsultThreadPrepControls(model: model)
         }
         .safeAreaInset(edge: .bottom) {
-            if model.visibleMessages.contains(where: { $0.kind == .photoRequest }) || model.thread?.book.enabled == true {
-                ConsultThreadBookBar(model: model, onBook: onBook)
-            }
+            ConsultThreadBookBar(model: model, onBook: onBook)
         }
     }
 }
