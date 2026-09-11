@@ -165,6 +165,13 @@ struct ProConsultBriefView: View {
                             : plan.nextStep)
                     }
                     ProConsultEstimateAndDirections(brief: brief)
+                    // C2-4 — only a server that sends the list gets the control:
+                    // on one that predates it, asking would 404.
+                    if let questions = brief.proFollowUps {
+                        ProConsultFollowUpSection(consultId: consultId, questions: questions, busy: busy) {
+                            Task { await load() }
+                        }
+                    }
                     if let feedback = recordedFeedback ?? brief.feedback {
                         Text("Feedback recorded: \(feedback.rating == .accurateUseful ? "Accurate / useful" : "Off")")
                     } else {

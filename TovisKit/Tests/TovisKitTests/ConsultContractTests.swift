@@ -239,9 +239,12 @@ import Testing
     @Test func decodesAnAdaptiveFollowUpMessage() throws {
         let thread = try decode(ConsultThreadResponse.self, key: "thread").thread
         let followUps = thread.messages.filter { $0.kind == .followUp }
-        #expect(followUps.count == 2)
+        // Two of the model's, one the PRO wrote (C2-4).
+        #expect(followUps.count == 3)
 
         let generated = try #require(followUps.first)
+        // A model's question has no author but the app.
+        #expect(generated.attribution == nil)
         #expect(generated.questionKey == "prior_lightening")
         #expect(generated.followUpOptions?.count == 4)
         #expect(generated.fallback == false)
@@ -254,7 +257,7 @@ import Testing
         // be the same for everybody is the question P5g exists to delete.
         #expect(generated.text?.contains("loved the ash") == true)
 
-        let fallback = try #require(followUps.last)
+        let fallback = try #require(followUps.dropLast().last)
         // 🔴 The fallback is visible to the client, which is why this flag is on
         // the wire: Part 0 rule 4 forbids a silent fallback, and one she cannot
         // see is a silent one. The server also sends its own bubble saying so.
@@ -266,6 +269,36 @@ import Testing
                     && $0.text?.contains("couldn’t think of the next question") == true
             }
         )
+    }
+
+    /// C2-4 — a question the PROFESSIONAL wrote, off the contract fixture.
+    ///
+    /// The SAME card kind as the model's, answered through the same route —
+    /// that is the design rule, and it is what let build 78 answer one with no
+    /// app change. What makes it hers on the wire: `attribution` ("From
+    /// Susie"), `round` 0, `fallback` false, and a `pro_` key the server files
+    /// by. The attribution is server copy, so its wording is asserted verbatim
+    /// rather than composed here.
+    @Test func decodesAProAuthoredFollowUpMessage() throws {
+        let thread = try decode(ConsultThreadResponse.self, key: "thread").thread
+        let card = try #require(thread.messages.first { $0.id == "pro-follow-up:pro_1" })
+        #expect(card.kind == .followUp)
+        #expect(card.author == .app)
+        #expect(card.state == .open)
+        #expect(card.attribution == "From Susie")
+        #expect(card.questionKey == "pro_1")
+        #expect(card.questionKey?.hasPrefix("pro_") == true)
+        #expect(card.round == 0)
+        #expect(card.fallback == false)
+        #expect(card.selectedValues == [])
+        // Server-minted option values, the grammar the DB guard pins.
+        #expect(card.followUpOptions?.map(\.value) == ["option-1", "option-2", "option-3"])
+        // The server introduces her question in its own bubble, in the pro's
+        // name, before the card.
+        let index = try #require(thread.messages.firstIndex { $0.id == card.id })
+        let intro = thread.messages[index - 1]
+        #expect(intro.kind == .text)
+        #expect(intro.text?.contains("Susie has a quick question") == true)
     }
 
     /// P5g — a region-picker card decodes, and a card WITHOUT `presentation`

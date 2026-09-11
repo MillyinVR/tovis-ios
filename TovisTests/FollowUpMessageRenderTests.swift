@@ -138,6 +138,108 @@ import UIKit
     }
 }
 
+/// C2-4 — the SAME card, with the pro's name on it.
+@Suite @MainActor struct ProFollowUpMessageRenderTests {
+    private func proCard() throws -> ConsultThreadMessage {
+        let json = """
+        {
+          "kind": "FOLLOW_UP",
+          "id": "pro-follow-up:pro_1",
+          "author": "APP",
+          "state": "OPEN",
+          "text": "Have you had keratin or a smoothing treatment in the last year?",
+          "attribution": "From Susie",
+          "questionKey": "pro_1",
+          "options": [
+            { "value": "option-1", "label": "Yes, within the year" },
+            { "value": "option-2", "label": "No" },
+            { "value": "option-3", "label": "Not sure" }
+          ],
+          "selectedValues": [],
+          "fallback": false,
+          "round": 0
+        }
+        """
+        return try JSONDecoder().decode(ConsultThreadMessage.self, from: Data(json.utf8))
+    }
+
+    @Test func decodesTheAttribution() throws {
+        let card = try proCard()
+        #expect(card.attribution == "From Susie")
+        #expect(card.round == 0)
+        #expect(card.questionKey == "pro_1")
+    }
+
+    /// The eyebrow adds a line above the question; a card that swallowed it
+    /// would be exactly as tall as the model's card with the same options.
+    @Test func rendersTheEyebrowAboveTheQuestion() throws {
+        func height(_ message: ConsultThreadMessage, _ name: String) throws -> CGFloat {
+            let view = FollowUpMessageView(message: message, busy: false, onAnswer: { _ in })
+                .padding(20).frame(width: 390).background(BrandColor.bgPrimary)
+            let renderer = ImageRenderer(content: view)
+            renderer.scale = 3
+            let image = try #require(renderer.uiImage)
+            let png = try #require(image.pngData())
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("tovis-follow-up-\(name).png")
+            try png.write(to: url)
+            print("FOLLOW UP SNAPSHOT \(name) → \(url.path)")
+            return image.size.height
+        }
+        let attributed = try proCard()
+        // The same card with the eyebrow removed, and nothing else changed.
+        let plainJSON = """
+        {
+          "kind": "FOLLOW_UP", "id": "pro-follow-up:pro_1", "author": "APP", "state": "OPEN",
+          "text": "Have you had keratin or a smoothing treatment in the last year?",
+          "questionKey": "pro_1",
+          "options": [
+            { "value": "option-1", "label": "Yes, within the year" },
+            { "value": "option-2", "label": "No" },
+            { "value": "option-3", "label": "Not sure" }
+          ],
+          "selectedValues": [], "fallback": false, "round": 0
+        }
+        """
+        let plain = try JSONDecoder().decode(ConsultThreadMessage.self, from: Data(plainJSON.utf8))
+        #expect(plain.attribution == nil)
+        let withEyebrow = try height(attributed, "pro-attributed")
+        let without = try height(plain, "pro-plain")
+        #expect(withEyebrow > without)
+        #expect(without > 160)
+    }
+}
+
+/// C2-4 — the pro's section on the Brief, in both modes, off the contract
+/// fixture: one open question, one answered, and the button.
+@Suite @MainActor struct ProConsultFollowUpSectionRenderTests {
+    @Test func rendersAskedQuestionsAndTheControlInBothModes() throws {
+        let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let url = repo.appendingPathComponent("TovisKit/Tests/TovisKitTests/Fixtures/consultSuitability.json")
+        let root = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        let envelope = try #require(root["proBrief"] as? [String: Any])
+        let payload = try #require(envelope["brief"] as? [String: Any])
+        let brief = try JSONDecoder().decode(ProConsultBrief.self, from: JSONSerialization.data(withJSONObject: payload))
+        let questions = try #require(brief.proFollowUps)
+        #expect(questions.count == 2)
+        for (scheme, name) in [(ColorScheme.light, "light"), (ColorScheme.dark, "dark")] {
+            let view = ProConsultFollowUpSection(consultId: brief.consultId, questions: questions, busy: false, onAsked: {})
+                .font(BrandFont.body(14)).foregroundStyle(BrandColor.textPrimary)
+                .frame(width: 358).padding(16).background(BrandColor.bgPrimary).environment(\.colorScheme, scheme)
+            let renderer = ImageRenderer(content: view)
+            renderer.scale = 2
+            let image = try #require(renderer.uiImage)
+            #expect(image.size.width == 390)
+            // Title, intro, two question rows and the button: a section that
+            // dropped the rows would be far shorter.
+            #expect(image.size.height > 260)
+            let png = try #require(image.pngData())
+            let out = FileManager.default.temporaryDirectory.appendingPathComponent("consult-pro-follow-ups-\(name).png")
+            try png.write(to: out)
+            print("PRO FOLLOW-UPS SNAPSHOT → \(out.path)")
+        }
+    }
+}
+
 @Suite @MainActor struct ConsultMentorRenderTests {
     @Test func rendersDatabaseDerivedMentorInBothModes() throws {
         let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
