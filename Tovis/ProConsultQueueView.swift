@@ -68,6 +68,9 @@ struct ProConsultBriefView: View {
                 if let error { Text(error).foregroundStyle(BrandColor.textSecondary) }
                 if busy { ProgressView() }
                 if let brief {
+                    if let topLine = brief.topLine, !topLine.isEmpty {
+                        ProConsultTopLine(text: topLine)
+                    }
                     if let mentor = brief.mentor {
                         ConsultMentorLayer(mentor: mentor)
                     }
@@ -371,6 +374,23 @@ struct ConsultMentorLayer: View {
 
 private func consultBriefLabel(_ value: String) -> String {
     value.replacingOccurrences(of: "_", with: " ").lowercased().capitalized
+}
+
+/// C2-6a — the first line of the Brief. Server-composed, one sentence pair,
+/// rendered whole: the pro reads it before anything else on the screen.
+struct ProConsultTopLine: View {
+    let text: String
+    var body: some View {
+        Text(text)
+            .font(BrandFont.body(16, .semibold))
+            .foregroundStyle(BrandColor.textPrimary)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(BrandColor.bgPrimary, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(BrandColor.textPrimary.opacity(0.2), lineWidth: 1))
+            .accessibilityIdentifier("consult-brief-top-line")
+    }
 }
 
 struct ProConsultVersionSummary: View {
