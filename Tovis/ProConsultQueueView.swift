@@ -86,6 +86,12 @@ struct ProConsultBriefView: View {
                             Text("\(detail.sentiment == "LIKE" ? "Likes" : detail.sentiment == "DISLIKE" ? "Avoids" : detail.sentiment == "GOAL" ? "Wants" : "Context"): \(detail.clientWords)")
                         }
                     }
+                    // C2-6b — the reference note, beside what the client picked
+                    // out of the same picture. Server-composed, rendered whole;
+                    // nothing on a server that predates it or had no flag.
+                    if let note = brief.inspirationCredibility, !note.isEmpty {
+                        ProConsultReferenceNote(text: note)
+                    }
                     Text("Client’s words").font(BrandFont.body(18, .semibold))
                     ForEach(brief.lookBrief?.chartSources ?? []) { source in Text(source.summary).font(BrandFont.body(12)) }
                     ForEach(brief.clientIntake + (brief.lookBrief?.additionalClientAnswers ?? [])) { item in
@@ -390,6 +396,27 @@ struct ProConsultTopLine: View {
             .background(BrandColor.bgPrimary, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(BrandColor.textPrimary.opacity(0.2), lineWidth: 1))
             .accessibilityIdentifier("consult-brief-top-line")
+    }
+}
+
+/// C2-6b — one line about the reference photograph the reading flagged.
+/// Server-composed, one sentence, rendered whole. Quieter than the top line
+/// (it is a note beside the client's likes, not the first thing on the
+/// screen) but framed like it, so the pro reads it as the app's observation
+/// and not as the client's words.
+struct ProConsultReferenceNote: View {
+    let text: String
+    var body: some View {
+        Text(text)
+            .font(BrandFont.body(14, .semibold))
+            .foregroundStyle(BrandColor.textPrimary)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(BrandColor.bgPrimary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(BrandColor.textPrimary.opacity(0.2), lineWidth: 1))
+            .accessibilityIdentifier("consult-brief-inspiration-credibility")
     }
 }
 
