@@ -212,6 +212,19 @@ struct FollowUpMessageView: View {
     var body: some View {
         ConsultThreadCardView(dimmed: answered) {
             VStack(alignment: .leading, spacing: 10) {
+                // C2-4 — a question the PRO wrote carries her name, so it never
+                // reads as the app's voice. Served ("From Susie"), rendered
+                // verbatim, same eyebrow the web card wears.
+                if let attribution = message.attribution, !attribution.isEmpty {
+                    Text(attribution)
+                        .font(BrandFont.body(11, .bold))
+                        .textCase(.uppercase)
+                        .kerning(0.6)
+                        .foregroundStyle(BrandColor.textMuted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityIdentifier("consult-follow-up-attribution")
+                }
+
                 Text(message.text ?? "")
                     .font(BrandFont.body(15, .semibold))
                     .foregroundStyle(BrandColor.textPrimary)

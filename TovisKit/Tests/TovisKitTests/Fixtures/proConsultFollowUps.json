@@ -1,0 +1,51 @@
+{
+  "ok": true,
+  "questions": [
+    {
+      "id": "profollowup_fixture_1",
+      "questionKey": "pro_1",
+      "priority": "NEED_BEFORE_APPOINTMENT",
+      "text": "Have you had keratin or a smoothing treatment in the last year?",
+      "options": [
+        {
+          "value": "option-1",
+          "label": "Yes, within the year"
+        },
+        {
+          "value": "option-2",
+          "label": "No"
+        },
+        {
+          "value": "option-3",
+          "label": "Not sure"
+        }
+      ],
+      "selectedValue": null,
+      "selectedLabel": null,
+      "planVersion": 3,
+      "askedAt": "2026-08-12T09:10:00.000Z",
+      "answeredAt": null
+    },
+    {
+      "id": "profollowup_fixture_2",
+      "questionKey": "pro_2",
+      "priority": "HELPFUL_FOR_PREP",
+      "text": "Do you usually wear your hair up or down for work?",
+      "options": [
+        {
+          "value": "option-1",
+          "label": "Mostly up"
+        },
+        {
+          "value": "option-2",
+          "label": "Mostly down"
+        }
+      ],
+      "selectedValue": "option-2",
+      "selectedLabel": "Mostly down",
+      "planVersion": 3,
+      "askedAt": "2026-08-12T09:12:00.000Z",
+      "answeredAt": "2026-08-12T11:40:00.000Z"
+    }
+  ]
+}

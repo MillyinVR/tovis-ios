@@ -41,6 +41,11 @@ public struct ProConsultBrief: Decodable, Sendable {
     public let feedback: ProConsultFeedback?
     public let mentor: ConsultMentor?
     public let inspiration: ProConsultInspiration?
+    /// C2-4 — the questions this professional asked the client from this
+    /// Brief, oldest first, with answers where they exist. Optional on the
+    /// wire: a server that predates it sends nothing and the Brief shows no
+    /// "Ask a follow-up" section, which is the truth on that server.
+    public let proFollowUps: [ProConsultFollowUp]?
 
     public let consultId: String
     public let lookPlan: ConsultLookPlan?
@@ -215,5 +220,20 @@ extension ProConsultService {
         struct Response: Decodable { let feedback: ProConsultFeedback }
         let result: Response = try await api.request(try consultPath(id) + "/feedback", method: .post, body: JSONEncoder().encode(Body(rating: rating)))
         return result.feedback
+    }
+}
+
+// C2-4 — the pro asks. What she asked comes back on the Brief (`proFollowUps`);
+// the route's GET twin exists server-side but the Brief is the read here.
+extension ProConsultService {
+    /// `POST /pro/consults/{id}/follow-up` — asks, and returns the whole list
+    /// with the new question on it. The server mints the option values and the
+    /// key; identity is the session's, never sent. A refusal (open cap, total
+    /// cap, no Brief yet, appointment started) arrives as `APIError.server`
+    /// with the server's own sentence, which is what the sheet shows.
+    public func askFollowUp(id: String, _ ask: ProConsultFollowUpAsk) async throws -> [ProConsultFollowUp] {
+        let result: ProConsultFollowUpListResponse = try await api.request(
+            try consultPath(id) + "/follow-up", method: .post, body: JSONEncoder().encode(ask))
+        return result.questions
     }
 }

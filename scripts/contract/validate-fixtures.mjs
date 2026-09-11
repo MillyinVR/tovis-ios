@@ -23,6 +23,13 @@ const schemaPath = process.env.TOVIS_API_SCHEMA || defaultSchema
 const CHECKS = [
   { file: 'consultSuitability.json', def: 'ConsultClientResultsDTO', pick: (d) => [d.results.results] },
   { file: 'consultSuitability.json', def: 'ConsultProBriefDTO', pick: (d) => [d.proBrief.brief] },
+  // C2-4 — the pro's own follow-up questions: on the Brief (an OPTIONAL field,
+  // so a server that predates it still validates) and as the ask/list route's
+  // own response. Both arms on purpose: one OPEN (NEED_BEFORE_APPOINTMENT,
+  // nulls throughout) and one ANSWERED, so the answer pair going non-nullable
+  // on either side fails here rather than at runtime.
+  { file: 'consultSuitability.json', def: 'ConsultProFollowUpDTO', pick: (d) => d.proBrief.brief.proFollowUps },
+  { file: 'proConsultFollowUps.json', def: 'ConsultProFollowUpListResponseDTO', pick: (d) => [d] },
   { file: 'clientConsultSessions.json', def: 'ClientConsultSessionsDTO', pick: (d) => [d] },
   { file: 'clientHome.json', def: 'ClientHomeDTO', pick: (d) => [d.home] },
   { file: 'consultFlow.json', def: 'ConsultSessionDTO', pick: (d) => [d.session.consult] },

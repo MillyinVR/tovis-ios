@@ -3043,6 +3043,39 @@
           "selectedValues": [],
           "fallback": true,
           "round": 2
+        },
+        {
+          "kind": "TEXT",
+          "id": "pro-follow-up-intro",
+          "author": "APP",
+          "state": "DONE",
+          "text": "Susie has a quick question for you before your appointment — it helps her plan your visit properly. One tap is all it takes."
+        },
+        {
+          "kind": "FOLLOW_UP",
+          "id": "pro-follow-up:pro_1",
+          "author": "APP",
+          "state": "OPEN",
+          "text": "Have you had keratin or a smoothing treatment in the last year?",
+          "attribution": "From Susie",
+          "questionKey": "pro_1",
+          "options": [
+            {
+              "value": "option-1",
+              "label": "Yes, within the year"
+            },
+            {
+              "value": "option-2",
+              "label": "No"
+            },
+            {
+              "value": "option-3",
+              "label": "Not sure"
+            }
+          ],
+          "selectedValues": [],
+          "fallback": false,
+          "round": 0
         }
       ],
       "chartCopy": {

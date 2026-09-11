@@ -242,6 +242,15 @@ public struct ConsultThreadMessage: Decodable, Sendable, Identifiable {
     public let fallback: Bool?
     /// Which round of at most three this is.
     public let round: Int?
+    /// C2-4 — set when the PROFESSIONAL wrote this question herself ("From
+    /// Susie"), so the card never reads as the app's voice. Server copy,
+    /// rendered verbatim.
+    ///
+    /// Optional on the wire like every field added since P5a: a build that
+    /// predates it renders the same card with no eyebrow and answers it through
+    /// the same route — `round` is 0 on such a card, `fallback` is false, and
+    /// `questionKey` carries the `pro_` prefix the server files by.
+    public let attribution: String?
 
     /// Shared by QUESTION, INSPIRATION, PHOTO_REQUEST and PLAN — each names the
     /// schema its own mutation must echo.
@@ -260,7 +269,7 @@ public struct ConsultThreadMessage: Decodable, Sendable, Identifiable {
         case run, results, awaitingStart, promptVersion
         case planVersion, updatePending, previousPlanVersion, changes
         case bookingId
-        case questionKey, fallback, round, selectedValues
+        case questionKey, fallback, round, selectedValues, attribution
         case followUpOptions = "options"
         case schemaVersion
     }
@@ -350,6 +359,7 @@ public struct ConsultThreadMessage: Decodable, Sendable, Identifiable {
         )
         fallback = try container.decodeIfPresent(Bool.self, forKey: .fallback)
         round = try container.decodeIfPresent(Int.self, forKey: .round)
+        attribution = try container.decodeIfPresent(String.self, forKey: .attribution)
 
         schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion)
     }
