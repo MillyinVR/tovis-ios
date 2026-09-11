@@ -52,6 +52,14 @@ public struct ProConsultBrief: Decodable, Sendable {
     /// predates it sends nothing and the Brief shows no line, which is the
     /// truth on that server. Null when the server had nothing to say.
     public let topLine: String?
+    /// C2-6b — one line about the reference PHOTOGRAPH when the inspiration
+    /// reading flagged it (edited, AI-looking, extensions, studio light, the
+    /// finish hides the cut, one angle): "Reference note: looks edited or
+    /// filtered; lit like a photo shoot." Composed by the server from the
+    /// reading's flags through its pro copy table. Optional on the wire: a
+    /// server that predates it sends nothing, an up-to-date server with no
+    /// flag sends null, and the Brief shows no note either way.
+    public let inspirationCredibility: String?
 
     public let consultId: String
     public let lookPlan: ConsultLookPlan?
