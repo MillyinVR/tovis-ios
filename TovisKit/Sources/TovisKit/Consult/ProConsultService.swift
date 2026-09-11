@@ -46,6 +46,12 @@ public struct ProConsultBrief: Decodable, Sendable {
     /// wire: a server that predates it sends nothing and the Brief shows no
     /// "Ask a follow-up" section, which is the truth on that server.
     public let proFollowUps: [ProConsultFollowUp]?
+    /// C2-6a — the one-line synthesis at the top of the Brief: "Client wants
+    /// X because Y. Must preserve Z and avoid W.", composed by the server from
+    /// the client's own taps and answers. Optional on the wire: a server that
+    /// predates it sends nothing and the Brief shows no line, which is the
+    /// truth on that server. Null when the server had nothing to say.
+    public let topLine: String?
 
     public let consultId: String
     public let lookPlan: ConsultLookPlan?
