@@ -77,6 +77,7 @@
             "helpText": null,
             "kind": "SINGLE_SELECT",
             "requirement": "REQUIRED",
+            "allowText": true,
             "options": [
               {
                 "value": "noticeable",
@@ -90,6 +91,7 @@
             "helpText": "This helps your professional understand what “subtle” or “a change” means to you. It is okay to revise your answer.",
             "kind": "SINGLE_SELECT",
             "requirement": "CONDITIONAL",
+            "allowText": true,
             "options": [
               {
                 "value": "lighter",
@@ -103,6 +105,7 @@
             "helpText": "Treatments besides hair color can change how your hair responds and what result is safely achievable.",
             "kind": "SINGLE_SELECT",
             "requirement": "REQUIRED",
+            "allowText": true,
             "options": [
               {
                 "value": "within-6-months",
@@ -116,6 +119,7 @@
             "helpText": "Treatments besides hair color can change how your hair responds and what result is safely achievable.",
             "kind": "SINGLE_SELECT",
             "requirement": "REQUIRED",
+            "allowText": true,
             "options": [
               {
                 "value": "6-12-months",
@@ -129,6 +133,7 @@
             "helpText": "Treatments besides hair color can change how your hair responds and what result is safely achievable.",
             "kind": "SINGLE_SELECT",
             "requirement": "REQUIRED",
+            "allowText": true,
             "options": [
               {
                 "value": "never",
@@ -142,6 +147,7 @@
             "helpText": "Treatments besides hair color can change how your hair responds and what result is safely achievable.",
             "kind": "SINGLE_SELECT",
             "requirement": "REQUIRED",
+            "allowText": true,
             "options": [
               {
                 "value": "never",
@@ -155,6 +161,7 @@
             "helpText": null,
             "kind": "SINGLE_SELECT",
             "requirement": "REQUIRED",
+            "allowText": true,
             "options": [
               {
                 "value": "no",
@@ -655,6 +662,7 @@
             "title": "Hair back",
             "instruction": "Face away from the camera in indirect daylight.",
             "requirement": "REQUIRED",
+            "allowText": true,
             "framing": "FULL_VIEW"
           },
           {
@@ -662,6 +670,7 @@
             "title": "Left side",
             "instruction": "Turn the left side toward the camera in indirect daylight.",
             "requirement": "REQUIRED",
+            "allowText": true,
             "framing": "FULL_VIEW"
           },
           {
@@ -669,6 +678,7 @@
             "title": "Right side",
             "instruction": "Turn the right side toward the camera in indirect daylight.",
             "requirement": "REQUIRED",
+            "allowText": true,
             "framing": "FULL_VIEW"
           },
           {
@@ -676,6 +686,7 @@
             "title": "Crown",
             "instruction": "Angle the crown toward the camera in indirect daylight.",
             "requirement": "REQUIRED",
+            "allowText": true,
             "framing": "FULL_VIEW"
           },
           {
@@ -683,6 +694,7 @@
             "title": "Face front",
             "instruction": "Face the camera straight on in indirect daylight with a relaxed, neutral expression.",
             "requirement": "REQUIRED",
+            "allowText": true,
             "framing": "FULL_VIEW"
           },
           {
@@ -690,6 +702,7 @@
             "title": "Profile",
             "instruction": "Turn fully to one side in indirect daylight.",
             "requirement": "REQUIRED",
+            "allowText": true,
             "framing": "FULL_VIEW"
           },
           {
@@ -697,6 +710,7 @@
             "title": "Eyes & brows",
             "instruction": "Fill the frame with both eyes and brows, eyes open, in indirect daylight.",
             "requirement": "REQUIRED",
+            "allowText": true,
             "framing": "TIGHT_CROP"
           }
         ]
@@ -819,6 +833,7 @@
           "title": "Hair back",
           "instruction": "Face away from the camera in indirect daylight.",
           "requirement": "REQUIRED",
+          "allowText": true,
           "framing": "FULL_VIEW"
         },
         {
@@ -826,6 +841,7 @@
           "title": "Left side",
           "instruction": "Turn the left side toward the camera in indirect daylight.",
           "requirement": "REQUIRED",
+          "allowText": true,
           "framing": "FULL_VIEW"
         },
         {
@@ -833,6 +849,7 @@
           "title": "Right side",
           "instruction": "Turn the right side toward the camera in indirect daylight.",
           "requirement": "REQUIRED",
+          "allowText": true,
           "framing": "FULL_VIEW"
         },
         {
@@ -840,6 +857,7 @@
           "title": "Crown",
           "instruction": "Angle the crown toward the camera in indirect daylight.",
           "requirement": "REQUIRED",
+          "allowText": true,
           "framing": "FULL_VIEW"
         },
         {
@@ -847,6 +865,7 @@
           "title": "Face front",
           "instruction": "Face the camera straight on in indirect daylight with a relaxed, neutral expression.",
           "requirement": "REQUIRED",
+          "allowText": true,
           "framing": "FULL_VIEW"
         },
         {
@@ -854,6 +873,7 @@
           "title": "Profile",
           "instruction": "Turn fully to one side in indirect daylight.",
           "requirement": "REQUIRED",
+          "allowText": true,
           "framing": "FULL_VIEW"
         },
         {
@@ -861,6 +881,7 @@
           "title": "Eyes & brows",
           "instruction": "Fill the frame with both eyes and brows, eyes open, in indirect daylight.",
           "requirement": "REQUIRED",
+          "allowText": true,
           "framing": "TIGHT_CROP"
         }
       ]
@@ -984,6 +1005,7 @@
             "title": "Hair back",
             "instruction": "Face away from the camera in indirect daylight.",
             "requirement": "REQUIRED",
+            "allowText": true,
             "framing": "FULL_VIEW"
           },
           {
@@ -991,6 +1013,7 @@
             "title": "Left side",
             "instruction": "Turn the left side toward the camera in indirect daylight.",
             "requirement": "REQUIRED",
+            "allowText": true,
             "framing": "FULL_VIEW"
           },
           {
@@ -998,6 +1021,7 @@
             "title": "Right side",
             "instruction": "Turn the right side toward the camera in indirect daylight.",
             "requirement": "REQUIRED",
+            "allowText": true,
             "framing": "FULL_VIEW"
           },
           {
@@ -1005,6 +1029,7 @@
             "title": "Crown",
             "instruction": "Angle the crown toward the camera in indirect daylight.",
             "requirement": "REQUIRED",
+            "allowText": true,
             "framing": "FULL_VIEW"
           },
           {
@@ -1012,6 +1037,7 @@
             "title": "Face front",
             "instruction": "Face the camera straight on in indirect daylight with a relaxed, neutral expression.",
             "requirement": "REQUIRED",
+            "allowText": true,
             "framing": "FULL_VIEW"
           },
           {
@@ -1019,6 +1045,7 @@
             "title": "Profile",
             "instruction": "Turn fully to one side in indirect daylight.",
             "requirement": "REQUIRED",
+            "allowText": true,
             "framing": "FULL_VIEW"
           },
           {
@@ -1026,6 +1053,7 @@
             "title": "Eyes & brows",
             "instruction": "Fill the frame with both eyes and brows, eyes open, in indirect daylight.",
             "requirement": "REQUIRED",
+            "allowText": true,
             "framing": "TIGHT_CROP"
           }
         ]
@@ -1989,6 +2017,7 @@
             "helpText": null,
             "kind": "SINGLE_SELECT",
             "requirement": "REQUIRED",
+            "allowText": true,
             "options": [
               {
                 "value": "noticeable",
@@ -1997,6 +2026,7 @@
             ]
           },
           "answer": "noticeable",
+          "clientWords": "noticeable but I still want to look like me at work",
           "packVersion": 3,
           "schemaVersion": 2
         },
@@ -2011,6 +2041,7 @@
             "helpText": "This helps your professional understand what “subtle” or “a change” means to you. It is okay to revise your answer.",
             "kind": "SINGLE_SELECT",
             "requirement": "CONDITIONAL",
+            "allowText": true,
             "options": [
               {
                 "value": "lighter",
@@ -2354,6 +2385,7 @@
             "title": "Hair back",
             "instruction": "Face away from the camera in indirect daylight.",
             "requirement": "REQUIRED",
+            "allowText": true,
             "framing": "FULL_VIEW"
           },
           "shotPackVersion": 2,
@@ -2382,6 +2414,7 @@
             "title": "Left side",
             "instruction": "Turn the left side toward the camera in indirect daylight.",
             "requirement": "REQUIRED",
+            "allowText": true,
             "framing": "FULL_VIEW"
           },
           "shotPackVersion": 2,
@@ -2410,6 +2443,7 @@
             "title": "Right side",
             "instruction": "Turn the right side toward the camera in indirect daylight.",
             "requirement": "REQUIRED",
+            "allowText": true,
             "framing": "FULL_VIEW"
           },
           "shotPackVersion": 2,
@@ -2438,6 +2472,7 @@
             "title": "Crown",
             "instruction": "Angle the crown toward the camera in indirect daylight.",
             "requirement": "REQUIRED",
+            "allowText": true,
             "framing": "FULL_VIEW"
           },
           "shotPackVersion": 2,
@@ -2466,6 +2501,7 @@
             "title": "Face front",
             "instruction": "Face the camera straight on in indirect daylight with a relaxed, neutral expression.",
             "requirement": "REQUIRED",
+            "allowText": true,
             "framing": "FULL_VIEW"
           },
           "shotPackVersion": 2,
@@ -2494,6 +2530,7 @@
             "title": "Profile",
             "instruction": "Turn fully to one side in indirect daylight.",
             "requirement": "REQUIRED",
+            "allowText": true,
             "framing": "FULL_VIEW"
           },
           "shotPackVersion": 2,
@@ -2522,6 +2559,7 @@
             "title": "Eyes & brows",
             "instruction": "Fill the frame with both eyes and brows, eyes open, in indirect daylight.",
             "requirement": "REQUIRED",
+            "allowText": true,
             "framing": "TIGHT_CROP"
           },
           "shotPackVersion": 2,
@@ -3001,6 +3039,7 @@
             }
           ],
           "selectedValues": [],
+          "allowText": true,
           "fallback": false,
           "round": 1
         },
@@ -3041,6 +3080,8 @@
             }
           ],
           "selectedValues": [],
+          "allowText": true,
+          "clientWords": "I honestly do not remember what was used, it was at a salon abroad",
           "fallback": true,
           "round": 2
         },
@@ -3074,6 +3115,7 @@
             }
           ],
           "selectedValues": [],
+          "allowText": false,
           "fallback": false,
           "round": 0
         }

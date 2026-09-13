@@ -176,8 +176,8 @@ private struct ConsultThreadMessageView: View {
             FollowUpMessageView(
                 message: message,
                 busy: model.busy || !model.inputsOpen,
-                onAnswer: { value in
-                    Task { await model.answerFollowUp(message, value: value) }
+                onAnswer: { value, text in
+                    Task { await model.answerFollowUp(message, value: value, text: text) }
                 }
             )
         case .unknown:
@@ -205,9 +205,14 @@ private struct ConsultThreadMessageView: View {
 struct FollowUpMessageView: View {
     let message: ConsultThreadMessage
     let busy: Bool
-    let onAnswer: (String) -> Void
+    let onAnswer: (String, String?) -> Void
+
+    @State private var text: String = ""
 
     private var answered: Bool { !(message.selectedValues ?? []).isEmpty }
+    /// 🔴 Absent, and therefore false, on a PROFESSIONAL's own question and on
+    /// a chart-fact confirmation — neither route can carry a sentence.
+    private var takesWords: Bool { message.allowText == true }
 
     var body: some View {
         ConsultThreadCardView(dimmed: answered) {
@@ -237,19 +242,28 @@ struct FollowUpMessageView: View {
 
                 if answered {
                     Text(
-                        (message.followUpOptions ?? [])
-                            .filter { (message.selectedValues ?? []).contains($0.value) }
-                            .map(\.label)
-                            .joined(separator: ", ")
+                        (message.selectedValues ?? []).contains(ConsultClientWords.value)
+                            ? (message.clientWords ?? "")
+                            : (message.followUpOptions ?? [])
+                                .filter { (message.selectedValues ?? []).contains($0.value) }
+                                .map(\.label)
+                                .joined(separator: ", ")
                     )
                     .font(BrandFont.body(12))
                     .foregroundStyle(BrandColor.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    if let words = message.clientWords,
+                       !(message.selectedValues ?? []).contains(ConsultClientWords.value) {
+                        Text(words)
+                            .font(BrandFont.body(12))
+                            .foregroundStyle(BrandColor.textSecondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 } else {
                     FlowLayout(spacing: 8, lineSpacing: 8) {
                         ForEach(message.followUpOptions ?? []) { option in
                             Button {
-                                onAnswer(option.value)
+                                onAnswer(option.value, text)
                             } label: {
                                 ConsultRegionChipLabel(text: option.label, filled: false)
                             }
@@ -260,9 +274,30 @@ struct FollowUpMessageView: View {
                             )
                         }
                     }
+                    if takesWords {
+                        ConsultClientWordsInput(
+                            text: $text,
+                            busy: busy,
+                            placeholder: ConsultThreadCopy.intakeOwnWordsPlaceholder,
+                            identifier: "consult-follow-up-own-words"
+                        )
+                        Button {
+                            onAnswer(ConsultClientWords.value, text)
+                        } label: {
+                            ConsultRegionChipLabel(
+                                text: ConsultThreadCopy.intakeOwnWordsSend, filled: false
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(
+                            busy || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        )
+                        .accessibilityIdentifier("consult-follow-up-client-words")
+                    }
                 }
             }
         }
+        .onAppear { text = message.clientWords ?? "" }
         .accessibilityIdentifier("consult-follow-up")
     }
 }
@@ -417,11 +452,22 @@ struct QuestionMessageView: View {
     let message: ConsultThreadMessage
     let model: ConsultFlowViewModel
 
+    /// Her own words, kept here while she types. Seeded from what the server
+    /// already holds so re-opening the question puts her sentence back in the
+    /// box instead of silently dropping it.
+    @State private var text: String = ""
+
     var body: some View {
         if let question = message.question {
-            let answeredLabel = message.answer.flatMap { value in
-                question.options.first { $0.value == value }?.label ?? value
+            // Her words are the WHOLE answer on the escape hatch; on an
+            // ordinary option they are a note beneath the label she chose.
+            let answeredLabel = message.answer.flatMap { value -> String? in
+                value == ConsultClientWords.value
+                    ? (message.clientWords ?? value)
+                    : (question.options.first { $0.value == value }?.label ?? value)
             }
+            let answeredNote = message.answer == ConsultClientWords.value
+                ? nil : message.clientWords
             VStack(alignment: .leading, spacing: 8) {
                 ConsultThreadCardView(dimmed: answeredLabel != nil && !model.isEditingAnswers) {
                     VStack(alignment: .leading, spacing: 10) {
@@ -439,7 +485,7 @@ struct QuestionMessageView: View {
                                     Button {
                                         Task {
                                             await model.answerIntake(
-                                                message, value: option.value
+                                                message, value: option.value, text: text
                                             )
                                         }
                                     } label: {
@@ -469,13 +515,50 @@ struct QuestionMessageView: View {
                                     .disabled(model.busy || !model.inputsOpen)
                                 }
                             }
+                            // 🔴 Only when the SERVER says this card takes
+                            // words. It is false on a chart-fact confirmation,
+                            // whose answer route carries a value and no
+                            // sentence — a box that cannot send what she types
+                            // is the defect #1171 fixed.
+                            if question.allowText {
+                                ConsultClientWordsInput(
+                                    text: $text,
+                                    busy: model.busy || !model.inputsOpen,
+                                    placeholder: ConsultThreadCopy.intakeOwnWordsPlaceholder,
+                                    identifier: "consult-intake-own-words-\(question.key)"
+                                )
+                                Button {
+                                    Task {
+                                        await model.answerIntake(
+                                            message,
+                                            value: ConsultClientWords.value,
+                                            text: text
+                                        )
+                                    }
+                                } label: {
+                                    ConsultRegionChipLabel(
+                                        text: ConsultThreadCopy.intakeOwnWordsSend,
+                                        filled: false
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(
+                                    model.busy || !model.inputsOpen
+                                        || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                )
+                                .accessibilityIdentifier("consult-intake-client-words-\(question.key)")
+                            }
                         }
                     }
                 }
                 if let answeredLabel {
                     ConsultThreadBubble(author: .client) { Text(answeredLabel) }
                 }
+                if let answeredNote {
+                    ConsultThreadBubble(author: .client) { Text(answeredNote) }
+                }
             }
+            .onAppear { text = message.clientWords ?? "" }
             .accessibilityIdentifier("consult-thread-question-\(question.key)")
         }
     }
