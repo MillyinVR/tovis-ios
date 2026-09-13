@@ -21,6 +21,7 @@
         "proDecidesNote": "Your professional makes the final call.",
         "autoAccepts": false,
         "commitNote": "Your time is held for you — your professional confirms in the morning.",
+        "safetyNote": null,
         "lines": [
           {
             "serviceName": "Full Balayage",
@@ -68,6 +69,7 @@
         "proDecidesNote": "Your professional makes the final call.",
         "autoAccepts": true,
         "commitNote": "Tapping book confirms this appointment right away.",
+        "safetyNote": null,
         "lines": [
           {
             "serviceName": "Full Balayage",
@@ -140,6 +142,7 @@
         "proDecidesNote": "Your professional makes the final call.",
         "autoAccepts": true,
         "commitNote": "Tapping book confirms this appointment right away.",
+        "safetyNote": "Your professional needs to do a quick skin or strand test before this appointment.",
         "lines": [
           {
             "serviceName": "Silk Press",
