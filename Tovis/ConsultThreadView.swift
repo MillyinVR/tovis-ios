@@ -918,6 +918,31 @@ private struct PlanMessageView: View {
                                 Task { await model.confirmLook(version: version) }
                             }
                         )
+                        // The whole plan, at last. `planSeeAll` has been a dead
+                        // string since P5a — everything behind it was decoded
+                        // on the device and rendered nowhere. The card keeps
+                        // the summary, because the thread is a chat and a chat
+                        // message is not a report.
+                        NavigationLink {
+                            ConsultResultsView(
+                                results: results,
+                                teaserTapped: model.teaserTapped || results.meCardTeaser.tapped,
+                                busy: model.busy,
+                                onTapMeCard: { Task { await model.tapLockedMeCard() } }
+                            )
+                        } label: {
+                            Text(ConsultThreadCopy.planSeeAll)
+                                .font(BrandFont.body(14, .semibold))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .foregroundStyle(BrandColor.textPrimary)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .stroke(BrandColor.textMuted.opacity(0.28), lineWidth: 1)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("consult-see-whole-plan")
                     }
                 }
             }
