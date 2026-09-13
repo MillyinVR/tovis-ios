@@ -888,6 +888,12 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
         #expect(!model.canOfferPartialContinue)
     }
 
+    /// ⚠️ The own-words box appears in these PNGs as a YELLOW BAR with a red
+    /// "no entry" sign. That is `ImageRenderer` refusing to rasterise a
+    /// `TextField` — proven with a bare TextField through the same renderer,
+    /// 2026-09-13 — NOT a broken control. These snapshots are evidence about
+    /// the question's wording and its fit at 390pt; they are no evidence at all
+    /// about the box.
     @Test func rendersPlainLanguageQuestionAtPhoneWidth() async throws {
         var root = try fixtureRoot()
         var response = try #require(root["intake"] as? [String: Any])
