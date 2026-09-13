@@ -21,6 +21,13 @@ public enum ConsultThreadCopy {
     public static let ownWordsLabel = "Say it in your own words"
     public static let ownWordsPlaceholder = "Tell me what you mean, or correct what I noticed…"
     public static let ownWordsLimit = "Please keep your response to 600 characters."
+    /// The INTAKE and FOLLOW-UP box. Different words from the inspiration one:
+    /// there she is correcting what the model noticed about a picture, here she
+    /// is answering a question whose options ran out (Tori, 2026-09-13).
+    public static let intakeOwnWordsPlaceholder =
+        "Add anything that matters, or answer here if none of these fits…"
+    /// Files what she typed as the answer ITSELF, with no option chosen.
+    public static let intakeOwnWordsSend = "None of these — use what I wrote"
     public static let profileDetailsTitle = "What your photos show"
     public static let profileDetailsBody = "These details help explain the style ideas below. Photos can change how colors look. Your professional will check these details with you in person."
     public static let styleOptionsTitle = "Style options to discuss"

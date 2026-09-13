@@ -324,12 +324,22 @@ final class ConsultFlowViewModel {
     /// One tap answers one question, and the POST carries the WHOLE revision —
     /// so the answers already in the thread are read back out of it rather than
     /// kept in a second copy here that could drift from what the server holds.
-    func answerIntake(_ message: ConsultThreadMessage, value: String) async {
+    ///
+    /// `text` is her OWN WORDS: a note beside the option she tapped, or — with
+    /// `value` of `CONSULT_INTAKE_CLIENT_WORDS_VALUE` — the answer itself. It
+    /// is a REPLACE write like the answers, so the whole sidecar is read back
+    /// and echoed; an EMPTY box clears this question's note, which is the only
+    /// way to take one back.
+    func answerIntake(_ message: ConsultThreadMessage, value: String, text: String? = nil) async {
+        let note = (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard let consultId = machine.consultId,
               let question = message.question,
               let packVersion = message.packVersion,
               let schemaVersion = message.schemaVersion,
+              // The sentinel is an answer only WITH words, and only where the
+              // server said this question takes them.
               question.options.contains(where: { $0.value == value })
+                || (value == ConsultClientWords.value && question.allowText && !note.isEmpty)
         else { return }
 
         await perform {
@@ -350,11 +360,14 @@ final class ConsultFlowViewModel {
             let current = try await service.intake(consultId: consultId)
             var answers = current.latestRevision?.answers ?? [:]
             answers[question.key] = value
+            var textAnswers = current.latestRevision?.textAnswers ?? [:]
+            textAnswers[question.key] = note.isEmpty ? nil : note
             let saved = try await service.submitIntake(
                 consultId: consultId,
                 packVersion: packVersion,
                 schemaVersion: schemaVersion,
                 answers: answers,
+                textAnswers: textAnswers,
                 complete: current.latestRevision?.complete ?? false,
                 idempotencyKey: UUID().uuidString
             )
@@ -368,6 +381,7 @@ final class ConsultFlowViewModel {
                     packVersion: saved.questionPack.version,
                     schemaVersion: saved.questionPack.schemaVersion,
                     answers: saved.latestRevision?.answers ?? answers,
+                    textAnswers: saved.latestRevision?.textAnswers ?? textAnswers,
                     complete: true,
                     idempotencyKey: UUID().uuidString
                 )
@@ -466,10 +480,13 @@ final class ConsultFlowViewModel {
         }
     }
 
-    func answerFollowUp(_ message: ConsultThreadMessage, value: String) async {
+    func answerFollowUp(_ message: ConsultThreadMessage, value: String, text: String? = nil) async {
+        let note = (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let takesWords = message.allowText == true
         guard let consultId = machine.consultId,
               let questionKey = message.questionKey,
               message.followUpOptions?.contains(where: { $0.value == value }) == true
+                || (value == ConsultClientWords.value && takesWords && !note.isEmpty)
         else { return }
         await perform {
             if let sourceId = message.chartFactSourceId {
@@ -481,6 +498,9 @@ final class ConsultFlowViewModel {
                 consultId: consultId,
                 questionKey: questionKey,
                 selectedValues: [value],
+                // Only from a card that offered the box: a professional's own
+                // question has nowhere to put a sentence.
+                text: takesWords ? note : nil,
                 idempotencyKey: UUID().uuidString
             )
             try await loadThread()

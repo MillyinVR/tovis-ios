@@ -891,20 +891,29 @@ struct ConsultManagementControls: View {
     }
 }
 
+/// The box she types into.
+///
+/// The WORDING and the accessibility identifier are passed in, because the
+/// inspiration card asks her to correct what the model noticed and the intake
+/// question asks her to answer where the options ran out. The LIMIT is one rule
+/// for all of them (`ConsultClientWords.limit`), which is what the database
+/// guards enforce.
 struct ConsultClientWordsInput: View {
     @Binding var text: String
     let busy: Bool
+    var placeholder: String = ConsultThreadCopy.ownWordsPlaceholder
+    var identifier: String = "consult-inspiration-own-words"
 
     var body: some View {
         Text(ConsultThreadCopy.ownWordsLabel)
             .font(BrandFont.body(13, .semibold))
             .foregroundStyle(BrandColor.textSecondary)
-        TextField(ConsultThreadCopy.ownWordsPlaceholder, text: $text, axis: .vertical)
+        TextField(placeholder, text: $text, axis: .vertical)
             .lineLimit(2...5)
             .textFieldStyle(.roundedBorder)
             .disabled(busy)
-            .accessibilityIdentifier("consult-inspiration-own-words")
-        if text.utf16.count > 600 {
+            .accessibilityIdentifier(identifier)
+        if text.utf16.count > ConsultClientWords.limit {
             Text(ConsultThreadCopy.ownWordsLimit).font(BrandFont.body(12))
         }
     }

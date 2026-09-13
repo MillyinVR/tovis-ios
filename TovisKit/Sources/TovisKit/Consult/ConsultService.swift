@@ -21,12 +21,18 @@ public protocol ConsultServicing: Sendable {
     func reviewChart(consultId: String, fingerprint: String, decision: String, idempotencyKey: String) async throws
     func intake(consultId: String) async throws -> ConsultIntakeState
     func submitIntake(consultId: String, state: ConsultIntakeState, answers: [String: String],
+                      textAnswers: [String: String],
                       idempotencyKey: String) async throws -> ConsultIntakeState
     /// P5a — the thread's twin: the pack VERSIONS rather than the whole state,
     /// because a thread carries them on the question message and never loads
     /// `ConsultIntakeState`.
+    ///
+    /// 🔴 `textAnswers` is her OWN WORDS, keyed to an answered question. Like
+    /// `answers` it is a REPLACE write: the caller echoes the WHOLE map back,
+    /// or a submit that carries one key WIPES every note she has typed.
     func submitIntake(consultId: String, packVersion: Int, schemaVersion: Int,
-                      answers: [String: String], complete: Bool,
+                      answers: [String: String], textAnswers: [String: String],
+                      complete: Bool,
                       idempotencyKey: String) async throws -> ConsultIntakeState
     func inspiration(consultId: String) async throws -> ConsultInspirationState
     func skipInspiration(consultId: String, schemaVersion: Int,
@@ -46,7 +52,7 @@ public protocol ConsultServicing: Sendable {
     /// decision, made from the vocabulary home the round already recorded. A
     /// client that had to know that routing is a client that can get it wrong.
     func answerFollowUp(consultId: String, questionKey: String,
-                        selectedValues: [String],
+                        selectedValues: [String], text: String?,
                         idempotencyKey: String) async throws
     func capture(consultId: String) async throws -> ConsultCaptureState
     // The capture chain is THREE separately-durable legs, not one call. Each is
@@ -260,17 +266,22 @@ public final class ConsultService: ConsultServicing, Sendable {
         consultId: String,
         questionKey: String,
         selectedValues: [String],
+        text: String?,
         idempotencyKey: String
     ) async throws {
         struct Body: Encodable {
             let idempotencyKey: String
             let questionKey: String
             let selectedValues: [String]
+            /// Sent only from a card that OFFERED the box, so answering a
+            /// professional's question posts the body it always did.
+            let text: String?
         }
         let body = try JSONEncoder.canonical.encode(Body(
             idempotencyKey: idempotencyKey,
             questionKey: questionKey,
-            selectedValues: selectedValues
+            selectedValues: selectedValues,
+            text: text
         ))
         // The response carries the follow-up state, and the caller ignores it:
         // every mutation in this thread is followed by a full thread re-read,
@@ -290,7 +301,8 @@ public final class ConsultService: ConsultServicing, Sendable {
     }
 
     public func submitIntake(consultId: String, state: ConsultIntakeState,
-                             answers: [String: String], idempotencyKey: String) async throws
+                             answers: [String: String], textAnswers: [String: String],
+                             idempotencyKey: String) async throws
         -> ConsultIntakeState {
         // Delegates rather than repeating the body: ONE encoder for this call,
         // so the wizard's caller and the thread's caller cannot drift about what
@@ -300,6 +312,7 @@ public final class ConsultService: ConsultServicing, Sendable {
             packVersion: state.questionPack.version,
             schemaVersion: state.questionPack.schemaVersion,
             answers: answers,
+            textAnswers: textAnswers,
             complete: true,
             idempotencyKey: idempotencyKey
         )
@@ -326,7 +339,8 @@ public final class ConsultService: ConsultServicing, Sendable {
     }
 
     public func submitIntake(consultId: String, packVersion: Int, schemaVersion: Int,
-                             answers: [String: String], complete: Bool,
+                             answers: [String: String], textAnswers: [String: String],
+                             complete: Bool,
                              idempotencyKey: String) async throws -> ConsultIntakeState {
         struct Body: Encodable {
             let idempotencyKey: String
@@ -334,13 +348,17 @@ public final class ConsultService: ConsultServicing, Sendable {
             let schemaVersion: Int
             let complete: Bool
             let answers: [String: String]
+            /// Omitted entirely when she has typed nothing, so a consult with no
+            /// words posts exactly the body this client has always posted.
+            let textAnswers: [String: String]?
         }
         let body = try JSONEncoder.canonical.encode(Body(
             idempotencyKey: idempotencyKey,
             packVersion: packVersion,
             schemaVersion: schemaVersion,
             complete: complete,
-            answers: answers
+            answers: answers,
+            textAnswers: textAnswers.isEmpty ? nil : textAnswers
         ))
         let response: ConsultIntakeSubmitResponse = try await api.request(
             "/client/consult/\(consultId)/intake", method: .post, body: body

@@ -17,6 +17,9 @@ private actor MockConsultService: ConsultServicing {
     /// The last intake revision this mock accepted, so its thread can render the
     /// answered questions as history the way the server's projection does.
     private var latestIntakeAnswers: [String: String] = [:]
+    /// Her own words as the device last sent them — recorded so a test can
+    /// prove the REPLACE write echoed the whole sidecar back.
+    private(set) var latestIntakeTextAnswers: [String: String] = [:]
     private var latestIntakeState: ConsultIntakeState?
     private(set) var intakeCompletionClaims: [Bool] = []
     private(set) var captureKeys: [ConsultCaptureMutationKeys] = []
@@ -126,22 +129,25 @@ private actor MockConsultService: ConsultServicing {
     }
 
     func submitIntake(consultId: String, state: ConsultIntakeState,
-                      answers: [String: String], idempotencyKey: String) async throws
+                      answers: [String: String], textAnswers: [String: String],
+                      idempotencyKey: String) async throws
         -> ConsultIntakeState {
         try await submitIntake(
             consultId: consultId,
             packVersion: state.questionPack.version,
             schemaVersion: state.questionPack.schemaVersion,
             answers: answers,
+            textAnswers: textAnswers,
             complete: true,
             idempotencyKey: idempotencyKey
         )
     }
 
     func submitIntake(consultId: String, packVersion: Int, schemaVersion: Int,
-                      answers: [String: String], complete: Bool,
+                      answers: [String: String], textAnswers: [String: String], complete: Bool,
                       idempotencyKey: String) async throws -> ConsultIntakeState {
         intakeCompletionClaims.append(complete)
+        latestIntakeTextAnswers = textAnswers
         var value = dictionary("intake", "intake")
         let pack = try #require(value["questionPack"] as? [String: Any])
         let questions = try #require(pack["questions"] as? [[String: Any]])
@@ -210,12 +216,12 @@ private actor MockConsultService: ConsultServicing {
     /// P5g — every follow-up answer this double was asked to file, in order.
     /// Recorded rather than discarded so a test can assert the device sent the
     /// KEY and the ENUM and decided no routing of its own.
-    private(set) var answeredFollowUps: [(key: String, values: [String])] = []
+    private(set) var answeredFollowUps: [(key: String, values: [String], text: String?)] = []
 
     func answerFollowUp(consultId: String, questionKey: String,
-                        selectedValues: [String],
+                        selectedValues: [String], text: String?,
                         idempotencyKey: String) async throws {
-        answeredFollowUps.append((questionKey, selectedValues))
+        answeredFollowUps.append((questionKey, selectedValues, text))
     }
 
     /// When set, the image read throws it — the server-side half of B4 (a
@@ -1671,7 +1677,84 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
         #expect(message.kind == .inspiration)
         #expect(message.card == nil)
     }
+
+    // ── Her own words ───────────────────────────────────────────────────────
+    //
+    // Tori, 2026-09-13: "there were times i couldnt answer the consult
+    // questions with the optios it gave me". Two behaviours, one control — a
+    // note beside the option she taps, and her words INSTEAD of an option.
+
+    @Test func anIntakeAnswerCarriesHerOwnWordsAsANote() async throws {
+        let service = MockConsultService(root: try editingRoot())
+        let model = model(service)
+        await model.start()
+        try await acceptBothAgreements(model)
+        let message = try #require(openMessage(model))
+        let option = try #require(message.question?.options.first?.value)
+
+        await model.answerIntake(message, value: option, text: "  it depends on the season  ")
+
+        // Trimmed on the way out, keyed to the question she answered — the
+        // exact shape `consult_intake_payload_guard` accepts.
+        #expect(await service.latestIntakeTextAnswers == ["change_scale": "it depends on the season"])
+    }
+
+    @Test func herWordsCanBeTheAnswerItself_andNeverGoWithoutThem() async throws {
+        let service = MockConsultService(root: try editingRoot())
+        let model = model(service)
+        await model.start()
+        try await acceptBothAgreements(model)
+        let message = try #require(openMessage(model))
+        let key = try #require(message.question?.key)
+
+        // 🔴 The sentinel with an EMPTY box is refused before any request is
+        // made: it is a code meaning "see the sentence" pointing at no
+        // sentence, and the server would 400 it after she had already tapped.
+        // Asserted on the SUBMIT COUNT — an empty sidecar would also be the
+        // shape of a request that went out and simply carried nothing.
+        await model.answerIntake(message, value: ConsultClientWords.value, text: "   ")
+        #expect(await service.intakeCompletionClaims.isEmpty)
+
+        await model.answerIntake(
+            message, value: ConsultClientWords.value, text: "none of these, my hair is two colours"
+        )
+        #expect(
+            await service.latestIntakeTextAnswers[key] == "none of these, my hair is two colours"
+        )
+    }
+
+    @Test func aFollowUpCardSendsWordsOnlyWhenTheServerOfferedTheBox() async throws {
+        let takesWords = try followUpMessage(allowText: true)
+        let proQuestion = try followUpMessage(allowText: nil)
+
+        let service = MockConsultService(root: try editingRoot())
+        let model = model(service)
+        await model.start()
+
+        await model.answerFollowUp(takesWords, value: "never", text: "  at a salon abroad  ")
+        // 🔴 A professional's own question has nowhere to put a sentence, so the
+        // card never offers the box and the device never sends one.
+        await model.answerFollowUp(proQuestion, value: "never", text: "ignored")
+
+        let sent = await service.answeredFollowUps
+        #expect(sent.count == 2)
+        #expect(sent.first?.text == "at a salon abroad")
+        #expect(sent.last?.text == nil)
+    }
+
+    /// One FOLLOW_UP card, built the way the server sends it.
+    private func followUpMessage(allowText: Bool?) throws -> ConsultThreadMessage {
+        let flag = allowText.map { ",\"allowText\":\($0)" } ?? ""
+        let json = """
+        {"kind":"FOLLOW_UP","id":"follow-up:1:box_dye_history","author":"APP","state":"OPEN",
+         "text":"When did you last use box dye?","questionKey":"box_dye_history",
+         "options":[{"value":"never","label":"Never"}],"selectedValues":[],
+         "fallback":false,"round":1\(flag)}
+        """
+        return try JSONDecoder().decode(ConsultThreadMessage.self, from: Data(json.utf8))
+    }
 }
+
 
 private extension MockConsultService {
     func setSessionProfessionalIdForTest(_ value: String) {

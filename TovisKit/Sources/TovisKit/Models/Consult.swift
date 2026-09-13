@@ -241,7 +241,49 @@ public struct ConsultIntakeQuestion: Decodable, Sendable, Identifiable {
     public let kind: String
     public let requirement: ConsultIntakeRequirement
     public let options: [ConsultIntakeOption]
+    /// Whether she may answer this one in her OWN WORDS — as a note beside the
+    /// option she taps, or instead of tapping one at all (Tori, 2026-09-13).
+    ///
+    /// Defaults to FALSE when the field is absent, which is the honest reading
+    /// of a server that predates it: no flag, no box. It is false on the wire
+    /// too for a question whose answer route cannot carry words — a chart-fact
+    /// confirmation — so this is never "can she type", it is "will what she
+    /// types be sent".
+    public let allowText: Bool
     public var id: String { key }
+
+    private enum CodingKeys: String, CodingKey {
+        case key, label, helpText, kind, requirement, options, allowText
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        key = try container.decode(String.self, forKey: .key)
+        label = try container.decode(String.self, forKey: .label)
+        helpText = try container.decodeIfPresent(String.self, forKey: .helpText)
+        kind = try container.decode(String.self, forKey: .kind)
+        requirement = try container.decode(ConsultIntakeRequirement.self, forKey: .requirement)
+        options = try container.decode([ConsultIntakeOption].self, forKey: .options)
+        allowText = try container.decodeIfPresent(Bool.self, forKey: .allowText) ?? false
+    }
+
+    public init(
+        key: String,
+        label: String,
+        helpText: String?,
+        kind: String,
+        requirement: ConsultIntakeRequirement,
+        options: [ConsultIntakeOption],
+        allowText: Bool
+    ) {
+        self.key = key
+        self.label = label
+        self.helpText = helpText
+        self.kind = kind
+        self.requirement = requirement
+        self.options = options
+        self.allowText = allowText
+    }
 }
 
 public struct ConsultIntakeQuestionPack: Decodable, Sendable {
@@ -278,7 +320,24 @@ public struct ConsultIntakeRevision: Decodable, Sendable, Identifiable {
     public let schemaVersion: Int
     public let complete: Bool
     public let answers: [String: String]
+    /// Her OWN WORDS, keyed to a question she also answered. ABSENT — not
+    /// empty — on every intake written before free text existed, and on one
+    /// where she typed nothing.
+    public let textAnswers: [String: String]?
     public let createdAt: String
+}
+
+/// The answer CODE that means "she answered this one in her own words".
+///
+/// 🔴 Deliberately NOT a member of any question's `options`, so a build that
+/// predates free text can never render it as a tappable choice and send it
+/// with no words attached. The server admits it only on a question that says
+/// `allowText` AND carries a matching `textAnswers` entry.
+public enum ConsultClientWords {
+    public static let value = "client-words"
+    /// The one limit this app has for client text, mirrored from
+    /// lib/consult/clientText.ts and enforced by the database guards.
+    public static let limit = 600
 }
 
 /// The server-owned answer to "can this intake be completed as saved?" —

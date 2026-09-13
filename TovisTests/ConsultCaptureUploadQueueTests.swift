@@ -173,9 +173,10 @@ struct ConsultCaptureUploadQueueTests {
         func thread(consultId: String) async throws -> ConsultThread { fail() }
         func intake(consultId: String) async throws -> ConsultIntakeState { fail() }
         func submitIntake(consultId: String, state: ConsultIntakeState, answers: [String: String],
+                          textAnswers: [String: String],
                           idempotencyKey: String) async throws -> ConsultIntakeState { fail() }
         func submitIntake(consultId: String, packVersion: Int, schemaVersion: Int,
-                          answers: [String: String], complete: Bool,
+                          answers: [String: String], textAnswers: [String: String], complete: Bool,
                           idempotencyKey: String) async throws -> ConsultIntakeState { fail() }
         func inspiration(consultId: String) async throws -> ConsultInspirationState { fail() }
         func skipInspiration(consultId: String, schemaVersion: Int,
@@ -189,7 +190,8 @@ struct ConsultCaptureUploadQueueTests {
         func inspirationImage(consultId: String,
                               readEndpoint: String) async throws -> ConsultInspirationSignedRead { fail() }
         func answerFollowUp(consultId: String, questionKey: String,
-                            selectedValues: [String], idempotencyKey: String) async throws { fail() }
+                            selectedValues: [String], text: String?,
+                            idempotencyKey: String) async throws { fail() }
         func capture(consultId: String) async throws -> ConsultCaptureState {
             try Self.decode(ConsultCaptureState.self, Self.captureState)
         }

@@ -115,7 +115,7 @@ import UIKit
             let view = FollowUpMessageView(
                 message: try message(fallback: fallback),
                 busy: false,
-                onAnswer: { _ in }
+                onAnswer: { _, _ in }
             )
             .padding(20)
             .frame(width: 390)
@@ -174,7 +174,7 @@ import UIKit
     /// would be exactly as tall as the model's card with the same options.
     @Test func rendersTheEyebrowAboveTheQuestion() throws {
         func height(_ message: ConsultThreadMessage, _ name: String) throws -> CGFloat {
-            let view = FollowUpMessageView(message: message, busy: false, onAnswer: { _ in })
+            let view = FollowUpMessageView(message: message, busy: false, onAnswer: { _, _ in })
                 .padding(20).frame(width: 390).background(BrandColor.bgPrimary)
             let renderer = ImageRenderer(content: view)
             renderer.scale = 3

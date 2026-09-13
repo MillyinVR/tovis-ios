@@ -252,6 +252,21 @@ public struct ConsultThreadMessage: Decodable, Sendable, Identifiable {
     /// `questionKey` carries the `pro_` prefix the server files by.
     public let attribution: String?
 
+    // QUESTION and FOLLOW_UP — her own words (Tori, 2026-09-13)
+    /// Whether THIS CARD takes a typed answer. On a QUESTION the flag lives on
+    /// `question.allowText`; on a FOLLOW_UP it is here, because a follow-up
+    /// card has no nested question.
+    ///
+    /// 🔴 Absent, and therefore false, on a card whose answer route cannot
+    /// carry a sentence — a professional's own question, and a chart-fact
+    /// confirmation. A box that cannot send what she types is the defect #1171
+    /// fixed on the confirmation card, so this flag gates the box on BOTH
+    /// kinds; it is never inferred from the question alone.
+    public let allowText: Bool?
+    /// What she already typed on this card: a note beside her choice, or — when
+    /// the answer is the client-words sentinel — the answer itself.
+    public let clientWords: String?
+
     /// Shared by QUESTION, INSPIRATION, PHOTO_REQUEST and PLAN — each names the
     /// schema its own mutation must echo.
     public let schemaVersion: Int?
@@ -270,6 +285,7 @@ public struct ConsultThreadMessage: Decodable, Sendable, Identifiable {
         case planVersion, updatePending, previousPlanVersion, changes
         case bookingId
         case questionKey, fallback, round, selectedValues, attribution
+        case allowText, clientWords
         case followUpOptions = "options"
         case schemaVersion
     }
@@ -360,6 +376,8 @@ public struct ConsultThreadMessage: Decodable, Sendable, Identifiable {
         fallback = try container.decodeIfPresent(Bool.self, forKey: .fallback)
         round = try container.decodeIfPresent(Int.self, forKey: .round)
         attribution = try container.decodeIfPresent(String.self, forKey: .attribution)
+        allowText = try container.decodeIfPresent(Bool.self, forKey: .allowText)
+        clientWords = try container.decodeIfPresent(String.self, forKey: .clientWords)
 
         schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion)
     }
