@@ -91,6 +91,18 @@ import Testing
         let open = try #require(thread.messages.first { $0.id == thread.nextOpenMessageId })
         #expect(open.state == .open)
 
+        // The consult reads as a CHAT — one thing at a time (Tori,
+        // 2026-09-11). What she SEES is history up to and including the step
+        // waiting for her, and nothing after it. Twin of the web script's
+        // `visibleConsultThreadMessages`.
+        let visible = thread.visibleMessages
+        #expect(visible.count < thread.messages.count)
+        #expect(visible.last?.id == thread.nextOpenMessageId)
+        // Everything before it is still there — a thread you cannot scroll back
+        // through is a wizard, and a BLOCKED step sitting before the open one
+        // (a photo she skipped) is still on screen and still tappable.
+        #expect(visible.map(\.id) == thread.messages.prefix(visible.count).map(\.id))
+
         // 🔴 BOTH question types come back, off the same wire key.
         let intakeQuestion = try #require(
             thread.messages.first { $0.kind == .question }?.question
@@ -866,6 +878,96 @@ import Testing
         results["lookPlan"] = invalid
         response["results"] = results
         #expect(try !decode(ConsultClientResultsResponse.self, value: response).results.hasFaithfulClientContract)
+    }
+
+    /// Rule 8 on the wire: what the light meant, and what daylight would still
+    /// add. Both are OPTIONAL and purely additive (tovis-app #1167), so the
+    /// build has to read them when they come and be unbothered when they do not.
+    @Test func theLightCaveatAndTheDaylightGapAreOptionalOnTheWire() throws {
+        var response = try #require(try root()["results"] as? [String: Any])
+        var results = try #require(response["results"] as? [String: Any])
+
+        // Absent — a consult analysed before either shipped, or an older server.
+        results.removeValue(forKey: "photoLight")
+        results.removeValue(forKey: "daylightGap")
+        response["results"] = results
+        let bare = try decode(ConsultClientResultsResponse.self, value: response).results
+        #expect(bare.photoLight == nil)
+        #expect(bare.daylightGap == nil)
+        #expect(bare.hasFaithfulClientContract)
+
+        results["photoLight"] = [
+            "acceptedFrameCount": 3, "warmFrameCount": 2, "mostFramesWarm": true,
+        ]
+        results["daylightGap"] = [
+            "missingShotKeys": ["hair_back", "hair_crown"],
+            "unlocks": ["HAIR_LEVELS", "SKIN_TONE_AND_SEASON"],
+            "provisionalCount": 13,
+        ]
+        response["results"] = results
+        let full = try decode(ConsultClientResultsResponse.self, value: response).results
+        // 🔴 `mostFramesWarm` is the SERVER's call — the caveat shows on it and
+        // never on a count this device re-judges, so the two clients cannot
+        // disagree about what "most" means.
+        #expect(full.photoLight?.mostFramesWarm == true)
+        #expect(full.photoLight?.warmFrameCount == 2)
+        #expect(full.daylightGap?.provisionalCount == 13)
+        #expect(full.daylightGap?.unlocks.count == 2)
+        #expect(full.hasFaithfulClientContract)
+
+        // An unlock group this build was never taught is DROPPED, not rendered
+        // as a placeholder in the middle of her sentence.
+        #expect(ConsultThreadCopy.daylightGapUnlock("HAIR_LEVELS") != nil)
+        #expect(ConsultThreadCopy.daylightGapUnlock("SOMETHING_NEWER") == nil)
+    }
+
+    /// A photograph makes a reading THIN. It must never withdraw the booking
+    /// (Tori, 2026-09-13, asked twice) — tovis-app #1168 split the one field
+    /// into `provisional` and `choosable`, and this is the device half.
+    @Test func aThinReadingIsStillBookableAndProReviewKeepsItsPaths() throws {
+        let step: [String: Any] = [
+            "serviceId": "color", "offeringId": "pro-color",
+            "serviceCategoryId": "hair-color", "serviceName": "Dimensional color",
+        ]
+        let path: [String: Any] = [
+            "title": "Warm dimension", "whyThisWorksForYou": "Keeps the length you love.",
+            "featureEvidence": [], "sessionCount": 1, "visits": [["steps": [step]]],
+        ]
+        func plan(status: String, choosable: Bool?, paths: [[String: Any]] = []) throws -> ConsultLookPlan {
+            var raw: [String: Any] = [
+                "schemaVersion": 1, "tier": "EXACT", "status": status,
+                "provisional": status != "READY_TO_CHOOSE",
+                "summary": "Keep your length with warm dimension.",
+                "nextStep": "Confirm your look.", "paths": paths,
+            ]
+            if let choosable { raw["choosable"] = choosable }
+            return try decode(ConsultLookPlan.self, value: raw)
+        }
+
+        // 🔴 The case the split exists for: her selfie was warm-lit, so the
+        // reading is thin — and she may STILL book it.
+        let thin = try plan(status: "NEEDS_INPUT", choosable: true, paths: [path])
+        #expect(thin.provisional)
+        #expect(thin.isChoosable)
+        #expect(thin.isConsistent)
+
+        // 🔴 PRO_REVIEW KEEPS ITS PATHS now. This used to fail the invariant,
+        // and the failure is not a missing section — it is `contractMismatch`,
+        // which replaces the whole plan card with "we couldn't verify this
+        // plan". A served, valid plan must never read as a broken one.
+        let review = try plan(status: "PRO_REVIEW", choosable: false, paths: [path])
+        #expect(review.isConsistent)
+        #expect(!review.isChoosable)
+        // NO_OFFERING still carries none — there is genuinely nothing on the menu.
+        #expect(try !plan(status: "NO_OFFERING", choosable: false, paths: [path]).isConsistent)
+        // She may never choose something nobody has reviewed, or that does not exist.
+        #expect(try !plan(status: "PRO_REVIEW", choosable: true, paths: [path]).isConsistent)
+        #expect(try !plan(status: "READY_TO_CHOOSE", choosable: true).isConsistent)
+
+        // A server that predates the field: read as the permission its gates
+        // actually applied at the time, which was READY_TO_CHOOSE.
+        #expect(try plan(status: "READY_TO_CHOOSE", choosable: nil, paths: [path]).isChoosable)
+        #expect(try !plan(status: "NEEDS_INPUT", choosable: nil, paths: [path]).isChoosable)
     }
 
     @Test func sharedBriefKeepsExpectationNotesAndUnknownCompletedTiming() throws {

@@ -116,7 +116,7 @@ struct ConsultThreadView: View {
             if let failure = model.failure, model.failurePlacement == .thread {
                 BrandErrorBanner(message: failure.message)
             }
-            ForEach(model.messages) { message in
+            ForEach(model.visibleMessages) { message in
                 ConsultThreadMessageView(
                     message: message,
                     model: model,
@@ -660,7 +660,35 @@ private struct PhotoRequestMessageView: View {
     let model: ConsultFlowViewModel
     let onFullscreen: (FullscreenMedia) -> Void
 
+    /// Set when she taps "Add this photo" on a compact row. The full camera
+    /// card then takes over, so there stays exactly ONE way to take a photo.
+    @State private var expanded = false
+
     var body: some View {
+        let guided = model.guidedPhotoPresentation(message)
+        if guided?.choice == .open {
+            ConsultDaylightChoiceView(
+                busy: model.busy,
+                onBuildNow: { Task { await model.buildLookNow() } },
+                onAddPhotosFirst: { model.addPhotosFirst() }
+            )
+        } else if guided?.compact == true && !expanded {
+            ConsultDaylightLaterView(
+                title: message.shot?.title ?? "",
+                // 🔴 Only when the SERVER would accept the upload. Offering a
+                // way in that the write boundary then refuses is the defect
+                // `shootable` exists to prevent.
+                shootable: message.shootable ?? true,
+                sheSaidBuildNow: guided?.choice == .built,
+                busy: model.busy,
+                onAdd: { expanded = true }
+            )
+        } else {
+            camera
+        }
+    }
+
+    private var camera: some View {
         VStack(alignment: .leading, spacing: 12) {
             if message.shootable != false && message.slot?.state != .accepted {
                 ForEach(message.chartPhotos ?? []) { photo in
@@ -709,6 +737,109 @@ private struct PhotoRequestMessageView: View {
                 .opacity(message.slot?.state == .accepted ? 0.75 : 1)
             }
         }
+    }
+}
+
+/// The daylight break (Tori, 2026-09-12): a clean stop before the first
+/// daylight photo when her look can already be built. Both buttons are hers;
+/// the sentence says the photos are wanted either way, and can wait.
+///
+/// 🔴 Takes `busy` and two closures rather than the view model, the same shape
+/// `FollowUpMessageView` has and for the same reason: a leaf view that holds
+/// the model cannot be rendered without one, and this card's PNG — the thing
+/// that catches a swallowed button or an unreadable sentence — is worth more
+/// than the convenience of reaching through.
+struct ConsultDaylightChoiceView: View {
+    let busy: Bool
+    let onBuildNow: () -> Void
+    let onAddPhotosFirst: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ConsultThreadBubble(author: .app) {
+                Text(ConsultThreadCopy.captureChoice)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            ConsultThreadCardView {
+                VStack(spacing: 8) {
+                    Button(action: onBuildNow) {
+                        Text(ConsultThreadCopy.captureChoiceBuildNow)
+                            .font(BrandFont.body(15, .semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 13)
+                            .foregroundStyle(BrandColor.onAccent)
+                            .background(BrandColor.accent)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                    Button(action: onAddPhotosFirst) {
+                        Text(ConsultThreadCopy.captureChoiceAddPhotos)
+                            .font(BrandFont.body(15, .semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 13)
+                            .foregroundStyle(BrandColor.textPrimary)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(BrandColor.textMuted.opacity(0.28), lineWidth: 1)
+                            )
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(busy)
+            }
+        }
+        .accessibilityIdentifier("consult-daylight-choice")
+    }
+}
+
+/// Her look exists and this photo was never sent: one line with the way to add
+/// it, rather than a camera card standing between her and her plan. The first
+/// of these carries her answer and the standing invitation.
+struct ConsultDaylightLaterView: View {
+    let title: String
+    let shootable: Bool
+    let sheSaidBuildNow: Bool
+    let busy: Bool
+    let onAdd: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if sheSaidBuildNow {
+                ConsultThreadBubble(author: .client) {
+                    Text(ConsultThreadCopy.captureChoiceBuildNow)
+                }
+                ConsultThreadBubble(author: .app) {
+                    Text(ConsultThreadCopy.captureChoiceBuilt)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            HStack(spacing: 12) {
+                Text(title)
+                    .font(BrandFont.body(12, .semibold))
+                    .foregroundStyle(BrandColor.textSecondary)
+                Spacer(minLength: 0)
+                if shootable {
+                    // 🔴 UNDERLINED, as the web link is. Without it this renders
+                    // as a second run of plain grey text beside the shot title
+                    // and does not read as something you can tap — checked in
+                    // the PNG, which is the only place that shows.
+                    Button(action: onAdd) {
+                        Text(ConsultThreadCopy.captureAddLater)
+                            .font(BrandFont.body(12, .bold))
+                            .underline()
+                            .foregroundStyle(BrandColor.textSecondary)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(busy)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(BrandColor.textMuted.opacity(0.18), lineWidth: 1)
+            )
+        }
+        .accessibilityIdentifier("consult-daylight-later")
     }
 }
 
@@ -771,7 +902,22 @@ private struct PlanMessageView: View {
                             .font(BrandFont.body(13))
                             .foregroundStyle(BrandColor.ember)
                     } else if let results = message.results {
-                        ConsultPlanSummaryView(results: results, model: model)
+                        ConsultPlanSummaryView(
+                            results: results,
+                            busy: model.busy,
+                            onChoose: { version, pathIndex, locationType in
+                                Task {
+                                    await model.chooseLook(
+                                        version: version,
+                                        pathIndex: pathIndex,
+                                        locationType: locationType
+                                    )
+                                }
+                            },
+                            onConfirm: { version in
+                                Task { await model.confirmLook(version: version) }
+                            }
+                        )
                     }
                 }
             }
@@ -783,16 +929,21 @@ private struct PlanMessageView: View {
 /// The plan card's PLACEHOLDER body (P5a): the analysis's own headline
 /// directions. The versioned plan card the handoff describes — the reveal, with
 /// its own history — is later work.
-private struct ConsultPlanSummaryView: View {
+struct ConsultPlanSummaryView: View {
     let results: ConsultClientResults
-    let model: ConsultFlowViewModel
+    let busy: Bool
+    let onChoose: (Int, Int, String) -> Void
+    let onConfirm: (Int) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             // Optional on the wire (additive), so the same fallback the results
             // screen has always used.
             if let plan = results.lookBrief?.professionalPlan ?? results.lookPlan {
-                ConsultLookPlanView(plan: plan, brief: results.lookBrief, model: model)
+                ConsultLookPlanView(
+                    plan: plan, brief: results.lookBrief, busy: busy,
+                    onChoose: onChoose, onConfirm: onConfirm
+                )
             } else {
             Text(results.directionsTitle ?? "Directions to discuss")
                 .font(BrandFont.body(16, .semibold))
@@ -803,6 +954,48 @@ private struct ConsultPlanSummaryView: View {
                     .foregroundStyle(BrandColor.textPrimary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            }
+            // Rule 8: say what the photographs could not settle, and what she
+            // can do about it. Both sections are the SERVER's call to make —
+            // `mostFramesWarm` decides the first, and the second appears only
+            // when a picture she can actually take would settle something.
+            if let light = results.photoLight, light.mostFramesWarm {
+                Text(ConsultThreadCopy.warmLightCaveat(
+                    warm: light.warmFrameCount, total: light.acceptedFrameCount
+                ))
+                .font(BrandFont.body(12))
+                .foregroundStyle(BrandColor.textPrimary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(8)
+                .background(BrandColor.amber.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                .accessibilityIdentifier("consult-warm-light-caveat")
+            }
+            if let gap = results.daylightGap {
+                // 🔴 Unknown codes are DROPPED, so a server that learns a new
+                // group cannot put a placeholder in the middle of her sentence.
+                // If that leaves nothing to name, there is nothing to say.
+                let clauses = gap.unlocks.compactMap(ConsultThreadCopy.daylightGapUnlock)
+                if !clauses.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(ConsultThreadCopy.daylightGapTitle)
+                            .font(BrandFont.body(12, .semibold))
+                            .foregroundStyle(BrandColor.textPrimary)
+                        if gap.provisionalCount > 0 {
+                            Text(ConsultThreadCopy.daylightGapProvisional(count: gap.provisionalCount))
+                                .font(BrandFont.body(12))
+                                .foregroundStyle(BrandColor.textSecondary)
+                        }
+                        Text(ConsultThreadCopy.daylightGapBody(
+                            list: clauses.joined(separator: ", ")
+                        ))
+                        .font(BrandFont.body(12))
+                        .foregroundStyle(BrandColor.textPrimary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(8)
+                    .background(BrandColor.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                    .accessibilityIdentifier("consult-daylight-gap")
+                }
             }
             if let suitability = results.currentSuitability {
                 ClientSuitabilityView(suitability: suitability)
@@ -884,30 +1077,37 @@ private struct ConsultThreadPrepControls: View {
                 }
                 .accessibilityIdentifier("consult-chart-copy-toggle")
 
-                if model.canOfferPartialContinue {
+                // The daylight break's standing way out: build the look from
+                // what is in, and add the rest later. It REPLACES the old
+                // partial-pack offer ("Carry on with N of M photos"), which
+                // asked her to weigh a fraction she had no way to judge.
+                //
+                // Hidden while the choice itself is on screen — the view model
+                // answers that, so this is never the same button twice.
+                if model.canBuildLookNow {
                     ConsultThreadCardView {
                         VStack(alignment: .leading, spacing: 10) {
-                            Text(ConsultThreadCopy.partialContinueBody)
+                            Text(ConsultThreadCopy.captureChoiceLater)
                                 .font(BrandFont.body(13))
                                 .foregroundStyle(BrandColor.textSecondary)
                             Button {
-                                Task { await model.proceedWithAccepted() }
+                                Task { await model.buildLookNow() }
                             } label: {
-                                Text(ConsultThreadCopy.partialContinue(
-                                    accepted: model.acceptedShotCount,
-                                    total: model.totalShotCount
-                                ))
-                                .font(BrandFont.body(14, .semibold))
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                                .foregroundStyle(BrandColor.onAccent)
-                                .background(BrandColor.accent)
-                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                Text(ConsultThreadCopy.captureChoiceBuildNow)
+                                    .font(BrandFont.body(14, .semibold))
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 12)
+                                    .foregroundStyle(BrandColor.textPrimary)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                            .stroke(BrandColor.textMuted.opacity(0.28), lineWidth: 1)
+                                    )
                             }
+                            .buttonStyle(.plain)
                             .disabled(model.busy)
                         }
                     }
-                    .accessibilityIdentifier("consult-partial-continue")
+                    .accessibilityIdentifier("consult-build-look-now")
                 }
             }
         }
@@ -1071,10 +1271,19 @@ struct ConsultAnalysisRunProgressView: View {
 }
 
 
-private struct ConsultLookPlanView: View {
+/// The look plan card.
+///
+/// 🔴 Takes `busy` and two closures rather than the view model, the same shape
+/// `FollowUpMessageView` and `ConsultDaylightChoiceView` have: a leaf view that
+/// holds the model cannot be rendered without one, and this card's PNG is what
+/// shows whether the Choose button is actually on screen for a plan she is
+/// allowed to book — the thing #1168 was about.
+struct ConsultLookPlanView: View {
     let plan: ConsultLookPlan
     let brief: ConsultLookBriefVersion?
-    let model: ConsultFlowViewModel
+    let busy: Bool
+    let onChoose: (Int, Int, String) -> Void
+    let onConfirm: (Int) -> Void
 
 
     private var heading: String {
@@ -1088,8 +1297,16 @@ private struct ConsultLookPlanView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(heading).font(BrandFont.body(16, .bold))
+            // 🔴 Two provisional states, and they must not share a sentence
+            // (Tori, 2026-09-13). A plan she CAN book, thin only because the
+            // photograph was, says so and invites the daylight shots; a plan
+            // still waiting on an answer says that instead. Before this the
+            // card said "a few details still need confirming" to both — to the
+            // second client that named something she could not act on.
             if plan.provisional || brief?.awaitingAnalysis == true {
-                Text("Draft — a few details still need confirming")
+                Text(plan.isChoosable && brief?.awaitingAnalysis != true
+                     ? ConsultThreadCopy.planFromEarlyPhotos
+                     : ConsultThreadCopy.planDraft)
                     .font(BrandFont.body(12, .semibold))
                     .foregroundStyle(BrandColor.textSecondary)
             }
@@ -1123,13 +1340,21 @@ private struct ConsultLookPlanView: View {
                             if !estimate.visits.allSatisfy({ $0.steps.allSatisfy(\.available) }) {
                                 Text("Your pro needs to update this option before you can choose it.")
                             }
-                            if plan.status == .readyToChoose && !plan.provisional && !brief.awaitingAnalysis {
+                            // 🔴 `isChoosable`, NEVER `provisional` (Tori,
+                            // 2026-09-13: "we absolutely can not make the
+                            // pictures be a blocker"). This read the photo
+                            // check twice over — `readyToChoose` and
+                            // `!provisional` are the same fact — so a warm-lit
+                            // selfie withdrew the Choose button and there was
+                            // nothing she could do about it. Permission is
+                            // answered only by things she can act on.
+                            if plan.isChoosable && !brief.awaitingAnalysis {
                                 Button(selected ? "Look selected" : "Choose this look") {
-                                    Task { await model.chooseLook(version: brief.version, pathIndex: index, locationType: estimate.locationType) }
+                                    onChoose(brief.version, index, estimate.locationType)
                                 }
                                 .buttonStyle(.bordered)
                                 .tint(BrandColor.accent)
-                                .disabled(model.busy || (brief.confirmationOpen ?? brief.inputOpen) == false || brief.correctionsNeedReview || selected || !estimate.visits.allSatisfy { $0.steps.allSatisfy(\.available) })
+                                .disabled(busy || (brief.confirmationOpen ?? brief.inputOpen) == false || brief.correctionsNeedReview || selected || !estimate.visits.allSatisfy { $0.steps.allSatisfy(\.available) })
                             }
                         }
                         .font(BrandFont.body(12))
@@ -1151,11 +1376,11 @@ private struct ConsultLookPlanView: View {
                 Text(brief.professionalConfirmed ? "Your pro confirmed this version." : "Waiting for your pro’s confirmation.").font(BrandFont.body(12))
                 if brief.selectedPathIndex != nil && !brief.awaitingAnalysis {
                     Button(brief.clientConfirmed ? "Version confirmed" : "Confirm this look") {
-                        Task { await model.confirmLook(version: brief.version) }
+                        onConfirm(brief.version)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(BrandColor.accent)
-                    .disabled(model.busy || brief.confirmationOpen == false || brief.correctionsNeedReview || brief.clientConfirmed)
+                    .disabled(busy || brief.confirmationOpen == false || brief.correctionsNeedReview || brief.clientConfirmed)
                 }
                 if let visit = brief.completedVisit { ConsultCompletedVisitView(visit: visit) }
                 if let reserved = brief.reservedDurationMinutes {

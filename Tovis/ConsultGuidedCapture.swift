@@ -153,9 +153,10 @@ nonisolated enum ConsultShotGuidance {
     /// hair pack asks her for the back of her own head. Pretending that is an
     /// ordinary framing problem is what makes an app feel like it is not on your
     /// side, so this says the true thing instead — including that she can just
-    /// not do it. She can: partial capture is the norm, and the thread already
-    /// offers "continue with N of M" once one shot is accepted
-    /// (`canOfferPartialContinue`), so this promises nothing that is not built.
+    /// not do it. She can: partial capture is the norm, and the thread offers
+    /// to build her look from what is already in — at the daylight break before
+    /// the first photo, and as a standing exit underneath (`canBuildLookNow`) —
+    /// so this promises nothing that is not built.
     ///
     /// Only `hair_back` gets one. The crown is awkward but reachable with the
     /// rear camera held overhead; the sides are reachable in a mirror. The back

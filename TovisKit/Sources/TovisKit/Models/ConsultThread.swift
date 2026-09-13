@@ -406,6 +406,33 @@ public struct ConsultThread: Decodable, Sendable {
     /// chart-copy choice can still be changed.
     public let chartCopy: ConsultChartCopyState?
     public let book: ConsultThreadBookCta
+
+    /// The messages she SEES: everything up to and including the one that is
+    /// waiting for her, and nothing after it.
+    ///
+    /// Tori's call (2026-09-11): the consult reads as a CHAT — one thing at a
+    /// time, the answered step scrolls up into history, the next one arrives
+    /// underneath. This reverses the 2026-09-10 version that put every later
+    /// step back on screen locked; that read as a form with the fields greyed
+    /// out. Twin of `tovis-app lib/consult/visibleThread.ts`.
+    ///
+    /// `nextOpenMessageId` is the SERVER's answer to "which step is next" — the
+    /// first OPEN message in thread order — so the slice is taken from it
+    /// rather than from a device-side re-derivation of the state machine. A
+    /// thread with nothing open (finished, stopped, or waiting on the pro)
+    /// shows all of its history.
+    ///
+    /// 🔴 Several messages can be OPEN at once server-side (the inspiration
+    /// review and the photo pack are concurrent). That stays true on the wire;
+    /// here she is simply walked through them in order. A BLOCKED message that
+    /// sits BEFORE the open one (a photo she skipped, once the plan exists) is
+    /// still rendered and still tappable — hiding it would take a retake away.
+    public var visibleMessages: [ConsultThreadMessage] {
+        guard let current = messages.firstIndex(where: { $0.id == nextOpenMessageId }) else {
+            return messages
+        }
+        return Array(messages[...current])
+    }
 }
 
 struct ConsultThreadResponse: Decodable, Sendable {

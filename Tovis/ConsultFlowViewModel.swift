@@ -13,6 +13,21 @@ enum ConsultFailurePlacement {
     case planButton
 }
 
+/// How a guided (daylight) photo request is drawn — the daylight break, Tori
+/// 2026-09-12.
+///
+/// `choice == .open` — the request is the open step and her look could already
+/// be built, so the CHOICE renders in its place: build now, or add the photos
+/// first. `choice == .built` — she built without this one; her answer and the
+/// standing invitation render above it. `compact` — her look exists and this
+/// photo was never sent: one line with the way to add it, not a full camera
+/// card standing between her and her plan.
+struct GuidedPhotoPresentation: Equatable {
+    enum Choice { case open, built }
+    let choice: Choice?
+    let compact: Bool
+}
+
 /// P5a — the consult, driven as a THREAD.
 ///
 /// ONE read owns the screen: `GET /client/consult/{id}/thread` serves the whole
@@ -137,6 +152,15 @@ final class ConsultFlowViewModel {
     var isLookAnchored: Bool { machine.anchor.lookPostId != nil }
 
     var messages: [ConsultThreadMessage] { thread?.messages ?? [] }
+    /// What the THREAD draws: one thing at a time (Tori, 2026-09-11).
+    ///
+    /// 🔴 Rendering only. Every other reader above and below wants the WHOLE
+    /// list — whether a photo was accepted, whether consent is done, which
+    /// acceptance to revoke — and slicing those would make the app answer
+    /// questions about a thread it has only half of. Same split as the web
+    /// script (`visibleConsultThreadMessages` renders; `thread.messages`
+    /// decides).
+    var visibleMessages: [ConsultThreadMessage] { thread?.visibleMessages ?? [] }
     var nextOpenMessageId: String? { thread?.nextOpenMessageId }
     var professionalDisplayName: String { thread?.professionalDisplayName ?? "" }
 
@@ -183,15 +207,110 @@ final class ConsultFlowViewModel {
         photoMessages.filter { $0.slot?.state == .accepted }.count
     }
 
-    var totalShotCount: Int { photoMessages.count }
+    // MARK: - The daylight break (Tori, 2026-09-12)
+    //
+    // A clean stop before the first daylight photo when her look can already be
+    // built: "Build my look now", or "Add daylight photos first". Both answers
+    // are hers, and both say the same thing — the photos are wanted, and they
+    // can wait. Twin of the web flow's block of the same name.
+    //
+    // 🔴 This REPLACES the old partial-pack control ("Carry on with N of M
+    // photos"), which asked her to weigh a fraction she had no way to judge and
+    // only ever appeared once some photos were in. The honest question is asked
+    // BEFORE the first one.
 
-    /// The partial-pack affordance: some but not all photos accepted while the
-    /// session still sits at MEDIA_READY. (A full accepted pack advances
-    /// server-side on its own once inspiration is done.)
-    var canOfferPartialContinue: Bool {
-        guard inputsOpen else { return false }
-        guard thread?.status == .mediaReady else { return false }
-        return acceptedShotCount >= 1 && acceptedShotCount < totalShotCount
+    /// Which way she went at the first daylight photo.
+    ///
+    /// Transient on purpose — the durable half of the decision is the plan run
+    /// itself, and a client who comes back before sending a photo is asked the
+    /// same honest question again.
+    enum CaptureChoice { case undecided, photos }
+    var captureChoice: CaptureChoice = .undecided
+
+    private var planMessage: ConsultThreadMessage? { messages.first { $0.kind == .plan } }
+
+    /// Has she asked for her plan? The server's own rule (`planCommitted` in
+    /// tovis-app `lib/consult/thread.ts`): a run exists, or a plan does. From
+    /// then on the daylight photos are still wanted, still shootable, and no
+    /// longer in her way.
+    private var planCommitted: Bool {
+        guard let plan = planMessage else { return false }
+        return plan.run != nil || (plan.planVersion ?? 0) > 0 || plan.results != nil
+    }
+
+    /// Could her look be built right now, from what is in?
+    ///
+    /// Either the server already serves a startable plan card (a hair consult
+    /// reaches ANALYSIS_PENDING off the early photo alone), or the partial-pack
+    /// door is open (MEDIA_READY with at least one accepted guided photo).
+    ///
+    /// 🔴 `acceptedShotCount` counts GUIDED shots only, as the server excludes
+    /// the early photo in `advanceLockedConsultToAnalysisIfReady`: the door is
+    /// about the guided pack, and a photograph that is not one of its slots
+    /// does not open it.
+    private var buildable: Bool {
+        guard inputsOpen, !planCommitted else { return false }
+        if let plan = planMessage, plan.awaitingStart == true, plan.run == nil { return true }
+        return thread?.status == .mediaReady && acceptedShotCount >= 1
+    }
+
+    /// The first guided photo still awaiting her.
+    private var openGuidedPhoto: ConsultThreadMessage? {
+        photoMessages.first { $0.state == .open }
+    }
+
+    /// The choice stands only on a photo she has not tried yet. A refused shot
+    /// is a retake card with its guidance, and a client who has sent one has
+    /// already answered "photos first" — she gets the photo, with the exit
+    /// underneath.
+    private var choosing: Bool {
+        buildable && captureChoice == .undecided && openGuidedPhoto?.slot?.state == .empty
+    }
+
+    /// The standing way out, under the thread: build the look from what is in
+    /// and add the rest later. Hidden while the choice itself is on screen —
+    /// that would be the same button twice.
+    var canBuildLookNow: Bool { buildable && !choosing && openGuidedPhoto != nil }
+
+    /// How a guided photo request is drawn. Nil for the early photo and for
+    /// anything that is not a photo request — both render as they always have.
+    func guidedPhotoPresentation(_ message: ConsultThreadMessage) -> GuidedPhotoPresentation? {
+        guard message.kind == .photoRequest, message.shot?.key != .earlyPhoto else { return nil }
+        guard planCommitted else {
+            return GuidedPhotoPresentation(
+                choice: choosing && message.id == openGuidedPhoto?.id ? .open : nil,
+                compact: false
+            )
+        }
+        let firstUnsent = photoMessages.first { $0.slot?.state == .empty }?.id
+        return GuidedPhotoPresentation(
+            choice: message.id == firstUnsent ? .built : nil,
+            compact: message.slot?.state == .empty
+        )
+    }
+
+    /// "Add daylight photos first" — she keeps the camera card, and the exit
+    /// stays a tap away underneath it.
+    func addPhotosFirst() { captureChoice = .photos }
+
+    /// "Build my look now". One tap from wherever the capture is: a consult
+    /// still in MEDIA_READY goes through the partial-pack door first (the
+    /// server insists on at least one accepted guided photo and a finished
+    /// reference step), and the plan the re-read then serves is started exactly
+    /// as its own button starts it. A consult already at ANALYSIS_PENDING skips
+    /// straight to the start.
+    func buildLookNow() async {
+        // No consult-id guard here: both calls below already refuse without
+        // one, and a third copy of that check is a third place to get it wrong.
+        if planMessage?.awaitingStart != true {
+            await proceedWithAccepted()
+            // 🔴 Re-read the thread's OWN answer rather than assuming the door
+            // opened. `proceedWithAccepted` can refuse (an unfinished reference
+            // step), and starting an analysis the server has not offered is how
+            // a client earns a refusal it cannot explain.
+            guard failure == nil, planMessage?.awaitingStart == true else { return }
+        }
+        await startAnalysis()
     }
 
     var chartCopy: ConsultChartCopyState? { thread?.chartCopy }
