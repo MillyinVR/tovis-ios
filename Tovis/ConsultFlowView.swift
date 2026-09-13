@@ -250,8 +250,25 @@ struct ConsultPhotoPickerSlot: View {
     @State private var pick: PhotosPickerItem?
     @State private var preparationError: ConsultClientFailure?
     @State private var showGuidedCamera = false
+    /// A photo from the ROLL, waiting for her to say which part of it to send.
+    ///
+    /// 🔴 The selfie only (Tori, 2026-09-13), and only from the picker. It is
+    /// the one photo chosen before anything else exists, so it is the one that
+    /// arrives with other people in it — and the one she is most likely to be
+    /// small in. A guided shot is framed to an instruction as it is taken, and
+    /// a shuttered frame was composed a second ago, so neither is asked again.
+    @State private var pendingFocus: PendingSelfieFocus?
+    @State private var preparingFocus = false
     @State private var daylightReminder: ConsultDaylightReminder.Availability = .unavailable
     @State private var daylightReminderFailed = false
+
+    private struct PendingSelfieFocus: Identifiable {
+        let id = UUID()
+        let source: Data
+        let image: UIImage
+    }
+
+    private var focusable: Bool { shot.key == .earlyPhoto }
 
     var body: some View {
         BrandSurface {
@@ -421,6 +438,34 @@ struct ConsultPhotoPickerSlot: View {
         .fullScreenCover(isPresented: $showGuidedCamera) {
             ConsultGuidedCaptureView(shot: shot, onStill: onStill)
         }
+        .sheet(item: $pendingFocus) { pending in
+            ConsultPhotoFocusView(image: pending.image, copy: .selfie,
+                busy: disabled || preparingFocus,
+                onConfirm: { rect in
+                    guard !preparingFocus, !disabled else { return }
+                    preparingFocus = true
+                    Task {
+                        defer { preparingFocus = false }
+                        // No rectangle is "send it as it is": the ORIGINAL
+                        // bytes go on, exactly as they did before this step
+                        // existed, rather than through a needless re-encode.
+                        guard let rect else {
+                            pendingFocus = nil
+                            await onStill(pending.source)
+                            return
+                        }
+                        guard let jpeg = await ConsultPhotoPreparation.confirmedCropJPEG(
+                            from: pending.source, rect: rect
+                        ) else {
+                            preparationError = .invalidPhoto
+                            pendingFocus = nil
+                            return
+                        }
+                        pendingFocus = nil
+                        await onStill(jpeg)
+                    }
+                }, onCancel: { pendingFocus = nil })
+        }
         .onChange(of: pick) { _, item in
             guard let item else { return }
             Task {
@@ -431,10 +476,21 @@ struct ConsultPhotoPickerSlot: View {
                         return
                     }
                     preparationError = nil
-                    // One road for both doors: a picked photo goes through the
-                    // same model path as a shuttered one, so it gets the same
-                    // quality check, the same crop, and the same place to say so.
-                    await onStill(source)
+                    // The selfie stops here and asks which part of the photo to
+                    // send; every other shot goes straight on. One road for
+                    // both doors either way: a picked photo ends up in the same
+                    // model path as a shuttered one, so it gets the same quality
+                    // check, the same crop, and the same place to say so.
+                    guard focusable else {
+                        await onStill(source)
+                        return
+                    }
+                    guard let preview = await ConsultPhotoPreparation.jpeg(from: source),
+                          let decoded = UIImage(data: preview) else {
+                        preparationError = .invalidPhoto
+                        return
+                    }
+                    pendingFocus = PendingSelfieFocus(source: source, image: decoded)
                 } catch {
                     preparationError = .invalidPhoto
                 }
@@ -637,13 +693,13 @@ struct ConsultInspirationPhotoPicker: View {
         }
         .accessibilityIdentifier("consult-inspiration-source-decision")
         .sheet(item: $pendingFocus) { pending in
-            ConsultInspirationFocusView(image: pending.image, busy: busy || preparing,
+            ConsultPhotoFocusView(image: pending.image, copy: .inspiration, busy: busy || preparing,
                 onConfirm: { rect in
-                    guard !preparing, !busy else { return }
+                    guard !preparing, !busy, let rect else { return }
                     preparing = true
                     Task {
                         defer { preparing = false }
-                        guard let jpeg = await ConsultPhotoPreparation.confirmedInspirationJPEG(from: pending.source, rect: rect) else {
+                        guard let jpeg = await ConsultPhotoPreparation.confirmedCropJPEG(from: pending.source, rect: rect) else {
                             preparationError = .invalidPhoto
                             pendingFocus = nil
                             return

@@ -1,11 +1,12 @@
 import CoreGraphics
 import Foundation
+import SwiftUI
 import Testing
 import TovisKit
 import UIKit
 @testable import Tovis
 
-@Suite struct ConsultInspirationPreparationTests {
+@Suite struct ConsultPhotoFocusTests {
     /// Distinct vertical bands expose a crop that accidentally uses full-frame
     /// pixels. Synthetic pixels only; no client photographs in the test suite.
     private func fixture() -> UIImage {
@@ -28,13 +29,13 @@ import UIKit
             CGRect(x: CGFloat.nan, y: 0, width: 0.5, height: 1),
             CGRect(x: 1.0000001, y: 0, width: 0.0000001, height: 1),
         ] {
-            #expect(await ConsultPhotoPreparation.confirmedInspirationJPEG(from: data, rect: rect) == nil)
+            #expect(await ConsultPhotoPreparation.confirmedCropJPEG(from: data, rect: rect) == nil)
         }
     }
 
     @Test func onlyConfirmedPixelsAreEncoded() async throws {
         let data = try #require(fixture().pngData())
-        let jpeg = try #require(await ConsultPhotoPreparation.confirmedInspirationJPEG(
+        let jpeg = try #require(await ConsultPhotoPreparation.confirmedCropJPEG(
             from: data, rect: CGRect(x: 0.5, y: 0, width: 0.5, height: 1)
         ))
         let image = try #require(UIImage(data: jpeg))
@@ -45,7 +46,7 @@ import UIKit
     }
 
     @Test func corruptImageFailsClosed() async {
-        #expect(await ConsultPhotoPreparation.confirmedInspirationJPEG(
+        #expect(await ConsultPhotoPreparation.confirmedCropJPEG(
             from: Data([1, 2, 3]), rect: CGRect(x: 0, y: 0, width: 1, height: 1)
         ) == nil)
     }
@@ -57,7 +58,7 @@ import UIKit
             fixture().draw(in: CGRect(x: 0, y: 0, width: 4000, height: 2000))
         }
         let data = try #require(source.pngData())
-        let jpeg = try #require(await ConsultPhotoPreparation.confirmedInspirationJPEG(
+        let jpeg = try #require(await ConsultPhotoPreparation.confirmedCropJPEG(
             from: data, rect: CGRect(x: 0.5, y: 0, width: 0.5, height: 1)
         ))
         let image = try #require(UIImage(data: jpeg))
@@ -94,5 +95,67 @@ import UIKit
         }
         #expect(didDraw)
         return bytes
+    }
+
+    /// 🔴 The whole frame is an answer on HER photo and on no other.
+    ///
+    /// An inspiration reference is asked for precisely so a region of it can be
+    /// singled out — offering "use the whole photo" there would hand the vision
+    /// read the group shot the focus step exists to prevent. The selfie is the
+    /// opposite case: it is already a picture of her, so sending it as it is
+    /// has to be one tap, and the crop is for the day someone else is in frame.
+    @Test func onlyTheSelfieOffersTheWholePhoto() {
+        #expect(ConsultPhotoFocusCopy.selfie.fullFrame == "Use the whole photo")
+        #expect(ConsultPhotoFocusCopy.inspiration.fullFrame == nil)
+    }
+
+    /// Parity with web's `captureFocus`: the same words, in both places.
+    @Test func selfieFocusSaysTheSameThingAsTheWeb() {
+        #expect(ConsultPhotoFocusCopy.selfie.title == "Happy with this photo?")
+        #expect(ConsultPhotoFocusCopy.selfie.center == "Zoom in on me")
+        #expect(ConsultPhotoFocusCopy.selfie.confirm == "Use this area")
+        #expect(ConsultPhotoFocusCopy.selfie.cancel == "Choose another photo")
+    }
+}
+
+/// Draws the shipping focus sheet from a synthetic photo — no account, no API.
+///
+/// 🔴 The view itself, not a description of it. The web twin's equivalent check
+/// caught a real defect (the whole-photo answer rendered disabled before the
+/// image reported a size), which no assertion about the copy could have found.
+@MainActor
+@Suite struct ConsultPhotoFocusRenderTests {
+    private func photo() -> UIImage {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: CGSize(width: 300, height: 400), format: format).image { context in
+            context.cgContext.setFillColor(UIColor.systemTeal.cgColor)
+            context.cgContext.fill(CGRect(x: 0, y: 0, width: 300, height: 400))
+        }
+    }
+
+    private func render(_ copy: ConsultPhotoFocusCopy, name: String) throws -> UIImage {
+        // `.content`, not `body`: ImageRenderer draws a ScrollView blank, and a
+        // blank PNG passes every assertion you would think to write about it.
+        let renderer = ImageRenderer(content: ConsultPhotoFocusView(
+            image: photo(), copy: copy, busy: false, onConfirm: { _ in }, onCancel: {}
+        ).content.frame(width: 390).background(BrandColor.bgPrimary))
+        renderer.scale = 2
+        let image = try #require(renderer.uiImage)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("tovis-focus-\(name).png")
+        try #require(image.pngData()).write(to: url)
+        print("FOCUS SNAPSHOT → \(url.path)")
+        return image
+    }
+
+    /// Both cards draw, and the selfie's is TALLER by exactly the answer that
+    /// only it has — the whole-photo button. A blank render (the ScrollView
+    /// trap) fails this, because a blank page has no height to differ by.
+    @Test func bothFocusCardsDrawAndOnlyTheSelfieOffersTheWholePhoto() throws {
+        let selfie = try render(.selfie, name: "selfie")
+        let inspiration = try render(.inspiration, name: "inspiration")
+        #expect(selfie.size.width == 390)
+        #expect(selfie.size.height > 400)
+        #expect(selfie.size.height > inspiration.size.height)
     }
 }
