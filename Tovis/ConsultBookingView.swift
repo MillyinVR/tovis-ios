@@ -392,6 +392,18 @@ struct ConsultStartingAtBlock: View {
                 .font(BrandFont.body(12, .semibold))
                 .foregroundStyle(BrandColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
+            // 🔴 The prerequisite, before she commits. This booking is allowed
+            // now where it used to be refused outright, so this sentence is the
+            // only thing telling her a test comes first.
+            if let safetyNote = proposal.safetyNote {
+                Text(safetyNote)
+                    .font(BrandFont.body(12, .semibold))
+                    .foregroundStyle(BrandColor.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 10).padding(.vertical, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(BrandColor.amber.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+            }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)

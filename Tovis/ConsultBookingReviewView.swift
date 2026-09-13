@@ -249,6 +249,19 @@ struct ConsultBookingReviewView: View {
             // ordinary add-ons step's "No charge until the pro confirms" is a
             // lie to every client of an auto-accepting pro, which is exactly
             // why this one is composed server-side.
+            // The safety prerequisite has to be readable at the control that
+            // commits her, not only on the screen before it.
+            if let safetyNote = proposal.safetyNote {
+                Text(safetyNote)
+                    .font(BrandFont.body(11, .semibold))
+                    .foregroundStyle(BrandColor.textPrimary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 10).padding(.vertical, 8)
+                    .frame(maxWidth: .infinity)
+                    .background(BrandColor.amber.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+            }
+
             Text(proposal.commitNote)
                 .font(BrandFont.body(11))
                 .foregroundStyle(BrandColor.textMuted)

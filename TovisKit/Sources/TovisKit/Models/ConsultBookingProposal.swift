@@ -107,6 +107,18 @@ public struct ConsultBookingProposal: Decodable, Sendable {
     public let autoAccepts: Bool
     /// The rendered sentence for that outcome.
     public let commitNote: String
+    /// Present exactly when the pinned analysis routed to safety
+    /// prerequisites — a reported reaction, or recent/unknown colour chemistry.
+    ///
+    /// 🔴 Until 2026-09-13 that state REFUSED the proposal outright
+    /// (`safetyReviewRequired`), so there was nothing to render. Tori's call is
+    /// that the pro's own booking review is where that judgement belongs, so
+    /// she may now ask — and this sentence is the ONLY thing that tells her a
+    /// test comes first. It is not decoration: a screen that drops it puts her
+    /// in a chemical appointment she was never told had a prerequisite.
+    ///
+    /// Optional-with-default so a server that predates the field still decodes.
+    public let safetyNote: String?
     public let lines: [ConsultBookingProposalLine]
     /// The enhancements the analysis recommends on top of the look (B7).
     /// `lines` above ALREADY reflects whatever she asked for, so the total is
@@ -138,6 +150,7 @@ public struct ConsultBookingProposal: Decodable, Sendable {
         proDecidesNote: String,
         autoAccepts: Bool,
         commitNote: String,
+        safetyNote: String? = nil,
         lines: [ConsultBookingProposalLine],
         recommendations: [ConsultBookingProposalRecommendation]
     ) {
@@ -154,15 +167,20 @@ public struct ConsultBookingProposal: Decodable, Sendable {
         self.proDecidesNote = proDecidesNote
         self.autoAccepts = autoAccepts
         self.commitNote = commitNote
+        self.safetyNote = safetyNote
         self.lines = lines
         self.recommendations = recommendations
     }
 }
 
-/// Why no proposal could be made. `safetyReviewRequired` is the load-bearing
-/// one: the analysis routed to safety prerequisites, so the estimate's floor is
-/// a service it explicitly declined to recommend yet, and no amount of the pro's
-/// menu being well-configured makes that bookable unattended.
+/// Why no proposal could be made.
+///
+/// 🔴 `safetyReviewRequired` is NO LONGER SENT by a current server (2026-09-13):
+/// a safety-routed analysis now proposes, carrying `safetyNote`. The case is
+/// kept because a deploy applies migrations while the previous deployment is
+/// still serving, so an older server can still emit it for the length of a
+/// build — and because dropping a wire case turns an explained refusal into an
+/// `unknown`.
 ///
 /// `unknown` is not a defensive nicety — the server may add a tenth code, and a
 /// build that failed to decode it would turn an explained refusal into a crash
