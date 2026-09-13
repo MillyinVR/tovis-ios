@@ -1141,10 +1141,33 @@ public struct ConsultLookPlan: Decodable, Sendable, Equatable {
     public let schemaVersion: Int
     public let tier: Tier
     public let status: Status
+    /// Is this reading THIN — built on fewer or poorer photographs than the
+    /// plan would like? Still driven by the photograph, and still honest.
+    ///
+    /// 🔴 It is NOT permission to book. See `isChoosable`.
     public let provisional: Bool
+    /// May she CHOOSE and book this plan? Optional on the wire so a server
+    /// that predates 2026-09-13 still decodes — read it through `isChoosable`,
+    /// never directly.
+    public let choosable: Bool?
     public let summary: String
     public let nextStep: String
     public let paths: [Path]
+
+    /// May she choose and book this plan?
+    ///
+    /// 🔴 Deliberately SEPARATE from `provisional` (Tori, 2026-09-13: "we
+    /// absolutely can not make the pictures be a blocker"). Photograph quality
+    /// makes a reading provisional — that is honest and stays — but it must
+    /// never decide whether she may book. The two questions had been one field
+    /// here as they had been on the server, so a warm-lit selfie silently
+    /// withdrew the booking on the phone.
+    ///
+    /// A server that predates the field is read as the permission its gates
+    /// actually applied at the time, which was `READY_TO_CHOOSE` — the same
+    /// fallback `normalizeStoredConsultLookPlan` uses for a row written before
+    /// it (tovis-app `lib/consult/lookPlan.ts`).
+    public var isChoosable: Bool { choosable ?? (status == .readyToChoose) }
 
     public var isConsistent: Bool {
         schemaVersion == 1 && provisional == (status != .readyToChoose)
@@ -1152,12 +1175,58 @@ public struct ConsultLookPlan: Decodable, Sendable, Equatable {
             && !nextStep.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && paths.count <= 3
             && (status != .readyToChoose || !paths.isEmpty)
-            && (!(status == .proReview || status == .noOffering) || paths.isEmpty)
+            // 🔴 PRO_REVIEW KEEPS ITS PATHS (tovis-app #1168, 2026-09-13): the
+            // pro reviewing feasibility is a reason to show her the look and
+            // say so, never a reason to delete it. This used to demand an empty
+            // path list for PRO_REVIEW too, which after that change refuses a
+            // perfectly valid served plan — and the refusal is not a missing
+            // section, it is `contractMismatch`, which replaces the whole plan
+            // card with "we couldn't verify this plan". NO_OFFERING still
+            // carries none, because there is genuinely nothing on the menu.
+            && (status != .noOffering || paths.isEmpty)
+            // The server's own invariant, enforced on the way in: she may
+            // choose only something that EXISTS, on a menu that can host it,
+            // and that no one is waiting to review.
+            && (!isChoosable || (!paths.isEmpty && status != .noOffering && status != .proReview))
             && paths.allSatisfy { path in
                 path.sessionCount == path.visits.count && (1...8).contains(path.sessionCount)
                     && path.visits.allSatisfy { (1...6).contains($0.steps.count) }
             }
     }
+}
+
+/// What the LIGHT in her photographs means for the colour reading.
+///
+/// Warm light stopped refusing a photo on 2026-09-07, so a plan can be built
+/// from frames the old gate would have turned away. That is the right trade —
+/// a blocked client learns nothing — but only if the plan SAYS so when the
+/// light was against it.
+public struct ConsultResultsPhotoLight: Decodable, Sendable, Equatable {
+    /// Accepted captures that fed the analysis.
+    public let acceptedFrameCount: Int
+    /// How many of those carried a colour warning (warm light or a cast).
+    public let warmFrameCount: Int
+    /// Whether MOST of them did — decided on the SERVER so the two clients
+    /// cannot disagree about what "most" means.
+    public let mostFramesWarm: Bool
+}
+
+/// What the daylight photographs would still add — the UNKNOWNs said out loud,
+/// with the thing she can do about them (Tori, 2026-09-13).
+///
+/// Composed by the server from the reading that actually came back, never from
+/// an assumption: a group appears only when one of its observations really is
+/// UNKNOWN and the views that would settle it really are missing.
+public struct ConsultResultsDaylightGap: Decodable, Sendable, Equatable {
+    /// 🔴 A `String` rather than a shot-key enum on purpose: this list is for
+    /// counting and for the server's own bookkeeping, and an unknown pack view
+    /// added later must not fail the decode of an entire plan.
+    public let missingShotKeys: [String]
+    /// What those views would settle. Empty = nothing left for a photo to fix.
+    public let unlocks: [String]
+    /// Observations that WERE read but are held below the plan-carrying floor —
+    /// what the early selfie actually bought her.
+    public let provisionalCount: Int
 }
 
 public struct ConsultClientResults: Decodable, Sendable {
@@ -1193,6 +1262,12 @@ public struct ConsultClientResults: Decodable, Sendable {
     /// copy. Optional on the wire (additive); the view falls back to the
     /// default heading when a server has not sent it.
     public let directionsTitle: String?
+    /// What the light in her photographs means for the colour reading, and what
+    /// daylight would still add. BOTH optional on the wire (purely additive), so
+    /// a server that predates either keeps decoding — which is also what a
+    /// consult analysed before they shipped sends.
+    public let photoLight: ConsultResultsPhotoLight?
+    public let daylightGap: ConsultResultsDaylightGap?
     public let meCardTeaser: ConsultMeCardTeaser
     public let createdAt: String
 

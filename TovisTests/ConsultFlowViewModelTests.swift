@@ -873,7 +873,8 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
         await service.configureManagement(canDelete: false, inputsOpen: false)
         await model.refreshThread()
         #expect(!model.isEditingAnswers)
-        #expect(!model.canOfferPartialContinue)
+        // A closed consult offers no way to build the look either.
+        #expect(!model.canBuildLookNow)
     }
 
     @Test func earlyPhotoDoesNotUnlockPartialGuidedPack() async throws {
@@ -885,7 +886,9 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
         _ = try await answerWholeIntake(model)
         #expect(model.messages.contains { $0.shot?.key == .earlyPhoto && $0.slot?.state == .accepted })
         #expect(model.acceptedShotCount == 0)
-        #expect(!model.canOfferPartialContinue)
+        // The GUIDED door is the one the early photo must not open: no accepted
+        // guided shot means no offer to build from the pack.
+        #expect(!model.canBuildLookNow)
     }
 
     /// ⚠️ The own-words box appears in these PNGs as a YELLOW BAR with a red
@@ -1043,7 +1046,10 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
             // holds the session at MEDIA_READY, and the client must not jump
             // ahead locally.
             #expect(model.acceptedShotCount == 7)
-            #expect(!model.canOfferPartialContinue)
+            // Nothing left to skip past — every guided shot is in — so the
+            // daylight break has nowhere to stand. What is holding the plan is
+            // the inspiration review, not a photograph.
+            #expect(!model.canBuildLookNow)
             #expect(planMessage(model)?.awaitingStart != true)
 
             // 🔴 The selfie is in, so the spark is bookable — with no analysis,
@@ -1101,7 +1107,10 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
         }
     }
 
-    @Test func partialPackContinuesThroughProceedOnceInspirationIsDone() async throws {
+    /// The daylight break (Tori, 2026-09-12), end to end: the choice stands at
+    /// the first untried daylight photo, and "Build my look now" carries her
+    /// through the partial-pack door and into the run in ONE tap.
+    @Test func theDaylightBreakBuildsTheLookFromWhatIsAlreadyIn() async throws {
         try await withCaptureVault("flow-partial") {
             let service = MockConsultService(root: try fixtureRoot())
             let model = model(service, uploads: await testQueue(service))
@@ -1114,20 +1123,46 @@ nonisolated private struct IdentityConsultJPEGPreparation: ConsultJPEGPreparing 
             await model.skipInspiration(try #require(inspirationMessage(model)))
             #expect(inspirationMessage(model)?.state == .done)
 
-            // One accepted photo out of seven unlocks the partial-pack path.
+            // One accepted photo out of seven: her look can be built.
             await submit(model, Data("left".utf8), for: try #require(photoMessage(model, .hairLeft)))
             #expect(model.acceptedShotCount == 1)
-            #expect(model.canOfferPartialContinue)
             // A hair shot is not a selfie: the Book gate must not have moved.
             #expect(model.thread?.book.enabled == false)
             #expect(model.thread?.book.reason == .selfieRequired)
 
-            await model.proceedWithAccepted()
-            #expect(planMessage(model)?.awaitingStart == true)
+            // The CHOICE stands in the open photo's place — and only there. A
+            // shot she has already sent is history, not a place to ask again.
+            let open = try #require(model.messages.first {
+                $0.kind == .photoRequest && $0.shot?.key != .earlyPhoto && $0.state == .open
+            })
+            #expect(model.guidedPhotoPresentation(open)?.choice == .open)
+            let sent = try #require(photoMessage(model, .hairLeft))
+            #expect(model.guidedPhotoPresentation(sent)?.choice == nil)
+            // While the choice is on screen the standing exit is NOT — that
+            // would be the same button twice.
+            #expect(!model.canBuildLookNow)
 
-            await model.startAnalysis()
+            // "Add daylight photos first": the camera card comes back, and the
+            // exit becomes the standing one underneath.
+            model.addPhotosFirst()
+            #expect(model.guidedPhotoPresentation(open)?.choice == nil)
+            #expect(model.canBuildLookNow)
+
+            // One tap: through the partial-pack door and into the run.
+            await model.buildLookNow()
             #expect(planMessage(model)?.results != nil)
             #expect(model.failure == nil)
+
+            // Her look exists, so an unsent daylight photo is one compact line
+            // with the way to add it — never a camera card in front of her plan.
+            let unsent = try #require(model.messages.first {
+                $0.kind == .photoRequest && $0.shot?.key != .earlyPhoto && $0.slot?.state == .empty
+            })
+            let presentation = try #require(model.guidedPhotoPresentation(unsent))
+            #expect(presentation.compact)
+            #expect(presentation.choice == .built)
+            // And the offer to build is gone: the plan is committed.
+            #expect(!model.canBuildLookNow)
         }
     }
 
