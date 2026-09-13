@@ -1056,21 +1056,34 @@ public struct ConsultFeatureProfile: Decodable, Sendable {
     public let browDensity: ConsultObservation
     public let browShape: ConsultObservation
 
-    /// Plain descriptions for client screens; professional labels stay unchanged.
-    public var clientEntries: [(label: String, value: String)] {
-        [
-            ("The shade beneath your skin’s surface", ConsultClientProfileCopy.value(field: "skinUndertone", value: skinUndertone.value)),
-            ("Difference between your hair, skin, and eye colors", ConsultClientProfileCopy.value(field: "contrastLevel", value: contrastLevel.value)),
-            ("Suggested group of colors to try", ConsultClientProfileCopy.value(field: "colorSeason", value: colorSeason.value)),
-            ("Face length compared with width", ConsultClientProfileCopy.value(field: "faceProportion", value: faceProportion.value)),
-            ("Jawline", ConsultClientProfileCopy.value(field: "jawline", value: jawline.value)),
-            ("Forehead", ConsultClientProfileCopy.value(field: "foreheadProportion", value: foreheadProportion.value)),
-            ("How soft or defined your features look", ConsultClientProfileCopy.value(field: "featureBalance", value: featureBalance.value)),
-            ("Eye shape", ConsultClientProfileCopy.value(field: "eyeShape", value: eyeShape.value)),
-            ("Eye spacing", ConsultClientProfileCopy.value(field: "eyeSpacing", value: eyeSpacing.value)),
-            ("How full your eyebrows look", ConsultClientProfileCopy.value(field: "browDensity", value: browDensity.value)),
-            ("Brow shape", ConsultClientProfileCopy.value(field: "browShape", value: browShape.value)),
-        ] + (eyeColor.map { [(label: "Visible eye color", value: ConsultClientProfileCopy.value(field: "eyeColor", value: $0.value))] } ?? [])
+    /// The client's own reading: plain-language labels, plain-language values,
+    /// and the CONFIDENCE each one was given. (The professional's own labels
+    /// are `orderedEntries`, and stay unchanged.)
+    ///
+    /// 🔴 The confidence travels with the entry rather than being looked up
+    /// again beside it. A reading shown without its range reads as a fact, and
+    /// none of these are facts — they are what a photograph suggested. The
+    /// thread's disclosure shows label and value; the whole-plan screen shows
+    /// all three, off this one list, so the two can never disagree about which
+    /// fields there are or what order they come in.
+    public var clientEntries: [(label: String, value: String, confidence: ConsultConfidence)] {
+        func entry(_ label: String, _ field: String, _ observation: ConsultObservation)
+            -> (label: String, value: String, confidence: ConsultConfidence) {
+            (label, ConsultClientProfileCopy.value(field: field, value: observation.value), observation.confidence)
+        }
+        return [
+            entry("The shade beneath your skin’s surface", "skinUndertone", skinUndertone),
+            entry("Difference between your hair, skin, and eye colors", "contrastLevel", contrastLevel),
+            entry("Suggested group of colors to try", "colorSeason", colorSeason),
+            entry("Face length compared with width", "faceProportion", faceProportion),
+            entry("Jawline", "jawline", jawline),
+            entry("Forehead", "foreheadProportion", foreheadProportion),
+            entry("How soft or defined your features look", "featureBalance", featureBalance),
+            entry("Eye shape", "eyeShape", eyeShape),
+            entry("Eye spacing", "eyeSpacing", eyeSpacing),
+            entry("How full your eyebrows look", "browDensity", browDensity),
+            entry("Brow shape", "browShape", browShape),
+        ] + (eyeColor.map { [entry("Visible eye color", "eyeColor", $0)] } ?? [])
     }
 
     /// Stable render order + display labels for the profile grid.
