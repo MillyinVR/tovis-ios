@@ -41,11 +41,12 @@ enum ConsultPhotoPreparation {
         await prepare(data, plan: .fullFrame)?.upload
     }
 
-    /// Inspiration selected by the uploader, in the upright preview's space.
+    /// A region the CLIENT confirmed, in the upright preview's space — the
+    /// inspiration reference, and her own selfie when she zooms in on herself.
     /// A missing or invalid confirmation must never upload the full photograph.
     /// This is separate from camera-shot plans: no automatic crop fallback and
     /// no second, uncropped image retained in the prepared result.
-    static func confirmedInspirationJPEG(from data: Data, rect: CGRect) async -> Data? {
+    static func confirmedCropJPEG(from data: Data, rect: CGRect) async -> Data? {
         guard let validated = MediaCropRect(
             x: Double(rect.origin.x), y: Double(rect.origin.y),
             w: Double(rect.size.width), h: Double(rect.size.height)
