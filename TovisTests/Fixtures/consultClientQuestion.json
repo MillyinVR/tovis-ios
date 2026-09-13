@@ -4,6 +4,7 @@
   "helpText": "Include treatments that add lasting curls, straighten or loosen curls, or smooth hair. These may be called perms, relaxers, or keratin treatments. Include other chemical treatments too, but not everyday washing, conditioning, or heat styling. Choose “Not sure” if you don’t know.",
   "kind": "SINGLE_SELECT",
   "requirement": "REQUIRED",
+  "allowText": true,
   "options": [
     {
       "value": "never",
