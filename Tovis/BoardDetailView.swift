@@ -10,12 +10,35 @@ import TovisKit
 struct BoardDetailView: View {
     @Environment(SessionModel.self) private var session
 
-    /// The preview row from the Me dashboard — gives the header an instant title
-    /// and count while the full detail (looks + slug + visibility) loads.
-    let board: ClientMeBoard
+    /// Which board to open. The detail is always fetched by this id, so a caller
+    /// that has nothing but an id — a tapped EVENT_DATE_COUNTDOWN notification,
+    /// whose href is `/client/boards/{boardId}` — can open the same screen the
+    /// Me tab does.
+    let boardId: String
+    /// The name the Me dashboard already knows, so the header reads right from
+    /// the first frame instead of after the fetch. Nil when the caller only had
+    /// an id; the loaded detail supplies the name a moment later either way.
+    let previewName: String?
     /// The signed-in client's public handle (from `me.profile.handle`) — needed to
     /// build the share link. Nil when they haven't claimed one yet.
     let ownerHandle: String?
+
+    /// From the Me dashboard's board grid, which already holds the preview row.
+    init(board: ClientMeBoard, ownerHandle: String?) {
+        self.boardId = board.id
+        self.previewName = board.name
+        self.ownerHandle = ownerHandle
+    }
+
+    /// From an id alone — a tapped notification. `ownerHandle` still comes from
+    /// the caller because the board detail does not carry its owner's handle and
+    /// the share link cannot be built without it; nil simply leaves the share
+    /// section prompting for a handle, which is what an unclaimed one does too.
+    init(boardId: String, ownerHandle: String?) {
+        self.boardId = boardId
+        self.previewName = nil
+        self.ownerHandle = ownerHandle
+    }
 
     private enum Phase {
         case loading
@@ -31,7 +54,7 @@ struct BoardDetailView: View {
             VStack(alignment: .leading, spacing: 20) {
                 switch phase {
                 case .loading:
-                    header(name: board.name, detail: nil)
+                    header(name: previewName ?? "", detail: nil)
                     ProgressView().tint(BrandColor.accent)
                         .frame(maxWidth: .infinity)
                         .padding(.top, 40)
@@ -169,7 +192,7 @@ struct BoardDetailView: View {
     private func load() async {
         phase = .loading
         do {
-            let detail = try await session.client.boards.detail(id: board.id)
+            let detail = try await session.client.boards.detail(id: boardId)
             phase = .loaded(detail)
         } catch let error as APIError {
             phase = .failed(error.userMessage)

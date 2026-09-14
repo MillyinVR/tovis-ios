@@ -11,7 +11,15 @@ import TovisKit
 struct ProClientChartView: View {
     @Environment(SessionModel.self) private var session
     let clientId: String
-    let fullName: String
+    /// The client's name, when the caller already has it — the roster row, the
+    /// thread header, the calendar sheet all do, and passing it keeps the title
+    /// right from the first frame instead of after the chart lands.
+    ///
+    /// 🔴 Optional because a tapped CHART_ACCESS_GRANTED notification does NOT:
+    /// its href is `/pro/clients/{id}` and the id is all the parser can carry.
+    /// The loaded chart's own header is the authority either way, so a deep
+    /// link resolves the title from the response rather than going titleless.
+    let fullName: String?
 
     /// Mirrors the web chart's tab set exactly (`CHART_TABS` in
     /// lib/clients/chartTabs.ts). "History" and "Photos" used to be two tabs
@@ -111,7 +119,7 @@ struct ProClientChartView: View {
             .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 40)
         }
         .background(BrandColor.bgPrimary.ignoresSafeArea())
-        .navigationTitle(fullName)
+        .navigationTitle(navigationTitleText)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(BrandColor.bgPrimary, for: .navigationBar)
         .task { if case .loading = phase { await load() } }
@@ -236,6 +244,18 @@ struct ProClientChartView: View {
         }
         tabBar(technicalEnabled: chart.technicalEnabled)
         tabContent(chart)
+    }
+
+    /// What the navigation bar says: the caller's name when it has one, else the
+    /// name the loaded chart itself carries. A deep link that arrives before the
+    /// chart lands (or whose chart is refused — `.notShared`) shows the generic
+    /// word rather than an empty bar.
+    private var navigationTitleText: String {
+        if let fullName, !fullName.isEmpty { return fullName }
+        if case let .loaded(chart) = phase, !chart.header.fullName.isEmpty {
+            return chart.header.fullName
+        }
+        return "Client"
     }
 
     // MARK: - Header

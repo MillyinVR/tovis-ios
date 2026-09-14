@@ -109,6 +109,47 @@ struct ClientNotificationDeepLinkTests {
         )
     }
 
+    // ⚠️ The dead taps screen-02 found. Each destination screen already existed
+    // natively and was reachable by hand; the parser simply had no case, so the
+    // href fell to `.clientHome` — which, unlike a nil, DISMISSES the
+    // notification center and lands the client on Home.
+    @Test("Client notifications whose screen exists open that screen")
+    func clientDeadEndsNowRoute() throws {
+        // EVENT_DATE_COUNTDOWN — `composeEventCountdownCopy` in
+        // lib/notifications/eventCountdownNotifications.ts. Its body is literally
+        // "open your board to browse looks and book a pro who has an opening",
+        // and the tap did not open the board.
+        #expect(
+            try clientNotification(href: "/client/boards/board_1").deepLink?.target
+                == .board(id: "board_1")
+        )
+        #expect(try clientNotification(href: "/client/boards/board_1").deepLink?.role == .client)
+        // A bare /client/boards names no board; the phone has no boards index,
+        // so the client shell stays the honest answer.
+        #expect(try clientNotification(href: "/client/boards").deepLink?.target == .clientHome)
+
+        // AI_CONSULT_ANALYSIS_READY — lib/consult/analysisNotifications.ts sends
+        // `${href}/results`, FOUR path parts, and the parser's `== 3` test
+        // rejected it. This is the payoff notification of the whole consult
+        // chain ("Your consult is ready"), and it landed on Home.
+        #expect(
+            try clientNotification(href: "/client/consult/cs_1/results").deepLink?.target
+                == .clientConsult(id: "cs_1")
+        )
+        // Its sibling AI_CONSULT_ANALYSIS_FAILED sends the bare path and always
+        // worked — pinned so the widened case does not break it.
+        #expect(
+            try clientNotification(href: "/client/consult/cs_1").deepLink?.target
+                == .clientConsult(id: "cs_1")
+        )
+        // …but the widening is exactly that wide. An unknown sub-route is not
+        // silently claimed for the consult flow.
+        #expect(
+            try clientNotification(href: "/client/consult/cs_1/book").deepLink?.target
+                == .clientHome
+        )
+    }
+
     // Booking rows already worked (via `bookingId`), but their hrefs must still
     // resolve — the href is the fallback when a row arrives without the id.
     @Test("Booking hrefs keep their step")
@@ -238,6 +279,32 @@ struct ProNotificationDeepLinkTests {
         #expect(try proNotification(href: "/pro/dashboard?month=2026-04").deepLink?.target == .proHome)
         // Shared with the client shell.
         #expect(try proNotification(href: "/messages/thread/th_1").deepLink?.target == .thread(id: "th_1"))
+    }
+
+    // ⚠️ The pro half of the same defect. All three screens existed natively and
+    // were reachable by hand; the parser's `default:` swallowed the path and the
+    // tap landed on Overview.
+    @Test("Pro notifications whose screen exists open that screen")
+    func proDeadEndsNowRoute() throws {
+        // PRO_LICENSE_EXPIRING_SOON / PRO_LICENSE_EXPIRED —
+        // lib/licensing/licenseExpiryNotifications.ts. Both bodies tell the pro
+        // to upload their renewed licence; `ProVerificationView` is where that
+        // happens, and this notification is the pro's only prompt to go there.
+        #expect(
+            try proNotification(href: "/pro/verification").deepLink?.target == .proVerification
+        )
+        #expect(try proNotification(href: "/pro/verification").deepLink?.role == .pro)
+        // CHART_ACCESS_GRANTED — lib/notifications/chartAccessNotifications.ts.
+        // "You can now open their chart." The tap did not open their chart.
+        #expect(
+            try proNotification(href: "/pro/clients/cl_1").deepLink?.target
+                == .proClient(clientId: "cl_1")
+        )
+        // A bare /pro/clients names no client — no emitter sends it, and the
+        // roster is a tab rather than a destination a notice points at.
+        #expect(try proNotification(href: "/pro/clients").deepLink?.target == .proHome)
+        // WAITLIST_CLIENT_LEFT / WAITLIST_OFFER_EXPIRED — lib/booking/writeBoundary.ts.
+        #expect(try proNotification(href: "/pro/waitlist").deepLink?.target == .proWaitlist)
     }
 
     @Test("Pro paths with no native surface stay nil")

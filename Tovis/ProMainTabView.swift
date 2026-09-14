@@ -35,6 +35,16 @@ struct ProMainTabView: View {
     @State private var reviewsLink: ReviewsDeepLink?
     /// The membership screen surfaced by a `/pro/membership` push (handle-expiry).
     @State private var showMembership = false
+    /// The licence + ID screen surfaced by a `/pro/verification` notification
+    /// (PRO_LICENSE_EXPIRING_SOON / PRO_LICENSE_EXPIRED).
+    @State private var showVerification = false
+    /// The waitlist surfaced by a `/pro/waitlist` notification
+    /// (WAITLIST_CLIENT_LEFT / WAITLIST_OFFER_EXPIRED).
+    @State private var showWaitlist = false
+    /// A client's chart surfaced by a `/pro/clients/{id}` push
+    /// (CHART_ACCESS_GRANTED). Carries only the id — the chart response is what
+    /// names the client.
+    @State private var deepLinkClient: DeepLinkClientRef?
     /// Set while a pushed screen asks for the footer to be hidden (a full-screen
     /// form whose own bottom action bar the footer would sit on top of).
     @State private var footerHidden = false
@@ -313,6 +323,46 @@ struct ProMainTabView: View {
             }
             .tint(BrandColor.accent)
         }
+        // A tapped `/pro/verification` notification (licence expiring / expired)
+        // → the screen that takes the renewed licence.
+        .sheet(isPresented: $showVerification) {
+            NavigationStack {
+                ProVerificationView()
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Done") { showVerification = false }
+                                .tint(BrandColor.textSecondary)
+                        }
+                    }
+            }
+            .tint(BrandColor.accent)
+        }
+        // A tapped `/pro/waitlist` notification → the waitlist the notice is about.
+        .sheet(isPresented: $showWaitlist) {
+            NavigationStack {
+                ProWaitlistView()
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Done") { showWaitlist = false }
+                                .tint(BrandColor.textSecondary)
+                        }
+                    }
+            }
+            .tint(BrandColor.accent)
+        }
+        // A tapped `/pro/clients/{id}` push (chart access granted) → that chart.
+        .sheet(item: $deepLinkClient) { ref in
+            NavigationStack {
+                ProClientChartView(clientId: ref.id, fullName: nil)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Done") { deepLinkClient = nil }
+                                .tint(BrandColor.textSecondary)
+                        }
+                    }
+            }
+            .tint(BrandColor.accent)
+        }
         // The standalone camera. Deliberately NOT force-dismissed when a session
         // becomes live mid-shoot: the footer button flips back on its own (it is
         // state-driven), but yanking a running camera out from under a pro is
@@ -392,11 +442,22 @@ struct ProMainTabView: View {
             tab = .profile
         case .proCalendar:
             tab = .calendar
+        case .proVerification:
+            // The screen itself is otherwise reached only from the pro
+            // onboarding checklist's `.verification` row — nothing an APPROVED
+            // pro whose licence is merely expiring is being shown — so for the
+            // licence pair this tap is effectively the whole route.
+            showVerification = true
+        case let .proClient(clientId):
+            deepLinkClient = DeepLinkClientRef(id: clientId)
+        case .proWaitlist:
+            showWaitlist = true
         case .proHome:
             tab = .overview
         // Client-shell targets are handled by the workspace switch above;
         // unreachable here, but the switch must stay exhaustive.
-        case .booking, .offers, .opening, .referrals, .activity, .chartAccess, .clientConsult, .clientHome:
+        case .booking, .offers, .opening, .referrals, .activity, .chartAccess, .clientConsult,
+             .board, .clientHome:
             break
         }
         session.clearPushDeepLink()
@@ -421,6 +482,9 @@ struct ProMainTabView: View {
 /// Identifiable wrapper so a deep-linked pro booking id can drive a `.sheet(item:)`
 /// (a bare `String` isn't `Identifiable`). `step` is the optional deep-link section.
 private struct DeepLinkBookingRef: Identifiable { let id: String; let step: String? }
+
+/// Identifiable wrapper so a deep-linked client id can drive a `.sheet(item:)`.
+private struct DeepLinkClientRef: Identifiable { let id: String }
 
 /// Identifiable wrapper for a `/pro/reviews` deep link so it can drive a
 /// `.sheet(item:)` even when no specific review is targeted (`focusReviewId == nil`).
