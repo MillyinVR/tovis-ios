@@ -13,7 +13,12 @@ import TovisKit
 
 /// The native page a blocker links to. `nil` (unknown blocker) renders as a
 /// non-navigating info row.
-private enum ProReadinessFix {
+///
+/// Internal rather than private so `ProOnboardingChecklistDestinationTests` can
+/// assert the mapping: `.verification` is reachable from exactly ONE place in
+/// the whole app (the row this file builds), so a blocker that stops resolving
+/// to it locks a barred pro out of the screen that fixes them.
+enum ProReadinessFix: Equatable {
     case services
     case locations
     case workingHours
@@ -23,14 +28,14 @@ private enum ProReadinessFix {
 
 /// One row in the checklist: web-parity label + an SF Symbol + optional native
 /// fix-it destination. `id` is the blocker's raw value so it stays stable/keyed.
-private struct ProReadinessChecklistItem: Identifiable {
+struct ProReadinessChecklistItem: Identifiable {
     let id: String
     let label: String
     let icon: String
     let fix: ProReadinessFix?
 }
 
-private func checklistItem(for blocker: ProReadinessBlocker) -> ProReadinessChecklistItem {
+func checklistItem(for blocker: ProReadinessBlocker) -> ProReadinessChecklistItem {
     // Labels are copied verbatim from web's PRO_BLOCKER_COPY so both platforms
     // read identically.
     switch blocker {
@@ -54,10 +59,8 @@ private func checklistItem(for blocker: ProReadinessBlocker) -> ProReadinessChec
         return .init(id: blocker.rawValue, label: "Add working hours for every bookable location.", icon: "clock", fix: .workingHours)
     case .stripeNotReady:
         return .init(id: blocker.rawValue, label: "Finish Stripe payout setup in your payment settings.", icon: "creditcard", fix: .payment)
-    case .verificationNotApproved:
-        return .init(id: blocker.rawValue, label: "Finish professional verification.", icon: "checkmark.seal", fix: .verification)
-    case .verificationNotBroadlyDiscoverable:
-        return .init(id: blocker.rawValue, label: "Finish verification so clients can discover you.", icon: "checkmark.seal", fix: .verification)
+    case .verificationBarred:
+        return .init(id: blocker.rawValue, label: "Your verification needs attention before you can take bookings.", icon: "checkmark.seal", fix: .verification)
     case .licenseExpired:
         return .init(id: blocker.rawValue, label: "Your license has expired — renew it and update your license info.", icon: "checkmark.seal", fix: .verification)
     case .unknown:

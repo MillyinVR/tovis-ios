@@ -17,8 +17,11 @@ public enum ProReadinessBlocker: String, Decodable, Sendable, Equatable, Hashabl
     case offeringMissingSalonPriceOrDuration = "OFFERING_MISSING_SALON_PRICE_OR_DURATION"
     case offeringMissingMobilePriceOrDuration = "OFFERING_MISSING_MOBILE_PRICE_OR_DURATION"
     case stripeNotReady = "STRIPE_NOT_READY"
-    case verificationNotApproved = "VERIFICATION_NOT_APPROVED"
-    case verificationNotBroadlyDiscoverable = "VERIFICATION_NOT_BROADLY_DISCOVERABLE"
+    // Web #997 ("a verified licence is a badge, not a gate") collapsed
+    // VERIFICATION_NOT_APPROVED + VERIFICATION_NOT_BROADLY_DISCOVERABLE into
+    // this one blocker, which now fires only on an admin's ACTIVE refusal
+    // (REJECTED / NEEDS_INFO). Both old strings are gone from the web tree.
+    case verificationBarred = "VERIFICATION_BARRED"
     case licenseExpired = "LICENSE_EXPIRED"
     case unknown
 

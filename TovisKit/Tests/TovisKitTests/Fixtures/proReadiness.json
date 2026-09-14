@@ -1,0 +1,37 @@
+{
+  "ready": {
+    "ok": true,
+    "readiness": {
+      "ok": true,
+      "liveModes": ["SALON", "MOBILE"],
+      "readyLocationIds": ["loc_salon_1", "loc_mobile_1"]
+    }
+  },
+  "blocked": {
+    "ok": true,
+    "readiness": {
+      "ok": false,
+      "blockers": [
+        "NO_ACTIVE_OFFERING",
+        "NO_BOOKABLE_LOCATION",
+        "SALON_MISSING_ADDRESS",
+        "MOBILE_MISSING_BASE_CONFIG",
+        "LOCATION_MISSING_TIMEZONE",
+        "LOCATION_MISSING_WORKING_HOURS",
+        "LOCATION_MISSING_GEO",
+        "OFFERING_MISSING_SALON_PRICE_OR_DURATION",
+        "OFFERING_MISSING_MOBILE_PRICE_OR_DURATION",
+        "STRIPE_NOT_READY",
+        "VERIFICATION_BARRED",
+        "LICENSE_EXPIRED"
+      ]
+    }
+  },
+  "verificationBarred": {
+    "ok": true,
+    "readiness": {
+      "ok": false,
+      "blockers": ["VERIFICATION_BARRED"]
+    }
+  }
+}
