@@ -116,7 +116,7 @@ private final class ConsultURLProtocol: URLProtocol {
         let requestBody = try #require(request.httpBody)
         let body = try #require(JSONSerialization.jsonObject(with: requestBody) as? [String: Any])
         #expect(body["schemaVersion"] as? Int == 6)
-        #expect(body["promptVersion"] as? String == "service-analysis-v8")
+        #expect(body["promptVersion"] as? String == "service-analysis-v14")
         #expect(body["idempotencyKey"] as? String == "retry-same-plan")
         var machine = ConsultFlowMachine(bookingId: "booking_fixture_1")
         try machine.apply(analysis: started)
