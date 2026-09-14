@@ -426,6 +426,29 @@ const CHECKS = [
     def: 'ProCalendarResponseDTO',
     pick: (d) => [d],
   },
+  // GET /api/v1/pro/readiness — `jsonOk({ readiness })`, so the whole document
+  // is the DTO. Both arms of the union on purpose, and the blocked arm lists
+  // EVERY blocker the server can send.
+  //
+  // 🔴 This endpoint had no schema definition at all until now, and that is the
+  // whole story of a twenty-day silent break: web #997 collapsed
+  // VERIFICATION_NOT_APPROVED + VERIFICATION_NOT_BROADLY_DISCOVERABLE into
+  // VERIFICATION_BARRED, this decoder fell through to `.unknown`, and the
+  // checklist row that is the ONLY route to ProVerificationView in the whole app
+  // lost its destination. A pro who was rejected or asked for more info could not
+  // reach the screen that fixes it. Nothing was red, because there was nothing to
+  // be red: `ProReadinessTests.toleratesUnknownBlocker` proves the fallback works,
+  // which is exactly what made the drift invisible.
+  //
+  // Hand-built rather than captured — no single pro is blocked on all twelve
+  // things at once — but it models the CURRENT server's vocabulary, which is what
+  // this fixture is for. ENUM_COVERAGE below holds it to that: a blocker ADDED
+  // on web fails here too, not just a rename.
+  {
+    file: 'proReadiness.json',
+    def: 'ProReadinessResponseDTO',
+    pick: (d) => [d.ready, d.blocked, d.verificationBarred],
+  },
   // POST /api/v1/auth/session-handoff returns `jsonOk({ url, redirectPath,
   // expiresAt })`, so the payload is spread at the ROOT alongside `ok`.
   //
@@ -437,6 +460,21 @@ const CHECKS = [
     file: 'authSessionHandoff.json',
     def: 'AuthSessionHandoffResponseDTO',
     pick: (d) => [d],
+  },
+]
+
+// Fixtures that must EXHAUST a schema enum, not merely validate against it.
+//
+// A plain CHECKS entry catches a value the server no longer sends (a rename).
+// It cannot catch one the server STARTED sending: the fixture still validates,
+// the new member is simply never exercised, and the device decodes it to its
+// `.unknown` fallback forever. For a union the UI switches over — where
+// `.unknown` means "generic copy, no destination" — that silence is the bug.
+const ENUM_COVERAGE = [
+  {
+    file: 'proReadiness.json',
+    def: 'ProReadinessBlocker',
+    pick: (d) => d.blocked.readiness.blockers,
   },
 ]
 
@@ -500,6 +538,32 @@ for (const check of CHECKS) {
 
   checked += items.length
   if (ok) console.log(`✓ ${check.file} → ${check.def} (${items.length} object(s))`)
+}
+
+for (const cover of ENUM_COVERAGE) {
+  const path = resolve(fixturesDir, cover.file)
+  if (!existsSync(path)) {
+    fail(`${cover.file}: fixture missing at ${path}`)
+    continue
+  }
+
+  const members = schema.definitions?.[cover.def]?.enum
+  if (!Array.isArray(members)) {
+    fail(`${cover.file}: schema definition '${cover.def}' is not a string enum`)
+    continue
+  }
+
+  const present = new Set(cover.pick(JSON.parse(readFileSync(path, 'utf8'))))
+  const missing = members.filter((m) => !present.has(m))
+  if (missing.length > 0) {
+    fail(
+      `${cover.file} does not exercise every ${cover.def}: ` +
+        `missing ${missing.join(', ')}. Add each to the fixture (and give it a ` +
+        `case in the Swift model + the UI that switches over it).`,
+    )
+  } else {
+    console.log(`✓ ${cover.file} → ${cover.def} (all ${members.length} member(s) exercised)`)
+  }
 }
 
 if (process.exitCode === 1) {

@@ -85,11 +85,71 @@ final class ProReadinessURLProtocol: URLProtocol {
         #expect(readiness.blockers == [.noActiveOffering, .stripeNotReady])
     }
 
+    /// 🔴 Read this next to `decodesEveryBlockerTheServerCanSend`. On its own this
+    /// test is what made a real break invisible for twenty days: web #997 renamed
+    /// two blockers, they landed here as `.unknown`, and the fallback this asserts
+    /// worked perfectly — a checklist row with generic copy and no destination.
+    /// The fallback is for a blocker the app has not SHIPPED support for yet; the
+    /// fixture test below is what proves the app knows the ones that exist today.
     @Test func toleratesUnknownBlocker() async throws {
         reset("{\"ok\":true,\"readiness\":{\"ok\":false,\"blockers\":[\"SOME_FUTURE_BLOCKER\"]}}")
 
         let readiness = try await makeService().readiness()
 
         #expect(readiness.blockers == [.unknown])
+    }
+
+    /// The contract fixture (`proReadiness.json`) holds the server's whole blocker
+    /// vocabulary, and the cross-repo validator holds the fixture to the generated
+    /// API schema. Decoding it here closes the loop: not ONE of these may land on
+    /// `.unknown`, so a blocker renamed on web fails in tovis-app CI
+    /// (validate-fixtures) and again here.
+    @Test func decodesEveryBlockerTheServerCanSend() throws {
+        let data = try fixture("proReadiness")
+        let root = try #require(
+            try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        let blocked = try #require(root["blocked"] as? [String: Any])
+
+        let readiness = try JSONDecoder().decode(
+            ProReadinessResponse.self,
+            from: JSONSerialization.data(withJSONObject: blocked)
+        ).readiness
+
+        #expect(
+            readiness.blockers == [
+                .noActiveOffering,
+                .noBookableLocation,
+                .salonMissingAddress,
+                .mobileMissingBaseConfig,
+                .locationMissingTimezone,
+                .locationMissingWorkingHours,
+                .locationMissingGeo,
+                .offeringMissingSalonPriceOrDuration,
+                .offeringMissingMobilePriceOrDuration,
+                .stripeNotReady,
+                .verificationBarred,
+                .licenseExpired,
+            ]
+        )
+        #expect(!readiness.blockers.contains(.unknown))
+    }
+
+    /// The ready arm of the same fixture — `ok: true` carries different keys
+    /// entirely, so it is a separate shape, not a variation.
+    @Test func decodesTheReadyArmOfTheFixture() throws {
+        let data = try fixture("proReadiness")
+        let root = try #require(
+            try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        let ready = try #require(root["ready"] as? [String: Any])
+
+        let readiness = try JSONDecoder().decode(
+            ProReadinessResponse.self,
+            from: JSONSerialization.data(withJSONObject: ready)
+        ).readiness
+
+        #expect(readiness.isReady)
+        #expect(readiness.blockers.isEmpty)
     }
 }
