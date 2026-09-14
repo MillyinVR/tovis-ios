@@ -99,8 +99,9 @@ public final class ConsultService: ConsultServicing, Sendable {
     // every shipped build after tovis-app #1081 deployed (2026-09-05) sent
     // schemaVersion 3 to a server demanding 4 and died at the button. The
     // shape and the pin are one change — never move one without the other.
+    // Build 82 matches the server's v14 prompt; schema 6 is unchanged.
     public static let analysisSchemaVersion = 6
-    public static let analysisPromptVersion = "service-analysis-v8"
+    public static let analysisPromptVersion = "service-analysis-v14"
     public static let maximumPhotoBytes = 5_000_000
 
     private let api: APIClient

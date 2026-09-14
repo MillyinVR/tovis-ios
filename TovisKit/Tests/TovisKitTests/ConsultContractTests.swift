@@ -399,7 +399,7 @@ import Testing
         let analysis = try decode(ConsultAnalysisStartResponse.self, key: "analysis").analysis
         #expect(analysis.status == .completed)
         #expect(analysis.schemaVersion == 6)
-        #expect(analysis.promptVersion == "service-analysis-v8")
+        #expect(analysis.promptVersion == "service-analysis-v14")
         // The fixture must speak the pair this build SENDS, or the machine
         // refuses it — which is exactly how a stale pin reaches production
         // green (#406 moved the shape and left the pin on v3).
