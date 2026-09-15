@@ -4,6 +4,13 @@
 // row); each presenter wraps this in a NavigationStack sheet, mirroring the
 // deep-link look sheets in MainTabView/ProMainTabView.
 //
+// A tapped /looks/tags/{slug} Universal Link lands here too (LookTagLink →
+// PushDeepLink.Target.lookTag → the shells' own sheet). That link used to be the
+// one route into a tag that left the app: the AASA file excluded the path
+// because "native has no tag screen", which stopped being true the day this
+// file replaced those three ejects. The link arrives with no human label, hence
+// the optional `display` below.
+//
 // Backed by GET /looks?tag={slug} (web PR #673) through the shared LooksGrid;
 // tapping a tile pushes the look detail (web parity: tag tiles link to
 // /looks/{id}). Until the web param deploys the server ignores `tag` and
@@ -17,8 +24,11 @@ struct LookTagFeedView: View {
     /// The canonical tag slug from the look/trending payload — sent verbatim;
     /// the server owns normalization.
     let slug: String
-    /// The first-seen human form, for the `#display` title (web parity).
-    let display: String
+    /// The first-seen human form, for the `#display` title (web parity). A tap
+    /// on a chip has it; a tapped `/looks/tags/{slug}` Universal Link does NOT
+    /// — the URL carries only the slug — so it arrives nil there and the title
+    /// falls back to the slug until `resolvedDisplay` upgrades it below.
+    let display: String?
 
     @Environment(SessionModel.self) private var session
 
@@ -29,8 +39,18 @@ struct LookTagFeedView: View {
     @State private var errorMessage: String?
     @State private var didLoad = false
     @State private var openedLookId: String?
+    /// The human label recovered from the first loaded look that carries this
+    /// tag, for the deep-link case where the caller had only the slug. Web reads
+    /// `LookTag.display` from the row; the feed payload carries the same value on
+    /// every look's tags, so the title ends up identical without a second fetch.
+    @State private var resolvedDisplay: String?
 
     private let pageSize = 24
+
+    /// What renders after the `#`. The slug is the last resort, not a wrong
+    /// answer: it differs from web's label only in case/punctuation, and only
+    /// until the first page lands.
+    private var title: String { display ?? resolvedDisplay ?? slug }
 
     var body: some View {
         ScrollView {
@@ -43,7 +63,7 @@ struct LookTagFeedView: View {
             .padding(.bottom, 24)
         }
         .background(BrandColor.bgPrimary.ignoresSafeArea())
-        .navigationTitle("#\(display)")
+        .navigationTitle("#\(title)")
         .navigationBarTitleDisplayMode(.inline)
         .tint(BrandColor.accent)
         .navigationDestination(item: $openedLookId) { id in
@@ -62,7 +82,7 @@ struct LookTagFeedView: View {
                 .font(BrandFont.mono(11)).tracking(1.4)
                 .textCase(.uppercase)
                 .foregroundStyle(BrandColor.textMuted)
-            Text("#\(display)")
+            Text("#\(title)")
                 .font(BrandFont.display(26, .semibold)).italic()
                 .foregroundStyle(BrandColor.textPrimary)
         }
@@ -117,6 +137,12 @@ struct LookTagFeedView: View {
             let page = try await session.client.looks.feed(tag: slug, limit: pageSize)
             looks = page.items
             cursor = page.nextCursor
+            if display == nil {
+                resolvedDisplay = page.items
+                    .lazy
+                    .compactMap { $0.tags.first(where: { $0.slug == slug })?.display }
+                    .first
+            }
         } catch {
             errorMessage = "Couldn’t load this tag. Check your connection and try again."
         }
@@ -137,4 +163,12 @@ struct LookTagFeedView: View {
         }
         loadingMore = false
     }
+}
+
+/// Identifiable wrapper so a shell can present the tag feed with `.sheet(item:)`
+/// from a tapped `/looks/tags/{slug}` Universal Link. The slug IS the id, so two
+/// taps on the same tag re-present the same sheet instead of stacking.
+struct LookTagPresentation: Identifiable, Equatable {
+    let id: String
+    var slug: String { id }
 }

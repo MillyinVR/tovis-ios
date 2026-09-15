@@ -49,6 +49,11 @@ struct MainTabView: View {
     /// detail self-fetches by id; the handle rides along only so the share
     /// section can build a link, and is best-effort.
     @State private var deepLinkBoard: DeepLinkBoardRef?
+    /// A hashtag browse page surfaced by a tapped `/looks/tags/{slug}` Universal
+    /// Link, presented over the shell. Role-less like a look. Carries only the
+    /// slug — the URL has no human label, so the screen recovers one from the
+    /// first page it loads.
+    @State private var deepLinkLookTag: LookTagPresentation?
     @State private var deepLinkPublicClient: PublicClientPresentation?
     @State private var deepLinkPublicPro: PublicProPresentation?
     /// The activity feed surfaced by a `/client/activity` push, presented over the
@@ -244,6 +249,22 @@ struct MainTabView: View {
             }
             .tint(BrandColor.accent)
         }
+        // A tapped `/looks/tags/{slug}` share link → the native tag feed. The same
+        // screen the feed's chips, Discover's trending rail and the look detail's
+        // tag row already push; before the AASA exclusion was retired this link
+        // was the one way into a tag that left the app.
+        .sheet(item: $deepLinkLookTag) { tag in
+            NavigationStack {
+                LookTagFeedView(slug: tag.slug, display: nil)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Done") { deepLinkLookTag = nil }
+                                .tint(BrandColor.textSecondary)
+                        }
+                    }
+            }
+            .tint(BrandColor.accent)
+        }
         // PublicClientViewerView brings its own back-button top bar and hides the
         // navigation bar, so it is presented bare — a toolbar "Done" here would
         // render a second, competing dismiss control in the same corner.
@@ -406,6 +427,9 @@ struct MainTabView: View {
         case let .look(id, book):
             // A shared look (Universal Link) or a look push → the native detail.
             deepLinkLook = LookPresentation(id: id, book: book)
+        case let .lookTag(slug):
+            // A tapped tag page (Universal Link) → the native tag feed.
+            deepLinkLookTag = LookTagPresentation(id: slug)
         case let .publicClient(handle):
             // A shared /u/{handle} link → the native creator profile.
             deepLinkPublicClient = PublicClientPresentation(handle: handle)
