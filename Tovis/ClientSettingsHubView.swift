@@ -134,6 +134,23 @@ struct ClientSettingsHubView: View {
                     }
                 }
 
+                // Web parity: /client/settings carries this row in its own
+                // "Your work" section, offered only to someone who could
+                // actually take it. `canSwitchToPro` is true exactly when a
+                // professional profile already exists, and the upgrade route
+                // answers 409 ALREADY_PRO for those accounts — so offering it
+                // there would advertise a door that is already open, and the
+                // Workspace row above is how they walk through it.
+                if !canSwitchToPro {
+                    BrandSection(title: "Your work") {
+                        SettingsLinkRow(
+                            icon: "scissors",
+                            title: "Offer services",
+                            subtitle: "Add a pro workspace & start taking bookings"
+                        ) { ClientBecomeProView() }
+                    }
+                }
+
                 BrandSection(title: "Appearance") {
                     BrandSurface {
                         Picker("Theme", selection: Binding(

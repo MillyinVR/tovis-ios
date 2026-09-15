@@ -346,6 +346,37 @@ const CHECKS = [
     def: 'ProConsentFormOptionDTO',
     pick: (d) => d.consentForms,
   },
+  // GET /api/v1/pro/consent-forms — the pro's own form LIBRARY. The read half
+  // K14 never shipped: the library had three write routes and no way to be
+  // READ off the wire, so form authoring existed only inside a web server
+  // component and the device could use forms it could not create.
+  //
+  // 🔴 CONSTRUCTED, not captured — the route is new and there is no pro on the
+  // technical-record allowlist to drive it against from here. Every value is
+  // therefore held to what the SERVER composes: the three `originLabel`
+  // phrasings come from `describeConsentFormOrigin`, and `limits` carries the
+  // exact numbers `parseConsentFormText` refuses past (200 / 20,000).
+  //
+  // Deliberately mixed so a field lost on any ONE arm fails here: a
+  // pro-authored form WITH signatures, an adopted-and-edited form that is
+  // RETIRED, an adopted-verbatim one, and templates on both sides of `adopted`.
+  {
+    file: 'proConsentForms.json',
+    def: 'ProConsentFormLibraryResponseDTO',
+    pick: (d) => [d],
+  },
+  // The items individually as well as through the envelope: an envelope that
+  // stopped `$ref`-ing the item would let the item definition rot unnoticed.
+  {
+    file: 'proConsentForms.json',
+    def: 'ProConsentFormLibraryItemDTO',
+    pick: (d) => d.forms,
+  },
+  {
+    file: 'proConsentForms.json',
+    def: 'ProConsentFormTemplateDTO',
+    pick: (d) => d.templates,
+  },
   // GET /api/v1/pro/bookings — buckets + stats; validate every row, so a
   // required field lost on ANY of them fails here rather than at runtime. The
   // fixture models TODAY's server: both badges present on every row (K5-B).

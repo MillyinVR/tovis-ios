@@ -506,6 +506,16 @@ struct ProProfileTabView: View {
                     if capabilities.importFromAnotherApp {
                         businessLink(icon: "square.and.arrow.down", title: "Import from another app") { ProMigrateView() }
                     }
+                    // The consent-form library. Same reasoning as the two rows
+                    // above, with one difference worth knowing: this capability
+                    // is PER-PRO (an env flag OR a dogfood allowlist), so the
+                    // server resolves it from the acting pro rather than the
+                    // deployment. The app could already USE these forms — attach
+                    // one to a chart, text a signing link — and could not write
+                    // one from anywhere.
+                    if capabilities.clientTechnicalRecord {
+                        businessLink(icon: "doc.text", title: "Consent forms") { ProConsentFormsView() }
+                    }
                 }
             }
 
