@@ -447,10 +447,41 @@ enum LooksPath {
     }
 
     /// Web `lib/looks/tags.ts` `slugifyLookTag`: lowercase, then keep only ascii
-    /// alphanumerics. Kept byte-for-byte equivalent so a link built from a web
-    /// slug round-trips unchanged.
+    /// alphanumerics. Kept equivalent so a link built from a web slug
+    /// round-trips unchanged.
+    ///
+    /// Filters UNICODE SCALARS, not Characters. Web runs
+    /// `.replace(/[^a-z0-9]/g, "")`, which works on code units; Swift's
+    /// `String` iterates GRAPHEME CLUSTERS, so filtering the string itself
+    /// drops a whole cluster whenever a base letter carries a combining mark.
+    /// That is a real divergence, not a theoretical one — the generated parity
+    /// fixture caught four cases of it on the day it was added:
+    ///
+    ///   - DECOMPOSED "cafe" + U+0301 renders as "cafe-acute" and reads as one
+    ///     cluster, so cluster filtering answered "caf" where web answers
+    ///     "cafe" — the ascii `e` was swallowed along with its accent.
+    ///   - U+0130 lowercases to `i` + U+0307, so that spelling of "Istanbul"
+    ///     answered "stanbul" where web answers "istanbul".
+    ///
+    /// A shared or hand-typed `/looks/tags/<decomposed>` therefore opened a
+    /// different feed on the phone than the same URL opens on the web page.
+    /// Scalars answer identically.
+    ///
+    /// The character class matches web's exactly (`a`-`z`, `0`-`9`) rather than
+    /// `isLetter`/`isNumber`, which are Unicode-wide: the Roman numeral twelve
+    /// and the Arabic-Indic digit three are both `isNumber`, and neither is an
+    /// ascii digit web would keep.
+    ///
+    /// Pinned by `LookTagSlugParityTests` against
+    /// `Fixtures/lookTagSlugs.json`, which tovis-app GENERATES from the real
+    /// function — so changing this rule on either side fails there.
     private static func slugifyTag(_ raw: String) -> String {
-        String(raw.lowercased().filter { $0.isASCII && ($0.isLetter || $0.isNumber) })
+        String(raw.lowercased().unicodeScalars.compactMap { scalar -> Character? in
+            switch scalar {
+            case "a"..."z", "0"..."9": return Character(scalar)
+            default: return nil
+            }
+        })
     }
 }
 
