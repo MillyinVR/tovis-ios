@@ -22,6 +22,12 @@ import TovisKit
 struct MainTabView: View {
     @Environment(SessionModel.self) private var session
     private struct ConsultLink: Identifiable { let id: String }
+    /// A deep-linked board: the id the notification named, plus the owner handle
+    /// resolved alongside it (nil when /me was unreachable or none is claimed).
+    private struct DeepLinkBoardRef: Identifiable {
+        let id: String
+        let ownerHandle: String?
+    }
     @State private var consultLink: ConsultLink?
     @State private var tab: ClientTab.ID = Self.launchTab
     @State private var messagesBadge: String?
@@ -38,6 +44,11 @@ struct MainTabView: View {
     /// Link) or a look push, presented over the shell. Carries only the id — the
     /// detail screen self-fetches, so nothing has to be resolved before routing.
     @State private var deepLinkLook: LookPresentation?
+    /// A board surfaced by a tapped `/client/boards/{id}` notification
+    /// (EVENT_DATE_COUNTDOWN — "open your board to browse looks"). The board
+    /// detail self-fetches by id; the handle rides along only so the share
+    /// section can build a link, and is best-effort.
+    @State private var deepLinkBoard: DeepLinkBoardRef?
     @State private var deepLinkPublicClient: PublicClientPresentation?
     @State private var deepLinkPublicPro: PublicProPresentation?
     /// The activity feed surfaced by a `/client/activity` push, presented over the
@@ -184,6 +195,19 @@ struct MainTabView: View {
             Task { await routeDeepLink(link) }
         }
         .sheet(item: $consultLink) { link in ConsultNotificationView(consultId: link.id) }
+        // A tapped `/client/boards/{id}` notification → that board.
+        .sheet(item: $deepLinkBoard) { ref in
+            NavigationStack {
+                BoardDetailView(boardId: ref.id, ownerHandle: ref.ownerHandle)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Done") { deepLinkBoard = nil }
+                                .tint(BrandColor.textSecondary)
+                        }
+                    }
+            }
+            .tint(BrandColor.accent)
+        }
         .sheet(item: $deepLinkBooking) { booking in
             NavigationStack {
                 BookingDetailView(booking: booking, onDecision: { session.signalRefresh() }, focusStep: deepLinkBookingStep)
@@ -412,11 +436,20 @@ struct MainTabView: View {
             // on Home (which is where it landed before `.chartAccess` existed)
             // leaves them with the buzz and no way to answer it.
             showChartAccess = true
+        case let .board(id):
+            // The board detail is fetched by id, so the only thing that has to be
+            // resolved first is the owner's handle — the share section cannot
+            // build a `/u/{handle}/boards/{slug}` link without it. Best-effort
+            // (`try?`): a failed /me must not turn the board into a dead tap, and
+            // a nil handle renders exactly what an unclaimed handle renders.
+            let handle = (try? await session.client.me.fetch())?.profile.handle
+            deepLinkBoard = DeepLinkBoardRef(id: id, ownerHandle: handle)
         case .clientHome:
             tab = .home
         // Pro-shell targets are handled by the workspace switch above; unreachable
         // here, but the switch must stay exhaustive.
-        case .proBooking, .proConsult, .proReviews, .membership, .proProfile, .proCalendar, .proHome:
+        case .proBooking, .proConsult, .proReviews, .membership, .proProfile, .proCalendar,
+             .proVerification, .proClient, .proWaitlist, .proHome:
             break
         }
         session.clearPushDeepLink()

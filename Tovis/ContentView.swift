@@ -137,6 +137,15 @@ struct PushDeepLink: Equatable {
         /// dropped the client on Home with no explanation and no way to answer.
         case chartAccess
         case clientConsult(id: String)
+        /// /client/boards/{boardId} — one of the client's OWN saved-looks boards.
+        ///
+        /// 🔴 EVENT_DATE_COUNTDOWN ships as a PUSH, and its body is an
+        /// instruction to come here — "open your board to browse looks and book
+        /// a pro who has an opening" (`composeEventCountdownCopy`). The href
+        /// names the board; without this case it fell to `.clientHome`, so the
+        /// tap did not open it. `BoardDetailView` has been reachable by hand
+        /// from the Me tab the entire time.
+        case board(id: String)
         case clientHome                      // any other /client/*
 
         // Pro-shell targets.
@@ -146,6 +155,28 @@ struct PushDeepLink: Equatable {
         case membership                      // /pro/membership
         case proProfile                      // /pro/profile/public-profile
         case proCalendar                     // /pro/calendar
+        /// /pro/verification — the licence + ID verification screen.
+        ///
+        /// 🔴 PRO_LICENSE_EXPIRING_SOON ("Renew and upload your updated license
+        /// to keep your verified badge") and PRO_LICENSE_EXPIRED ("Upload your
+        /// renewed license to restore it") both point here, and both taps landed
+        /// on Overview. `ProVerificationView` is the screen that takes that
+        /// upload. Note these two are IN_APP + EMAIL, not push — so the dead tap
+        /// was in the notification centre, which `.proHome` also DISMISSES.
+        case proVerification
+        /// /pro/clients/{clientId} — that client's chart.
+        ///
+        /// 🔴 CHART_ACCESS_GRANTED ships as a PUSH: the client just opened their
+        /// chart to this pro, and the body says "You can now open their chart."
+        /// Falling to `.proHome` answered that with Overview.
+        case proClient(clientId: String)
+        /// /pro/waitlist — the pro's waitlist.
+        ///
+        /// 🔴 WAITLIST_CLIENT_LEFT (in-app + push) and WAITLIST_OFFER_EXPIRED
+        /// (in-app only) both report a change to a waitlist ENTRY — "Your … slot
+        /// is free to re-offer", "they're back on your list" — and neither
+        /// opened the list.
+        case proWaitlist
         case proHome                         // any other /pro/*
     }
 
@@ -165,9 +196,11 @@ struct PushDeepLink: Equatable {
         // screen from their client roster (ProClientsView).
         case .thread, .look, .publicClient, .publicPro:
             return nil
-        case .booking, .offers, .opening, .referrals, .activity, .chartAccess, .clientConsult, .clientHome:
+        case .booking, .offers, .opening, .referrals, .activity, .chartAccess, .clientConsult,
+             .board, .clientHome:
             return .client
-        case .proBooking, .proConsult, .proReviews, .membership, .proProfile, .proCalendar, .proHome:
+        case .proBooking, .proConsult, .proReviews, .membership, .proProfile, .proCalendar,
+             .proVerification, .proClient, .proWaitlist, .proHome:
             return .pro
         }
     }
@@ -224,8 +257,25 @@ struct PushDeepLink: Equatable {
                 // A `#review` fragment is folded into `step` so the target is
                 // distinct and a future scroll-to-section can use it.
                 target = .booking(id: parts[2], step: step ?? (fragment == "review" ? "review" : nil))
-            case "consult" where parts.count == 3:
+            // /client/consult/{id} — the consult itself (LOOK_BRIEF_REVIEW,
+            // AI_CONSULT_ANALYSIS_FAILED, the prep reminders).
+            //
+            // 🔴 …and /client/consult/{id}/results, which is what
+            // AI_CONSULT_ANALYSIS_READY sends — "Your consult is ready. Your
+            // directions are ready to look over." Four path parts, so the
+            // `== 3` test rejected it and the payoff notification of the whole
+            // consult chain landed on Home. Both resolve to the same native
+            // surface: the phone has ONE consult screen, and the thread it
+            // opens on carries the plan card the web results page expands.
+            case "consult" where parts.count == 3,
+                 "consult" where parts.count == 4 && parts[3] == "results":
                 target = .clientConsult(id: parts[2])
+            // /client/boards/{boardId} → that board (EVENT_DATE_COUNTDOWN).
+            // A bare /client/boards is NOT claimed: the phone has no boards
+            // index of its own — they live inside the Me tab — so there is
+            // nothing to open, and the client shell is the honest answer.
+            case "boards" where parts.count >= 3:
+                target = .board(id: parts[2])
             case "offers":
                 // The priority-offer push is `/client/offers?accept={recipientId}`;
                 // carry that id so the offers screen floats + highlights it.
@@ -274,6 +324,15 @@ struct PushDeepLink: Equatable {
             case "membership": target = .membership
             case "profile":    target = .proProfile   // /pro/profile/public-profile
             case "calendar":   target = .proCalendar
+            // /pro/verification → the licence + ID screen (the license-expiry pair).
+            case "verification": target = .proVerification
+            // /pro/clients/{clientId} → that client's chart (CHART_ACCESS_GRANTED).
+            // A bare /pro/clients is not claimed — no emitter sends it, and the
+            // roster is a tab away rather than a destination a notice names.
+            case "clients" where parts.count >= 3:
+                target = .proClient(clientId: parts[2])
+            // /pro/waitlist → the waitlist (WAITLIST_CLIENT_LEFT / _OFFER_EXPIRED).
+            case "waitlist":   target = .proWaitlist
             default:           target = .proHome
             }
             return
