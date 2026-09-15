@@ -191,6 +191,13 @@
       "why": "CONSULTATION_APPROVED / _REJECTED — the client answered the proposal."
     },
     {
+      "shape": "/pro/looks/analysis",
+      "surface": "native",
+      "probe": "/pro/looks/analysis",
+      "target": "proLookAnalysis",
+      "why": "LOOK_MEDIA_CLARIFICATION opens the signed-in shared look review from the pro shell."
+    },
+    {
       "shape": "/pro/consults/{consultSessionId}",
       "surface": "native",
       "probe": "/pro/consults/id1",
@@ -245,6 +252,13 @@
       "probe": "/pro/waitlist",
       "target": "proWaitlist",
       "why": "WAITLIST_CLIENT_LEFT / WAITLIST_OFFER_EXPIRED."
+    },
+    {
+      "shape": "/admin/looks/analysis",
+      "surface": "web",
+      "probe": "/admin/looks/analysis",
+      "target": null,
+      "why": "LOOK_MEDIA_ADMIN_REVIEW opens the privileged web review; there is no native admin shell."
     },
     {
       "shape": "/admin",
