@@ -287,13 +287,6 @@
       "probe": "/admin/invite-codes",
       "target": null,
       "why": "ADMIN_USER_SIGNED_UP. No native admin app."
-    },
-    {
-      "shape": "/admin/viral-requests/{viralRequestId}",
-      "surface": "web",
-      "probe": "/admin/viral-requests/id1",
-      "target": null,
-      "why": "The viral-request review queue. No native admin app."
     }
   ]
 }
