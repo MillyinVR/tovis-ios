@@ -293,6 +293,27 @@ struct PushDeepLink: Equatable {
                 target = .offers(accept: comps.queryItems?.first(where: { $0.name == "accept" })?.value)
             case "referrals": target = .referrals
             case "activity":  target = .activity
+            // 🔴 Tokenised client-action flows (`lib/clientActions`): a
+            // single-use token appended to the registry's `pathPrefix`. The app
+            // cannot complete ANY of them — they exist precisely for a
+            // recipient who may have no account and no app — so the honest
+            // answer is to decline and let the tap open the web page.
+            //
+            // Declining is not the same as falling through. Without this arm
+            // the `/client/*` default below answered `.clientHome`, which is
+            // NOT nil: the notification centre DISMISSED ITSELF ONTO HOME and
+            // the client never reached the page the notice was sent to deliver
+            // — with no error, and looking exactly like a working tap. Five
+            // events shipped that way (AFTERCARE_READY, DEPOSIT_PAYMENT_LINK,
+            // APPOINTMENT_REMINDER's armed arm, CONSENT_SIGNATURE_REQUEST,
+            // CONSULTATION_PROPOSAL_SENT's tokenised arm); the generated
+            // href-shape contract found all five on its first run.
+            //
+            // Claimed as whole PREFIXES, token or not: none of these has a
+            // native screen at any depth, so there is nothing for a bare
+            // `/client/deposit` to open either.
+            case "rebook", "deposit", "appointment", "consent", "consultation":
+                return nil
             case "settings":
                 // Web split settings into a hub of sub-routes, so the chart
                 // consent surface is `/client/settings/chart-sharing`. Rows
