@@ -71,4 +71,43 @@ import Testing
             try decode(#"{"capabilities":{"noShowFees":true}}"#)
         }
     }
+
+    // MARK: - clientTechnicalRecord (the per-pro one)
+
+    @Test func decodesTheTechnicalRecordCapability() throws {
+        let on = try decode(
+            #"{"capabilities":{"noShowFees":false,"importFromAnotherApp":false,"clientTechnicalRecord":true}}"#
+        )
+        #expect(on.clientTechnicalRecord == true)
+        // Independent of its neighbours, same as they are of each other.
+        #expect(on.noShowFees == false)
+        #expect(on.importFromAnotherApp == false)
+
+        let off = try decode(
+            #"{"capabilities":{"noShowFees":true,"importFromAnotherApp":true,"clientTechnicalRecord":false}}"#
+        )
+        #expect(off.clientTechnicalRecord == false)
+        #expect(off.noShowFees == true)
+    }
+
+    /// 🔴 The reason this ONE key decodes with `decodeIfPresent` while its
+    /// neighbours are required: it is ABSENT on every server older than the PR
+    /// that added it. A synthesized decode would throw on the whole payload
+    /// there, the caller would fall back to `.none`, and a NEW field would take
+    /// the two ALREADY-WORKING rows down with it.
+    ///
+    /// Absent degrades to false — which is what the fail-safe doctrine demands
+    /// anyway: the consent-forms row simply does not appear until web deploys.
+    @Test func anOlderServerOmittingItKeepsTheOtherRowsWorking() throws {
+        let caps = try decode(
+            #"{"ok":true,"capabilities":{"noShowFees":true,"importFromAnotherApp":true}}"#
+        )
+        #expect(caps.clientTechnicalRecord == false)
+        #expect(caps.noShowFees == true)
+        #expect(caps.importFromAnotherApp == true)
+    }
+
+    @Test func theFallbackOffersNoFormLibraryEither() {
+        #expect(ProCapabilities.none.clientTechnicalRecord == false)
+    }
 }

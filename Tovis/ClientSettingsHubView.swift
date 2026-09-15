@@ -134,6 +134,31 @@ struct ClientSettingsHubView: View {
                     }
                 }
 
+                // Web parity: /client/settings carries this row in its own
+                // "Your work" section, offered only to someone who could
+                // actually take it. The upgrade route answers 409 ALREADY_PRO
+                // once a professional profile exists, so offering it to a
+                // dual-role account would advertise a door that is already
+                // open — and the Workspace row above is how they walk through
+                // it.
+                //
+                // ⚠️ `canSwitchToPro` is the nearest signal the wire carries,
+                // not the same question web asks. Web gates on the PROFILE
+                // existing; this gates on being entitled to ACT as pro, which
+                // `canActAs` also refuses for a BARRED profile whose home role
+                // is still CLIENT. Such an account is offered the row and gets
+                // the 409 — handled in `ClientBecomeProView`, which surfaces
+                // the server's reason instead of dismissing.
+                if !canSwitchToPro {
+                    BrandSection(title: "Your work") {
+                        SettingsLinkRow(
+                            icon: "scissors",
+                            title: "Offer services",
+                            subtitle: "Add a pro workspace & start taking bookings"
+                        ) { ClientBecomeProView() }
+                    }
+                }
+
                 BrandSection(title: "Appearance") {
                     BrandSurface {
                         Picker("Theme", selection: Binding(

@@ -102,6 +102,10 @@ public final class TovisClient: Sendable {
     public let proLocations: ProLocationsService
     /// PRO workspace — the clients directory (search + addresses + notes).
     public let proClients: ProClientsService
+    /// PRO workspace — the consent form library (write a waiver, adopt a
+    /// template, publish a revision, retire one). Same technical-record gate as
+    /// `proClients.technicalRecord`; every call 404s while it is off.
+    public let proConsentForms: ProConsentFormsService
     public let proReminders: ProRemindersService
     /// PRO workspace — session media (before/after photo upload + list).
     public let proMedia: ProMediaService
@@ -251,6 +255,7 @@ public final class TovisClient: Sendable {
         self.proSchedule = ProScheduleService(api: api)
         self.proLocations = ProLocationsService(api: api)
         self.proClients = ProClientsService(api: api)
+        self.proConsentForms = ProConsentFormsService(api: api)
         self.proReminders = ProRemindersService(api: api)
         self.proMedia = ProMediaService(
             api: api,

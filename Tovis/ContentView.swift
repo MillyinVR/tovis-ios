@@ -925,6 +925,63 @@ final class SessionModel {
         pushDeepLink = link
     }
 
+    /// "Offer services" — add a PRO workspace to this client account
+    /// (`POST /api/v1/pro/upgrade`), then move the shell into it.
+    ///
+    /// The route re-mints the session with the PRO acting role (the upgrade
+    /// flips the account's home role, and it has to — switching INTO a workspace
+    /// you don't call home needs an APPROVED profile, so a pro with a PENDING
+    /// licence could not reach the studio otherwise). `AuthService` persists
+    /// that token; re-reading the role from it is what swaps RootView to
+    /// `ProMainTabView`, and is the native twin of web's hard navigation.
+    ///
+    /// ⚠️ IRREVERSIBLE from the app. The caller confirms with the person first.
+    func upgradeToPro(
+        professionType: ProfessionType,
+        licenseState: String,
+        businessName: String?,
+        handle: String?,
+        licenseNumber: String?,
+        licenseExpiry: String?,
+        location: ProSignupLocation
+    ) async -> ProUpgradeOutcome {
+        isWorking = true
+        errorMessage = nil
+        defer { isWorking = false }
+        do {
+            _ = try await client.auth.upgradeToPro(
+                professionType: professionType,
+                licenseState: licenseState,
+                businessName: businessName,
+                handle: handle,
+                licenseNumber: licenseNumber,
+                licenseExpiry: licenseExpiry,
+                location: location
+            )
+            await reloadActiveRole()
+            // The client shell's caches were loaded as a client; the pro shell
+            // mounts fresh, but anything still observing gets the same nudge a
+            // workspace switch gives it.
+            signalRefresh()
+            return .upgraded
+        } catch let error as APIError {
+            // ALREADY_PRO is the one refusal a retry cannot fix: the workspace
+            // this would create already exists. Re-printing "you already have a
+            // professional profile" under a button that can only fail again is a
+            // dead end — the honest move is to take them there, which is what
+            // the workspace switcher is for.
+            if case let .server(_, _, code) = error, code == "ALREADY_PRO" {
+                await switchWorkspace(to: .pro)
+                return .alreadyPro
+            }
+            errorMessage = error.userMessage
+            return .failed
+        } catch {
+            errorMessage = "Couldn’t set up your pro account. Please try again."
+            return .failed
+        }
+    }
+
     /// Subscribe to this user's live channel. Derives the userId from the stored
     /// JWT so it works on a cold launch too. No-op if realtime isn't configured.
     private func startRealtime() async {

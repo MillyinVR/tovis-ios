@@ -438,6 +438,92 @@ public final class AuthService: Sendable {
         return response
     }
 
+    /// POST /api/v1/pro/upgrade — "Offer services": add a PRO workspace to this
+    /// already-signed-in CLIENT account.
+    ///
+    /// Lives on AuthService rather than a pro service for the same reason
+    /// `switchWorkspace` does: it re-mints the SESSION. The upgrade flips the
+    /// account's home role to PRO and returns a new ACTIVE token carrying that
+    /// acting role, which is persisted here — without that swap the app keeps
+    /// acting as a client until the old JWT expires.
+    ///
+    /// Shares every credential check with registration server-side (profession,
+    /// business name, handle against the global registry, mobile radius, licence
+    /// state, the CA BreEZe lookup, manual-review staging), so a refusal arrives
+    /// as an `APIError` carrying the server's own sentence — print that rather
+    /// than inventing one.
+    ///
+    /// ⚠️ IRREVERSIBLE from the app. A caller must have confirmed with the
+    /// person first; `code: "ALREADY_PRO"` (409) is the one refusal no retry
+    /// fixes, because the workspace it would create already exists.
+    @discardableResult
+    public func upgradeToPro(
+        professionType: ProfessionType,
+        licenseState: String,
+        businessName: String?,
+        handle: String?,
+        licenseNumber: String?,
+        licenseExpiry: String?,
+        location: ProSignupLocation
+    ) async throws -> ProUpgradeResponse {
+        // Same mapping registerPro does — one shape of `signupLocation` on the
+        // wire, whichever door created the profile.
+        let signupLocation: SignupLocationPayload
+        let mobileRadiusMiles: Int?
+        switch location {
+        case let .salon(salon):
+            signupLocation = SignupLocationPayload(
+                kind: "PRO_SALON",
+                postalCode: salon.postalCode,
+                city: salon.city,
+                state: salon.state,
+                countryCode: salon.countryCode,
+                lat: salon.lat,
+                lng: salon.lng,
+                timeZoneId: salon.timeZoneId,
+                placeId: salon.placeId,
+                formattedAddress: salon.formattedAddress
+            )
+            mobileRadiusMiles = nil
+        case let .mobile(zip, radiusMiles):
+            signupLocation = SignupLocationPayload(
+                kind: "PRO_MOBILE",
+                postalCode: zip.postalCode,
+                city: zip.city,
+                state: zip.state,
+                countryCode: zip.countryCode,
+                lat: zip.lat,
+                lng: zip.lng,
+                timeZoneId: zip.timeZoneId
+            )
+            mobileRadiusMiles = radiusMiles
+        }
+
+        let payload = try JSONEncoder.canonical.encode(
+            ProUpgradeRequest(
+                professionType: professionType.rawValue,
+                licenseState: licenseState,
+                signupLocation: signupLocation,
+                businessName: businessName,
+                handle: handle,
+                mobileRadiusMiles: mobileRadiusMiles,
+                licenseNumber: licenseNumber,
+                licenseExpiry: licenseExpiry
+            )
+        )
+        // No `captureErrorDetails`: the 409's `code: "ALREADY_PRO"` — the one
+        // refusal a retry cannot fix — already travels on plain `.server`, which
+        // parses `{ ok:false, error, code }`. That flag is for EXTRA body fields
+        // and would buy nothing here.
+        let response: ProUpgradeResponse = try await api.request(
+            "/pro/upgrade",
+            method: .post,
+            body: payload
+        )
+        await tokenStore.save(response.token)
+        return response
+    }
+
     /// Forget the session locally. (Also call DeviceService.unregister first if
     /// you want to stop pushes to this device server-side.)
     public func logout() async {

@@ -1,0 +1,98 @@
+{
+    "ok": true,
+    "forms": [
+        {
+            "id": "cmsb10q4a0001pp0uf3k9xzt2",
+            "kind": "SERVICE_WAIVER",
+            "isActive": true,
+            "origin": "PRO_AUTHORED",
+            "originLabel": "Written by you",
+            "currentVersion": {
+                "id": "cmsb10q4b0003pp0u2h7vd1qe",
+                "version": 2,
+                "title": "Corrective colour waiver",
+                "body": "I understand corrective colour may take several sessions.\n\nI confirm I have disclosed every product used on my hair in the last twelve months, including box colour and henna.",
+                "publishedAt": "2026-08-14T17:22:09.318Z",
+                "verbatimFromTemplate": false
+            },
+            "versionCount": 2,
+            "signatureCount": 3
+        },
+        {
+            "id": "cmsb10q4c0005pp0u8tqr4nl9",
+            "kind": "GENERAL_CONSENT",
+            "isActive": false,
+            "origin": "ADOPTED_TEMPLATE",
+            "originLabel": "Platform template, edited",
+            "currentVersion": {
+                "id": "cmsb10q4c0007pp0uk5wm2cxd",
+                "version": 3,
+                "title": "General consent",
+                "body": "I agree to the service discussed at my consultation and understand the results described.",
+                "publishedAt": "2026-07-02T09:04:41.006Z",
+                "verbatimFromTemplate": false
+            },
+            "versionCount": 3,
+            "signatureCount": 0
+        },
+        {
+            "id": "cmsb10q4d0009pp0uw6zj1hty",
+            "kind": "PATCH_TEST",
+            "isActive": true,
+            "origin": "ADOPTED_TEMPLATE",
+            "originLabel": "Platform template, unchanged",
+            "currentVersion": {
+                "id": "cmsb10q4d000bpp0uq3xe8fva",
+                "version": 1,
+                "title": "Patch test record",
+                "body": "A patch test was applied 48 hours before my appointment and I reported the result honestly.",
+                "publishedAt": "2026-06-18T14:11:57.882Z",
+                "verbatimFromTemplate": true
+            },
+            "versionCount": 1,
+            "signatureCount": 1
+        }
+    ],
+    "templates": [
+        {
+            "id": "cmsb0zzz0001pp0uplatform01",
+            "kind": "GENERAL_CONSENT",
+            "isActive": true,
+            "origin": "PLATFORM_TEMPLATE",
+            "originLabel": "Platform template",
+            "currentVersion": {
+                "id": "cmsb0zzz0002pp0uplatform02",
+                "version": 1,
+                "title": "General consent",
+                "body": "I agree to the service discussed at my consultation and understand the results described.",
+                "publishedAt": "2026-05-30T11:00:00.000Z",
+                "verbatimFromTemplate": true
+            },
+            "versionCount": 1,
+            "signatureCount": 0,
+            "adopted": true
+        },
+        {
+            "id": "cmsb0zzz0003pp0uplatform03",
+            "kind": "PATCH_TEST",
+            "isActive": true,
+            "origin": "PLATFORM_TEMPLATE",
+            "originLabel": "Platform template",
+            "currentVersion": {
+                "id": "cmsb0zzz0004pp0uplatform04",
+                "version": 2,
+                "title": "Patch test record",
+                "body": "A patch test was applied 48 hours before my appointment and I reported the result honestly.",
+                "publishedAt": "2026-05-30T11:00:00.000Z",
+                "verbatimFromTemplate": true
+            },
+            "versionCount": 2,
+            "signatureCount": 0,
+            "adopted": false
+        }
+    ],
+    "limits": {
+        "titleMax": 200,
+        "bodyMax": 20000
+    }
+}
