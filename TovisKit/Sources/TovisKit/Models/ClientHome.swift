@@ -298,9 +298,26 @@ public struct HomeViral: Decodable, Sendable, Identifiable {
     private enum CodingKeys: String, CodingKey {
         case id, name, sourceUrl, status, coverImage, count = "_count"
     }
-    private struct Count: Decodable, Sendable { let approvalFanOuts: Int }
 
-    public let fanOutCount: Int
+    /// `_count`, which carries a DIFFERENT number for a live look than for a
+    /// pending one. Both are optional so one struct can decode either, and so a
+    /// server that has not shipped the rename yet does not throw.
+    private struct Count: Decodable, Sendable {
+        let offeringPros: Int?
+        let approvalFanOuts: Int?
+    }
+
+    /// Pros who explicitly said "I can do this" — a LIVE look's number.
+    ///
+    /// This used to be `_count.approvalFanOuts`, which counted notification
+    /// DELIVERY rows: pros whose services matched and who the backend managed
+    /// to tell. None of them had agreed to anything, so "N pros now offer this"
+    /// was claiming a commitment nobody had made (tovis-app slice 3).
+    public let offeringProCount: Int
+
+    /// Pros the request was SHARED with — a PENDING look's number, and still
+    /// the fan-out, because "shared with N pros" is a claim about delivery.
+    public let sharedProCount: Int
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -309,7 +326,14 @@ public struct HomeViral: Decodable, Sendable, Identifiable {
         sourceUrl = try c.decodeIfPresent(String.self, forKey: .sourceUrl)
         status = try c.decodeIfPresent(String.self, forKey: .status)
         coverImage = try c.decodeIfPresent(String.self, forKey: .coverImage)
-        fanOutCount = (try c.decodeIfPresent(Count.self, forKey: .count))?.approvalFanOuts ?? 0
+        let count = try c.decodeIfPresent(Count.self, forKey: .count)
+        // ⚠️ Both fall back to 0 rather than throwing, which is why the web
+        // rename could NOT be shipped on its own: a build reading the old key
+        // against the new payload would have shown "0 pros" with nothing
+        // failing anywhere. Zero renders the honest "Newly approved" copy, so
+        // the floor is a missing claim rather than a false one.
+        offeringProCount = count?.offeringPros ?? 0
+        sharedProCount = count?.approvalFanOuts ?? 0
     }
 
     /// Platform label derived from the source URL ("TikTok", "Instagram", …).

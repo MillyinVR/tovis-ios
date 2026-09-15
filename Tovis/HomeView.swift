@@ -1369,9 +1369,14 @@ private struct ViralLooksBand: View {
                 Text(look.name)
                     .font(BrandFont.body(17, .bold)).foregroundStyle(BrandColor.textPrimary)
                     .lineLimit(1)
-                Text(look.fanOutCount > 0
-                        ? "\(look.fanOutCount) \(look.fanOutCount == 1 ? "pro" : "pros") now offer this"
-                        : "Newly approved")
+                // The verb agrees too: counting fan-outs this was almost
+                // always plural, but counting opt-ins exactly one pro is the
+                // ordinary case — the first one to say yes.
+                Text(look.offeringProCount == 0
+                        ? "Newly approved"
+                        : look.offeringProCount == 1
+                            ? "1 pro now offers this"
+                            : "\(look.offeringProCount) pros now offer this")
                     .font(BrandFont.mono(10)).tracking(1.0)
                     .foregroundStyle(BrandColor.textSecondary)
                     .padding(.top, 6)
@@ -1412,9 +1417,11 @@ private struct ViralLooksBand: View {
                 Eyebrow(text: "Trending this week")
                 Text(look.name)
                     .font(BrandFont.display(25, .bold)).foregroundStyle(BrandColor.textPrimary)
-                Text(look.fanOutCount > 0
-                     ? "\(look.fanOutCount) \(look.fanOutCount == 1 ? "pro" : "pros") now offer this"
-                     : "Newly approved — pros are picking it up now.")
+                Text(look.offeringProCount == 0
+                     ? "Newly approved — pros are picking it up now."
+                     : look.offeringProCount == 1
+                         ? "1 pro now offers this"
+                         : "\(look.offeringProCount) pros now offer this")
                     .font(BrandFont.body(12)).foregroundStyle(BrandColor.textSecondary)
             }
             .padding(16)
@@ -1451,8 +1458,8 @@ private struct ViralLooksBand: View {
                 Text(look.name)
                     .font(BrandFont.display(21, .bold)).foregroundStyle(BrandColor.textPrimary)
                 pipeline(status: look.status)
-                Text(look.fanOutCount > 0
-                     ? "Shared with \(look.fanOutCount) \(look.fanOutCount == 1 ? "pro" : "pros") in your area. We’ll notify you the moment it’s bookable."
+                Text(look.sharedProCount > 0
+                     ? "Shared with \(look.sharedProCount) \(look.sharedProCount == 1 ? "pro" : "pros") in your area. We’ll notify you the moment it’s bookable."
                      : "In review with our team. We’ll share it with pros and notify you the moment it’s bookable.")
                     .font(BrandFont.body(12.5)).foregroundStyle(BrandColor.textSecondary)
                     .padding(.horizontal, 14).padding(.vertical, 11)
