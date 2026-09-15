@@ -474,6 +474,51 @@ struct PublicBoardLink: Equatable {
     }
 }
 
+// MARK: - Public-profile Universal Link
+
+/// A parsed `https://<host>/u/<handle>` or `https://<host>/professionals/<id>`
+/// Universal Link — a shared PUBLIC PROFILE, creator-side or pro-side.
+///
+/// 🔴 Both paths have been resolvable by `PushDeepLink` for a long time, and both
+/// shells already present the screen — but that parser is only ever reached from a
+/// tapped PUSH (`handlePushDeepLink(href:)`). `handleDeepLink(url:)`, the one entry
+/// point `.onOpenURL` calls, had no branch for either, so a TAPPED profile link fell
+/// through every branch to `CheckoutReturn`'s guard and was dropped. `/u/*` is
+/// associated in the AASA, so that tap opened the app and did nothing — the silent
+/// no-op the AASA file warns an associated-but-unhandled path becomes;
+/// `/professionals/*` was not associated at all, so it left for Safari. Both are the
+/// links the app's OWN Share controls emit (`PublicClientViewerView`'s share item,
+/// `ProProfileView.shareURL`), which is the one route a stranger arrives by.
+///
+/// The path parsing is `PushDeepLink`'s, not a second copy of it: it accepts an
+/// absolute URL and already draws every line this needs — `/u/{handle}/boards/{slug}`
+/// is left to `PublicBoardLink` and its own screen, a handle-less `/u` resolves
+/// nothing, and `/professionals/{id}` takes exactly two segments.
+///
+/// ⚠️ The claim is gated on the path ROOT, not on which target came back, because the
+/// path root is what the AASA actually associates. A push can name many more targets
+/// (`/client/…`, `/pro/…`); none of those paths are associated, so none can arrive as
+/// a Universal Link, and handing an arbitrary tapped https URL to the full push table
+/// would widen what a link off the internet may open inside the app.
+///
+/// ⚠️ The handle-keyed pro mirror `/p/{handle}` is NOT claimed — resolving a handle to
+/// a professionalId needs a lookup this parser cannot do, so it stays a web link.
+struct PublicProfileLink: Equatable {
+    let target: PushDeepLink.Target
+
+    init?(url: URL) {
+        guard url.scheme?.lowercased() == "https" else { return nil }
+        let host = url.host?.lowercased()
+        guard host == "tovis.app" || host == "www.tovis.app" else { return nil }
+        // Path segments minus the leading "/": ["u", "<handle>"] /
+        // ["professionals", "<id>"].
+        let parts = url.pathComponents.filter { $0 != "/" }
+        guard let root = parts.first, root == "u" || root == "professionals" else { return nil }
+        guard let link = PushDeepLink(href: url.absoluteString) else { return nil }
+        self.target = link.target
+    }
+}
+
 // MARK: - Client-claim Universal Link
 
 /// A parsed `https://<host>/claim/<token>` Universal Link — the claim link a pro
@@ -676,8 +721,9 @@ final class SessionModel {
     private(set) var claimableHistoryMessage: String?
 
     /// Handle an incoming deep link / Universal Link. Password-reset, public-board,
-    /// claim + single-look links route to their native screens; a `/c/<shortCode>`
-    /// referral link opens the web funnel in the in-app browser (web-only by design);
+    /// claim, single-look + public-profile links route to their native screens; a
+    /// `/c/<shortCode>` referral link opens the web funnel in the in-app browser
+    /// (web-only by design);
     /// the `tovis://checkout/return?…` scheme feeds the active booking screen. Anything
     /// else is ignored so stray links are safe.
     func handleDeepLink(_ url: URL) {
@@ -697,6 +743,15 @@ final class SessionModel {
         // so both entry points land on one handler in the shells.
         if let look = LooksLink(url: url) {
             pushDeepLink = PushDeepLink(target: .look(id: look.id, book: look.book))
+            return
+        }
+        // A shared public profile — a creator's `/u/{handle}` or a pro's
+        // `/professionals/{id}`. Routed through the same targets a push uses, so a
+        // tapped share link and a tapped notification land on one handler in the
+        // shells. Checked AFTER `PublicBoardLink` so a `/u/{handle}/boards/{slug}`
+        // share still lands on the board it was sent for.
+        if let profile = PublicProfileLink(url: url) {
+            pushDeepLink = PushDeepLink(target: profile.target)
             return
         }
         // A client-referral link (`/c/<shortCode>`). The web tap-funnel is web-only by
