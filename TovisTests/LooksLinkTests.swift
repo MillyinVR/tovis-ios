@@ -42,6 +42,40 @@ struct LooksPathTests {
     func otherSectionIsNotALook() {
         #expect(LooksPath.lookId(from: ["boards", "b1"]) == nil)
     }
+
+    @Test("A /looks/tags/{slug} path yields the slug")
+    func resolvesTagSlug() {
+        #expect(LooksPath.tagSlug(from: ["looks", "tags", "balayage"]) == "balayage")
+    }
+
+    // The slug is normalized the way web's `slugifyLookTag` does — lowercase,
+    // ascii alphanumerics only — so the key sent to GET /looks?tag= is the key
+    // the web page resolves, whatever casing the tapped URL carried.
+    @Test("The slug is normalized like web's slugifyLookTag")
+    func normalizesTagSlug() {
+        #expect(LooksPath.tagSlug(from: ["looks", "tags", "Balayage"]) == "balayage")
+        #expect(LooksPath.tagSlug(from: ["looks", "tags", "90s_Blowout"]) == "90sblowout")
+        #expect(LooksPath.tagSlug(from: ["looks", "tags", "café"]) == "caf")
+    }
+
+    // Web's own validity floor: `parseLookTags` drops anything that normalizes
+    // below two characters and `loadLookTagPage` 404s it, so there is no screen
+    // to open — and the server 400s a sub-2-char `tag` param.
+    @Test("A slug that normalizes below two characters is not a tag")
+    func rejectsShortTagSlug() {
+        #expect(LooksPath.tagSlug(from: ["looks", "tags", "a"]) == nil)
+        #expect(LooksPath.tagSlug(from: ["looks", "tags", "--"]) == nil)
+        #expect(LooksPath.tagSlug(from: ["looks", "tags", ""]) == nil)
+    }
+
+    @Test("The bare tags index and a look are not tag pages")
+    func rejectsNonTagPaths() {
+        // Web has no /looks/tags index page — only /looks/tags/[slug].
+        #expect(LooksPath.tagSlug(from: ["looks", "tags"]) == nil)
+        #expect(LooksPath.tagSlug(from: ["looks", "look_123"]) == nil)
+        #expect(LooksPath.tagSlug(from: ["looks", "tags", "balayage", "extra"]) == nil)
+        #expect(LooksPath.tagSlug(from: ["boards", "tags", "balayage"]) == nil)
+    }
 }
 
 @Suite("Looks universal link")
@@ -67,7 +101,7 @@ struct LooksLinkTests {
 
     @Test("A tag link is not a look link")
     func rejectsTagLink() throws {
-        // The app renders these in every look's tag chips; they open in Safari.
+        // Still not a LOOK — it is a tag page, and `LookTagLink` below claims it.
         let url = try #require(URL(string: "https://www.tovis.app/looks/tags/balayage"))
         #expect(LooksLink(url: url) == nil)
     }
@@ -94,6 +128,70 @@ struct LooksLinkTests {
     }
 }
 
+// The tag page's own Universal Link. `/looks/tags/*` was EXCLUDED from the AASA
+// file because "native has no tag screen" — a premise that expired when
+// LookTagFeedView replaced the three SafariView ejects. These pin the app half:
+// web must not associate the path unless a tapped link resolves to a screen,
+// because an associated path the app doesn't route is a silent no-op.
+@Suite("Look tag universal link")
+struct LookTagLinkTests {
+    @Test("Opens the tag page the app's own chips link to")
+    func parsesTagURL() throws {
+        let url = try #require(URL(string: "https://www.tovis.app/looks/tags/balayage"))
+        #expect(LookTagLink(url: url)?.slug == "balayage")
+    }
+
+    @Test("Accepts the apex host too")
+    func parsesApexHost() throws {
+        let url = try #require(URL(string: "https://tovis.app/looks/tags/balayage"))
+        #expect(LookTagLink(url: url)?.slug == "balayage")
+    }
+
+    @Test("A query string doesn't leak into the slug")
+    func ignoresQuery() throws {
+        let url = try #require(URL(string: "https://www.tovis.app/looks/tags/balayage?utm_source=ig"))
+        #expect(LookTagLink(url: url)?.slug == "balayage")
+    }
+
+    @Test("A single look is not a tag page")
+    func rejectsLookLink() throws {
+        let url = try #require(URL(string: "https://www.tovis.app/looks/look_123"))
+        #expect(LookTagLink(url: url) == nil)
+    }
+
+    @Test("Rejects a foreign host and a non-https scheme")
+    func rejectsForeignURLs() throws {
+        let foreign = try #require(URL(string: "https://evil.example.com/looks/tags/balayage"))
+        #expect(LookTagLink(url: foreign) == nil)
+
+        let lookalike = try #require(URL(string: "https://tovis.app.evil.com/looks/tags/balayage"))
+        #expect(LookTagLink(url: lookalike) == nil)
+
+        let insecure = try #require(URL(string: "http://www.tovis.app/looks/tags/balayage"))
+        #expect(LookTagLink(url: insecure) == nil)
+    }
+
+    // `pathComponents` decodes and drops a trailing slash, so both shapes a real
+    // share/paste can produce resolve to the same slug — pinned because the
+    // parser's `parts.count == 3` would otherwise be quietly shape-sensitive.
+    @Test("A trailing slash and percent-encoding still resolve")
+    func toleratesURLShapes() throws {
+        let trailing = try #require(URL(string: "https://www.tovis.app/looks/tags/balayage/"))
+        #expect(LookTagLink(url: trailing)?.slug == "balayage")
+
+        let encoded = try #require(URL(string: "https://www.tovis.app/looks/tags/Bal%20ayage"))
+        #expect(LookTagLink(url: encoded)?.slug == "balayage")
+    }
+
+    // The bare index stays EXCLUDED in the AASA file for exactly this reason:
+    // web has no /looks/tags page, and neither does the app.
+    @Test("The bare tags index is not a tag page")
+    func rejectsTagsIndex() throws {
+        let url = try #require(URL(string: "https://www.tovis.app/looks/tags"))
+        #expect(LookTagLink(url: url) == nil)
+    }
+}
+
 @Suite("Push deep link — looks")
 struct PushDeepLinkLooksTests {
     @Test("A /looks/{id} href targets the look")
@@ -103,7 +201,10 @@ struct PushDeepLinkLooksTests {
 
     @Test("A tag href does not target a look")
     func rejectsTagHref() {
-        // Previously produced `.look(id: "tags")`.
+        // Previously produced `.look(id: "tags")`. Still nil, and deliberately so
+        // even though a tapped /looks/tags/{slug} URL now opens the native tag
+        // feed: that route is set from `LookTagLink`, not from an href, so the
+        // notification surfaces keep the behaviour their own tests pin.
         #expect(PushDeepLink(href: "/looks/tags/balayage") == nil)
     }
 

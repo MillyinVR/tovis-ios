@@ -91,6 +91,17 @@ struct PushDeepLink: Equatable {
         /// on a phone it landed on the look and stopped, one silent tap short of
         /// the thing the link was sent to do.
         case look(id: String, book: Bool)    // /looks/{id}[?book=1]
+        /// /looks/tags/{slug} — the hashtag browse page.
+        ///
+        /// The app has had `LookTagFeedView` since it replaced the three Safari
+        /// ejects for tag chips, but a tapped tag LINK still left the app,
+        /// because the AASA file excluded the path on the stale grounds that
+        /// "native has no tag screen". Set only from `LookTagLink` (a tapped
+        /// Universal Link): the push-href parser still refuses `/looks/tags/…`,
+        /// so `LooksPath.lookId`'s reserved-segment guard keeps meaning exactly
+        /// what it says, and a notification row carrying a tag href stays the
+        /// separate surface it is, with its own pinned behaviour.
+        case lookTag(slug: String)           // /looks/tags/{slug}
         /// /u/{handle} — a creator's public profile.
         ///
         /// 🔴 Load-bearing: this is the link the client Share sheet promises
@@ -194,7 +205,7 @@ struct PushDeepLink: Equatable {
         switch target {
         // A public profile is readable from either shell — a pro opens the same
         // screen from their client roster (ProClientsView).
-        case .thread, .look, .publicClient, .publicPro:
+        case .thread, .look, .lookTag, .publicClient, .publicPro:
             return nil
         case .booking, .offers, .opening, .referrals, .activity, .chartAccess, .clientConsult,
              .board, .clientHome:
@@ -416,6 +427,31 @@ enum LooksPath {
         guard !candidate.isEmpty, !reserved.contains(candidate.lowercased()) else { return nil }
         return candidate
     }
+
+    /// The tag slug in `/looks/tags/{slug}` — the OTHER `/looks/…` route, and a
+    /// screen the app has had since `LookTagFeedView` replaced the three Safari
+    /// ejects. Normalized exactly the way web's `slugifyLookTag` does so the key
+    /// we send to `GET /looks?tag=` is the key the web page resolves.
+    ///
+    /// nil for the bare `/looks/tags` index (web has no such page) and for a slug
+    /// that normalizes below web's own two-character floor — `parseLookTags`
+    /// drops those and `loadLookTagPage` 404s them, so there is nothing to show.
+    /// Neither shape is emitted by anything in either codebase.
+    static func tagSlug(from parts: [String]) -> String? {
+        guard parts.count == 3,
+              parts[0].lowercased() == "looks",
+              parts[1].lowercased() == "tags"
+        else { return nil }
+        let slug = slugifyTag(parts[2])
+        return slug.count >= 2 ? slug : nil
+    }
+
+    /// Web `lib/looks/tags.ts` `slugifyLookTag`: lowercase, then keep only ascii
+    /// alphanumerics. Kept byte-for-byte equivalent so a link built from a web
+    /// slug round-trips unchanged.
+    private static func slugifyTag(_ raw: String) -> String {
+        String(raw.lowercased().filter { $0.isASCII && ($0.isLetter || $0.isNumber) })
+    }
 }
 
 /// A tapped `https://(www.)tovis.app/looks/{id}` Universal Link.
@@ -445,6 +481,34 @@ struct LooksLink: Equatable {
             .queryItems?
             .first(where: { $0.name == "book" })?
             .value == "1"
+    }
+}
+
+// MARK: - Tag-page Universal Link
+
+/// A tapped `https://(www.)tovis.app/looks/tags/{slug}` Universal Link — the
+/// hashtag browse page.
+///
+/// This path was deliberately EXCLUDED from the AASA file on the grounds that
+/// "native has no tag screen". That stopped being true when `LookTagFeedView`
+/// replaced the three SafariView ejects (the feed's overlay chips, Discover's
+/// trending rail, the look detail's tag row), so the app has been rendering the
+/// tag feed natively from the inside while sending every tapped tag LINK out to
+/// Safari. This parser is the app half of retiring that exclusion — the AASA
+/// change on web must not land without it, or a tapped tag page becomes the
+/// silent no-op the association rules warn about.
+struct LookTagLink: Equatable {
+    /// Normalized slug (web `slugifyLookTag`), ready for `GET /looks?tag=`.
+    let slug: String
+
+    init?(url: URL) {
+        guard url.scheme?.lowercased() == "https" else { return nil }
+        let host = url.host?.lowercased()
+        guard host == "tovis.app" || host == "www.tovis.app" else { return nil }
+        // Path segments minus the leading "/": ["looks", "tags", "<slug>"].
+        guard let slug = LooksPath.tagSlug(from: url.pathComponents.filter({ $0 != "/" }))
+        else { return nil }
+        self.slug = slug
     }
 }
 
@@ -721,11 +785,11 @@ final class SessionModel {
     private(set) var claimableHistoryMessage: String?
 
     /// Handle an incoming deep link / Universal Link. Password-reset, public-board,
-    /// claim, single-look + public-profile links route to their native screens; a
-    /// `/c/<shortCode>` referral link opens the web funnel in the in-app browser
-    /// (web-only by design);
-    /// the `tovis://checkout/return?…` scheme feeds the active booking screen. Anything
-    /// else is ignored so stray links are safe.
+    /// claim, single-look, tag-page + public-profile links route to their native
+    /// screens; a `/c/<shortCode>` referral link opens the web funnel in the
+    /// in-app browser (web-only by design); the `tovis://checkout/return?…`
+    /// scheme feeds the active booking screen. Anything else is ignored so stray
+    /// links are safe.
     func handleDeepLink(_ url: URL) {
         if let reset = PasswordResetLink(url: url) {
             pendingPasswordResetToken = reset.token
@@ -743,6 +807,12 @@ final class SessionModel {
         // so both entry points land on one handler in the shells.
         if let look = LooksLink(url: url) {
             pushDeepLink = PushDeepLink(target: .look(id: look.id, book: look.book))
+            return
+        }
+        // A tapped tag page (`/looks/tags/{slug}`) — the native tag feed, which the
+        // app already renders from its own chips and now also from a link.
+        if let tag = LookTagLink(url: url) {
+            pushDeepLink = PushDeepLink(target: .lookTag(slug: tag.slug))
             return
         }
         // A shared public profile — a creator's `/u/{handle}` or a pro's
@@ -815,6 +885,31 @@ final class SessionModel {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard let raw, !raw.isEmpty else { return }
         handlePushDeepLink(href: raw)
+        #endif
+    }
+
+    /// DEBUG: open a full Universal Link at launch, as if one had been TAPPED.
+    ///
+    /// The sibling of `applyDebugDeepLinkIfRequested` above, for the links that
+    /// only `handleDeepLink` resolves. It is not a duplicate of it: the push-href
+    /// parser deliberately refuses some paths a tapped URL does route —
+    /// `/looks/tags/{slug}` is exactly that — so a tag page could not be reached
+    /// through the href hook at all, and Simulator.app does not accept synthetic
+    /// taps on this machine. Without this, the tag feed's whole deep-link route
+    /// could ship build-green, unit-tested, and never once looked at.
+    ///
+    /// Also the only way to exercise a Universal Link BEFORE the AASA change is
+    /// deployed: until `www.tovis.app` serves the new association file, iOS has
+    /// no reason to hand the app the tap at all.
+    ///
+    ///     SIMCTL_CHILD_TOVIS_DEBUG_OPEN_UNIVERSAL_LINK=https://www.tovis.app/looks/tags/balayage \
+    ///       xcrun simctl launch …
+    func applyDebugUniversalLinkIfRequested() {
+        #if DEBUG
+        let raw = ProcessInfo.processInfo.environment["TOVIS_DEBUG_OPEN_UNIVERSAL_LINK"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let raw, !raw.isEmpty, let url = URL(string: raw) else { return }
+        handleDeepLink(url)
         #endif
     }
 
@@ -1604,6 +1699,7 @@ struct RootView: View {
                 }
                 .task {
                     session.applyDebugDeepLinkIfRequested()
+                    session.applyDebugUniversalLinkIfRequested()
                     // Hand the durable photo queue an authenticated client and
                     // let it drain. This is deliberately at the ROOT of the
                     // signed-in shell, not in the camera or the session screen:
