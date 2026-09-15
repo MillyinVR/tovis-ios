@@ -179,10 +179,20 @@ struct ClientBecomeProView: View {
 
         switch outcome {
         case .upgraded, .alreadyPro:
-            // The session now acts as PRO, so RootView has already swapped the
-            // whole shell underneath this screen. Dismissing leaves nothing of
-            // the client navigation stack pointing at a workspace that moved.
-            dismiss()
+            // 🔴 Only once the session ACTUALLY acts as PRO. RootView swaps the
+            // whole shell on that flip, so dismissing leaves nothing of the
+            // client navigation stack pointing at a workspace that moved —
+            // but if the flip did not take, dismissing would drop the person
+            // back with an error they never got to read.
+            //
+            // The `alreadyPro` arm can land here without the switch taking: a
+            // barred profile whose home role is still CLIENT cannot act as PRO
+            // (`canActAs`), and that is also the one state where this row is
+            // offered to someone who already has a profile — `canSwitchToPro`
+            // is false for them while web gates its row on the profile itself.
+            // `switchWorkspace` has already put the server's reason on
+            // `session.errorMessage`, which is rendered above the button.
+            if session.activeRole == .pro { dismiss() }
         case .failed:
             // The message is on `session.errorMessage`, rendered above the
             // button — the form stays usable so a taken handle or a refused
