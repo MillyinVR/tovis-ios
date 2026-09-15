@@ -40,6 +40,7 @@ struct ProMainTabView: View {
     @State private var reviewsLink: ReviewsDeepLink?
     /// The membership screen surfaced by a `/pro/membership` push (handle-expiry).
     @State private var showMembership = false
+    @State private var showLookAnalysis = false
     /// The licence + ID screen surfaced by a `/pro/verification` notification
     /// (PRO_LICENSE_EXPIRING_SOON / PRO_LICENSE_EXPIRED).
     @State private var showVerification = false
@@ -331,6 +332,9 @@ struct ProMainTabView: View {
             }
             .tint(BrandColor.accent)
         }
+        .sheet(isPresented: $showLookAnalysis) {
+            ProLookAnalysisWebView()
+        }
         // A tapped `/pro/membership` push (handle-reservation expiry) → membership.
         .sheet(isPresented: $showMembership) {
             NavigationStack {
@@ -460,6 +464,8 @@ struct ProMainTabView: View {
             // Carry the review id (lifted from the `#review-{id}` fragment) so the
             // list scrolls to that review; nil opens the list at the top.
             reviewsLink = ReviewsDeepLink(focusReviewId: id)
+        case .proLookAnalysis:
+            showLookAnalysis = true
         case .membership:
             showMembership = true
         case .proProfile:
@@ -554,5 +560,75 @@ private struct ProSessionPickerSheet: View {
         guard let iso = b.scheduledFor else { return client }
         let when = Wire.dateTime(iso, timeZone: nil)
         return when.isEmpty ? client : "\(client) • \(when)"
+    }
+}
+
+/// Reuses the existing short-lived, single-use session exchange. No native bearer
+/// token or cookie is handed to Safari. Both the portfolio and notifications use
+/// this same presentation, and issuance starts only once the sheet is visible.
+struct ProLookAnalysisWebView: View {
+    @Environment(SessionModel.self) private var session
+    @Environment(\.dismiss) private var dismiss
+    @State private var exchangeURL: URL?
+    @State private var isPreparing = false
+    @State private var failed = false
+
+    static let path = "/pro/looks/analysis"
+    static let title = "Prepare looks for consultations"
+
+    var body: some View {
+        Group {
+            if let exchangeURL {
+                SafariView(url: exchangeURL) { dismiss() }
+            } else {
+                NavigationStack {
+                    VStack(spacing: 18) {
+                        if isPreparing {
+                            ProgressView("Opening your look review…")
+                                .tint(BrandColor.accent)
+                        } else if failed {
+                            Text("We couldn’t open your signed-in look review. Please try again.")
+                                .font(BrandFont.body(15))
+                                .foregroundStyle(BrandColor.textSecondary)
+                                .multilineTextAlignment(.center)
+                            Button("Try again") { Task { await prepare() } }
+                                .font(BrandFont.body(15, .semibold))
+                                .tint(BrandColor.accent)
+                        }
+                    }
+                    .padding(24)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(BrandColor.bgPrimary.ignoresSafeArea())
+                    .navigationTitle(Self.title)
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Done") { dismiss() }
+                                .tint(BrandColor.textSecondary)
+                        }
+                    }
+                }
+            }
+        }
+        .task { await prepare() }
+    }
+
+    @MainActor
+    private func prepare() async {
+        guard !isPreparing, exchangeURL == nil else { return }
+        isPreparing = true
+        failed = false
+        defer { isPreparing = false }
+        let fallback = session.client.webPageURL(Self.path)
+        let url = await session.client.auth.webHandoffURL(for: Self.path, fallback: fallback)
+        guard !Task.isCancelled else { return }
+        // The shared helper intentionally returns its fallback on failure. This
+        // review flow must say that sign-in failed, not open an unauthenticated
+        // page and let the professional believe their answers reached us.
+        guard url != fallback else {
+            failed = true
+            return
+        }
+        exchangeURL = url
     }
 }

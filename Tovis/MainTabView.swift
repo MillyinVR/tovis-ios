@@ -473,7 +473,7 @@ struct MainTabView: View {
         // Pro-shell targets are handled by the workspace switch above; unreachable
         // here, but the switch must stay exhaustive.
         case .proBooking, .proConsult, .proReviews, .membership, .proProfile, .proCalendar,
-             .proVerification, .proClient, .proWaitlist, .proHome:
+             .proVerification, .proClient, .proWaitlist, .proLookAnalysis, .proHome:
             break
         }
         session.clearPushDeepLink()
