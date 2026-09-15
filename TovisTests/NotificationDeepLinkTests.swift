@@ -330,3 +330,24 @@ struct LookBriefNotificationLinkTests {
         #expect(PushDeepLink(href: "/pro/consults")?.target == .proHome)
     }
 }
+
+@Suite("Look analysis review links")
+struct LookAnalysisNotificationLinkTests {
+    @Test func proReviewOpensItsOwnDestination() {
+        let link = PushDeepLink(href: "/pro/looks/analysis")
+        #expect(link?.target == .proLookAnalysis)
+        #expect(link?.role == .pro)
+    }
+
+    @Test func reviewRouteDoesNotClaimOtherLookPaths() {
+        #expect(PushDeepLink(href: "/pro/looks")?.target == .proHome)
+        #expect(PushDeepLink(href: "/pro/looks/analysis/other")?.target == .proHome)
+        #expect(PushDeepLink(href: "/admin/looks/analysis") == nil)
+    }
+
+    @MainActor
+    @Test func reviewNotificationBadgesUseHumanLabels() {
+        #expect(ProNotificationsView.eventLabel("LOOK_MEDIA_CLARIFICATION") == "Look clarification")
+        #expect(ProNotificationsView.eventLabel("LOOK_MEDIA_ADMIN_REVIEW") == "Look review")
+    }
+}

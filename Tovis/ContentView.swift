@@ -162,6 +162,7 @@ struct PushDeepLink: Equatable {
         // Pro-shell targets.
         case proBooking(id: String, step: String?)  // /pro/bookings/{id}[/session|/aftercare|…]
         case proConsult(id: String)
+        case proLookAnalysis                 // /pro/looks/analysis — signed-in web review
         case proReviews(id: String?)         // /pro/reviews[/{id}] or #review-{id}
         case membership                      // /pro/membership
         case proProfile                      // /pro/profile/public-profile
@@ -211,7 +212,7 @@ struct PushDeepLink: Equatable {
              .board, .clientHome:
             return .client
         case .proBooking, .proConsult, .proReviews, .membership, .proProfile, .proCalendar,
-             .proVerification, .proClient, .proWaitlist, .proHome:
+             .proVerification, .proClient, .proWaitlist, .proLookAnalysis, .proHome:
             return .pro
         }
     }
@@ -338,6 +339,8 @@ struct PushDeepLink: Equatable {
                 // The 4th segment (session|aftercare|before-photos|…) is the step;
                 // `nil` = the plain booking detail. Carried for a future step-jump.
                 target = .proBooking(id: parts[2], step: parts.count >= 4 ? parts[3] : nil)
+            case "looks" where parts.count == 3 && parts[2] == "analysis":
+                target = .proLookAnalysis
             case "consults" where parts.count == 3:
                 target = .proConsult(id: parts[2])
             case "reviews":

@@ -32,6 +32,7 @@ struct ProProfileTabView: View {
     @State private var capabilities: ProCapabilities = .none
     @State private var tab: Tab = .portfolio
     @State private var composing = false
+    @State private var showLookAnalysis = false
     @State private var editing = false
     @State private var showPayment = false
     /// The library owns its own load, so the tab's pull-to-refresh reaches it by
@@ -68,6 +69,7 @@ struct ProProfileTabView: View {
             }
             .task { if case .loading = phase { await load() } }
             .onChange(of: session.refreshTick) { Task { await load() } }
+            .sheet(isPresented: $showLookAnalysis) { ProLookAnalysisWebView() }
             .sheet(isPresented: $editing) {
                 if case let .loaded(mine, _, isApproved) = phase {
                     ProEditProfileSheet(profile: mine, canEditHandle: isApproved) { saved in
@@ -397,6 +399,14 @@ struct ProProfileTabView: View {
     /// wasn't it. Both rows are gone; this is them.
     @ViewBuilder
     private func portfolioTab() -> some View {
+        Button { showLookAnalysis = true } label: {
+            Label(ProLookAnalysisWebView.title, systemImage: "photo.badge.checkmark")
+                .font(BrandFont.body(14, .semibold))
+                .foregroundStyle(BrandColor.accent)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 12)
+        }
+        .buttonStyle(.plain)
         ProLibrarySection(reloadTick: libraryReloadTick)
     }
 

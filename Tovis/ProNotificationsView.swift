@@ -282,8 +282,10 @@ struct ProNotificationsView: View {
     }
 
     /// Event → human badge label, matching the web's eventKeyLabel.
-    private static func eventLabel(_ eventKey: String) -> String {
+    static func eventLabel(_ eventKey: String) -> String {
         let k = eventKey.uppercased()
+        if k == "LOOK_MEDIA_CLARIFICATION" { return "Look clarification" }
+        if k == "LOOK_MEDIA_ADMIN_REVIEW" { return "Look review" }
         if k == "BOOKING_REQUEST_CREATED" { return "Booking request" }
         if k == "PAYMENT_CONFIRMATION_REQUIRED" { return "Confirm payment" }
         if k.contains("CANCELLED") { return "Booking cancelled" }
