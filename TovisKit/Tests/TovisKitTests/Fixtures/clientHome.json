@@ -176,7 +176,7 @@
       }
     ],
     "viralLive": [
-      { "id": "v_1", "name": "Glass Skin", "sourceUrl": null, "approvedAt": "2026-06-01T00:00:00.000Z", "_count": { "approvalFanOuts": 12 } }
+      { "id": "v_1", "name": "Glass Skin", "sourceUrl": null, "approvedAt": "2026-06-01T00:00:00.000Z", "_count": { "offeringPros": 7, "approvalFanOuts": 12 } }
     ],
     "viralPending": [
       { "id": "vp_1", "name": "Cherry Cola", "sourceUrl": "https://www.tiktok.com/@x/video/1", "status": "IN_REVIEW", "createdAt": "2026-06-25T00:00:00.000Z", "_count": { "approvalFanOuts": 3 } }

@@ -292,7 +292,11 @@ func fixture(_ name: String) throws -> Data {
         #expect(home.favoritePros.first?.professional?.displayName == "Grace Kim")
         #expect(home.favoriteServices.first?.service?.minPrice == "45.00")
         #expect(home.favoriteServices.first?.service?.category?.name == "Nails")
-        #expect(home.viralLive.first?.fanOutCount == 12)
+        // A live look reports pros who OPTED IN, not pros we notified. The
+        // fixture carries 7 opt-ins beside 12 fan-outs precisely so that
+        // reading the old key would fail here rather than quietly agree.
+        #expect(home.viralLive.first?.offeringProCount == 7)
+        #expect(home.viralPending.first?.sharedProCount == 3)
         // Pending viral carries its review status + derived platform.
         #expect(home.viralPending.first?.status == "IN_REVIEW")
         #expect(home.viralPending.first?.platform == "TikTok")
